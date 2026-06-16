@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="학생관리">
 <link rel="icon" type="image/png" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root {
   --gd:#1e2e5c; --gm:#2b3990; --gl:#5a70cc; --gp:#e8ecf8;
@@ -212,7 +213,12 @@ async function renderMain(){
     <div class="acard">
       <h3 class="actitle">학생 관리</h3>
       <p class="adesc">학생 기본정보를 등록하고 관리합니다. 학번은 등록 순서대로 자동 부여되며, 목록은 가나다순으로 표시됩니다.</p>
-      ${isAdmin()?'<button class="bp" onclick="openStudentForm()">＋ 새 학생 등록</button>':''}
+      ${isAdmin()?`<div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button class="bp" onclick="openStudentForm()">＋ 새 학생 등록</button>
+        <button class="bs" onclick="downloadTemplate()">⬇ 엑셀 양식 다운로드</button>
+        <button class="bs" onclick="document.getElementById('xlsx-input').click()">⬆ 엑셀 일괄 등록</button>
+        <input type="file" id="xlsx-input" accept=".xlsx,.xls" style="display:none" onchange="handleXlsxUpload(event)">
+      </div>`:''}
     </div>
     <div class="acard">
       <div class="toolbar">
@@ -526,6 +532,169 @@ async function unlinkSibling(id, sibId){
   } catch(e){ toast('실패: '+e.message,'err'); }
 }
 window.unlinkSibling = unlinkSibling;
+
+// ── 엑셀 일괄 등록 ──
+// 양식 컬럼 정의 (헤더명 → 내부 필드)
+const XLSX_COLS = [
+  {h:'이름', f:'name'},
+  {h:'성별(남/여)', f:'gender'},
+  {h:'생년월일(YYYY-MM-DD)', f:'birth'},
+  {h:'기관(지혜빛/다니엘)', f:'org'},
+  {h:'입학일(YYYY-MM-DD)', f:'admitDate'},
+  {h:'재적상태(재학/휴학/자퇴/졸업)', f:'status'},
+  {h:'학생연락처', f:'phone'},
+  {h:'학생이메일', f:'email'},
+  {h:'보호자이름', f:'guardian'},
+  {h:'보호자연락처', f:'guardianPhone'},
+  {h:'주소', f:'address'},
+  {h:'특이사항', f:'memo'},
+];
+
+// 양식 다운로드
+function downloadTemplate(){
+  const headers = XLSX_COLS.map(c=>c.h);
+  // 예시 행 2개
+  const example = [
+    ['홍길동','남','2018-03-15','다니엘','2025-03-02','재학','010-1234-5678','hong@email.com','홍판서','010-8765-4321','경기도 오산시 ...','땅콩 알레르기'],
+    ['김믿음','여','2021-05-20','지혜빛','2025-03-02','재학','','','김집사','010-1111-2222','경기도 화성시 ...',''],
+  ];
+  const aoa = [headers, ...example];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  // 컬럼 너비
+  ws['!cols'] = headers.map(h=>({wch: Math.max(h.length, 14)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '학생등록');
+  XLSX.writeFile(wb, '학생등록_양식.xlsx');
+  toast('양식을 다운로드했습니다.','ok');
+}
+window.downloadTemplate = downloadTemplate;
+
+// 엑셀 업로드 처리
+function handleXlsxUpload(ev){
+  const file = ev.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      parseAndPreview(rows);
+    } catch(err){
+      toast('엑셀 읽기 실패: '+err.message,'err');
+    }
+    ev.target.value = '';  // 같은 파일 재선택 가능하게
+  };
+  reader.readAsArrayBuffer(file);
+}
+window.handleXlsxUpload = handleXlsxUpload;
+
+// 파싱 + 미리보기
+function parseAndPreview(rows){
+  if(!rows || rows.length < 2) return toast('데이터가 없습니다.','err');
+  // 첫 행은 헤더 → 무시하고 순서 기준으로 매핑
+  const allowed = myOrgs();
+  const orgMap = {'지혜빛':'jihyebit','다니엘':'daniel','다니엘 아마츠':'daniel'};
+  const statusMap = {'재학':'active','휴학':'leave','자퇴':'quit','졸업':'grad','조기졸업':'egrad'};
+  const parsed = [], errors = [];
+
+  for(let i=1;i<rows.length;i++){
+    const r = rows[i];
+    if(!r || r.every(c=>String(c).trim()==='')) continue;  // 빈 행 skip
+    const rowNum = i+1;
+    const get = idx => String(r[idx]??'').trim();
+    const name = get(0);
+    if(!name) continue;  // 이름 없으면 skip
+    const orgRaw = get(3);
+    const org = orgMap[orgRaw] || (orgRaw==='jihyebit'||orgRaw==='daniel'?orgRaw:'');
+    if(!org){ errors.push(`${rowNum}행 "${name}": 기관이 올바르지 않습니다 (${orgRaw})`); continue; }
+    if(!allowed.includes(org)){ errors.push(`${rowNum}행 "${name}": 등록 권한이 없는 기관입니다 (${orgRaw})`); continue; }
+    const statusRaw = get(5);
+    const status = statusMap[statusRaw] || 'active';
+    const admitDate = get(4);
+    parsed.push({
+      name, gender:get(1), birth:get(2), org, admitDate,
+      admitYear: admitDate ? Number(admitDate.slice(0,4)) : new Date().getFullYear(),
+      status, phone:get(6), email:get(7), guardian:get(8),
+      guardianPhone:get(9), address:get(10), memo:get(11),
+    });
+  }
+
+  if(!parsed.length){
+    return toast('등록할 학생이 없습니다. 양식을 확인하세요.','err');
+  }
+
+  // 미리보기 모달
+  const errHTML = errors.length
+    ? `<div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px;line-height:1.6">
+         ⚠️ 제외된 ${errors.length}건:<br>${errors.join('<br>')}</div>` : '';
+  const rowsHTML = parsed.map((p,i)=>`<tr>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${i+1}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${p.name}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${ORGS[p.org]}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${p.birth||'-'}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${STATUS[p.status]}</td>
+  </tr>`).join('');
+
+  window.__bulkParsed = parsed;
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">일괄 등록 미리보기</div>
+      <div class="msub">아래 ${parsed.length}명의 학생을 등록합니다. 확인 후 등록하세요.</div>
+      ${errHTML}
+      <div style="max-height:320px;overflow-y:auto;border:1px solid var(--ivd);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:var(--iv);position:sticky;top:0">
+            <th style="padding:8px;text-align:left">#</th><th style="padding:8px;text-align:left">이름</th>
+            <th style="padding:8px;text-align:left">기관</th><th style="padding:8px;text-align:left">생년월일</th>
+            <th style="padding:8px;text-align:left">상태</th>
+          </tr></thead>
+          <tbody>${rowsHTML}</tbody>
+        </table>
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="confirmBulkRegister()">${parsed.length}명 등록</button>
+      </div>
+    </div></div>`;
+}
+
+// 일괄 등록 실행
+async function confirmBulkRegister(){
+  const parsed = window.__bulkParsed || [];
+  if(!parsed.length) return;
+  $I('mwrap').innerHTML = `<div class="mov"><div class="mbk"></div><div class="mbox" style="text-align:center">
+    <div class="mtitle">등록 중...</div><div class="msub" id="bulk-progress">0 / ${parsed.length}</div></div></div>`;
+  let ok=0, fail=0;
+  // 학번 부여를 위해 기관/년도별 카운터를 현재 학생 수로 초기화
+  const counter = {};
+  STUDENTS.forEach(s => {
+    const key = `${s.org}-${s.admitYear}`;
+    counter[key] = (counter[key]||0) + 1;
+  });
+  for(let i=0;i<parsed.length;i++){
+    const p = parsed[i];
+    try {
+      const key = `${p.org}-${p.admitYear}`;
+      counter[key] = (counter[key]||0) + 1;
+      const studentNo = `${p.admitYear}-${pad(counter[key])}`;
+      await addDoc(collection(db,'students'), {
+        ...p, studentNo, siblings:[],
+        history:[{at:Date.now(), by:CU.name, changes:['엑셀 일괄 등록']}],
+        createdAt: Timestamp.now()
+      });
+      ok++;
+    } catch(e){ fail++; }
+    const pr = $I('bulk-progress'); if(pr) pr.textContent = `${i+1} / ${parsed.length}`;
+  }
+  toast(`${ok}명 등록 완료${fail?`, ${fail}명 실패`:''}`, 'ok');
+  closeMod();
+  await loadStudents();
+  renderList();
+}
+window.confirmBulkRegister = confirmBulkRegister;
 </script>
 </body>
 </html>
