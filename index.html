@@ -291,6 +291,7 @@ const pad=n=>String(n).padStart(2,'0');
 let CU = null;       // 현재 로그인 유저 (Firestore 데이터)
 let curMon = new Date();
 let selP = null, selS = null;
+let STAFF_CACHE = {};  // 전체 교직원 캐시 (uid -> data)
 let IDX = 0;         // 사용 안함 (Firebase auto ID)
 
 // ── Firebase 유틸 ────────────────────────────
@@ -804,7 +805,7 @@ async function dlOvExcel(){
 window.dlOvExcel=dlOvExcel;
 
 // ── UI 로직 (showMain, 탭, 모달 등) ────────
-function showMain(){
+async function showMain(){
   $I('ls').style.display='none'; $I('ms').style.display='flex';
   const org=ORGS[CU.org]||'', dept=CU.dept!=='전체'?' · '+CU.dept:'';
   $I('hn').textContent=CU.name;
@@ -813,6 +814,12 @@ function showMain(){
   // 통계 하위탭은 관리자에게만 표시
   $I('st-stat').style.display=isAdmin?'':'none';
   $I('t-adm').style.display=isAdmin?'flex':'none';
+  // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
+  try {
+    const snap = await getDocs(collection(db,'staff'));
+    STAFF_CACHE = {};
+    snap.forEach(d => { STAFF_CACHE[d.id] = { uid:d.id, ...d.data() }; });
+  } catch(e) { STAFF_CACHE = {}; }
   showTab('att');
 }
 
@@ -901,19 +908,6 @@ function pickP(k,pid,sid,isEdit){
 }
 function pickS(k,sid,isEdit){selS=k;renderSBtns(sid,isEdit);}
 
-function saveRec(ds,existId){
-  if(!selS) return toast('항목을 선택하세요.','err');
-  const memo=$I('mmemo').value.trim();
-  const acc=CU;
-  const rec={uid:acc.uid,name:acc.name,org:acc.org,dept:acc.dept||'',date:ds,sub:selS,memo};
-  if(existId){const i=RECS.findIndex(r=>r.id===existId);if(i>-1)RECS[i]={...RECS[i],...rec};}
-  else RECS.push({id:'r'+(++IDX),...rec});
-  toast('저장되었습니다.','ok'); closeMod(); drawCal();
-}
-function delRec(id){
-  if(!confirm('기록을 삭제할까요?\n삭제하면 자동 정상출근으로 돌아갑니다.')) return;
-  RECS=RECS.filter(r=>r.id!==id); toast('삭제되었습니다.'); closeMod(); drawCal();
-}
 // ── 통계 탭 ──────────────────────────────────
 function renderStat(){
   $I('c-stat').innerHTML=`
@@ -947,7 +941,7 @@ function renderStat(){
         </select>
         <select id="sc-name" onchange="loadMonthChart()">
           <option value="">전체 인원</option>
-          ${Object.entries(ACCS).map(([,a])=>`<option value="${a.uid}">${a.name}</option>`).join('')}
+          ${Object.entries(STAFF_CACHE).map(([,a])=>`<option value="${a.uid}">${a.name}</option>`).join('')}
         </select>
         <button class="bp" onclick="dlChartExcel()" style="margin-left:auto;font-size:13px;padding:8px 14px">⬇ 엑셀 다운로드</button>
       </div>
@@ -1070,7 +1064,7 @@ function renderAdmAtt(){
         </select>
         <select id="fname" onchange="loadOv()">
           <option value="">전체 인원</option>
-          ${Object.entries(ACCS).map(([,a])=>`<option value="${a.uid}">${a.name}</option>`).join('')}
+          ${Object.entries(STAFF_CACHE).map(([,a])=>`<option value="${a.uid}">${a.name}</option>`).join('')}
         </select>
         <select id="fstatus" onchange="loadOv()">
           <option value="">전체 항목</option>
