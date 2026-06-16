@@ -536,24 +536,29 @@ async function drawCal() {
     const h = document.createElement('div'); h.className = 'ch'; h.textContent = d; g.appendChild(h);
   });
 
-  // 공휴일 로드
-  const holSnap = await getDocs(query(collection(db, 'holidays'),
-    where('org', 'in', [CU.org, 'all'])));
-  const holMap = {};
-  holSnap.forEach(d => { holMap[d.data().date] = d.data().name; });
+  const holMap = {}, wps = [], recMap = {};
+  try {
+    // 공휴일 로드 (전체 가져와서 필터 - 색인 불필요)
+    const holSnap = await getDocs(collection(db, 'holidays'));
+    holSnap.forEach(d => {
+      const h = d.data();
+      if (h.org === CU.org || h.org === 'all') holMap[h.date] = h.name;
+    });
 
-  // 근무기간 로드
-  const wpSnap = await getDocs(query(collection(db, 'workPeriods'),
-    where('org', '==', CU.org)));
-  const wps = [];
-  wpSnap.forEach(d => wps.push(d.data()));
+    // 근무기간 로드 (전체 가져와서 필터)
+    const wpSnap = await getDocs(collection(db, 'workPeriods'));
+    wpSnap.forEach(d => { const w = d.data(); if (w.org === CU.org) wps.push(w); });
 
-  // 내 출근 기록 로드
-  const sd = `${y}-${pad(m+1)}-01`, ed = `${y}-${pad(m+1)}-${pad(new Date(y,m+1,0).getDate())}`;
-  const recSnap = await getDocs(query(collection(db, 'attendance'),
-    where('uid', '==', CU.uid), where('date', '>=', sd), where('date', '<=', ed)));
-  const recMap = {};
-  recSnap.forEach(d => { recMap[d.data().date] = { id: d.id, ...d.data() }; });
+    // 내 출근 기록 로드 (전체 가져와서 필터)
+    const sd = `${y}-${pad(m+1)}-01`, ed = `${y}-${pad(m+1)}-${pad(new Date(y,m+1,0).getDate())}`;
+    const recSnap = await getDocs(collection(db, 'attendance'));
+    recSnap.forEach(d => {
+      const r = d.data();
+      if (r.uid === CU.uid && r.date >= sd && r.date <= ed) recMap[r.date] = { id: d.id, ...r };
+    });
+  } catch(e) {
+    console.log('달력 데이터 로드 중 일부 오류 (무시 가능):', e);
+  }
 
   function isWD(ds) {
     const dow = new Date(ds+'T00:00:00').getDay(), wknd = dow===0||dow===6;
@@ -609,8 +614,9 @@ window.addWP = addWP;
 
 async function loadWPList() {
   const el=$I('wplist'); if(!el) return;
-  const snap=await getDocs(query(collection(db,'workPeriods'),orderBy('s','desc')));
+  const snap=await getDocs(collection(db,'workPeriods'));
   const wps=[]; snap.forEach(d=>wps.push({id:d.id,...d.data()}));
+  wps.sort((a,b)=>(b.s||'').localeCompare(a.s||''));
   el.innerHTML=wps.length?wps.map(w=>`
     <div class="wpitem">
       <span class="wporg">${ORGS[w.org]||w.org}</span>
@@ -642,8 +648,9 @@ window.addHol = addHol;
 
 async function loadHolList() {
   const el=$I('hlist'); if(!el) return;
-  const snap=await getDocs(query(collection(db,'holidays'),orderBy('date','desc')));
+  const snap=await getDocs(collection(db,'holidays'));
   const hols=[]; snap.forEach(d=>hols.push({id:d.id,...d.data()}));
+  hols.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   el.innerHTML=hols.length?hols.map(h=>`
     <div class="hitem">
       <span class="hdate">${h.date}</span>
@@ -664,11 +671,11 @@ window.delHol = delHol;
 
 // ── 전체 현황 / 통계 (Firebase) ──────────────
 async function getAllRows(sd, ed, orgFilter, uidFilter) {
-  let q = query(collection(db,'attendance'), where('date','>=',sd), where('date','<=',ed));
-  const snap = await getDocs(q);
+  const snap = await getDocs(collection(db,'attendance'));
   const manRows = [];
   snap.forEach(d => {
     const r = {id:d.id,...d.data()};
+    if (r.date < sd || r.date > ed) return;
     if (orgFilter && r.org!==orgFilter) return;
     if (uidFilter && r.uid!==uidFilter) return;
     manRows.push(r);
