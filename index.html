@@ -231,6 +231,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
   </header>
   <div class="tb">
     <button class="tbtn" id="t-att" onclick="showTab('att')">📋 출근부</button>
+    <button class="tbtn" id="t-notice" onclick="showTab('notice')">📢 공지<span id="notice-dot" style="display:none;width:8px;height:8px;background:#dc2626;border-radius:50%;margin-left:4px;vertical-align:middle"></span></button>
     <button class="tbtn" id="t-adm" onclick="showTab('adm')" style="display:none">⚙️ 관리자</button>
   </div>
   <!-- 출근부 상위 콘텐츠 (하위 탭 포함) -->
@@ -243,6 +244,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <!-- 하위 탭 콘텐츠 -->
     <div id="c-cal" class="tc"></div>
     <div id="c-stat" class="tc" style="display:none"></div>
+  </div>
+  <div id="c-notice" style="display:none;flex-direction:column;flex:1">
+    <div class="tc" id="notice-body"></div>
+    <div id="mwrap2"></div>
   </div>
   <div id="c-adm" style="display:none;flex-direction:column;flex:1">
     <!-- 관리자 하위 탭 바 -->
@@ -935,6 +940,7 @@ async function showMain(){
   $I('t-adm').style.display=isAdmin?'flex':'none';
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
   await reloadStaffCache();
+  updateNoticeDot();
   showTab('att');
 }
 
@@ -956,10 +962,14 @@ function showTab(t){
   document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('active'));
   $I('t-'+t)?.classList.add('active');
   // 상위 탭 콘텐츠 전환
-  ['c-att','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   if(t==='att'){
     $I('c-att').style.display='flex';
     showSubTab('cal');
+  }
+  if(t==='notice'){
+    $I('c-notice').style.display='flex';
+    renderNotice();
   }
   if(t==='adm'){
     $I('c-adm').style.display='flex';
@@ -1089,6 +1099,190 @@ async function saveBulkAdm(){
   $I('ba-s').value='';$I('ba-e').value='';$I('ba-memo').value='';
 }
 window.saveBulkAdm = saveBulkAdm;
+
+// ── 공지사항 기능 ────────────────────────────
+// 공지가 현재 유저(또는 지정 staff)에게 해당하는지 판정
+function noticeMatches(n, u){
+  if(n.scope==='all') return true;
+  if(n.scope==='org') return (u.orgs&&u.orgs.length?u.orgs:[u.org]).includes(n.org);
+  if(n.scope==='dept') return ((u.orgs&&u.orgs.length?u.orgs:[u.org]).includes(n.org)) && u.dept===n.dept;
+  if(n.scope==='user') return n.uid===u.uid;
+  return false;
+}
+// 공지 작성 권한 (슈퍼/기관관리자)
+function canWriteNotice(){ return ['super','org_admin'].includes(CU.role); }
+
+// 공지 탭 렌더링
+async function renderNotice(){
+  const el=$I('notice-body'); if(!el) return;
+  el.innerHTML='<p class="empty">불러오는 중...</p>';
+  await reloadStaffCache();
+  const snap=await getDocs(collection(db,'notices'));
+  let notices=[]; snap.forEach(d=>notices.push({id:d.id,...d.data()}));
+  // 나에게 해당하는 공지만
+  notices=notices.filter(n=>noticeMatches(n,CU)||canWriteNotice());
+  notices.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+
+  const writeBtn=canWriteNotice()
+    ? `<button class="bp" style="margin-bottom:16px" onclick="openNoticeForm()">✏️ 새 공지 작성</button>` : '';
+
+  const cards=notices.length?notices.map(n=>{
+    const mine=noticeMatches(n,CU);
+    const unread=mine && !(n.readBy||[]).includes(CU.uid);
+    const scopeLabel = n.scope==='all'?'전체'
+      : n.scope==='org'?`${ORGS[n.org]||n.org}`
+      : n.scope==='dept'?`${ORGS[n.org]||n.org} · ${n.dept}`
+      : n.scope==='user'?`개인: ${STAFF_CACHE[n.uid]?.name||'?'}`:'';
+    const dt=n.createdAt?.seconds?new Date(n.createdAt.seconds*1000):null;
+    const dstr=dt?`${dt.getFullYear()}.${pad(dt.getMonth()+1)}.${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`:'';
+    const readCount=(n.readBy||[]).length;
+    const admInfo=canWriteNotice()
+      ? `<div style="margin-top:8px"><button class="bm" style="font-size:12px" onclick="showReadStatus('${n.id}')">👁 읽음 현황 (${readCount})</button>
+         <button class="bm" style="font-size:12px;background:#fee2e2;color:#dc2626" onclick="delNotice('${n.id}')">🗑 삭제</button></div>` : '';
+    return `<div class="acard" style="margin-bottom:12px;${unread?'border-left:4px solid #dc2626':''}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        ${n.important?'<span style="background:#dc2626;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px">중요</span>':''}
+        ${unread?'<span style="background:#dc2626;color:#fff;font-size:10px;padding:2px 8px;border-radius:100px">NEW</span>':''}
+        <span style="background:var(--gp);color:var(--gm);font-size:11px;font-weight:600;padding:2px 8px;border-radius:100px">${scopeLabel}</span>
+      </div>
+      <div style="font-weight:700;font-size:15px;color:var(--gd);margin-bottom:4px">${n.title}</div>
+      <div style="font-size:14px;color:var(--ts);white-space:pre-wrap;line-height:1.6">${n.body}</div>
+      <div style="font-size:11px;color:var(--tl);margin-top:8px">${n.author||''} · ${dstr}</div>
+      ${admInfo}
+    </div>`;
+  }).join(''):'<p class="empty">공지사항이 없습니다.</p>';
+
+  el.innerHTML=`<div class="asc">${writeBtn}${cards}</div>`;
+
+  // 읽음 처리 (나에게 해당하는 안 읽은 공지)
+  for(const n of notices){
+    if(noticeMatches(n,CU) && !(n.readBy||[]).includes(CU.uid)){
+      try{ await updateDoc(doc(db,'notices',n.id),{readBy:[...(n.readBy||[]),CU.uid]}); }catch(e){}
+    }
+  }
+  updateNoticeDot();
+}
+window.renderNotice = renderNotice;
+
+// 안 읽은 공지 있으면 탭에 빨간 점
+async function updateNoticeDot(){
+  try{
+    const snap=await getDocs(collection(db,'notices'));
+    let unread=false;
+    snap.forEach(d=>{ const n={id:d.id,...d.data()}; if(noticeMatches(n,CU)&&!(n.readBy||[]).includes(CU.uid)) unread=true; });
+    const dot=$I('notice-dot'); if(dot) dot.style.display=unread?'inline-block':'none';
+  }catch(e){}
+}
+window.updateNoticeDot = updateNoticeDot;
+
+// 공지 작성 폼
+function openNoticeForm(){
+  const orgOpts=orgOptionsHTML(false);
+  $I('mwrap2').innerHTML=`
+    <div class="mov" id="mov2">
+      <div class="mbk" onclick="closeNoticeForm()"></div>
+      <div class="mbox">
+        <div class="mtitle">새 공지 작성</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin:8px 0 16px">
+          <div class="fgrp"><label class="mlabel">제목</label>
+            <input type="text" id="nt-title" class="minput" placeholder="공지 제목"></div>
+          <div class="fgrp"><label class="mlabel">내용</label>
+            <textarea id="nt-body" class="minput" rows="4" placeholder="공지 내용"></textarea></div>
+          <div class="fgrp"><label class="mlabel">공지 대상</label>
+            <select id="nt-scope" class="minput" onchange="onNoticeScopeChange()">
+              <option value="all">전체</option>
+              <option value="org">기관별</option>
+              <option value="dept">부서별 (다니엘 아마츠)</option>
+              <option value="user">개인별</option>
+            </select></div>
+          <div class="fgrp" id="nt-org-grp" style="display:none"><label class="mlabel">기관</label>
+            <select id="nt-org" class="minput" onchange="onNoticeOrgChange()">${orgOpts}</select></div>
+          <div class="fgrp" id="nt-dept-grp" style="display:none"><label class="mlabel">부서</label>
+            <select id="nt-dept" class="minput">
+              <option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>
+            </select></div>
+          <div class="fgrp" id="nt-user-grp" style="display:none"><label class="mlabel">대상 교직원</label>
+            <select id="nt-user" class="minput">${Object.entries(STAFF_CACHE).map(([,a])=>`<option value="${a.uid}">${a.name} (${ORGS[a.org]||a.org})</option>`).join('')}</select></div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="nt-important" style="width:16px;height:16px"> 중요 공지로 표시</label>
+        </div>
+        <div class="mact">
+          <button class="bs" onclick="closeNoticeForm()">취소</button>
+          <button class="bp" onclick="saveNotice()">공지 등록</button>
+        </div>
+      </div>
+    </div>`;
+}
+window.openNoticeForm = openNoticeForm;
+function closeNoticeForm(){ const w=$I('mwrap2'); if(w) w.innerHTML=''; }
+window.closeNoticeForm = closeNoticeForm;
+
+function onNoticeScopeChange(){
+  const sc=$I('nt-scope').value;
+  $I('nt-org-grp').style.display=(sc==='org'||sc==='dept')?'':'none';
+  $I('nt-dept-grp').style.display=sc==='dept'?'':'none';
+  $I('nt-user-grp').style.display=sc==='user'?'':'none';
+  if(sc==='dept'){ const o=$I('nt-org'); if(o&&o.value!=='daniel'){ /* 부서는 다니엘만 */ } }
+}
+window.onNoticeScopeChange = onNoticeScopeChange;
+function onNoticeOrgChange(){}
+window.onNoticeOrgChange = onNoticeOrgChange;
+
+async function saveNotice(){
+  const title=$I('nt-title').value.trim(), body=$I('nt-body').value.trim();
+  const scope=$I('nt-scope').value, important=$I('nt-important')?.checked;
+  if(!title||!body) return toast('제목과 내용을 입력하세요.','err');
+  const data={title,body,scope,important,author:CU.name,readBy:[],createdAt:Timestamp.now()};
+  if(scope==='org'){ data.org=$I('nt-org').value; }
+  else if(scope==='dept'){ data.org=$I('nt-org').value; data.dept=$I('nt-dept').value; }
+  else if(scope==='user'){ data.uid=$I('nt-user').value; }
+  // 기관관리자는 자기 기관 대상만
+  if(CU.role==='org_admin' && (scope==='org'||scope==='dept') && !myOrgs().includes(data.org))
+    return toast('관리 권한이 없는 기관입니다.','err');
+  await addDoc(collection(db,'notices'),data);
+  toast('공지가 등록되었습니다.','ok');
+  closeNoticeForm();
+  renderNotice();
+}
+window.saveNotice = saveNotice;
+
+async function delNotice(id){
+  if(!confirm('이 공지를 삭제할까요?')) return;
+  await deleteDoc(doc(db,'notices',id));
+  toast('삭제되었습니다.');
+  renderNotice();
+}
+window.delNotice = delNotice;
+
+// 읽음 현황 보기
+async function showReadStatus(id){
+  const snap=await getDocs(collection(db,'notices'));
+  let n=null; snap.forEach(d=>{ if(d.id===id) n={id:d.id,...d.data()}; });
+  if(!n) return;
+  // 대상자 목록 추리기
+  const targets=Object.values(STAFF_CACHE).filter(u=>noticeMatches(n,u));
+  const readSet=new Set(n.readBy||[]);
+  const readList=targets.filter(u=>readSet.has(u.uid));
+  const unreadList=targets.filter(u=>!readSet.has(u.uid));
+  $I('mwrap2').innerHTML=`
+    <div class="mov" id="mov2">
+      <div class="mbk" onclick="closeNoticeForm()"></div>
+      <div class="mbox">
+        <div class="mtitle">읽음 현황</div>
+        <div class="msub">${n.title}</div>
+        <div style="margin:12px 0">
+          <div style="font-size:13px;font-weight:700;color:#16a34a;margin-bottom:6px">✓ 읽음 (${readList.length})</div>
+          <div style="font-size:13px;color:var(--ts);line-height:1.8">${readList.length?readList.map(u=>`${u.name}(${ORGS[u.org]||u.org})`).join(', '):'-'}</div>
+        </div>
+        <div style="margin:12px 0">
+          <div style="font-size:13px;font-weight:700;color:#dc2626;margin-bottom:6px">✗ 안 읽음 (${unreadList.length})</div>
+          <div style="font-size:13px;color:var(--ts);line-height:1.8">${unreadList.length?unreadList.map(u=>`${u.name}(${ORGS[u.org]||u.org})`).join(', '):'-'}</div>
+        </div>
+        <div class="mact"><button class="bp" onclick="closeNoticeForm()">닫기</button></div>
+      </div>
+    </div>`;
+}
+window.showReadStatus = showReadStatus;
 
 // ── 모달 ─────────────────────────────────────
 function openMod(ds,eff){
