@@ -285,7 +285,26 @@ const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
 const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'탭관리자',teacher:'교사'};
 const pad=n=>String(n).padStart(2,'0');
 
+// ── 공통 유틸 함수 ───────────────────────────
+const $I = id => document.getElementById(id);
+const fmtD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const TODAY = new Date();
+const TY = TODAY.getFullYear();   // 올해
+const TM = TODAY.getMonth()+1;    // 이번 달
 
+function toast(msg, type='') {
+  let t = document.getElementById('__toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = '__toast';
+    t.className = 'toast';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => { t.className = 'toast'; }, 2500);
+}
 
 // ── 상태 ────────────────────────────────────
 let CU = null;       // 현재 로그인 유저 (Firestore 데이터)
@@ -1116,6 +1135,120 @@ function openEditOv(id,date,uid,sub,memo){
   renderPBtns('ep-btns','es-btns',true);
 }
 
+// ── 누락 함수들 (Firebase 버전) ─────────────
+function toggleFMode(){
+  const m=$I('fmode')?.value;
+  if(!m) return;
+  const isRange=m==='range';
+  if($I('fm')) $I('fm').style.display=isRange?'none':'';
+  if($I('fds')) $I('fds').style.display=isRange?'':'none';
+  if($I('fdsep')) $I('fdsep').style.display=isRange?'':'none';
+  if($I('fde')) $I('fde').style.display=isRange?'':'none';
+  loadOv();
+}
+
+function updDept(){
+  const o=$I('no')?.value, d=$I('nd'); if(!d) return;
+  d.innerHTML=o==='jihyebit'?'<option value="전체">전체</option>':
+    '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
+}
+
+function updEditDept(){
+  const o=$I('es-org')?.value, d=$I('es-dept'); if(!d) return;
+  d.innerHTML=o==='jihyebit'?'<option value="전체">전체</option>':
+    '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
+}
+
+function openMyInfo(){
+  const el=document.createElement('div'); el.id='my-info-mod';
+  el.innerHTML=`
+    <div class="mov">
+      <div class="mbk" onclick="document.getElementById('my-info-mod').remove()"></div>
+      <div class="mbox">
+        <div class="mtitle">내 정보</div>
+        <div style="background:var(--iv);border-radius:10px;padding:16px;margin-bottom:20px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+            <div><span style="color:var(--tl)">이름</span><div style="font-weight:700;margin-top:2px">${CU.name}</div></div>
+            <div><span style="color:var(--tl)">아이디</span><div style="font-weight:700;margin-top:2px">${CU.id}</div></div>
+            <div><span style="color:var(--tl)">기관</span><div style="font-weight:700;margin-top:2px">${ORGS[CU.org]||CU.org}</div></div>
+            <div><span style="color:var(--tl)">부서</span><div style="font-weight:700;margin-top:2px">${CU.dept||'-'}</div></div>
+            <div><span style="color:var(--tl)">권한</span><div style="font-weight:700;margin-top:2px">${ROLES[CU.role]||CU.role}</div></div>
+          </div>
+        </div>
+        <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:12px">🔑 비밀번호 변경</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+          <div class="fgrp"><label>현재 비밀번호</label>
+            <input id="cp-cur" type="password" placeholder="현재 비밀번호" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+          <div class="fgrp"><label>새 비밀번호</label>
+            <input id="cp-new" type="password" placeholder="새 비밀번호 (6자 이상)" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+          <div class="fgrp"><label>새 비밀번호 확인</label>
+            <input id="cp-con" type="password" placeholder="새 비밀번호 재입력" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+        </div>
+        <div class="mact">
+          <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+          <button class="bp" onclick="changeMyPw()">비밀번호 변경</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+function openEditStaff(uid, name, org, dept, role){
+  const el=document.createElement('div'); el.id='edit-staff-mod';
+  const deptOpts = (o, sel) => o==='jihyebit'
+    ? `<option value="전체"${sel==='전체'?' selected':''}>전체</option>`
+    : `<option value="초등부"${sel==='초등부'?' selected':''}>초등부</option><option value="중고등부"${sel==='중고등부'?' selected':''}>중고등부</option><option value="행정실"${sel==='행정실'?' selected':''}>행정실</option>`;
+  el.innerHTML=`
+    <div class="mov">
+      <div class="mbk" onclick="document.getElementById('edit-staff-mod').remove()"></div>
+      <div class="mbox">
+        <div class="mtitle">교직원 정보 수정</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+          <div class="fgrp"><label>이름</label>
+            <input id="es-name" type="text" value="${name}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+          <div class="fgrp"><label>기관</label>
+            <select id="es-org" onchange="updEditDept()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+              <option value="jihyebit"${org==='jihyebit'?' selected':''}>지혜빛</option>
+              <option value="daniel"${org==='daniel'?' selected':''}>다니엘 아마츠</option>
+            </select></div>
+          <div class="fgrp"><label>부서</label>
+            <select id="es-dept" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">${deptOpts(org, dept)}</select></div>
+          <div class="fgrp"><label>권한</label>
+            <select id="es-role" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+              <option value="teacher"${role==='teacher'?' selected':''}>교사</option>
+              <option value="tab_admin"${role==='tab_admin'?' selected':''}>탭관리자</option>
+              <option value="org_admin"${role==='org_admin'?' selected':''}>기관관리자</option>
+              <option value="super"${role==='super'?' selected':''}>슈퍼관리자</option>
+            </select></div>
+        </div>
+        <div class="mact">
+          <button class="bs" onclick="document.getElementById('edit-staff-mod').remove()">취소</button>
+          <button class="bp" onclick="saveEditStaff('${uid}')">저장</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+function openResetPw(uid){
+  const el=document.createElement('div'); el.id='reset-pw-mod';
+  el.innerHTML=`
+    <div class="mov">
+      <div class="mbk" onclick="document.getElementById('reset-pw-mod').remove()"></div>
+      <div class="mbox">
+        <div class="mtitle">비밀번호 재설정</div>
+        <div class="msub">Firebase 보안 정책상 클라이언트에서는 직접 재설정이 제한됩니다.</div>
+        <div style="background:var(--iv);border-radius:10px;padding:16px 20px;margin-bottom:20px;font-size:13px;color:var(--ts);line-height:1.7">
+          비밀번호 재설정은 Firebase 콘솔에서 직접 변경하거나, 추후 Cloud Function으로 구현됩니다.
+        </div>
+        <div class="mact">
+          <button class="bp" onclick="document.getElementById('reset-pw-mod').remove()">확인</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+
 // ── 전역 노출 (onclick 호환) ──────────────
 window.showTab = showTab;
 window.showSubTab = showSubTab;
@@ -1132,8 +1265,6 @@ window.updEditDept = updEditDept;
 window.openEditStaff = openEditStaff;
 window.saveEditStaff = saveEditStaff;
 window.openResetPw = openResetPw;
-window.selectEditParent = selectEditParent;
-window.selectEditSub = selectEditSub;
 </script>
 </body>
 </html>
