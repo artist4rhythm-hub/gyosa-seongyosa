@@ -122,6 +122,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="ahr">
       <div id="hn"></div>
       <div id="hi"></div>
+      <a class="homebtn" href="class.html">반 편성 →</a>
       <a class="homebtn" href="index.html">← 메인으로</a>
     </div>
   </header>
@@ -162,6 +163,17 @@ function toast(msg, type=''){
   const t = $I('toast'); t.textContent = msg;
   t.className = 'toast show ' + type;
   clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
+}
+// 공통 활동 로그 (새 기능 추가 시 해당 동작에서 호출)
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){}
 }
 // 볼 수 있는 기관 목록
 function myOrgs(){
@@ -380,6 +392,7 @@ async function saveStudent(editId){
       newData.history = hist;
       newData.studentNo = old.studentNo;  // 학번 유지
       await updateDoc(doc(db,'students',editId), newData);
+      logActivity('수정', '학생', `${name} 정보 수정`);
       toast('수정되었습니다.','ok');
     } else {
       newData.studentNo = await genStudentNo(org, admitYear);
@@ -387,6 +400,7 @@ async function saveStudent(editId){
       newData.createdAt = Timestamp.now();
       newData.siblings = [];
       await addDoc(collection(db,'students'), newData);
+      logActivity('입력', '학생', `${name} 학생 등록`);
       toast('등록되었습니다.','ok');
     }
     closeMod();
@@ -402,7 +416,9 @@ window.saveStudent = saveStudent;
 async function deleteStudent(id){
   if(!confirm('정말 이 학생을 삭제할까요?\n출석·성적 등 연결된 데이터가 있으면 문제가 될 수 있습니다.\n(자퇴/졸업은 삭제 대신 재적상태 변경을 권장합니다)')) return;
   try {
+    const s = STUDENTS.find(x=>x.id===id);
     await deleteDoc(doc(db,'students',id));
+    logActivity('삭제', '학생', `${s?.name||''} 학생 삭제`);
     toast('삭제되었습니다.');
     closeMod();
     await loadStudents();
@@ -690,6 +706,7 @@ async function confirmBulkRegister(){
     const pr = $I('bulk-progress'); if(pr) pr.textContent = `${i+1} / ${parsed.length}`;
   }
   toast(`${ok}명 등록 완료${fail?`, ${fail}명 실패`:''}`, 'ok');
+  logActivity('입력', '학생', `엑셀 일괄 등록 ${ok}명`);
   closeMod();
   await loadStudents();
   renderList();

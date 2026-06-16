@@ -154,6 +154,17 @@ function toast(msg, type=''){
   t.className = 'toast show ' + type;
   clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
 }
+// 공통 활동 로그 (새 기능 추가 시 해당 동작에서 호출)
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){}
+}
 function myOrgs(){
   if(!CU) return [];
   if(CU.role==='super') return ['jihyebit','daniel'];
@@ -333,11 +344,13 @@ async function saveClass(editId){
   try {
     if(editId){
       await updateDoc(doc(db,'classes',editId), data);
+      logActivity('수정', '반편성', `${curYear}년 ${name} 수정`);
       toast('수정되었습니다.','ok');
     } else {
       data.students = [];
       data.createdAt = Timestamp.now();
       await addDoc(collection(db,'classes'), data);
+      logActivity('입력', '반편성', `${curYear}년 ${name} 생성`);
       toast('반이 만들어졌습니다.','ok');
     }
     closeMod();
@@ -352,6 +365,7 @@ async function deleteClass(id){
   if(!confirm(`"${c?.name}" 반을 삭제할까요?\n(학생 정보는 삭제되지 않고 반 배정만 해제됩니다)`)) return;
   try {
     await deleteDoc(doc(db,'classes',id));
+    logActivity('삭제', '반편성', `${curYear}년 ${c?.name||''} 삭제`);
     toast('삭제되었습니다.');
     await loadClasses();
     renderClasses();
@@ -468,6 +482,7 @@ async function doPromote(prevYear){
       cnt++;
     }
     toast(`${cnt}개 반이 복제되었습니다.`,'ok');
+    logActivity('입력', '반편성', `${prevYear}년→${curYear}년 진급 복제 (${cnt}개 반)`);
     closeMod();
     await loadClasses();
     renderClasses();

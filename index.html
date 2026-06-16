@@ -256,10 +256,12 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       <button class="subtbtn active" id="sa-sys" onclick="showAdmTab('sys')">🏢 통합관리</button>
       <button class="subtbtn" id="sa-att" onclick="showAdmTab('att')">📋 출근부 설정</button>
       <button class="subtbtn" id="sa-log" onclick="showAdmTab('log')" style="display:none">🔐 로그인 기록</button>
+      <button class="subtbtn" id="sa-act" onclick="showAdmTab('act')" style="display:none">📜 활동 로그</button>
     </div>
     <div id="ca-sys" class="tc"></div>
     <div id="ca-att" class="tc" style="display:none"></div>
     <div id="ca-log" class="tc" style="display:none"></div>
+    <div id="ca-act" class="tc" style="display:none"></div>
   </div>
 </div>
 
@@ -398,6 +400,22 @@ async function recordLogin(uid, name, org) {
   } catch(e){}
 }
 
+// ── 공통 활동 로그 ──────────────────────────
+// action: '입력'|'수정'|'삭제' 등, category: '출근부'|'학생'|'계정'|'공지'|'출석부'...
+// target: 대상 설명(예: '2026-06-17 정상출근', '홍길동 학생')
+// 새 기능을 추가할 때마다 해당 동작에서 이 함수를 호출해 로그를 남길 것!
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){ /* 로그 실패는 본 기능에 영향 없게 무시 */ }
+}
+window.logActivity = logActivity;
+
 function showLoginErr(msg) {
   toast(msg, 'err');
 }
@@ -486,6 +504,7 @@ async function createAcc() {
       createdAt: Timestamp.now()
     });
     toast(`${name} 선생님 계정이 발급되었습니다.`, 'ok');
+    logActivity('입력', '계정', `${name} (${id}) 계정 발급`);
     $I('nn').value = ''; $I('nid').value = ''; $I('npw').value = '';
     if ($I('nm-jihyebit')) $I('nm-jihyebit').checked = false;
     if ($I('nm-daniel')) $I('nm-daniel').checked = false;
@@ -504,6 +523,7 @@ async function saveEditStaff(uid) {
   const acStatus = $I('es-acstatus')?.value || 'active';
   if (!name) return toast('이름을 입력하세요.', 'err');
   await updateDoc(doc(db, 'staff', uid), { name, org, dept, role, acStatus });
+  logActivity('수정', '계정', `${name} 정보 수정 (상태: ${acStatus==='active'?'재직':acStatus==='leave'?'휴직':'퇴직'})`);
   toast(`${name} 선생님 정보가 수정되었습니다.`, 'ok');
   document.getElementById('edit-staff-mod')?.remove();
   await loadStaff();
@@ -529,6 +549,7 @@ async function deleteStaff(uid) {
   const s = snap.data();
   if (!confirm(`${s.name} (${s.id}) 선생님 계정을 삭제할까요?\n출근 기록은 유지됩니다.`)) return;
   await deleteDoc(doc(db, 'staff', uid));
+  logActivity('삭제', '계정', `${s.name} (${s.id}) 계정 삭제`);
   toast(`${s.name} 선생님 계정이 삭제되었습니다.`, 'ok');
   await loadStaff();
 }
@@ -610,8 +631,10 @@ async function saveRec(ds, existId) {
   };
   if (existId) {
     await updateDoc(doc(db, 'attendance', existId), data);
+    logActivity('수정', '출근부', `${ds} ${selS}`);
   } else {
     await addDoc(collection(db, 'attendance'), data);
+    logActivity('입력', '출근부', `${ds} ${selS}`);
   }
   toast('저장되었습니다.', 'ok');
   closeMod(); drawCal();
@@ -621,6 +644,7 @@ window.saveRec = saveRec;
 async function delRec(id) {
   if (!confirm('기록을 삭제할까요?\n삭제하면 자동 정상출근으로 돌아갑니다.')) return;
   await deleteDoc(doc(db, 'attendance', id));
+  logActivity('삭제', '출근부', '');
   toast('삭제되었습니다.');
   closeMod(); drawCal();
 }
@@ -977,6 +1001,7 @@ async function showMain(){
   $I('t-adm').style.display=isAdmin?'flex':'none';
   // 로그인 기록은 슈퍼관리자만
   const logTab = $I('sa-log'); if(logTab) logTab.style.display = CU.role==='super' ? '' : 'none';
+  const actTab = $I('sa-act'); if(actTab) actTab.style.display = CU.role==='super' ? '' : 'none';
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
   await reloadStaffCache();
   updateNoticeDot();
@@ -1101,6 +1126,7 @@ async function saveBulk(targetUid){
     cnt++;
   }
   toast(`${cnt}일이 일괄 입력되었습니다.`,'ok');
+  logActivity('입력', '출근부', `${target.name} ${s}~${e} ${sub} (일괄 ${cnt}일)`);
   closeMod();
   if(targetUid){ const bm=$I('bulk-adm-mod'); if(bm) bm.remove(); }
   else drawCal();
@@ -1135,6 +1161,7 @@ async function saveBulkAdm(){
     cnt++;
   }
   toast(`${target.name} 선생님에게 ${cnt}일이 일괄 입력되었습니다.`,'ok');
+  logActivity('입력', '출근부', `${target.name} ${s}~${e} ${sub} (관리자 일괄 ${cnt}일)`);
   $I('ba-s').value='';$I('ba-e').value='';$I('ba-memo').value='';
 }
 window.saveBulkAdm = saveBulkAdm;
@@ -1274,6 +1301,73 @@ async function renderLoginLog(){
   </div>`;
 }
 window.renderLoginLog = renderLoginLog;
+
+// ── 활동 로그 조회 (슈퍼관리자) ──────────────
+let ACT_LOGS = [];
+async function renderActivityLog(){
+  const el = $I('ca-act'); if(!el) return;
+  if(CU.role!=='super'){ el.innerHTML='<div class="acard"><p class="empty">슈퍼관리자만 볼 수 있습니다.</p></div>'; return; }
+  el.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
+  const snap = await getDocs(collection(db,'activityLogs'));
+  ACT_LOGS = [];
+  snap.forEach(d=>{ const l=d.data(); if(l.at?.seconds) ACT_LOGS.push({...l, ts:l.at.seconds*1000}); });
+  ACT_LOGS.sort((a,b)=>b.ts-a.ts);
+
+  // 카테고리 목록 (동적)
+  const cats = Array.from(new Set(ACT_LOGS.map(l=>l.category))).filter(Boolean);
+
+  el.innerHTML = `
+  <div class="asc">
+    <div class="acard">
+      <h3 class="actitle">📜 활동 로그</h3>
+      <p class="adesc">교직원의 입력·수정·삭제 활동 기록입니다. 최근 활동이 위에 표시됩니다.</p>
+      <div class="frow" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
+        <select id="al-cat" onchange="filterActLog()" style="height:36px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px">
+          <option value="">전체 분류</option>
+          ${cats.map(c=>`<option value="${c}">${c}</option>`).join('')}
+        </select>
+        <select id="al-action" onchange="filterActLog()" style="height:36px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px">
+          <option value="">전체 작업</option>
+          <option value="입력">입력</option>
+          <option value="수정">수정</option>
+          <option value="삭제">삭제</option>
+        </select>
+        <input type="text" id="al-search" placeholder="이름·내용 검색" oninput="filterActLog()" style="height:36px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;flex:1;min-width:120px">
+      </div>
+      <div style="font-size:12px;color:var(--tl);margin-bottom:8px">총 ${ACT_LOGS.length}건</div>
+      <div id="al-list"></div>
+    </div>
+  </div>`;
+  filterActLog();
+}
+window.renderActivityLog = renderActivityLog;
+
+function filterActLog(){
+  const cat = $I('al-cat')?.value||'', act = $I('al-action')?.value||'', q = ($I('al-search')?.value||'').trim();
+  let list = ACT_LOGS.filter(l=>{
+    if(cat && l.category!==cat) return false;
+    if(act && l.action!==act) return false;
+    if(q && !((l.name||'').includes(q) || (l.target||'').includes(q))) return false;
+    return true;
+  });
+  list = list.slice(0, 300);  // 최근 300건만 표시 (성능)
+  const actColor = a => a==='삭제'?'#dc2626':a==='수정'?'#b45309':'#16a34a';
+  const actBg = a => a==='삭제'?'#fee2e2':a==='수정'?'#fef3c7':'#dcfce7';
+  const el = $I('al-list');
+  if(!list.length){ el.innerHTML='<p class="empty">기록이 없습니다.</p>'; return; }
+  el.innerHTML = list.map(l=>{
+    const d = new Date(l.ts);
+    const ds = `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--ivd)">
+      <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;background:${actBg(l.action)};color:${actColor(l.action)};flex-shrink:0">${l.action}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;color:var(--tx)"><b>${l.name}</b> · ${l.category} · ${l.target||''}</div>
+        <div style="font-size:11px;color:var(--tl);margin-top:2px">${ds}</div>
+      </div>
+    </div>`;
+  }).join('') + (ACT_LOGS.length>300?'<p style="font-size:11px;color:var(--tl);text-align:center;margin-top:10px">최근 300건만 표시됩니다.</p>':'');
+}
+window.filterActLog = filterActLog;
 
 // ── 공지사항 기능 ────────────────────────────
 // 공지가 현재 유저(또는 지정 staff)에게 해당하는지 판정
@@ -1415,6 +1509,7 @@ async function saveNotice(){
   if(CU.role==='org_admin' && (scope==='org'||scope==='dept') && !myOrgs().includes(data.org))
     return toast('관리 권한이 없는 기관입니다.','err');
   await addDoc(collection(db,'notices'),data);
+  logActivity('입력', '공지', `${title}`);
   toast('공지가 등록되었습니다.','ok');
   closeNoticeForm();
   renderNotice();
@@ -1424,6 +1519,7 @@ window.saveNotice = saveNotice;
 async function delNotice(id){
   if(!confirm('이 공지를 삭제할까요?')) return;
   await deleteDoc(doc(db,'notices',id));
+  logActivity('삭제', '공지', '');
   toast('삭제되었습니다.');
   renderNotice();
 }
@@ -1560,11 +1656,12 @@ function renderStat(){
 function showAdmTab(sub){
   document.querySelectorAll('#c-adm .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att','ca-log'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-log','ca-act'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
   if(sub==='log') renderLoginLog();
+  if(sub==='act') renderActivityLog();
 }
 
 // ── 관리자 > 통합관리 ────────────────────────
