@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>학생 관리 · 교사 선교사</title>
+<meta name="theme-color" content="#1e2e5c">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="학생관리">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root {
+  --gd:#1e2e5c; --gm:#2b3990; --gl:#5a70cc; --gp:#e8ecf8;
+  --gold:#c9a84c; --goldd:#a8873a; --goldp:#fdf3d8;
+  --iv:#f5f0e8; --ivd:#e8e0d0;
+  --tx:#1a1a2e; --ts:#4a4a6a; --tl:#8888aa; --wh:#ffffff;
+  --sh:0 2px 12px rgba(30,46,92,0.10); --r:12px; --rs:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--iv);color:var(--tx);min-height:100vh;}
+
+/* 로딩/로그인 안내 */
+#gate{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(150deg,#eef0f8 0%,#f5f0e8 60%,#fdf3d8 100%);padding:24px;text-align:center;}
+.gbox{background:var(--wh);border-radius:24px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(30,46,92,0.12);}
+.gtitle{font-size:22px;font-weight:800;color:var(--gd);margin-bottom:8px;}
+.gsub{font-size:14px;color:var(--ts);line-height:1.6;margin-bottom:20px;}
+.gbtn{display:inline-block;width:100%;padding:14px;background:linear-gradient(135deg,#2b3990,#1e2e5c);color:var(--wh);border:none;border-radius:var(--rs);font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;}
+
+/* 헤더 */
+#ms{display:none;flex-direction:column;min-height:100vh;}
+.ah{background:linear-gradient(135deg,#1e2e5c,#12194a);color:var(--wh);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+.ahl{display:flex;align-items:center;gap:12px;}
+.ahi{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.aht{font-size:16px;font-weight:700;}
+.ahr{text-align:right;}
+#hn{font-size:15px;font-weight:600;}
+#hi{font-size:11px;opacity:.7;margin-top:2px;}
+.homebtn{background:rgba(255,255,255,0.15);color:var(--wh);border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;margin-top:4px;text-decoration:none;display:inline-block;}
+
+/* 콘텐츠 */
+.tc{padding:20px 16px;max-width:960px;margin:0 auto;width:100%;}
+.actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
+.adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
+.acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
+
+/* 폼 */
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.fgrp{display:flex;flex-direction:column;}
+.fgrp.full{grid-column:1/-1;}
+.fgrp label{font-size:12px;font-weight:700;color:var(--ts);margin-bottom:5px;}
+.fgrp input,.fgrp select,.fgrp textarea{height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);outline:none;width:100%;font-family:inherit;}
+.fgrp textarea{height:auto;padding:10px 12px;resize:vertical;}
+.fgrp input:focus,.fgrp select:focus,.fgrp textarea:focus{border-color:var(--gl);background:var(--wh);}
+
+/* 버튼 */
+.bp{background:linear-gradient(135deg,#2b3990,#1e2e5c);color:var(--wh);border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;}
+.bs{background:var(--iv);color:var(--ts);border:1.5px solid var(--ivd);border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+.bm{background:var(--gp);color:var(--gm);border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+.bd{background:#fee2e2;color:#dc2626;border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+
+/* 학생 목록 */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;}
+.toolbar select,.toolbar input{height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--wh);outline:none;}
+.slist{display:flex;flex-direction:column;gap:8px;}
+.sitem{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--wh);border:1px solid var(--ivd);border-radius:10px;cursor:pointer;transition:border-color .15s;}
+.sitem:hover{border-color:var(--gl);}
+.savatar{width:40px;height:40px;border-radius:50%;background:var(--gp);color:var(--gm);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;}
+.sinfo{flex:1;min-width:0;}
+.sname{font-size:15px;font-weight:700;color:var(--gd);}
+.smeta{font-size:12px;color:var(--ts);margin-top:2px;}
+.snum{font-size:11px;color:var(--tl);font-family:monospace;}
+.badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px;}
+.b-active{background:#dcfce7;color:#16a34a;}
+.b-leave{background:#fef3c7;color:#b45309;}
+.b-quit{background:#fee2e2;color:#dc2626;}
+.b-grad{background:#e0f2fe;color:#0369a1;}
+.empty{text-align:center;color:var(--tl);padding:30px;font-size:14px;}
+
+/* 모달 */
+.mov{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;}
+.mbk{position:absolute;inset:0;background:rgba(20,25,60,0.5);}
+.mbox{position:relative;background:var(--wh);border-radius:16px;padding:24px;width:100%;max-width:560px;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.mtitle{font-size:18px;font-weight:800;color:var(--gd);margin-bottom:4px;}
+.msub{font-size:13px;color:var(--ts);margin-bottom:16px;}
+.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+.seclb{font-size:13px;font-weight:800;color:var(--gold);margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--ivd);}
+
+/* 형제/이력 */
+.sibrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.sibchip{display:inline-flex;align-items:center;gap:6px;background:var(--goldp);color:var(--goldd);font-size:12px;font-weight:600;padding:5px 10px;border-radius:100px;}
+.sibchip .x{cursor:pointer;font-weight:800;}
+.cand{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--iv);border-radius:8px;margin-bottom:6px;font-size:13px;}
+.histitem{font-size:12px;color:var(--ts);padding:7px 0;border-bottom:1px dashed var(--ivd);line-height:1.5;}
+.histitem:last-child{border-bottom:none;}
+
+/* 토스트 */
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+</style>
+</head>
+<body>
+
+<!-- 로그인 게이트 (로그인 안 된 경우) -->
+<div id="gate">
+  <div class="gbox">
+    <div class="gtitle">학생 관리</div>
+    <div class="gsub" id="gate-msg">로그인 확인 중...</div>
+    <a class="gbtn" id="gate-btn" href="index.html" style="display:none">로그인 화면으로</a>
+  </div>
+</div>
+
+<!-- 메인 -->
+<div id="ms">
+  <header class="ah">
+    <div class="ahl">
+      <div class="ahi">🎓</div>
+      <div class="aht">학생 관리</div>
+    </div>
+    <div class="ahr">
+      <div id="hn"></div>
+      <div id="hi"></div>
+      <a class="homebtn" href="index.html">← 메인으로</a>
+    </div>
+  </header>
+  <div class="tc" id="main-body"></div>
+</div>
+
+<div id="mwrap"></div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ── 공통 유틸 ──
+const $I = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+const STATUS = {active:'재학', leave:'휴학', quit:'자퇴', grad:'졸업', egrad:'조기졸업'};
+const STATUS_BADGE = {active:'b-active', leave:'b-leave', quit:'b-quit', grad:'b-grad', egrad:'b-grad'};
+let CU = null;          // 현재 로그인 유저
+let STUDENTS = [];      // 학생 캐시
+
+function toast(msg, type=''){
+  const t = $I('toast'); t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
+}
+// 볼 수 있는 기관 목록
+function myOrgs(){
+  if(!CU) return [];
+  if(CU.role==='super') return ['jihyebit','daniel'];
+  if(CU.role==='org_admin') return CU.orgs && CU.orgs.length ? CU.orgs : [CU.org];
+  return CU.orgs && CU.orgs.length ? CU.orgs : [CU.org];
+}
+function orgOptionsHTML(includeAll){
+  const orgs = myOrgs();
+  let h = includeAll ? '<option value="">전체 기관</option>' : '';
+  if(orgs.includes('jihyebit')) h += '<option value="jihyebit">지혜빛</option>';
+  if(orgs.includes('daniel')) h += '<option value="daniel">다니엘 아마츠</option>';
+  return h;
+}
+const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+
+// ── 로그인 확인 ──
+onAuthStateChanged(auth, async (user) => {
+  if(!user){
+    $I('gate-msg').textContent = '로그인이 필요합니다. 메인 화면에서 먼저 로그인해주세요.';
+    $I('gate-btn').style.display = 'inline-block';
+    return;
+  }
+  // staff 문서 로드
+  try {
+    const snap = await getDoc(doc(db,'staff',user.uid));
+    if(!snap.exists()){
+      $I('gate-msg').textContent = '교직원 정보를 찾을 수 없습니다.';
+      $I('gate-btn').style.display = 'inline-block';
+      return;
+    }
+    CU = { uid:user.uid, ...snap.data() };
+    $I('gate').style.display = 'none';
+    $I('ms').style.display = 'flex';
+    const org = ORGS[CU.org] || CU.org;
+    $I('hn').textContent = CU.name;
+    $I('hi').textContent = `${org} · ${CU.dept||''}`;
+    renderMain();
+  } catch(e){
+    $I('gate-msg').textContent = '오류가 발생했습니다: ' + e.message;
+    $I('gate-btn').style.display = 'inline-block';
+  }
+});
+
+// ── 메인 화면 ──
+async function renderMain(){
+  $I('main-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">학생 관리</h3>
+      <p class="adesc">학생 기본정보를 등록하고 관리합니다. 학번은 등록 순서대로 자동 부여되며, 목록은 가나다순으로 표시됩니다.</p>
+      ${isAdmin()?'<button class="bp" onclick="openStudentForm()">＋ 새 학생 등록</button>':''}
+    </div>
+    <div class="acard">
+      <div class="toolbar">
+        <select id="flt-org" onchange="renderList()">${orgOptionsHTML(true)}</select>
+        <select id="flt-status" onchange="renderList()">
+          <option value="active">재학생만</option>
+          <option value="">전체 상태</option>
+          <option value="leave">휴학</option>
+          <option value="quit">자퇴</option>
+          <option value="grad">졸업</option>
+        </select>
+        <input type="text" id="flt-search" placeholder="이름 검색" oninput="renderList()" style="flex:1;min-width:120px">
+      </div>
+      <div class="slist" id="student-list"><p class="empty">불러오는 중...</p></div>
+    </div>`;
+  await loadStudents();
+  renderList();
+}
+
+// ── 학생 데이터 로드 ──
+async function loadStudents(){
+  const snap = await getDocs(collection(db,'students'));
+  const allowed = myOrgs();
+  STUDENTS = [];
+  snap.forEach(d => {
+    const s = { id:d.id, ...d.data() };
+    if(allowed.includes(s.org)) STUDENTS.push(s);
+  });
+}
+
+// ── 학생 목록 렌더 (가나다순) ──
+function renderList(){
+  const el = $I('student-list'); if(!el) return;
+  const fOrg = $I('flt-org')?.value || '';
+  const fStatus = $I('flt-status')?.value;
+  const fSearch = ($I('flt-search')?.value || '').trim();
+  let list = STUDENTS.filter(s => {
+    if(fOrg && s.org !== fOrg) return false;
+    if(fStatus && (s.status||'active') !== fStatus) return false;
+    if(fSearch && !s.name.includes(fSearch)) return false;
+    return true;
+  });
+  list.sort((a,b) => a.name.localeCompare(b.name, 'ko'));
+  if(!list.length){ el.innerHTML = '<p class="empty">학생이 없습니다.</p>'; return; }
+  el.innerHTML = list.map(s => {
+    const st = s.status || 'active';
+    return `<div class="sitem" onclick="openStudentDetail('${s.id}')">
+      <div class="savatar">${s.name.charAt(0)}</div>
+      <div class="sinfo">
+        <div class="sname">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span></div>
+        <div class="smeta">${ORGS[s.org]||s.org}${s.birth?' · '+s.birth:''}${s.phone?' · '+s.phone:''}</div>
+        <div class="snum">학번 ${s.studentNo||'-'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── 학번 생성 (등록순 고정) ──
+// 규칙: 입학년도 4자리 + '-' + 그 기관/그 해 등록 순번 3자리
+async function genStudentNo(org, admitYear){
+  const prefix = `${admitYear}`;
+  // 같은 기관+같은 입학년도 학생 수 세기
+  const cnt = STUDENTS.filter(s => s.org===org && s.admitYear===admitYear).length;
+  return `${prefix}-${pad((cnt+1))}`;
+}
+
+window.renderList = renderList;
+
+// ── 학생 등록/수정 폼 ──
+function openStudentForm(editId){
+  const s = editId ? STUDENTS.find(x=>x.id===editId) : null;
+  const thisYear = new Date().getFullYear();
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${s?'학생 정보 수정':'새 학생 등록'}</div>
+      <div class="msub">${s?'변경 사항은 이력에 자동 기록됩니다.':'기본정보를 입력하세요. * 표시는 필수입니다.'}</div>
+
+      <div class="seclb">기본 정보</div>
+      <div class="fg">
+        <div class="fgrp"><label>이름 *</label><input id="f-name" value="${s?.name||''}"></div>
+        <div class="fgrp"><label>성별</label><select id="f-gender">
+          <option value="">선택</option>
+          <option value="남"${s?.gender==='남'?' selected':''}>남</option>
+          <option value="여"${s?.gender==='여'?' selected':''}>여</option>
+        </select></div>
+        <div class="fgrp"><label>생년월일</label><input type="date" id="f-birth" value="${s?.birth||''}"></div>
+        <div class="fgrp"><label>기관 *</label><select id="f-org" ${s?'disabled':''}>${orgOptionsHTML(false)}</select></div>
+        <div class="fgrp"><label>입학일</label><input type="date" id="f-admit" value="${s?.admitDate||''}"></div>
+        <div class="fgrp"><label>재적 상태</label><select id="f-status">
+          ${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${(s?.status||'active')===k?' selected':''}>${v}</option>`).join('')}
+        </select></div>
+      </div>
+
+      <div class="seclb">연락처</div>
+      <div class="fg">
+        <div class="fgrp"><label>학생 연락처</label><input id="f-phone" value="${s?.phone||''}" placeholder="010-0000-0000"></div>
+        <div class="fgrp"><label>학생 이메일</label><input id="f-email" value="${s?.email||''}" placeholder="student@email.com"></div>
+        <div class="fgrp"><label>보호자 이름</label><input id="f-guardian" value="${s?.guardian||''}"></div>
+        <div class="fgrp"><label>보호자 연락처</label><input id="f-gphone" value="${s?.guardianPhone||''}" placeholder="010-0000-0000"></div>
+        <div class="fgrp full"><label>주소</label><input id="f-addr" value="${s?.address||''}"></div>
+      </div>
+
+      <div class="seclb">특이사항</div>
+      <div class="fg"><div class="fgrp full"><textarea id="f-memo" rows="2" placeholder="알레르기, 특이사항 등">${s?.memo||''}</textarea></div></div>
+
+      <input type="hidden" id="f-admit-year" value="${s?.admitYear||thisYear}">
+      <div class="mact">
+        ${s&&isAdmin()?`<button class="bd" onclick="deleteStudent('${s.id}')">삭제</button>`:''}
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveStudent('${s?.id||''}')">저장</button>
+      </div>
+    </div></div>`;
+}
+window.openStudentForm = openStudentForm;
+function closeMod(){ $I('mwrap').innerHTML=''; }
+window.closeMod = closeMod;
+
+// ── 학생 저장 ──
+async function saveStudent(editId){
+  const name = $I('f-name').value.trim();
+  const org = $I('f-org').value;
+  if(!name) return toast('이름을 입력하세요.','err');
+  if(!org) return toast('기관을 선택하세요.','err');
+
+  const admitDate = $I('f-admit').value;
+  const admitYear = admitDate ? Number(admitDate.slice(0,4)) : Number($I('f-admit-year').value);
+
+  const newData = {
+    name, org,
+    gender: $I('f-gender').value,
+    birth: $I('f-birth').value,
+    admitDate, admitYear,
+    status: $I('f-status').value,
+    phone: $I('f-phone').value.trim(),
+    email: $I('f-email').value.trim(),
+    guardian: $I('f-guardian').value.trim(),
+    guardianPhone: $I('f-gphone').value.trim(),
+    address: $I('f-addr').value.trim(),
+    memo: $I('f-memo').value.trim(),
+  };
+
+  try {
+    if(editId){
+      // 변경 이력 계산
+      const old = STUDENTS.find(s=>s.id===editId);
+      const changes = [];
+      const fieldNames = {name:'이름',gender:'성별',birth:'생년월일',admitDate:'입학일',status:'재적상태',phone:'학생연락처',email:'이메일',guardian:'보호자',guardianPhone:'보호자연락처',address:'주소',memo:'특이사항'};
+      for(const k of Object.keys(fieldNames)){
+        const ov = old[k]||'', nv = newData[k]||'';
+        let ovd = ov, nvd = nv;
+        if(k==='status'){ ovd = STATUS[ov]||ov; nvd = STATUS[nv]||nv; }
+        if(ovd !== nvd) changes.push(`${fieldNames[k]}: ${ovd||'(없음)'} → ${nvd||'(없음)'}`);
+      }
+      const hist = old.history || [];
+      if(changes.length){
+        hist.push({ at: Date.now(), by: CU.name, changes });
+      }
+      newData.history = hist;
+      newData.studentNo = old.studentNo;  // 학번 유지
+      await updateDoc(doc(db,'students',editId), newData);
+      toast('수정되었습니다.','ok');
+    } else {
+      newData.studentNo = await genStudentNo(org, admitYear);
+      newData.history = [{ at: Date.now(), by: CU.name, changes:['학생 등록'] }];
+      newData.createdAt = Timestamp.now();
+      newData.siblings = [];
+      await addDoc(collection(db,'students'), newData);
+      toast('등록되었습니다.','ok');
+    }
+    closeMod();
+    await loadStudents();
+    renderList();
+  } catch(e){
+    toast('저장 실패: ' + e.message, 'err');
+  }
+}
+window.saveStudent = saveStudent;
+
+// ── 학생 삭제 ──
+async function deleteStudent(id){
+  if(!confirm('정말 이 학생을 삭제할까요?\n출석·성적 등 연결된 데이터가 있으면 문제가 될 수 있습니다.\n(자퇴/졸업은 삭제 대신 재적상태 변경을 권장합니다)')) return;
+  try {
+    await deleteDoc(doc(db,'students',id));
+    toast('삭제되었습니다.');
+    closeMod();
+    await loadStudents();
+    renderList();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.deleteStudent = deleteStudent;
+
+// ── 학생 상세 보기 ──
+function openStudentDetail(id){
+  const s = STUDENTS.find(x=>x.id===id); if(!s) return;
+  const st = s.status || 'active';
+  // 형제 정보
+  const sibs = (s.siblings||[]).map(sid => STUDENTS.find(x=>x.id===sid)).filter(Boolean);
+  const sibHTML = sibs.length
+    ? sibs.map(sb=>`<span class="sibchip">${sb.name} (${ORGS[sb.org]||sb.org})${isAdmin()?`<span class="x" onclick="unlinkSibling('${s.id}','${sb.id}')">✕</span>`:''}</span>`).join('')
+    : '<span style="font-size:13px;color:var(--tl)">등록된 형제가 없습니다.</span>';
+  // 변경 이력
+  const hist = (s.history||[]).slice().reverse();
+  const histHTML = hist.length
+    ? hist.map(h=>{
+        const d = new Date(h.at);
+        const dstr = `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return `<div class="histitem"><b>${dstr}</b> · ${h.by}<br>${(h.changes||[]).join('<br>')}</div>`;
+      }).join('')
+    : '<span style="font-size:13px;color:var(--tl)">이력이 없습니다.</span>';
+
+  const row = (label,val) => val ? `<div style="display:flex;gap:8px;padding:5px 0;font-size:14px"><span style="color:var(--tl);min-width:90px">${label}</span><span style="font-weight:600">${val}</span></div>` : '';
+
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
+        <div class="savatar" style="width:52px;height:52px;font-size:20px">${s.name.charAt(0)}</div>
+        <div>
+          <div class="mtitle" style="margin:0">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span></div>
+          <div class="snum">학번 ${s.studentNo||'-'} · ${ORGS[s.org]||s.org}</div>
+        </div>
+      </div>
+
+      <div class="seclb">기본 정보</div>
+      ${row('성별',s.gender)}${row('생년월일',s.birth)}${row('입학일',s.admitDate)}
+      ${row('학생 연락처',s.phone)}${row('학생 이메일',s.email)}
+      ${row('보호자',s.guardian)}${row('보호자 연락처',s.guardianPhone)}
+      ${row('주소',s.address)}${row('특이사항',s.memo)}
+
+      <div class="seclb">형제 / 자매 ${isAdmin()?`<button class="bm" style="margin-left:8px" onclick="openSiblingPicker('${s.id}')">＋ 연결</button>`:''}</div>
+      <div class="sibrow">${sibHTML}</div>
+
+      <div class="seclb">변경 이력</div>
+      <div>${histHTML}</div>
+
+      <div class="mact">
+        ${isAdmin()?`<button class="bs" onclick="openStudentForm('${s.id}')">정보 수정</button>`:''}
+        <button class="bp" onclick="closeMod()">닫기</button>
+      </div>
+    </div></div>`;
+}
+window.openStudentDetail = openStudentDetail;
+
+// ── 형제 연결 ──
+function openSiblingPicker(id){
+  const s = STUDENTS.find(x=>x.id===id); if(!s) return;
+  const already = new Set([id, ...(s.siblings||[])]);
+  // 자동 추천: 같은 기관 + 같은 보호자 연락처
+  const auto = STUDENTS.filter(x => !already.has(x.id) && x.org===s.org && s.guardianPhone && x.guardianPhone===s.guardianPhone);
+  // 수동: 같은 기관 전체 (이미 연결된 것 제외)
+  const manual = STUDENTS.filter(x => !already.has(x.id) && x.org===s.org).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+
+  const autoHTML = auto.length
+    ? auto.map(x=>`<div class="cand"><span>👍 ${x.name} · 학번 ${x.studentNo||'-'} <span style="color:var(--goldd);font-size:11px">(보호자 연락처 일치)</span></span><button class="bm" onclick="linkSibling('${id}','${x.id}')">연결</button></div>`).join('')
+    : '<span style="font-size:13px;color:var(--tl)">추천할 형제 후보가 없습니다.</span>';
+
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="openStudentDetail('${id}')"></div>
+    <div class="mbox">
+      <div class="mtitle">형제 / 자매 연결</div>
+      <div class="msub">${s.name} 학생과 형제 관계인 학생을 연결합니다.</div>
+
+      <div class="seclb">자동 추천 (보호자 연락처 일치)</div>
+      <div>${autoHTML}</div>
+
+      <div class="seclb">수동 선택</div>
+      <div class="fgrp">
+        <select id="sib-manual">
+          <option value="">학생 선택...</option>
+          ${manual.map(x=>`<option value="${x.id}">${x.name} · 학번 ${x.studentNo||'-'}</option>`).join('')}
+        </select>
+      </div>
+      <button class="bm" style="margin-top:8px" onclick="linkSiblingManual('${id}')">선택한 학생 연결</button>
+
+      <div class="mact"><button class="bp" onclick="openStudentDetail('${id}')">완료</button></div>
+    </div></div>`;
+}
+window.openSiblingPicker = openSiblingPicker;
+
+async function linkSibling(id, sibId){
+  try {
+    const a = STUDENTS.find(x=>x.id===id), b = STUDENTS.find(x=>x.id===sibId);
+    const aSibs = Array.from(new Set([...(a.siblings||[]), sibId]));
+    const bSibs = Array.from(new Set([...(b.siblings||[]), id]));
+    await updateDoc(doc(db,'students',id), {siblings:aSibs});
+    await updateDoc(doc(db,'students',sibId), {siblings:bSibs});
+    toast('형제로 연결되었습니다.','ok');
+    await loadStudents();
+    openSiblingPicker(id);
+  } catch(e){ toast('연결 실패: '+e.message,'err'); }
+}
+window.linkSibling = linkSibling;
+
+function linkSiblingManual(id){
+  const sibId = $I('sib-manual').value;
+  if(!sibId) return toast('학생을 선택하세요.','err');
+  linkSibling(id, sibId);
+}
+window.linkSiblingManual = linkSiblingManual;
+
+async function unlinkSibling(id, sibId){
+  if(!confirm('형제 연결을 해제할까요?')) return;
+  try {
+    const a = STUDENTS.find(x=>x.id===id), b = STUDENTS.find(x=>x.id===sibId);
+    await updateDoc(doc(db,'students',id), {siblings:(a.siblings||[]).filter(x=>x!==sibId)});
+    if(b) await updateDoc(doc(db,'students',sibId), {siblings:(b.siblings||[]).filter(x=>x!==id)});
+    toast('연결이 해제되었습니다.');
+    await loadStudents();
+    openStudentDetail(id);
+  } catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.unlinkSibling = unlinkSibling;
+</script>
+</body>
+</html>
