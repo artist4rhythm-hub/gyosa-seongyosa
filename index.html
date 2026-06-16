@@ -255,9 +255,11 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="subtb">
       <button class="subtbtn active" id="sa-sys" onclick="showAdmTab('sys')">🏢 통합관리</button>
       <button class="subtbtn" id="sa-att" onclick="showAdmTab('att')">📋 출근부 설정</button>
+      <button class="subtbtn" id="sa-log" onclick="showAdmTab('log')" style="display:none">🔐 로그인 기록</button>
     </div>
     <div id="ca-sys" class="tc"></div>
     <div id="ca-att" class="tc" style="display:none"></div>
+    <div id="ca-log" class="tc" style="display:none"></div>
   </div>
 </div>
 
@@ -358,9 +360,19 @@ onAuthStateChanged(auth, async (user) => {
   if (user) {
     const snap = await getDoc(doc(db, 'staff', user.uid));
     if (snap.exists()) {
-      CU = { uid: user.uid, ...snap.data() };
+      const data = snap.data();
+      // 계정 상태 확인 (휴직/퇴직은 로그인 차단)
+      const acStatus = data.acStatus || 'active';
+      if (acStatus === 'leave' || acStatus === 'quit') {
+        await signOut(auth);
+        showLoginErr(acStatus==='quit' ? '퇴직 처리된 계정입니다. 관리자에게 문의하세요.' : '휴직 중인 계정입니다. 관리자에게 문의하세요.');
+        return;
+      }
+      CU = { uid: user.uid, ...data };
       $I('ls').style.display = 'none';
       $I('ms').style.display = 'flex';
+      // 로그인 기록 저장 (비동기, 실패해도 진행)
+      recordLogin(user.uid, data.name, data.org).catch(()=>{});
       showMain();
     } else {
       await signOut(auth);
@@ -372,6 +384,19 @@ onAuthStateChanged(auth, async (user) => {
     $I('ms').style.display = 'none';
   }
 });
+
+// 로그인 기록 저장 (마지막 로그인 + 누적 이력)
+async function recordLogin(uid, name, org) {
+  const now = Timestamp.now();
+  // 마지막 로그인 시각 갱신
+  try { await updateDoc(doc(db,'staff',uid), { lastLogin: now }); } catch(e){}
+  // 누적 로그인 이력 (한 건씩)
+  try {
+    await addDoc(collection(db,'loginLogs'), {
+      uid, name: name||'', org: org||'', at: now
+    });
+  } catch(e){}
+}
 
 function showLoginErr(msg) {
   toast(msg, 'err');
@@ -457,6 +482,7 @@ async function createAcc() {
     await subAuth.signOut();
     await setDoc(doc(db, 'staff', cred.user.uid), {
       uid: cred.user.uid, id, name, org, orgs, dept, role,
+      acStatus: 'active',
       createdAt: Timestamp.now()
     });
     toast(`${name} 선생님 계정이 발급되었습니다.`, 'ok');
@@ -475,8 +501,9 @@ window.createAcc = createAcc;
 async function saveEditStaff(uid) {
   const name = $I('es-name').value.trim();
   const org = $I('es-org').value, dept = $I('es-dept').value, role = $I('es-role').value;
+  const acStatus = $I('es-acstatus')?.value || 'active';
   if (!name) return toast('이름을 입력하세요.', 'err');
-  await updateDoc(doc(db, 'staff', uid), { name, org, dept, role });
+  await updateDoc(doc(db, 'staff', uid), { name, org, dept, role, acStatus });
   toast(`${name} 선생님 정보가 수정되었습니다.`, 'ok');
   document.getElementById('edit-staff-mod')?.remove();
   await loadStaff();
@@ -526,20 +553,29 @@ async function loadStaff() {
     if (orgFilter && !sOrgs.includes(orgFilter)) return;
     list.push(s);
   });
-  el.innerHTML = list.length ? list.map(s => `
-    <div class="sitem" style="flex-wrap:wrap;gap:8px">
-      <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px">
+  el.innerHTML = list.length ? list.map(s => {
+    const ac = s.acStatus || 'active';
+    const acBadge = ac==='leave' ? '<span class="rbadge" style="background:#fef3c7;color:#b45309">휴직</span>'
+      : ac==='quit' ? '<span class="rbadge" style="background:#fee2e2;color:#dc2626">퇴직</span>' : '';
+    const ll = s.lastLogin?.seconds ? new Date(s.lastLogin.seconds*1000) : null;
+    const llStr = ll ? `최근 로그인 ${ll.getFullYear()}.${pad(ll.getMonth()+1)}.${pad(ll.getDate())}` : '로그인 기록 없음';
+    return `
+    <div class="sitem" style="flex-wrap:wrap;gap:8px;${ac!=='active'?'opacity:.6':''}">
+      <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px;flex-wrap:wrap">
         <span class="sname">${s.name}</span>
         <span class="sid" style="color:var(--tl);font-size:12px">${s.id}</span>
         <span style="font-size:12px;color:var(--ts)">${ORGS[s.org]||s.org}${s.dept!=='전체'?' · '+s.dept:''}</span>
         <span class="rbadge ${s.role==='super'?'r-super':s.role==='org_admin'?'r-org':s.role==='tab_admin'?'r-tab':'r-teacher'}">${ROLES[s.role]||s.role}</span>
+        ${acBadge}
+        <span style="font-size:11px;color:var(--tl)">${llStr}</span>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="bm" onclick="openEditStaff('${s.uid}','${s.name}','${s.org}','${s.dept}','${s.role}')">✏️ 수정</button>
         <button class="bm" style="background:#fef3c7;color:#b45309" onclick="openResetPw('${s.uid}')">🔑 비번</button>
         ${isSU?`<button class="bm" style="background:#ede9fe;color:#7c3aed" onclick="showPw('${s.uid}')">👁 확인</button>`:''}        ${s.uid!==CU.uid?`<button class="bm" style="background:#fee2e2;color:#dc2626" onclick="deleteStaff('${s.uid}')">🗑 삭제</button>`:''}
       </div>
-    </div>`).join('') : '<p class="empty">교직원이 없습니다.</p>';
+    </div>`;
+  }).join('') : '<p class="empty">교직원이 없습니다.</p>';
 }
 window.loadStaff = loadStaff;
 
@@ -939,6 +975,8 @@ async function showMain(){
   // 통계 하위탭은 관리자에게만 표시
   $I('st-stat').style.display=isAdmin?'':'none';
   $I('t-adm').style.display=isAdmin?'flex':'none';
+  // 로그인 기록은 슈퍼관리자만
+  const logTab = $I('sa-log'); if(logTab) logTab.style.display = CU.role==='super' ? '' : 'none';
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
   await reloadStaffCache();
   updateNoticeDot();
@@ -1100,6 +1138,142 @@ async function saveBulkAdm(){
   $I('ba-s').value='';$I('ba-e').value='';$I('ba-memo').value='';
 }
 window.saveBulkAdm = saveBulkAdm;
+
+// ── 로그인 기록 통계 (슈퍼관리자) ──────────────
+async function renderLoginLog(){
+  const el = $I('ca-log'); if(!el) return;
+  if(CU.role!=='super'){ el.innerHTML='<div class="acard"><p class="empty">슈퍼관리자만 볼 수 있습니다.</p></div>'; return; }
+  el.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
+  await reloadStaffCache();
+
+  // 로그인 기록 로드
+  const snap = await getDocs(collection(db,'loginLogs'));
+  const logs = [];
+  snap.forEach(d=>{ const l=d.data(); if(l.at?.seconds) logs.push({...l, ts:l.at.seconds*1000}); });
+  if(!logs.length){ el.innerHTML='<div class="acard"><h3 class="actitle">🔐 로그인 기록</h3><p class="empty">아직 로그인 기록이 없습니다.</p></div>'; return; }
+
+  logs.sort((a,b)=>b.ts-a.ts);
+  const now = Date.now();
+  const DAY = 86400000;
+
+  // ── 전체 통계 ──
+  const total = logs.length;
+  const last30 = logs.filter(l=>now-l.ts < 30*DAY).length;
+  const last7 = logs.filter(l=>now-l.ts < 7*DAY).length;
+  // 활성 사용자 수 (기록 있는 고유 uid)
+  const uniqUsers = new Set(logs.map(l=>l.uid)).size;
+  const avgPerUser = uniqUsers ? (total/uniqUsers).toFixed(1) : 0;
+
+  // ── 시간대별 (0~23시) ──
+  const byHour = new Array(24).fill(0);
+  logs.forEach(l=>{ byHour[new Date(l.ts).getHours()]++; });
+  const maxHour = Math.max(...byHour);
+  const peakHour = byHour.indexOf(maxHour);
+
+  // ── 요일별 ──
+  const dowNames = ['일','월','화','수','목','금','토'];
+  const byDow = new Array(7).fill(0);
+  logs.forEach(l=>{ byDow[new Date(l.ts).getDay()]++; });
+  const maxDow = Math.max(...byDow);
+
+  // ── 사용자별 ──
+  const byUser = {};
+  logs.forEach(l=>{
+    if(!byUser[l.uid]) byUser[l.uid] = {name:l.name, org:l.org, count:0, last:0};
+    byUser[l.uid].count++;
+    if(l.ts > byUser[l.uid].last) byUser[l.uid].last = l.ts;
+  });
+  // 휴면 의심: 14일 이상 로그인 없음 (전체 교직원 중)
+  const dormant = [];
+  Object.values(STAFF_CACHE).forEach(s=>{
+    const u = byUser[s.uid];
+    const lastTs = u ? u.last : (s.lastLogin?.seconds ? s.lastLogin.seconds*1000 : 0);
+    if((s.acStatus||'active')==='active' && (!lastTs || now-lastTs > 14*DAY)){
+      dormant.push({name:s.name, org:s.org, last:lastTs});
+    }
+  });
+
+  const fmtDate = ts => { if(!ts) return '기록 없음'; const d=new Date(ts); return `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+  // 시간대 막대 (간단 텍스트 바)
+  const hourBars = byHour.map((c,h)=>{
+    if(c===0) return '';
+    const w = Math.round(c/maxHour*100);
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;font-size:12px">
+      <span style="width:38px;color:var(--ts)">${pad(h)}시</span>
+      <div style="flex:1;background:var(--gp);border-radius:4px;height:16px;overflow:hidden"><div style="width:${w}%;height:100%;background:var(--gm)"></div></div>
+      <span style="width:30px;text-align:right;color:var(--tl)">${c}</span>
+    </div>`;
+  }).join('');
+
+  const dowBars = byDow.map((c,i)=>{
+    const w = maxDow ? Math.round(c/maxDow*100) : 0;
+    return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;font-size:12px">
+      <span style="width:38px;color:var(--ts)">${dowNames[i]}요일</span>
+      <div style="flex:1;background:var(--gp);border-radius:4px;height:16px;overflow:hidden"><div style="width:${w}%;height:100%;background:var(--gold)"></div></div>
+      <span style="width:30px;text-align:right;color:var(--tl)">${c}</span>
+    </div>`;
+  }).join('');
+
+  // 사용자별 표 (로그인 많은 순)
+  const userRows = Object.values(byUser).sort((a,b)=>b.count-a.count).map(u=>`
+    <tr><td style="padding:6px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${u.name}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${ORGS[u.org]||u.org}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd);text-align:center">${u.count}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd);font-size:12px">${fmtDate(u.last)}</td></tr>`).join('');
+
+  const dormantHTML = dormant.length
+    ? dormant.map(d=>`${d.name}(${ORGS[d.org]||d.org}, ${d.last?fmtDate(d.last):'기록없음'})`).join(', ')
+    : '없음';
+
+  const stat = (label,val,color) => `<div style="flex:1;min-width:90px;background:var(--iv);border-radius:10px;padding:14px;text-align:center">
+    <div style="font-size:22px;font-weight:800;color:${color||'var(--gm)'}">${val}</div>
+    <div style="font-size:11px;color:var(--ts);margin-top:2px">${label}</div></div>`;
+
+  el.innerHTML = `
+  <div class="asc">
+    <div class="acard">
+      <h3 class="actitle">🔐 로그인 기록 통계</h3>
+      <p class="adesc">전체 로그인 기록을 분석합니다. 개인 감시보다 시스템 활용도·보안 점검 용도로 활용하세요.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        ${stat('총 로그인',total)}
+        ${stat('최근 7일',last7)}
+        ${stat('최근 30일',last30)}
+        ${stat('1인 평균',avgPerUser,'var(--goldd)')}
+        ${stat('주 접속시간',peakHour+'시','var(--gd)')}
+      </div>
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px">⏰ 시간대별 로그인</h3>
+      <div style="margin-top:10px">${hourBars||'<p class="empty">데이터 없음</p>'}</div>
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px">📅 요일별 로그인</h3>
+      <div style="margin-top:10px">${dowBars}</div>
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px">⚠️ 휴면 의심 계정 (14일 이상 미접속)</h3>
+      <div style="font-size:13px;color:var(--ts);line-height:1.7;margin-top:6px">${dormantHTML}</div>
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px">👥 교직원별 로그인 현황</h3>
+      <div style="overflow-x:auto;margin-top:10px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:var(--iv)">
+            <th style="padding:8px;text-align:left">이름</th><th style="padding:8px;text-align:left">기관</th>
+            <th style="padding:8px;text-align:center">횟수</th><th style="padding:8px;text-align:left">최근 로그인</th>
+          </tr></thead>
+          <tbody>${userRows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+window.renderLoginLog = renderLoginLog;
 
 // ── 공지사항 기능 ────────────────────────────
 // 공지가 현재 유저(또는 지정 staff)에게 해당하는지 판정
@@ -1386,10 +1560,11 @@ function renderStat(){
 function showAdmTab(sub){
   document.querySelectorAll('#c-adm .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-log'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
+  if(sub==='log') renderLoginLog();
 }
 
 // ── 관리자 > 통합관리 ────────────────────────
@@ -1667,6 +1842,8 @@ function openMyInfo(){
 
 function openEditStaff(uid, name, org, dept, role){
   const el=document.createElement('div'); el.id='edit-staff-mod';
+  const cur = STAFF_CACHE[uid] || {};
+  const acStatus = cur.acStatus || 'active';
   const deptOpts = (o, sel) => o==='jihyebit'
     ? `<option value="전체"${sel==='전체'?' selected':''}>전체</option>`
     : `<option value="초등부"${sel==='초등부'?' selected':''}>초등부</option><option value="중고등부"${sel==='중고등부'?' selected':''}>중고등부</option><option value="행정실"${sel==='행정실'?' selected':''}>행정실</option>`;
@@ -1691,6 +1868,12 @@ function openEditStaff(uid, name, org, dept, role){
               <option value="tab_admin"${role==='tab_admin'?' selected':''}>탭관리자</option>
               <option value="org_admin"${role==='org_admin'?' selected':''}>기관관리자</option>
               <option value="super"${role==='super'?' selected':''}>슈퍼관리자</option>
+            </select></div>
+          <div class="fgrp"><label>계정 상태</label>
+            <select id="es-acstatus" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+              <option value="active"${acStatus==='active'?' selected':''}>재직 (로그인 가능)</option>
+              <option value="leave"${acStatus==='leave'?' selected':''}>휴직 (로그인 차단)</option>
+              <option value="quit"${acStatus==='quit'?' selected':''}>퇴직 (로그인 차단)</option>
             </select></div>
         </div>
         <div class="mact">
