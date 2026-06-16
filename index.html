@@ -88,6 +88,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .cc.empty{background:none;}
 .cc.tod{background:#edf0fa;outline:2px solid var(--gold);}
 .cc.wknd .cd{color:#dc2626;}
+.cc.hol{background:#fef2f2;}
+.cc.hol .cd{color:#dc2626;}
 .cc.nwd{background:#f5f5f5;}
 .cc.nwd .cd{color:#ccc;}
 .cd{font-size:12px;font-weight:700;display:block;margin-bottom:3px;}
@@ -322,6 +324,28 @@ let IDX = 0;         // 사용 안함 (Firebase auto ID)
 // ── Firebase 유틸 ────────────────────────────
 function korEmail(id) { return `${id}@gyosa-seongyosa.staff`; }
 
+// 현재 유저가 볼 수 있는 기관 목록 반환
+// super: 모든 기관 / org_admin: 관리 기관만 / 그 외: 본인 기관
+function myOrgs() {
+  if (!CU) return [];
+  if (CU.role === 'super') return ['jihyebit', 'daniel'];
+  if (CU.role === 'org_admin') return CU.orgs && CU.orgs.length ? CU.orgs : [CU.org];
+  return [CU.org];
+}
+// 해당 기관을 볼 권한이 있는지
+function canSeeOrg(org) {
+  if (CU && CU.role === 'super') return true;
+  return myOrgs().includes(org);
+}
+// 권한에 맞는 기관 <option> HTML 생성 (전체 옵션 포함 여부 선택)
+function orgOptionsHTML(includeAll) {
+  const orgs = myOrgs();
+  let html = includeAll ? '<option value="">전체 기관</option>' : '';
+  if (orgs.includes('jihyebit')) html += '<option value="jihyebit">지혜빛</option>';
+  if (orgs.includes('daniel')) html += '<option value="daniel">다니엘 아마츠</option>';
+  return html;
+}
+
 // ── 인증 ─────────────────────────────────────
 onAuthStateChanged(auth, async (user) => {
   if (user) {
@@ -396,11 +420,28 @@ window.changeMyPw = changeMyPw;
 // ── 계정 발급 (Firebase) ─────────────────────
 async function createAcc() {
   const name = $I('nn').value.trim(), id = $I('nid').value.trim(), pw = $I('npw').value;
-  const org = $I('no').value, dept = $I('nd').value, role = $I('nr').value;
+  const role = $I('nr').value;
   if (!name || !id || !pw) return toast('이름, 아이디, 비밀번호를 입력하세요.', 'err');
   if (pw.length < 6) return toast('비밀번호는 6자 이상이어야 합니다.', 'err');
+
+  // 권한별 기관/부서 처리
+  let org, dept, orgs;
+  if (role === 'org_admin') {
+    // 기관관리자: 체크박스로 여러 기관 선택
+    orgs = [];
+    if ($I('nm-jihyebit')?.checked) orgs.push('jihyebit');
+    if ($I('nm-daniel')?.checked) orgs.push('daniel');
+    if (orgs.length === 0) return toast('관리 기관을 하나 이상 선택하세요.', 'err');
+    org = orgs[0];   // 대표 기관 (호환용)
+    dept = '전체';
+  } else {
+    // 교사/탭관리자: 단일 기관
+    org = $I('no').value;
+    dept = $I('nd').value;
+    orgs = [org];
+  }
+
   try {
-    // 서브 앱으로 생성 (현재 로그인 유지)
     const { initializeApp: iApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
     const { getAuth: gAuth, createUserWithEmailAndPassword: cUser } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
     const sub = iApp(firebaseConfig, 'sub-' + Date.now());
@@ -408,11 +449,13 @@ async function createAcc() {
     const cred = await cUser(subAuth, korEmail(id), pw);
     await subAuth.signOut();
     await setDoc(doc(db, 'staff', cred.user.uid), {
-      uid: cred.user.uid, id, name, org, dept, role,
+      uid: cred.user.uid, id, name, org, orgs, dept, role,
       createdAt: Timestamp.now()
     });
     toast(`${name} 선생님 계정이 발급되었습니다.`, 'ok');
     $I('nn').value = ''; $I('nid').value = ''; $I('npw').value = '';
+    if ($I('nm-jihyebit')) $I('nm-jihyebit').checked = false;
+    if ($I('nm-daniel')) $I('nm-daniel').checked = false;
     await loadStaff();
   } catch(e) {
     if (e.code === 'auth/email-already-in-use') toast('이미 사용 중인 아이디입니다.', 'err');
@@ -462,12 +505,19 @@ async function loadStaff() {
   const el = $I('slist'); if (!el) return;
   const isSU = CU.role === 'super';
   const orgFilter = $I('sf-org')?.value || '';
+  const allowed = myOrgs();   // 내가 볼 수 있는 기관들
   let q = collection(db, 'staff');
   const snap = await getDocs(q);
   const list = [];
   snap.forEach(d => {
     const s = { ...d.data(), uid: d.id };
-    if (!orgFilter || s.org === orgFilter) list.push(s);
+    // 이 선생님이 속한 기관들 (단수 org + 복수 orgs 합침)
+    const sOrgs = s.orgs && s.orgs.length ? s.orgs : [s.org];
+    // 권한 필터: 내 관리 기관과 겹치는 선생님만
+    if (!sOrgs.some(o => allowed.includes(o))) return;
+    // 드롭다운 필터
+    if (orgFilter && !sOrgs.includes(orgFilter)) return;
+    list.push(s);
   });
   el.innerHTML = list.length ? list.map(s => `
     <div class="sitem" style="flex-wrap:wrap;gap:8px">
@@ -583,10 +633,11 @@ async function drawCal() {
     let cls = 'cc';
     if (isT) cls += ' tod';
     if (wknd) cls += ' wknd';
+    if (hol) cls += ' hol';
     if (!work && !hol && !rec) cls += ' nwd';
     let badge = '';
     if (hol) {
-      badge = `<span class="cbadge" style="background:#f3f4f6;color:#6b7280">${hol}</span>`;
+      badge = `<span class="cbadge" style="background:#fee2e2;color:#dc2626;font-weight:700">${hol}</span>`;
     } else if (rec) {
       const inf = SINF[rec.sub] || {l:rec.sub,c:'#555',b:'#eee',pl:''};
       const pl = (inf.pl&&inf.pl!==inf.l)?`<span class="cbp">${inf.pl}·</span>`:'';
@@ -677,11 +728,13 @@ window.delHol = delHol;
 
 // ── 전체 현황 / 통계 (Firebase) ──────────────
 async function getAllRows(sd, ed, orgFilter, uidFilter) {
+  const allowed = myOrgs();   // 권한상 볼 수 있는 기관
   const snap = await getDocs(collection(db,'attendance'));
   const manRows = [];
   snap.forEach(d => {
     const r = {id:d.id,...d.data()};
     if (r.date < sd || r.date > ed) return;
+    if (!allowed.includes(r.org)) return;       // 권한 필터
     if (orgFilter && r.org!==orgFilter) return;
     if (uidFilter && r.uid!==uidFilter) return;
     manRows.push(r);
@@ -692,7 +745,9 @@ async function getAllRows(sd, ed, orgFilter, uidFilter) {
   const staffList = [];
   staffSnap.forEach(d => {
     const s = {uid:d.id,...d.data()};
-    if (orgFilter && s.org!==orgFilter) return;
+    const sOrgs = s.orgs && s.orgs.length ? s.orgs : [s.org];
+    if (!sOrgs.some(o => allowed.includes(o))) return;   // 권한 필터
+    if (orgFilter && !sOrgs.includes(orgFilter)) return;
     if (uidFilter && s.uid!==uidFilter) return;
     staffList.push(s);
   });
@@ -769,8 +824,9 @@ async function loadStat() {
   const rows=await getAllRows(`${year}-01-01`,`${year}-12-31`,org,'');
   const staffSnap=await getDocs(collection(db,'staff'));
   const byUid={};
-  staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};if(org&&s.org!==org)return;byUid[s.uid]={name:s.name,org:s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{byUid[s.uid].counts[p.k]=0;p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
-  rows.forEach(r=>{if(!byUid[r.uid])return;const pk=S2P[r.sub]||r.sub;if(byUid[r.uid].counts[pk]!==undefined)byUid[r.uid].counts[pk]++;if(byUid[r.uid].counts[r.sub]!==undefined)byUid[r.uid].counts[r.sub]++;});
+  const allowed=myOrgs();
+  staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};const sOrgs=s.orgs&&s.orgs.length?s.orgs:[s.org];if(!sOrgs.some(o=>allowed.includes(o)))return;if(org&&!sOrgs.includes(org))return;byUid[s.uid]={name:s.name,org:s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{byUid[s.uid].counts[p.k]=0;p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
+  rows.forEach(r=>{if(!byUid[r.uid])return;if(byUid[r.uid].counts[r.sub]!==undefined)byUid[r.uid].counts[r.sub]++;});
   const people=Object.values(byUid);
   if(!people.length){el.innerHTML='<p class="empty">데이터가 없습니다.</p>';return;}
   el.innerHTML=`<div style="overflow-x:auto"><table class="otable" style="min-width:700px"><thead><tr><th rowspan="2" style="vertical-align:middle">이름</th><th rowspan="2" style="vertical-align:middle">기관</th><th rowspan="2" style="vertical-align:middle">부서</th>${TREE.map(p=>`<th colspan="${p.s.length}" style="text-align:center;background:${p.b};color:${p.c}">${p.l}</th>`).join('')}<th rowspan="2" style="vertical-align:middle">합계</th></tr><tr>${TREE.map(p=>p.s.map(s=>`<th style="font-size:10px;background:#f8f8f8;color:#666">${s.l}</th>`).join('')).join('')}</tr></thead><tbody>${people.map(p=>{const total=TREE.reduce((sum,par)=>sum+par.s.reduce((s2,s)=>s2+(p.counts[s.k]||0),0),0);return `<tr><td style="font-weight:700">${p.name}</td><td>${ORGS[p.org]||p.org}</td><td>${p.dept||'-'}</td>${TREE.map(par=>par.s.map(s=>{const v=p.counts[s.k]||0;const inf=SINF[s.k];return `<td style="text-align:center;${v>0?`color:${inf?.c||'#333'};font-weight:700`:'color:#ccc'}">${v||'-'}</td>`;}).join('')).join('')}<td style="text-align:center;font-weight:700;color:var(--gd)">${total}</td></tr>`;}).join('')}</tbody></table></div>`;
@@ -850,7 +906,12 @@ async function showMain(){
   try {
     const snap = await getDocs(collection(db,'staff'));
     STAFF_CACHE = {};
-    snap.forEach(d => { STAFF_CACHE[d.id] = { uid:d.id, ...d.data() }; });
+    const allowed = myOrgs();
+    snap.forEach(d => {
+      const s = { uid:d.id, ...d.data() };
+      const sOrgs = s.orgs && s.orgs.length ? s.orgs : [s.org];
+      if (sOrgs.some(o => allowed.includes(o))) STAFF_CACHE[d.id] = s;
+    });
   } catch(e) { STAFF_CACHE = {}; }
   showTab('att');
 }
@@ -948,9 +1009,7 @@ function renderStat(){
       <h3 class="actitle">📊 연간 출근 통계</h3>
       <div class="frow" style="gap:8px;margin-bottom:16px;align-items:center">
         <select id="st-org" onchange="loadStat()">
-          <option value="">전체 기관</option>
-          <option value="jihyebit">지혜빛</option>
-          <option value="daniel">다니엘 아마츠</option>
+          ${orgOptionsHTML(true)}
         </select>
         <select id="st-year" onchange="loadStat()">
           ${[TY,TY-1,TY-2].map(y=>`<option value="${y}" ${y===TY?'selected':''}>${y}년</option>`).join('')}
@@ -964,9 +1023,7 @@ function renderStat(){
       <h3 class="actitle">📈 월별 현황 비교</h3>
       <div class="frow" style="gap:8px;margin-bottom:16px;align-items:center">
         <select id="sc-org" onchange="loadMonthChart()">
-          <option value="">전체 기관</option>
-          <option value="jihyebit">지혜빛</option>
-          <option value="daniel">다니엘 아마츠</option>
+          ${orgOptionsHTML(true)}
         </select>
         <select id="sc-year" onchange="loadMonthChart()">
           ${[TY,TY-1].map(y=>`<option value="${y}" ${y===TY?'selected':''}>${y}년</option>`).join('')}
@@ -1007,20 +1064,28 @@ function renderAdmSys(){
         <div class="fgrp"><label>이름</label><input type="text" id="nn" placeholder="홍길동"></div>
         <div class="fgrp"><label>아이디</label><input type="text" id="nid" placeholder="hong123"></div>
         <div class="fgrp"><label>비밀번호</label><input type="password" id="npw" placeholder="초기 비밀번호"></div>
-        <div class="fgrp"><label>기관</label>
+        <div class="fgrp"><label>권한</label>
+          <select id="nr" onchange="onRoleChange()">
+            ${isSU?'<option value="org_admin">기관관리자</option>':''}
+            <option value="tab_admin">탭관리자</option>
+            <option value="teacher" selected>교사</option>
+          </select>
+        </div>
+        <div class="fgrp" id="org-single"><label>기관</label>
           <select id="no" onchange="updDept()">
             <option value="jihyebit">지혜빛</option>
             <option value="daniel">다니엘 아마츠</option>
           </select>
         </div>
-        <div class="fgrp"><label>부서</label><select id="nd"><option value="전체">전체</option></select></div>
-        <div class="fgrp"><label>권한</label>
-          <select id="nr">
-            ${isSU?'<option value="org_admin">기관관리자</option>':''}
-            <option value="tab_admin">탭관리자</option>
-            <option value="teacher">교사</option>
-          </select>
+        <div class="fgrp" id="org-multi" style="display:none"><label>관리 기관 (복수 선택 가능)</label>
+          <div style="display:flex;gap:16px;align-items:center;padding:8px 0">
+            <label style="display:flex;align-items:center;gap:6px;font-weight:500;cursor:pointer">
+              <input type="checkbox" id="nm-jihyebit" value="jihyebit" style="width:18px;height:18px"> 지혜빛</label>
+            <label style="display:flex;align-items:center;gap:6px;font-weight:500;cursor:pointer">
+              <input type="checkbox" id="nm-daniel" value="daniel" style="width:18px;height:18px"> 다니엘 아마츠</label>
+          </div>
         </div>
+        <div class="fgrp" id="dept-grp"><label>부서</label><select id="nd"><option value="전체">전체</option></select></div>
       </div>
       <button class="bp" onclick="createAcc()">계정 발급</button>
     </div>`:'' }
@@ -1029,9 +1094,7 @@ function renderAdmSys(){
       <h3 class="actitle">👥 전체 교직원 목록</h3>
       <div class="frow" style="margin-bottom:12px">
         <select id="sf-org" onchange="loadStaff()">
-          <option value="">전체 기관</option>
-          <option value="jihyebit">지혜빛</option>
-          <option value="daniel">다니엘 아마츠</option>
+          ${orgOptionsHTML(true)}
         </select>
       </div>
       <div id="slist" class="slist"></div>
@@ -1051,8 +1114,7 @@ function renderAdmAtt(){
       <div class="fg">
         <div class="fgrp"><label>기관</label>
           <select id="wp-org">
-            <option value="jihyebit">지혜빛</option>
-            <option value="daniel">다니엘 아마츠</option>
+            ${orgOptionsHTML(false)}
           </select>
         </div>
         <div class="fgrp"><label>시작일</label><input type="date" id="wp-s"></div>
@@ -1077,8 +1139,7 @@ function renderAdmAtt(){
         <div class="fgrp"><label>적용 기관</label>
           <select id="ho">
             <option value="all">전체</option>
-            <option value="jihyebit">지혜빛</option>
-            <option value="daniel">다니엘 아마츠</option>
+            ${orgOptionsHTML(false)}
           </select>
         </div>
       </div>
@@ -1090,9 +1151,7 @@ function renderAdmAtt(){
       <h3 class="actitle">📋 전체 출근 현황</h3>
       <div class="frow" style="flex-wrap:wrap;gap:8px;align-items:center">
         <select id="fo" onchange="loadOv()">
-          <option value="">전체 기관</option>
-          <option value="jihyebit">지혜빛</option>
-          <option value="daniel">다니엘 아마츠</option>
+          ${orgOptionsHTML(true)}
         </select>
         <select id="fname" onchange="loadOv()">
           <option value="">전체 인원</option>
@@ -1149,6 +1208,23 @@ function openEditOv(id,date,uid,sub,memo){
 }
 
 // ── 누락 함수들 (Firebase 버전) ─────────────
+function onRoleChange(){
+  const role = $I('nr')?.value;
+  const single = $I('org-single'), multi = $I('org-multi'), deptGrp = $I('dept-grp');
+  if(role === 'org_admin'){
+    // 기관관리자: 다중 기관 선택, 부서 숨김
+    if(single) single.style.display='none';
+    if(multi) multi.style.display='';
+    if(deptGrp) deptGrp.style.display='none';
+  } else {
+    // 교사/탭관리자: 단일 기관, 부서 표시
+    if(single) single.style.display='';
+    if(multi) multi.style.display='none';
+    if(deptGrp) deptGrp.style.display='';
+  }
+}
+window.onRoleChange = onRoleChange;
+
 function toggleFMode(){
   const m=$I('fmode')?.value;
   if(!m) return;
