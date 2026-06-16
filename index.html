@@ -280,11 +280,12 @@ const db = getFirestore(app);
 // ── 대/소항목 ────────────────────────────────
 const TREE=[
   {k:'정상출근',l:'정상출근',c:'#2b3990',b:'#e8ecf8',s:[{k:'정상출근',l:'정상출근'},{k:'재택근무',l:'재택근무'},{k:'출장',l:'출장'}]},
-  {k:'지각',    l:'지각',    c:'#b45309',b:'#fef3c7',s:[{k:'지각',l:'지각'}]},
+  {k:'늦은 출근',l:'늦은 출근',c:'#b45309',b:'#fef3c7',s:[{k:'늦은 출근',l:'늦은 출근'}]},
   {k:'조퇴',    l:'조퇴',    c:'#d97706',b:'#fff7ed',s:[{k:'조퇴',l:'조퇴'}]},
   {k:'결근',    l:'결근',    c:'#dc2626',b:'#fee2e2',s:[{k:'결근',l:'결근'}]},
   {k:'병가',    l:'병가',    c:'#7c3aed',b:'#ede9fe',s:[{k:'병가',l:'병가'}]},
-  {k:'휴가',    l:'휴가',    c:'#0369a1',b:'#e0f2fe',s:[{k:'연차',l:'연차'},{k:'반차(오전)',l:'반차(오전)'},{k:'반차(오후)',l:'반차(오후)'},{k:'경조사휴가',l:'경조사휴가'}]},
+  {k:'연차',    l:'연차',    c:'#0369a1',b:'#e0f2fe',s:[{k:'정기휴가',l:'정기휴가'},{k:'임시휴교',l:'임시휴교'},{k:'휴무일',l:'휴무일'},{k:'반차(오전)',l:'반차(오전)'},{k:'반차(오후)',l:'반차(오후)'}]},
+  {k:'경조사',  l:'경조사',  c:'#be185d',b:'#fce7f3',s:[{k:'경조사',l:'경조사'}]},
 ];
 const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
@@ -616,10 +617,15 @@ async function drawCal() {
     console.log('달력 데이터 로드 중 일부 오류 (무시 가능):', e);
   }
 
-  function isWD(ds) {
+  // 해당 날짜의 자동 상태 판정: 'work'(정상출근) / 'vacation'(정기휴가) / null
+  function autoStatus(ds) {
     const dow = new Date(ds+'T00:00:00').getDay(), wknd = dow===0||dow===6;
-    if (wknd) return wps.some(w => w.wknd && ds>=w.s && ds<=w.e);
-    return wps.some(w => ds>=w.s && ds<=w.e);
+    // 방학기간이 근무기간보다 우선
+    const vac = wps.find(w => w.type==='vacation' && ds>=w.s && ds<=w.e && (!wknd || w.wknd));
+    if (vac) return 'vacation';
+    const work = wps.find(w => w.type!=='vacation' && ds>=w.s && ds<=w.e && (!wknd || w.wknd));
+    if (work) return 'work';
+    return null;
   }
 
   const fd = new Date(y,m,1).getDay();
@@ -629,12 +635,14 @@ async function drawCal() {
   for (let d=1; d<=dim; d++) {
     const ds = `${y}-${pad(m+1)}-${pad(d)}`;
     const dow = new Date(y,m,d).getDay(), wknd = dow===0||dow===6;
-    const hol = holMap[ds], rec = recMap[ds], isT = ds===tstr, work = isWD(ds);
+    const hol = holMap[ds], rec = recMap[ds], isT = ds===tstr;
+    const auto = autoStatus(ds);              // 'work' | 'vacation' | null
+    const work = auto==='work', vacAuto = auto==='vacation';
     let cls = 'cc';
     if (isT) cls += ' tod';
     if (wknd) cls += ' wknd';
     if (hol) cls += ' hol';
-    if (!work && !hol && !rec) cls += ' nwd';
+    if (!auto && !hol && !rec) cls += ' nwd';
     let badge = '';
     if (hol) {
       badge = `<span class="cbadge" style="background:#fee2e2;color:#dc2626;font-weight:700">${hol}</span>`;
@@ -644,11 +652,19 @@ async function drawCal() {
       badge = `<span class="cbadge" style="background:${inf.b};color:${inf.c}">${pl}${inf.l}</span>`;
     } else if (work) {
       badge = `<span class="cbadge auto-dim" style="background:#e8ecf8;color:#2b3990">정상출근</span>`;
+    } else if (vacAuto) {
+      badge = `<span class="cbadge auto-dim" style="background:#e0f2fe;color:#0369a1">정기휴가</span>`;
     }
     const cell = document.createElement('div');
     cell.className = cls;
     cell.innerHTML = `<span class="cd">${d}</span>${badge}${rec?.memo?`<span class="cmemo">${rec.memo}</span>`:''}`;
-    if (!hol) { cell.classList.add('click'); cell.onclick = () => openMod(ds, rec ? {...SINF[rec.sub],sub:rec.sub,memo:rec.memo,manual:true,id:rec.id} : (work?{l:'정상출근',c:'#2b3990',b:'#e8ecf8',pl:'정상출근',sub:'정상출근',memo:'',auto:true}:null)); }
+    if (!hol) {
+      cell.classList.add('click');
+      const autoDefault = work ? {l:'정상출근',c:'#2b3990',b:'#e8ecf8',pl:'정상출근',sub:'정상출근',memo:'',auto:true}
+        : vacAuto ? {l:'정기휴가',c:'#0369a1',b:'#e0f2fe',pl:'연차',sub:'정기휴가',memo:'',auto:true}
+        : null;
+      cell.onclick = () => openMod(ds, rec ? {...SINF[rec.sub],sub:rec.sub,memo:rec.memo,manual:true,id:rec.id} : autoDefault);
+    }
     g.appendChild(cell);
   }
 }
@@ -659,15 +675,24 @@ window.nextMon = function(){ curMon=new Date(curMon.getFullYear(),curMon.getMont
 // ── 근무기간 (Firebase) ───────────────────────
 async function addWP() {
   const org=$I('wp-org').value, s=$I('wp-s').value, e=$I('wp-e').value;
-  const name=$I('wp-n').value.trim()||'근무기간', wknd=$I('wp-wknd').value==='true';
+  const type=$I('wp-type')?.value||'work', wknd=$I('wp-wknd').value==='true';
+  const vac=type==='vacation'?($I('wp-vac')?.value||'봄방학'):'';
+  const name=$I('wp-n').value.trim()||(type==='vacation'?vac:'근무기간');
   if(!s||!e) return toast('시작일과 종료일을 입력하세요.','err');
   if(s>e) return toast('종료일이 시작일보다 빠릅니다.','err');
-  await addDoc(collection(db,'workPeriods'),{org,s,e,wknd,name,createdAt:Timestamp.now()});
-  toast('근무기간이 등록되었습니다.','ok');
+  await addDoc(collection(db,'workPeriods'),{org,s,e,wknd,name,type,vac,createdAt:Timestamp.now()});
+  toast(type==='vacation'?'방학기간이 등록되었습니다.':'근무기간이 등록되었습니다.','ok');
   $I('wp-s').value='';$I('wp-e').value='';$I('wp-n').value='';
   await loadWPList();
 }
 window.addWP = addWP;
+
+function onWpTypeChange(){
+  const type=$I('wp-type')?.value;
+  const vg=$I('wp-vac-grp');
+  if(vg) vg.style.display = type==='vacation' ? '' : 'none';
+}
+window.onWpTypeChange = onWpTypeChange;
 
 async function loadWPList() {
   const el=$I('wplist'); if(!el) return;
@@ -677,10 +702,11 @@ async function loadWPList() {
   el.innerHTML=wps.length?wps.map(w=>`
     <div class="wpitem">
       <span class="wporg">${ORGS[w.org]||w.org}</span>
+      ${w.type==='vacation'?`<span class="wptag" style="background:#e0f2fe;color:#0369a1">방학·${w.vac||'정기휴가'}</span>`:'<span class="wptag" style="background:#e8ecf8;color:#2b3990">근무</span>'}
       <span class="wpdates">${w.name} · ${w.s} ~ ${w.e}</span>
       ${w.wknd?'<span class="wptag">토·일 포함</span>':''}
       <button class="bx" onclick="delWP('${w.id}')">✕</button>
-    </div>`).join(''):'<p class="empty">등록된 근무기간이 없습니다.</p>';
+    </div>`).join(''):'<p class="empty">등록된 기간이 없습니다.</p>';
 }
 window.loadWPList = loadWPList;
 
@@ -761,15 +787,20 @@ async function getAllRows(sd, ed, orgFilter, uidFilter) {
 
   const autoRows = [];
   for (const s of staffList) {
+    const sOrgs = s.orgs && s.orgs.length ? s.orgs : [s.org];
     let d = new Date(sd+'T00:00:00'), end = new Date(ed+'T00:00:00');
     while (d<=end) {
       const ds = fmtD(d);
       const dow = d.getDay(), wknd = dow===0||dow===6;
-      const isWork = wknd
-        ? wps.some(w=>w.org===s.org&&w.wknd&&ds>=w.s&&ds<=w.e)
-        : wps.some(w=>w.org===s.org&&ds>=w.s&&ds<=w.e);
-      if (!manRows.some(r=>r.uid===s.uid&&r.date===ds) && !holDates.has(ds) && isWork)
-        autoRows.push({uid:s.uid,name:s.name,org:s.org,dept:s.dept||'',date:ds,sub:'정상출근',memo:'',auto:true});
+      // 이 교직원 소속 기관의 기간만 적용 (방학 우선)
+      const inPeriod = (w) => sOrgs.includes(w.org) && ds>=w.s && ds<=w.e && (!wknd || w.wknd);
+      const isVac = wps.some(w => w.type==='vacation' && inPeriod(w));
+      const isWork = wps.some(w => w.type!=='vacation' && inPeriod(w));
+      const hasManual = manRows.some(r=>r.uid===s.uid&&r.date===ds);
+      if (!hasManual && !holDates.has(ds)) {
+        if (isVac) autoRows.push({uid:s.uid,name:s.name,org:s.org,dept:s.dept||'',date:ds,sub:'정기휴가',memo:'',auto:true});
+        else if (isWork) autoRows.push({uid:s.uid,name:s.name,org:s.org,dept:s.dept||'',date:ds,sub:'정상출근',memo:'',auto:true});
+      }
       d.setDate(d.getDate()+1);
     }
   }
@@ -838,7 +869,7 @@ async function loadMonthChart() {
   const el=$I('chart-wrap'); if(!el) return;
   el.innerHTML='<p class="empty">불러오는 중...</p>';
   const months=Array.from({length:12},(_,i)=>i+1);
-  const parentColors={'정상출근':'#2b3990','지각':'#b45309','조퇴':'#d97706','결근':'#dc2626','병가':'#7c3aed','휴가':'#0369a1'};
+  const parentColors={}; TREE.forEach(p=>{parentColors[p.k]=p.c;});
   const monthData=await Promise.all(months.map(async m=>{
     const sd=`${year}-${pad(m)}-01`,ed=`${year}-${pad(m)}-${pad(new Date(year,m,0).getDate())}`;
     const rows=await getAllRows(sd,ed,org,uid);
@@ -903,6 +934,12 @@ async function showMain(){
   $I('st-stat').style.display=isAdmin?'':'none';
   $I('t-adm').style.display=isAdmin?'flex':'none';
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
+  await reloadStaffCache();
+  showTab('att');
+}
+
+// 교직원 캐시 새로고침 (권한 필터 적용)
+async function reloadStaffCache(){
   try {
     const snap = await getDocs(collection(db,'staff'));
     STAFF_CACHE = {};
@@ -913,7 +950,6 @@ async function showMain(){
       if (sOrgs.some(o => allowed.includes(o))) STAFF_CACHE[d.id] = s;
     });
   } catch(e) { STAFF_CACHE = {}; }
-  showTab('att');
 }
 
 function showTab(t){
@@ -947,22 +983,132 @@ function renderAtt(){
       <span class="mlb" id="mlb"></span>
       <button class="ibtn" onclick="nextMon()">›</button>
     </div>
+    <div style="text-align:center;margin-bottom:12px">
+      <button class="bp" style="font-size:13px;padding:8px 16px" onclick="openBulkMod()">📋 기간 일괄 입력</button>
+    </div>
     <div id="cg" class="cg"></div>
     <div id="mwrap"></div>`;
   drawCal();
 }
 
+// 기간 일괄 입력 모달 (본인용)
+function openBulkMod(){
+  const opts = TREE.map(p=>`<optgroup label="${p.l}">${p.s.map(s=>`<option value="${s.k}">${s.l}</option>`).join('')}</optgroup>`).join('');
+  $I('mwrap').innerHTML=`
+    <div class="mov" id="mov">
+      <div class="mbk" onclick="closeMod()"></div>
+      <div class="mbox">
+        <div class="mtitle">기간 일괄 입력</div>
+        <div class="msub">선택한 기간의 평일(토·일 제외)에 같은 항목이 한꺼번에 기록됩니다.</div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin:8px 0 16px">
+          <div class="fgrp"><label class="mlabel">시작일</label>
+            <input type="date" id="bk-s" class="minput"></div>
+          <div class="fgrp"><label class="mlabel">종료일</label>
+            <input type="date" id="bk-e" class="minput"></div>
+          <div class="fgrp"><label class="mlabel">항목</label>
+            <select id="bk-sub" class="minput">${opts}</select></div>
+          <div class="fgrp"><label class="mlabel">메모 (선택)</label>
+            <input type="text" id="bk-memo" class="minput" placeholder="비고 사항..."></div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="bk-wknd" style="width:16px;height:16px"> 토·일도 포함</label>
+        </div>
+        <div class="mact">
+          <button class="bs" onclick="closeMod()">취소</button>
+          <button class="bp" onclick="saveBulk(null)">일괄 저장</button>
+        </div>
+      </div>
+    </div>`;
+}
+window.openBulkMod = openBulkMod;
+
+// 기간 일괄 저장 (targetUid가 null이면 본인, 있으면 해당 교직원)
+async function saveBulk(targetUid){
+  const s=$I('bk-s').value, e=$I('bk-e').value, sub=$I('bk-sub').value, memo=$I('bk-memo').value.trim();
+  const incWknd=$I('bk-wknd')?.checked;
+  if(!s||!e) return toast('시작일과 종료일을 선택하세요.','err');
+  if(s>e) return toast('종료일이 시작일보다 빠릅니다.','err');
+  // 대상 교직원 정보
+  let target;
+  if(targetUid){ target=STAFF_CACHE[targetUid]; if(!target) return toast('대상 교직원을 찾을 수 없습니다.','err'); }
+  else target=CU;
+  // 날짜 순회
+  const days=[];
+  let d=new Date(s+'T00:00:00'), end=new Date(e+'T00:00:00');
+  while(d<=end){ const dow=d.getDay(); if(incWknd||(dow!==0&&dow!==6)) days.push(fmtD(d)); d.setDate(d.getDate()+1); }
+  if(!days.length) return toast('선택 기간에 입력할 날짜가 없습니다.','err');
+  if(days.length>120) return toast('기간이 너무 깁니다. (최대 120일)','err');
+  if(!confirm(`${target.name} 선생님에게 ${days.length}일을 '${sub}'(으)로 일괄 입력할까요?\n(기존 기록은 덮어씁니다)`)) return;
+  toast('저장 중...');
+  // 기존 기록 조회 (해당 기간/대상)
+  const snap=await getDocs(collection(db,'attendance'));
+  const existing={};
+  snap.forEach(doc0=>{ const r=doc0.data(); if(r.uid===target.uid&&r.date>=s&&r.date<=e) existing[r.date]={id:doc0.id}; });
+  // 저장
+  let cnt=0;
+  for(const ds of days){
+    const data={uid:target.uid,name:target.name,org:target.org,dept:target.dept||'',date:ds,sub,memo,updatedAt:Timestamp.now()};
+    if(existing[ds]) await updateDoc(doc(db,'attendance',existing[ds].id),data);
+    else await addDoc(collection(db,'attendance'),data);
+    cnt++;
+  }
+  toast(`${cnt}일이 일괄 입력되었습니다.`,'ok');
+  closeMod();
+  if(targetUid){ const bm=$I('bulk-adm-mod'); if(bm) bm.remove(); }
+  else drawCal();
+}
+window.saveBulk = saveBulk;
+
+// 관리자 화면 일괄 입력 (대상 교직원 지정)
+async function saveBulkAdm(){
+  const uid=$I('ba-uid')?.value, s=$I('ba-s').value, e=$I('ba-e').value;
+  const sub=$I('ba-sub').value, memo=$I('ba-memo').value.trim();
+  const incWknd=$I('ba-wknd')?.value==='true';
+  if(!uid) return toast('대상 교직원을 선택하세요.','err');
+  if(!s||!e) return toast('시작일과 종료일을 선택하세요.','err');
+  if(s>e) return toast('종료일이 시작일보다 빠릅니다.','err');
+  const target=STAFF_CACHE[uid];
+  if(!target) return toast('대상 교직원을 찾을 수 없습니다.','err');
+  const days=[];
+  let d=new Date(s+'T00:00:00'), end=new Date(e+'T00:00:00');
+  while(d<=end){ const dow=d.getDay(); if(incWknd||(dow!==0&&dow!==6)) days.push(fmtD(d)); d.setDate(d.getDate()+1); }
+  if(!days.length) return toast('선택 기간에 입력할 날짜가 없습니다.','err');
+  if(days.length>120) return toast('기간이 너무 깁니다. (최대 120일)','err');
+  if(!confirm(`${target.name} 선생님에게 ${days.length}일을 '${sub}'(으)로 일괄 입력할까요?\n(기존 기록은 덮어씁니다)`)) return;
+  toast('저장 중...');
+  const snap=await getDocs(collection(db,'attendance'));
+  const existing={};
+  snap.forEach(doc0=>{ const r=doc0.data(); if(r.uid===uid&&r.date>=s&&r.date<=e) existing[r.date]={id:doc0.id}; });
+  let cnt=0;
+  for(const ds of days){
+    const data={uid:target.uid,name:target.name,org:target.org,dept:target.dept||'',date:ds,sub,memo,updatedAt:Timestamp.now()};
+    if(existing[ds]) await updateDoc(doc(db,'attendance',existing[ds].id),data);
+    else await addDoc(collection(db,'attendance'),data);
+    cnt++;
+  }
+  toast(`${target.name} 선생님에게 ${cnt}일이 일괄 입력되었습니다.`,'ok');
+  $I('ba-s').value='';$I('ba-e').value='';$I('ba-memo').value='';
+}
+window.saveBulkAdm = saveBulkAdm;
+
 // ── 모달 ─────────────────────────────────────
 function openMod(ds,eff){
   const [,mm,dd]=ds.split('-');
-  selP=eff?.manual?S2P[eff.sub]:'정상출근';
-  selS=eff?.manual?eff.sub:'정상출근';
+  // 자동 상태(정기휴가/정상출근)면 그 값을 초기 선택으로
+  const autoSub = eff?.auto ? (eff.sub||'정상출근') : '정상출근';
+  selP = eff?.manual ? S2P[eff.sub] : (S2P[autoSub]||'정상출근');
+  selS = eff?.manual ? eff.sub : autoSub;
+  let subMsg = '';
+  if (eff?.auto) {
+    subMsg = autoSub==='정기휴가'
+      ? '현재 자동 정기휴가(방학) 상태입니다. 출근하셨다면 정상출근으로 변경해 저장하세요.'
+      : '현재 자동 정상출근 상태입니다. 변경 시 직접 기록됩니다.';
+  }
   $I('mwrap').innerHTML=`
     <div class="mov" id="mov">
       <div class="mbk" onclick="closeMod()"></div>
       <div class="mbox">
         <div class="mtitle">${parseInt(mm)}월 ${parseInt(dd)}일 출근 기록</div>
-        <div class="msub" id="msub">${eff?.auto?'현재 자동 정상출근 상태입니다. 변경 시 직접 기록됩니다.':''}</div>
+        <div class="msub" id="msub">${subMsg}</div>
         <div class="sp" id="spbtns"></div>
         <div class="sublb">세부 항목</div>
         <div class="ss" id="ssbtns"></div>
@@ -1105,13 +1251,28 @@ function renderAdmSys(){
 }
 
 // ── 관리자 > 출근부 설정 ─────────────────────
-function renderAdmAtt(){
+async function renderAdmAtt(){
+  await reloadStaffCache();
   $I('ca-att').innerHTML=`
   <div class="asc">
     <div class="acard">
-      <h3 class="actitle">📆 근무기간 설정</h3>
-      <p class="adesc">설정 기간 내 평일이 소속 교사 달력에 자동 정상출근으로 표시됩니다.</p>
+      <h3 class="actitle">📆 근무기간 / 방학기간 설정</h3>
+      <p class="adesc">근무기간은 평일이 자동 정상출근으로, 방학기간은 평일이 자동 정기휴가로 교사 달력에 표시됩니다.</p>
       <div class="fg">
+        <div class="fgrp"><label>유형</label>
+          <select id="wp-type" onchange="onWpTypeChange()">
+            <option value="work">근무기간 (정상출근)</option>
+            <option value="vacation">방학기간 (정기휴가)</option>
+          </select>
+        </div>
+        <div class="fgrp" id="wp-vac-grp" style="display:none"><label>방학 종류</label>
+          <select id="wp-vac">
+            <option value="봄방학">봄방학</option>
+            <option value="여름방학">여름방학</option>
+            <option value="가을방학">가을방학</option>
+            <option value="겨울방학">겨울방학</option>
+          </select>
+        </div>
         <div class="fgrp"><label>기관</label>
           <select id="wp-org">
             ${orgOptionsHTML(false)}
@@ -1127,7 +1288,7 @@ function renderAdmAtt(){
           </select>
         </div>
       </div>
-      <button class="bp" onclick="addWP()">근무기간 등록</button>
+      <button class="bp" onclick="addWP()">기간 등록</button>
       <div id="wplist" class="wplist"></div>
     </div>
 
@@ -1148,6 +1309,33 @@ function renderAdmAtt(){
     </div>
 
     <div class="acard">
+      <h3 class="actitle">📋 교직원 기간 일괄 입력</h3>
+      <p class="adesc">특정 교직원에게 일정 기간의 출근 항목(정기휴가 등)을 한꺼번에 입력합니다.</p>
+      <div class="fg">
+        <div class="fgrp"><label>대상 교직원</label>
+          <select id="ba-uid">
+            ${Object.entries(STAFF_CACHE).map(([,a])=>`<option value="${a.uid}">${a.name} (${ORGS[a.org]||a.org})</option>`).join('')}
+          </select>
+        </div>
+        <div class="fgrp"><label>시작일</label><input type="date" id="ba-s"></div>
+        <div class="fgrp"><label>종료일</label><input type="date" id="ba-e"></div>
+        <div class="fgrp"><label>항목</label>
+          <select id="ba-sub">
+            ${TREE.map(p=>`<optgroup label="${p.l}">${p.s.map(s=>`<option value="${s.k}">${s.l}</option>`).join('')}</optgroup>`).join('')}
+          </select>
+        </div>
+        <div class="fgrp"><label>메모 (선택)</label><input type="text" id="ba-memo" placeholder="비고 사항..."></div>
+        <div class="fgrp"><label>토·일 포함</label>
+          <select id="ba-wknd">
+            <option value="false">토·일 제외 (기본)</option>
+            <option value="true">토·일 포함</option>
+          </select>
+        </div>
+      </div>
+      <button class="bp" onclick="saveBulkAdm()">일괄 입력</button>
+    </div>
+
+    <div class="acard">
       <h3 class="actitle">📋 전체 출근 현황</h3>
       <div class="frow" style="flex-wrap:wrap;gap:8px;align-items:center">
         <select id="fo" onchange="loadOv()">
@@ -1161,7 +1349,7 @@ function renderAdmAtt(){
           <option value="">전체 항목</option>
           <option value="정상출근">정상출근만</option>
           <option value="!정상출근">정상출근 제외</option>
-          ${TREE.map(p=>`<option value="${p.k}">${p.l}류</option>`).join('')}
+          ${TREE.map(p=>`<option value="${p.k}">${p.l}</option>`).join('')}
         </select>
         <button class="bp" onclick="dlOvExcel()" style="margin-left:auto;font-size:13px;padding:8px 14px">⬇ 엑셀 다운로드</button>
       </div>
