@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>교사 선교사</title>
+<meta name="theme-color" content="#1e2e5c">
+<link rel="manifest" href="manifest.json">
 <style>
 :root {
   /* C 테마 — 네이비 + 아이보리 + 골드 */
@@ -184,6 +186,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 </head>
 <body>
 
+
 <!-- 로그인 -->
 <div id="ls">
   <div class="lbox">
@@ -193,10 +196,26 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       </div>
       <div class="ltitle">교사 선교사</div>
       <div class="lsubtitle">지혜빛 · 다니엘 아마츠</div>
+      
     </div>
     <div class="lf"><label>아이디</label><input type="text" id="lid" placeholder="아이디 입력" autocomplete="off"></div>
     <div class="lf"><label>비밀번호</label><input type="password" id="lpw" placeholder="비밀번호 입력"></div>
-    <button id="lbtn" onclick="doLogin()">로그인</button>
+    <button id="lbtn" onclick="doLogin()">로그인</button></div>
+        <span class="dtag" style="background:#1e2e5c;color:white">슈퍼</span>
+      </button>
+      <button class="dab" onclick="ql('daniel_admin','1234')">
+        <div><div class="dan">김다니엘</div><div class="dar">기관관리자 · 다니엘 아마츠</div></div>
+        <span class="dtag" style="background:#e8ecf8;color:#1e2e5c">기관관리자</span>
+      </button>
+      <button class="dab" onclick="ql('teacher01','1234')">
+        <div><div class="dan">박지혜</div><div class="dar">교사 · 지혜빛</div></div>
+        <span class="dtag" style="background:#ede8dc;color:#555">교사</span>
+      </button>
+      <button class="dab" onclick="ql('teacher02','1234')">
+        <div><div class="dan">최은혜</div><div class="dar">교사 · 다니엘 아마츠 · 초등부</div></div>
+        <span class="dtag" style="background:#ede8dc;color:#555">교사</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -243,7 +262,28 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
   </div>
 </div>
 
-<script>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ── Firebase 초기화 ──────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ── 공통 상수 / 유틸 ────────────────────────
+
 // ── 대/소항목 ────────────────────────────────
 const TREE=[
   {k:'정상출근',l:'정상출근',c:'#2b3990',b:'#e8ecf8',s:[{k:'정상출근',l:'정상출근'},{k:'재택근무',l:'재택근무'},{k:'출장',l:'출장'}]},
@@ -260,67 +300,513 @@ const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
 const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'탭관리자',teacher:'교사'};
 const pad=n=>String(n).padStart(2,'0');
 
-// ── 샘플 데이터 ──────────────────────────────
-const ACCS={
-  'super01':     {pw:'1234',uid:'u1',name:'이현우', org:'daniel',   dept:'행정실',role:'super'},
-  'daniel_admin':{pw:'1234',uid:'u2',name:'김다니엘',org:'daniel',   dept:'행정실',role:'org_admin'},
-  'teacher01':   {pw:'1234',uid:'u3',name:'박지혜', org:'jihyebit', dept:'전체',  role:'teacher'},
-  'teacher02':   {pw:'1234',uid:'u4',name:'최은혜', org:'daniel',   dept:'초등부',role:'teacher'},
-};
-const td=new Date(), TY=td.getFullYear(), TM=td.getMonth()+1;
-const fmtD=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 
-let workPeriods=[
-  {id:'wp1',org:'daniel',   s:`${TY}-${pad(TM)}-01`,e:`${TY}-${pad(TM)}-${pad(new Date(TY,TM,0).getDate())}`,wknd:false,name:'정규 근무'},
-  {id:'wp2',org:'jihyebit', s:`${TY}-${pad(TM)}-01`,e:`${TY}-${pad(TM)}-${pad(new Date(TY,TM,0).getDate())}`,wknd:false,name:'정규 근무'},
-];
-let RECS=[
-  {id:'r1',uid:'u3',name:'박지혜', org:'jihyebit',dept:'전체',  date:`${TY}-${pad(TM)}-04`,sub:'조퇴',    memo:'개인 사정'},
-  {id:'r2',uid:'u3',name:'박지혜', org:'jihyebit',dept:'전체',  date:`${TY}-${pad(TM)}-05`,sub:'병가',    memo:'감기'},
-  {id:'r3',uid:'u4',name:'최은혜', org:'daniel',  dept:'초등부',date:`${TY}-${pad(TM)}-04`,sub:'출장',    memo:'교육청 연수'},
-  {id:'r4',uid:'u4',name:'최은혜', org:'daniel',  dept:'초등부',date:`${TY}-${pad(TM)}-06`,sub:'반차(오전)',memo:''},
-];
-let HOLS=[
-  {id:'h1',date:`${TY}-${pad(TM)}-10`,name:'개교기념일',org:'all'},
-  {id:'h2',date:`${TY}-06-06`,name:'현충일',org:'all'},
-];
-let STAFF=Object.entries(ACCS).map(([id,d])=>({id,...d}));
-let CU=null, curMon=new Date(), IDX=300;
-let selP=null, selS=null;
 
-// ── 유틸 ─────────────────────────────────────
-function $I(id){return document.getElementById(id);}
-function toast(m,t=''){
-  const el=document.createElement('div');
-  el.className='toast'+(t?' '+t:''); el.textContent=m;
-  document.body.appendChild(el);
-  setTimeout(()=>el.classList.add('show'),10);
-  setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),300);},3000);
-}
-function isWknd(ds){const d=new Date(ds+'T00:00:00');return d.getDay()===0||d.getDay()===6;}
-function isWorkday(ds,org){
-  if(isWknd(ds)) return workPeriods.some(w=>w.org===org&&w.wknd&&ds>=w.s&&ds<=w.e);
-  return workPeriods.some(w=>w.org===org&&ds>=w.s&&ds<=w.e);
-}
-function getHol(ds,org){return HOLS.find(h=>h.date===ds&&(h.org==='all'||h.org===org));}
-function getEff(ds,uid,org){
-  const man=RECS.find(r=>r.uid===uid&&r.date===ds);
-  if(man) return {...(SINF[man.sub]||{l:man.sub,c:'#555',b:'#eee',pk:'',pl:''}),sub:man.sub,memo:man.memo,manual:true,id:man.id};
-  if(getHol(ds,org)) return null;
-  if(isWorkday(ds,org)) return {l:'정상출근',c:'#2b3990',b:'#e8ecf8',pl:'정상출근',sub:'정상출근',memo:'',auto:true};
-  return null;
-}
+// ── 상태 ────────────────────────────────────
+let CU = null;       // 현재 로그인 유저 (Firestore 데이터)
+let curMon = new Date();
+let selP = null, selS = null;
+let IDX = 0;         // 사용 안함 (Firebase auto ID)
+
+// ── Firebase 유틸 ────────────────────────────
+function korEmail(id) { return `${id}@gyosa-seongyosa.staff`; }
 
 // ── 인증 ─────────────────────────────────────
-function doLogin(){
-  const id=$I('lid').value.trim(),pw=$I('lpw').value;
-  if(!id||!pw) return toast('아이디와 비밀번호를 입력하세요.','err');
-  const a=ACCS[id]; if(!a||a.pw!==pw) return toast('아이디 또는 비밀번호가 틀렸습니다.','err');
-  CU={id,...a}; showMain();
-}
-function doLogout(){CU=null;$I('ls').style.display='flex';$I('ms').style.display='none';$I('lid').value='';$I('lpw').value='';}
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&$I('ls').style.display!=='none')doLogin();});
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    const snap = await getDoc(doc(db, 'staff', user.uid));
+    if (snap.exists()) {
+      CU = { uid: user.uid, ...snap.data() };
+      $I('ls').style.display = 'none';
+      $I('ms').style.display = 'flex';
+      showMain();
+    } else {
+      await signOut(auth);
+      showLoginErr('계정 정보를 찾을 수 없습니다.');
+    }
+  } else {
+    CU = null;
+    $I('ls').style.display = 'flex';
+    $I('ms').style.display = 'none';
+  }
+});
 
+function showLoginErr(msg) {
+  toast(msg, 'err');
+}
+
+async function doLogin() {
+  const id = $I('lid').value.trim(), pw = $I('lpw').value;
+  if (!id || !pw) return toast('아이디와 비밀번호를 입력하세요.', 'err');
+  $I('lbtn').disabled = true;
+  try {
+    await signInWithEmailAndPassword(auth, korEmail(id), pw);
+  } catch(e) {
+    toast('아이디 또는 비밀번호가 틀렸습니다.', 'err');
+    $I('lbtn').disabled = false;
+  }
+}
+
+async function doLogout() {
+  await signOut(auth);
+  $I('lid').value = ''; $I('lpw').value = '';
+}
+
+window.doLogin = doLogin;
+window.doLogout = doLogout;
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && $I('ls').style.display !== 'none') doLogin();
+});
+
+// ── 비번 변경 (Firebase) ─────────────────────
+async function changeMyPw() {
+  const cur = $I('cp-cur').value, nw = $I('cp-new').value, con = $I('cp-con').value;
+  if (!cur || !nw || !con) return toast('모든 항목을 입력하세요.', 'err');
+  if (nw.length < 6) return toast('새 비밀번호는 6자 이상이어야 합니다.', 'err');
+  if (nw !== con) return toast('새 비밀번호가 일치하지 않습니다.', 'err');
+  try {
+    const user = auth.currentUser;
+    const cred = EmailAuthProvider.credential(korEmail(CU.id), cur);
+    await reauthenticateWithCredential(user, cred);
+    await updatePassword(user, nw);
+    toast('비밀번호가 변경되었습니다.', 'ok');
+    document.getElementById('my-info-mod')?.remove();
+  } catch(e) {
+    if (e.code === 'auth/wrong-password') toast('현재 비밀번호가 틀렸습니다.', 'err');
+    else toast('변경 실패: ' + e.message, 'err');
+  }
+}
+window.changeMyPw = changeMyPw;
+
+// ── 계정 발급 (Firebase) ─────────────────────
+async function createAcc() {
+  const name = $I('nn').value.trim(), id = $I('nid').value.trim(), pw = $I('npw').value;
+  const org = $I('no').value, dept = $I('nd').value, role = $I('nr').value;
+  if (!name || !id || !pw) return toast('이름, 아이디, 비밀번호를 입력하세요.', 'err');
+  if (pw.length < 6) return toast('비밀번호는 6자 이상이어야 합니다.', 'err');
+  try {
+    // 서브 앱으로 생성 (현재 로그인 유지)
+    const { initializeApp: iApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const { getAuth: gAuth, createUserWithEmailAndPassword: cUser } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    const sub = iApp(firebaseConfig, 'sub-' + Date.now());
+    const subAuth = gAuth(sub);
+    const cred = await cUser(subAuth, korEmail(id), pw);
+    await subAuth.signOut();
+    await setDoc(doc(db, 'staff', cred.user.uid), {
+      uid: cred.user.uid, id, name, org, dept, role,
+      createdAt: Timestamp.now()
+    });
+    toast(`${name} 선생님 계정이 발급되었습니다.`, 'ok');
+    $I('nn').value = ''; $I('nid').value = ''; $I('npw').value = '';
+    await loadStaff();
+  } catch(e) {
+    if (e.code === 'auth/email-already-in-use') toast('이미 사용 중인 아이디입니다.', 'err');
+    else toast('발급 실패: ' + e.message, 'err');
+  }
+}
+window.createAcc = createAcc;
+
+// ── 계정 수정 (Firebase) ─────────────────────
+async function saveEditStaff(uid) {
+  const name = $I('es-name').value.trim();
+  const org = $I('es-org').value, dept = $I('es-dept').value, role = $I('es-role').value;
+  if (!name) return toast('이름을 입력하세요.', 'err');
+  await updateDoc(doc(db, 'staff', uid), { name, org, dept, role });
+  toast(`${name} 선생님 정보가 수정되었습니다.`, 'ok');
+  document.getElementById('edit-staff-mod')?.remove();
+  await loadStaff();
+}
+window.saveEditStaff = saveEditStaff;
+
+// ── 비번 재설정 (Firebase Admin 불가 → 임시 표시) ──
+async function doResetPw(uid) {
+  const newPw = $I('rp-new').value.trim();
+  if (!newPw || newPw.length < 6) return toast('비밀번호는 6자 이상이어야 합니다.', 'err');
+  // Firebase 클라이언트에서는 타인 비번 직접 변경 불가
+  // 실제 운영 시 Firebase Admin SDK Cloud Function 필요
+  // 현재는 안내 메시지 표시
+  toast('⚠️ 실서버에서는 Cloud Function을 통해 재설정됩니다.', 'err');
+  document.getElementById('reset-pw-mod')?.remove();
+}
+window.doResetPw = doResetPw;
+
+// ── 계정 삭제 (Firestore만 삭제) ─────────────
+async function deleteStaff(uid) {
+  const snap = await getDoc(doc(db, 'staff', uid));
+  if (!snap.exists()) return;
+  const s = snap.data();
+  if (!confirm(`${s.name} (${s.id}) 선생님 계정을 삭제할까요?\n출근 기록은 유지됩니다.`)) return;
+  await deleteDoc(doc(db, 'staff', uid));
+  toast(`${s.name} 선생님 계정이 삭제되었습니다.`, 'ok');
+  await loadStaff();
+}
+window.deleteStaff = deleteStaff;
+
+// ── 교직원 목록 로드 (Firebase) ──────────────
+async function loadStaff() {
+  const el = $I('slist'); if (!el) return;
+  const isSU = CU.role === 'super';
+  const orgFilter = $I('sf-org')?.value || '';
+  let q = collection(db, 'staff');
+  const snap = await getDocs(q);
+  const list = [];
+  snap.forEach(d => {
+    const s = { ...d.data(), uid: d.id };
+    if (!orgFilter || s.org === orgFilter) list.push(s);
+  });
+  el.innerHTML = list.length ? list.map(s => `
+    <div class="sitem" style="flex-wrap:wrap;gap:8px">
+      <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px">
+        <span class="sname">${s.name}</span>
+        <span class="sid" style="color:var(--tl);font-size:12px">${s.id}</span>
+        <span style="font-size:12px;color:var(--ts)">${ORGS[s.org]||s.org}${s.dept!=='전체'?' · '+s.dept:''}</span>
+        <span class="rbadge ${s.role==='super'?'r-super':s.role==='org_admin'?'r-org':s.role==='tab_admin'?'r-tab':'r-teacher'}">${ROLES[s.role]||s.role}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button class="bm" onclick="openEditStaff('${s.uid}','${s.name}','${s.org}','${s.dept}','${s.role}')">✏️ 수정</button>
+        <button class="bm" style="background:#fef3c7;color:#b45309" onclick="openResetPw('${s.uid}')">🔑 비번</button>
+        ${isSU?`<button class="bm" style="background:#ede9fe;color:#7c3aed" onclick="showPw('${s.uid}')">👁 확인</button>`:''}        ${s.uid!==CU.uid?`<button class="bm" style="background:#fee2e2;color:#dc2626" onclick="deleteStaff('${s.uid}')">🗑 삭제</button>`:''}
+      </div>
+    </div>`).join('') : '<p class="empty">교직원이 없습니다.</p>';
+}
+window.loadStaff = loadStaff;
+
+// ── 비번 확인 (Firebase에서는 불가 → 안내) ────
+function showPw(uid) {
+  if (CU.role !== 'super') return toast('슈퍼관리자만 확인할 수 있습니다.', 'err');
+  const el = document.createElement('div'); el.id = 'show-pw-mod';
+  el.innerHTML = `
+    <div class="mov">
+      <div class="mbk" onclick="document.getElementById('show-pw-mod').remove()"></div>
+      <div class="mbox">
+        <div class="mtitle">비밀번호 확인</div>
+        <div class="msub">Firebase 보안 정책상 저장된 비밀번호는 확인할 수 없습니다.</div>
+        <div style="background:var(--iv);border-radius:10px;padding:16px 20px;margin-bottom:20px;font-size:13px;color:var(--ts);line-height:1.7">
+          보안상의 이유로 Firebase는 비밀번호를 암호화하여 저장합니다.<br>
+          비밀번호를 모를 경우 <b>비번 재설정</b> 버튼을 사용해주세요.
+        </div>
+        <div class="mact"><button class="bp" onclick="document.getElementById('show-pw-mod').remove()">확인</button></div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+window.showPw = showPw;
+
+// ── 출근 기록 저장 (Firebase) ─────────────────
+async function saveRec(ds, existId) {
+  if (!selS) return toast('항목을 선택하세요.', 'err');
+  const memo = $I('mmemo').value.trim();
+  const data = {
+    uid: CU.uid, name: CU.name, org: CU.org, dept: CU.dept || '',
+    date: ds, sub: selS, memo, updatedAt: Timestamp.now()
+  };
+  if (existId) {
+    await updateDoc(doc(db, 'attendance', existId), data);
+  } else {
+    await addDoc(collection(db, 'attendance'), data);
+  }
+  toast('저장되었습니다.', 'ok');
+  closeMod(); drawCal();
+}
+window.saveRec = saveRec;
+
+async function delRec(id) {
+  if (!confirm('기록을 삭제할까요?\n삭제하면 자동 정상출근으로 돌아갑니다.')) return;
+  await deleteDoc(doc(db, 'attendance', id));
+  toast('삭제되었습니다.');
+  closeMod(); drawCal();
+}
+window.delRec = delRec;
+
+// ── 달력 데이터 로드 (Firebase) ──────────────
+async function drawCal() {
+  const y = curMon.getFullYear(), m = curMon.getMonth();
+  $I('mlb').textContent = `${y}년 ${m+1}월`;
+  const g = $I('cg'); g.innerHTML = '';
+  ['일','월','화','수','목','금','토'].forEach(d => {
+    const h = document.createElement('div'); h.className = 'ch'; h.textContent = d; g.appendChild(h);
+  });
+
+  // 공휴일 로드
+  const holSnap = await getDocs(query(collection(db, 'holidays'),
+    where('org', 'in', [CU.org, 'all'])));
+  const holMap = {};
+  holSnap.forEach(d => { holMap[d.data().date] = d.data().name; });
+
+  // 근무기간 로드
+  const wpSnap = await getDocs(query(collection(db, 'workPeriods'),
+    where('org', '==', CU.org)));
+  const wps = [];
+  wpSnap.forEach(d => wps.push(d.data()));
+
+  // 내 출근 기록 로드
+  const sd = `${y}-${pad(m+1)}-01`, ed = `${y}-${pad(m+1)}-${pad(new Date(y,m+1,0).getDate())}`;
+  const recSnap = await getDocs(query(collection(db, 'attendance'),
+    where('uid', '==', CU.uid), where('date', '>=', sd), where('date', '<=', ed)));
+  const recMap = {};
+  recSnap.forEach(d => { recMap[d.data().date] = { id: d.id, ...d.data() }; });
+
+  function isWD(ds) {
+    const dow = new Date(ds+'T00:00:00').getDay(), wknd = dow===0||dow===6;
+    if (wknd) return wps.some(w => w.wknd && ds>=w.s && ds<=w.e);
+    return wps.some(w => ds>=w.s && ds<=w.e);
+  }
+
+  const fd = new Date(y,m,1).getDay();
+  for (let i=0; i<fd; i++) { const b=document.createElement('div'); b.className='cc empty'; g.appendChild(b); }
+  const dim = new Date(y,m+1,0).getDate(), tstr = fmtD(new Date());
+
+  for (let d=1; d<=dim; d++) {
+    const ds = `${y}-${pad(m+1)}-${pad(d)}`;
+    const dow = new Date(y,m,d).getDay(), wknd = dow===0||dow===6;
+    const hol = holMap[ds], rec = recMap[ds], isT = ds===tstr, work = isWD(ds);
+    let cls = 'cc';
+    if (isT) cls += ' tod';
+    if (wknd) cls += ' wknd';
+    if (!work && !hol && !rec) cls += ' nwd';
+    let badge = '';
+    if (hol) {
+      badge = `<span class="cbadge" style="background:#f3f4f6;color:#6b7280">${hol}</span>`;
+    } else if (rec) {
+      const inf = SINF[rec.sub] || {l:rec.sub,c:'#555',b:'#eee',pl:''};
+      const pl = (inf.pl&&inf.pl!==inf.l)?`<span class="cbp">${inf.pl}·</span>`:'';
+      badge = `<span class="cbadge" style="background:${inf.b};color:${inf.c}">${pl}${inf.l}</span>`;
+    } else if (work) {
+      badge = `<span class="cbadge auto-dim" style="background:#e8ecf8;color:#2b3990">정상출근</span>`;
+    }
+    const cell = document.createElement('div');
+    cell.className = cls;
+    cell.innerHTML = `<span class="cd">${d}</span>${badge}${rec?.memo?`<span class="cmemo">${rec.memo}</span>`:''}`;
+    if (!hol) { cell.classList.add('click'); cell.onclick = () => openMod(ds, rec ? {...SINF[rec.sub],sub:rec.sub,memo:rec.memo,manual:true,id:rec.id} : (work?{l:'정상출근',c:'#2b3990',b:'#e8ecf8',pl:'정상출근',sub:'정상출근',memo:'',auto:true}:null)); }
+    g.appendChild(cell);
+  }
+}
+window.drawCal = drawCal;
+window.prevMon = function(){ curMon=new Date(curMon.getFullYear(),curMon.getMonth()-1,1); drawCal(); };
+window.nextMon = function(){ curMon=new Date(curMon.getFullYear(),curMon.getMonth()+1,1); drawCal(); };
+
+// ── 근무기간 (Firebase) ───────────────────────
+async function addWP() {
+  const org=$I('wp-org').value, s=$I('wp-s').value, e=$I('wp-e').value;
+  const name=$I('wp-n').value.trim()||'근무기간', wknd=$I('wp-wknd').value==='true';
+  if(!s||!e) return toast('시작일과 종료일을 입력하세요.','err');
+  if(s>e) return toast('종료일이 시작일보다 빠릅니다.','err');
+  await addDoc(collection(db,'workPeriods'),{org,s,e,wknd,name,createdAt:Timestamp.now()});
+  toast('근무기간이 등록되었습니다.','ok');
+  $I('wp-s').value='';$I('wp-e').value='';$I('wp-n').value='';
+  await loadWPList();
+}
+window.addWP = addWP;
+
+async function loadWPList() {
+  const el=$I('wplist'); if(!el) return;
+  const snap=await getDocs(query(collection(db,'workPeriods'),orderBy('s','desc')));
+  const wps=[]; snap.forEach(d=>wps.push({id:d.id,...d.data()}));
+  el.innerHTML=wps.length?wps.map(w=>`
+    <div class="wpitem">
+      <span class="wporg">${ORGS[w.org]||w.org}</span>
+      <span class="wpdates">${w.name} · ${w.s} ~ ${w.e}</span>
+      ${w.wknd?'<span class="wptag">토·일 포함</span>':''}
+      <button class="bx" onclick="delWP('${w.id}')">✕</button>
+    </div>`).join(''):'<p class="empty">등록된 근무기간이 없습니다.</p>';
+}
+window.loadWPList = loadWPList;
+
+async function delWP(id) {
+  if(!confirm('삭제할까요?')) return;
+  await deleteDoc(doc(db,'workPeriods',id));
+  toast('삭제되었습니다.');
+  await loadWPList();
+}
+window.delWP = delWP;
+
+// ── 공휴일 (Firebase) ────────────────────────
+async function addHol() {
+  const date=$I('hd').value, name=$I('hn2').value.trim(), org=$I('ho').value;
+  if(!date||!name) return toast('날짜와 이름을 입력하세요.','err');
+  await addDoc(collection(db,'holidays'),{date,name,org,createdAt:Timestamp.now()});
+  toast('등록되었습니다.','ok');
+  $I('hd').value='';$I('hn2').value='';
+  await loadHolList();
+}
+window.addHol = addHol;
+
+async function loadHolList() {
+  const el=$I('hlist'); if(!el) return;
+  const snap=await getDocs(query(collection(db,'holidays'),orderBy('date','desc')));
+  const hols=[]; snap.forEach(d=>hols.push({id:d.id,...d.data()}));
+  el.innerHTML=hols.length?hols.map(h=>`
+    <div class="hitem">
+      <span class="hdate">${h.date}</span>
+      <span class="hname flex1">${h.name}</span>
+      <span class="horg" style="color:var(--tl);font-size:12px">${h.org==='all'?'전체':ORGS[h.org]||h.org}</span>
+      <button class="bx" onclick="delHol('${h.id}')">✕</button>
+    </div>`).join(''):'<p class="empty">등록된 휴일이 없습니다.</p>';
+}
+window.loadHolList = loadHolList;
+
+async function delHol(id) {
+  if(!confirm('삭제할까요?')) return;
+  await deleteDoc(doc(db,'holidays',id));
+  toast('삭제되었습니다.');
+  await loadHolList();
+}
+window.delHol = delHol;
+
+// ── 전체 현황 / 통계 (Firebase) ──────────────
+async function getAllRows(sd, ed, orgFilter, uidFilter) {
+  let q = query(collection(db,'attendance'), where('date','>=',sd), where('date','<=',ed));
+  const snap = await getDocs(q);
+  const manRows = [];
+  snap.forEach(d => {
+    const r = {id:d.id,...d.data()};
+    if (orgFilter && r.org!==orgFilter) return;
+    if (uidFilter && r.uid!==uidFilter) return;
+    manRows.push(r);
+  });
+
+  // 자동 정상출근 계산
+  const staffSnap = await getDocs(collection(db,'staff'));
+  const staffList = [];
+  staffSnap.forEach(d => {
+    const s = {uid:d.id,...d.data()};
+    if (orgFilter && s.org!==orgFilter) return;
+    if (uidFilter && s.uid!==uidFilter) return;
+    staffList.push(s);
+  });
+
+  const wpSnap = await getDocs(collection(db,'workPeriods'));
+  const wps = []; wpSnap.forEach(d=>wps.push(d.data()));
+
+  const holSnap = await getDocs(collection(db,'holidays'));
+  const holDates = new Set();
+  holSnap.forEach(d=>{ if(!orgFilter||d.data().org==='all'||d.data().org===orgFilter) holDates.add(d.data().date); });
+
+  const autoRows = [];
+  for (const s of staffList) {
+    let d = new Date(sd+'T00:00:00'), end = new Date(ed+'T00:00:00');
+    while (d<=end) {
+      const ds = fmtD(d);
+      const dow = d.getDay(), wknd = dow===0||dow===6;
+      const isWork = wknd
+        ? wps.some(w=>w.org===s.org&&w.wknd&&ds>=w.s&&ds<=w.e)
+        : wps.some(w=>w.org===s.org&&ds>=w.s&&ds<=w.e);
+      if (!manRows.some(r=>r.uid===s.uid&&r.date===ds) && !holDates.has(ds) && isWork)
+        autoRows.push({uid:s.uid,name:s.name,org:s.org,dept:s.dept||'',date:ds,sub:'정상출근',memo:'',auto:true});
+      d.setDate(d.getDate()+1);
+    }
+  }
+  return [...autoRows,...manRows];
+}
+
+async function loadOv() {
+  const of=$I('fo')?.value||'', fname=$I('fname')?.value||'', fstatus=$I('fstatus')?.value||'';
+  const mode=$I('fmode')?.value||'month';
+  let sd,ed;
+  if(mode==='range'){ sd=$I('fds')?.value||`${TY}-${pad(TM)}-01`; ed=$I('fde')?.value||`${TY}-${pad(TM)}-${pad(new Date(TY,TM,0).getDate())}`; }
+  else{ const mv=$I('fm')?.value||`${TY}-${pad(TM)}`; const [fy,fm2]=mv.split('-'); sd=`${fy}-${fm2}-01`; ed=`${fy}-${fm2}-${pad(new Date(Number(fy),Number(fm2),0).getDate())}`; }
+  const el=$I('ovt'); if(!el) return;
+  el.innerHTML='<p class="empty">불러오는 중...</p>';
+  let all = await getAllRows(sd, ed, of, fname);
+  if(fstatus==='정상출근') all=all.filter(r=>S2P[r.sub]==='정상출근'||r.sub==='정상출근');
+  else if(fstatus==='!정상출근') all=all.filter(r=>!(S2P[r.sub]==='정상출근'||r.sub==='정상출근'));
+  else if(fstatus) all=all.filter(r=>S2P[r.sub]===fstatus||r.sub===fstatus);
+  all.sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name));
+  if(!all.length){el.innerHTML='<p class="empty">조건에 맞는 기록이 없습니다.</p>';return;}
+  el.innerHTML=`<div style="font-size:12px;color:var(--tl);margin-bottom:8px">총 ${all.length}건</div><div style="overflow-x:auto"><table class="otable"><thead><tr><th>날짜</th><th>이름</th><th>기관</th><th>부서</th><th>대항목</th><th>소항목</th><th>메모</th><th>수정</th></tr></thead><tbody>${all.map(r=>{const inf=SINF[r.sub]||{l:r.sub,c:'#555',b:'#eee',pl:r.sub};return `<tr><td>${r.date}</td><td>${r.name}</td><td>${ORGS[r.org]||r.org}</td><td>${r.dept||'-'}</td><td>${inf.pl||inf.l}</td><td><span class="sbadge" style="background:${inf.b};color:${inf.c}">${inf.l}</span>${r.auto?'<span style="font-size:10px;color:#bbb;margin-left:3px">(자동)</span>':''}</td><td>${r.memo||'-'}</td><td>${r.auto?'<span style="color:#bbb;font-size:12px">-</span>':`<button class="bm" onclick="openEditOv('${r.id||''}','${r.date}','${r.uid}','${r.sub}','${(r.memo||'').replace(/'/g,\"\\\\'\"')}')">수정</button>`}</td></tr>`;}).join('')}</tbody></table></div>`;
+}
+window.loadOv = loadOv;
+
+async function saveEditOv(id, date, uid, sub, memo) {
+  if(!selS) return toast('항목을 선택하세요.','err');
+  const newMemo=$I('ememo').value.trim();
+  if(id){ await updateDoc(doc(db,'attendance',id),{sub:selS,memo:newMemo,updatedAt:Timestamp.now()}); }
+  else {
+    const snap=await getDoc(doc(db,'staff',uid));
+    if(snap.exists()){const s=snap.data(); await addDoc(collection(db,'attendance'),{uid,name:s.name,org:s.org,dept:s.dept||'',date,sub:selS,memo:newMemo,updatedAt:Timestamp.now()});}
+  }
+  toast('수정되었습니다.','ok');
+  document.getElementById('emod')?.remove();
+  await loadOv();
+}
+window.saveEditOv = saveEditOv;
+
+// ── 통계 (Firebase) ───────────────────────────
+async function loadStat() {
+  const org=$I('st-org')?.value||'', year=Number($I('st-year')?.value||TY);
+  const el=$I('stat-table'); if(!el) return;
+  el.innerHTML='<p class="empty">불러오는 중...</p>';
+  const rows=await getAllRows(`${year}-01-01`,`${year}-12-31`,org,'');
+  const staffSnap=await getDocs(collection(db,'staff'));
+  const byUid={};
+  staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};if(org&&s.org!==org)return;byUid[s.uid]={name:s.name,org:s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{byUid[s.uid].counts[p.k]=0;p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
+  rows.forEach(r=>{if(!byUid[r.uid])return;const pk=S2P[r.sub]||r.sub;if(byUid[r.uid].counts[pk]!==undefined)byUid[r.uid].counts[pk]++;if(byUid[r.uid].counts[r.sub]!==undefined)byUid[r.uid].counts[r.sub]++;});
+  const people=Object.values(byUid);
+  if(!people.length){el.innerHTML='<p class="empty">데이터가 없습니다.</p>';return;}
+  el.innerHTML=`<div style="overflow-x:auto"><table class="otable" style="min-width:700px"><thead><tr><th rowspan="2" style="vertical-align:middle">이름</th><th rowspan="2" style="vertical-align:middle">기관</th><th rowspan="2" style="vertical-align:middle">부서</th>${TREE.map(p=>`<th colspan="${p.s.length}" style="text-align:center;background:${p.b};color:${p.c}">${p.l}</th>`).join('')}<th rowspan="2" style="vertical-align:middle">합계</th></tr><tr>${TREE.map(p=>p.s.map(s=>`<th style="font-size:10px;background:#f8f8f8;color:#666">${s.l}</th>`).join('')).join('')}</tr></thead><tbody>${people.map(p=>{const total=TREE.reduce((sum,par)=>sum+par.s.reduce((s2,s)=>s2+(p.counts[s.k]||0),0),0);return `<tr><td style="font-weight:700">${p.name}</td><td>${ORGS[p.org]||p.org}</td><td>${p.dept||'-'}</td>${TREE.map(par=>par.s.map(s=>{const v=p.counts[s.k]||0;const inf=SINF[s.k];return `<td style="text-align:center;${v>0?`color:${inf?.c||'#333'};font-weight:700`:'color:#ccc'}">${v||'-'}</td>`;}).join('')).join('')}<td style="text-align:center;font-weight:700;color:var(--gd)">${total}</td></tr>`;}).join('')}</tbody></table></div>`;
+}
+window.loadStat = loadStat;
+
+async function loadMonthChart() {
+  const org=$I('sc-org')?.value||'', year=Number($I('sc-year')?.value||TY), uid=$I('sc-name')?.value||'';
+  const el=$I('chart-wrap'); if(!el) return;
+  el.innerHTML='<p class="empty">불러오는 중...</p>';
+  const months=Array.from({length:12},(_,i)=>i+1);
+  const parentColors={'정상출근':'#2b3990','지각':'#b45309','조퇴':'#d97706','결근':'#dc2626','병가':'#7c3aed','휴가':'#0369a1'};
+  const monthData=await Promise.all(months.map(async m=>{
+    const sd=`${year}-${pad(m)}-01`,ed=`${year}-${pad(m)}-${pad(new Date(year,m,0).getDate())}`;
+    const rows=await getAllRows(sd,ed,org,uid);
+    const counts={};TREE.forEach(p=>{counts[p.k]=0;});
+    rows.forEach(r=>{const pk=S2P[r.sub]||r.sub;if(counts[pk]!==undefined)counts[pk]++;});
+    return {m,counts,total:rows.length};
+  }));
+  const maxVal=Math.max(...monthData.map(d=>d.total),1),barH=120;
+  el.innerHTML=`<div style="overflow-x:auto"><div style="min-width:600px"><div style="display:flex;align-items:flex-end;gap:6px;height:${barH+30}px;padding:0 8px;margin-bottom:8px">${monthData.map(d=>{const stackParts=TREE.map(p=>{const v=d.counts[p.k]||0,h=Math.round((v/maxVal)*barH);return h>0?`<div style="height:${h}px;background:${parentColors[p.k]||'#aaa'};opacity:.85" title="${p.l}: ${v}일"></div>`:''}).reverse().join('');return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px"><div style="font-size:10px;color:var(--ts);font-weight:700">${d.total||''}</div><div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:${barH}px;border-radius:4px 4px 0 0;overflow:hidden;background:#f0f0f0">${stackParts}</div><div style="font-size:10px;color:var(--tl)">${d.m}월</div></div>`;}).join('')}</div><div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 8px 0;border-top:1px solid var(--ivd)">${TREE.map(p=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px"><span style="width:10px;height:10px;border-radius:2px;background:${parentColors[p.k]};display:inline-block"></span>${p.l}</span>`).join('')}</div><div style="margin-top:16px;overflow-x:auto"><table class="otable" style="min-width:500px"><thead><tr><th>월</th>${TREE.map(p=>`<th style="background:${p.b};color:${p.c}">${p.l}</th>`).join('')}<th>합계</th></tr></thead><tbody>${monthData.map(d=>`<tr><td style="font-weight:700">${d.m}월</td>${TREE.map(p=>{const v=d.counts[p.k]||0;return `<td style="text-align:center;${v>0?`color:${parentColors[p.k]};font-weight:700`:'color:#ccc'}">${v||'-'}</td>`;}).join('')}<td style="text-align:center;font-weight:700">${d.total}</td></tr>`).join('')}<tr style="background:var(--iv)"><td style="font-weight:700">합계</td>${TREE.map(p=>{const v=monthData.reduce((s,d)=>s+(d.counts[p.k]||0),0);return `<td style="text-align:center;font-weight:700;color:${parentColors[p.k]}">${v||'-'}</td>`;}).join('')}<td style="text-align:center;font-weight:700;color:var(--gd)">${monthData.reduce((s,d)=>s+d.total,0)}</td></tr></tbody></table></div></div></div>`;
+}
+window.loadMonthChart = loadMonthChart;
+
+// ── 엑셀 다운로드 ────────────────────────────
+function toCSV(rows){return rows.map(r=>r.map(c=>'"'+(String(c??'').replace(/"/g,'""'))+'"').join(',')).join('\n');}
+function dlCSV(filename,rows){const bom='\uFEFF';const csv=bom+toCSV(rows);const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;a.click();URL.revokeObjectURL(a.href);}
+async function dlStatExcel(){
+  const org=$I('st-org')?.value||'',year=Number($I('st-year')?.value||TY);
+  const rows=await getAllRows(`${year}-01-01`,`${year}-12-31`,org,'');
+  const staffSnap=await getDocs(collection(db,'staff'));
+  const byUid={};
+  staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};if(org&&s.org!==org)return;byUid[s.uid]={name:s.name,org:ORGS[s.org]||s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
+  rows.forEach(r=>{if(byUid[r.uid]&&byUid[r.uid].counts[r.sub]!==undefined)byUid[r.uid].counts[r.sub]++;});
+  const subHeaders=TREE.flatMap(p=>p.s.map(s=>s.l));
+  const h1=['이름','기관','부서',...TREE.flatMap(p=>p.s.map((_,i)=>i===0?p.l:'')),'합계'];
+  const h2=['','','',...subHeaders,''];
+  const dataRows=Object.values(byUid).map(p=>{const subs=TREE.flatMap(par=>par.s.map(s=>p.counts[s.k]||0));return [p.name,p.org,p.dept,...subs,subs.reduce((a,b)=>a+b,0)];});
+  dlCSV(`출근통계_${year}년_${org?ORGS[org]:'전체'}.csv`,[h1,h2,...dataRows]);
+  toast('다운로드 중...','ok');
+}
+window.dlStatExcel=dlStatExcel;
+async function dlChartExcel(){
+  const org=$I('sc-org')?.value||'',year=Number($I('sc-year')?.value||TY),uid=$I('sc-name')?.value||'';
+  const months=Array.from({length:12},(_,i)=>i+1);
+  const header=['월',...TREE.map(p=>p.l),'합계'];
+  const dataRows=await Promise.all(months.map(async m=>{const sd=`${year}-${pad(m)}-01`,ed=`${year}-${pad(m)}-${pad(new Date(year,m,0).getDate())}`;const rows=await getAllRows(sd,ed,org,uid);const counts={};TREE.forEach(p=>{counts[p.k]=0;});rows.forEach(r=>{const pk=S2P[r.sub]||r.sub;if(counts[pk]!==undefined)counts[pk]++;});return [`${m}월`,...TREE.map(p=>counts[p.k]||0),rows.length]}));
+  const sumRow=['합계',...TREE.map(p=>dataRows.reduce((s,r)=>s+Number(r[TREE.indexOf(p)+1]),0)),dataRows.reduce((s,r)=>s+Number(r[r.length-1]),0)];
+  const nameLabel=uid?(await getDoc(doc(db,'staff',uid))).data()?.name||'전체':'전체';
+  dlCSV(`월별현황_${year}년_${org?ORGS[org]:'전체'}_${nameLabel}.csv`,[header,...dataRows,sumRow]);
+  toast('다운로드 중...','ok');
+}
+window.dlChartExcel=dlChartExcel;
+async function dlOvExcel(){
+  const of=$I('fo')?.value||'',fname=$I('fname')?.value||'';
+  const mode=$I('fmode')?.value||'month';let sd,ed;
+  if(mode==='range'){sd=$I('fds')?.value;ed=$I('fde')?.value;}else{const mv=$I('fm')?.value||`${TY}-${pad(TM)}`;const [fy,fm2]=mv.split('-');sd=`${fy}-${fm2}-01`;ed=`${fy}-${fm2}-${pad(new Date(Number(fy),Number(fm2),0).getDate())}`;}
+  const all=await getAllRows(sd,ed,of,fname);
+  const header=['날짜','이름','기관','부서','대항목','소항목','메모','구분'];
+  const rows=all.map(r=>{const inf=SINF[r.sub]||{l:r.sub,pl:r.sub};return [r.date,r.name,ORGS[r.org]||r.org,r.dept||'',inf.pl||inf.l,inf.l,r.memo||'',r.auto?'자동':'직접입력'];});
+  dlCSV(`출근현황_${sd}~${ed}.csv`,[header,...rows]);
+  toast('다운로드 중...','ok');
+}
+window.dlOvExcel=dlOvExcel;
+
+// ── UI 로직 (showMain, 탭, 모달 등) ────────
 function showMain(){
   $I('ls').style.display='none'; $I('ms').style.display='flex';
   const org=ORGS[CU.org]||'', dept=CU.dept!=='전체'?' · '+CU.dept:'';
@@ -367,40 +853,6 @@ function renderAtt(){
     <div id="cg" class="cg"></div>
     <div id="mwrap"></div>`;
   drawCal();
-}
-
-function drawCal(){
-  const y=curMon.getFullYear(),m=curMon.getMonth();
-  $I('mlb').textContent=`${y}년 ${m+1}월`;
-  const g=$I('cg'); g.innerHTML='';
-  ['일','월','화','수','목','금','토'].forEach(d=>{const h=document.createElement('div');h.className='ch';h.textContent=d;g.appendChild(h);});
-  const fd=new Date(y,m,1).getDay();
-  for(let i=0;i<fd;i++){const b=document.createElement('div');b.className='cc empty';g.appendChild(b);}
-  const dim=new Date(y,m+1,0).getDate(), tstr=fmtD(new Date());
-  for(let d=1;d<=dim;d++){
-    const ds=`${y}-${pad(m+1)}-${pad(d)}`;
-    const dow=new Date(y,m,d).getDay(), wknd=dow===0||dow===6;
-    const hol=getHol(ds,CU.org), eff=getEff(ds,CU.uid,CU.org), isT=ds===tstr;
-    const work=isWorkday(ds,CU.org);
-    let cls='cc';
-    if(isT) cls+=' tod';
-    if(wknd) cls+=' wknd';
-    if(!work&&!hol&&!eff) cls+=' nwd';
-    let badge='';
-    if(hol){
-      badge=`<span class="cbadge" style="background:#f3f4f6;color:#6b7280">${hol.name}</span>`;
-    } else if(eff){
-      const ap=eff.auto?' auto-dim':'';
-      const pl=(eff.pl&&eff.pl!==eff.l)?`<span class="cbp">${eff.pl}·</span>`:'';
-      badge=`<span class="cbadge${ap}" style="background:${eff.b};color:${eff.c}">${pl}${eff.l}</span>`;
-    }
-    if(!hol){cls+=' click';}
-    const cell=document.createElement('div');
-    cell.className=cls;
-    cell.innerHTML=`<span class="cd">${d}</span>${badge}${eff?.memo?`<span class="cmemo">${eff.memo}</span>`:''}`;
-    if(!hol) cell.onclick=()=>openMod(ds,eff);
-    g.appendChild(cell);
-  }
 }
 
 // ── 모달 ─────────────────────────────────────
@@ -465,9 +917,6 @@ function delRec(id){
   if(!confirm('기록을 삭제할까요?\n삭제하면 자동 정상출근으로 돌아갑니다.')) return;
   RECS=RECS.filter(r=>r.id!==id); toast('삭제되었습니다.'); closeMod(); drawCal();
 }
-function prevMon(){curMon=new Date(curMon.getFullYear(),curMon.getMonth()-1,1);drawCal();}
-function nextMon(){curMon=new Date(curMon.getFullYear(),curMon.getMonth()+1,1);drawCal();}
-
 // ── 통계 탭 ──────────────────────────────────
 function renderStat(){
   $I('c-stat').innerHTML=`
@@ -509,156 +958,6 @@ function renderStat(){
     </div>
   </div>`;
   loadStat(); loadMonthChart();
-}
-
-function getAllRows(sd, ed, orgFilter, uidFilter){
-  const manRows=RECS.filter(r=>r.date>=sd&&r.date<=ed&&(!orgFilter||r.org===orgFilter)&&(!uidFilter||r.uid===uidFilter));
-  const autoRows=[];
-  Object.entries(ACCS).forEach(([id,a])=>{
-    if(orgFilter&&a.org!==orgFilter) return;
-    if(uidFilter&&a.uid!==uidFilter) return;
-    let d=new Date(sd+'T00:00:00'), end=new Date(ed+'T00:00:00');
-    while(d<=end){
-      const ds=fmtD(d);
-      if(!RECS.some(r=>r.uid===a.uid&&r.date===ds)&&!getHol(ds,a.org)&&isWorkday(ds,a.org))
-        autoRows.push({uid:a.uid,name:a.name,org:a.org,dept:a.dept||'',date:ds,sub:'정상출근',auto:true});
-      d.setDate(d.getDate()+1);
-    }
-  });
-  return [...autoRows,...manRows];
-}
-
-function loadStat(){
-  const org=$I('st-org')?.value||'';
-  const year=Number($I('st-year')?.value||TY);
-  const sd=`${year}-01-01`, ed=`${year}-12-31`;
-  const rows=getAllRows(sd,ed,org,'');
-
-  // 인원별 집계
-  const byUid={};
-  Object.entries(ACCS).forEach(([,a])=>{
-    if(org&&a.org!==org) return;
-    byUid[a.uid]={name:a.name,org:a.org,dept:a.dept,counts:{}};
-    TREE.forEach(p=>{ byUid[a.uid].counts[p.k]=0; p.s.forEach(s=>{ byUid[a.uid].counts[s.k]=0; }); });
-  });
-  rows.forEach(r=>{
-    if(!byUid[r.uid]) return;
-    const pk=S2P[r.sub]||r.sub;
-    if(byUid[r.uid].counts[pk]!==undefined) byUid[r.uid].counts[pk]++;
-    if(byUid[r.uid].counts[r.sub]!==undefined) byUid[r.uid].counts[r.sub]++;
-  });
-
-  const el=$I('stat-table'); if(!el) return;
-  const people=Object.values(byUid);
-  if(!people.length){el.innerHTML='<p class="empty">데이터가 없습니다.</p>';return;}
-
-  const parentKeys=TREE.map(p=>p.k);
-  el.innerHTML=`
-    <div style="overflow-x:auto">
-    <table class="otable" style="min-width:700px">
-      <thead>
-        <tr>
-          <th rowspan="2" style="vertical-align:middle">이름</th>
-          <th rowspan="2" style="vertical-align:middle">기관</th>
-          <th rowspan="2" style="vertical-align:middle">부서</th>
-          ${TREE.map(p=>`<th colspan="${p.s.length}" style="text-align:center;background:${p.b};color:${p.c}">${p.l}</th>`).join('')}
-          <th rowspan="2" style="vertical-align:middle">합계</th>
-        </tr>
-        <tr>
-          ${TREE.map(p=>p.s.map(s=>`<th style="font-size:10px;background:#f8f8f8;color:#666">${s.l}</th>`).join('')).join('')}
-        </tr>
-      </thead>
-      <tbody>
-        ${people.map(p=>{
-          const total=TREE.reduce((sum,par)=>sum+par.s.reduce((s2,s)=>s2+(p.counts[s.k]||0),0),0);
-          return `<tr>
-            <td style="font-weight:700">${p.name}</td>
-            <td>${ORGS[p.org]||p.org}</td>
-            <td>${p.dept||'-'}</td>
-            ${TREE.map(par=>par.s.map(s=>{
-              const v=p.counts[s.k]||0;
-              const inf=SINF[s.k];
-              return `<td style="text-align:center;${v>0?`color:${inf?.c||'#333'};font-weight:700`:'color:#ccc'}">${v||'-'}</td>`;
-            }).join('')).join('')}
-            <td style="text-align:center;font-weight:700;color:var(--gd)">${total}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>`;
-}
-
-function loadMonthChart(){
-  const org=$I('sc-org')?.value||'';
-  const year=Number($I('sc-year')?.value||TY);
-  const uid=$I('sc-name')?.value||'';
-  const el=$I('chart-wrap'); if(!el) return;
-
-  // 월별 집계
-  const months=Array.from({length:12},(_,i)=>i+1);
-  const parentColors={'정상출근':'#2d7a4f','지각':'#b45309','조퇴':'#d97706','결근':'#dc2626','병가':'#7c3aed','휴가':'#0369a1'};
-
-  const monthData=months.map(m=>{
-    const sd=`${year}-${pad(m)}-01`, ed=`${year}-${pad(m)}-${pad(new Date(year,m,0).getDate())}`;
-    const rows=getAllRows(sd,ed,org,uid);
-    const counts={};
-    TREE.forEach(p=>{ counts[p.k]=0; });
-    rows.forEach(r=>{ const pk=S2P[r.sub]||r.sub; if(counts[pk]!==undefined) counts[pk]++; });
-    return {m, counts, total:rows.length};
-  });
-
-  const maxVal=Math.max(...monthData.map(d=>d.total),1);
-  const barH=120;
-
-  el.innerHTML=`
-    <div style="overflow-x:auto">
-    <div style="min-width:600px">
-      <!-- 막대 차트 -->
-      <div style="display:flex;align-items:flex-end;gap:6px;height:${barH+30}px;padding:0 8px;margin-bottom:8px">
-        ${monthData.map(d=>{
-          const stackParts=TREE.map(p=>{
-            const v=d.counts[p.k]||0;
-            const h=Math.round((v/maxVal)*barH);
-            return h>0?`<div style="height:${h}px;background:${parentColors[p.k]||'#aaa'};opacity:.85;transition:height .3s" title="${p.l}: ${v}일"></div>`:'';
-          }).reverse().join('');
-          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
-            <div style="font-size:10px;color:var(--ts);font-weight:700">${d.total||''}</div>
-            <div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:${barH}px;border-radius:4px 4px 0 0;overflow:hidden;background:#f0f0f0">
-              ${stackParts}
-            </div>
-            <div style="font-size:10px;color:var(--tl)">${d.m}월</div>
-          </div>`;
-        }).join('')}
-      </div>
-      <!-- 범례 -->
-      <div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 8px 0;border-top:1px solid var(--ivd)">
-        ${TREE.map(p=>`<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px">
-          <span style="width:10px;height:10px;border-radius:2px;background:${parentColors[p.k]};opacity:.85;display:inline-block"></span>${p.l}
-        </span>`).join('')}
-      </div>
-      <!-- 월별 상세 테이블 -->
-      <div style="margin-top:16px;overflow-x:auto">
-      <table class="otable" style="min-width:500px">
-        <thead><tr><th>월</th>${TREE.map(p=>`<th style="background:${p.b};color:${p.c}">${p.l}</th>`).join('')}<th>합계</th></tr></thead>
-        <tbody>
-          ${monthData.map(d=>`<tr>
-            <td style="font-weight:700">${d.m}월</td>
-            ${TREE.map(p=>{
-              const v=d.counts[p.k]||0;
-              return `<td style="text-align:center;${v>0?`color:${parentColors[p.k]};font-weight:700`:'color:#ccc'}">${v||'-'}</td>`;
-            }).join('')}
-            <td style="text-align:center;font-weight:700">${d.total}</td>
-          </tr>`).join('')}
-          <tr style="background:var(--iv)">
-            <td style="font-weight:700">합계</td>
-            ${TREE.map(p=>{
-              const v=monthData.reduce((s,d)=>s+(d.counts[p.k]||0),0);
-              return `<td style="text-align:center;font-weight:700;color:${parentColors[p.k]}">${v||'-'}</td>`;
-            }).join('')}
-            <td style="text-align:center;font-weight:700;color:var(--gd)">${monthData.reduce((s,d)=>s+d.total,0)}</td>
-          </tr>
-        </tbody>
-      </table></div>
-    </div></div>`;
 }
 
 // ── 통계 탭 끝 ───────────────────────────────
@@ -802,119 +1101,6 @@ function renderAdmAtt(){
 }
 
 // 근무기간
-function addWP(){
-  const org=$I('wp-org').value,s=$I('wp-s').value,e=$I('wp-e').value;
-  const name=$I('wp-n').value.trim()||'근무기간', wknd=$I('wp-wknd').value==='true';
-  if(!s||!e) return toast('시작일과 종료일을 입력하세요.','err');
-  if(s>e) return toast('종료일이 시작일보다 빠릅니다.','err');
-  workPeriods.push({id:'wp'+(++IDX),org,s,e,wknd,name});
-  toast('근무기간이 등록되었습니다.','ok');
-  $I('wp-s').value='';$I('wp-e').value='';$I('wp-n').value='';
-  loadWPList();
-}
-function loadWPList(){
-  const el=$I('wplist'); if(!el) return;
-  const sorted=[...workPeriods].sort((a,b)=>b.s.localeCompare(a.s));
-  el.innerHTML=sorted.length?sorted.map(w=>`
-    <div class="wpitem">
-      <span class="wporg">${ORGS[w.org]||w.org}</span>
-      <span class="wpdates">${w.name} · ${w.s} ~ ${w.e}</span>
-      ${w.wknd?'<span class="wptag">토·일 포함</span>':''}
-      <button class="bx" onclick="delWP('${w.id}')">✕</button>
-    </div>`).join(''):'<p class="empty">등록된 근무기간이 없습니다.</p>';
-}
-function delWP(id){if(!confirm('삭제할까요?'))return;workPeriods=workPeriods.filter(w=>w.id!==id);toast('삭제되었습니다.');loadWPList();}
-
-// 공휴일
-function addHol(){
-  const date=$I('hd').value,name=$I('hn2').value.trim(),org=$I('ho').value;
-  if(!date||!name) return toast('날짜와 이름을 입력하세요.','err');
-  HOLS.push({id:'h'+(++IDX),date,name,org});
-  toast('등록되었습니다.','ok');$I('hd').value='';$I('hn2').value='';loadHolList();
-}
-function loadHolList(){
-  const el=$I('hlist'); if(!el) return;
-  const sorted=[...HOLS].sort((a,b)=>b.date.localeCompare(a.date));
-  el.innerHTML=sorted.length?sorted.map(h=>`
-    <div class="hitem">
-      <span class="hdate">${h.date}</span>
-      <span class="hname flex1">${h.name}</span>
-      <span class="horg" style="color:var(--tl);font-size:12px">${h.org==='all'?'전체':ORGS[h.org]||h.org}</span>
-      <button class="bx" onclick="delHol('${h.id}')">✕</button>
-    </div>`).join(''):'<p class="empty">등록된 휴일이 없습니다.</p>';
-}
-function delHol(id){if(!confirm('삭제할까요?'))return;HOLS=HOLS.filter(h=>h.id!==id);toast('삭제되었습니다.');loadHolList();}
-
-// 조회방식 토글
-function toggleFMode(){
-  const m=$I('fmode')?.value;
-  if(!m) return;
-  const isRange=m==='range';
-  $I('fm').style.display=isRange?'none':'';
-  $I('fds').style.display=isRange?'':'none';
-  $I('fdsep').style.display=isRange?'':'none';
-  $I('fde').style.display=isRange?'':'none';
-  loadOv();
-}
-
-// 전체 현황
-function loadOv(){
-  const of=$I('fo')?.value||'';
-  const fname=$I('fname')?.value||'';
-  const fstatus=$I('fstatus')?.value||'';
-  const mode=$I('fmode')?.value||'month';
-  let sd,ed;
-  if(mode==='range'){
-    sd=$I('fds')?.value||`${TY}-${pad(TM)}-01`;
-    ed=$I('fde')?.value||`${TY}-${pad(TM)}-${pad(new Date(TY,TM,0).getDate())}`;
-  } else {
-    const mv=$I('fm')?.value||`${TY}-${pad(TM)}`;
-    const [fy,fm2]=mv.split('-');
-    sd=`${fy}-${fm2}-01`; ed=`${fy}-${fm2}-${pad(new Date(Number(fy),Number(fm2),0).getDate())}`;
-  }
-
-  const manRows=RECS.filter(r=>r.date>=sd&&r.date<=ed&&(!of||r.org===of)&&(!fname||r.uid===fname));
-  const autoRows=[];
-  Object.entries(ACCS).forEach(([id,a])=>{
-    if(of&&a.org!==of) return;
-    if(fname&&a.uid!==fname) return;
-    let d=new Date(sd+'T00:00:00'), end=new Date(ed+'T00:00:00');
-    while(d<=end){
-      const ds=fmtD(d);
-      if(!RECS.some(r=>r.uid===a.uid&&r.date===ds)&&!getHol(ds,a.org)&&isWorkday(ds,a.org))
-        autoRows.push({uid:a.uid,name:a.name,org:a.org,dept:a.dept||'',date:ds,sub:'정상출근',memo:'',auto:true});
-      d.setDate(d.getDate()+1);
-    }
-  });
-
-  let all=[...autoRows,...manRows].sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name));
-
-  // 상태 필터
-  if(fstatus==='정상출근') all=all.filter(r=>S2P[r.sub]==='정상출근'||r.sub==='정상출근');
-  else if(fstatus==='!정상출근') all=all.filter(r=>!(S2P[r.sub]==='정상출근'||r.sub==='정상출근'));
-  else if(fstatus) all=all.filter(r=>S2P[r.sub]===fstatus||r.sub===fstatus);
-
-  const el=$I('ovt'); if(!el) return;
-  if(!all.length){el.innerHTML='<p class="empty">조건에 맞는 기록이 없습니다.</p>';return;}
-  el.innerHTML=`
-    <div style="font-size:12px;color:var(--tl);margin-bottom:8px">총 ${all.length}건</div>
-    <div style="overflow-x:auto">
-    <table class="otable">
-      <thead><tr><th>날짜</th><th>이름</th><th>기관</th><th>부서</th><th>대항목</th><th>소항목</th><th>메모</th><th>수정</th></tr></thead>
-      <tbody>${all.map(r=>{
-        const inf=SINF[r.sub]||{l:r.sub,c:'#555',b:'#eee',pl:r.sub};
-        return `<tr>
-          <td>${r.date}</td><td>${r.name}</td>
-          <td>${ORGS[r.org]||r.org}</td><td>${r.dept||'-'}</td>
-          <td>${inf.pl||inf.l}</td>
-          <td><span class="sbadge" style="background:${inf.b};color:${inf.c}">${inf.l}</span>${r.auto?'<span style="font-size:10px;color:#bbb;margin-left:3px">(자동)</span>':''}</td>
-          <td>${r.memo||'-'}</td>
-          <td>${r.auto?'<span style="color:#bbb;font-size:12px">-</span>':`<button class="bm" onclick="openEditOv('${r.id||''}','${r.date}','${r.uid}','${r.sub}','${r.memo||''}')">수정</button>`}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table></div>`;
-}
-
 function openEditOv(id,date,uid,sub,memo){
   selP=S2P[sub]||'정상출근'; selS=sub||'정상출근';
   const el=document.createElement('div'); el.id='emod';
@@ -937,360 +1123,6 @@ function openEditOv(id,date,uid,sub,memo){
     </div>`;
   document.body.appendChild(el);
   renderPBtns('ep-btns','es-btns',true);
-}
-function saveEditOv(id,date,uid){
-  if(!selS) return toast('항목을 선택하세요.','err');
-  const memo=$I('ememo').value.trim();
-  const ae=Object.entries(ACCS).find(([,a])=>a.uid===uid), a=ae?ae[1]:null;
-  if(id){const i=RECS.findIndex(r=>r.id===id);if(i>-1)RECS[i]={...RECS[i],sub:selS,memo};}
-  else if(a) RECS.push({id:'r'+(++IDX),uid,name:a.name,org:a.org,dept:a.dept||'',date,sub:selS,memo});
-  toast('수정되었습니다.','ok');
-  document.getElementById('emod')?.remove(); loadOv();
-}
-
-// ── 엑셀 다운로드 ────────────────────────────
-function toCSV(rows){ return rows.map(r=>r.map(c=>'"'+(String(c??'').replace(/"/g,'""'))+'"').join(',')).join('\n'); }
-function dlCSV(filename, rows){
-  const bom='\uFEFF'; // 한글 깨짐 방지 BOM
-  const csv=bom+toCSV(rows);
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(blob);
-  a.download=filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-// 연간 통계 엑셀
-function dlStatExcel(){
-  const org=$I('st-org')?.value||'';
-  const year=Number($I('st-year')?.value||TY);
-  const sd=`${year}-01-01`, ed=`${year}-12-31`;
-  const rows=getAllRows(sd,ed,org,'');
-
-  const byUid={};
-  Object.entries(ACCS).forEach(([,a])=>{
-    if(org&&a.org!==org) return;
-    byUid[a.uid]={name:a.name,org:ORGS[a.org]||a.org,dept:a.dept,counts:{}};
-    TREE.forEach(p=>{ p.s.forEach(s=>{ byUid[a.uid].counts[s.k]=0; }); });
-  });
-  rows.forEach(r=>{ if(byUid[r.uid]&&byUid[r.uid].counts[r.sub]!==undefined) byUid[r.uid].counts[r.sub]++; });
-
-  // 헤더 2행
-  const subHeaders=TREE.flatMap(p=>p.s.map(s=>s.l));
-  const header1=['이름','기관','부서',...TREE.flatMap(p=>p.s.map((_,i)=>i===0?p.l:'')),'합계'];
-  const header2=['','','',...subHeaders,''];
-  const dataRows=Object.values(byUid).map(p=>{
-    const subs=TREE.flatMap(par=>par.s.map(s=>p.counts[s.k]||0));
-    const total=subs.reduce((a,b)=>a+b,0);
-    return [p.name,p.org,p.dept,...subs,total];
-  });
-  dlCSV(`출근통계_${year}년_${org?ORGS[org]:'전체'}.csv`,[header1,header2,...dataRows]);
-  toast('연간 통계 파일이 다운로드됩니다.','ok');
-}
-
-// 월별 현황 엑셀
-function dlChartExcel(){
-  const org=$I('sc-org')?.value||'';
-  const year=Number($I('sc-year')?.value||TY);
-  const uid=$I('sc-name')?.value||'';
-  const months=Array.from({length:12},(_,i)=>i+1);
-
-  const header=['월',...TREE.map(p=>p.l),'합계'];
-  const dataRows=months.map(m=>{
-    const sd=`${year}-${pad(m)}-01`, ed=`${year}-${pad(m)}-${pad(new Date(year,m,0).getDate())}`;
-    const rows=getAllRows(sd,ed,org,uid);
-    const counts={};
-    TREE.forEach(p=>{ counts[p.k]=0; });
-    rows.forEach(r=>{ const pk=S2P[r.sub]||r.sub; if(counts[pk]!==undefined) counts[pk]++; });
-    return [`${m}월`,...TREE.map(p=>counts[p.k]||0),rows.length];
-  });
-  const totRow=['합계',...TREE.map(p=>dataRows.reduce((s,r,i)=>s+(months.map(m=>{
-    const sd=`${year}-${pad(m)}-01`, ed=`${year}-${pad(m)}-${pad(new Date(year,m,0).getDate())}`;
-    return getAllRows(sd,ed,org,uid);
-  })[i].filter(r=>(S2P[r.sub]||r.sub)===p.k).length),0)),''];
-
-  // 합계행 다시 계산 (단순하게)
-  const sumRow=['합계',...TREE.map(p=>dataRows.reduce((s,r)=>s+Number(r[TREE.indexOf(p)+1]),0)),dataRows.reduce((s,r)=>s+Number(r[r.length-1]),0)];
-
-  const nameLabel=uid?Object.values(ACCS).find(a=>a.uid===uid)?.name||'전체':'전체';
-  dlCSV(`월별현황_${year}년_${org?ORGS[org]:'전체'}_${nameLabel}.csv`,[header,...dataRows,sumRow]);
-  toast('월별 현황 파일이 다운로드됩니다.','ok');
-}
-
-// 전체 출근 현황 엑셀 (출근부 설정 탭)
-function dlOvExcel(){
-  const of=$I('fo')?.value||'';
-  const fname=$I('fname')?.value||'';
-  const mode=$I('fmode')?.value||'month';
-  let sd,ed;
-  if(mode==='range'){
-    sd=$I('fds')?.value||`${TY}-${pad(TM)}-01`;
-    ed=$I('fde')?.value||`${TY}-${pad(TM)}-${pad(new Date(TY,TM,0).getDate())}`;
-  } else {
-    const mv=$I('fm')?.value||`${TY}-${pad(TM)}`;
-    const [fy,fm2]=mv.split('-');
-    sd=`${fy}-${fm2}-01`; ed=`${fy}-${fm2}-${pad(new Date(Number(fy),Number(fm2),0).getDate())}`;
-  }
-  const manRows=RECS.filter(r=>r.date>=sd&&r.date<=ed&&(!of||r.org===of)&&(!fname||r.uid===fname));
-  const autoRows=[];
-  Object.entries(ACCS).forEach(([,a])=>{
-    if(of&&a.org!==of) return; if(fname&&a.uid!==fname) return;
-    let d=new Date(sd+'T00:00:00'), end=new Date(ed+'T00:00:00');
-    while(d<=end){
-      const ds=fmtD(d);
-      if(!RECS.some(r=>r.uid===a.uid&&r.date===ds)&&!getHol(ds,a.org)&&isWorkday(ds,a.org))
-        autoRows.push({uid:a.uid,name:a.name,org:a.org,dept:a.dept||'',date:ds,sub:'정상출근',memo:'',auto:true});
-      d.setDate(d.getDate()+1);
-    }
-  });
-  const all=[...autoRows,...manRows].sort((a,b)=>a.date.localeCompare(b.date)||a.name.localeCompare(b.name));
-  const header=['날짜','이름','기관','부서','대항목','소항목','메모','구분'];
-  const rows=all.map(r=>{
-    const inf=SINF[r.sub]||{l:r.sub,pl:r.sub};
-    return [r.date,r.name,ORGS[r.org]||r.org,r.dept||'',inf.pl||inf.l,inf.l,r.memo||'',r.auto?'자동':'직접입력'];
-  });
-  dlCSV(`출근현황_${sd}~${ed}.csv`,[header,...rows]);
-  toast('출근 현황 파일이 다운로드됩니다.','ok');
-}
-
-// ── 계정 ─────────────────────────────────────
-function updDept(){
-  const o=$I('no')?.value,d=$I('nd'); if(!d) return;
-  d.innerHTML=o==='jihyebit'?'<option value="전체">전체</option>':
-    '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
-}
-
-function loadStaff(){
-  const el=$I('slist'); if(!el) return;
-  const orgFilter=$I('sf-org')?.value||'';
-  const isSU=CU.role==='super';
-  const filtered=STAFF.filter(s=>!orgFilter||s.org===orgFilter);
-  el.innerHTML=filtered.length?filtered.map(s=>`
-    <div class="sitem" style="flex-wrap:wrap;gap:8px">
-      <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px">
-        <span class="sname">${s.name}</span>
-        <span class="sid" style="color:var(--tl);font-size:12px">${s.id}</span>
-        <span style="font-size:12px;color:var(--ts)">${ORGS[s.org]||s.org}${s.dept!=='전체'?' · '+s.dept:''}</span>
-        <span class="rbadge ${s.role==='super'?'r-super':s.role==='org_admin'?'r-org':s.role==='tab_admin'?'r-tab':'r-teacher'}">${ROLES[s.role]||s.role}</span>
-      </div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        <button class="bm" onclick="openEditStaff('${s.id}')">✏️ 수정</button>
-        <button class="bm" style="background:#fef3c7;color:#b45309" onclick="openResetPw('${s.id}')">🔑 비번</button>
-        ${isSU?`<button class="bm" style="background:#ede9fe;color:#7c3aed" onclick="showPw('${s.id}')">👁 확인</button>`:''}
-        ${s.id!==CU.id?`<button class="bm" style="background:#fee2e2;color:#dc2626" onclick="deleteStaff('${s.id}')">🗑 삭제</button>`:''}
-      </div>
-    </div>`).join(''):'<p class="empty">교직원이 없습니다.</p>';
-}
-
-// 교직원 정보 수정 모달
-function openEditStaff(id){
-  const s=STAFF.find(x=>x.id===id); if(!s) return;
-  const isSU=CU.role==='super';
-  const el=document.createElement('div'); el.id='edit-staff-mod';
-  el.innerHTML=`
-    <div class="mov">
-      <div class="mbk" onclick="document.getElementById('edit-staff-mod').remove()"></div>
-      <div class="mbox">
-        <div class="mtitle">교직원 정보 수정</div>
-        <div class="msub">${s.name} (${s.id})</div>
-        <div class="fg" style="margin-bottom:14px">
-          <div class="fgrp"><label>이름</label><input id="es-name" type="text" value="${s.name}"></div>
-          <div class="fgrp"><label>기관</label>
-            <select id="es-org" onchange="updEditDept()">
-              <option value="jihyebit" ${s.org==='jihyebit'?'selected':''}>지혜빛</option>
-              <option value="daniel" ${s.org==='daniel'?'selected':''}>다니엘 아마츠</option>
-            </select>
-          </div>
-          <div class="fgrp"><label>부서</label>
-            <select id="es-dept">
-              ${s.org==='jihyebit'
-                ?`<option value="전체" ${s.dept==='전체'?'selected':''}>전체</option>`
-                :`<option value="초등부" ${s.dept==='초등부'?'selected':''}>초등부</option>
-                  <option value="중고등부" ${s.dept==='중고등부'?'selected':''}>중고등부</option>
-                  <option value="행정실" ${s.dept==='행정실'?'selected':''}>행정실</option>`}
-            </select>
-          </div>
-          <div class="fgrp"><label>권한</label>
-            <select id="es-role">
-              ${isSU?`<option value="super" ${s.role==='super'?'selected':''}>슈퍼관리자</option>
-                      <option value="org_admin" ${s.role==='org_admin'?'selected':''}>기관관리자</option>`:''}
-              <option value="tab_admin" ${s.role==='tab_admin'?'selected':''}>탭관리자</option>
-              <option value="teacher" ${s.role==='teacher'?'selected':''}>교사</option>
-            </select>
-          </div>
-        </div>
-        <div class="mact">
-          <button class="bs" onclick="document.getElementById('edit-staff-mod').remove()">취소</button>
-          <button class="bp" onclick="saveEditStaff('${id}')">저장</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
-}
-function updEditDept(){
-  const o=$I('es-org')?.value, d=$I('es-dept'); if(!d) return;
-  d.innerHTML=o==='jihyebit'?'<option value="전체">전체</option>':
-    '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
-}
-function saveEditStaff(id){
-  const name=$I('es-name').value.trim();
-  const org=$I('es-org').value, dept=$I('es-dept').value, role=$I('es-role').value;
-  if(!name) return toast('이름을 입력하세요.','err');
-  const si=STAFF.findIndex(x=>x.id===id);
-  if(si>-1){ STAFF[si]={...STAFF[si],name,org,dept,role}; ACCS[id]={...ACCS[id],name,org,dept,role}; }
-  toast(`${name} 선생님 정보가 수정되었습니다.`,'ok');
-  document.getElementById('edit-staff-mod')?.remove();
-  loadStaff();
-}
-
-// 비번 재설정 모달 (관리자용)
-function openResetPw(id){
-  const s=STAFF.find(x=>x.id===id); if(!s) return;
-  const el=document.createElement('div'); el.id='reset-pw-mod';
-  el.innerHTML=`
-    <div class="mov">
-      <div class="mbk" onclick="document.getElementById('reset-pw-mod').remove()"></div>
-      <div class="mbox">
-        <div class="mtitle">비밀번호 재설정</div>
-        <div class="msub">${s.name} (${s.id}) 선생님의 비밀번호를 재설정합니다.</div>
-        <div class="fgrp" style="margin-bottom:14px">
-          <label>새 비밀번호</label>
-          <input id="rp-new" type="text" placeholder="새 비밀번호 입력" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-        </div>
-        <p style="font-size:12px;color:var(--tl);margin-bottom:16px">※ 재설정 후 선생님에게 새 비밀번호를 직접 전달해주세요.</p>
-        <div class="mact">
-          <button class="bs" onclick="document.getElementById('reset-pw-mod').remove()">취소</button>
-          <button class="bp" onclick="doResetPw('${id}')">재설정</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
-}
-function doResetPw(id){
-  const newPw=$I('rp-new').value.trim();
-  if(!newPw||newPw.length<4) return toast('비밀번호는 4자 이상이어야 합니다.','err');
-  const si=STAFF.findIndex(x=>x.id===id);
-  if(si>-1){ STAFF[si].pw=newPw; ACCS[id].pw=newPw; }
-  toast('비밀번호가 재설정되었습니다.','ok');
-  document.getElementById('reset-pw-mod')?.remove();
-}
-
-// 비번 확인 (슈퍼관리자 전용)
-function showPw(id){
-  if(CU.role!=='super') return toast('슈퍼관리자만 확인할 수 있습니다.','err');
-  const s=STAFF.find(x=>x.id===id); if(!s) return;
-  const el=document.createElement('div'); el.id='show-pw-mod';
-  el.innerHTML=`
-    <div class="mov">
-      <div class="mbk" onclick="document.getElementById('show-pw-mod').remove()"></div>
-      <div class="mbox">
-        <div class="mtitle">비밀번호 확인</div>
-        <div class="msub">슈퍼관리자 전용 — 외부에 노출되지 않도록 주의하세요.</div>
-        <div style="background:var(--iv);border-radius:10px;padding:16px 20px;margin-bottom:20px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div>
-              <div style="font-size:13px;color:var(--tl);margin-bottom:4px">${s.name} (${s.id})</div>
-              <div style="font-size:22px;font-weight:700;letter-spacing:2px;color:var(--gd)" id="pw-display">••••••</div>
-            </div>
-            <button class="bm" id="pw-toggle-btn" onclick="togglePwView('${s.pw}')">표시</button>
-          </div>
-        </div>
-        <div class="mact">
-          <button class="bp" onclick="document.getElementById('show-pw-mod').remove()">닫기</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
-}
-let _pwShowing=false;
-function togglePwView(pw){
-  _pwShowing=!_pwShowing;
-  const d=$I('pw-display'), b=$I('pw-toggle-btn');
-  if(d) d.textContent=_pwShowing?pw:'••••••';
-  if(b) b.textContent=_pwShowing?'숨기기':'표시';
-}
-
-// 교직원 삭제
-function deleteStaff(id){
-  const s=STAFF.find(x=>x.id===id); if(!s) return;
-  if(!confirm(`${s.name} (${s.id}) 선생님 계정을 삭제할까요?\n출근 기록은 유지됩니다.`)) return;
-  STAFF=STAFF.filter(x=>x.id!==id);
-  delete ACCS[id];
-  toast(`${s.name} 선생님 계정이 삭제되었습니다.`,'ok');
-  loadStaff();
-}
-
-// ── 내 정보 / 본인 비번 변경 ─────────────────
-function openMyInfo(){
-  const el=document.createElement('div'); el.id='my-info-mod';
-  el.innerHTML=`
-    <div class="mov">
-      <div class="mbk" onclick="document.getElementById('my-info-mod').remove()"></div>
-      <div class="mbox">
-        <div class="mtitle">내 정보</div>
-        <div class="msub"></div>
-
-        <!-- 기본 정보 -->
-        <div style="background:var(--iv);border-radius:10px;padding:16px;margin-bottom:20px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
-            <div><span style="color:var(--tl)">이름</span><div style="font-weight:700;margin-top:2px">${CU.name}</div></div>
-            <div><span style="color:var(--tl)">아이디</span><div style="font-weight:700;margin-top:2px">${CU.id}</div></div>
-            <div><span style="color:var(--tl)">기관</span><div style="font-weight:700;margin-top:2px">${ORGS[CU.org]||CU.org}</div></div>
-            <div><span style="color:var(--tl)">부서</span><div style="font-weight:700;margin-top:2px">${CU.dept||'-'}</div></div>
-            <div><span style="color:var(--tl)">권한</span><div style="font-weight:700;margin-top:2px">${ROLES[CU.role]||CU.role}</div></div>
-          </div>
-        </div>
-
-        <!-- 비번 변경 -->
-        <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:12px">🔑 비밀번호 변경</div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
-          <div class="fgrp">
-            <label>현재 비밀번호</label>
-            <input id="cp-cur" type="password" placeholder="현재 비밀번호" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-          </div>
-          <div class="fgrp">
-            <label>새 비밀번호</label>
-            <input id="cp-new" type="password" placeholder="새 비밀번호 (4자 이상)" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-          </div>
-          <div class="fgrp">
-            <label>새 비밀번호 확인</label>
-            <input id="cp-con" type="password" placeholder="새 비밀번호 재입력" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-          </div>
-        </div>
-        <div class="mact">
-          <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
-          <button class="bp" onclick="changeMyPw()">비밀번호 변경</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
-}
-
-function changeMyPw(){
-  const cur=$I('cp-cur').value, nw=$I('cp-new').value, con=$I('cp-con').value;
-  if(!cur||!nw||!con) return toast('모든 항목을 입력하세요.','err');
-  if(ACCS[CU.id].pw!==cur) return toast('현재 비밀번호가 틀렸습니다.','err');
-  if(nw.length<4) return toast('새 비밀번호는 4자 이상이어야 합니다.','err');
-  if(nw!==con) return toast('새 비밀번호가 일치하지 않습니다.','err');
-  ACCS[CU.id].pw=nw; CU.pw=nw;
-  const si=STAFF.findIndex(x=>x.id===CU.id);
-  if(si>-1) STAFF[si].pw=nw;
-  toast('비밀번호가 변경되었습니다.','ok');
-  document.getElementById('my-info-mod')?.remove();
-}
-
-function createAcc(){
-  const name=$I('nn').value.trim(),id=$I('nid').value.trim(),pw=$I('npw').value;
-  const org=$I('no').value,dept=$I('nd').value,role=$I('nr').value;
-  if(!name||!id||!pw) return toast('이름, 아이디, 비밀번호를 입력하세요.','err');
-  if(ACCS[id]) return toast('이미 사용 중인 아이디입니다.','err');
-  if(pw.length<4) return toast('비밀번호는 4자 이상이어야 합니다.','err');
-  const uid='u'+Date.now();
-  ACCS[id]={pw,uid,name,org,dept,role}; STAFF.push({id,pw,uid,name,org,dept,role});
-  toast(`${name} 선생님 계정이 발급되었습니다.`,'ok');
-  $I('nn').value='';$I('nid').value='';$I('npw').value='';
-  loadStaff();
 }
 </script>
 </body>
