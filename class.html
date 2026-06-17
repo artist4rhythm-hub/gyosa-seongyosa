@@ -399,6 +399,7 @@ async function deleteClass(id){
 window.deleteClass = deleteClass;
 
 // ── 학생 추가 (반에 배정) ──
+let _addCtx = null;  // 현재 추가 화면 컨텍스트
 function openAddStudent(classId){
   const c = CLASSES.find(x=>x.id===classId); if(!c) return;
   // 이미 다른 반에 배정된 학생 ID 모음 (같은 연도)
@@ -408,7 +409,8 @@ function openAddStudent(classId){
   // 후보: 같은 기관, 재학중, 아직 이 반에 없음
   const candidates = STUDENTS.filter(s=>
     s.org===c.org && (s.status||'active')==='active' && !already.has(s.id)
-  ).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  );
+  _addCtx = { classId, candidates, assignedElsewhere };
 
   $I('mwrap').innerHTML = `
     <div class="mov"><div class="mbk" onclick="closeMod()"></div>
@@ -416,27 +418,55 @@ function openAddStudent(classId){
       <div class="mtitle">${c.name}에 학생 추가</div>
       <div class="msub">추가할 학생을 체크한 뒤 아래 버튼을 누르세요. 여러 명을 한 번에 배정할 수 있습니다.</div>
       <input type="text" id="add-search" placeholder="이름 검색" oninput="filterAddList()" style="width:100%;height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;margin-bottom:8px;outline:none">
-      <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+        <select id="add-sort" onchange="renderAddList()" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 8px;font-size:13px;background:var(--wh)">
+          <option value="name-asc">이름 ㄱ→ㅎ</option>
+          <option value="name-desc">이름 ㅎ→ㄱ</option>
+          <option value="birth-asc">나이 많은순 (옛날 출생)</option>
+          <option value="birth-desc">나이 적은순 (최근 출생)</option>
+        </select>
         <button class="bm" onclick="toggleAllAdd(true)">전체 선택</button>
         <button class="bm" onclick="toggleAllAdd(false)">전체 해제</button>
         <span id="add-count" style="font-size:12px;color:var(--ts);align-self:center;margin-left:auto">0명 선택</span>
       </div>
-      <div id="add-list" style="max-height:340px;overflow-y:auto">
-        ${candidates.length?candidates.map(s=>{
-          const elsewhere = assignedElsewhere.has(s.id);
-          const bi = birthInfo(s.birth);
-          return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer">
-            <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name} <span style="color:var(--gm);font-size:12px;font-weight:600">${bi}</span> <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:#dc2626;font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
-          </label>`;
-        }).join(''):'<p class="empty">추가할 수 있는 학생이 없습니다.</p>'}
-      </div>
+      <div id="add-list" style="max-height:340px;overflow-y:auto"></div>
       <div class="mact">
         <button class="bs" onclick="closeMod()">취소</button>
         <button class="bp" onclick="addCheckedStudents('${classId}')">선택한 학생 추가</button>
       </div>
     </div></div>`;
+  renderAddList();
 }
 window.openAddStudent = openAddStudent;
+
+// 후보 목록을 정렬 옵션대로 그리기
+function renderAddList(){
+  if(!_addCtx) return;
+  const { candidates, assignedElsewhere } = _addCtx;
+  const sort = $I('add-sort')?.value || 'name-asc';
+  const arr = [...candidates];
+  arr.sort((a,b)=>{
+    if(sort==='name-asc') return a.name.localeCompare(b.name,'ko');
+    if(sort==='name-desc') return b.name.localeCompare(a.name,'ko');
+    // 생년월일 기준 (빈 값은 뒤로)
+    const ba = a.birth||'9999', bb = b.birth||'9999';
+    if(sort==='birth-asc') return ba.localeCompare(bb);   // 옛날 출생 먼저 = 나이 많은순
+    if(sort==='birth-desc') return bb.localeCompare(ba);  // 최근 출생 먼저 = 나이 적은순
+    return 0;
+  });
+  const el = $I('add-list');
+  el.innerHTML = arr.length ? arr.map(s=>{
+    const elsewhere = assignedElsewhere.has(s.id);
+    const bi = birthInfo(s.birth);
+    return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer">
+      <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name} <span style="color:var(--gm);font-size:12px;font-weight:600">${bi}</span> <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:#dc2626;font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
+    </label>`;
+  }).join('') : '<p class="empty">추가할 수 있는 학생이 없습니다.</p>';
+  // 검색어 유지 적용
+  filterAddList();
+  updateAddCount();
+}
+window.renderAddList = renderAddList;
 
 function updateAddCount(){
   const n = document.querySelectorAll('.add-chk:checked').length;
