@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="출석부">
 <link rel="icon" type="image/png" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root {
   --gd:#1e2e5c; --gm:#2b3990; --gl:#5a70cc; --gp:#e8ecf8;
@@ -479,14 +480,252 @@ async function saveCheck(){
 }
 window.saveCheck = saveCheck;
 
-// ── 통계 (4단계에서 구현 예정) ──
+// ── 출석 통계 ──
+let statRecords = null;  // 출결 기록 캐시 (한 번만 로드)
+let statYear = new Date().getFullYear();
+let statOrg = '';
+let statTermSel = '1';   // '1' | '2' | 'year'
+let statView = 'student'; // student | class | dept | all
+
 function renderStat(){
+  const orgs = myOrgs();
+  if(!statOrg) statOrg = orgs[0];
+  const ty = new Date().getFullYear();
+  const years = [];
+  for(let y=ty+1; y>=ty-3; y--) years.push(y);
+
   $I('c-stat').innerHTML = `
     <div class="acard">
       <h3 class="actitle">📊 출석 통계</h3>
-      <div class="empty">통계 화면은 이후 단계에서 만들어집니다.</div>
+      <p class="adesc">학기 또는 연간 단위로 학생·반·부서·전체 출석 현황을 봅니다. 수업일수는 학기 기간의 평일에서 휴일·방학을 뺀 값입니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fgrp" style="margin-bottom:0"><label>연도</label>
+          <select id="st-year" onchange="onStatChange()">${years.map(y=>`<option value="${y}"${y===statYear?' selected':''}>${y}년</option>`).join('')}</select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>기관</label>
+          <select id="st-org" onchange="onStatChange()">${orgs.map(o=>`<option value="${o}"${o===statOrg?' selected':''}>${ORGS[o]}</option>`).join('')}</select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>학기</label>
+          <select id="st-term" onchange="onStatChange()">
+            <option value="1"${statTermSel==='1'?' selected':''}>1학기</option>
+            <option value="2"${statTermSel==='2'?' selected':''}>2학기</option>
+            <option value="year"${statTermSel==='year'?' selected':''}>연간 (1+2학기)</option>
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>보기</label>
+          <select id="st-view" onchange="onStatChange()">
+            <option value="student"${statView==='student'?' selected':''}>학생별</option>
+            <option value="class"${statView==='class'?' selected':''}>반별</option>
+            <option value="dept"${statView==='dept'?' selected':''}>부서별</option>
+            <option value="all"${statView==='all'?' selected':''}>전체</option>
+          </select></div>
+      </div>
+      <button class="bs" style="margin-top:12px" onclick="downloadStatExcel()">⬇ 엑셀 다운로드</button>
+    </div>
+    <div id="st-body"></div>`;
+  buildStat();
+}
+window.renderStat = renderStat;
+
+function onStatChange(){
+  statYear = Number($I('st-year').value);
+  statOrg = $I('st-org').value;
+  statTermSel = $I('st-term').value;
+  statView = $I('st-view').value;
+  buildStat();
+}
+window.onStatChange = onStatChange;
+
+// 선택된 학기들의 수업일 집합 + 라벨
+function getStatTerms(){
+  const sel = [];
+  const want = statTermSel==='year' ? [1,2] : [Number(statTermSel)];
+  for(const tn of want){
+    const t = TERMS.find(x=>x.year===statYear && x.org===statOrg && x.term===tn);
+    if(t) sel.push(t);
+  }
+  return sel;
+}
+
+let _statCache = null;
+async function buildStat(){
+  const body = $I('st-body'); if(!body) return;
+  body.innerHTML = '<div class="acard"><p class="empty">집계 중...</p></div>';
+
+  const terms = getStatTerms();
+  if(!terms.length){
+    body.innerHTML = `<div class="acard"><div class="empty">선택한 학기가 등록되지 않았습니다.<br>설정 탭에서 ${statYear}년 ${ORGS[statOrg]} 학기를 먼저 등록해주세요.</div></div>`;
+    return;
+  }
+
+  // 수업일 집합
+  let schoolDays = [];
+  terms.forEach(t=>{ schoolDays = schoolDays.concat(calcSchoolDays(t)); });
+  const schoolDaySet = new Set(schoolDays);
+  const totalDays = schoolDaySet.size;
+  const minDate = schoolDays.length ? schoolDays.reduce((a,b)=>a<b?a:b) : '';
+  const maxDate = schoolDays.length ? schoolDays.reduce((a,b)=>a>b?a:b) : '';
+
+  // 출결 기록 로드 (이 기관)
+  const snap = await getDocs(collection(db,'studentAttendance'));
+  const recs = [];
+  snap.forEach(d=>{ const r=d.data(); if(r.org===statOrg && schoolDaySet.has(r.date)) recs.push(r); });
+
+  // 출석 인정 타입 id 집합
+  const presentIds = new Set(TYPES.filter(t=>t.isPresent).map(t=>t.id));
+  const typeName = id => (TYPES.find(t=>t.id===id)?.name)||'기타';
+
+  // 이 기관·올해 반들
+  const orgClasses = CLASSES.filter(c=>c.org===statOrg);
+  // 학생 → 반 매핑
+  const studClass = {};
+  orgClasses.forEach(c=>(c.students||[]).forEach(sid=>{ studClass[sid]=c; }));
+
+  // 학생별 집계: {studentId: {name, className, dept, counts:{typeName:n}, present:n, recorded:n}}
+  const byStud = {};
+  // 대상 학생 = 이 기관 반에 배정된 재학생
+  orgClasses.forEach(c=>{
+    (c.students||[]).forEach(sid=>{
+      const s = STUDENTS[sid]; if(!s || (s.status||'active')!=='active') return;
+      if(!byStud[sid]) byStud[sid]={name:s.name, studentNo:s.studentNo||'', className:c.name, dept:c.dept||'', classId:c.id, counts:{}, present:0, recorded:0};
+    });
+  });
+  // 기록 반영
+  recs.forEach(r=>{
+    const b = byStud[r.studentId]; if(!b) return;
+    const tn = typeName(r.typeId);
+    b.counts[tn] = (b.counts[tn]||0)+1;
+    b.recorded++;
+    if(presentIds.has(r.typeId)) b.present++;
+  });
+  // 기록 없는 날은 "출석"으로 간주 (기본 자동 출석)
+  Object.values(byStud).forEach(b=>{
+    const autoPresent = totalDays - b.recorded;
+    if(autoPresent>0){ b.present += autoPresent; b.counts['출석']=(b.counts['출석']||0)+autoPresent; }
+  });
+
+  _statCache = {byStud, totalDays, minDate, maxDate, terms};
+
+  // 보기별 렌더
+  if(statView==='student') renderStatStudent(byStud, totalDays, minDate, maxDate);
+  else if(statView==='class') renderStatGroup(byStud, totalDays, 'className', '반');
+  else if(statView==='dept') renderStatGroup(byStud, totalDays, 'dept', '부서');
+  else renderStatAll(byStud, totalDays, minDate, maxDate);
+}
+
+function periodLabel(min,max){ return min&&max?`${min} ~ ${max}`:''; }
+
+function renderStatStudent(byStud, totalDays, minDate, maxDate){
+  const list = Object.values(byStud).sort((a,b)=>(a.className+a.name).localeCompare(b.className+b.name,'ko'));
+  if(!list.length){ $I('st-body').innerHTML='<div class="acard"><p class="empty">대상 학생이 없습니다.</p></div>'; return; }
+  // 등장하는 출결 항목들 (열 구성)
+  const cols = TYPES.map(t=>t.name);
+  const rows = list.map(b=>{
+    const rate = totalDays? Math.round(b.present/totalDays*100) : 0;
+    return `<tr>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${b.name}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd)">${b.className}</td>
+      ${cols.map(c=>`<td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${b.counts[c]||0}</td>`).join('')}
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'}">${rate}%</td>
+    </tr>`;
+  }).join('');
+  $I('st-body').innerHTML = `
+    <div class="acard">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <h3 class="actitle" style="margin:0">학생별 출석 (${list.length}명)</h3>
+        <span style="font-size:12px;color:var(--ts)">수업일 ${totalDays}일 · ${periodLabel(minDate,maxDate)}</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">
+          <thead><tr style="background:var(--iv)">
+            <th style="padding:8px;text-align:left">이름</th><th style="padding:8px;text-align:left">반</th>
+            ${cols.map(c=>`<th style="padding:8px;text-align:center">${c}</th>`).join('')}
+            <th style="padding:8px;text-align:center">출석률</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>`;
 }
+
+function renderStatGroup(byStud, totalDays, key, label){
+  // 그룹별 합산
+  const groups = {};
+  Object.values(byStud).forEach(b=>{
+    const g = b[key]||'(미지정)';
+    if(!groups[g]) groups[g]={count:0, present:0, possible:0, counts:{}};
+    groups[g].count++;
+    groups[g].present += b.present;
+    groups[g].possible += totalDays;
+    Object.entries(b.counts).forEach(([k,v])=>groups[g].counts[k]=(groups[g].counts[k]||0)+v);
+  });
+  const cols = TYPES.map(t=>t.name);
+  const rows = Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'ko')).map(([g,d])=>{
+    const rate = d.possible? Math.round(d.present/d.possible*100):0;
+    return `<tr>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${g}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${d.count}명</td>
+      ${cols.map(c=>`<td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${d.counts[c]||0}</td>`).join('')}
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'}">${rate}%</td>
+    </tr>`;
+  }).join('');
+  $I('st-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">${label}별 출석 · 수업일 ${totalDays}일</h3>
+      <div style="overflow-x:auto;margin-top:10px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">
+          <thead><tr style="background:var(--iv)">
+            <th style="padding:8px;text-align:left">${label}</th><th style="padding:8px;text-align:center">인원</th>
+            ${cols.map(c=>`<th style="padding:8px;text-align:center">${c}</th>`).join('')}
+            <th style="padding:8px;text-align:center">평균 출석률</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderStatAll(byStud, totalDays, minDate, maxDate){
+  const list = Object.values(byStud);
+  const totalStud = list.length;
+  const totalPresent = list.reduce((s,b)=>s+b.present,0);
+  const totalPossible = totalStud*totalDays;
+  const avgRate = totalPossible? Math.round(totalPresent/totalPossible*100):0;
+  const allCounts = {};
+  list.forEach(b=>Object.entries(b.counts).forEach(([k,v])=>allCounts[k]=(allCounts[k]||0)+v));
+  const stat=(label,val,color)=>`<div style="flex:1;min-width:90px;background:var(--iv);border-radius:10px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:800;color:${color||'var(--gm)'}">${val}</div><div style="font-size:11px;color:var(--ts);margin-top:2px">${label}</div></div>`;
+  const typeRows = TYPES.map(t=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--ivd);font-size:13px"><span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${t.color};margin-right:6px"></span>${t.name}</span><span style="font-weight:700">${allCounts[t.name]||0}건</span></div>`).join('');
+  $I('st-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">전체 출석 현황 · 수업일 ${totalDays}일</h3>
+      <p class="adesc">${periodLabel(minDate,maxDate)}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        ${stat('대상 학생',totalStud+'명')}
+        ${stat('수업일',totalDays+'일')}
+        ${stat('평균 출석률',avgRate+'%',avgRate>=90?'#16a34a':'#b45309')}
+      </div>
+      <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:8px">항목별 합계</div>
+      ${typeRows}
+    </div>`;
+}
+
+// 엑셀 다운로드 (현재 보기 기준)
+function downloadStatExcel(){
+  if(!_statCache){ toast('먼저 통계를 조회하세요.','err'); return; }
+  const {byStud, totalDays, terms} = _statCache;
+  const cols = TYPES.map(t=>t.name);
+  const header = ['이름','학번','반','부서', ...cols, '수업일','출석률(%)'];
+  const aoa = [header];
+  Object.values(byStud).sort((a,b)=>(a.className+a.name).localeCompare(b.className+b.name,'ko')).forEach(b=>{
+    const rate = totalDays? Math.round(b.present/totalDays*100):0;
+    aoa.push([b.name, b.studentNo, b.className, b.dept, ...cols.map(c=>b.counts[c]||0), totalDays, rate]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = header.map(h=>({wch:Math.max(h.length,8)}));
+  const wb = XLSX.utils.book_new();
+  const termLabel = statTermSel==='year'?'연간':TERM_NAMES[Number(statTermSel)];
+  XLSX.utils.book_append_sheet(wb, ws, '출석통계');
+  XLSX.writeFile(wb, `출석통계_${statYear}_${ORGS[statOrg]}_${termLabel}.xlsx`);
+  toast('엑셀을 다운로드했습니다.','ok');
+}
+window.downloadStatExcel = downloadStatExcel;
 
 // ── 설정: 출결 항목 관리 ──
 function renderSet(){
