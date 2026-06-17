@@ -136,6 +136,21 @@ const db = getFirestore(app);
 const $I = id => document.getElementById(id);
 const pad = n => String(n).padStart(2,'0');
 const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+// 생년월일 → "2018년생 (만7세)" 형태
+function birthInfo(birth){
+  if(!birth) return '';
+  const y = birth.slice(0,4);
+  let age = '';
+  const bd = new Date(birth+'T00:00:00');
+  if(!isNaN(bd)){
+    const now = new Date();
+    let a = now.getFullYear()-bd.getFullYear();
+    const m = now.getMonth()-bd.getMonth();
+    if(m<0 || (m===0 && now.getDate()<bd.getDate())) a--;
+    age = ` (만${a}세)`;
+  }
+  return `${y}년생${age}`;
+}
 // 부서 옵션 (다니엘만 부서 있음)
 const DEPTS = {jihyebit:['전체'], daniel:['초등부','중등부','고등부']};
 // 학년 옵션 (참고용 - 자유 입력도 가능)
@@ -264,7 +279,7 @@ function renderClasses(){
       .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
     const teacher = STAFF.find(s=>s.uid===c.teacherUid);
     const studChips = studs.length
-      ? studs.map(s=>`<span class="stud-chip">${s.name}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`).join('')
+      ? studs.map(s=>`<span class="stud-chip">${s.name}${s.birth?`<span style="color:var(--tl);font-size:11px">${s.birth.slice(0,4)}</span>`:''}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`).join('')
       : '<span style="font-size:13px;color:var(--tl)">배정된 학생이 없습니다.</span>';
     return `<div class="clscard">
       <div class="clshead" onclick="toggleClass('${c.id}')">
@@ -409,8 +424,9 @@ function openAddStudent(classId){
       <div id="add-list" style="max-height:340px;overflow-y:auto">
         ${candidates.length?candidates.map(s=>{
           const elsewhere = assignedElsewhere.has(s.id);
+          const bi = birthInfo(s.birth);
           return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer">
-            <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name} <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:#dc2626;font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
+            <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name} <span style="color:var(--gm);font-size:12px;font-weight:600">${bi}</span> <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:#dc2626;font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
           </label>`;
         }).join(''):'<p class="empty">추가할 수 있는 학생이 없습니다.</p>'}
       </div>
@@ -467,17 +483,17 @@ window.addCheckedStudents = addCheckedStudents;
 function downloadClassTemplate(){
   const fOrg = $I('flt-org')?.value || '';
   const orgs = fOrg ? [fOrg] : myOrgs();
-  const headers = ['학번','이름','기관','배정할 반 이름'];
+  const headers = ['학번','이름','생년월일','기관','배정할 반 이름'];
   const aoa = [headers];
   STUDENTS.filter(s=>orgs.includes(s.org) && (s.status||'active')==='active')
     .sort((a,b)=>(a.org+a.name).localeCompare(b.org+b.name,'ko'))
     .forEach(s=>{
       // 이미 올해 배정된 반 찾기
       const cur = CLASSES.find(c=>(c.students||[]).includes(s.id));
-      aoa.push([s.studentNo||'', s.name, ORGS[s.org]||s.org, cur?cur.name:'']);
+      aoa.push([s.studentNo||'', s.name, s.birth||'', ORGS[s.org]||s.org, cur?cur.name:'']);
     });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:14},{wch:14},{wch:16},{wch:20}];
+  ws['!cols'] = [{wch:14},{wch:14},{wch:14},{wch:16},{wch:20}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '반편성');
   XLSX.writeFile(wb, `반편성_양식_${curYear}.xlsx`);
@@ -518,7 +534,7 @@ function parseClassXlsx(rows){
   for(let i=1;i<rows.length;i++){
     const r=rows[i]; if(!r||r.every(c=>String(c).trim()==='')) continue;
     const no=String(r[0]??'').trim(), name=String(r[1]??'').trim();
-    const orgRaw=String(r[2]??'').trim(), className=String(r[3]??'').trim();
+    const orgRaw=String(r[3]??'').trim(), className=String(r[4]??'').trim();
     if(!className) continue;  // 반 이름 비었으면 건너뜀
     // 학생 찾기 (학번 우선)
     let stu = no && byNo[no] ? byNo[no] : null;
