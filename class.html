@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="반편성">
 <link rel="icon" type="image/png" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root {
   --gd:#1e2e5c; --gm:#2b3990; --gl:#5a70cc; --gp:#e8ecf8;
@@ -235,6 +236,8 @@ async function renderMain(){
         <select id="flt-org" onchange="renderClasses()">${orgOptionsHTML(true)}</select>
         ${isAdmin()?`<button class="bp" onclick="openClassForm()">＋ 반 만들기</button>`:''}
         ${isAdmin()?`<button class="bs" onclick="openPromote()">⬆ 전년도에서 진급</button>`:''}
+        ${isAdmin()?`<button class="bs" onclick="downloadClassTemplate()">⬇ 엑셀 양식</button>`:''}
+        ${isAdmin()?`<button class="bs" onclick="document.getElementById('cls-xlsx').click()">⬆ 엑셀 일괄 편성</button><input type="file" id="cls-xlsx" accept=".xlsx,.xls" style="display:none" onchange="handleClassXlsx(event)">`:''}
       </div>
     </div>
     <div id="class-list"></div>`;
@@ -396,21 +399,43 @@ function openAddStudent(classId){
     <div class="mov"><div class="mbk" onclick="closeMod()"></div>
     <div class="mbox">
       <div class="mtitle">${c.name}에 학생 추가</div>
-      <div class="msub">학생을 선택하면 이 반에 배정됩니다. (이미 다른 반에 있는 학생은 ⚠️ 표시)</div>
-      <input type="text" id="add-search" placeholder="이름 검색" oninput="filterAddList()" style="width:100%;height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;margin-bottom:12px;outline:none">
+      <div class="msub">추가할 학생을 체크한 뒤 아래 버튼을 누르세요. 여러 명을 한 번에 배정할 수 있습니다.</div>
+      <input type="text" id="add-search" placeholder="이름 검색" oninput="filterAddList()" style="width:100%;height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;margin-bottom:8px;outline:none">
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="bm" onclick="toggleAllAdd(true)">전체 선택</button>
+        <button class="bm" onclick="toggleAllAdd(false)">전체 해제</button>
+        <span id="add-count" style="font-size:12px;color:var(--ts);align-self:center;margin-left:auto">0명 선택</span>
+      </div>
       <div id="add-list" style="max-height:340px;overflow-y:auto">
         ${candidates.length?candidates.map(s=>{
           const elsewhere = assignedElsewhere.has(s.id);
-          return `<div class="pickrow add-row" data-name="${s.name}">
-            <span>${s.name} <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:#dc2626;font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
-            <button class="bm" onclick="addStudent('${classId}','${s.id}')">추가</button>
-          </div>`;
+          return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer">
+            <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name} <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:#dc2626;font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
+          </label>`;
         }).join(''):'<p class="empty">추가할 수 있는 학생이 없습니다.</p>'}
       </div>
-      <div class="mact"><button class="bp" onclick="closeMod()">완료</button></div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="addCheckedStudents('${classId}')">선택한 학생 추가</button>
+      </div>
     </div></div>`;
 }
 window.openAddStudent = openAddStudent;
+
+function updateAddCount(){
+  const n = document.querySelectorAll('.add-chk:checked').length;
+  const el = $I('add-count'); if(el) el.textContent = `${n}명 선택`;
+}
+window.updateAddCount = updateAddCount;
+
+function toggleAllAdd(on){
+  // 검색으로 보이는 항목만 토글
+  document.querySelectorAll('.add-row').forEach(r=>{
+    if(r.style.display!=='none'){ const chk=r.querySelector('.add-chk'); if(chk) chk.checked=on; }
+  });
+  updateAddCount();
+}
+window.toggleAllAdd = toggleAllAdd;
 
 function filterAddList(){
   const q = ($I('add-search')?.value||'').trim();
@@ -420,17 +445,135 @@ function filterAddList(){
 }
 window.filterAddList = filterAddList;
 
-async function addStudent(classId, studentId){
+async function addCheckedStudents(classId){
   const c = CLASSES.find(x=>x.id===classId); if(!c) return;
+  const ids = Array.from(document.querySelectorAll('.add-chk:checked')).map(c=>c.value);
+  if(!ids.length) return toast('학생을 선택하세요.','err');
   try {
-    const studs = Array.from(new Set([...(c.students||[]), studentId]));
+    const studs = Array.from(new Set([...(c.students||[]), ...ids]));
     await updateDoc(doc(db,'classes',classId), {students:studs});
     c.students = studs;
-    toast('학생이 추가되었습니다.','ok');
-    openAddStudent(classId);  // 목록 갱신
+    logActivity('수정','반편성',`${c.name}에 ${ids.length}명 배정`);
+    toast(`${ids.length}명이 추가되었습니다.`,'ok');
+    closeMod();
+    renderClasses();
+    const b = $I('body-'+classId); if(b) b.classList.add('open');
   } catch(e){ toast('실패: '+e.message,'err'); }
 }
-window.addStudent = addStudent;
+window.addCheckedStudents = addCheckedStudents;
+
+// ── 엑셀 일괄 편성 ──
+// 양식 다운로드: 현재 연도/기관의 재학생 명단 + 빈 "반이름" 칸
+function downloadClassTemplate(){
+  const fOrg = $I('flt-org')?.value || '';
+  const orgs = fOrg ? [fOrg] : myOrgs();
+  const headers = ['학번','이름','기관','배정할 반 이름'];
+  const aoa = [headers];
+  STUDENTS.filter(s=>orgs.includes(s.org) && (s.status||'active')==='active')
+    .sort((a,b)=>(a.org+a.name).localeCompare(b.org+b.name,'ko'))
+    .forEach(s=>{
+      // 이미 올해 배정된 반 찾기
+      const cur = CLASSES.find(c=>(c.students||[]).includes(s.id));
+      aoa.push([s.studentNo||'', s.name, ORGS[s.org]||s.org, cur?cur.name:'']);
+    });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:14},{wch:14},{wch:16},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '반편성');
+  XLSX.writeFile(wb, `반편성_양식_${curYear}.xlsx`);
+  toast('양식을 다운로드했습니다. "배정할 반 이름"을 채워서 올려주세요.','ok');
+}
+window.downloadClassTemplate = downloadClassTemplate;
+
+function handleClassXlsx(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      parseClassXlsx(rows);
+    } catch(err){ toast('엑셀 읽기 실패: '+err.message,'err'); }
+    ev.target.value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+window.handleClassXlsx = handleClassXlsx;
+
+function parseClassXlsx(rows){
+  if(!rows || rows.length<2) return toast('데이터가 없습니다.','err');
+  // 0학번 1이름 2기관 3반이름
+  const allowed = myOrgs();
+  // 학번/이름으로 학생 찾기
+  const byNo = {}, byName = {};
+  STUDENTS.forEach(s=>{ if(s.studentNo) byNo[s.studentNo]=s; (byName[s.name]=byName[s.name]||[]).push(s); });
+  // 반 이름 → 반 객체 (올해, 기관별)
+  const findClass = (org, name) => CLASSES.find(c=>c.org===org && c.name===name);
+
+  const assign = {};   // classId -> Set(studentId)
+  const errors = [];
+  const orgMap = {'지혜빛':'jihyebit','다니엘':'daniel','다니엘 아마츠':'daniel'};
+
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i]; if(!r||r.every(c=>String(c).trim()==='')) continue;
+    const no=String(r[0]??'').trim(), name=String(r[1]??'').trim();
+    const orgRaw=String(r[2]??'').trim(), className=String(r[3]??'').trim();
+    if(!className) continue;  // 반 이름 비었으면 건너뜀
+    // 학생 찾기 (학번 우선)
+    let stu = no && byNo[no] ? byNo[no] : null;
+    if(!stu && name && byName[name]){ stu = byName[name].length===1?byName[name][0]:byName[name].find(s=>orgMap[orgRaw]===s.org); }
+    if(!stu){ errors.push(`${i+1}행: 학생을 찾을 수 없음 (${name||no})`); continue; }
+    if(!allowed.includes(stu.org)){ errors.push(`${i+1}행 ${stu.name}: 권한 없는 기관`); continue; }
+    const cls = findClass(stu.org, className);
+    if(!cls){ errors.push(`${i+1}행 ${stu.name}: "${className}" 반이 ${curYear}년에 없음`); continue; }
+    (assign[cls.id]=assign[cls.id]||new Set()).add(stu.id);
+  }
+
+  const totalAssign = Object.values(assign).reduce((s,set)=>s+set.size,0);
+  if(!totalAssign){ return toast('편성할 내용이 없습니다. 반 이름과 반 등록을 확인하세요.','err'); }
+
+  // 미리보기
+  const summary = Object.entries(assign).map(([cid,set])=>{
+    const c = CLASSES.find(x=>x.id===cid);
+    return `<div style="padding:6px 0;border-bottom:1px solid var(--ivd);font-size:13px"><b>${c.name}</b> ← ${set.size}명</div>`;
+  }).join('');
+  const errHTML = errors.length?`<div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px;font-size:12px;margin-top:10px;line-height:1.6">⚠️ 제외 ${errors.length}건:<br>${errors.slice(0,15).join('<br>')}${errors.length>15?'<br>...':''}</div>`:'';
+  window.__clsAssign = assign;
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">일괄 편성 미리보기</div>
+      <div class="msub">${totalAssign}명을 아래 반에 배정합니다. (기존 배정에 추가됩니다)</div>
+      <div style="max-height:300px;overflow-y:auto">${summary}</div>
+      ${errHTML}
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="confirmClassXlsx()">${totalAssign}명 편성</button>
+      </div>
+    </div></div>`;
+}
+
+async function confirmClassXlsx(){
+  const assign = window.__clsAssign; if(!assign) return;
+  toast('편성 중...');
+  let cnt=0;
+  try {
+    for(const [cid,set] of Object.entries(assign)){
+      const c = CLASSES.find(x=>x.id===cid); if(!c) continue;
+      const studs = Array.from(new Set([...(c.students||[]), ...set]));
+      await updateDoc(doc(db,'classes',cid), {students:studs});
+      c.students = studs;
+      cnt += set.size;
+    }
+    logActivity('수정','반편성',`엑셀 일괄 편성 ${cnt}명`);
+    toast(`${cnt}명이 편성되었습니다.`,'ok');
+    closeMod();
+    await loadClasses();
+    renderClasses();
+  } catch(e){ toast('편성 실패: '+e.message,'err'); }
+}
+window.confirmClassXlsx = confirmClassXlsx;
 
 async function removeStudent(classId, studentId){
   const c = CLASSES.find(x=>x.id===classId); if(!c) return;
