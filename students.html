@@ -277,11 +277,16 @@ function renderList(){
   if(!list.length){ el.innerHTML = '<p class="empty">학생이 없습니다.</p>'; return; }
   el.innerHTML = list.map(s => {
     const st = s.status || 'active';
+    // 입학/편입 연도 표시
+    let yearInfo = '';
+    if(s.transferDate) yearInfo = `편입 ${s.transferDate.slice(0,4)}년`;
+    else if(s.admitDate) yearInfo = `입학 ${s.admitDate.slice(0,4)}년`;
+    else if(s.admitYear) yearInfo = `입학 ${s.admitYear}년`;
     return `<div class="sitem" onclick="openStudentDetail('${s.id}')">
       <div class="savatar">${s.name.charAt(0)}</div>
       <div class="sinfo">
         <div class="sname">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span></div>
-        <div class="smeta">${ORGS[s.org]||s.org}${s.birth?' · '+s.birth:''}${s.phone?' · '+s.phone:''}</div>
+        <div class="smeta">${ORGS[s.org]||s.org}${s.birth?' · '+s.birth:''}${yearInfo?' · '+yearInfo:''}</div>
         <div class="snum">학번 ${s.studentNo||'-'}</div>
       </div>
     </div>`;
@@ -320,6 +325,8 @@ function openStudentForm(editId){
         <div class="fgrp"><label>생년월일</label><input type="date" id="f-birth" value="${s?.birth||''}"></div>
         <div class="fgrp"><label>기관 *</label><select id="f-org" ${s?'disabled':''}>${orgOptionsHTML(false)}</select></div>
         <div class="fgrp"><label>입학일</label><input type="date" id="f-admit" value="${s?.admitDate||''}"></div>
+        <div class="fgrp"><label>편입일</label><input type="date" id="f-transfer" value="${s?.transferDate||''}"></div>
+        <div class="fgrp"><label>자퇴일</label><input type="date" id="f-quit" value="${s?.quitDate||''}"></div>
         <div class="fgrp"><label>재적 상태</label><select id="f-status">
           ${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${(s?.status||'active')===k?' selected':''}>${v}</option>`).join('')}
         </select></div>
@@ -364,6 +371,8 @@ async function saveStudent(editId){
     gender: $I('f-gender').value,
     birth: $I('f-birth').value,
     admitDate, admitYear,
+    transferDate: $I('f-transfer').value,
+    quitDate: $I('f-quit').value,
     status: $I('f-status').value,
     phone: $I('f-phone').value.trim(),
     email: $I('f-email').value.trim(),
@@ -378,7 +387,7 @@ async function saveStudent(editId){
       // 변경 이력 계산
       const old = STUDENTS.find(s=>s.id===editId);
       const changes = [];
-      const fieldNames = {name:'이름',gender:'성별',birth:'생년월일',admitDate:'입학일',status:'재적상태',phone:'학생연락처',email:'이메일',guardian:'보호자',guardianPhone:'보호자연락처',address:'주소',memo:'특이사항'};
+      const fieldNames = {name:'이름',gender:'성별',birth:'생년월일',admitDate:'입학일',transferDate:'편입일',quitDate:'자퇴일',status:'재적상태',phone:'학생연락처',email:'이메일',guardian:'보호자',guardianPhone:'보호자연락처',address:'주소',memo:'특이사항'};
       for(const k of Object.keys(fieldNames)){
         const ov = old[k]||'', nv = newData[k]||'';
         let ovd = ov, nvd = nv;
@@ -460,7 +469,8 @@ function openStudentDetail(id){
       </div>
 
       <div class="seclb">기본 정보</div>
-      ${row('성별',s.gender)}${row('생년월일',s.birth)}${row('입학일',s.admitDate)}
+      ${row('성별',s.gender)}${row('생년월일',s.birth)}
+      ${row('입학일',s.admitDate)}${row('편입일',s.transferDate)}${row('자퇴일',s.quitDate)}
       ${row('학생 연락처',s.phone)}${row('학생 이메일',s.email)}
       ${row('보호자',s.guardian)}${row('보호자 연락처',s.guardianPhone)}
       ${row('주소',s.address)}${row('특이사항',s.memo)}
@@ -557,6 +567,8 @@ const XLSX_COLS = [
   {h:'생년월일(YYYY-MM-DD)', f:'birth'},
   {h:'기관(지혜빛/다니엘)', f:'org'},
   {h:'입학일(YYYY-MM-DD)', f:'admitDate'},
+  {h:'편입일(YYYY-MM-DD)', f:'transferDate'},
+  {h:'자퇴일(YYYY-MM-DD)', f:'quitDate'},
   {h:'재적상태(재학/휴학/자퇴/졸업)', f:'status'},
   {h:'학생연락처', f:'phone'},
   {h:'학생이메일', f:'email'},
@@ -571,8 +583,8 @@ function downloadTemplate(){
   const headers = XLSX_COLS.map(c=>c.h);
   // 예시 행 2개
   const example = [
-    ['홍길동','남','2018-03-15','다니엘','2025-03-02','재학','010-1234-5678','hong@email.com','홍판서','010-8765-4321','경기도 오산시 ...','땅콩 알레르기'],
-    ['김믿음','여','2021-05-20','지혜빛','2025-03-02','재학','','','김집사','010-1111-2222','경기도 화성시 ...',''],
+    ['홍길동','남','2018-03-15','다니엘','2025-03-02','','','재학','010-1234-5678','hong@email.com','홍판서','010-8765-4321','경기도 오산시 ...','땅콩 알레르기'],
+    ['김믿음','여','2021-05-20','지혜빛','','2026-03-02','','재학','','','김집사','010-1111-2222','경기도 화성시 ...','편입생 예시'],
   ];
   const aoa = [headers, ...example];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -626,14 +638,18 @@ function parseAndPreview(rows){
     const org = orgMap[orgRaw] || (orgRaw==='jihyebit'||orgRaw==='daniel'?orgRaw:'');
     if(!org){ errors.push(`${rowNum}행 "${name}": 기관이 올바르지 않습니다 (${orgRaw})`); continue; }
     if(!allowed.includes(org)){ errors.push(`${rowNum}행 "${name}": 등록 권한이 없는 기관입니다 (${orgRaw})`); continue; }
-    const statusRaw = get(5);
+    const statusRaw = get(7);
     const status = statusMap[statusRaw] || 'active';
     const admitDate = get(4);
+    const transferDate = get(5);
+    const quitDate = get(6);
+    // 입학년도: 입학일 우선, 없으면 편입일 연도
+    const yearBase = admitDate || transferDate;
     parsed.push({
-      name, gender:get(1), birth:get(2), org, admitDate,
-      admitYear: admitDate ? Number(admitDate.slice(0,4)) : new Date().getFullYear(),
-      status, phone:get(6), email:get(7), guardian:get(8),
-      guardianPhone:get(9), address:get(10), memo:get(11),
+      name, gender:get(1), birth:get(2), org, admitDate, transferDate, quitDate,
+      admitYear: yearBase ? Number(yearBase.slice(0,4)) : new Date().getFullYear(),
+      status, phone:get(8), email:get(9), guardian:get(10),
+      guardianPhone:get(11), address:get(12), memo:get(13),
     });
   }
 
