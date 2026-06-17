@@ -136,6 +136,9 @@ const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
 const ROLES = {super:'슈퍼관리자', org_admin:'기관관리자', tab_admin:'부서장', teacher:'교사'};
 let CU = null;
 let TYPES = [];   // 출결 항목 캐시
+let TERMS = [];   // 학기 일정 캐시
+let HOLIDAYS = []; // 출근부 공휴일 (연동)
+let WORKPERIODS = []; // 출근부 근무/방학 기간 (연동)
 
 // 기본 출결 항목 (최초 1회 자동 생성용)
 const DEFAULT_TYPES = [
@@ -190,6 +193,8 @@ onAuthStateChanged(auth, async (user) => {
     // 설정 탭은 기관관리자/슈퍼만
     if(canSetup()) $I('tb-set').style.display='';
     await loadTypes();
+    await loadTerms();
+    await loadHolidays();
     showTab('check');
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
 });
@@ -210,6 +215,58 @@ async function loadTypes(){
   }
   TYPES.sort((a,b)=>(a.order||0)-(b.order||0));
 }
+
+// ── 학기 일정 로드 ──
+async function loadTerms(){
+  const snap = await getDocs(collection(db,'terms'));
+  const allowed = myOrgs();
+  TERMS = [];
+  snap.forEach(d=>{ const t={id:d.id, ...d.data()}; if(allowed.includes(t.org)) TERMS.push(t); });
+  TERMS.sort((a,b)=> (b.year-a.year) || a.org.localeCompare(b.org) || (a.term-b.term));
+}
+
+// ── 출근부 휴일/기간 연동 로드 ──
+async function loadHolidays(){
+  const hSnap = await getDocs(collection(db,'holidays'));
+  HOLIDAYS = []; hSnap.forEach(d=>HOLIDAYS.push(d.data()));
+  const wSnap = await getDocs(collection(db,'workPeriods'));
+  WORKPERIODS = []; wSnap.forEach(d=>WORKPERIODS.push(d.data()));
+}
+
+// ── 특정 날짜가 해당 기관에서 휴일/방학인지 판정 ──
+// 반환: 휴일이면 사유 문자열, 아니면 null
+function holidayReason(dateStr, org){
+  // 공휴일 (출근부 holidays: org가 'all' 또는 해당 기관)
+  const hol = HOLIDAYS.find(h => h.date===dateStr && (h.org==='all' || h.org===org));
+  if(hol) return hol.name || '공휴일';
+  // 방학기간 (출근부 workPeriods 중 type==='vacation')
+  const vac = WORKPERIODS.find(w => w.type==='vacation' && w.org===org && dateStr>=w.s && dateStr<=w.e);
+  if(vac) return vac.vac || vac.name || '방학';
+  return null;
+}
+
+// ── 수업일 계산: 학기 기간 평일 − 휴일/방학 ──
+// term: {year, org, term, start, end}
+// 반환: 수업일 날짜 배열 (YYYY-MM-DD)
+function calcSchoolDays(term){
+  const days = [];
+  if(!term.start || !term.end) return days;
+  let d = new Date(term.start+'T00:00:00');
+  const end = new Date(term.end+'T00:00:00');
+  while(d <= end){
+    const dow = d.getDay();
+    const ds = fmtDate(d);
+    // 평일(월~금)이고 휴일/방학이 아니면 수업일
+    if(dow!==0 && dow!==6 && !holidayReason(ds, term.org)){
+      days.push(ds);
+    }
+    d.setDate(d.getDate()+1);
+  }
+  return days;
+}
+
+function fmtDate(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+const TERM_NAMES = {1:'1학기', 2:'2학기'};
 
 // ── 탭 전환 ──
 function showTab(t){
@@ -259,7 +316,29 @@ function renderSet(){
       <p class="adesc">출석 체크에 사용할 항목을 관리합니다. "출석 인정" 항목은 수업일수 출석으로 계산되고, 그 외는 결석으로 처리됩니다. 운영하며 자유롭게 추가·수정·삭제할 수 있습니다.</p>
       <button class="bp" onclick="openTypeForm()">＋ 항목 추가</button>
       <div class="typelist">${items || '<p class="empty">항목이 없습니다.</p>'}</div>
+    </div>
+    <div class="acard">
+      <h3 class="actitle">📅 학기 일정 설정</h3>
+      <p class="adesc">연도·기관·학기별로 개학일과 종업일을 입력합니다. 수업일수는 학기 기간의 평일에서 출근부에 등록된 방학·공휴일·임시휴교를 자동으로 뺀 값입니다. (휴일은 출근부에서 한 번만 등록하면 출석부에 자동 반영됩니다)</p>
+      <button class="bp" onclick="openTermForm()">＋ 학기 추가</button>
+      <div class="typelist">${termListHTML()}</div>
     </div>`;
+}
+
+// 학기 목록 HTML
+function termListHTML(){
+  if(!TERMS.length) return '<p class="empty">등록된 학기가 없습니다.</p>';
+  return TERMS.map(t=>{
+    const days = calcSchoolDays(t).length;
+    return `<div class="typeitem" style="flex-wrap:wrap">
+      <span class="typename" style="flex:0 0 auto">${t.year}년 · ${ORGS[t.org]||t.org} · ${TERM_NAMES[t.term]||t.term}</span>
+      <span style="font-size:13px;color:var(--ts)">${t.start||'?'} ~ ${t.end||'?'}</span>
+      <span class="typebadge" style="background:var(--gp);color:var(--gm)">수업일 ${days}일</span>
+      <span style="flex:1"></span>
+      <button class="bm" onclick="openTermForm('${t.id}')">수정</button>
+      <button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delTerm('${t.id}')">삭제</button>
+    </div>`;
+  }).join('');
 }
 
 // ── 출결 항목 추가/수정 폼 ──
@@ -325,6 +404,81 @@ async function delType(id){
   } catch(e){ toast('삭제 실패: '+e.message,'err'); }
 }
 window.delType = delType;
+
+// ── 학기 일정 추가/수정 폼 ──
+function orgOptionsHTML(sel){
+  return myOrgs().map(o=>`<option value="${o}"${sel===o?' selected':''}>${ORGS[o]}</option>`).join('');
+}
+function openTermForm(editId){
+  const t = editId ? TERMS.find(x=>x.id===editId) : null;
+  const ty = new Date().getFullYear();
+  const years = [];
+  for(let y=ty+1; y>=ty-3; y--) years.push(y);
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${t?'학기 수정':'학기 추가'}</div>
+      <div class="msub">연도, 기관, 학기를 정하고 개학일·종업일을 입력하세요.</div>
+      <div class="fgrp"><label>연도</label>
+        <select id="tm-year">${years.map(y=>`<option value="${y}"${t&&t.year===y?' selected':(!t&&y===ty?' selected':'')}>${y}년</option>`).join('')}</select></div>
+      <div class="fgrp"><label>기관</label>
+        <select id="tm-org">${orgOptionsHTML(t?.org)}</select></div>
+      <div class="fgrp"><label>학기</label>
+        <select id="tm-term">
+          <option value="1"${t&&t.term===1?' selected':''}>1학기</option>
+          <option value="2"${t&&t.term===2?' selected':''}>2학기</option>
+        </select></div>
+      <div class="fgrp"><label>개학일</label><input type="date" id="tm-start" value="${t?.start||''}"></div>
+      <div class="fgrp"><label>종업일</label><input type="date" id="tm-end" value="${t?.end||''}"></div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveTerm('${t?.id||''}')">저장</button>
+      </div>
+    </div></div>`;
+}
+window.openTermForm = openTermForm;
+
+async function saveTerm(editId){
+  const year = Number($I('tm-year').value);
+  const org = $I('tm-org').value;
+  const term = Number($I('tm-term').value);
+  const start = $I('tm-start').value, end = $I('tm-end').value;
+  if(!start || !end) return toast('개학일과 종업일을 입력하세요.','err');
+  if(start > end) return toast('종업일이 개학일보다 빠릅니다.','err');
+  const data = {year, org, term, start, end};
+  try {
+    if(editId){
+      await updateDoc(doc(db,'terms',editId), data);
+      logActivity('수정','학기일정',`${year} ${ORGS[org]} ${TERM_NAMES[term]}`);
+      toast('수정되었습니다.','ok');
+    } else {
+      // 중복 체크 (같은 연도·기관·학기)
+      if(TERMS.some(t=>t.year===year && t.org===org && t.term===term))
+        return toast('이미 등록된 학기입니다. 수정해주세요.','err');
+      data.createdAt = Timestamp.now();
+      await addDoc(collection(db,'terms'), data);
+      logActivity('입력','학기일정',`${year} ${ORGS[org]} ${TERM_NAMES[term]}`);
+      toast('추가되었습니다.','ok');
+    }
+    closeMod();
+    await loadTerms();
+    renderSet();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveTerm = saveTerm;
+
+async function delTerm(id){
+  const t = TERMS.find(x=>x.id===id);
+  if(!confirm(`${t?.year}년 ${ORGS[t?.org]} ${TERM_NAMES[t?.term]} 학기를 삭제할까요?`)) return;
+  try {
+    await deleteDoc(doc(db,'terms',id));
+    logActivity('삭제','학기일정',`${t?.year} ${ORGS[t?.org]} ${TERM_NAMES[t?.term]}`);
+    toast('삭제되었습니다.');
+    await loadTerms();
+    renderSet();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.delTerm = delTerm;
 </script>
 </body>
 </html>
