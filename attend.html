@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>출석부 · 교사 선교사</title>
+<meta name="theme-color" content="#1e2e5c">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="출석부">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root {
+  --gd:#1e2e5c; --gm:#2b3990; --gl:#5a70cc; --gp:#e8ecf8;
+  --gold:#c9a84c; --goldd:#a8873a; --goldp:#fdf3d8;
+  --iv:#f5f0e8; --ivd:#e8e0d0;
+  --tx:#1a1a2e; --ts:#4a4a6a; --tl:#8888aa; --wh:#ffffff;
+  --sh:0 2px 12px rgba(30,46,92,0.10); --r:12px; --rs:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--iv);color:var(--tx);min-height:100vh;}
+
+#gate{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(150deg,#eef0f8 0%,#f5f0e8 60%,#fdf3d8 100%);padding:24px;text-align:center;}
+.gbox{background:var(--wh);border-radius:24px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(30,46,92,0.12);}
+.gtitle{font-size:22px;font-weight:800;color:var(--gd);margin-bottom:8px;}
+.gsub{font-size:14px;color:var(--ts);line-height:1.6;margin-bottom:20px;}
+.gbtn{display:inline-block;width:100%;padding:14px;background:linear-gradient(135deg,#2b3990,#1e2e5c);color:var(--wh);border:none;border-radius:var(--rs);font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;}
+
+#ms{display:none;flex-direction:column;min-height:100vh;}
+.ah{background:linear-gradient(135deg,#1e2e5c,#12194a);color:var(--wh);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+.ahl{display:flex;align-items:center;gap:12px;}
+.ahi{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.aht{font-size:16px;font-weight:700;}
+.ahr{text-align:right;}
+#hn{font-size:15px;font-weight:600;}
+#hi{font-size:11px;opacity:.7;margin-top:2px;}
+.homebtn{background:rgba(255,255,255,0.15);color:var(--wh);border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;margin-top:4px;text-decoration:none;display:inline-block;}
+
+/* 하위 탭 */
+.subtb{display:flex;gap:4px;background:var(--wh);padding:8px 16px;border-bottom:1px solid var(--ivd);overflow-x:auto;}
+.subtbtn{padding:8px 14px;background:transparent;border:none;border-radius:8px;font-size:14px;font-weight:600;color:var(--ts);cursor:pointer;white-space:nowrap;}
+.subtbtn.active{background:var(--gp);color:var(--gm);}
+
+.tc{padding:20px 16px;max-width:960px;margin:0 auto;width:100%;}
+.actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
+.adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
+.acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
+
+.fgrp{display:flex;flex-direction:column;margin-bottom:12px;}
+.fgrp label{font-size:12px;font-weight:700;color:var(--ts);margin-bottom:5px;}
+.fgrp input,.fgrp select{height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);outline:none;width:100%;font-family:inherit;}
+
+.bp{background:linear-gradient(135deg,#2b3990,#1e2e5c);color:var(--wh);border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;}
+.bs{background:var(--iv);color:var(--ts);border:1.5px solid var(--ivd);border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+.bm{background:var(--gp);color:var(--gm);border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+
+/* 출결 항목 목록 */
+.typelist{display:flex;flex-direction:column;gap:8px;margin-top:16px;}
+.typeitem{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--wh);border:1px solid var(--ivd);border-radius:10px;}
+.typedot{width:20px;height:20px;border-radius:50%;flex-shrink:0;}
+.typename{font-size:15px;font-weight:700;color:var(--gd);flex:1;}
+.typebadge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;}
+.empty{text-align:center;color:var(--tl);padding:30px;font-size:14px;}
+
+.addrow{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:8px;}
+.addrow .fgrp{margin-bottom:0;}
+
+.mov{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;}
+.mbk{position:absolute;inset:0;background:rgba(20,25,60,0.5);}
+.mbox{position:relative;background:var(--wh);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.mtitle{font-size:18px;font-weight:800;color:var(--gd);margin-bottom:4px;}
+.msub{font-size:13px;color:var(--ts);margin-bottom:16px;}
+.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gbox">
+    <div class="gtitle">출석부</div>
+    <div class="gsub" id="gate-msg">로그인 확인 중...</div>
+    <a class="gbtn" id="gate-btn" href="index.html" style="display:none">로그인 화면으로</a>
+  </div>
+</div>
+
+<div id="ms">
+  <header class="ah">
+    <div class="ahl">
+      <div class="ahi">✅</div>
+      <div class="aht">출석부</div>
+    </div>
+    <div class="ahr">
+      <div id="hn"></div>
+      <div id="hi"></div>
+      <a class="homebtn" href="index.html">← 메인으로</a>
+    </div>
+  </header>
+  <div class="subtb" id="subtb">
+    <button class="subtbtn active" id="tb-check" onclick="showTab('check')">✅ 출석 체크</button>
+    <button class="subtbtn" id="tb-stat" onclick="showTab('stat')">📊 통계</button>
+    <button class="subtbtn" id="tb-set" onclick="showTab('set')" style="display:none">⚙️ 설정</button>
+  </div>
+  <div class="tc" id="c-check" style="display:none"></div>
+  <div class="tc" id="c-stat" style="display:none"></div>
+  <div class="tc" id="c-set" style="display:none"></div>
+</div>
+
+<div id="mwrap"></div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $I = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+const ROLES = {super:'슈퍼관리자', org_admin:'기관관리자', tab_admin:'부서장', teacher:'교사'};
+let CU = null;
+let TYPES = [];   // 출결 항목 캐시
+
+// 기본 출결 항목 (최초 1회 자동 생성용)
+const DEFAULT_TYPES = [
+  {name:'출석', color:'#16a34a', order:1, isPresent:true},
+  {name:'결석', color:'#dc2626', order:2, isPresent:false},
+  {name:'지각', color:'#f59e0b', order:3, isPresent:false},
+  {name:'조퇴', color:'#d97706', order:4, isPresent:false},
+  {name:'병결', color:'#7c3aed', order:5, isPresent:false},
+  {name:'체험학습', color:'#0369a1', order:6, isPresent:false},
+];
+
+function toast(msg, type=''){
+  const t = $I('toast'); t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
+}
+// 공통 활동 로그
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){}
+}
+function myOrgs(){
+  if(!CU) return [];
+  if(CU.role==='super') return ['jihyebit','daniel'];
+  return CU.orgs && CU.orgs.length ? CU.orgs : [CU.org];
+}
+const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+const canSetup = () => CU && ['super','org_admin'].includes(CU.role);
+
+onAuthStateChanged(auth, async (user) => {
+  if(!user){
+    $I('gate-msg').textContent = '로그인이 필요합니다. 메인 화면에서 먼저 로그인해주세요.';
+    $I('gate-btn').style.display = 'inline-block';
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(db,'staff',user.uid));
+    if(!snap.exists()){ $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    CU = { uid:user.uid, ...snap.data() };
+    // 휴직/퇴직 차단
+    const ac = CU.acStatus || 'active';
+    if(ac==='leave'||ac==='quit'){ $I('gate-msg').textContent = ac==='quit'?'퇴직 처리된 계정입니다.':'휴직 중인 계정입니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    $I('gate').style.display='none'; $I('ms').style.display='flex';
+    $I('hn').textContent = CU.name;
+    $I('hi').textContent = `${ORGS[CU.org]||CU.org} · ${CU.dept||''} · ${ROLES[CU.role]||''}`;
+    // 설정 탭은 기관관리자/슈퍼만
+    if(canSetup()) $I('tb-set').style.display='';
+    await loadTypes();
+    showTab('check');
+  } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
+});
+
+// ── 출결 항목 로드 (없으면 기본값 자동 생성) ──
+async function loadTypes(){
+  const snap = await getDocs(collection(db,'attendTypes'));
+  TYPES = [];
+  snap.forEach(d=>TYPES.push({id:d.id, ...d.data()}));
+  // 최초 실행: 항목이 하나도 없으면 기본값 생성 (설정 권한자만)
+  if(TYPES.length===0 && canSetup()){
+    for(const t of DEFAULT_TYPES){
+      await addDoc(collection(db,'attendTypes'), {...t, createdAt:Timestamp.now()});
+    }
+    const snap2 = await getDocs(collection(db,'attendTypes'));
+    TYPES = [];
+    snap2.forEach(d=>TYPES.push({id:d.id, ...d.data()}));
+  }
+  TYPES.sort((a,b)=>(a.order||0)-(b.order||0));
+}
+
+// ── 탭 전환 ──
+function showTab(t){
+  document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
+  $I('tb-'+t)?.classList.add('active');
+  ['check','stat','set'].forEach(id=>{ const el=$I('c-'+id); if(el) el.style.display='none'; });
+  $I('c-'+t).style.display='block';
+  if(t==='check') renderCheck();
+  if(t==='stat') renderStat();
+  if(t==='set') renderSet();
+}
+window.showTab = showTab;
+
+// ── 출석 체크 (2단계에서 구현 예정) ──
+function renderCheck(){
+  $I('c-check').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">✅ 출석 체크</h3>
+      <p class="adesc">날짜와 반을 선택해 학생 출결을 기록합니다.</p>
+      <div class="empty">출석 체크 화면은 다음 단계에서 만들어집니다.<br>먼저 설정에서 출결 항목을 확인해주세요.</div>
+    </div>`;
+}
+
+// ── 통계 (4단계에서 구현 예정) ──
+function renderStat(){
+  $I('c-stat').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📊 출석 통계</h3>
+      <div class="empty">통계 화면은 이후 단계에서 만들어집니다.</div>
+    </div>`;
+}
+
+// ── 설정: 출결 항목 관리 ──
+function renderSet(){
+  if(!canSetup()){ $I('c-set').innerHTML='<div class="acard"><p class="empty">설정 권한이 없습니다.</p></div>'; return; }
+  const items = TYPES.map(t=>`
+    <div class="typeitem">
+      <span class="typedot" style="background:${t.color}"></span>
+      <span class="typename">${t.name}</span>
+      ${t.isPresent?'<span class="typebadge" style="background:#dcfce7;color:#16a34a">출석 인정</span>':'<span class="typebadge" style="background:#fee2e2;color:#dc2626">결석 처리</span>'}
+      <button class="bm" onclick="openTypeForm('${t.id}')">수정</button>
+      <button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delType('${t.id}')">삭제</button>
+    </div>`).join('');
+  $I('c-set').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">⚙️ 출결 항목 설정</h3>
+      <p class="adesc">출석 체크에 사용할 항목을 관리합니다. "출석 인정" 항목은 수업일수 출석으로 계산되고, 그 외는 결석으로 처리됩니다. 운영하며 자유롭게 추가·수정·삭제할 수 있습니다.</p>
+      <button class="bp" onclick="openTypeForm()">＋ 항목 추가</button>
+      <div class="typelist">${items || '<p class="empty">항목이 없습니다.</p>'}</div>
+    </div>`;
+}
+
+// ── 출결 항목 추가/수정 폼 ──
+function openTypeForm(editId){
+  const t = editId ? TYPES.find(x=>x.id===editId) : null;
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${t?'항목 수정':'항목 추가'}</div>
+      <div class="msub">출결 항목의 이름, 색상, 출석 인정 여부를 설정합니다.</div>
+      <div class="fgrp"><label>항목 이름</label><input id="t-name" value="${t?.name||''}" placeholder="예: 공결, 외출"></div>
+      <div class="fgrp"><label>색상</label>
+        <input id="t-color" type="color" value="${t?.color||'#2b3990'}" style="height:44px;padding:4px">
+      </div>
+      <div class="fgrp"><label>출석 인정 여부</label>
+        <select id="t-present">
+          <option value="no"${t&&!t.isPresent?' selected':''}>결석 처리 (출석일수에서 제외)</option>
+          <option value="yes"${t&&t.isPresent?' selected':''}>출석 인정 (출석일수에 포함)</option>
+        </select>
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveType('${t?.id||''}')">저장</button>
+      </div>
+    </div></div>`;
+}
+window.openTypeForm = openTypeForm;
+function closeMod(){ $I('mwrap').innerHTML=''; }
+window.closeMod = closeMod;
+
+async function saveType(editId){
+  const name = $I('t-name').value.trim();
+  const color = $I('t-color').value;
+  const isPresent = $I('t-present').value==='yes';
+  if(!name) return toast('항목 이름을 입력하세요.','err');
+  try {
+    if(editId){
+      await updateDoc(doc(db,'attendTypes',editId), {name, color, isPresent});
+      logActivity('수정','출석항목',`${name}`);
+      toast('수정되었습니다.','ok');
+    } else {
+      const maxOrder = TYPES.length ? Math.max(...TYPES.map(t=>t.order||0)) : 0;
+      await addDoc(collection(db,'attendTypes'), {name, color, isPresent, order:maxOrder+1, createdAt:Timestamp.now()});
+      logActivity('입력','출석항목',`${name}`);
+      toast('추가되었습니다.','ok');
+    }
+    closeMod();
+    await loadTypes();
+    renderSet();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveType = saveType;
+
+async function delType(id){
+  const t = TYPES.find(x=>x.id===id);
+  if(!confirm(`"${t?.name}" 항목을 삭제할까요?\n이미 이 항목으로 기록된 출결이 있다면 통계에 영향이 있을 수 있습니다.`)) return;
+  try {
+    await deleteDoc(doc(db,'attendTypes',id));
+    logActivity('삭제','출석항목',`${t?.name||''}`);
+    toast('삭제되었습니다.');
+    await loadTypes();
+    renderSet();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.delType = delType;
+</script>
+</body>
+</html>
