@@ -139,6 +139,9 @@ let TYPES = [];   // 출결 항목 캐시
 let TERMS = [];   // 학기 일정 캐시
 let HOLIDAYS = []; // 출근부 공휴일 (연동)
 let WORKPERIODS = []; // 출근부 근무/방학 기간 (연동)
+let CLASSES = [];  // 반 편성 캐시 (올해)
+let STUDENTS = {}; // 학생 캐시 (id -> data)
+let curYear = new Date().getFullYear();
 
 // 기본 출결 항목 (최초 1회 자동 생성용)
 const DEFAULT_TYPES = [
@@ -195,6 +198,8 @@ onAuthStateChanged(auth, async (user) => {
     await loadTypes();
     await loadTerms();
     await loadHolidays();
+    await loadClasses();
+    await loadStudents();
     showTab('check');
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
 });
@@ -268,6 +273,38 @@ function calcSchoolDays(term){
 function fmtDate(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 const TERM_NAMES = {1:'1학기', 2:'2학기'};
 
+// ── 반·학생 로드 ──
+async function loadClasses(){
+  const snap = await getDocs(collection(db,'classes'));
+  const allowed = myOrgs();
+  CLASSES = [];
+  snap.forEach(d=>{ const c={id:d.id, ...d.data()}; if(c.year===curYear && allowed.includes(c.org)) CLASSES.push(c); });
+  CLASSES.sort((a,b)=> (a.org+a.dept+(a.grade||'')).localeCompare(b.org+b.dept+(b.grade||'')));
+}
+async function loadStudents(){
+  const snap = await getDocs(collection(db,'students'));
+  const allowed = myOrgs();
+  STUDENTS = {};
+  snap.forEach(d=>{ const s={id:d.id, ...d.data()}; if(allowed.includes(s.org)) STUDENTS[d.id]=s; });
+}
+
+// 이 반의 출결을 기록할 권한이 있는지 (담임/대리/부서장/관리자)
+function canEditClass(c){
+  if(!CU) return false;
+  if(CU.role==='super' || CU.role==='org_admin') return myOrgs().includes(c.org);
+  if(CU.role==='tab_admin'){
+    // 부서장: 행정실은 다니엘 전체, 그 외는 본인 부서
+    if(CU.dept==='행정실') return myOrgs().includes(c.org);
+    return c.org===CU.org && c.dept===CU.dept;
+  }
+  // 교사: 담임이거나 대리로 지정된 반
+  return c.teacherUid===CU.uid || (c.deputies||[]).includes(CU.uid);
+}
+// 이 반을 열람할 권한 (같은 기관이면 누구나)
+function canViewClass(c){
+  return myOrgs().includes(c.org);
+}
+
 // ── 탭 전환 ──
 function showTab(t){
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
@@ -280,15 +317,167 @@ function showTab(t){
 }
 window.showTab = showTab;
 
-// ── 출석 체크 (2단계에서 구현 예정) ──
+// ── 출석 체크 ──
+let checkDate = fmtDate(new Date());  // 선택된 날짜
+let checkClassId = '';                 // 선택된 반
+let checkRecords = {};                 // {studentId: {typeId, memo}}
+
 function renderCheck(){
+  // 권한 있는 반(편집) + 열람 가능 반 구분
+  const editable = CLASSES.filter(canEditClass);
+  const viewable = CLASSES.filter(c=>canViewClass(c) && !canEditClass(c));
+  const allSelectable = [...editable, ...viewable];
+
+  if(!CLASSES.length){
+    $I('c-check').innerHTML = `<div class="acard"><h3 class="actitle">✅ 출석 체크</h3>
+      <div class="empty">${curYear}년에 편성된 반이 없습니다.<br>먼저 반 편성에서 반을 만들고 학생을 배정해주세요.</div></div>`;
+    return;
+  }
+  if(!checkClassId && editable.length) checkClassId = editable[0].id;
+  else if(!checkClassId && allSelectable.length) checkClassId = allSelectable[0].id;
+
+  const optgroup = (label, arr) => arr.length
+    ? `<optgroup label="${label}">${arr.map(c=>`<option value="${c.id}"${c.id===checkClassId?' selected':''}>${c.name} (${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' '+c.dept:''})</option>`).join('')}</optgroup>` : '';
+
   $I('c-check').innerHTML = `
     <div class="acard">
       <h3 class="actitle">✅ 출석 체크</h3>
-      <p class="adesc">날짜와 반을 선택해 학생 출결을 기록합니다.</p>
-      <div class="empty">출석 체크 화면은 다음 단계에서 만들어집니다.<br>먼저 설정에서 출결 항목을 확인해주세요.</div>
-    </div>`;
+      <p class="adesc">날짜와 반을 선택하면 학생 명단이 나타납니다. 기본은 모두 출석이며, 변경이 필요한 학생만 바꾸고 저장하세요.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fgrp" style="margin-bottom:0"><label>날짜</label>
+          <input type="date" id="ck-date" value="${checkDate}" onchange="onCheckChange()"></div>
+        <div class="fgrp" style="margin-bottom:0;flex:1;min-width:180px"><label>반</label>
+          <select id="ck-class" onchange="onCheckChange()">
+            ${optgroup('내가 기록하는 반', editable)}
+            ${optgroup('열람 전용 (다른 반)', viewable)}
+          </select></div>
+      </div>
+    </div>
+    <div id="ck-body"></div>`;
+  loadCheckBody();
 }
+window.renderCheck = renderCheck;
+
+function onCheckChange(){
+  checkDate = $I('ck-date').value;
+  checkClassId = $I('ck-class').value;
+  loadCheckBody();
+}
+window.onCheckChange = onCheckChange;
+
+async function loadCheckBody(){
+  const body = $I('ck-body'); if(!body) return;
+  const c = CLASSES.find(x=>x.id===checkClassId);
+  if(!c){ body.innerHTML=''; return; }
+  const editable = canEditClass(c);
+  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
+    .filter(s=>(s.status||'active')==='active')
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+
+  // 날짜가 휴일/방학인지 체크
+  const holReason = holidayReason(checkDate, c.org);
+  const dow = new Date(checkDate+'T00:00:00').getDay();
+  const isWeekend = dow===0||dow===6;
+
+  body.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
+
+  // 기존 기록 로드 (이 반·이 날짜)
+  const snap = await getDocs(collection(db,'studentAttendance'));
+  checkRecords = {};
+  snap.forEach(d=>{ const r=d.data(); if(r.classId===checkClassId && r.date===checkDate) checkRecords[r.studentId]={id:d.id, typeId:r.typeId, memo:r.memo||''}; });
+
+  // 기본 출석 타입 (isPresent=true 중 첫번째)
+  const defType = TYPES.find(t=>t.isPresent) || TYPES[0];
+
+  let banner = '';
+  if(holReason) banner = `<div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 <b>${holReason}</b> 입니다. (휴일/방학)</div>`;
+  else if(isWeekend) banner = `<div style="background:#fef3c7;color:#b45309;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 주말입니다.</div>`;
+
+  if(!studs.length){
+    body.innerHTML = `<div class="acard">${banner}<div class="empty">이 반에 배정된 재학생이 없습니다.</div></div>`;
+    return;
+  }
+
+  const typeButtons = (sid, curType) => TYPES.map(t=>{
+    const sel = (curType||defType?.id)===t.id;
+    return `<button class="tbtn-att" onclick="setRec('${sid}','${t.id}')" data-sid="${sid}" data-tid="${t.id}"
+      style="border:1.5px solid ${sel?t.color:'var(--ivd)'};background:${sel?t.color:'#fff'};color:${sel?'#fff':'var(--ts)'};padding:5px 12px;border-radius:8px;font-size:13px;font-weight:600;cursor:${editable?'pointer':'default'};${editable?'':'pointer-events:none;opacity:.7'}">${t.name}</button>`;
+  }).join('');
+
+  const rows = studs.map(s=>{
+    const rec = checkRecords[s.id];
+    const curType = rec?.typeId;
+    return `<div style="padding:12px 0;border-bottom:1px solid var(--ivd)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-weight:700;font-size:15px;color:var(--gd)">${s.name}</span>
+        <span style="font-size:11px;color:var(--tl)">학번 ${s.studentNo||'-'}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${typeButtons(s.id, curType)}</div>
+      <input type="text" id="memo-${s.id}" placeholder="메모 (선택)" value="${rec?.memo||''}" ${editable?'':'disabled'}
+        style="width:100%;height:34px;border:1.5px solid var(--ivd);border-radius:6px;padding:0 10px;font-size:13px;background:${editable?'var(--iv)':'#f0f0f0'};outline:none">
+    </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="acard">
+      ${banner}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 class="actitle" style="margin:0">${c.name} · ${studs.length}명</h3>
+        ${editable?`<span style="font-size:12px;color:var(--gm)">✏️ 기록 가능</span>`:`<span style="font-size:12px;color:var(--tl)">👁 열람 전용</span>`}
+      </div>
+      ${rows}
+      ${editable?`<button class="bp" style="margin-top:16px;width:100%" onclick="saveCheck()">저장</button>`:''}
+    </div>`;
+
+  // 초기 선택값 채우기 (기록 없으면 기본 출석)
+  studs.forEach(s=>{ if(!checkRecords[s.id]) checkRecords[s.id]={typeId:defType?.id, memo:''}; });
+}
+
+function setRec(sid, tid){
+  if(!checkRecords[sid]) checkRecords[sid]={};
+  checkRecords[sid].typeId = tid;
+  // 버튼 스타일 갱신
+  document.querySelectorAll(`.tbtn-att[data-sid="${sid}"]`).forEach(b=>{
+    const t = TYPES.find(x=>x.id===b.dataset.tid);
+    const sel = b.dataset.tid===tid;
+    b.style.background = sel?t.color:'#fff';
+    b.style.color = sel?'#fff':'var(--ts)';
+    b.style.borderColor = sel?t.color:'var(--ivd)';
+  });
+}
+window.setRec = setRec;
+
+async function saveCheck(){
+  const c = CLASSES.find(x=>x.id===checkClassId);
+  if(!c || !canEditClass(c)) return toast('기록 권한이 없습니다.','err');
+  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean).filter(s=>(s.status||'active')==='active');
+  toast('저장 중...');
+  let cnt=0;
+  try {
+    for(const s of studs){
+      const rec = checkRecords[s.id]; if(!rec||!rec.typeId) continue;
+      const memo = ($I('memo-'+s.id)?.value||'').trim();
+      const existing = rec.id;
+      const data = {
+        studentId: s.id, studentName: s.name, classId: c.id, className: c.name,
+        org: c.org, date: checkDate, typeId: rec.typeId, memo,
+        by: CU.name, byUid: CU.uid, updatedAt: Timestamp.now()
+      };
+      if(existing){
+        // 변경 이력 누적
+        await updateDoc(doc(db,'studentAttendance',existing), data);
+      } else {
+        data.createdAt = Timestamp.now();
+        await addDoc(collection(db,'studentAttendance'), data);
+      }
+      cnt++;
+    }
+    logActivity('수정','출석부',`${c.name} ${checkDate} (${cnt}명)`);
+    toast(`${cnt}명 출결이 저장되었습니다.`,'ok');
+    loadCheckBody();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveCheck = saveCheck;
 
 // ── 통계 (4단계에서 구현 예정) ──
 function renderStat(){
