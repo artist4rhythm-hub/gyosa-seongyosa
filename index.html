@@ -301,7 +301,7 @@ const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
 
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
-const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'탭관리자',teacher:'교사'};
+const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사'};
 const pad=n=>String(n).padStart(2,'0');
 
 // ── 공통 유틸 함수 ───────────────────────────
@@ -1342,6 +1342,138 @@ async function renderActivityLog(){
 }
 window.renderActivityLog = renderActivityLog;
 
+// ── 전체 데이터 백업 (슈퍼관리자/기관관리자) ──────────────
+async function downloadBackup(){
+  const st = $I('backup-status');
+  const setSt = m => { if(st) st.textContent = m; };
+  setSt('데이터 수집 중...');
+  try {
+    const allowed = myOrgs();
+    const isSU = CU.role === 'super';
+    // 백업할 컬렉션 목록
+    const cols = ['staff','students','classes','attendance','workPeriods','holidays','notices','activityLogs','loginLogs'];
+    const data = {};
+    for(const c of cols){
+      const snap = await getDocs(collection(db, c));
+      const arr = [];
+      snap.forEach(d => arr.push({ _id:d.id, ...d.data() }));
+      data[c] = arr;
+      setSt(`${c} 수집 중... (${arr.length}건)`);
+    }
+
+    // 기관관리자는 본인 기관 데이터만 (슈퍼는 전체)
+    if(!isSU){
+      const inOrg = (o) => allowed.includes(o);
+      const matchStaff = (s) => { const so=s.orgs&&s.orgs.length?s.orgs:[s.org]; return so.some(inOrg); };
+      data.staff = data.staff.filter(matchStaff);
+      data.students = data.students.filter(s=>inOrg(s.org));
+      data.classes = data.classes.filter(c=>inOrg(c.org));
+      data.attendance = data.attendance.filter(r=>inOrg(r.org));
+      data.workPeriods = data.workPeriods.filter(w=>inOrg(w.org));
+      data.holidays = data.holidays.filter(h=>h.org==='all'||inOrg(h.org));
+      data.notices = data.notices.filter(n=>n.scope==='all'||inOrg(n.org));
+      // 로그류는 기관관리자 백업에서 제외 (개인정보/전체로그)
+      data.activityLogs = [];
+      data.loginLogs = [];
+    }
+
+    setSt('백업 파일 생성 중...');
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const html = buildBackupHTML(data, now, isSU);
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `교사선교사_백업_${stamp}.html`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    logActivity('백업', '데이터', `전체 백업 다운로드`);
+    setSt(`✓ 백업 완료 (${stamp})`);
+  } catch(e){
+    setSt('백업 실패: ' + e.message);
+    toast('백업 실패: ' + e.message, 'err');
+  }
+}
+window.downloadBackup = downloadBackup;
+
+// 백업 HTML 파일 생성 (데이터 내장 + 열람 화면)
+function buildBackupHTML(data, now, isSU){
+  const ORGS_J = JSON.stringify({jihyebit:'지혜빛',daniel:'다니엘 아마츠'});
+  const ROLES_J = JSON.stringify({super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사'});
+  const STATUS_J = JSON.stringify({active:'재학',leave:'휴학',quit:'자퇴',grad:'졸업',egrad:'조기졸업'});
+  const dataJson = JSON.stringify(data);
+  const dstr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const counts = Object.entries(data).map(([k,v])=>`${k}: ${v.length}건`).join(', ');
+  // 백업 열람 화면은 순수 HTML (인터넷·Firebase 불필요)
+  return `<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>교사 선교사 백업 — ${dstr}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif}
+body{background:#f5f0e8;color:#1a1a2e;padding:0}
+.hd{background:linear-gradient(135deg,#1e2e5c,#12194a);color:#fff;padding:20px 24px}
+.hd h1{font-size:20px;font-weight:800}
+.hd p{font-size:13px;opacity:.8;margin-top:4px}
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.tab{padding:8px 14px;background:#fff;border:1.5px solid #e8e0d0;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;color:#4a4a6a}
+.tab.on{background:#2b3990;color:#fff;border-color:#2b3990}
+.card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 12px rgba(30,46,92,.1);overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+th,td{padding:8px 10px;border-bottom:1px solid #eee;text-align:left}
+th{background:#f5f0e8;font-weight:700;position:sticky;top:0}
+tr:hover{background:#fafafa}
+.note{font-size:12px;color:#8888aa;margin-bottom:12px}
+.empty{padding:30px;text-align:center;color:#aaa}
+.cnt{font-size:12px;color:#8888aa;margin-bottom:8px}
+input.search{width:100%;max-width:300px;height:36px;border:1.5px solid #e8e0d0;border-radius:8px;padding:0 12px;font-size:13px;margin-bottom:12px;outline:none}
+</style></head>
+<body>
+<div class="hd"><h1>📦 교사 선교사 — 데이터 백업</h1>
+<p>백업 시점: ${dstr} · ${isSU?'전체':'기관'} 백업 · ${counts}</p></div>
+<div class="wrap">
+<p class="note">⚠️ 이 파일은 백업 시점의 데이터 사본입니다. 인터넷 없이 열람 가능하며, 이 파일에서 수정해도 실제 시스템에는 반영되지 않습니다.</p>
+<div class="tabs" id="tabs"></div>
+<input class="search" id="search" placeholder="검색..." oninput="render()">
+<div class="card" id="content"></div>
+</div>
+<scr`+`ipt>
+const DATA = ${dataJson};
+const ORGS = ${ORGS_J}, ROLES = ${ROLES_J}, STATUS = ${STATUS_J};
+const LABELS = {staff:'교직원',students:'학생',classes:'반편성',attendance:'출근부',workPeriods:'근무/방학기간',holidays:'공휴일',notices:'공지',activityLogs:'활동로그',loginLogs:'로그인기록'};
+let curTab = 'staff';
+function tsFmt(t){ if(!t)return''; if(t.seconds)return new Date(t.seconds*1000).toLocaleString('ko-KR'); if(typeof t==='number')return new Date(t).toLocaleString('ko-KR'); return ''; }
+function cell(k,v){
+  if(v==null)return '';
+  if(k==='org')return ORGS[v]||v;
+  if(k==='role')return ROLES[v]||v;
+  if(k==='status')return STATUS[v]||v;
+  if(k==='at'||k==='createdAt'||k==='updatedAt'||k==='lastLogin')return tsFmt(v);
+  if(Array.isArray(v))return v.length?v.join(', '):'';
+  if(typeof v==='object')return JSON.stringify(v);
+  return String(v);
+}
+function render(){
+  const tabsEl=document.getElementById('tabs');
+  tabsEl.innerHTML=Object.keys(DATA).map(function(k){return '<div class="tab '+(k===curTab?'on':'')+'" onclick="curTab=\\''+k+'\\';render()">'+(LABELS[k]||k)+' ('+DATA[k].length+')</div>';}).join('');
+  const rows=DATA[curTab]||[];
+  const q=(document.getElementById('search').value||'').trim().toLowerCase();
+  const el=document.getElementById('content');
+  if(!rows.length){el.innerHTML='<div class="empty">데이터가 없습니다.</div>';return;}
+  const skip=new Set(['_id','uid','history','readBy','siblings','students']);
+  const cols=Object.keys(rows[0]).filter(c=>!skip.has(c));
+  let list=rows;
+  if(q)list=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
+  el.innerHTML='<div class="cnt">'+list.length+'건</div><table><thead><tr>'+cols.map(c=>'<th>'+c+'</th>').join('')+'</tr></thead><tbody>'+
+    list.map(r=>'<tr>'+cols.map(c=>'<td>'+cell(c,r[c])+'</td>').join('')+'</tr>').join('')+'</tbody></table>';
+}
+render();
+</scr`+`ipt>
+</body></html>`;
+}
+window.buildBackupHTML = buildBackupHTML;
+
 function filterActLog(){
   const cat = $I('al-cat')?.value||'', act = $I('al-action')?.value||'', q = ($I('al-search')?.value||'').trim();
   let list = ACT_LOGS.filter(l=>{
@@ -1671,6 +1803,13 @@ function renderAdmSys(){
   <div class="asc">
     ${isOA?`
     <div class="acard">
+      <h3 class="actitle">💾 전체 데이터 백업</h3>
+      <p class="adesc">현재까지 저장된 모든 데이터를 하나의 파일로 다운로드합니다. 받은 파일을 더블클릭하면 인터넷 없이도 모든 자료를 열람할 수 있습니다. 정기적으로 백업해 안전하게 보관하세요.</p>
+      <button class="bp" onclick="downloadBackup()">💾 백업 파일 다운로드</button>
+      <span id="backup-status" style="margin-left:10px;font-size:13px;color:var(--ts)"></span>
+    </div>`:''}
+    ${isOA?`
+    <div class="acard">
       <h3 class="actitle">👤 교직원 계정 발급</h3>
       <p class="adesc">새 교직원 계정을 발급합니다. 발급된 아이디와 비밀번호로 로그인할 수 있습니다.</p>
       <div class="fg">
@@ -1680,7 +1819,7 @@ function renderAdmSys(){
         <div class="fgrp"><label>권한</label>
           <select id="nr" onchange="onRoleChange()">
             ${isSU?'<option value="org_admin">기관관리자</option>':''}
-            <option value="tab_admin">탭관리자</option>
+            <option value="tab_admin">부서장</option>
             <option value="teacher" selected>교사</option>
           </select>
         </div>
@@ -1962,7 +2101,7 @@ function openEditStaff(uid, name, org, dept, role){
           <div class="fgrp"><label>권한</label>
             <select id="es-role" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
               <option value="teacher"${role==='teacher'?' selected':''}>교사</option>
-              <option value="tab_admin"${role==='tab_admin'?' selected':''}>탭관리자</option>
+              <option value="tab_admin"${role==='tab_admin'?' selected':''}>부서장</option>
               <option value="org_admin"${role==='org_admin'?' selected':''}>기관관리자</option>
               <option value="super"${role==='super'?' selected':''}>슈퍼관리자</option>
             </select></div>
