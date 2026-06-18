@@ -343,6 +343,7 @@ window.showTab = showTab;
 // ── 출석 체크 ──
 let checkDate = fmtDate(new Date());  // 선택된 날짜
 let checkClassId = '';                 // 선택된 반
+let checkGradeFilter = '';             // 학년 필터 (빈값=전체)
 let checkRecords = {};                 // {studentId: {typeId, memo}}
 
 function renderCheck(){
@@ -370,20 +371,44 @@ function renderCheck(){
         <div class="fgrp" style="margin-bottom:0"><label>날짜</label>
           <input type="date" id="ck-date" value="${checkDate}" onchange="onCheckChange()"></div>
         <div class="fgrp" style="margin-bottom:0;flex:1;min-width:180px"><label>반</label>
-          <select id="ck-class" onchange="onCheckChange()">
+          <select id="ck-class" onchange="onCheckClassChange()">
             ${optgroup('내가 기록하는 반', editable)}
             ${optgroup('열람 전용 (다른 반)', viewable)}
           </select></div>
+        <div class="fgrp" style="margin-bottom:0;min-width:120px"><label>학년 필터</label>
+          <select id="ck-grade" onchange="onCheckChange()"><option value="">전체 학년</option></select></div>
       </div>
     </div>
     <div id="ck-body"></div>`;
+  fillCheckGradeFilter();
   loadCheckBody();
 }
 window.renderCheck = renderCheck;
 
+// 선택된 반의 학년 목록으로 필터 옵션 채우기
+function fillCheckGradeFilter(){
+  const el = $I('ck-grade'); if(!el) return;
+  const c = CLASSES.find(x=>x.id===checkClassId);
+  const gradeSet = new Set();
+  if(c && c.grades) Object.values(c.grades).forEach(g=>{ if(g) gradeSet.add(g); });
+  const arr = Array.from(gradeSet).sort();
+  el.innerHTML = '<option value="">전체 학년</option>' + arr.map(g=>`<option value="${g}"${g===checkGradeFilter?' selected':''}>${g}</option>`).join('');
+}
+window.fillCheckGradeFilter = fillCheckGradeFilter;
+
+// 반이 바뀌면 학년 필터를 초기화하고 다시 채움
+function onCheckClassChange(){
+  checkClassId = $I('ck-class').value;
+  checkGradeFilter = '';
+  fillCheckGradeFilter();
+  loadCheckBody();
+}
+window.onCheckClassChange = onCheckClassChange;
+
 function onCheckChange(){
   checkDate = $I('ck-date').value;
   checkClassId = $I('ck-class').value;
+  checkGradeFilter = $I('ck-grade')?.value || '';
   loadCheckBody();
 }
 window.onCheckChange = onCheckChange;
@@ -393,8 +418,10 @@ async function loadCheckBody(){
   const c = CLASSES.find(x=>x.id===checkClassId);
   if(!c){ body.innerHTML=''; return; }
   const editable = canEditClass(c);
+  const grades = c.grades || {};
   const allStuds = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
     .filter(s=>(s.status||'active')==='active')
+    .filter(s=>!checkGradeFilter || (grades[s.id]||'')===checkGradeFilter)  // 학년 필터
     .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   // 이 날짜에 휴학 중인 학생 분리
   const studs = allStuds.filter(s=>!isOnLeave(s, checkDate));
@@ -444,9 +471,12 @@ async function loadCheckBody(){
   const rows = studs.map(s=>{
     const rec = checkRecords[s.id];
     const curType = rec?.typeId;
+    const g = grades[s.id];
+    const gradeTag = g ? `<span style="background:var(--gp);color:var(--gm);font-size:10px;font-weight:700;padding:1px 7px;border-radius:100px">${g}</span>` : '';
     return `<div style="padding:12px 0;border-bottom:1px solid var(--ivd)">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
         <span style="font-weight:700;font-size:15px;color:var(--gd)">${s.name}</span>
+        ${gradeTag}
         <span style="font-size:11px;color:var(--tl)">학번 ${s.studentNo||'-'}</span>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${typeButtons(s.id, curType)}</div>
@@ -500,8 +530,10 @@ async function saveCheck(){
   const term = termOfDate(checkDate, c.org);
   if(term==='none') return toast('학기 일정이 등록되지 않았습니다.','err');
   if(term===null) return toast('학기 기간이 아닙니다. 출석을 기록할 수 없습니다.','err');
+  const grades = c.grades || {};
   const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
     .filter(s=>(s.status||'active')==='active')
+    .filter(s=>!checkGradeFilter || (grades[s.id]||'')===checkGradeFilter)  // 화면에 보이는 학생만
     .filter(s=>!isOnLeave(s, checkDate));  // 휴학 중인 학생 제외
   toast('저장 중...');
   let cnt=0;
@@ -940,7 +972,7 @@ async function loadMonthlyBody(){
     // 월간 합계 막대
     const bar = `<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;background:#eee;border-radius:3px;height:10px;min-width:40px;overflow:hidden"><div style="width:${rate}%;height:100%;background:${rate>=90?'#16a34a':rate>=70?'#f59e0b':'#dc2626'}"></div></div><span style="font-size:11px;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'};white-space:nowrap">${present}/${totalSchool}</span></div>`;
     return `<tr>
-      <td style="position:sticky;left:0;background:#fff;padding:4px 8px;font-size:13px;font-weight:600;white-space:nowrap;border-right:2px solid var(--ivd)">${s.name}</td>
+      <td style="position:sticky;left:0;background:#fff;padding:4px 8px;font-size:13px;font-weight:600;white-space:nowrap;border-right:2px solid var(--ivd)">${s.name}${(c.grades&&c.grades[s.id])?`<span style="color:var(--gm);font-size:10px;font-weight:700;margin-left:4px">${c.grades[s.id]}</span>`:''}</td>
       ${cells}
       <td style="padding:4px 8px;min-width:90px">${bar}</td>
     </tr>`;
