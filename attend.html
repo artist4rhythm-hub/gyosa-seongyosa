@@ -278,6 +278,16 @@ function isOnLeave(s, dateStr){
   if(!s || !s.leaves || !s.leaves.length) return false;
   return s.leaves.some(lv => lv.start && lv.end && dateStr>=lv.start && dateStr<=lv.end);
 }
+// 특정 날짜가 해당 기관의 등록된 학기 기간 안에 있는지
+// 반환: 속하면 학기객체, 안 속하면 null, 그 해 학기 자체가 없으면 'none'
+function termOfDate(dateStr, org){
+  const year = Number(dateStr.slice(0,4));
+  const orgTerms = TERMS.filter(t=>t.org===org && t.year===year);
+  if(!orgTerms.length) return 'none';
+  const hit = orgTerms.find(t=>t.start && t.end && dateStr>=t.start && dateStr<=t.end);
+  return hit || null;
+}
+
 // 학생의 휴학 기간과 수업일 집합의 교집합 일수 (통계 분모 제외용)
 function leaveDaysInSet(s, daySet){
   if(!s || !s.leaves || !s.leaves.length) return 0;
@@ -405,6 +415,17 @@ async function loadCheckBody(){
   // 기본 출석 타입 (isPresent=true 중 첫번째)
   const defType = TYPES.find(t=>t.isPresent) || TYPES[0];
 
+  // 학기 기간 체크: 학기 밖이면 입력 차단
+  const term = termOfDate(checkDate, c.org);
+  if(term === 'none'){
+    body.innerHTML = `<div class="acard"><div style="background:#fef3c7;color:#b45309;border-radius:8px;padding:14px;font-size:13px;line-height:1.6">📅 ${checkDate.slice(0,4)}년 ${ORGS[c.org]} 학기 일정이 등록되지 않았습니다.<br>설정 탭에서 학기(개학일~종업일)를 먼저 등록해야 출석을 기록할 수 있습니다.</div></div>`;
+    return;
+  }
+  if(term === null){
+    body.innerHTML = `<div class="acard"><div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:14px;font-size:13px;line-height:1.6">🚫 이 날짜(${checkDate})는 <b>학기 기간이 아닙니다.</b><br>출석은 등록된 학기(개학일~종업일) 안에서만 기록할 수 있습니다.<br><span style="color:var(--ts)">방학·학기 외 기간에는 출결을 입력하지 않습니다.</span></div></div>`;
+    return;
+  }
+
   let banner = '';
   if(holReason) banner = `<div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 <b>${holReason}</b> 입니다. (휴일/방학)</div>`;
   else if(isWeekend) banner = `<div style="background:#fef3c7;color:#b45309;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 주말입니다.</div>`;
@@ -476,6 +497,9 @@ window.setRec = setRec;
 async function saveCheck(){
   const c = CLASSES.find(x=>x.id===checkClassId);
   if(!c || !canEditClass(c)) return toast('기록 권한이 없습니다.','err');
+  const term = termOfDate(checkDate, c.org);
+  if(term==='none') return toast('학기 일정이 등록되지 않았습니다.','err');
+  if(term===null) return toast('학기 기간이 아닙니다. 출석을 기록할 수 없습니다.','err');
   const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
     .filter(s=>(s.status||'active')==='active')
     .filter(s=>!isOnLeave(s, checkDate));  // 휴학 중인 학생 제외
@@ -832,7 +856,7 @@ async function buildMonthlyCalendar(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px">
         <div class="fgrp" style="margin-bottom:0;flex:1;min-width:160px"><label>반</label>
           <select id="mc-class" onchange="onMonthChange()">
-            ${orgClasses.map(c=>`<option value="${c.id}"${c.id===statMonthClassId?' selected':''}>${c.name}${c.dept&&c.dept!=='전체'?' ('+c.dept+')':''}</option>`).join('')}
+            ${orgClasses.map(c=>`<option value="${c.id}"${c.id===statMonthClassId?' selected':''}>${c.name}${c.dept&&c.dept!=='전체'?' · '+c.dept:''}${c.grade?' · '+c.grade:''}</option>`).join('')}
           </select></div>
         <div class="fgrp" style="margin-bottom:0"><label>월</label>
           <select id="mc-month" onchange="onMonthChange()">
