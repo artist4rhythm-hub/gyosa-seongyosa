@@ -512,7 +512,9 @@ let statRecords = null;  // 출결 기록 캐시 (한 번만 로드)
 let statYear = new Date().getFullYear();
 let statOrg = '';
 let statTermSel = '1';   // '1' | '2' | 'year'
-let statView = 'student'; // student | class | dept | all
+let statView = 'student'; // student | class | grade | dept | all | month
+let statClassFilter = '';
+let statGradeFilter = '';
 
 function renderStat(){
   const orgs = myOrgs();
@@ -540,23 +542,54 @@ function renderStat(){
           <select id="st-view" onchange="onStatChange()">
             <option value="student"${statView==='student'?' selected':''}>학생별</option>
             <option value="class"${statView==='class'?' selected':''}>반별</option>
+            <option value="grade"${statView==='grade'?' selected':''}>학년별</option>
             <option value="dept"${statView==='dept'?' selected':''}>부서별</option>
             <option value="all"${statView==='all'?' selected':''}>전체</option>
             <option value="month"${statView==='month'?' selected':''}>월별 달력</option>
           </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>반 필터</label>
+          <select id="st-class" onchange="onStatChange()"><option value="">전체 반</option></select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>학년 필터</label>
+          <select id="st-grade" onchange="onStatChange()"><option value="">전체 학년</option></select></div>
       </div>
       <button class="bs" style="margin-top:12px" onclick="downloadStatExcel()">⬇ 엑셀 다운로드</button>
     </div>
     <div id="st-body"></div>`;
+  fillStatFilters();
   buildStat();
 }
 window.renderStat = renderStat;
 
+// 반/학년 필터 옵션 채우기 (선택된 기관 기준)
+function fillStatFilters(){
+  const orgClasses = CLASSES.filter(c=>c.org===statOrg);
+  const clsEl = $I('st-class');
+  if(clsEl){
+    clsEl.innerHTML = '<option value="">전체 반</option>' +
+      orgClasses.sort((a,b)=>a.name.localeCompare(b.name,'ko')).map(c=>`<option value="${c.id}"${c.id===statClassFilter?' selected':''}>${c.name}${c.grade?' ('+c.grade+')':''}</option>`).join('');
+  }
+  // 학년 목록 (반 grades에 등장하는 학년 + 반 grade)
+  const gradeSet = new Set();
+  orgClasses.forEach(c=>{ Object.values(c.grades||{}).forEach(g=>gradeSet.add(g)); });
+  const gEl = $I('st-grade');
+  if(gEl){
+    const arr = Array.from(gradeSet).sort();
+    gEl.innerHTML = '<option value="">전체 학년</option>' +
+      arr.map(g=>`<option value="${g}"${g===statGradeFilter?' selected':''}>${g}</option>`).join('');
+  }
+}
+window.fillStatFilters = fillStatFilters;
+
 function onStatChange(){
+  const prevOrg = statOrg;
   statYear = Number($I('st-year').value);
   statOrg = $I('st-org').value;
   statTermSel = $I('st-term').value;
   statView = $I('st-view').value;
+  statClassFilter = $I('st-class')?.value || '';
+  statGradeFilter = $I('st-grade')?.value || '';
+  // 기관이 바뀌면 반/학년 필터 초기화하고 옵션 다시 채움
+  if(prevOrg !== statOrg){ statClassFilter=''; statGradeFilter=''; fillStatFilters(); }
   buildStat();
 }
 window.onStatChange = onStatChange;
@@ -609,16 +642,21 @@ async function buildStat(){
   const studClass = {};
   orgClasses.forEach(c=>(c.students||[]).forEach(sid=>{ studClass[sid]=c; }));
 
-  // 학생별 집계: {studentId: {name, className, dept, counts, present, recorded, myTotal}}
+  // 학생별 집계: {studentId: {name, className, grade, dept, counts, present, recorded, myTotal}}
   const byStud = {};
   // 대상 학생 = 이 기관 반에 배정된 재학생
   orgClasses.forEach(c=>{
+    // 반 필터 적용
+    if(statClassFilter && c.id!==statClassFilter) return;
     (c.students||[]).forEach(sid=>{
       const s = STUDENTS[sid]; if(!s || (s.status||'active')!=='active') return;
+      const grade = (c.grades||{})[sid] || '';
+      // 학년 필터 적용
+      if(statGradeFilter && grade!==statGradeFilter) return;
       if(!byStud[sid]){
         // 개인 수업일수 = 전체 수업일 − 본인 휴학 기간에 걸린 수업일
         const leaveDays = leaveDaysInSet(s, schoolDaySet);
-        byStud[sid]={name:s.name, studentNo:s.studentNo||'', className:c.name, dept:c.dept||'', classId:c.id, counts:{}, present:0, recorded:0, myTotal: Math.max(0, totalDays - leaveDays), leaveDays};
+        byStud[sid]={name:s.name, studentNo:s.studentNo||'', className:c.name, grade:grade||'(학년미지정)', dept:c.dept||'', classId:c.id, counts:{}, present:0, recorded:0, myTotal: Math.max(0, totalDays - leaveDays), leaveDays};
       }
     });
   });
@@ -643,6 +681,7 @@ async function buildStat(){
   // 보기별 렌더
   if(statView==='student') renderStatStudent(byStud, totalDays, minDate, maxDate);
   else if(statView==='class') renderStatGroup(byStud, totalDays, 'className', '반');
+  else if(statView==='grade') renderStatGroup(byStud, totalDays, 'grade', '학년');
   else if(statView==='dept') renderStatGroup(byStud, totalDays, 'dept', '부서');
   else renderStatAll(byStud, totalDays, minDate, maxDate);
 }
@@ -661,6 +700,7 @@ function renderStatStudent(byStud, totalDays, minDate, maxDate){
     return `<tr>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${b.name}${leaveNote}</td>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd)">${b.className}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd)">${b.grade||'-'}</td>
       ${cols.map(c=>`<td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${b.counts[c]||0}</td>`).join('')}
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${denom}</td>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'}">${rate}%</td>
@@ -675,7 +715,7 @@ function renderStatStudent(byStud, totalDays, minDate, maxDate){
       <div style="overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">
           <thead><tr style="background:var(--iv)">
-            <th style="padding:8px;text-align:left">이름</th><th style="padding:8px;text-align:left">반</th>
+            <th style="padding:8px;text-align:left">이름</th><th style="padding:8px;text-align:left">반</th><th style="padding:8px;text-align:left">학년</th>
             ${cols.map(c=>`<th style="padding:8px;text-align:center">${c}</th>`).join('')}
             <th style="padding:8px;text-align:center">수업일</th>
             <th style="padding:8px;text-align:center">출석률</th>

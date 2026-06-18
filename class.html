@@ -99,10 +99,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 
 <div id="ms">
   <header class="ah">
-    <div class="ahl">
+    <a class="ahl" href="index.html" style="text-decoration:none;color:inherit;cursor:pointer">
       <div class="ahi">🏫</div>
       <div class="aht">반 편성</div>
-    </div>
+    </a>
     <div class="ahr">
       <div id="hn"></div>
       <div id="hi"></div>
@@ -278,8 +278,13 @@ function renderClasses(){
     const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(Boolean)
       .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
     const teacher = STAFF.find(s=>s.uid===c.teacherUid);
+    const grades = c.grades || {};
     const studChips = studs.length
-      ? studs.map(s=>`<span class="stud-chip">${s.name}${s.birth?`<span style="color:var(--tl);font-size:11px">${s.birth.slice(0,4)}</span>`:''}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`).join('')
+      ? studs.map(s=>{
+          const g = grades[s.id];
+          const gradeTag = g ? `<span style="background:var(--gp);color:var(--gm);font-size:10px;font-weight:700;padding:1px 6px;border-radius:100px">${g}</span>` : `<span style="color:#dc2626;font-size:10px">학년?</span>`;
+          return `<span class="stud-chip">${s.name}${s.birth?`<span style="color:var(--tl);font-size:11px">${s.birth.slice(0,4)}</span>`:''}${gradeTag}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`;
+        }).join('')
       : '<span style="font-size:13px;color:var(--tl)">배정된 학생이 없습니다.</span>';
     return `<div class="clscard">
       <div class="clshead" onclick="toggleClass('${c.id}')">
@@ -292,6 +297,7 @@ function renderClasses(){
         <div style="margin-bottom:10px">${studChips}</div>
         ${isAdmin()?`<div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="bm" onclick="openAddStudent('${c.id}')">＋ 학생 추가</button>
+          <button class="bm" onclick="openGradeAssign('${c.id}')">🎓 학년 지정</button>
           <button class="bm" onclick="openClassForm('${c.id}')">반 정보 수정</button>
           <button class="bm" style="background:#fee2e2;color:#dc2626" onclick="deleteClass('${c.id}')">반 삭제</button>
         </div>`:''}
@@ -508,6 +514,65 @@ async function addCheckedStudents(classId){
 }
 window.addCheckedStudents = addCheckedStudents;
 
+// ── 학년 지정 (반 안 학생들에게 개별 학년 부여) ──
+function openGradeAssign(classId){
+  const c = CLASSES.find(x=>x.id===classId); if(!c) return;
+  const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(Boolean)
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  if(!studs.length) return toast('먼저 학생을 추가하세요.','err');
+  const grades = c.grades || {};
+  const gradeOpts = (cur) => {
+    const list = GRADES[c.org] || [];
+    return `<option value="">미지정</option>` + list.map(g=>`<option value="${g}"${cur===g?' selected':''}>${g}</option>`).join('');
+  };
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${c.name} 학년 지정</div>
+      <div class="msub">각 학생의 학년을 지정하세요. 통계에서 학년별로 볼 때 사용됩니다.</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--ts)">전체 일괄:</span>
+        <select id="grade-bulk" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px">${gradeOpts('')}</select>
+        <button class="bm" onclick="applyGradeBulk()">전체 적용</button>
+      </div>
+      <div style="max-height:340px;overflow-y:auto">
+        ${studs.map(s=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--ivd)">
+          <span style="font-size:14px">${s.name} <span style="color:var(--tl);font-size:11px">${s.birth?s.birth.slice(0,4)+'년생':''}</span></span>
+          <select class="grade-sel" data-sid="${s.id}" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px">${gradeOpts(grades[s.id])}</select>
+        </div>`).join('')}
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveGrades('${classId}')">저장</button>
+      </div>
+    </div></div>`;
+}
+window.openGradeAssign = openGradeAssign;
+
+function applyGradeBulk(){
+  const v = $I('grade-bulk').value;
+  document.querySelectorAll('.grade-sel').forEach(sel=>sel.value=v);
+}
+window.applyGradeBulk = applyGradeBulk;
+
+async function saveGrades(classId){
+  const c = CLASSES.find(x=>x.id===classId); if(!c) return;
+  const grades = {};
+  document.querySelectorAll('.grade-sel').forEach(sel=>{
+    const v = sel.value; if(v) grades[sel.dataset.sid] = v;
+  });
+  try {
+    await updateDoc(doc(db,'classes',classId), {grades});
+    c.grades = grades;
+    logActivity('수정','반편성',`${c.name} 학년 지정`);
+    toast('학년이 저장되었습니다.','ok');
+    closeMod();
+    renderClasses();
+    const b = $I('body-'+classId); if(b) b.classList.add('open');
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveGrades = saveGrades;
+
 // ── 엑셀 일괄 편성 ──
 // 양식 다운로드: 현재 연도/기관의 재학생 명단 + 빈 "반이름" 칸
 function downloadClassTemplate(){
@@ -670,9 +735,13 @@ async function doPromote(prevYear){
     let cnt=0;
     for(const c of prevClasses){
       const studs = (c.students||[]).filter(sid=>activeIds.has(sid));
+      // 복제 대상 학생의 학년만 남기기
+      const grades = {};
+      if(c.grades) studs.forEach(sid=>{ if(c.grades[sid]) grades[sid]=c.grades[sid]; });
       await addDoc(collection(db,'classes'), {
         name:c.name, org:c.org, dept:c.dept||'', grade:c.grade||'',
-        teacherUid:c.teacherUid||'', year:curYear, students:studs,
+        teacherUid:c.teacherUid||'', deputies:c.deputies||[],
+        year:curYear, students:studs, grades,
         createdAt: Timestamp.now()
       });
       cnt++;
