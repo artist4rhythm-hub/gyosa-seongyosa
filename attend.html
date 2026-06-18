@@ -90,10 +90,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 
 <div id="ms">
   <header class="ah">
-    <div class="ahl">
+    <a class="ahl" href="index.html" style="text-decoration:none;color:inherit;cursor:pointer">
       <div class="ahi">✅</div>
       <div class="aht">출석부</div>
-    </div>
+    </a>
     <div class="ahr">
       <div id="hn"></div>
       <div id="hi"></div>
@@ -273,6 +273,18 @@ function calcSchoolDays(term){
 
 function fmtDate(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 const TERM_NAMES = {1:'1학기', 2:'2학기'};
+// 특정 날짜에 휴학 중인지
+function isOnLeave(s, dateStr){
+  if(!s || !s.leaves || !s.leaves.length) return false;
+  return s.leaves.some(lv => lv.start && lv.end && dateStr>=lv.start && dateStr<=lv.end);
+}
+// 학생의 휴학 기간과 수업일 집합의 교집합 일수 (통계 분모 제외용)
+function leaveDaysInSet(s, daySet){
+  if(!s || !s.leaves || !s.leaves.length) return 0;
+  let cnt = 0;
+  daySet.forEach(d=>{ if(isOnLeave(s, d)) cnt++; });
+  return cnt;
+}
 
 // ── 반·학생 로드 ──
 async function loadClasses(){
@@ -371,9 +383,12 @@ async function loadCheckBody(){
   const c = CLASSES.find(x=>x.id===checkClassId);
   if(!c){ body.innerHTML=''; return; }
   const editable = canEditClass(c);
-  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
+  const allStuds = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
     .filter(s=>(s.status||'active')==='active')
     .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  // 이 날짜에 휴학 중인 학생 분리
+  const studs = allStuds.filter(s=>!isOnLeave(s, checkDate));
+  const leaveStuds = allStuds.filter(s=>isOnLeave(s, checkDate));
 
   // 날짜가 휴일/방학인지 체크
   const holReason = holidayReason(checkDate, c.org);
@@ -419,15 +434,25 @@ async function loadCheckBody(){
     </div>`;
   }).join('');
 
+  const leaveSection = leaveStuds.length ? `
+    <div style="margin-top:16px;padding-top:12px;border-top:2px dashed var(--ivd)">
+      <div style="font-size:13px;font-weight:700;color:var(--tl);margin-bottom:8px">휴학 중 (${leaveStuds.length}명) · 출결 제외</div>
+      ${leaveStuds.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;opacity:.6">
+        <span style="font-weight:600">${s.name}</span>
+        <span class="typebadge" style="background:#fef3c7;color:#b45309">휴학 중</span>
+      </div>`).join('')}
+    </div>` : '';
+
   body.innerHTML = `
     <div class="acard">
       ${banner}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <h3 class="actitle" style="margin:0">${c.name} · ${studs.length}명</h3>
+        <h3 class="actitle" style="margin:0">${c.name} · ${studs.length}명${leaveStuds.length?` <span style="font-size:12px;color:var(--tl);font-weight:400">(휴학 ${leaveStuds.length}명 제외)</span>`:''}</h3>
         ${editable?`<span style="font-size:12px;color:var(--gm)">✏️ 기록 가능</span>`:`<span style="font-size:12px;color:var(--tl)">👁 열람 전용</span>`}
       </div>
       ${rows}
       ${editable?`<button class="bp" style="margin-top:16px;width:100%" onclick="saveCheck()">저장</button>`:''}
+      ${leaveSection}
     </div>`;
 
   // 초기 선택값 채우기 (기록 없으면 기본 출석)
@@ -451,7 +476,9 @@ window.setRec = setRec;
 async function saveCheck(){
   const c = CLASSES.find(x=>x.id===checkClassId);
   if(!c || !canEditClass(c)) return toast('기록 권한이 없습니다.','err');
-  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean).filter(s=>(s.status||'active')==='active');
+  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
+    .filter(s=>(s.status||'active')==='active')
+    .filter(s=>!isOnLeave(s, checkDate));  // 휴학 중인 학생 제외
   toast('저장 중...');
   let cnt=0;
   try {
@@ -515,6 +542,7 @@ function renderStat(){
             <option value="class"${statView==='class'?' selected':''}>반별</option>
             <option value="dept"${statView==='dept'?' selected':''}>부서별</option>
             <option value="all"${statView==='all'?' selected':''}>전체</option>
+            <option value="month"${statView==='month'?' selected':''}>월별 달력</option>
           </select></div>
       </div>
       <button class="bs" style="margin-top:12px" onclick="downloadStatExcel()">⬇ 엑셀 다운로드</button>
@@ -549,6 +577,9 @@ async function buildStat(){
   const body = $I('st-body'); if(!body) return;
   body.innerHTML = '<div class="acard"><p class="empty">집계 중...</p></div>';
 
+  // 월별 달력 보기는 별도 흐름
+  if(statView==='month'){ buildMonthlyCalendar(); return; }
+
   const terms = getStatTerms();
   if(!terms.length){
     body.innerHTML = `<div class="acard"><div class="empty">선택한 학기가 등록되지 않았습니다.<br>설정 탭에서 ${statYear}년 ${ORGS[statOrg]} 학기를 먼저 등록해주세요.</div></div>`;
@@ -578,26 +609,32 @@ async function buildStat(){
   const studClass = {};
   orgClasses.forEach(c=>(c.students||[]).forEach(sid=>{ studClass[sid]=c; }));
 
-  // 학생별 집계: {studentId: {name, className, dept, counts:{typeName:n}, present:n, recorded:n}}
+  // 학생별 집계: {studentId: {name, className, dept, counts, present, recorded, myTotal}}
   const byStud = {};
   // 대상 학생 = 이 기관 반에 배정된 재학생
   orgClasses.forEach(c=>{
     (c.students||[]).forEach(sid=>{
       const s = STUDENTS[sid]; if(!s || (s.status||'active')!=='active') return;
-      if(!byStud[sid]) byStud[sid]={name:s.name, studentNo:s.studentNo||'', className:c.name, dept:c.dept||'', classId:c.id, counts:{}, present:0, recorded:0};
+      if(!byStud[sid]){
+        // 개인 수업일수 = 전체 수업일 − 본인 휴학 기간에 걸린 수업일
+        const leaveDays = leaveDaysInSet(s, schoolDaySet);
+        byStud[sid]={name:s.name, studentNo:s.studentNo||'', className:c.name, dept:c.dept||'', classId:c.id, counts:{}, present:0, recorded:0, myTotal: Math.max(0, totalDays - leaveDays), leaveDays};
+      }
     });
   });
-  // 기록 반영
+  // 기록 반영 (휴학 기간에 잘못 기록된 건 제외)
   recs.forEach(r=>{
     const b = byStud[r.studentId]; if(!b) return;
+    const s = STUDENTS[r.studentId];
+    if(isOnLeave(s, r.date)) return;  // 휴학 중 기록은 무시
     const tn = typeName(r.typeId);
     b.counts[tn] = (b.counts[tn]||0)+1;
     b.recorded++;
     if(presentIds.has(r.typeId)) b.present++;
   });
-  // 기록 없는 날은 "출석"으로 간주 (기본 자동 출석)
+  // 기록 없는 날은 "출석"으로 간주 (개인 수업일 기준)
   Object.values(byStud).forEach(b=>{
-    const autoPresent = totalDays - b.recorded;
+    const autoPresent = b.myTotal - b.recorded;
     if(autoPresent>0){ b.present += autoPresent; b.counts['출석']=(b.counts['출석']||0)+autoPresent; }
   });
 
@@ -618,11 +655,14 @@ function renderStatStudent(byStud, totalDays, minDate, maxDate){
   // 등장하는 출결 항목들 (열 구성)
   const cols = TYPES.map(t=>t.name);
   const rows = list.map(b=>{
-    const rate = totalDays? Math.round(b.present/totalDays*100) : 0;
+    const denom = b.myTotal!=null ? b.myTotal : totalDays;
+    const rate = denom? Math.round(b.present/denom*100) : 0;
+    const leaveNote = b.leaveDays>0 ? ` <span style="font-size:10px;color:#b45309">(휴학 ${b.leaveDays}일 제외)</span>` : '';
     return `<tr>
-      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${b.name}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${b.name}${leaveNote}</td>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd)">${b.className}</td>
       ${cols.map(c=>`<td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${b.counts[c]||0}</td>`).join('')}
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${denom}</td>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'}">${rate}%</td>
     </tr>`;
   }).join('');
@@ -637,6 +677,7 @@ function renderStatStudent(byStud, totalDays, minDate, maxDate){
           <thead><tr style="background:var(--iv)">
             <th style="padding:8px;text-align:left">이름</th><th style="padding:8px;text-align:left">반</th>
             ${cols.map(c=>`<th style="padding:8px;text-align:center">${c}</th>`).join('')}
+            <th style="padding:8px;text-align:center">수업일</th>
             <th style="padding:8px;text-align:center">출석률</th>
           </tr></thead>
           <tbody>${rows}</tbody>
@@ -653,7 +694,7 @@ function renderStatGroup(byStud, totalDays, key, label){
     if(!groups[g]) groups[g]={count:0, present:0, possible:0, counts:{}};
     groups[g].count++;
     groups[g].present += b.present;
-    groups[g].possible += totalDays;
+    groups[g].possible += (b.myTotal!=null ? b.myTotal : totalDays);
     Object.entries(b.counts).forEach(([k,v])=>groups[g].counts[k]=(groups[g].counts[k]||0)+v);
   });
   const cols = TYPES.map(t=>t.name);
@@ -686,7 +727,7 @@ function renderStatAll(byStud, totalDays, minDate, maxDate){
   const list = Object.values(byStud);
   const totalStud = list.length;
   const totalPresent = list.reduce((s,b)=>s+b.present,0);
-  const totalPossible = totalStud*totalDays;
+  const totalPossible = list.reduce((s,b)=>s+(b.myTotal!=null?b.myTotal:totalDays),0);
   const avgRate = totalPossible? Math.round(totalPresent/totalPossible*100):0;
   const allCounts = {};
   list.forEach(b=>Object.entries(b.counts).forEach(([k,v])=>allCounts[k]=(allCounts[k]||0)+v));
@@ -714,8 +755,9 @@ function downloadStatExcel(){
   const header = ['이름','학번','반','부서', ...cols, '수업일','출석률(%)'];
   const aoa = [header];
   Object.values(byStud).sort((a,b)=>(a.className+a.name).localeCompare(b.className+b.name,'ko')).forEach(b=>{
-    const rate = totalDays? Math.round(b.present/totalDays*100):0;
-    aoa.push([b.name, b.studentNo, b.className, b.dept, ...cols.map(c=>b.counts[c]||0), totalDays, rate]);
+    const denom = b.myTotal!=null ? b.myTotal : totalDays;
+    const rate = denom? Math.round(b.present/denom*100):0;
+    aoa.push([b.name, b.studentNo, b.className, b.dept, ...cols.map(c=>b.counts[c]||0), denom, rate]);
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = header.map(h=>({wch:Math.max(h.length,8)}));
@@ -726,6 +768,143 @@ function downloadStatExcel(){
   toast('엑셀을 다운로드했습니다.','ok');
 }
 window.downloadStatExcel = downloadStatExcel;
+
+// ── 월별 달력형 보기 ──
+let statMonth = new Date().getMonth()+1;  // 1~12
+let statMonthClassId = '';
+
+async function buildMonthlyCalendar(){
+  const body = $I('st-body'); if(!body) return;
+  // 이 기관 반 목록
+  const orgClasses = CLASSES.filter(c=>c.org===statOrg);
+  if(!orgClasses.length){
+    body.innerHTML = `<div class="acard"><div class="empty">${statYear}년 ${ORGS[statOrg]}에 편성된 반이 없습니다.</div></div>`;
+    return;
+  }
+  if(!statMonthClassId || !orgClasses.find(c=>c.id===statMonthClassId)) statMonthClassId = orgClasses[0].id;
+
+  const months = [];
+  for(let m=1;m<=12;m++) months.push(m);
+
+  // 선택 UI + 본문 컨테이너
+  body.innerHTML = `
+    <div class="acard">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px">
+        <div class="fgrp" style="margin-bottom:0;flex:1;min-width:160px"><label>반</label>
+          <select id="mc-class" onchange="onMonthChange()">
+            ${orgClasses.map(c=>`<option value="${c.id}"${c.id===statMonthClassId?' selected':''}>${c.name}${c.dept&&c.dept!=='전체'?' ('+c.dept+')':''}</option>`).join('')}
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>월</label>
+          <select id="mc-month" onchange="onMonthChange()">
+            ${months.map(m=>`<option value="${m}"${m===statMonth?' selected':''}>${m}월</option>`).join('')}
+          </select></div>
+      </div>
+    </div>
+    <div id="mc-body"><div class="acard"><p class="empty">불러오는 중...</p></div></div>`;
+  loadMonthlyBody();
+}
+window.buildMonthlyCalendar = buildMonthlyCalendar;
+
+function onMonthChange(){
+  statMonthClassId = $I('mc-class').value;
+  statMonth = Number($I('mc-month').value);
+  loadMonthlyBody();
+}
+window.onMonthChange = onMonthChange;
+
+async function loadMonthlyBody(){
+  const body = $I('mc-body'); if(!body) return;
+  const c = CLASSES.find(x=>x.id===statMonthClassId); if(!c) return;
+  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
+    .filter(s=>(s.status||'active')==='active')
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+
+  // 그 달의 날짜들
+  const y = statYear, m = statMonth;
+  const lastDay = new Date(y, m, 0).getDate();
+  const days = [];
+  for(let d=1; d<=lastDay; d++){
+    const ds = `${y}-${pad(m)}-${pad(d)}`;
+    const dow = new Date(ds+'T00:00:00').getDay();
+    const hol = holidayReason(ds, c.org);
+    days.push({d, ds, dow, isWeekend:dow===0||dow===6, hol});
+  }
+
+  // 출결 기록 로드 (이 반·이 달)
+  const snap = await getDocs(collection(db,'studentAttendance'));
+  const recMap = {};  // studentId -> {date -> typeId}
+  const prefix = `${y}-${pad(m)}`;
+  snap.forEach(doc0=>{ const r=doc0.data(); if(r.classId===statMonthClassId && (r.date||'').startsWith(prefix)){ (recMap[r.studentId]=recMap[r.studentId]||{})[r.date]=r.typeId; } });
+
+  const typeById = {}; TYPES.forEach(t=>typeById[t.id]=t);
+  const presentIds = new Set(TYPES.filter(t=>t.isPresent).map(t=>t.id));
+  const defType = TYPES.find(t=>t.isPresent) || TYPES[0];
+
+  // 수업일(평일·휴일아님) 카운트
+  const schoolDays = days.filter(x=>!x.isWeekend && !x.hol);
+  const totalSchool = schoolDays.length;
+
+  if(!studs.length){
+    body.innerHTML = `<div class="acard"><div class="empty">이 반에 배정된 재학생이 없습니다.</div></div>`;
+    return;
+  }
+
+  const dowName = ['일','월','화','수','목','금','토'];
+
+  // 헤더 (날짜)
+  const headCells = days.map(x=>{
+    const bg = x.hol?'#fee2e2':x.isWeekend?'#f3f4f6':'transparent';
+    const col = x.dow===0?'#dc2626':x.dow===6?'#2563eb':'var(--ts)';
+    return `<th style="padding:2px;min-width:22px;background:${bg};font-size:10px;color:${col};font-weight:600" title="${x.ds}${x.hol?' '+x.hol:''}">${x.d}<br><span style="font-size:9px">${dowName[x.dow]}</span></th>`;
+  }).join('');
+
+  // 학생별 행
+  const rows = studs.map(s=>{
+    const rec = recMap[s.id] || {};
+    let present=0;
+    const cells = days.map(x=>{
+      if(x.isWeekend || x.hol) return `<td style="background:${x.hol?'#fee2e2':'#f3f4f6'};border:1px solid #eee"></td>`;
+      // 기록 없으면 기본 출석
+      const tid = rec[x.ds] || defType?.id;
+      const t = typeById[tid];
+      if(presentIds.has(tid)) present++;
+      const isDefault = !rec[x.ds];
+      const dot = t ? `<span title="${t.name}" style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${t.color};opacity:${isDefault?0.25:1}"></span>` : '';
+      return `<td style="border:1px solid #eee;text-align:center;padding:1px">${dot}</td>`;
+    }).join('');
+    const rate = totalSchool? Math.round(present/totalSchool*100):0;
+    // 월간 합계 막대
+    const bar = `<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;background:#eee;border-radius:3px;height:10px;min-width:40px;overflow:hidden"><div style="width:${rate}%;height:100%;background:${rate>=90?'#16a34a':rate>=70?'#f59e0b':'#dc2626'}"></div></div><span style="font-size:11px;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'};white-space:nowrap">${present}/${totalSchool}</span></div>`;
+    return `<tr>
+      <td style="position:sticky;left:0;background:#fff;padding:4px 8px;font-size:13px;font-weight:600;white-space:nowrap;border-right:2px solid var(--ivd)">${s.name}</td>
+      ${cells}
+      <td style="padding:4px 8px;min-width:90px">${bar}</td>
+    </tr>`;
+  }).join('');
+
+  // 범례
+  const legend = TYPES.map(t=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:12px"><span style="width:12px;height:12px;border-radius:3px;background:${t.color}"></span>${t.name}</span>`).join('');
+
+  body.innerHTML = `
+    <div class="acard">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <h3 class="actitle" style="margin:0">${c.name} · ${y}년 ${m}월</h3>
+        <span style="font-size:12px;color:var(--ts)">수업일 ${totalSchool}일 · 학생 ${studs.length}명</span>
+      </div>
+      <div style="margin-bottom:10px">${legend}<span style="font-size:11px;color:var(--tl);margin-left:6px">(연한 색 = 자동 출석, 진한 색 = 직접 기록)</span></div>
+      <div style="overflow-x:auto">
+        <table style="border-collapse:collapse;font-size:12px">
+          <thead><tr>
+            <th style="position:sticky;left:0;background:var(--iv);padding:4px 8px;border-right:2px solid var(--ivd);font-size:12px">학생</th>
+            ${headCells}
+            <th style="padding:4px 8px;font-size:12px">월간 출석</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+window.loadMonthlyBody = loadMonthlyBody;
 
 // ── 설정: 출결 항목 관리 ──
 function renderSet(){

@@ -115,10 +115,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <!-- 메인 -->
 <div id="ms">
   <header class="ah">
-    <div class="ahl">
+    <a class="ahl" href="index.html" style="text-decoration:none;color:inherit;cursor:pointer">
       <div class="ahi">🎓</div>
       <div class="aht">학생 관리</div>
-    </div>
+    </a>
     <div class="ahr">
       <div id="hn"></div>
       <div id="hi"></div>
@@ -283,16 +283,28 @@ function renderList(){
     if(s.transferDate) yearInfo = `편입 ${s.transferDate.slice(0,4)}년`;
     else if(s.admitDate) yearInfo = `입학 ${s.admitDate.slice(0,4)}년`;
     else if(s.admitYear) yearInfo = `입학 ${s.admitYear}년`;
-    return `<div class="sitem" onclick="openStudentDetail('${s.id}')">
+    // 현재 휴학 중인지 (오늘이 휴학 기간에 포함)
+    const onLeave = isOnLeave(s, todayStr());
+    const leaveBadge = onLeave ? ' <span class="badge b-leave">휴학 중</span>' : '';
+    return `<div class="sitem" onclick="openStudentDetail('${s.id}')" ${st==='quit'?'style="opacity:.55"':''}>
       <div class="savatar">${s.name.charAt(0)}</div>
       <div class="sinfo">
-        <div class="sname">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span></div>
+        <div class="sname">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span>${leaveBadge}</div>
         <div class="smeta">${ORGS[s.org]||s.org}${s.birth?' · '+s.birth:''}${yearInfo?' · '+yearInfo:''}</div>
         <div class="snum">학번 ${s.studentNo||'-'}</div>
       </div>
     </div>`;
   }).join('');
 }
+
+// 오늘 날짜 문자열
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+// 특정 날짜에 휴학 중인지 (leaves 배열 기준)
+function isOnLeave(s, dateStr){
+  if(!s.leaves || !s.leaves.length) return false;
+  return s.leaves.some(lv => lv.start && lv.end && dateStr>=lv.start && dateStr<=lv.end);
+}
+window.isOnLeave = isOnLeave;
 
 // ── 학번 생성 (등록순 고정) ──
 // 규칙: 입학년도 4자리 + '-' + 그 기관/그 해 등록 순번 3자리
@@ -342,6 +354,10 @@ function openStudentForm(editId){
         <div class="fgrp full"><label>주소</label><input id="f-addr" value="${s?.address||''}"></div>
       </div>
 
+      <div class="seclb">휴학 기간 <span style="font-weight:400;color:var(--tl);font-size:11px">(여러 번 가능 · 해당 기간은 출결·통계에서 자동 제외)</span></div>
+      <div id="leave-list"></div>
+      <button type="button" class="bm" onclick="addLeaveRow()" style="margin-top:4px">＋ 휴학 기간 추가</button>
+
       <div class="seclb">특이사항</div>
       <div class="fg"><div class="fgrp full"><textarea id="f-memo" rows="2" placeholder="알레르기, 특이사항 등">${s?.memo||''}</textarea></div></div>
 
@@ -352,8 +368,47 @@ function openStudentForm(editId){
         <button class="bp" onclick="saveStudent('${s?.id||''}')">저장</button>
       </div>
     </div></div>`;
+  renderLeaveRows(s?.leaves || []);
 }
 window.openStudentForm = openStudentForm;
+
+// ── 휴학 기간 행 관리 ──
+function renderLeaveRows(leaves){
+  const el = $I('leave-list'); if(!el) return;
+  if(!leaves || !leaves.length){ el.innerHTML = '<p style="font-size:12px;color:var(--tl);padding:4px 0">등록된 휴학 기간이 없습니다.</p>'; return; }
+  el.innerHTML = leaves.map((lv,i)=>`
+    <div class="leave-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+      <input type="date" class="lv-start" value="${lv.start||''}" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">
+      <span style="color:var(--tl)">~</span>
+      <input type="date" class="lv-end" value="${lv.end||''}" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">
+      <button type="button" class="bm" style="background:#fee2e2;color:#dc2626" onclick="removeLeaveRow(${i})">삭제</button>
+    </div>`).join('');
+}
+function collectLeaves(){
+  const rows = document.querySelectorAll('.leave-row');
+  const arr = [];
+  rows.forEach(r=>{
+    const s = r.querySelector('.lv-start').value, e = r.querySelector('.lv-end').value;
+    if(s && e) arr.push({start:s, end:e});
+  });
+  return arr;
+}
+function addLeaveRow(){
+  const cur = collectLeaves();
+  cur.push({start:'', end:''});
+  renderLeaveRows(cur);
+}
+window.addLeaveRow = addLeaveRow;
+function removeLeaveRow(i){
+  const cur = collectLeaves();
+  // collectLeaves는 빈 행을 버리므로, 화면 기준으로 다시 수집
+  const rows = Array.from(document.querySelectorAll('.leave-row')).map(r=>({
+    start:r.querySelector('.lv-start').value, end:r.querySelector('.lv-end').value
+  }));
+  rows.splice(i,1);
+  renderLeaveRows(rows);
+}
+window.removeLeaveRow = removeLeaveRow;
 function closeMod(){ $I('mwrap').innerHTML=''; }
 window.closeMod = closeMod;
 
@@ -375,6 +430,7 @@ async function saveStudent(editId){
     transferDate: $I('f-transfer').value,
     quitDate: $I('f-quit').value,
     status: $I('f-status').value,
+    leaves: collectLeaves(),
     phone: $I('f-phone').value.trim(),
     email: $I('f-email').value.trim(),
     guardian: $I('f-guardian').value.trim(),
@@ -475,6 +531,7 @@ function openStudentDetail(id){
       ${row('학생 연락처',s.phone)}${row('학생 이메일',s.email)}
       ${row('보호자',s.guardian)}${row('보호자 연락처',s.guardianPhone)}
       ${row('주소',s.address)}${row('특이사항',s.memo)}
+      ${(s.leaves&&s.leaves.length)?`<div class="seclb">휴학 기간</div>${s.leaves.map(lv=>`<div style="font-size:14px;padding:4px 0">${lv.start} ~ ${lv.end}${(todayStr()>=lv.start&&todayStr()<=lv.end)?' <span class="badge b-leave">현재 휴학 중</span>':''}</div>`).join('')}`:''}
 
       <div class="seclb">형제 / 자매 ${isAdmin()?`<button class="bm" style="margin-left:8px" onclick="openSiblingPicker('${s.id}')">＋ 연결</button>`:''}</div>
       <div class="sibrow">${sibHTML}</div>
