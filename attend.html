@@ -923,7 +923,10 @@ async function loadMonthlyBody(){
     const ds = `${y}-${pad(m)}-${pad(d)}`;
     const dow = new Date(ds+'T00:00:00').getDay();
     const hol = holidayReason(ds, c.org);
-    days.push({d, ds, dow, isWeekend:dow===0||dow===6, hol});
+    // 학기 기간 안인지 (학기 객체면 true, null/'none'이면 false)
+    const tm = termOfDate(ds, c.org);
+    const inTerm = (tm && tm!=='none');
+    days.push({d, ds, dow, isWeekend:dow===0||dow===6, hol, inTerm});
   }
 
   // 출결 기록 로드 (이 반·이 달)
@@ -936,8 +939,8 @@ async function loadMonthlyBody(){
   const presentIds = new Set(TYPES.filter(t=>t.isPresent).map(t=>t.id));
   const defType = TYPES.find(t=>t.isPresent) || TYPES[0];
 
-  // 수업일(평일·휴일아님) 카운트
-  const schoolDays = days.filter(x=>!x.isWeekend && !x.hol);
+  // 수업일(학기 안 + 평일 + 휴일아님) 카운트
+  const schoolDays = days.filter(x=>x.inTerm && !x.isWeekend && !x.hol);
   const totalSchool = schoolDays.length;
 
   if(!studs.length){
@@ -949,9 +952,10 @@ async function loadMonthlyBody(){
 
   // 헤더 (날짜)
   const headCells = days.map(x=>{
-    const bg = x.hol?'#fee2e2':x.isWeekend?'#f3f4f6':'transparent';
+    const bg = !x.inTerm?'#e5e7eb':x.hol?'#fee2e2':x.isWeekend?'#f3f4f6':'transparent';
     const col = x.dow===0?'#dc2626':x.dow===6?'#2563eb':'var(--ts)';
-    return `<th style="padding:2px;min-width:22px;background:${bg};font-size:10px;color:${col};font-weight:600" title="${x.ds}${x.hol?' '+x.hol:''}">${x.d}<br><span style="font-size:9px">${dowName[x.dow]}</span></th>`;
+    const ttl = !x.inTerm?(x.ds+' 학기 외'):(x.ds+(x.hol?' '+x.hol:''));
+    return `<th style="padding:2px;min-width:22px;background:${bg};font-size:10px;color:${col};font-weight:600" title="${ttl}">${x.d}<br><span style="font-size:9px">${dowName[x.dow]}</span></th>`;
   }).join('');
 
   // 학생별 행
@@ -959,6 +963,7 @@ async function loadMonthlyBody(){
     const rec = recMap[s.id] || {};
     let present=0;
     const cells = days.map(x=>{
+      if(!x.inTerm) return `<td style="background:#e5e7eb;border:1px solid #eee"></td>`;
       if(x.isWeekend || x.hol) return `<td style="background:${x.hol?'#fee2e2':'#f3f4f6'};border:1px solid #eee"></td>`;
       // 기록 없으면 기본 출석
       const tid = rec[x.ds] || defType?.id;
