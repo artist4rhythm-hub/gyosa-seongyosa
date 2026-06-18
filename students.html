@@ -225,12 +225,13 @@ async function renderMain(){
   $I('main-body').innerHTML = `
     <div class="acard">
       <h3 class="actitle">학생 관리</h3>
-      <p class="adesc">학생 기본정보를 등록하고 관리합니다. 학번은 등록 순서대로 자동 부여되며, 목록은 가나다순으로 표시됩니다.</p>
+      <p class="adesc">학생 기본정보를 등록하고 관리합니다. 학번은 출생연도 기준으로 자동 부여됩니다. (생년월일 필수)</p>
       ${isAdmin()?`<div style="display:flex;flex-wrap:wrap;gap:8px">
         <button class="bp" onclick="openStudentForm()">＋ 새 학생 등록</button>
         <button class="bs" onclick="downloadTemplate()">⬇ 엑셀 양식 다운로드</button>
         <button class="bs" onclick="document.getElementById('xlsx-input').click()">⬆ 엑셀 일괄 등록</button>
         <input type="file" id="xlsx-input" accept=".xlsx,.xls" style="display:none" onchange="handleXlsxUpload(event)">
+        <button class="bs" onclick="reassignStudentNos()" style="margin-left:auto">🔄 학번 일괄 재배정</button>
       </div>`:''}
     </div>
     <div class="acard">
@@ -243,12 +244,33 @@ async function renderMain(){
           <option value="quit">자퇴</option>
           <option value="grad">졸업</option>
         </select>
+        <select id="flt-birth" onchange="renderList()"><option value="">전체 출생연도</option></select>
+        <select id="flt-gender" onchange="renderList()">
+          <option value="">남녀 전체</option>
+          <option value="남">남학생</option>
+          <option value="여">여학생</option>
+        </select>
+        <select id="flt-sort" onchange="renderList()">
+          <option value="name">이름순</option>
+          <option value="studentNo">학번순</option>
+          <option value="birth">출생연도순</option>
+          <option value="admit">입학연도순</option>
+        </select>
         <input type="text" id="flt-search" placeholder="이름 검색" oninput="renderList()" style="flex:1;min-width:120px">
       </div>
+      <div id="list-count" style="font-size:12px;color:var(--tl);margin-bottom:8px"></div>
       <div class="slist" id="student-list"><p class="empty">불러오는 중...</p></div>
     </div>`;
   await loadStudents();
+  fillBirthFilter();
   renderList();
+}
+
+// 출생연도 필터 옵션 채우기
+function fillBirthFilter(){
+  const el = $I('flt-birth'); if(!el) return;
+  const years = Array.from(new Set(STUDENTS.map(s=>(s.birth||'').slice(0,4)).filter(Boolean))).sort((a,b)=>b-a);
+  el.innerHTML = '<option value="">전체 출생연도</option>' + years.map(y=>`<option value="${y}">${y}년생</option>`).join('');
 }
 
 // ── 학생 데이터 로드 ──
@@ -262,34 +284,48 @@ async function loadStudents(){
   });
 }
 
-// ── 학생 목록 렌더 (가나다순) ──
+// ── 학생 목록 렌더 ──
 function renderList(){
   const el = $I('student-list'); if(!el) return;
   const fOrg = $I('flt-org')?.value || '';
   const fStatus = $I('flt-status')?.value;
+  const fBirth = $I('flt-birth')?.value || '';
+  const fGender = $I('flt-gender')?.value || '';
+  const fSort = $I('flt-sort')?.value || 'name';
   const fSearch = ($I('flt-search')?.value || '').trim();
   let list = STUDENTS.filter(s => {
     if(fOrg && s.org !== fOrg) return false;
     if(fStatus && (s.status||'active') !== fStatus) return false;
+    if(fBirth && (s.birth||'').slice(0,4) !== fBirth) return false;
+    if(fGender && s.gender !== fGender) return false;
     if(fSearch && !s.name.includes(fSearch)) return false;
     return true;
   });
-  list.sort((a,b) => a.name.localeCompare(b.name, 'ko'));
-  if(!list.length){ el.innerHTML = '<p class="empty">학생이 없습니다.</p>'; return; }
+  // 정렬
+  list.sort((a,b)=>{
+    if(fSort==='name') return a.name.localeCompare(b.name,'ko');
+    if(fSort==='studentNo') return (a.studentNo||'').localeCompare(b.studentNo||'');
+    if(fSort==='birth') return (a.birth||'').localeCompare(b.birth||'') || a.name.localeCompare(b.name,'ko');
+    if(fSort==='admit') return (a.admitDate||String(a.admitYear||'')).localeCompare(b.admitDate||String(b.admitYear||'')) || a.name.localeCompare(b.name,'ko');
+    return 0;
+  });
+  const cntEl = $I('list-count'); if(cntEl) cntEl.textContent = `${list.length}명`;
+  if(!list.length){ el.innerHTML = '<p class="empty">조건에 맞는 학생이 없습니다.</p>'; return; }
   el.innerHTML = list.map(s => {
     const st = s.status || 'active';
-    // 입학/편입 연도 표시
     let yearInfo = '';
     if(s.transferDate) yearInfo = `편입 ${s.transferDate.slice(0,4)}년`;
     else if(s.admitDate) yearInfo = `입학 ${s.admitDate.slice(0,4)}년`;
     else if(s.admitYear) yearInfo = `입학 ${s.admitYear}년`;
-    // 현재 휴학 중인지 (오늘이 휴학 기간에 포함)
     const onLeave = isOnLeave(s, todayStr());
     const leaveBadge = onLeave ? ' <span class="badge b-leave">휴학 중</span>' : '';
+    // 성별 색상
+    const gc = s.gender==='남' ? '#2b6cb0' : s.gender==='여' ? '#d53f8c' : 'var(--gm)';
+    const gbg = s.gender==='남' ? '#e6f0fb' : s.gender==='여' ? '#fce8f3' : 'var(--gp)';
     return `<div class="sitem" onclick="openStudentDetail('${s.id}')" ${st==='quit'?'style="opacity:.55"':''}>
-      <div class="savatar">${s.name.charAt(0)}</div>
+      <div class="savatar" style="background:${gbg};color:${gc}">${s.name.charAt(0)}</div>
       <div class="sinfo">
-        <div class="sname">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span>${leaveBadge}</div>
+        <div class="sname" style="color:${gc}">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span>${leaveBadge}</div>
         <div class="smeta">${ORGS[s.org]||s.org}${s.birth?' · '+s.birth:''}${yearInfo?' · '+yearInfo:''}</div>
         <div class="snum">학번 ${s.studentNo||'-'}</div>
       </div>
@@ -306,12 +342,53 @@ function isOnLeave(s, dateStr){
 }
 window.isOnLeave = isOnLeave;
 
-// ── 학번 생성 (등록순 고정) ──
-// 규칙: 입학년도 4자리 + '-' + 그 기관/그 해 등록 순번 3자리
-async function genStudentNo(org, admitYear){
-  const prefix = `${admitYear}`;
-  // 같은 기관+같은 입학년도 학생 수 세기
-  const cnt = STUDENTS.filter(s => s.org===org && s.admitYear===admitYear).length;
+// ── 학번 일괄 재배정 (출생연도 기준) ──
+async function reassignStudentNos(){
+  const noBirth = STUDENTS.filter(s=>!s.birth);
+  let msg = '모든 학생의 학번을 출생연도 기준으로 다시 매깁니다.\n\n규칙: 기관별 + 출생연도별로 묶고, 등록순으로 번호 부여 (예: 2018-01)\n\n기존 학번은 모두 바뀝니다. 계속할까요?';
+  if(noBirth.length) msg = `⚠️ 생년월일이 없는 학생이 ${noBirth.length}명 있습니다. 이 학생들은 재배정에서 제외됩니다.\n(${noBirth.slice(0,5).map(s=>s.name).join(', ')}${noBirth.length>5?' 외':''})\n\n` + msg;
+  if(!confirm(msg)) return;
+
+  // 기관+출생연도별 그룹, 등록순(createdAt) 정렬
+  const groups = {};
+  STUDENTS.filter(s=>s.birth).forEach(s=>{
+    const by = s.birth.slice(0,4);
+    const key = `${s.org}-${by}`;
+    (groups[key]=groups[key]||[]).push(s);
+  });
+  let updated = 0;
+  try {
+    for(const key of Object.keys(groups)){
+      const [org, by] = key.split('-');
+      // 등록순: createdAt 있으면 그걸로, 없으면 기존 학번/이름순
+      const arr = groups[key].sort((a,b)=>{
+        const ta = a.createdAt?.seconds||0, tb = b.createdAt?.seconds||0;
+        if(ta!==tb) return ta-tb;
+        return (a.studentNo||'').localeCompare(b.studentNo||'') || a.name.localeCompare(b.name,'ko');
+      });
+      for(let i=0;i<arr.length;i++){
+        const newNo = `${by}-${pad(i+1)}`;
+        if(arr[i].studentNo !== newNo){
+          await updateDoc(doc(db,'students',arr[i].id), {studentNo:newNo});
+          arr[i].studentNo = newNo;
+          updated++;
+        }
+      }
+    }
+    logActivity('수정','학생',`학번 일괄 재배정 (${updated}명)`);
+    toast(`${updated}명의 학번이 재배정되었습니다.`,'ok');
+    await loadStudents();
+    renderList();
+  } catch(e){ toast('재배정 실패: '+e.message,'err'); }
+}
+window.reassignStudentNos = reassignStudentNos;
+
+// ── 학번 생성 (출생연도 기준, 등록순 고정) ──
+// 규칙: 출생연도 4자리 + '-' + 그 기관/그 출생연도 등록 순번 2자리
+async function genStudentNo(org, birthYear){
+  const prefix = `${birthYear}`;
+  // 같은 기관 + 같은 출생연도 학생 수 세기
+  const cnt = STUDENTS.filter(s => s.org===org && (s.birth||'').slice(0,4)===String(birthYear)).length;
   return `${prefix}-${pad((cnt+1))}`;
 }
 
@@ -335,7 +412,7 @@ function openStudentForm(editId){
           <option value="남"${s?.gender==='남'?' selected':''}>남</option>
           <option value="여"${s?.gender==='여'?' selected':''}>여</option>
         </select></div>
-        <div class="fgrp"><label>생년월일</label><input type="date" id="f-birth" value="${s?.birth||''}"></div>
+        <div class="fgrp"><label>생년월일 *</label><input type="date" id="f-birth" value="${s?.birth||''}"></div>
         <div class="fgrp"><label>기관 *</label><select id="f-org" ${s?'disabled':''}>${orgOptionsHTML(false)}</select></div>
         <div class="fgrp"><label>입학일</label><input type="date" id="f-admit" value="${s?.admitDate||''}"></div>
         <div class="fgrp"><label>편입일</label><input type="date" id="f-transfer" value="${s?.transferDate||''}"></div>
@@ -416,16 +493,19 @@ window.closeMod = closeMod;
 async function saveStudent(editId){
   const name = $I('f-name').value.trim();
   const org = $I('f-org').value;
+  const birth = $I('f-birth').value;
   if(!name) return toast('이름을 입력하세요.','err');
   if(!org) return toast('기관을 선택하세요.','err');
+  if(!birth) return toast('생년월일을 입력하세요. (학번 부여에 필요합니다)','err');
 
   const admitDate = $I('f-admit').value;
   const admitYear = admitDate ? Number(admitDate.slice(0,4)) : Number($I('f-admit-year').value);
+  const birthYear = Number(birth.slice(0,4));
 
   const newData = {
     name, org,
     gender: $I('f-gender').value,
-    birth: $I('f-birth').value,
+    birth,
     admitDate, admitYear,
     transferDate: $I('f-transfer').value,
     quitDate: $I('f-quit').value,
@@ -461,7 +541,7 @@ async function saveStudent(editId){
       logActivity('수정', '학생', `${name} 정보 수정`);
       toast('수정되었습니다.','ok');
     } else {
-      newData.studentNo = await genStudentNo(org, admitYear);
+      newData.studentNo = await genStudentNo(org, birthYear);
       newData.history = [{ at: Date.now(), by: CU.name, changes:['학생 등록'] }];
       newData.createdAt = Timestamp.now();
       newData.siblings = [];
@@ -758,18 +838,22 @@ async function confirmBulkRegister(){
   $I('mwrap').innerHTML = `<div class="mov"><div class="mbk"></div><div class="mbox" style="text-align:center">
     <div class="mtitle">등록 중...</div><div class="msub" id="bulk-progress">0 / ${parsed.length}</div></div></div>`;
   let ok=0, fail=0;
-  // 학번 부여를 위해 기관/년도별 카운터를 현재 학생 수로 초기화
+  // 학번 부여를 위해 기관/출생연도별 카운터를 현재 학생 수로 초기화
   const counter = {};
   STUDENTS.forEach(s => {
-    const key = `${s.org}-${s.admitYear}`;
+    const by = (s.birth||'').slice(0,4);
+    if(!by) return;
+    const key = `${s.org}-${by}`;
     counter[key] = (counter[key]||0) + 1;
   });
   for(let i=0;i<parsed.length;i++){
     const p = parsed[i];
     try {
-      const key = `${p.org}-${p.admitYear}`;
+      const by = (p.birth||'').slice(0,4);
+      if(!by){ fail++; continue; }  // 생년월일 없으면 제외
+      const key = `${p.org}-${by}`;
       counter[key] = (counter[key]||0) + 1;
-      const studentNo = `${p.admitYear}-${pad(counter[key])}`;
+      const studentNo = `${by}-${pad(counter[key])}`;
       await addDoc(collection(db,'students'), {
         ...p, studentNo, siblings:[],
         history:[{at:Date.now(), by:CU.name, changes:['엑셀 일괄 등록']}],
