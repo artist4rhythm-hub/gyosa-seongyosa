@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>근무시간 · 교사 선교사</title>
+<meta name="theme-color" content="#1e2e5c">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root {
+  --gd:#1e2e5c; --gm:#2b3990; --gl:#5a70cc; --gp:#e8ecf8;
+  --gold:#c9a84c; --goldd:#a8873a; --goldp:#fdf3d8;
+  --iv:#f5f0e8; --ivd:#e8e0d0;
+  --tx:#1a1a2e; --ts:#4a4a6a; --tl:#8888aa; --wh:#ffffff;
+  --sh:0 2px 12px rgba(30,46,92,0.10); --r:12px; --rs:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--iv);color:var(--tx);min-height:100vh;}
+
+#gate{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(150deg,#eef0f8 0%,#f5f0e8 60%,#fdf3d8 100%);padding:24px;text-align:center;}
+.gbox{background:var(--wh);border-radius:24px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(30,46,92,0.12);}
+.gtitle{font-size:22px;font-weight:800;color:var(--gd);margin-bottom:8px;}
+.gsub{font-size:14px;color:var(--ts);line-height:1.6;margin-bottom:20px;}
+.gbtn{display:inline-block;width:100%;padding:14px;background:linear-gradient(135deg,#2b3990,#1e2e5c);color:var(--wh);border:none;border-radius:var(--rs);font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;}
+
+#ms{display:none;flex-direction:column;min-height:100vh;}
+.ah{background:linear-gradient(135deg,#1e2e5c,#12194a);color:var(--wh);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+.ahl{display:flex;align-items:center;gap:12px;}
+.ahi{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.aht{font-size:16px;font-weight:700;}
+.ahr{text-align:right;}
+#hn{font-size:15px;font-weight:600;}
+#hi{font-size:11px;opacity:.7;margin-top:2px;}
+.homebtn{background:rgba(255,255,255,0.15);color:var(--wh);border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;margin-top:4px;text-decoration:none;display:inline-block;}
+
+.subtb{display:flex;gap:4px;background:var(--wh);padding:8px 16px;border-bottom:1px solid var(--ivd);overflow-x:auto;}
+.subtbtn{padding:8px 14px;background:transparent;border:none;border-radius:8px;font-size:14px;font-weight:600;color:var(--ts);cursor:pointer;white-space:nowrap;}
+.subtbtn.active{background:var(--gp);color:var(--gm);}
+
+.tc{padding:20px 16px;max-width:1000px;margin:0 auto;width:100%;}
+.actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
+.adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
+.acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
+
+.bp{background:linear-gradient(135deg,#2b3990,#1e2e5c);color:var(--wh);border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;}
+.bs{background:var(--iv);color:var(--ts);border:1.5px solid var(--ivd);border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+.bm{background:var(--gp);color:var(--gm);border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+
+.fgrp{display:flex;flex-direction:column;margin-bottom:12px;}
+.fgrp label{font-size:12px;font-weight:700;color:var(--ts);margin-bottom:5px;}
+.fgrp input,.fgrp select{height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);outline:none;width:100%;font-family:inherit;}
+
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th,td{padding:8px 10px;border-bottom:1px solid var(--ivd);text-align:left;white-space:nowrap;}
+th{background:var(--iv);font-weight:700;font-size:12px;}
+.empty{text-align:center;color:var(--tl);padding:30px;font-size:14px;}
+
+.mov{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;}
+.mbk{position:absolute;inset:0;background:rgba(20,25,60,0.5);}
+.mbox{position:relative;background:var(--wh);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow-y:auto;}
+.mtitle{font-size:18px;font-weight:800;color:var(--gd);margin-bottom:4px;}
+.msub{font-size:13px;color:var(--ts);margin-bottom:16px;line-height:1.5;}
+.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+.row2{display:flex;gap:10px;}
+.row2 .fgrp{flex:1;}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gbox">
+    <div class="gtitle">근무시간</div>
+    <div class="gsub" id="gate-msg">로그인 확인 중...</div>
+    <a class="gbtn" id="gate-btn" href="index.html" style="display:none">로그인 화면으로</a>
+  </div>
+</div>
+
+<div id="ms">
+  <header class="ah">
+    <div class="ahl">
+      <div class="ahi">⏱️</div>
+      <div class="aht">근무시간</div>
+    </div>
+    <div class="ahr">
+      <div id="hn"></div>
+      <div id="hi"></div>
+      <a class="homebtn" href="index.html">← 메인으로</a>
+    </div>
+  </header>
+  <div class="subtb" id="subtb">
+    <button class="subtbtn active" id="tb-stat" onclick="showTab('stat')">📊 근무 통계</button>
+    <button class="subtbtn" id="tb-set" onclick="showTab('set')" style="display:none">⚙️ 근무시간 설정</button>
+  </div>
+  <div class="tc" id="c-stat" style="display:none"></div>
+  <div class="tc" id="c-set" style="display:none"></div>
+</div>
+
+<div id="mwrap"></div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $I = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+let CU = null;
+let STAFF = [];       // 교직원 목록
+let SETTINGS = {};    // uid -> 근무설정
+let ATT = [];         // 출근부 기록 (정상출근 판정용)
+
+// 정상출근으로 인정하는 항목 (근무시간 계산 대상)
+const WORK_SUBS = ['정상출근','재택근무','출장'];
+
+function toast(msg, type=''){
+  const t = $I('toast'); t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
+}
+async function logActivity(action, category, target){
+  if(!CU) return;
+  try { await addDoc(collection(db,'activityLogs'), {
+    uid:CU.uid, name:CU.name||'', role:CU.role||'', org:CU.org||'',
+    action, category, target:target||'', detail:'', at:Timestamp.now()
+  }); } catch(e){}
+}
+function myOrgs(){
+  if(!CU) return [];
+  if(CU.role==='super') return ['jihyebit','daniel'];
+  return CU.orgs && CU.orgs.length ? CU.orgs : [CU.org];
+}
+const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+const canManage = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+
+// 시:분 문자열("09:00") → 분
+function toMin(t){ if(!t||!t.includes(':')) return null; const [h,m]=t.split(':').map(Number); return h*60+m; }
+// 분 → "8시간 30분"
+function fmtDur(min){ if(min==null) return '-'; const h=Math.floor(min/60), m=min%60; return `${h}시간${m?' '+m+'분':''}`; }
+// 분 → 소수 시간(8.5)
+function toHours(min){ return Math.round(min/60*100)/100; }
+
+onAuthStateChanged(auth, async (user) => {
+  if(!user){ $I('gate-msg').textContent='로그인이 필요합니다. 메인 화면에서 먼저 로그인해주세요.'; $I('gate-btn').style.display='inline-block'; return; }
+  try {
+    const snap = await getDoc(doc(db,'staff',user.uid));
+    if(!snap.exists()){ $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    CU = { uid:user.uid, ...snap.data() };
+    const ac = CU.acStatus || 'active';
+    if(ac==='leave'||ac==='quit'){ $I('gate-msg').textContent = ac==='quit'?'퇴직 처리된 계정입니다.':'휴직 중인 계정입니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    $I('gate').style.display='none'; $I('ms').style.display='flex';
+    $I('hn').textContent = CU.name;
+    $I('hi').textContent = `${ORGS[CU.org]||CU.org} · ${CU.dept||''}`;
+    if(canManage()) $I('tb-set').style.display='';
+    await loadStaff();
+    await loadSettings();
+    showTab('stat');
+  } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
+});
+
+async function loadStaff(){
+  const snap = await getDocs(collection(db,'staff'));
+  const allowed = myOrgs();
+  STAFF = [];
+  snap.forEach(d=>{
+    const s={uid:d.id, ...d.data()};
+    const so = s.orgs&&s.orgs.length?s.orgs:[s.org];
+    // 관리자는 자기 기관 교직원, 일반 교사는 본인만
+    if(canManage()){ if(so.some(o=>allowed.includes(o))) STAFF.push(s); }
+    else if(s.uid===CU.uid){ STAFF.push(s); }
+  });
+  STAFF.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+}
+
+async function loadSettings(){
+  const snap = await getDocs(collection(db,'workSettings'));
+  SETTINGS = {};
+  snap.forEach(d=> SETTINGS[d.id] = d.data());
+}
+
+async function loadAtt(){
+  const snap = await getDocs(collection(db,'attendance'));
+  ATT = []; snap.forEach(d=>ATT.push(d.data()));
+}
+
+function showTab(t){
+  document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
+  $I('tb-'+t)?.classList.add('active');
+  ['stat','set'].forEach(id=>{ const el=$I('c-'+id); if(el) el.style.display='none'; });
+  $I('c-'+t).style.display='block';
+  if(t==='stat') renderStat();
+  if(t==='set') renderSet();
+}
+window.showTab = showTab;
+
+// ── 근무시간 설정 ──
+function renderSet(){
+  if(!canManage()){ $I('c-set').innerHTML='<div class="acard"><p class="empty">설정 권한이 없습니다.</p></div>'; return; }
+  const rows = STAFF.map(s=>{
+    const st = SETTINGS[s.uid];
+    const desc = st ? `출근 ${st.start} · 퇴근 ${st.end}${st.friEnd?` (금 ${st.friEnd})`:''} · 휴게 ${st.breakMin}분` : '미설정';
+    const dur = st ? fmtDur(dailyBaseMin(st, false)) : '-';
+    return `<tr>
+      <td style="font-weight:600">${s.name}</td>
+      <td>${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
+      <td style="color:var(--ts)">${desc}</td>
+      <td>${dur}</td>
+      <td><button class="bm" onclick="openSetForm('${s.uid}')">${st?'수정':'설정'}</button></td>
+    </tr>`;
+  }).join('');
+  $I('c-set').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">⚙️ 선생님별 근무시간 설정</h3>
+      <p class="adesc">선생님마다 기본 출근·퇴근·휴게시간을 설정합니다. 금요일 퇴근시간이 다르면 따로 입력하고, 같으면 비워두세요. 하루 기본 근무시간(휴게 제외)이 자동 계산됩니다.</p>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>이름</th><th>소속</th><th>설정</th><th>하루 근무</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" class="empty">교직원이 없습니다.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+window.renderSet = renderSet;
+
+// 하루 기본 근무시간(분) 계산. fri=true면 금요일 퇴근 적용
+function dailyBaseMin(st, fri){
+  if(!st) return null;
+  const s = toMin(st.start), e = toMin((fri && st.friEnd) ? st.friEnd : st.end);
+  if(s==null||e==null) return null;
+  return Math.max(0, e - s - (st.breakMin||0));
+}
+
+function openSetForm(uid){
+  const s = STAFF.find(x=>x.uid===uid); if(!s) return;
+  const st = SETTINGS[uid] || {start:'09:00', end:'17:00', friEnd:'', breakMin:60};
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${s.name} 근무시간 설정</div>
+      <div class="msub">기본 출퇴근 시간과 휴게시간을 입력하세요. 금요일 퇴근이 다르면 입력, 같으면 비워두세요.</div>
+      <div class="row2">
+        <div class="fgrp"><label>출근 시간</label><input type="time" id="ws-start" value="${st.start||''}"></div>
+        <div class="fgrp"><label>퇴근 시간</label><input type="time" id="ws-end" value="${st.end||''}"></div>
+      </div>
+      <div class="row2">
+        <div class="fgrp"><label>금요일 퇴근 (다를 때만)</label><input type="time" id="ws-friend" value="${st.friEnd||''}"></div>
+        <div class="fgrp"><label>휴게시간 (분)</label><input type="number" id="ws-break" value="${st.breakMin!=null?st.breakMin:60}" min="0" step="10"></div>
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveSet('${uid}')">저장</button>
+      </div>
+    </div></div>`;
+}
+window.openSetForm = openSetForm;
+function closeMod(){ $I('mwrap').innerHTML=''; }
+window.closeMod = closeMod;
+
+async function saveSet(uid){
+  const start = $I('ws-start').value, end = $I('ws-end').value;
+  const friEnd = $I('ws-friend').value;
+  const breakMin = Number($I('ws-break').value)||0;
+  if(!start||!end) return toast('출근/퇴근 시간을 입력하세요.','err');
+  if(toMin(end) <= toMin(start)) return toast('퇴근 시간이 출근 시간보다 빨라요.','err');
+  try {
+    const s = STAFF.find(x=>x.uid===uid);
+    await setDoc(doc(db,'workSettings',uid), {
+      start, end, friEnd, breakMin, name:s?.name||'', org:s?.org||'', updatedAt:Timestamp.now()
+    });
+    logActivity('수정','근무설정',`${s?.name} 근무시간 설정`);
+    toast('저장되었습니다.','ok');
+    closeMod();
+    await loadSettings();
+    renderSet();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveSet = saveSet;
+
+// ── 근무 통계 (월별) ──
+let statYear = new Date().getFullYear();
+let statMonth = new Date().getMonth()+1;
+
+function renderStat(){
+  const ty = new Date().getFullYear();
+  const years = []; for(let y=ty+1;y>=ty-3;y--) years.push(y);
+  const months = []; for(let m=1;m<=12;m++) months.push(m);
+  $I('c-stat').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📊 월별 근무시간</h3>
+      <p class="adesc">출근부의 "정상출근(재택·출장 포함)" 기록을 기준으로, 선생님별 설정 시간에 따라 월별 근무시간을 계산합니다. ${canManage()?'':'본인 근무시간만 표시됩니다.'}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fgrp" style="margin-bottom:0"><label>연도</label>
+          <select id="st-year" onchange="onStatChange()">${years.map(y=>`<option value="${y}"${y===statYear?' selected':''}>${y}년</option>`).join('')}</select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>월</label>
+          <select id="st-month" onchange="onStatChange()">${months.map(m=>`<option value="${m}"${m===statMonth?' selected':''}>${m}월</option>`).join('')}</select></div>
+        <button class="bs" onclick="downloadStatExcel()">⬇ 엑셀</button>
+      </div>
+    </div>
+    <div id="st-body"><div class="acard"><p class="empty">불러오는 중...</p></div></div>`;
+  buildStat();
+}
+window.renderStat = renderStat;
+
+function onStatChange(){
+  statYear = Number($I('st-year').value);
+  statMonth = Number($I('st-month').value);
+  buildStat();
+}
+window.onStatChange = onStatChange;
+
+let _statRows = [];
+async function buildStat(){
+  const body = $I('st-body'); if(!body) return;
+  if(!ATT.length) await loadAtt();
+
+  const y = statYear, m = statMonth;
+  const prefix = `${y}-${pad(m)}`;
+  // 대상 교직원 (관리자=기관 전체, 교사=본인)
+  const targets = STAFF;
+
+  const rows = targets.map(s=>{
+    const st = SETTINGS[s.uid];
+    // 이 사람의 이번 달 정상출근일
+    const workDays = ATT.filter(r=> r.uid===s.uid && (r.date||'').startsWith(prefix) && WORK_SUBS.includes(r.sub));
+    let totalMin = 0, cnt = 0;
+    workDays.forEach(r=>{
+      const dow = new Date(r.date+'T00:00:00').getDay();
+      const base = dailyBaseMin(st, dow===5); // 금요일이면 금요일퇴근 적용
+      if(base!=null){ totalMin += base; cnt++; }
+    });
+    return {
+      uid:s.uid, name:s.name, org:s.org, dept:s.dept||'',
+      hasSetting: !!st, days:cnt, totalMin, totalHours: toHours(totalMin)
+    };
+  });
+  _statRows = rows;
+
+  const trs = rows.map(r=>`<tr>
+    <td style="font-weight:600">${r.name}</td>
+    <td>${ORGS[r.org]||r.org}${r.dept&&r.dept!=='전체'?' · '+r.dept:''}</td>
+    <td style="text-align:center">${r.days}일</td>
+    <td style="text-align:center;font-weight:700;color:var(--gm)">${fmtDur(r.totalMin)}</td>
+    <td style="text-align:center">${r.totalHours}h</td>
+    <td>${r.hasSetting?'':'<span style="color:#dc2626;font-size:11px">설정 필요</span>'}</td>
+  </tr>`).join('');
+
+  body.innerHTML = `
+    <div class="acard">
+      <h3 class="actitle" style="margin-bottom:12px">${y}년 ${m}월 근무시간</h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>이름</th><th>소속</th><th>정상출근</th><th>근무시간</th><th>시간(h)</th><th></th></tr></thead>
+        <tbody>${trs || '<tr><td colspan="6" class="empty">데이터가 없습니다.</td></tr>'}</tbody>
+      </table></div>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">※ 1단계 기본 계산입니다. 조퇴·늦은출근·캠프·주말근무 등 예외와 초과·휴일 근무 구분은 다음 단계에서 반영됩니다.</p>
+    </div>`;
+}
+
+function downloadStatExcel(){
+  if(!_statRows.length) return toast('데이터가 없습니다.','err');
+  const aoa = [['이름','기관','부서','정상출근일','근무시간(시간)']];
+  _statRows.forEach(r=> aoa.push([r.name, ORGS[r.org]||r.org, r.dept, r.days, r.totalHours]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:12},{wch:12},{wch:10},{wch:10},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '근무시간');
+  XLSX.writeFile(wb, `근무시간_${statYear}_${pad(statMonth)}.xlsx`);
+  toast('엑셀을 다운로드했습니다.','ok');
+}
+window.downloadStatExcel = downloadStatExcel;
+</script>
+</body>
+</html>
