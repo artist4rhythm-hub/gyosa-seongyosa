@@ -94,9 +94,11 @@ th{background:var(--iv);font-weight:700;font-size:12px;}
   </header>
   <div class="subtb" id="subtb">
     <button class="subtbtn active" id="tb-stat" onclick="showTab('stat')">📊 근무 통계</button>
+    <button class="subtbtn" id="tb-exc" onclick="showTab('exc')" style="display:none">📝 예외 입력</button>
     <button class="subtbtn" id="tb-set" onclick="showTab('set')" style="display:none">⚙️ 근무시간 설정</button>
   </div>
   <div class="tc" id="c-stat" style="display:none"></div>
+  <div class="tc" id="c-exc" style="display:none"></div>
   <div class="tc" id="c-set" style="display:none"></div>
 </div>
 
@@ -128,6 +130,8 @@ let CU = null;
 let STAFF = [];       // 교직원 목록
 let SETTINGS = {};    // uid -> 근무설정
 let ATT = [];         // 출근부 기록 (정상출근 판정용)
+let EXC = [];         // 날짜별 예외 (workExceptions)
+let HOLIDAYS = [];    // 공휴일 (휴일근무 판정용)
 
 // 정상출근으로 인정하는 항목 (근무시간 계산 대상)
 const WORK_SUBS = ['정상출근','재택근무','출장'];
@@ -171,8 +175,11 @@ onAuthStateChanged(auth, async (user) => {
     $I('hn').textContent = CU.name;
     $I('hi').textContent = `${ORGS[CU.org]||CU.org} · ${CU.dept||''}`;
     if(canManage()) $I('tb-set').style.display='';
+    if(canManage()) $I('tb-exc').style.display='';
     await loadStaff();
     await loadSettings();
+    await loadExc();
+    await loadHolidays();
     showTab('stat');
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
 });
@@ -201,16 +208,175 @@ async function loadAtt(){
   const snap = await getDocs(collection(db,'attendance'));
   ATT = []; snap.forEach(d=>ATT.push(d.data()));
 }
+async function loadExc(){
+  const snap = await getDocs(collection(db,'workExceptions'));
+  const allowed = myOrgs();
+  EXC = [];
+  snap.forEach(d=>{ const e={id:d.id, ...d.data()};
+    if(canManage()){ if(allowed.includes(e.org)) EXC.push(e); }
+    else if(e.uid===CU.uid){ EXC.push(e); }
+  });
+}
+async function loadHolidays(){
+  const snap = await getDocs(collection(db,'holidays'));
+  HOLIDAYS = []; snap.forEach(d=>HOLIDAYS.push(d.data()));
+}
+// 날짜+기관이 공휴일인지
+function isHoliday(dateStr, org){
+  return HOLIDAYS.some(h=>h.date===dateStr && (h.org==='all'||h.org===org));
+}
+// 특정 uid+날짜의 예외 찾기
+function findExc(uid, dateStr){
+  return EXC.find(e=>e.uid===uid && e.date===dateStr) || null;
+}
 
 function showTab(t){
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('tb-'+t)?.classList.add('active');
-  ['stat','set'].forEach(id=>{ const el=$I('c-'+id); if(el) el.style.display='none'; });
+  ['stat','exc','set'].forEach(id=>{ const el=$I('c-'+id); if(el) el.style.display='none'; });
   $I('c-'+t).style.display='block';
   if(t==='stat') renderStat();
+  if(t==='exc') renderExc();
   if(t==='set') renderSet();
 }
 window.showTab = showTab;
+
+// ── 예외 입력 (조퇴·늦은출근·캠프·주말근무) ──
+const EXC_TYPES = {
+  late:   {label:'늦은 출근', desc:'그날 출근시간만 변경'},
+  early:  {label:'조퇴',      desc:'그날 퇴근시간만 변경'},
+  camp:   {label:'캠프/숙박', desc:'그날 총 근무시간 직접 입력'},
+  weekend:{label:'주말/휴일 근무', desc:'휴일에 근무 (전체가 휴일근무)'},
+};
+
+function renderExc(){
+  if(!canManage()){ $I('c-exc').innerHTML='<div class="acard"><p class="empty">입력 권한이 없습니다.</p></div>'; return; }
+  // 최근 예외 목록 (날짜 내림차순)
+  const list = [...EXC].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,100);
+  const rows = list.map(e=>{
+    const t = EXC_TYPES[e.type];
+    let detail = '';
+    if(e.type==='late') detail = `출근 ${e.start}`;
+    else if(e.type==='early') detail = `퇴근 ${e.end}`;
+    else if(e.type==='camp') detail = `${e.hours}시간`;
+    else if(e.type==='weekend') detail = `${e.start}~${e.end}`;
+    return `<tr>
+      <td>${e.date}</td>
+      <td style="font-weight:600">${e.name||''}</td>
+      <td><span class="typebadge" style="background:var(--gp);color:var(--gm);font-size:11px;padding:2px 8px;border-radius:100px">${t?.label||e.type}</span></td>
+      <td>${detail}</td>
+      <td style="color:var(--ts);font-size:12px">${e.memo||''}</td>
+      <td><button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delExc('${e.id}')">삭제</button></td>
+    </tr>`;
+  }).join('');
+  $I('c-exc').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📝 예외 입력</h3>
+      <p class="adesc">조퇴·늦은 출근·캠프(숙박)·주말근무 등 기본 근무시간과 다른 날을 입력합니다. 한 번에 여러 선생님을 골라 같은 날짜·내용으로 일괄 적용할 수 있습니다.</p>
+      <button class="bp" onclick="openExcForm()">＋ 예외 추가</button>
+    </div>
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px">최근 예외 내역</h3>
+      <div style="overflow-x:auto"><table>
+        <thead><tr><th>날짜</th><th>이름</th><th>유형</th><th>내용</th><th>메모</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6" class="empty">등록된 예외가 없습니다.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+window.renderExc = renderExc;
+
+function openExcForm(){
+  const today = `${statYear}-${pad(statMonth)}-01`;
+  const staffChecks = STAFF.map(s=>`<label style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1.5px solid var(--ivd);border-radius:8px;cursor:pointer;font-size:13px;margin:0 4px 4px 0">
+    <input type="checkbox" class="exc-staff" value="${s.uid}" data-name="${s.name}" data-org="${s.org}" style="width:15px;height:15px"> ${s.name}</label>`).join('');
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">예외 추가</div>
+      <div class="msub">날짜와 유형을 정하고, 적용할 선생님을 선택하세요.</div>
+      <div class="fgrp"><label>날짜</label><input type="date" id="exc-date" value="${today}"></div>
+      <div class="fgrp"><label>유형</label>
+        <select id="exc-type" onchange="updExcFields()">
+          ${Object.entries(EXC_TYPES).map(([k,v])=>`<option value="${k}">${v.label} — ${v.desc}</option>`).join('')}
+        </select></div>
+      <div id="exc-fields"></div>
+      <div class="fgrp"><label>메모 (선택)</label><input type="text" id="exc-memo" placeholder="예: 여름 비전트립 1일차"></div>
+      <div class="fgrp"><label>적용 대상 선생님 (복수 선택)</label>
+        <div style="display:flex;flex-wrap:wrap;max-height:160px;overflow-y:auto;padding:4px;border:1.5px solid var(--ivd);border-radius:8px;background:var(--iv)">${staffChecks}</div>
+        <div style="margin-top:6px"><button type="button" class="bm" onclick="toggleAllExcStaff(true)">전체 선택</button> <button type="button" class="bm" onclick="toggleAllExcStaff(false)">전체 해제</button></div>
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveExc()">저장</button>
+      </div>
+    </div></div>`;
+  updExcFields();
+}
+window.openExcForm = openExcForm;
+
+function toggleAllExcStaff(on){
+  document.querySelectorAll('.exc-staff').forEach(c=>c.checked=on);
+}
+window.toggleAllExcStaff = toggleAllExcStaff;
+
+// 유형별 입력 칸
+function updExcFields(){
+  const type = $I('exc-type').value;
+  const box = $I('exc-fields');
+  if(type==='late') box.innerHTML = `<div class="fgrp"><label>변경된 출근 시간</label><input type="time" id="exc-start" value="10:00"></div>`;
+  else if(type==='early') box.innerHTML = `<div class="fgrp"><label>변경된 퇴근 시간</label><input type="time" id="exc-end" value="15:10"></div>`;
+  else if(type==='camp') box.innerHTML = `<div class="fgrp"><label>그날 총 근무시간 (시간 단위, 휴게 제외)</label><input type="number" id="exc-hours" value="14" min="0" max="24" step="0.5"></div><p style="font-size:12px;color:var(--tl);margin:-6px 0 12px">숙박 활동은 휴게를 빼지 않고 실제 인정 시간을 직접 입력하세요. (수면시간 제외 기준은 기관 규칙에 따름)</p>`;
+  else if(type==='weekend') box.innerHTML = `<div class="row2"><div class="fgrp"><label>출근 시간</label><input type="time" id="exc-start" value="09:00"></div><div class="fgrp"><label>퇴근 시간</label><input type="time" id="exc-end" value="15:00"></div></div><p style="font-size:12px;color:var(--tl);margin:-6px 0 12px">주말·휴일 근무는 전체가 휴일근무로 집계됩니다.</p>`;
+}
+window.updExcFields = updExcFields;
+
+async function saveExc(){
+  const date = $I('exc-date').value;
+  const type = $I('exc-type').value;
+  const memo = $I('exc-memo').value.trim();
+  if(!date) return toast('날짜를 선택하세요.','err');
+  const targets = Array.from(document.querySelectorAll('.exc-staff:checked'));
+  if(!targets.length) return toast('적용할 선생님을 선택하세요.','err');
+
+  const base = {date, type, memo};
+  if(type==='late'){ base.start=$I('exc-start').value; if(!base.start) return toast('출근 시간을 입력하세요.','err'); }
+  else if(type==='early'){ base.end=$I('exc-end').value; if(!base.end) return toast('퇴근 시간을 입력하세요.','err'); }
+  else if(type==='camp'){ base.hours=Number($I('exc-hours').value); if(!base.hours) return toast('근무시간을 입력하세요.','err'); }
+  else if(type==='weekend'){ base.start=$I('exc-start').value; base.end=$I('exc-end').value; if(!base.start||!base.end) return toast('출근/퇴근 시간을 입력하세요.','err'); }
+
+  toast('저장 중...');
+  let cnt=0;
+  try {
+    for(const chk of targets){
+      const uid = chk.value, name = chk.dataset.name, org = chk.dataset.org;
+      // 같은 uid+날짜 기존 예외 있으면 덮어쓰기
+      const existing = EXC.find(e=>e.uid===uid && e.date===date);
+      const data = {...base, uid, name, org, by:CU.name, updatedAt:Timestamp.now()};
+      if(existing){ await updateDoc(doc(db,'workExceptions',existing.id), data); }
+      else { data.createdAt=Timestamp.now(); await addDoc(collection(db,'workExceptions'), data); }
+      cnt++;
+    }
+    logActivity('입력','근무예외',`${date} ${EXC_TYPES[type]?.label} (${cnt}명)`);
+    toast(`${cnt}명에게 적용되었습니다.`,'ok');
+    closeMod();
+    await loadExc();
+    renderExc();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveExc = saveExc;
+
+async function delExc(id){
+  const e = EXC.find(x=>x.id===id);
+  if(!confirm(`${e?.date} ${e?.name} 예외를 삭제할까요?`)) return;
+  try {
+    await deleteDoc(doc(db,'workExceptions',id));
+    logActivity('삭제','근무예외',`${e?.date} ${e?.name}`);
+    toast('삭제되었습니다.');
+    await loadExc();
+    renderExc();
+  } catch(err){ toast('삭제 실패: '+err.message,'err'); }
+}
+window.delExc = delExc;
 
 // ── 근무시간 설정 ──
 function renderSet(){
@@ -332,22 +498,48 @@ async function buildStat(){
 
   const y = statYear, m = statMonth;
   const prefix = `${y}-${pad(m)}`;
-  // 대상 교직원 (관리자=기관 전체, 교사=본인)
   const targets = STAFF;
+  const DAY_STD = 8*60; // 1일 8시간 = 초과 기준
 
   const rows = targets.map(s=>{
     const st = SETTINGS[s.uid];
-    // 이 사람의 이번 달 정상출근일
+    // 이번 달 정상출근일 (출근부 기준)
     const workDays = ATT.filter(r=> r.uid===s.uid && (r.date||'').startsWith(prefix) && WORK_SUBS.includes(r.sub));
-    let totalMin = 0, cnt = 0;
-    workDays.forEach(r=>{
-      const dow = new Date(r.date+'T00:00:00').getDay();
-      const base = dailyBaseMin(st, dow===5); // 금요일이면 금요일퇴근 적용
-      if(base!=null){ totalMin += base; cnt++; }
+    const workDates = new Set(workDays.map(r=>r.date));
+    // 이번 달 이 사람의 예외도 날짜로 모음 (주말근무·캠프는 정상출근 기록이 없을 수 있으니 예외도 근무일로 포함)
+    const excThisMonth = EXC.filter(e=>e.uid===s.uid && (e.date||'').startsWith(prefix));
+    excThisMonth.forEach(e=>{ if(e.type==='weekend'||e.type==='camp') workDates.add(e.date); });
+
+    let baseMin=0, overMin=0, holMin=0, cnt=0;
+    Array.from(workDates).forEach(date=>{
+      const dow = new Date(date+'T00:00:00').getDay();
+      const exc = findExc(s.uid, date);
+      let dayMin = null;       // 그날 총 근무(분)
+      let isHol = (dow===0||dow===6) || isHoliday(date, s.org);
+
+      if(exc){
+        if(exc.type==='camp'){ dayMin = Math.round((exc.hours||0)*60); }
+        else if(exc.type==='weekend'){ dayMin = Math.max(0, toMin(exc.end)-toMin(exc.start)); isHol = true; }
+        else if(exc.type==='late'){ const e=toMin((dow===5&&st?.friEnd)?st.friEnd:st?.end); dayMin = (e!=null)?Math.max(0, e - toMin(exc.start) - (st?.breakMin||0)):null; }
+        else if(exc.type==='early'){ const s0=toMin(st?.start); dayMin = (s0!=null)?Math.max(0, toMin(exc.end) - s0 - (st?.breakMin||0)):null; }
+      } else {
+        dayMin = dailyBaseMin(st, dow===5);
+      }
+      if(dayMin==null) return;
+      cnt++;
+      if(isHol){
+        holMin += dayMin;       // 휴일근무는 전체를 휴일로
+      } else {
+        baseMin += Math.min(dayMin, DAY_STD);
+        if(dayMin>DAY_STD) overMin += dayMin - DAY_STD;
+      }
     });
+    const totalMin = baseMin+overMin+holMin;
     return {
       uid:s.uid, name:s.name, org:s.org, dept:s.dept||'',
-      hasSetting: !!st, days:cnt, totalMin, totalHours: toHours(totalMin)
+      hasSetting:!!st, days:cnt,
+      baseMin, overMin, holMin, totalMin,
+      totalHours:toHours(totalMin)
     };
   });
   _statRows = rows;
@@ -356,8 +548,10 @@ async function buildStat(){
     <td style="font-weight:600">${r.name}</td>
     <td>${ORGS[r.org]||r.org}${r.dept&&r.dept!=='전체'?' · '+r.dept:''}</td>
     <td style="text-align:center">${r.days}일</td>
+    <td style="text-align:center">${fmtDur(r.baseMin)}</td>
+    <td style="text-align:center;color:${r.overMin?'#d97706':'var(--tl)'}">${r.overMin?fmtDur(r.overMin):'-'}</td>
+    <td style="text-align:center;color:${r.holMin?'#dc2626':'var(--tl)'}">${r.holMin?fmtDur(r.holMin):'-'}</td>
     <td style="text-align:center;font-weight:700;color:var(--gm)">${fmtDur(r.totalMin)}</td>
-    <td style="text-align:center">${r.totalHours}h</td>
     <td>${r.hasSetting?'':'<span style="color:#dc2626;font-size:11px">설정 필요</span>'}</td>
   </tr>`).join('');
 
@@ -365,19 +559,19 @@ async function buildStat(){
     <div class="acard">
       <h3 class="actitle" style="margin-bottom:12px">${y}년 ${m}월 근무시간</h3>
       <div style="overflow-x:auto"><table>
-        <thead><tr><th>이름</th><th>소속</th><th>정상출근</th><th>근무시간</th><th>시간(h)</th><th></th></tr></thead>
-        <tbody>${trs || '<tr><td colspan="6" class="empty">데이터가 없습니다.</td></tr>'}</tbody>
+        <thead><tr><th>이름</th><th>소속</th><th>근무일</th><th>기본</th><th>초과</th><th>휴일</th><th>합계</th><th></th></tr></thead>
+        <tbody>${trs || '<tr><td colspan="8" class="empty">데이터가 없습니다.</td></tr>'}</tbody>
       </table></div>
-      <p style="font-size:12px;color:var(--tl);margin-top:10px">※ 1단계 기본 계산입니다. 조퇴·늦은출근·캠프·주말근무 등 예외와 초과·휴일 근무 구분은 다음 단계에서 반영됩니다.</p>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">※ 기본=평일 1일 8시간 이내 / 초과=평일 8시간 초과분 / 휴일=주말·공휴일 근무. 예외 입력(조퇴·늦은출근·캠프·주말)이 자동 반영됩니다.</p>
     </div>`;
 }
 
 function downloadStatExcel(){
   if(!_statRows.length) return toast('데이터가 없습니다.','err');
-  const aoa = [['이름','기관','부서','정상출근일','근무시간(시간)']];
-  _statRows.forEach(r=> aoa.push([r.name, ORGS[r.org]||r.org, r.dept, r.days, r.totalHours]));
+  const aoa = [['이름','기관','부서','근무일','기본(시간)','초과(시간)','휴일(시간)','합계(시간)']];
+  _statRows.forEach(r=> aoa.push([r.name, ORGS[r.org]||r.org, r.dept, r.days, toHours(r.baseMin), toHours(r.overMin), toHours(r.holMin), toHours(r.totalMin)]));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:12},{wch:12},{wch:10},{wch:10},{wch:12}];
+  ws['!cols'] = [{wch:12},{wch:12},{wch:10},{wch:8},{wch:11},{wch:11},{wch:11},{wch:11}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '근무시간');
   XLSX.writeFile(wb, `근무시간_${statYear}_${pad(statMonth)}.xlsx`);
