@@ -326,7 +326,9 @@ function openClassForm(editId){
         <div class="fgrp"><label>반 이름 *</label><input id="c-name" value="${c?.name||''}" placeholder="예: 이레반, 로이반"></div>
         <div class="fgrp"><label>기관 *</label><select id="c-org" onchange="updClassDept()">${orgs.map(o=>`<option value="${o}"${defOrg===o?' selected':''}>${ORGS[o]}</option>`).join('')}</select></div>
         <div class="fgrp"><label>부서</label><select id="c-dept"></select></div>
-        <div class="fgrp"><label>학년</label><input id="c-grade" value="${c?.grade||''}" placeholder="예: 2·3학년, 4세" list="grade-list"></div>
+        <div class="fgrp full"><label>학년 (여러 학년 합반이면 복수 선택)</label>
+          <div id="c-grade-box" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1.5px solid var(--ivd);border-radius:8px;background:var(--iv)"></div>
+        </div>
         <div class="fgrp full"><label>담임 선생님</label><select id="c-teacher">
           <option value="">미지정</option>
           ${STAFF.map(s=>`<option value="${s.uid}"${c?.teacherUid===s.uid?' selected':''}>${s.name} (${ORGS[s.org]||s.org})</option>`).join('')}
@@ -344,7 +346,7 @@ function openClassForm(editId){
         <button class="bp" onclick="saveClass('${c?.id||''}')">저장</button>
       </div>
     </div></div>`;
-  updClassDept(c?.dept, c?.grade);
+  updClassDept(c?.dept, c?.gradeList || c?.grade);
 }
 window.openClassForm = openClassForm;
 function closeMod(){ $I('mwrap').innerHTML=''; }
@@ -355,20 +357,44 @@ function updClassDept(selDept, selGrade){
   const depts = DEPTS[org] || ['전체'];
   const ds = $I('c-dept');
   ds.innerHTML = depts.map(d=>`<option value="${d}"${selDept===d?' selected':''}>${d}</option>`).join('');
-  // 학년 추천 목록
-  const gl = $I('grade-list');
-  if(gl) gl.innerHTML = (GRADES[org]||[]).map(g=>`<option value="${g}">`).join('');
+  // 학년 복수 선택 체크박스
+  renderGradeBox(org, selGrade);
 }
 window.updClassDept = updClassDept;
+
+// 반 학년 체크박스 렌더 (기관 변경 시 갱신)
+function renderGradeBox(org, selGrade){
+  const box = $I('c-grade-box'); if(!box) return;
+  // 기존 학년 문자열을 배열로 (배열이면 그대로, "6·7세"/"2·3학년" 같은 문자열이면 분리)
+  let selected = [];
+  if(Array.isArray(selGrade)) selected = selGrade;
+  else if(typeof selGrade==='string' && selGrade){
+    // GRADES 목록 중 문자열에 포함된 것 찾기
+    const list = GRADES[org]||[];
+    selected = list.filter(g=>selGrade.includes(g.replace('세','').replace('학년','')) || selGrade.includes(g));
+    if(!selected.length) selected = selGrade.split(/[·,/\s]+/).filter(Boolean);
+  }
+  const list = GRADES[org] || [];
+  box.innerHTML = list.map(g=>{
+    const on = selected.includes(g);
+    return `<label style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1.5px solid ${on?'var(--gm)':'var(--ivd)'};border-radius:8px;background:${on?'var(--gp)':'#fff'};cursor:pointer;font-size:13px">
+      <input type="checkbox" class="c-grade-chk" value="${g}"${on?' checked':''} onchange="this.parentElement.style.background=this.checked?'var(--gp)':'#fff';this.parentElement.style.borderColor=this.checked?'var(--gm)':'var(--ivd)'" style="width:15px;height:15px;cursor:pointer"> ${g}</label>`;
+  }).join('');
+}
+window.renderGradeBox = renderGradeBox;
 
 async function saveClass(editId){
   const name = $I('c-name').value.trim();
   const org = $I('c-org').value;
   if(!name) return toast('반 이름을 입력하세요.','err');
+  // 학년 복수 선택 수집
+  const gradeArr = Array.from(document.querySelectorAll('.c-grade-chk:checked')).map(c=>c.value);
+  const gradeStr = gradeArr.join('·');  // 표시용 "6세·7세"
   const data = {
     name, org, year: curYear,
     dept: $I('c-dept').value,
-    grade: $I('c-grade').value.trim(),
+    grade: gradeStr,          // 표시용 문자열 (호환)
+    gradeList: gradeArr,      // 복수 학년 배열
     teacherUid: $I('c-teacher').value,
     deputies: Array.from($I('c-deputy').selectedOptions).map(o=>o.value),
   };
@@ -522,7 +548,8 @@ function openGradeAssign(classId){
   if(!studs.length) return toast('먼저 학생을 추가하세요.','err');
   const grades = c.grades || {};
   const gradeOpts = (cur) => {
-    const list = GRADES[c.org] || [];
+    // 반에 합반 학년(gradeList)이 지정돼 있으면 그 학년만, 없으면 기관 전체 학년
+    const list = (c.gradeList && c.gradeList.length) ? c.gradeList : (GRADES[c.org] || []);
     return `<option value="">미지정</option>` + list.map(g=>`<option value="${g}"${cur===g?' selected':''}>${g}</option>`).join('');
   };
   $I('mwrap').innerHTML = `
@@ -739,7 +766,7 @@ async function doPromote(prevYear){
       const grades = {};
       if(c.grades) studs.forEach(sid=>{ if(c.grades[sid]) grades[sid]=c.grades[sid]; });
       await addDoc(collection(db,'classes'), {
-        name:c.name, org:c.org, dept:c.dept||'', grade:c.grade||'',
+        name:c.name, org:c.org, dept:c.dept||'', grade:c.grade||'', gradeList:c.gradeList||[],
         teacherUid:c.teacherUid||'', deputies:c.deputies||[],
         year:curYear, students:studs, grades,
         createdAt: Timestamp.now()
