@@ -521,10 +521,26 @@ window.createAcc = createAcc;
 // ── 계정 수정 (Firebase) ─────────────────────
 async function saveEditStaff(uid) {
   const name = $I('es-name').value.trim();
-  const org = $I('es-org').value, dept = $I('es-dept').value, role = $I('es-role').value;
+  const role = $I('es-role').value;
   const acStatus = $I('es-acstatus')?.value || 'active';
   if (!name) return toast('이름을 입력하세요.', 'err');
-  await updateDoc(doc(db, 'staff', uid), { name, org, dept, role, acStatus });
+
+  let org, dept, orgs;
+  if (role === 'org_admin') {
+    // 기관관리자: 체크박스로 복수 기관
+    orgs = [];
+    if ($I('es-org-jihyebit')?.checked) orgs.push('jihyebit');
+    if ($I('es-org-daniel')?.checked) orgs.push('daniel');
+    if (orgs.length === 0) return toast('관리 기관을 하나 이상 선택하세요.', 'err');
+    org = orgs[0];        // 대표 기관 (호환용)
+    dept = '전체';
+  } else {
+    org = $I('es-org').value;
+    dept = $I('es-dept').value;
+    orgs = [org];
+  }
+
+  await updateDoc(doc(db, 'staff', uid), { name, org, orgs, dept, role, acStatus });
   logActivity('수정', '계정', `${name} 정보 수정 (상태: ${acStatus==='active'?'재직':acStatus==='leave'?'휴직':'퇴직'})`);
   toast(`${name} 선생님 정보가 수정되었습니다.`, 'ok');
   document.getElementById('edit-staff-mod')?.remove();
@@ -2044,6 +2060,17 @@ function updEditDept(){
     '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
 }
 
+// 권한이 기관관리자면 복수 기관 체크박스, 아니면 단일 드롭다운
+function updEditOrgMode(){
+  const role = $I('es-role')?.value;
+  const isOA = role==='org_admin';
+  const single = $I('es-org-single'), multi = $I('es-org-multi'), deptW = $I('es-dept-wrap');
+  if(single) single.style.display = isOA ? 'none' : '';
+  if(multi) multi.style.display = isOA ? '' : 'none';
+  if(deptW) deptW.style.display = isOA ? 'none' : '';  // 기관관리자는 부서 없음
+}
+window.updEditOrgMode = updEditOrgMode;
+
 function openMyInfo(){
   const el=document.createElement('div'); el.id='my-info-mod';
   el.innerHTML=`
@@ -2093,20 +2120,29 @@ function openEditStaff(uid, name, org, dept, role){
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
           <div class="fgrp"><label>이름</label>
             <input id="es-name" type="text" value="${name}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-          <div class="fgrp"><label>기관</label>
-            <select id="es-org" onchange="updEditDept()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-              <option value="jihyebit"${org==='jihyebit'?' selected':''}>지혜빛</option>
-              <option value="daniel"${org==='daniel'?' selected':''}>다니엘 아마츠</option>
-            </select></div>
-          <div class="fgrp"><label>부서</label>
-            <select id="es-dept" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">${deptOpts(org, dept)}</select></div>
           <div class="fgrp"><label>권한</label>
-            <select id="es-role" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+            <select id="es-role" onchange="updEditOrgMode()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
               <option value="teacher"${role==='teacher'?' selected':''}>교사</option>
               <option value="tab_admin"${role==='tab_admin'?' selected':''}>부서장</option>
               <option value="org_admin"${role==='org_admin'?' selected':''}>기관관리자</option>
               <option value="super"${role==='super'?' selected':''}>슈퍼관리자</option>
             </select></div>
+          <div class="fgrp"><label>기관</label>
+            <div id="es-org-single" style="${role==='org_admin'?'display:none':''}">
+              <select id="es-org" onchange="updEditDept()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+                <option value="jihyebit"${org==='jihyebit'?' selected':''}>지혜빛</option>
+                <option value="daniel"${org==='daniel'?' selected':''}>다니엘 아마츠</option>
+              </select>
+            </div>
+            <div id="es-org-multi" style="${role==='org_admin'?'':'display:none'};padding:8px 0">
+              <label style="display:flex;align-items:center;gap:8px;font-weight:400;margin-bottom:6px;cursor:pointer">
+                <input type="checkbox" id="es-org-jihyebit" ${(cur.orgs||[org]).includes('jihyebit')?'checked':''} style="width:16px;height:16px"> 지혜빛</label>
+              <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer">
+                <input type="checkbox" id="es-org-daniel" ${(cur.orgs||[org]).includes('daniel')?'checked':''} style="width:16px;height:16px"> 다니엘 아마츠</label>
+              <span style="font-size:11px;color:var(--tl);display:block;margin-top:6px">기관관리자는 여러 기관을 함께 관리할 수 있습니다.</span>
+            </div></div>
+          <div class="fgrp" id="es-dept-wrap" style="${role==='org_admin'?'display:none':''}"><label>부서</label>
+            <select id="es-dept" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">${deptOpts(org, dept)}</select></div>
           <div class="fgrp"><label>계정 상태</label>
             <select id="es-acstatus" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
               <option value="active"${acStatus==='active'?' selected':''}>재직 (로그인 가능)</option>
