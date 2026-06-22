@@ -334,6 +334,7 @@ let CU = null;       // 현재 로그인 유저 (Firestore 데이터)
 let curMon = new Date();
 let selP = null, selS = null;
 let STAFF_CACHE = {};  // 전체 교직원 캐시 (uid -> data)
+let TEACHER_INPUT = true;  // 교사 본인 출근부 직접 입력 허용 여부 (관리자가 끌 수 있음)
 let IDX = 0;         // 사용 안함 (Firebase auto ID)
 
 // ── Firebase 유틸 ────────────────────────────
@@ -377,6 +378,7 @@ onAuthStateChanged(auth, async (user) => {
       CU = { uid: user.uid, ...data };
       $I('ls').style.display = 'none';
       $I('ms').style.display = 'flex';
+      await loadAttConfig();
       // 로그인 기록 저장 (비동기, 실패해도 진행)
       recordLogin(user.uid, data.name, data.org).catch(()=>{});
       showMain();
@@ -391,9 +393,33 @@ onAuthStateChanged(auth, async (user) => {
   }
 });
 
+// 출근부 설정 로드 (교사 입력 허용 여부)
+async function loadAttConfig(){
+  try {
+    const snap = await getDoc(doc(db,'workConfig','att'));
+    if(snap.exists()) TEACHER_INPUT = snap.data().teacherInput !== false;
+    else TEACHER_INPUT = true;
+  } catch(e){ TEACHER_INPUT = true; }
+}
+async function saveAttConfig(val){
+  try {
+    await setDoc(doc(db,'workConfig','att'), {teacherInput: val, updatedAt: Timestamp.now()}, {merge:true});
+    TEACHER_INPUT = val;
+    logActivity('수정','출근부', `교사 직접 입력 ${val?'허용':'차단'}`);
+    toast(val?'교사 직접 입력을 허용했습니다.':'교사 직접 입력을 차단했습니다. (관리자만 입력)','ok');
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveAttConfig = saveAttConfig;
+
+// 현재 사용자가 본인 출근부를 직접 입력할 수 있는지
+function canInputOwnAtt(){
+  if(!CU) return false;
+  if(['super','org_admin','tab_admin'].includes(CU.role)) return true; // 관리자는 항상 가능
+  return TEACHER_INPUT; // 교사는 설정에 따라
+}
+
 // 로그인 기록 저장 (마지막 로그인 + 누적 이력)
-async function recordLogin(uid, name, org) {
-  const now = Timestamp.now();
+async function recordLogin(uid, name, org) {  const now = Timestamp.now();
   // 마지막 로그인 시각 갱신
   try { await updateDoc(doc(db,'staff',uid), { lastLogin: now }); } catch(e){}
   // 누적 로그인 이력 (한 건씩)
@@ -1078,7 +1104,9 @@ function renderAtt(){
       <button class="ibtn" onclick="nextMon()">›</button>
     </div>
     <div style="text-align:center;margin-bottom:12px">
-      <button class="bp" style="font-size:13px;padding:8px 16px" onclick="openBulkMod()">📋 기간 일괄 입력</button>
+      ${canInputOwnAtt()
+        ? `<button class="bp" style="font-size:13px;padding:8px 16px" onclick="openBulkMod()">📋 기간 일괄 입력</button>`
+        : `<span style="font-size:13px;color:var(--ts);background:var(--gp);padding:8px 14px;border-radius:8px;display:inline-block">📋 출근 기록은 관리자가 입력합니다. (조회 전용)</span>`}
     </div>
     <div id="cg" class="cg"></div>
     <div id="mwrap"></div>`;
@@ -1710,6 +1738,21 @@ window.showReadStatus = showReadStatus;
 // ── 모달 ─────────────────────────────────────
 function openMod(ds,eff){
   const [,mm,dd]=ds.split('-');
+  // 입력 권한 없으면(교사+입력차단) 조회 전용 모달
+  if(!canInputOwnAtt()){
+    const cur = eff?.manual ? (SINF[eff.sub]?.l||eff.sub) : '정상출근(자동)';
+    $I('mwrap').innerHTML=`
+      <div class="mov" id="mov">
+        <div class="mbk" onclick="closeMod()"></div>
+        <div class="mbox">
+          <div class="mtitle">${parseInt(mm)}월 ${parseInt(dd)}일 출근 기록</div>
+          <div class="msub">현재 상태: <b>${cur}</b>${eff?.manual&&eff.memo?`<br>메모: ${eff.memo}`:''}</div>
+          <div style="background:var(--gp);color:var(--gm);border-radius:8px;padding:12px;font-size:13px;line-height:1.6;margin-top:10px">📋 출근 기록은 관리자가 입력합니다.<br>변경이 필요하면 담당 관리자에게 요청해주세요.</div>
+          <div class="mact"><button class="bs" onclick="closeMod()">닫기</button></div>
+        </div>
+      </div>`;
+    return;
+  }
   // 자동 상태(정기휴가/정상출근)면 그 값을 초기 선택으로
   const autoSub = eff?.auto ? (eff.sub||'정상출근') : '정상출근';
   selP = eff?.manual ? S2P[eff.sub] : (S2P[autoSub]||'정상출근');
@@ -1881,6 +1924,13 @@ async function renderAdmAtt(){
   await reloadStaffCache();
   $I('ca-att').innerHTML=`
   <div class="asc">
+    <div class="acard">
+      <h3 class="actitle">🔐 교사 출근부 입력 권한</h3>
+      <p class="adesc">교사가 본인 출근부를 직접 입력할 수 있는지 설정합니다. 끄면 교사는 본인 기록을 <b>조회만</b> 할 수 있고, 출근 기록은 관리자(기관·부서)가 대신 입력합니다. 관리자는 이 설정과 무관하게 항상 입력할 수 있습니다.</p>
+      <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;font-weight:600;color:var(--gd)">
+        <input type="checkbox" id="att-teacher-input" ${TEACHER_INPUT?'checked':''} onchange="saveAttConfig(this.checked)" style="width:18px;height:18px"> 교사 직접 입력 허용
+      </label>
+    </div>
     <div class="acard">
       <h3 class="actitle">📆 근무기간 / 방학기간 설정</h3>
       <p class="adesc">근무기간은 평일이 자동 정상출근으로, 방학기간은 평일이 자동 정기휴가로 교사 달력에 표시됩니다.</p>
