@@ -132,6 +132,7 @@ let SETTINGS = {};    // uid -> 근무설정
 let ATT = [];         // 출근부 기록 (정상출근 판정용)
 let EXC = [];         // 날짜별 예외 (workExceptions)
 let HOLIDAYS = [];    // 공휴일 (휴일근무 판정용)
+let NIGHT_ON = false; // 야간(22~06시) 구분 사용 여부
 
 // 정상출근으로 인정하는 항목 (근무시간 계산 대상)
 const WORK_SUBS = ['정상출근','재택근무','출장'];
@@ -180,6 +181,7 @@ onAuthStateChanged(auth, async (user) => {
     await loadSettings();
     await loadExc();
     await loadHolidays();
+    await loadConfig();
     showTab('stat');
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
 });
@@ -191,9 +193,18 @@ async function loadStaff(){
   snap.forEach(d=>{
     const s={uid:d.id, ...d.data()};
     const so = s.orgs&&s.orgs.length?s.orgs:[s.org];
-    // 관리자는 자기 기관 교직원, 일반 교사는 본인만
-    if(canManage()){ if(so.some(o=>allowed.includes(o))) STAFF.push(s); }
-    else if(s.uid===CU.uid){ STAFF.push(s); }
+    if(CU.role==='super' || CU.role==='org_admin'){
+      // 기관관리자·슈퍼: 자기 기관 전체
+      if(so.some(o=>allowed.includes(o))) STAFF.push(s);
+    } else if(CU.role==='tab_admin'){
+      // 부서장: 행정실은 다니엘 전체, 그 외는 본인 부서. 본인은 항상 포함
+      if(s.uid===CU.uid) STAFF.push(s);
+      else if(CU.dept==='행정실'){ if(so.some(o=>allowed.includes(o))) STAFF.push(s); }
+      else if(so.some(o=>allowed.includes(o)) && s.dept===CU.dept) STAFF.push(s);
+    } else {
+      // 교사: 본인만
+      if(s.uid===CU.uid) STAFF.push(s);
+    }
   });
   STAFF.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
 }
@@ -220,6 +231,11 @@ async function loadExc(){
 async function loadHolidays(){
   const snap = await getDocs(collection(db,'holidays'));
   HOLIDAYS = []; snap.forEach(d=>HOLIDAYS.push(d.data()));
+}
+async function loadConfig(){
+  try { const snap = await getDoc(doc(db,'workConfig','main'));
+    if(snap.exists()) NIGHT_ON = !!snap.data().nightOn;
+  } catch(e){}
 }
 // 날짜+기관이 공휴일인지
 function isHoliday(dateStr, org){
@@ -395,6 +411,13 @@ function renderSet(){
   }).join('');
   $I('c-set').innerHTML = `
     <div class="acard">
+      <h3 class="actitle">🌙 야간 근무 구분</h3>
+      <p class="adesc">밤 10시~오전 6시 사이 근무를 "야간"으로 따로 집계합니다. 켜면 통계에 야간 칸이 추가됩니다. (캠프처럼 시간을 직접 입력한 날은 야간 자동 계산에서 제외됩니다)</p>
+      <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;font-weight:600;color:var(--gd)">
+        <input type="checkbox" id="night-toggle" ${NIGHT_ON?'checked':''} onchange="saveNightToggle()" style="width:18px;height:18px"> 야간 근무 구분 사용
+      </label>
+    </div>
+    <div class="acard">
       <h3 class="actitle">⚙️ 선생님별 근무시간 설정</h3>
       <p class="adesc">선생님마다 기본 출근·퇴근·휴게시간을 설정합니다. 금요일 퇴근시간이 다르면 따로 입력하고, 같으면 비워두세요. 하루 기본 근무시간(휴게 제외)이 자동 계산됩니다.</p>
       <div style="overflow-x:auto"><table>
@@ -405,12 +428,36 @@ function renderSet(){
 }
 window.renderSet = renderSet;
 
+async function saveNightToggle(){
+  NIGHT_ON = $I('night-toggle').checked;
+  try {
+    await setDoc(doc(db,'workConfig','main'), {nightOn:NIGHT_ON, updatedAt:Timestamp.now()});
+    logActivity('수정','근무설정',`야간 구분 ${NIGHT_ON?'켬':'끔'}`);
+    toast(NIGHT_ON?'야간 구분을 켰습니다.':'야간 구분을 껐습니다.','ok');
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveNightToggle = saveNightToggle;
+
 // 하루 기본 근무시간(분) 계산. fri=true면 금요일 퇴근 적용
-function dailyBaseMin(st, fri){
-  if(!st) return null;
+function dailyBaseMin(st, fri){  if(!st) return null;
   const s = toMin(st.start), e = toMin((fri && st.friEnd) ? st.friEnd : st.end);
   if(s==null||e==null) return null;
   return Math.max(0, e - s - (st.breakMin||0));
+}
+
+// 출근~퇴근 사이 야간(22:00~06:00) 구간의 분 계산
+// startMin, endMin: 분 단위 (당일 기준, end가 start보다 작으면 익일로 간주)
+function nightMin(startMin, endMin){
+  if(startMin==null||endMin==null) return 0;
+  let e = endMin; if(e<=startMin) e += 24*60; // 자정 넘김
+  let night = 0;
+  // 22:00(1320)~익일 06:00(1800)  +  전날 야간이 당일 06시까지 이어지는 경우(−120~360)
+  // 분 단위로 훑어서 야간대인지 체크 (간단·정확)
+  for(let t=startMin; t<e; t++){
+    const tod = ((t % (24*60)) + 24*60) % (24*60);
+    if(tod>=22*60 || tod<6*60) night++;
+  }
+  return night;
 }
 
 function openSetForm(uid){
@@ -462,6 +509,7 @@ window.saveSet = saveSet;
 // ── 근무 통계 (월별) ──
 let statYear = new Date().getFullYear();
 let statMonth = new Date().getMonth()+1;
+let statRange = 'month'; // 'month' | 'year'
 
 function renderStat(){
   const ty = new Date().getFullYear();
@@ -469,12 +517,17 @@ function renderStat(){
   const months = []; for(let m=1;m<=12;m++) months.push(m);
   $I('c-stat').innerHTML = `
     <div class="acard">
-      <h3 class="actitle">📊 월별 근무시간</h3>
-      <p class="adesc">출근부의 "정상출근(재택·출장 포함)" 기록을 기준으로, 선생님별 설정 시간에 따라 월별 근무시간을 계산합니다. ${canManage()?'':'본인 근무시간만 표시됩니다.'}</p>
+      <h3 class="actitle">📊 근무시간 통계</h3>
+      <p class="adesc">출근부의 "정상출근(재택·출장 포함)" 기록과 예외 입력을 기준으로 근무시간을 계산합니다. ${canManage()?'':'본인 근무시간만 표시됩니다.'}</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fgrp" style="margin-bottom:0"><label>기간</label>
+          <select id="st-range" onchange="onStatChange()">
+            <option value="month"${statRange==='month'?' selected':''}>월별</option>
+            <option value="year"${statRange==='year'?' selected':''}>연간</option>
+          </select></div>
         <div class="fgrp" style="margin-bottom:0"><label>연도</label>
           <select id="st-year" onchange="onStatChange()">${years.map(y=>`<option value="${y}"${y===statYear?' selected':''}>${y}년</option>`).join('')}</select></div>
-        <div class="fgrp" style="margin-bottom:0"><label>월</label>
+        <div class="fgrp" style="margin-bottom:0;${statRange==='year'?'display:none':''}" id="st-month-wrap"><label>월</label>
           <select id="st-month" onchange="onStatChange()">${months.map(m=>`<option value="${m}"${m===statMonth?' selected':''}>${m}월</option>`).join('')}</select></div>
         <button class="bs" onclick="downloadStatExcel()">⬇ 엑셀</button>
       </div>
@@ -485,8 +538,10 @@ function renderStat(){
 window.renderStat = renderStat;
 
 function onStatChange(){
+  statRange = $I('st-range').value;
   statYear = Number($I('st-year').value);
   statMonth = Number($I('st-month').value);
+  const mw = $I('st-month-wrap'); if(mw) mw.style.display = statRange==='year'?'none':'';
   buildStat();
 }
 window.onStatChange = onStatChange;
@@ -497,33 +552,35 @@ async function buildStat(){
   if(!ATT.length) await loadAtt();
 
   const y = statYear, m = statMonth;
-  const prefix = `${y}-${pad(m)}`;
+  const prefix = statRange==='year' ? `${y}-` : `${y}-${pad(m)}`;
   const targets = STAFF;
   const DAY_STD = 8*60; // 1일 8시간 = 초과 기준
 
   const rows = targets.map(s=>{
     const st = SETTINGS[s.uid];
-    // 이번 달 정상출근일 (출근부 기준)
+    // 기간 내 정상출근일 (출근부 기준)
     const workDays = ATT.filter(r=> r.uid===s.uid && (r.date||'').startsWith(prefix) && WORK_SUBS.includes(r.sub));
     const workDates = new Set(workDays.map(r=>r.date));
-    // 이번 달 이 사람의 예외도 날짜로 모음 (주말근무·캠프는 정상출근 기록이 없을 수 있으니 예외도 근무일로 포함)
-    const excThisMonth = EXC.filter(e=>e.uid===s.uid && (e.date||'').startsWith(prefix));
-    excThisMonth.forEach(e=>{ if(e.type==='weekend'||e.type==='camp') workDates.add(e.date); });
+    // 기간 내 예외도 날짜로 모음 (주말근무·캠프는 정상출근 기록이 없을 수 있으니 포함)
+    const excInRange = EXC.filter(e=>e.uid===s.uid && (e.date||'').startsWith(prefix));
+    excInRange.forEach(e=>{ if(e.type==='weekend'||e.type==='camp') workDates.add(e.date); });
 
-    let baseMin=0, overMin=0, holMin=0, cnt=0;
+    let baseMin=0, overMin=0, holMin=0, nightM=0, cnt=0;
     Array.from(workDates).forEach(date=>{
       const dow = new Date(date+'T00:00:00').getDay();
       const exc = findExc(s.uid, date);
       let dayMin = null;       // 그날 총 근무(분)
       let isHol = (dow===0||dow===6) || isHoliday(date, s.org);
+      let sMin=null, eMin=null; // 출퇴근 시각(야간 계산용)
 
       if(exc){
-        if(exc.type==='camp'){ dayMin = Math.round((exc.hours||0)*60); }
-        else if(exc.type==='weekend'){ dayMin = Math.max(0, toMin(exc.end)-toMin(exc.start)); isHol = true; }
-        else if(exc.type==='late'){ const e=toMin((dow===5&&st?.friEnd)?st.friEnd:st?.end); dayMin = (e!=null)?Math.max(0, e - toMin(exc.start) - (st?.breakMin||0)):null; }
-        else if(exc.type==='early'){ const s0=toMin(st?.start); dayMin = (s0!=null)?Math.max(0, toMin(exc.end) - s0 - (st?.breakMin||0)):null; }
+        if(exc.type==='camp'){ dayMin = Math.round((exc.hours||0)*60); /* 직접입력은 야간 자동계산 제외 */ }
+        else if(exc.type==='weekend'){ sMin=toMin(exc.start); eMin=toMin(exc.end); dayMin = Math.max(0, eMin-sMin); isHol = true; }
+        else if(exc.type==='late'){ sMin=toMin(exc.start); eMin=toMin((dow===5&&st?.friEnd)?st.friEnd:st?.end); dayMin = (eMin!=null)?Math.max(0, eMin - sMin - (st?.breakMin||0)):null; }
+        else if(exc.type==='early'){ sMin=toMin(st?.start); eMin=toMin(exc.end); dayMin = (sMin!=null)?Math.max(0, eMin - sMin - (st?.breakMin||0)):null; }
       } else {
         dayMin = dailyBaseMin(st, dow===5);
+        if(st){ sMin=toMin(st.start); eMin=toMin((dow===5&&st.friEnd)?st.friEnd:st.end); }
       }
       if(dayMin==null) return;
       cnt++;
@@ -533,17 +590,20 @@ async function buildStat(){
         baseMin += Math.min(dayMin, DAY_STD);
         if(dayMin>DAY_STD) overMin += dayMin - DAY_STD;
       }
+      // 야간(설정 켜졌고, 출퇴근 시각이 있는 경우만)
+      if(NIGHT_ON && sMin!=null && eMin!=null) nightM += nightMin(sMin, eMin);
     });
     const totalMin = baseMin+overMin+holMin;
     return {
       uid:s.uid, name:s.name, org:s.org, dept:s.dept||'',
       hasSetting:!!st, days:cnt,
-      baseMin, overMin, holMin, totalMin,
+      baseMin, overMin, holMin, nightMin:nightM, totalMin,
       totalHours:toHours(totalMin)
     };
   });
   _statRows = rows;
 
+  const nightCol = NIGHT_ON;
   const trs = rows.map(r=>`<tr>
     <td style="font-weight:600">${r.name}</td>
     <td>${ORGS[r.org]||r.org}${r.dept&&r.dept!=='전체'?' · '+r.dept:''}</td>
@@ -551,30 +611,39 @@ async function buildStat(){
     <td style="text-align:center">${fmtDur(r.baseMin)}</td>
     <td style="text-align:center;color:${r.overMin?'#d97706':'var(--tl)'}">${r.overMin?fmtDur(r.overMin):'-'}</td>
     <td style="text-align:center;color:${r.holMin?'#dc2626':'var(--tl)'}">${r.holMin?fmtDur(r.holMin):'-'}</td>
+    ${nightCol?`<td style="text-align:center;color:${r.nightMin?'#7c3aed':'var(--tl)'}">${r.nightMin?fmtDur(r.nightMin):'-'}</td>`:''}
     <td style="text-align:center;font-weight:700;color:var(--gm)">${fmtDur(r.totalMin)}</td>
     <td>${r.hasSetting?'':'<span style="color:#dc2626;font-size:11px">설정 필요</span>'}</td>
   </tr>`).join('');
 
   body.innerHTML = `
     <div class="acard">
-      <h3 class="actitle" style="margin-bottom:12px">${y}년 ${m}월 근무시간</h3>
+      <h3 class="actitle" style="margin-bottom:12px">${y}년 ${statRange==='year'?'전체':m+'월'} 근무시간</h3>
       <div style="overflow-x:auto"><table>
-        <thead><tr><th>이름</th><th>소속</th><th>근무일</th><th>기본</th><th>초과</th><th>휴일</th><th>합계</th><th></th></tr></thead>
-        <tbody>${trs || '<tr><td colspan="8" class="empty">데이터가 없습니다.</td></tr>'}</tbody>
+        <thead><tr><th>이름</th><th>소속</th><th>근무일</th><th>기본</th><th>초과</th><th>휴일</th>${nightCol?'<th>야간</th>':''}<th>합계</th><th></th></tr></thead>
+        <tbody>${trs || `<tr><td colspan="${nightCol?9:8}" class="empty">데이터가 없습니다.</td></tr>`}</tbody>
       </table></div>
-      <p style="font-size:12px;color:var(--tl);margin-top:10px">※ 기본=평일 1일 8시간 이내 / 초과=평일 8시간 초과분 / 휴일=주말·공휴일 근무. 예외 입력(조퇴·늦은출근·캠프·주말)이 자동 반영됩니다.</p>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">※ 기본=평일 1일 8시간 이내 / 초과=평일 8시간 초과분 / 휴일=주말·공휴일 근무${nightCol?' / 야간=22~06시 (합계에 별도 가산 아님, 참고용)':''}. 예외 입력이 자동 반영됩니다.</p>
     </div>`;
 }
 
 function downloadStatExcel(){
   if(!_statRows.length) return toast('데이터가 없습니다.','err');
-  const aoa = [['이름','기관','부서','근무일','기본(시간)','초과(시간)','휴일(시간)','합계(시간)']];
-  _statRows.forEach(r=> aoa.push([r.name, ORGS[r.org]||r.org, r.dept, r.days, toHours(r.baseMin), toHours(r.overMin), toHours(r.holMin), toHours(r.totalMin)]));
+  const hdr = ['이름','기관','부서','근무일','기본(시간)','초과(시간)','휴일(시간)'];
+  if(NIGHT_ON) hdr.push('야간(시간)');
+  hdr.push('합계(시간)');
+  const aoa = [hdr];
+  _statRows.forEach(r=>{
+    const row = [r.name, ORGS[r.org]||r.org, r.dept, r.days, toHours(r.baseMin), toHours(r.overMin), toHours(r.holMin)];
+    if(NIGHT_ON) row.push(toHours(r.nightMin));
+    row.push(toHours(r.totalMin));
+    aoa.push(row);
+  });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:12},{wch:12},{wch:10},{wch:8},{wch:11},{wch:11},{wch:11},{wch:11}];
+  ws['!cols'] = hdr.map(()=>({wch:11}));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, '근무시간');
-  XLSX.writeFile(wb, `근무시간_${statYear}_${pad(statMonth)}.xlsx`);
+  XLSX.writeFile(wb, `근무시간_${statYear}${statRange==='year'?'_연간':'_'+pad(statMonth)}.xlsx`);
   toast('엑셀을 다운로드했습니다.','ok');
 }
 window.downloadStatExcel = downloadStatExcel;
