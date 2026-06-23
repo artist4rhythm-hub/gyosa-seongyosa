@@ -120,11 +120,13 @@ th{background:var(--iv);font-weight:700;font-size:12px;}
     <button class="subtbtn active" id="tb-todo" onclick="showTab('todo')">📌 결재할 문서<span id="todo-badge" class="badge" style="display:none">0</span></button>
     <button class="subtbtn" id="tb-mine" onclick="showTab('mine')">📝 내가 올린 문서</button>
     <button class="subtbtn" id="tb-done" onclick="showTab('done')">📚 완료 문서</button>
+    <button class="subtbtn" id="tb-sign" onclick="showTab('sign')">✍️ 내 서명</button>
     <button class="subtbtn" id="tb-pos" onclick="showTab('pos')" style="display:none">⚙️ 직책 관리</button>
   </div>
   <div class="tc" id="c-todo" style="display:none"></div>
   <div class="tc" id="c-mine" style="display:none"></div>
   <div class="tc" id="c-done" style="display:none"></div>
+  <div class="tc" id="c-sign" style="display:none"></div>
   <div class="tc" id="c-pos" style="display:none"></div>
 </div>
 
@@ -241,11 +243,12 @@ function updateBadge(){
 function showTab(t){
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('tb-'+t)?.classList.add('active');
-  ['todo','mine','done','pos'].forEach(id=>{ const el=$I('c-'+id); if(el) el.style.display='none'; });
+  ['todo','mine','done','sign','pos'].forEach(id=>{ const el=$I('c-'+id); if(el) el.style.display='none'; });
   $I('c-'+t).style.display='block';
   if(t==='todo') renderTodo();
   if(t==='mine') renderMine();
   if(t==='done') renderDone();
+  if(t==='sign') renderSign();
   if(t==='pos') renderPos();
 }
 window.showTab = showTab;
@@ -313,6 +316,99 @@ function openCompose(){
 window.openCompose = openCompose;
 function closeMod(){ $I('mwrap').innerHTML=''; }
 window.closeMod = closeMod;
+
+// ── 내 서명 등록 ──
+function renderSign(){
+  const sig = CU.signature;
+  $I('c-sign').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">✍️ 내 서명 등록</h3>
+      <p class="adesc">서명(도장) 이미지를 등록하면, 결재할 때 결재란에 자동으로 들어갑니다. 배경이 투명하거나 흰색인 PNG를 권장합니다. 업로드 시 자동으로 작게 변환되어 저장됩니다.</p>
+      <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="width:120px;height:120px;border:2px dashed var(--ivd);border-radius:12px;display:flex;align-items:center;justify-content:center;background:#fff;overflow:hidden">
+            ${sig ? `<img src="${sig}" style="max-width:100%;max-height:100%">` : '<span style="color:var(--tl);font-size:13px">서명 없음</span>'}
+          </div>
+          <div style="font-size:12px;color:var(--ts);margin-top:6px">현재 서명</div>
+        </div>
+        <div>
+          <input type="file" id="sig-file" accept="image/*" style="display:none" onchange="handleSigUpload(event)">
+          <button class="bp" onclick="document.getElementById('sig-file').click()">📁 이미지 선택</button>
+          ${sig ? '<button class="bs" style="color:#dc2626;margin-left:8px" onclick="deleteSig()">서명 삭제</button>' : ''}
+          <p style="font-size:12px;color:var(--tl);margin-top:10px;max-width:280px">JPG·PNG 등 이미지 파일을 선택하면 미리보기가 나오고, 저장을 누르면 등록됩니다.</p>
+        </div>
+      </div>
+    </div>`;
+}
+window.renderSign = renderSign;
+
+// 이미지 업로드 → 리사이즈 → 미리보기
+function handleSigUpload(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      // 가로 최대 240px로 리사이즈 (비율 유지)
+      const maxW = 240;
+      const scale = Math.min(1, maxW / img.width);
+      const w = Math.round(img.width*scale), h = Math.round(img.height*scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      // PNG로 (투명 배경 유지), 용량 위해 품질 조정은 png엔 불가하므로 jpeg 대안 고려
+      let dataUrl = canvas.toDataURL('image/png');
+      // 너무 크면 jpeg로 압축
+      if(dataUrl.length > 100000) dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      showSigPreview(dataUrl);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+window.handleSigUpload = handleSigUpload;
+
+function showSigPreview(dataUrl){
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">서명 미리보기</div>
+      <div class="msub">이 서명을 등록할까요? 결재란에 이 모양으로 들어갑니다.</div>
+      <div style="text-align:center;padding:20px;background:#fff;border-radius:10px;border:1px solid var(--ivd)">
+        <img src="${dataUrl}" style="max-width:240px;max-height:140px">
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveSig('${dataUrl}')">등록</button>
+      </div>
+    </div></div>`;
+}
+
+async function saveSig(dataUrl){
+  try {
+    await updateDoc(doc(db,'staff',CU.uid), {signature:dataUrl});
+    CU.signature = dataUrl;
+    // STAFF 캐시에도 반영
+    const me = STAFF.find(s=>s.uid===CU.uid); if(me) me.signature = dataUrl;
+    toast('서명이 등록되었습니다.','ok');
+    closeMod();
+    renderSign();
+  } catch(e){ toast('저장 실패: '+e.message+' (이미지가 너무 클 수 있어요)','err'); }
+}
+window.saveSig = saveSig;
+
+async function deleteSig(){
+  if(!confirm('등록된 서명을 삭제할까요?')) return;
+  try {
+    await updateDoc(doc(db,'staff',CU.uid), {signature:''});
+    CU.signature = '';
+    const me = STAFF.find(s=>s.uid===CU.uid); if(me) me.signature = '';
+    toast('서명을 삭제했습니다.');
+    renderSign();
+  } catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.deleteSig = deleteSig;
 
 async function submitDoc(){
   const title = $I('cp-title').value.trim();
@@ -396,11 +492,14 @@ function openDoc(id){
   const lineHtml = (d.line||[]).map((st,i)=>{
     let cls='line-step', stateTxt='대기';
     if(st.state==='approved'){ cls+=' done'; stateTxt='✅ 승인'; }
+    else if(st.state==='final'){ cls+=' done'; stateTxt='✅ 전결'; }
     else if(st.state==='rejected'){ cls+=' rejected'; stateTxt='❌ 반려'; }
+    else if(st.state==='skipped'){ stateTxt='— 생략(전결)'; }
     else if(d.status==='progress' && i===d.currentStep){ cls+=' current'; stateTxt='⏳ 결재 차례'; }
+    const sigImg = st.sign ? `<img src="${st.sign}" style="max-width:70px;max-height:40px;margin-left:6px" title="서명">` : '';
     return `<div class="${cls}"><div class="line-no">${i+1}</div>
       <div class="line-info"><div class="line-name">${esc(st.name||'(미지정)')}</div><div class="line-pos">${st.position}</div></div>
-      <div class="line-state">${stateTxt}${st.actAt?` · ${fmtShort(st.actAt)}`:''}</div></div>`;
+      <div class="line-state" style="display:flex;align-items:center">${stateTxt}${st.actAt?` · ${fmtShort(st.actAt)}`:''}${sigImg}</div></div>`;
   }).join('');
   const myTurn = isMyTurn(d);
   $I('mwrap').innerHTML = `
@@ -412,10 +511,13 @@ function openDoc(id){
       <div class="fgrp"><label>결재선</label>${lineHtml}</div>
       ${d.rejectReason?`<div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px;font-size:13px">반려 사유: ${esc(d.rejectReason)}</div>`:''}
       <div class="mact">
-        ${myTurn?`<button class="bno" onclick="actReject('${d.id}')">반려</button><button class="bok" onclick="actApprove('${d.id}')">승인</button>`:''}
+        ${myTurn?`<button class="bno" onclick="actReject('${d.id}')">반려</button>
+          <button class="bs" style="background:#fef3c7;color:#b45309;border-color:#fcd34d" onclick="actFinal('${d.id}')">전결</button>
+          <button class="bok" onclick="actApprove('${d.id}')">승인</button>`:''}
         ${(d.drafterUid===CU.uid && d.status==='progress')?`<button class="bs" style="color:#dc2626" onclick="cancelDoc('${d.id}')">상신 취소</button>`:''}
         <button class="bs" onclick="closeMod()">닫기</button>
       </div>
+      ${myTurn && !CU.signature ? '<p style="font-size:12px;color:#dc2626;text-align:right;margin-top:8px">⚠️ 등록된 서명이 없습니다. "내 서명"에서 먼저 등록하면 결재란에 서명이 들어갑니다.</p>':''}
     </div></div>`;
 }
 window.openDoc = openDoc;
@@ -423,7 +525,7 @@ window.openDoc = openDoc;
 async function actApprove(id){
   const d = DOCS.find(x=>x.id===id); if(!d || !isMyTurn(d)) return;
   const line = [...d.line];
-  line[d.currentStep] = {...line[d.currentStep], state:'approved', actAt:Timestamp.now()};
+  line[d.currentStep] = {...line[d.currentStep], state:'approved', actAt:Timestamp.now(), sign:CU.signature||''};
   const nextStep = d.currentStep+1;
   const isLast = nextStep >= line.length;
   try {
@@ -439,12 +541,30 @@ async function actApprove(id){
 }
 window.actApprove = actApprove;
 
+// 전결: 이 단계에서 결재를 종료(최종 승인). 위 단계로 안 올라감
+async function actFinal(id){
+  const d = DOCS.find(x=>x.id===id); if(!d || !isMyTurn(d)) return;
+  if(!confirm('전결 처리할까요? 위 결재자에게 올리지 않고 여기서 최종 승인됩니다.')) return;
+  const line = [...d.line];
+  line[d.currentStep] = {...line[d.currentStep], state:'final', actAt:Timestamp.now(), sign:CU.signature||''};
+  // 전결 이후 단계는 '생략' 표시
+  for(let i=d.currentStep+1; i<line.length; i++){ line[i] = {...line[i], state:'skipped'}; }
+  try {
+    await updateDoc(doc(db,'approvals',id), { line, status:'approved', finalBy:CU.name });
+    toast('전결 처리되었습니다.','ok');
+    closeMod();
+    await loadDocs();
+    showTab('todo');
+  } catch(e){ toast('처리 실패: '+e.message,'err'); }
+}
+window.actFinal = actFinal;
+
 async function actReject(id){
   const d = DOCS.find(x=>x.id===id); if(!d || !isMyTurn(d)) return;
   const reason = prompt('반려 사유를 입력하세요:');
   if(reason===null) return;
   const line = [...d.line];
-  line[d.currentStep] = {...line[d.currentStep], state:'rejected', actAt:Timestamp.now()};
+  line[d.currentStep] = {...line[d.currentStep], state:'rejected', actAt:Timestamp.now(), sign:CU.signature||''};
   try {
     await updateDoc(doc(db,'approvals',id), { line, status:'rejected', rejectReason:reason.trim() });
     toast('반려했습니다.');
