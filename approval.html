@@ -159,6 +159,8 @@ let STAFF = [];       // 전체 교직원
 let DOCS = [];        // 결재 문서
 let POSITIONS = [];   // 결재 직책 목록 (approvalConfig/positions)
 let APPROVAL_LINES = {}; // 기관별 결재선 순서 정의
+let DOC_TYPES = [];   // 문서 종류 (approvalConfig/docTypes)
+const DEFAULT_DOC_TYPES = ['일반 기안','지출결의서','품의서','휴가신청서','구입요청서'];
 
 // 기본 직책 목록 (없으면 자동 생성)
 const DEFAULT_POSITIONS = ['교사','초등부장','중고등부장','행정실장','교감','교장','원장'];
@@ -218,6 +220,11 @@ async function loadConfig(){
     const ls = await getDoc(doc(db,'approvalConfig','lines'));
     APPROVAL_LINES = ls.exists() && ls.data().lines ? ls.data().lines : {...DEFAULT_LINES};
   } catch(e){ APPROVAL_LINES = {...DEFAULT_LINES}; }
+  // 문서 종류
+  try {
+    const dt = await getDoc(doc(db,'approvalConfig','docTypes'));
+    DOC_TYPES = dt.exists() && dt.data().list ? dt.data().list : [...DEFAULT_DOC_TYPES];
+  } catch(e){ DOC_TYPES = [...DEFAULT_DOC_TYPES]; }
 }
 
 async function loadDocs(){
@@ -303,8 +310,14 @@ function openCompose(){
     <div class="mbox">
       <div class="mtitle">새 기안</div>
       <div class="msub">제목과 내용을 입력하면, 소속·직책에 따라 결재선이 자동으로 만들어집니다.</div>
+      <div class="fgrp"><label>문서 종류</label>
+        <select id="cp-type">${DOC_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}</select></div>
       <div class="fgrp"><label>제목</label><input type="text" id="cp-title" placeholder="예: 교실 비품 구입 요청"></div>
       <div class="fgrp"><label>내용</label><textarea id="cp-content" rows="6" placeholder="결재 받을 내용을 입력하세요..."></textarea></div>
+      <div class="fgrp"><label>첨부 링크 (선택)</label>
+        <input type="text" id="cp-attach" placeholder="구글 드라이브 등 파일 링크 (영수증 등)">
+        <span style="font-size:12px;color:var(--tl);margin-top:4px">영수증·증빙은 구글 드라이브에 올리고 공유 링크를 붙여넣으세요. (용량 부담 없음)</span>
+      </div>
       <div class="fgrp"><label>결재선 (자동)</label>${lineHtml}</div>
       ${hasUnset?'<div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px;font-size:12px;margin-bottom:8px">⚠️ 결재선에 직책이 지정 안 된 단계가 있습니다. 관리자가 직책 관리에서 해당 직책의 담당자를 지정해야 합니다.</div>':''}
       <div class="mact">
@@ -413,6 +426,8 @@ window.deleteSig = deleteSig;
 async function submitDoc(){
   const title = $I('cp-title').value.trim();
   const content = $I('cp-content').value.trim();
+  const docType = $I('cp-type')?.value || '일반 기안';
+  const attach = $I('cp-attach')?.value.trim() || '';
   if(!title) return toast('제목을 입력하세요.','err');
   if(!content) return toast('내용을 입력하세요.','err');
   const line = buildLine(CU);
@@ -420,7 +435,7 @@ async function submitDoc(){
   if(line.some(st=>!st.uid)) return toast('결재선에 담당자가 없는 직책이 있습니다. 관리자에게 직책 지정을 요청하세요.','err');
   try {
     await addDoc(collection(db,'approvals'), {
-      title, content,
+      title, content, docType, attach,
       drafterUid:CU.uid, drafterName:CU.name, org:CU.org, dept:CU.dept||'', drafterPos:CU.position||'교사',
       line, currentStep:0, status:'progress',
       createdAt:Timestamp.now()
@@ -443,8 +458,8 @@ function statusPill(d){
 function docRow(d, highlight){
   return `<div class="doc-item ${highlight?'mine-turn':''}" onclick="openDoc('${d.id}')">
     <div class="doc-body">
-      <div class="doc-top"><span class="doc-title">${esc(d.title)}</span><span class="doc-date">${fmtShort(d.createdAt)}</span></div>
-      <div class="doc-meta">기안: ${esc(d.drafterName)} (${ORGS[d.org]||d.org}) · ${statusPill(d)}</div>
+      <div class="doc-top"><span class="doc-title">${d.docType?`<span style="font-size:10px;background:var(--gp);color:var(--gm);padding:1px 7px;border-radius:100px;margin-right:5px;font-weight:700">${esc(d.docType)}</span>`:''}${esc(d.title)}</span><span class="doc-date">${fmtShort(d.createdAt)}</span></div>
+      <div class="doc-meta">기안: ${esc(d.drafterName)} (${ORGS[d.org]||d.org})${d.attach?' · 📎':''} · ${statusPill(d)}</div>
     </div>
   </div>`;
 }
@@ -506,8 +521,9 @@ function openDoc(id){
     <div class="mov"><div class="mbk" onclick="closeMod()"></div>
     <div class="mbox">
       <div class="mtitle">${esc(d.title)}</div>
-      <div class="msub">기안: <b>${esc(d.drafterName)}</b> (${ORGS[d.org]||d.org}${d.dept&&d.dept!=='전체'?'·'+d.dept:''}) · ${fmtFull(d.createdAt)}<br>상태: ${statusPill(d)}</div>
+      <div class="msub">${d.docType?`<span style="display:inline-block;background:var(--gp);color:var(--gm);font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;margin-bottom:4px">${esc(d.docType)}</span><br>`:''}기안: <b>${esc(d.drafterName)}</b> (${ORGS[d.org]||d.org}${d.dept&&d.dept!=='전체'?'·'+d.dept:''}) · ${fmtFull(d.createdAt)}<br>상태: ${statusPill(d)}</div>
       <div class="readbox">${esc(d.content)}</div>
+      ${d.attach?`<div class="fgrp"><label>첨부 링크</label><a href="${esc(d.attach)}" target="_blank" style="color:var(--gm);word-break:break-all;font-size:13px">📎 ${esc(d.attach)}</a></div>`:''}
       <div class="fgrp"><label>결재선</label>${lineHtml}</div>
       ${d.rejectReason?`<div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px;font-size:13px">반려 사유: ${esc(d.rejectReason)}</div>`:''}
       <div class="mact">
@@ -621,6 +637,15 @@ function renderPos(){
       </div>
     </div>
     <div class="acard">
+      <h3 class="actitle">📄 결재 문서 종류</h3>
+      <p class="adesc">기안할 때 고를 수 있는 문서 종류입니다. 추가·삭제할 수 있습니다.</p>
+      <div class="taglist" style="margin-bottom:12px">${DOC_TYPES.map(t=>`<span class="tag">${t}<span class="x" onclick="delDocType('${t}')">✕</span></span>`).join('')}</div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="new-doctype" placeholder="새 문서 종류 (예: 출장신청서)" style="flex:1;border:1.5px solid var(--ivd);border-radius:8px;padding:10px 12px;font-size:14px;background:var(--iv)">
+        <button class="bp" onclick="addDocType()">추가</button>
+      </div>
+    </div>
+    <div class="acard">
       <h3 class="actitle">👥 교직원 직책 지정</h3>
       <p class="adesc">각 교직원에게 결재 직책을 지정하고, 그 직책이 <b>어느 기관 결재선에 쓰이는지</b> 체크하세요. 교감·교장처럼 두 기관을 함께 담당하면 둘 다 체크합니다.</p>
       <div style="overflow-x:auto"><table>
@@ -693,8 +718,25 @@ async function moveLineStep(org, idx, dir){
 }
 window.moveLineStep = moveLineStep;
 
-async function addPosition(){
-  const v = $I('new-pos').value.trim();
+async function addDocType(){
+  const v = $I('new-doctype').value.trim();
+  if(!v) return toast('문서 종류를 입력하세요.','err');
+  if(DOC_TYPES.includes(v)) return toast('이미 있는 종류입니다.','err');
+  DOC_TYPES.push(v);
+  try { await setDoc(doc(db,'approvalConfig','docTypes'), {list:DOC_TYPES}); toast('추가했습니다.','ok'); renderPos(); }
+  catch(e){ toast('실패: '+e.message,'err'); DOC_TYPES.pop(); }
+}
+window.addDocType = addDocType;
+
+async function delDocType(t){
+  if(!confirm(`'${t}' 문서 종류를 삭제할까요?`)) return;
+  DOC_TYPES = DOC_TYPES.filter(x=>x!==t);
+  try { await setDoc(doc(db,'approvalConfig','docTypes'), {list:DOC_TYPES}); toast('삭제했습니다.'); renderPos(); }
+  catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.delDocType = delDocType;
+
+async function addPosition(){  const v = $I('new-pos').value.trim();
   if(!v) return toast('직책 이름을 입력하세요.','err');
   if(POSITIONS.includes(v)) return toast('이미 있는 직책입니다.','err');
   POSITIONS.push(v);

@@ -146,6 +146,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
   appearance:none;-webkit-appearance:none;
 }
 .fgrp input[type="checkbox"],.fgrp input[type="radio"]{cursor:pointer;flex-shrink:0;}
+.tab-badge{display:inline-block;min-width:17px;height:17px;line-height:17px;background:#dc2626;color:#fff;font-size:10px;font-weight:700;border-radius:100px;padding:0 5px;margin-left:5px;text-align:center;vertical-align:middle;}
 .fgrp input[type="date"],
 .fgrp input[type="month"]{padding:0 10px;}
 .fgrp input:focus,.fgrp select:focus{border-color:var(--gl);}
@@ -1054,6 +1055,60 @@ async function showMain(){
   await reloadStaffCache();
   updateNoticeDot();
   showTab('att');
+  loadNotifications();  // 결재·쪽지 알림 (비동기)
+}
+
+// ── 메인 알림: 결재할 문서 + 안 읽은 쪽지 ──
+async function loadNotifications(){
+  let approvalCnt = 0, msgCnt = 0;
+  try {
+    const snap = await getDocs(collection(db,'approvals'));
+    snap.forEach(d=>{
+      const a = d.data();
+      if(a.status==='progress'){
+        const step = (a.line||[])[a.currentStep];
+        if(step && step.uid===CU.uid) approvalCnt++;
+      }
+    });
+  } catch(e){}
+  try {
+    const snap = await getDocs(collection(db,'messages'));
+    snap.forEach(d=>{
+      const m = d.data();
+      if((m.toUids||[]).includes(CU.uid) && !(m.readBy||[]).includes(CU.uid)) msgCnt++;
+    });
+  } catch(e){}
+  renderNotifBadges(approvalCnt, msgCnt);
+}
+
+function renderNotifBadges(approvalCnt, msgCnt){
+  // 탭 배지
+  const apTab = $I('t-approval'), msgTab = $I('t-message');
+  if(apTab){
+    let b = apTab.querySelector('.tab-badge');
+    if(approvalCnt>0){ if(!b){ b=document.createElement('span'); b.className='tab-badge'; apTab.appendChild(b);} b.textContent=approvalCnt; }
+    else if(b) b.remove();
+  }
+  if(msgTab){
+    let b = msgTab.querySelector('.tab-badge');
+    if(msgCnt>0){ if(!b){ b=document.createElement('span'); b.className='tab-badge'; msgTab.appendChild(b);} b.textContent=msgCnt; }
+    else if(b) b.remove();
+  }
+  // 알림 배너 (둘 중 하나라도 있으면 표시)
+  if(approvalCnt>0 || msgCnt>0){
+    const parts = [];
+    if(approvalCnt>0) parts.push(`<a href="approval.html" style="color:#b45309;font-weight:700;text-decoration:none">🗂️ 결재할 문서 ${approvalCnt}건</a>`);
+    if(msgCnt>0) parts.push(`<a href="message.html" style="color:var(--gm);font-weight:700;text-decoration:none">✉️ 새 쪽지 ${msgCnt}개</a>`);
+    let banner = $I('notif-banner');
+    if(!banner){
+      banner = document.createElement('div');
+      banner.id = 'notif-banner';
+      banner.style.cssText = 'background:#fff7ed;border:1.5px solid var(--gold);border-radius:10px;padding:12px 16px;margin:0 0 14px;font-size:14px;display:flex;gap:16px;flex-wrap:wrap;align-items:center';
+      const cal = $I('c-cal');
+      if(cal) cal.insertBefore(banner, cal.firstChild);
+    }
+    banner.innerHTML = `<span style="font-weight:700;color:var(--gd)">🔔 알림</span> ${parts.join('<span style="color:var(--tl)">·</span> ')}`;
+  }
 }
 
 // 교직원 캐시 새로고침 (권한 필터 적용)
