@@ -266,8 +266,14 @@ function buildLine(drafter){
     }
     // 기안자 본인의 직책보다 위 단계만 포함 (본인 직책과 같거나 아래는 제외)
     // 직책 순서는 lineDefs 순서를 따름. 기안자 직책이 lineDefs에 있으면 그 이후만.
-    // 해당 직책을 가진 사람 찾기 (같은 기관)
-    const person = STAFF.find(s=>s.org===org && s.position===realPos && (s.acStatus||'active')==='active');
+    // 해당 직책을 가졌고, 이 기관 결재에 적용되도록 등록된 사람 찾기
+    const person = STAFF.find(s=>{
+      if(s.position!==realPos) return false;
+      if((s.acStatus||'active')!=='active') return false;
+      // positionOrgs가 있으면 그걸로 판단, 없으면 본인 소속 기관으로 (구버전 호환)
+      const pOrgs = s.positionOrgs && s.positionOrgs.length ? s.positionOrgs : [s.org];
+      return pOrgs.includes(org);
+    });
     steps.push({ posDef, position:realPos, uid:person?.uid||null, name:person?.name||null });
   }
   // 기안자 직책이 결재선 상에 있으면, 그 단계까지는 제외 (본인보다 위만 남김)
@@ -469,10 +475,19 @@ function renderPos(){
   // 교직원별 직책 지정 표
   const rows = STAFF.map(s=>{
     const opts = `<option value="">미지정</option>` + POSITIONS.map(p=>`<option value="${p}"${s.position===p?' selected':''}>${p}</option>`).join('');
+    // 적용 기관 (기본: 본인 소속 기관 / positionOrgs가 있으면 그것)
+    const pOrgs = s.positionOrgs && s.positionOrgs.length ? s.positionOrgs : (s.position ? [s.org] : []);
+    const orgChecks = s.position ? `
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-right:8px;cursor:pointer">
+        <input type="checkbox" ${pOrgs.includes('jihyebit')?'checked':''} onchange="setPosOrg('${s.uid}','jihyebit',this.checked)" style="width:15px;height:15px"> 지혜빛</label>
+      <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+        <input type="checkbox" ${pOrgs.includes('daniel')?'checked':''} onchange="setPosOrg('${s.uid}','daniel',this.checked)" style="width:15px;height:15px"> 다니엘</label>
+    ` : '<span style="font-size:12px;color:var(--tl)">직책 지정 후 선택</span>';
     return `<tr>
       <td style="font-weight:600">${esc(s.name)}</td>
       <td>${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
       <td><select onchange="setPosition('${s.uid}',this.value)" style="height:34px;border:1.5px solid var(--ivd);border-radius:6px;padding:0 8px;font-size:13px;background:var(--iv)">${opts}</select></td>
+      <td>${orgChecks}</td>
     </tr>`;
   }).join('');
   $I('c-pos').innerHTML = `
@@ -487,10 +502,10 @@ function renderPos(){
     </div>
     <div class="acard">
       <h3 class="actitle">👥 교직원 직책 지정</h3>
-      <p class="adesc">각 교직원에게 결재 직책을 지정하세요. 결재선이 이 직책을 기준으로 자동 생성됩니다.</p>
+      <p class="adesc">각 교직원에게 결재 직책을 지정하고, 그 직책이 <b>어느 기관 결재선에 쓰이는지</b> 체크하세요. 교감·교장처럼 두 기관을 함께 담당하면 둘 다 체크합니다.</p>
       <div style="overflow-x:auto"><table>
-        <thead><tr><th>이름</th><th>소속</th><th>결재 직책</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="3" class="empty">교직원이 없습니다.</td></tr>'}</tbody>
+        <thead><tr><th>이름</th><th>소속</th><th>결재 직책</th><th>적용 기관</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" class="empty">교직원이 없습니다.</td></tr>'}</tbody>
       </table></div>
     </div>
     <div class="acard">
@@ -584,12 +599,34 @@ window.delPosition = delPosition;
 
 async function setPosition(uid, pos){
   try {
-    await updateDoc(doc(db,'staff',uid), {position: pos});
-    const s = STAFF.find(x=>x.uid===uid); if(s) s.position = pos;
+    const s = STAFF.find(x=>x.uid===uid);
+    const update = {position: pos};
+    // 직책을 새로 지정하면 적용 기관 기본값 = 본인 소속 기관
+    if(pos && (!s.positionOrgs || !s.positionOrgs.length)){
+      update.positionOrgs = [s.org];
+    }
+    if(!pos) update.positionOrgs = []; // 미지정이면 비움
+    await updateDoc(doc(db,'staff',uid), update);
+    if(s){ s.position = pos; if(update.positionOrgs) s.positionOrgs = update.positionOrgs; }
     toast('직책을 지정했습니다.','ok');
+    renderPos();
   } catch(e){ toast('실패: '+e.message,'err'); }
 }
 window.setPosition = setPosition;
+
+// 직책 적용 기관 토글
+async function setPosOrg(uid, org, on){
+  const s = STAFF.find(x=>x.uid===uid); if(!s) return;
+  let orgs = s.positionOrgs && s.positionOrgs.length ? [...s.positionOrgs] : [s.org];
+  if(on){ if(!orgs.includes(org)) orgs.push(org); }
+  else { orgs = orgs.filter(o=>o!==org); }
+  try {
+    await updateDoc(doc(db,'staff',uid), {positionOrgs:orgs});
+    s.positionOrgs = orgs;
+    toast('적용 기관을 변경했습니다.','ok');
+  } catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.setPosOrg = setPosOrg;
 </script>
 </body>
 </html>
