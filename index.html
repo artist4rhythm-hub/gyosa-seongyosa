@@ -193,6 +193,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 }
 @media(max-width:400px){.fg{grid-template-columns:1fr;}}
 </style>
+<script src="topnav.js"></script>
 </head>
 <body>
 
@@ -231,15 +232,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       </div>
     </div>
   </header>
-  <div class="tb">
+  <div id="topnav-container"></div>
+  <div class="tb" style="display:none">
     <button class="tbtn" id="t-att" onclick="showTab('att')">📋 출근부</button>
     <button class="tbtn" id="t-notice" onclick="showTab('notice')">📢 공지<span id="notice-dot" style="display:none;width:8px;height:8px;background:#dc2626;border-radius:50%;margin-left:4px;vertical-align:middle"></span></button>
-    <a class="tbtn" id="t-students" href="students.html" style="text-decoration:none;display:inline-block">🎓 학생관리</a>
-    <a class="tbtn" id="t-attend" href="attend.html" style="text-decoration:none;display:inline-block">✅ 출석부</a>
-    <a class="tbtn" id="t-calendar" href="calendar.html" style="text-decoration:none;display:inline-block">📅 학사일정</a>
-    <a class="tbtn" id="t-work" href="work.html" style="text-decoration:none;display:inline-block">⏱️ 근무시간</a>
-    <a class="tbtn" id="t-message" href="message.html" style="text-decoration:none;display:inline-block">✉️ 쪽지함</a>
-    <a class="tbtn" id="t-approval" href="approval.html" style="text-decoration:none;display:inline-block">🗂️ 전자결재</a>
     <button class="tbtn" id="t-adm" onclick="showTab('adm')" style="display:none">⚙️ 관리자</button>
   </div>
   <!-- 출근부 상위 콘텐츠 (하위 탭 포함) -->
@@ -1054,7 +1050,13 @@ async function showMain(){
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
   await reloadStaffCache();
   updateNoticeDot();
-  showTab('att');
+  // 공통 상단 메뉴 렌더 (컨테이너에)
+  if(window.renderTopNav) renderTopNav('att', CU.role, 'topnav-container');
+  // 해시(#notice, #adm)로 들어온 경우 해당 탭 열기
+  const hash = (location.hash||'').replace('#','');
+  if(hash==='notice') showTab('notice');
+  else if(hash==='adm' && isAdmin) showTab('adm');
+  else showTab('att');
   loadNotifications();  // 결재·쪽지 알림 (비동기)
 }
 
@@ -1128,6 +1130,8 @@ async function reloadStaffCache(){
 function showTab(t){
   document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('active'));
   $I('t-'+t)?.classList.add('active');
+  // 공통 상단 메뉴 강조 갱신
+  if(window.renderTopNav && CU) renderTopNav(t, CU.role, 'topnav-container');
   // 상위 탭 콘텐츠 전환
   ['c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   if(t==='att'){
