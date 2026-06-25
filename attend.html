@@ -350,8 +350,9 @@ let checkRecords = {};                 // {studentId: {typeId, memo}}
 
 function renderCheck(){
   // 권한 있는 반(편집) + 열람 가능 반 구분
-  const editable = CLASSES.filter(canEditClass);
-  const viewable = CLASSES.filter(c=>canViewClass(c) && !canEditClass(c));
+  const sortCls = (a,b)=>(a.grade||'').localeCompare(b.grade||'','ko')||(a.name||'').localeCompare(b.name||'','ko');
+  const editable = CLASSES.filter(canEditClass).sort(sortCls);
+  const viewable = CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)).sort(sortCls);
   const allSelectable = [...editable, ...viewable];
 
   if(!CLASSES.length){
@@ -363,7 +364,7 @@ function renderCheck(){
   else if(!checkClassId && allSelectable.length) checkClassId = allSelectable[0].id;
 
   const optgroup = (label, arr) => arr.length
-    ? `<optgroup label="${label}">${arr.map(c=>`<option value="${c.id}"${c.id===checkClassId?' selected':''}>${c.name} (${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' '+c.dept:''})</option>`).join('')}</optgroup>` : '';
+    ? `<optgroup label="${label}">${arr.map(c=>`<option value="${c.id}"${c.id===checkClassId?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name} (${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' '+c.dept:''})</option>`).join('')}</optgroup>` : '';
 
   $I('c-check').innerHTML = `
     <div class="acard">
@@ -475,7 +476,7 @@ async function loadCheckBody(){
     const curType = rec?.typeId;
     const g = grades[s.id];
     const gradeTag = g ? `<span style="background:var(--gp);color:var(--gm);font-size:10px;font-weight:700;padding:1px 7px;border-radius:100px">${g}</span>` : '';
-    return `<div style="padding:12px 0;border-bottom:1px solid var(--ivd)">
+    return `<div id="row-${s.id}" style="padding:12px 0;border-bottom:1px solid var(--ivd);scroll-margin-top:70px">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
         <span style="font-weight:700;font-size:15px;color:var(--gd)">${s.name}</span>
         ${gradeTag}
@@ -496,7 +497,32 @@ async function loadCheckBody(){
       </div>`).join('')}
     </div>` : '';
 
+  // 정사각 박스 현황 그리드 (한눈에 전체 상태)
+  const gridBoxes = studs.map(s=>{
+    const rec = checkRecords[s.id];
+    const t = rec && rec.typeId ? TYPES.find(x=>x.id===rec.typeId) : null;
+    const color = t ? t.color : '#e5e7eb';
+    const tn = t ? t.name : '미입력';
+    // 글자색: 배경이 진하면 흰색
+    return `<div id="box-${s.id}" onclick="scrollToStud('${s.id}')" title="${s.name} · ${tn}" style="aspect-ratio:1;background:${color};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:4px;overflow:hidden;border:1.5px solid rgba(0,0,0,0.06)" data-name="${s.name}">
+      <span style="font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:center;line-height:1.2">${s.name}</span>
+      <span class="box-state" style="font-size:9px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.3);margin-top:2px">${tn}</span>
+    </div>`;
+  }).join('');
+  const gridSection = studs.length ? `
+    <div class="acard">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 class="actitle" style="margin:0;font-size:15px">🔲 한눈에 보기</h3>
+        <span style="font-size:12px;color:var(--tl)">박스를 누르면 해당 학생으로 이동</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px">${gridBoxes}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:11px">
+        ${TYPES.map(t=>`<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}</span>`).join('')}
+      </div>
+    </div>` : '';
+
   body.innerHTML = `
+    ${gridSection}
     <div class="acard">
       ${banner}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -523,7 +549,27 @@ function setRec(sid, tid){
     b.style.color = sel?'#fff':'var(--ts)';
     b.style.borderColor = sel?t.color:'var(--ivd)';
   });
+  // 정사각 박스 갱신
+  const box = $I('box-'+sid);
+  if(box){
+    const t = TYPES.find(x=>x.id===tid);
+    box.style.background = t?t.color:'#e5e7eb';
+    const st = box.querySelector('.box-state');
+    if(st) st.textContent = t?t.name:'미입력';
+    box.title = `${box.dataset.name} · ${t?t.name:'미입력'}`;
+  }
 }
+
+function scrollToStud(sid){
+  const row = $I('row-'+sid);
+  if(row){
+    row.scrollIntoView({behavior:'smooth', block:'center'});
+    // 잠깐 강조
+    row.style.transition='background .3s'; row.style.background='#fff7ed';
+    setTimeout(()=>{ row.style.background=''; }, 900);
+  }
+}
+window.scrollToStud = scrollToStud;
 window.setRec = setRec;
 
 async function saveCheck(){
