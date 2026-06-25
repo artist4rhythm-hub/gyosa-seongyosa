@@ -41,6 +41,9 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 
 /* 콘텐츠 */
 .tc{padding:20px 16px;max-width:960px;margin:0 auto;width:100%;}
+.subtb{display:flex;gap:4px;background:var(--wh);padding:8px 16px;border-bottom:1px solid var(--ivd);overflow-x:auto;}
+.subtbtn{padding:8px 14px;background:transparent;border:none;border-radius:8px;font-size:14px;font-weight:600;color:var(--ts);cursor:pointer;white-space:nowrap;}
+.subtbtn.active{background:var(--gp);color:var(--gm);}
 .actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
 .adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
 .acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
@@ -128,6 +131,13 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       <a class="homebtn" href="index.html">← 메인으로</a>
     </div>
   </header>
+  <div class="subtb" id="sub-tabs">
+    <button class="subtbtn active" id="st-all" onclick="showStudentTab('all')">📋 전체 목록</button>
+    <button class="subtbtn" id="st-roster" onclick="showStudentTab('roster')">📊 재학생 명단</button>
+    <button class="subtbtn" id="st-stat" onclick="showStudentTab('stat')">📈 재적 통계</button>
+    <button class="subtbtn" id="st-birth" onclick="showStudentTab('birth')">🎂 생일 명단</button>
+    <button class="subtbtn" id="st-contact" onclick="showStudentTab('contact')">📞 연락처</button>
+  </div>
   <div class="tc" id="main-body"></div>
 </div>
 
@@ -215,7 +225,9 @@ onAuthStateChanged(auth, async (user) => {
     const org = ORGS[CU.org] || CU.org;
     $I('hn').textContent = CU.name;
     $I('hi').textContent = `${org} · ${CU.dept||''}`;
-    renderMain();
+    await loadStudents();
+    await loadClasses();
+    showStudentTab('all');
   } catch(e){
     $I('gate-msg').textContent = '오류가 발생했습니다: ' + e.message;
     $I('gate-btn').style.display = 'inline-block';
@@ -223,6 +235,41 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 // ── 메인 화면 ──
+let CLASSES = [];   // 반편성 (학생 학년 정보용)
+let studentTab = 'all';
+
+async function loadClasses(){
+  try {
+    const snap = await getDocs(collection(db,'classes'));
+    CLASSES = []; snap.forEach(d=>CLASSES.push({id:d.id, ...d.data()}));
+  } catch(e){ CLASSES = []; }
+}
+
+// 학생의 현재 학년 찾기 (반편성 grades 기준). 없으면 ''
+function studentGrade(sid){
+  for(const c of CLASSES){
+    if((c.students||[]).includes(sid) && c.grades && c.grades[sid]) return c.grades[sid];
+  }
+  return '';
+}
+// 학생이 속한 반 이름
+function studentClassName(sid){
+  const c = CLASSES.find(c=>(c.students||[]).includes(sid));
+  return c ? c.name : '';
+}
+
+function showStudentTab(t){
+  studentTab = t;
+  document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
+  $I('st-'+t)?.classList.add('active');
+  if(t==='all') renderMain();
+  else if(t==='roster') renderRoster();
+  else if(t==='stat') renderStat();
+  else if(t==='birth') renderBirth();
+  else if(t==='contact') renderContact();
+}
+window.showStudentTab = showStudentTab;
+
 async function renderMain(){
   $I('main-body').innerHTML = `
     <div class="acard">
@@ -337,6 +384,196 @@ function renderList(){
 
 // 오늘 날짜 문자열
 function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// 기관별 학년 순서
+const GRADE_ORDER = {
+  daniel: ['1학년','2학년','3학년','4학년','5학년','6학년','7학년','8학년','9학년','10학년','11학년','12학년'],
+  jihyebit: ['4세','5세','6세','7세']
+};
+let rosterIncludeLeave = true;  // 재학생 명단에 휴학생 포함 여부
+let rosterOrgView = 'split';    // split(기관별) | all(총합)
+
+// ── 재학생 명단 (학년별 표) ──
+function renderRoster(){
+  const ctrl = `
+    <div class="acard">
+      <h3 class="actitle">📊 재학생 명단</h3>
+      <p class="adesc">반편성에서 지정한 학생별 학년을 기준으로 정리합니다. 학년이 지정되지 않은 학생은 '미지정'으로 표시됩니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="r-view" onchange="setRosterView()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">
+          <option value="split"${rosterOrgView==='split'?' selected':''}>기관별로 보기</option>
+          <option value="all"${rosterOrgView==='all'?' selected':''}>전체 총합</option>
+        </select>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="r-leave" ${rosterIncludeLeave?'checked':''} onchange="setRosterLeave()" style="width:16px;height:16px"> 휴학생 포함
+        </label>
+      </div>
+    </div>`;
+  let body = '';
+  const orgs = rosterOrgView==='all' ? ['__all__'] : Object.keys(GRADE_ORDER).filter(o=>myOrgsHas(o));
+  orgs.forEach(org=>{ body += rosterTable(org); });
+  $I('main-body').innerHTML = ctrl + body;
+}
+window.renderRoster = renderRoster;
+function setRosterView(){ rosterOrgView = $I('r-view').value; renderRoster(); }
+window.setRosterView = setRosterView;
+function setRosterLeave(){ rosterIncludeLeave = $I('r-leave').checked; renderRoster(); }
+window.setRosterLeave = setRosterLeave;
+
+function myOrgsHas(org){ return myOrgs().includes(org); }
+
+// 한 기관(또는 전체)의 학년별 표
+function rosterTable(orgKey){
+  const isAll = orgKey==='__all__';
+  // 대상 학생: 재학(active) + (옵션) 휴학(leave)
+  const statuses = rosterIncludeLeave ? ['active','leave'] : ['active'];
+  const targetOrgs = isAll ? Object.keys(GRADE_ORDER).filter(myOrgsHas) : [orgKey];
+  // 학년 칼럼: 전체면 다니엘+지혜빛 학년 합침
+  let grades = [];
+  targetOrgs.forEach(o=>{ (GRADE_ORDER[o]||[]).forEach(g=>{ if(!grades.includes(g)) grades.push(g); }); });
+  // 학생을 학년별로 분류
+  const byGrade = {}; grades.forEach(g=>byGrade[g]=[]);
+  const unset = [];
+  STUDENTS.forEach(s=>{
+    if(!targetOrgs.includes(s.org)) return;
+    if(!statuses.includes(s.status||'active')) return;
+    const g = studentGrade(s.id);
+    if(g && byGrade[g]) byGrade[g].push(s);
+    else unset.push(s);
+  });
+  // 각 학년 가나다 정렬
+  grades.forEach(g=>byGrade[g].sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko')));
+  unset.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  // 표 만들기: 가로=학년, 세로=행(가나다). 최대 행수 = 가장 많은 학년 인원
+  const maxRows = Math.max(1, ...grades.map(g=>byGrade[g].length), unset.length);
+  const genderTag = s => `<span style="color:${s.gender==='남'?'#2b6cb0':s.gender==='여'?'#d53f8c':'#888'};font-size:11px">(${s.gender||'-'})</span>`;
+  let rowsHtml = '';
+  for(let i=0;i<maxRows;i++){
+    rowsHtml += '<tr>' + grades.map(g=>{
+      const s = byGrade[g][i];
+      return `<td style="border:1px solid var(--ivd);padding:4px 8px;font-size:12px;${s&&(s.status==='leave')?'opacity:.5':''}">${s?esc(s.name)+' '+genderTag(s):''}</td>`;
+    }).join('');
+    // 미지정 칼럼 (있으면)
+    if(unset.length) rowsHtml += `<td style="border:1px solid var(--ivd);padding:4px 8px;font-size:12px;background:#fafafa">${unset[i]?esc(unset[i].name)+' '+genderTag(unset[i]):''}</td>`;
+    rowsHtml += '</tr>';
+  }
+  // 집계 행: 학년별 남/여/계
+  const cnt = g => { const arr=byGrade[g]||[]; const m=arr.filter(s=>s.gender==='남').length, f=arr.filter(s=>s.gender==='여').length; return {m,f,t:arr.length}; };
+  const sumRow = (label, fn) => `<tr style="background:var(--iv);font-weight:700"><td style="border:1px solid var(--ivd);padding:4px 8px;font-size:11px">${label}</td></tr>`;
+  // 학년별 집계 행들
+  let totM=0, totF=0;
+  const mRow = '<tr style="background:#eef4ff;font-size:11px;font-weight:700">' + grades.map(g=>{ const c=cnt(g); return `<td style="border:1px solid var(--ivd);padding:3px 6px;text-align:center">남${c.m}·여${c.f}<br>계${c.t}</td>`; }).join('') + (unset.length?`<td style="border:1px solid var(--ivd);padding:3px 6px;text-align:center">${(()=>{const m=unset.filter(s=>s.gender==='남').length,f=unset.filter(s=>s.gender==='여').length;return `남${m}·여${f}<br>계${unset.length}`;})()}</td>`:'') + '</tr>';
+  // 부서별/기관 총합
+  let totals = {};
+  targetOrgs.forEach(o=>{
+    const studs = STUDENTS.filter(s=>s.org===o && statuses.includes(s.status||'active'));
+    const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
+    totals[o]={m,f,t:studs.length};
+    totM+=m; totF+=f;
+  });
+  const headGrades = grades.map(g=>`<th style="border:1px solid var(--ivd);padding:5px;font-size:11px;background:var(--gp);color:var(--gm)">${g}</th>`).join('') + (unset.length?'<th style="border:1px solid var(--ivd);padding:5px;font-size:11px;background:#fafafa">미지정</th>':'');
+  const title = isAll ? '전체 (두 기관 합산)' : ORGS[orgKey];
+  // 기관별 합계 표시
+  const orgTotalsHtml = targetOrgs.map(o=>`${ORGS[o]}: 남 ${totals[o].m} · 여 ${totals[o].f} · 계 <b>${totals[o].t}</b>명`).join(' &nbsp;|&nbsp; ');
+  return `
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px">${title}</h3>
+      <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">
+        <thead><tr>${headGrades}</tr></thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot>${mRow}</tfoot>
+      </table></div>
+      <div style="margin-top:12px;font-size:13px;line-height:1.9;background:var(--iv);border-radius:8px;padding:12px">
+        <div>${orgTotalsHtml}</div>
+        <div style="margin-top:6px;font-weight:800;color:var(--gd)">${title} 총원: 남 ${totM} · 여 ${totF} · <span style="font-size:15px">계 ${totM+totF}명</span></div>
+      </div>
+    </div>`;
+}
+
+// ── 재적 통계 ──
+function renderStat(){
+  const statuses = ['active'];
+  let html = `<div class="acard"><h3 class="actitle">📈 재적 통계</h3><p class="adesc">현재 재학 중인 학생 기준입니다.</p>`;
+  const orgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
+  let gM=0,gF=0;
+  orgs.forEach(o=>{
+    const studs = STUDENTS.filter(s=>s.org===o && statuses.includes(s.status||'active'));
+    const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
+    gM+=m; gF+=f;
+    // 부서별
+    const depts = {};
+    studs.forEach(s=>{ const d=s.dept||'미지정'; (depts[d]=depts[d]||[]).push(s); });
+    const deptRows = Object.entries(depts).map(([d,arr])=>{
+      const dm=arr.filter(s=>s.gender==='남').length, df=arr.filter(s=>s.gender==='여').length;
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--ivd)">${d}</td><td style="padding:6px 10px;border-bottom:1px solid var(--ivd);text-align:center">${dm}</td><td style="padding:6px 10px;border-bottom:1px solid var(--ivd);text-align:center">${df}</td><td style="padding:6px 10px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700">${arr.length}</td></tr>`;
+    }).join('');
+    html += `<div class="acard" style="box-shadow:none;border:1px solid var(--ivd)">
+      <h3 class="actitle" style="font-size:15px">${ORGS[o]}</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:6px 10px;text-align:left">부서</th><th style="padding:6px 10px">남</th><th style="padding:6px 10px">여</th><th style="padding:6px 10px">계</th></tr></thead>
+        <tbody>${deptRows||'<tr><td colspan="4" style="padding:10px;text-align:center;color:var(--tl)">학생 없음</td></tr>'}</tbody>
+        <tfoot><tr style="background:var(--gp);font-weight:700"><td style="padding:6px 10px">${ORGS[o]} 합계</td><td style="padding:6px 10px;text-align:center">${m}</td><td style="padding:6px 10px;text-align:center">${f}</td><td style="padding:6px 10px;text-align:center">${studs.length}</td></tr></tfoot>
+      </table>
+    </div>`;
+  });
+  html += `<div style="background:var(--gd);color:#fff;border-radius:10px;padding:16px;font-size:15px;font-weight:700;text-align:center">전체 재적: 남 ${gM} · 여 ${gF} · 총 ${gM+gF}명</div>`;
+  html += '</div>';
+  $I('main-body').innerHTML = html;
+}
+window.renderStat = renderStat;
+
+// ── 생일 명단 ──
+let birthMonth = new Date().getMonth()+1;
+function renderBirth(){
+  const months = []; for(let m=1;m<=12;m++) months.push(m);
+  const list = STUDENTS.filter(s=>(s.status||'active')==='active' && s.birth && Number(s.birth.slice(5,7))===birthMonth)
+    .sort((a,b)=>Number(a.birth.slice(8,10))-Number(b.birth.slice(8,10)));
+  const rows = list.map(s=>`<tr>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)} <span style="color:${s.gender==='남'?'#2b6cb0':'#d53f8c'};font-size:11px">(${s.gender||'-'})</span></td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${s.birth} (${Number(s.birth.slice(5,7))}월 ${Number(s.birth.slice(8,10))}일)</td>
+  </tr>`).join('');
+  $I('main-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">🎂 생일 명단</h3>
+      <p class="adesc">월을 선택하면 그 달 생일인 재학생을 보여줍니다.</p>
+      <select id="b-month" onchange="setBirthMonth()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:14px;background:var(--iv);margin-bottom:12px">
+        ${months.map(m=>`<option value="${m}"${m===birthMonth?' selected':''}>${m}월</option>`).join('')}
+      </select>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">이름</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">생년월일</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--tl)">이 달 생일인 학생이 없습니다.</td></tr>'}</tbody>
+      </table>
+      <div style="margin-top:10px;font-size:13px;color:var(--ts)">${birthMonth}월 생일자: ${list.length}명</div>
+    </div>`;
+}
+window.renderBirth = renderBirth;
+function setBirthMonth(){ birthMonth = Number($I('b-month').value); renderBirth(); }
+window.setBirthMonth = setBirthMonth;
+
+// ── 연락처 명단 ──
+function renderContact(){
+  const list = STUDENTS.filter(s=>(s.status||'active')==='active')
+    .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(a.name||'').localeCompare(b.name||'','ko'));
+  const rows = list.map(s=>`<tr>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-size:12px">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${esc(s.guardian||'-')}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${esc(s.guardianPhone||s.phone||'-')}</td>
+  </tr>`).join('');
+  $I('main-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📞 연락처 명단</h3>
+      <p class="adesc">재학생 학부모 연락처입니다. 비상연락·안내에 활용하세요.</p>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">학생</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">보호자</th><th style="padding:8px 10px;text-align:left">연락처</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--tl)">학생이 없습니다.</td></tr>'}</tbody>
+      </table></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--tl)">※ 연락처가 '-'로 나오면 학생 정보에 보호자 연락처가 입력되지 않은 것입니다.</div>
+    </div>`;
+}
+window.renderContact = renderContact;
 // 특정 날짜에 휴학 중인지 (leaves 배열 기준)
 function isOnLeave(s, dateStr){
   if(!s.leaves || !s.leaves.length) return false;
