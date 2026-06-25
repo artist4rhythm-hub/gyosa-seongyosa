@@ -408,14 +408,60 @@ function renderRoster(){
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
           <input type="checkbox" id="r-leave" ${rosterIncludeLeave?'checked':''} onchange="setRosterLeave()" style="width:16px;height:16px"> 휴학생 포함
         </label>
+        <button class="bs" onclick="downloadRosterExcel()" style="margin-left:auto">⬇ 엑셀 다운로드</button>
       </div>
     </div>`;
   let body = '';
   const orgs = rosterOrgView==='all' ? ['__all__'] : Object.keys(GRADE_ORDER).filter(o=>myOrgsHas(o));
   orgs.forEach(org=>{ body += rosterTable(org); });
+  // 휴학생 목록 (항상 별도 표시)
+  body += rosterLeaveList();
   $I('main-body').innerHTML = ctrl + body;
 }
 window.renderRoster = renderRoster;
+
+// 휴학생 목록 (별도 카드)
+function rosterLeaveList(){
+  const targetOrgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
+  const leaves = STUDENTS.filter(s=>s.status==='leave' && targetOrgs.includes(s.org))
+    .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(a.name||'').localeCompare(b.name||'','ko'));
+  if(!leaves.length) return '';
+  const rows = leaves.map(s=>{
+    const g = studentGrade(s.id);
+    return `<tr>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)} <span style="color:${s.gender==='남'?'#2b6cb0':'#d53f8c'};font-size:11px">(${s.gender||'-'})</span></td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${g||'미지정'}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px;color:#b45309">🏖️ 현재 휴학생 (${leaves.length}명)</h3>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">이름</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">학년</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+// 재학생 명단 엑셀 다운로드
+function downloadRosterExcel(){
+  const statuses = rosterIncludeLeave ? ['active','leave'] : ['active'];
+  const targetOrgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
+  const aoa = [['이름','성별','기관','부서','학년','상태']];
+  STUDENTS.filter(s=>targetOrgs.includes(s.org) && statuses.includes(s.status||'active'))
+    .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'))
+    .forEach(s=>{
+      aoa.push([s.name, s.gender||'', ORGS[s.org]||s.org, s.dept||'', studentGrade(s.id)||'미지정', s.status==='leave'?'휴학':'재학']);
+    });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:12},{wch:6},{wch:14},{wch:10},{wch:10},{wch:8}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '재학생명단');
+  XLSX.writeFile(wb, `재학생명단_${todayStr()}.xlsx`);
+  toast('엑셀을 다운로드했습니다.','ok');
+}
+window.downloadRosterExcel = downloadRosterExcel;
 function setRosterView(){ rosterOrgView = $I('r-view').value; renderRoster(); }
 window.setRosterView = setRosterView;
 function setRosterLeave(){ rosterIncludeLeave = $I('r-leave').checked; renderRoster(); }
@@ -525,10 +571,14 @@ window.renderStat = renderStat;
 
 // ── 생일 명단 ──
 let birthMonth = new Date().getMonth()+1;
+let birthOrg = '';  // '' = 전체
 function renderBirth(){
   const months = []; for(let m=1;m<=12;m++) months.push(m);
-  const list = STUDENTS.filter(s=>(s.status||'active')==='active' && s.birth && Number(s.birth.slice(5,7))===birthMonth)
-    .sort((a,b)=>Number(a.birth.slice(8,10))-Number(b.birth.slice(8,10)));
+  const myo = myOrgs();
+  let list = STUDENTS.filter(s=>(s.status||'active')==='active' && s.birth && Number(s.birth.slice(5,7))===birthMonth);
+  if(birthOrg) list = list.filter(s=>s.org===birthOrg);
+  list.sort((a,b)=>Number(a.birth.slice(8,10))-Number(b.birth.slice(8,10)));
+  const orgOpts = `<option value="">전체 기관</option>` + myo.map(o=>`<option value="${o}"${birthOrg===o?' selected':''}>${ORGS[o]}</option>`).join('');
   const rows = list.map(s=>`<tr>
     <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)} <span style="color:${s.gender==='남'?'#2b6cb0':'#d53f8c'};font-size:11px">(${s.gender||'-'})</span></td>
     <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
@@ -537,10 +587,13 @@ function renderBirth(){
   $I('main-body').innerHTML = `
     <div class="acard">
       <h3 class="actitle">🎂 생일 명단</h3>
-      <p class="adesc">월을 선택하면 그 달 생일인 재학생을 보여줍니다.</p>
-      <select id="b-month" onchange="setBirthMonth()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:14px;background:var(--iv);margin-bottom:12px">
-        ${months.map(m=>`<option value="${m}"${m===birthMonth?' selected':''}>${m}월</option>`).join('')}
-      </select>
+      <p class="adesc">월과 기관을 선택하면 그 달 생일인 재학생을 보여줍니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <select id="b-month" onchange="setBirthMonth()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:14px;background:var(--iv)">
+          ${months.map(m=>`<option value="${m}"${m===birthMonth?' selected':''}>${m}월</option>`).join('')}
+        </select>
+        <select id="b-org" onchange="setBirthOrg()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:14px;background:var(--iv)">${orgOpts}</select>
+      </div>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">이름</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">생년월일</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--tl)">이 달 생일인 학생이 없습니다.</td></tr>'}</tbody>
@@ -551,29 +604,68 @@ function renderBirth(){
 window.renderBirth = renderBirth;
 function setBirthMonth(){ birthMonth = Number($I('b-month').value); renderBirth(); }
 window.setBirthMonth = setBirthMonth;
+function setBirthOrg(){ birthOrg = $I('b-org').value; renderBirth(); }
+window.setBirthOrg = setBirthOrg;
 
 // ── 연락처 명단 ──
+let contactOrg = '';     // '' = 전체
+let contactGrade = '';   // '' = 전체 학년
 function renderContact(){
-  const list = STUDENTS.filter(s=>(s.status||'active')==='active')
-    .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(a.name||'').localeCompare(b.name||'','ko'));
+  const myo = myOrgs();
+  let list = STUDENTS.filter(s=>(s.status||'active')==='active');
+  if(contactOrg) list = list.filter(s=>s.org===contactOrg);
+  if(contactGrade) list = list.filter(s=>studentGrade(s.id)===contactGrade);
+  list.sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'));
+  // 학년 옵션 (선택된 기관 기준, 없으면 내 기관 전체)
+  const gradeSet = new Set();
+  const baseOrgs = contactOrg ? [contactOrg] : myo;
+  baseOrgs.forEach(o=>(GRADE_ORDER[o]||[]).forEach(g=>gradeSet.add(g)));
+  const orgOpts = `<option value="">전체 기관</option>` + myo.map(o=>`<option value="${o}"${contactOrg===o?' selected':''}>${ORGS[o]}</option>`).join('');
+  const gradeOpts = `<option value="">전체 학년</option>` + Array.from(gradeSet).map(g=>`<option value="${g}"${contactGrade===g?' selected':''}>${g}</option>`).join('');
   const rows = list.map(s=>`<tr>
     <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)}</td>
     <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-size:12px">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-size:12px">${studentGrade(s.id)||'-'}</td>
     <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${esc(s.guardian||'-')}</td>
     <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${esc(s.guardianPhone||s.phone||'-')}</td>
   </tr>`).join('');
   $I('main-body').innerHTML = `
     <div class="acard">
       <h3 class="actitle">📞 연락처 명단</h3>
-      <p class="adesc">재학생 학부모 연락처입니다. 비상연락·안내에 활용하세요.</p>
+      <p class="adesc">재학생 학부모 연락처입니다. 기관·학년으로 좁혀 보거나 엑셀로 내려받을 수 있습니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <select id="ct-org" onchange="setContactOrg()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">${orgOpts}</select>
+        <select id="ct-grade" onchange="setContactGrade()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">${gradeOpts}</select>
+        <button class="bs" onclick="downloadContactExcel()" style="margin-left:auto">⬇ 엑셀 다운로드</button>
+      </div>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">학생</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">보호자</th><th style="padding:8px 10px;text-align:left">연락처</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--tl)">학생이 없습니다.</td></tr>'}</tbody>
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">학생</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">학년</th><th style="padding:8px 10px;text-align:left">보호자</th><th style="padding:8px 10px;text-align:left">연락처</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--tl)">해당하는 학생이 없습니다.</td></tr>'}</tbody>
       </table></div>
-      <div style="margin-top:10px;font-size:12px;color:var(--tl)">※ 연락처가 '-'로 나오면 학생 정보에 보호자 연락처가 입력되지 않은 것입니다.</div>
+      <div style="margin-top:10px;font-size:12px;color:var(--tl)">총 ${list.length}명 · 연락처가 '-'면 보호자 연락처가 입력되지 않은 것입니다.</div>
     </div>`;
 }
 window.renderContact = renderContact;
+function setContactOrg(){ contactOrg = $I('ct-org').value; contactGrade=''; renderContact(); }
+window.setContactOrg = setContactOrg;
+function setContactGrade(){ contactGrade = $I('ct-grade').value; renderContact(); }
+window.setContactGrade = setContactGrade;
+
+function downloadContactExcel(){
+  let list = STUDENTS.filter(s=>(s.status||'active')==='active');
+  if(contactOrg) list = list.filter(s=>s.org===contactOrg);
+  if(contactGrade) list = list.filter(s=>studentGrade(s.id)===contactGrade);
+  list.sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'));
+  const aoa = [['학생','성별','기관','부서','학년','보호자','연락처','주소']];
+  list.forEach(s=> aoa.push([s.name, s.gender||'', ORGS[s.org]||s.org, s.dept||'', studentGrade(s.id)||'', s.guardian||'', s.guardianPhone||s.phone||'', s.address||'']));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:12},{wch:6},{wch:14},{wch:10},{wch:8},{wch:12},{wch:15},{wch:24}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '연락처');
+  XLSX.writeFile(wb, `연락처명단_${todayStr()}.xlsx`);
+  toast('엑셀을 다운로드했습니다.','ok');
+}
+window.downloadContactExcel = downloadContactExcel;
 // 특정 날짜에 휴학 중인지 (leaves 배열 기준)
 function isOnLeave(s, dateStr){
   if(!s.leaves || !s.leaves.length) return false;
