@@ -349,8 +349,17 @@ let checkGradeFilter = '';             // 학년 필터 (빈값=전체)
 let checkRecords = {};                 // {studentId: {typeId, memo}}
 
 function renderCheck(){
-  // 권한 있는 반(편집) + 열람 가능 반 구분
-  const sortCls = (a,b)=>(a.grade||'').localeCompare(b.grade||'','ko')||(a.name||'').localeCompare(b.name||'','ko');
+  // 학년 순서값 (4세→7세→1학년→12학년). 작을수록 앞
+  const gradeRank = g => {
+    if(!g) return 999;
+    const first = String(g).split(/[·,]/)[0].trim(); // 합반이면 첫 학년 기준
+    const age = first.match(/(\d+)\s*세/);
+    if(age) return Number(age[1]);            // 4~7세 → 4~7
+    const grd = first.match(/(\d+)\s*학년/);
+    if(grd) return 100 + Number(grd[1]);      // 1~12학년 → 101~112
+    return 998;
+  };
+  const sortCls = (a,b)=> gradeRank(a.grade)-gradeRank(b.grade) || (a.name||'').localeCompare(b.name||'','ko');
   const editable = CLASSES.filter(canEditClass).sort(sortCls);
   const viewable = CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)).sort(sortCls);
   const allSelectable = [...editable, ...viewable];
@@ -562,12 +571,21 @@ function setRec(sid, tid){
 
 function scrollToStud(sid){
   const row = $I('row-'+sid);
-  if(row){
-    row.scrollIntoView({behavior:'smooth', block:'center'});
-    // 잠깐 강조
-    row.style.transition='background .3s'; row.style.background='#fff7ed';
-    setTimeout(()=>{ row.style.background=''; }, 900);
-  }
+  if(!row) return;
+  row.scrollIntoView({behavior:'smooth', block:'center'});
+  // 강조: 노란 배경 + 테두리 + 2번 깜박임
+  row.style.transition = 'background .25s, box-shadow .25s';
+  row.style.borderRadius = '10px';
+  let on = false, cnt = 0;
+  const blink = () => {
+    on = !on;
+    row.style.background = on ? '#fde68a' : 'transparent';
+    row.style.boxShadow = on ? '0 0 0 2px var(--gold)' : 'none';
+    cnt++;
+    if(cnt < 6) setTimeout(blink, 280);
+    else { row.style.background=''; row.style.boxShadow='none'; }
+  };
+  blink();
 }
 window.scrollToStud = scrollToStud;
 window.setRec = setRec;
@@ -616,7 +634,7 @@ let statRecords = null;  // 출결 기록 캐시 (한 번만 로드)
 let statYear = new Date().getFullYear();
 let statOrg = '';
 let statTermSel = '1';   // '1' | '2' | 'year'
-let statView = 'student'; // student | class | grade | dept | all | month
+let statView = 'month'; // student | class | grade | dept | all | month
 let statClassFilter = '';
 let statGradeFilter = '';
 
@@ -644,12 +662,12 @@ function renderStat(){
           </select></div>
         <div class="fgrp" style="margin-bottom:0"><label>보기</label>
           <select id="st-view" onchange="onStatChange()">
+            <option value="month"${statView==='month'?' selected':''}>월별 달력</option>
             <option value="student"${statView==='student'?' selected':''}>학생별</option>
             <option value="class"${statView==='class'?' selected':''}>반별</option>
             <option value="grade"${statView==='grade'?' selected':''}>학년별</option>
             <option value="dept"${statView==='dept'?' selected':''}>부서별</option>
             <option value="all"${statView==='all'?' selected':''}>전체</option>
-            <option value="month"${statView==='month'?' selected':''}>월별 달력</option>
           </select></div>
         <div class="fgrp" style="margin-bottom:0"><label>반 필터</label>
           <select id="st-class" onchange="onStatChange()"><option value="">전체 반</option></select></div>
