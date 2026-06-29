@@ -278,6 +278,12 @@
 </head>
 <body>
 <div id="topnav-container"></div>
+<div id="tt-guard" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;text-align:center;padding:24px">
+  <div style="font-size:40px;margin-bottom:12px">🔒</div>
+  <div style="font-size:18px;font-weight:700;color:#1C2421;margin-bottom:6px">로그인이 필요합니다</div>
+  <div style="font-size:14px;color:#5A625E;margin-bottom:18px">시간표는 로그인 후 온라인으로 저장·공유됩니다.</div>
+  <a href="index.html" style="display:inline-block;padding:12px 24px;background:#2F6E5B;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">로그인 화면으로</a>
+</div>
 <script>
   // 공통 상단 메뉴 렌더 (로그인 정보가 없으므로 기본 권한으로 표시)
   if(window.renderTopNav){
@@ -1287,6 +1293,14 @@ document.addEventListener('change',e=>{
 */
 let savedTimetables=[];
 
+// Firebase에서 받은 목록으로 교체 (module script가 호출)
+window.ttSetSaved = function(arr){
+  savedTimetables = Array.isArray(arr) ? arr : [];
+  if(typeof renderSaved==='function') renderSaved();
+};
+// 현재 목록을 반환 (module script가 클라우드 저장 시 사용)
+window.ttGetSaved = function(){ return savedTimetables; };
+
 function fmtDateTime(iso){
   const d=new Date(iso);
   const p=n=>String(n).padStart(2,'0');
@@ -1313,6 +1327,7 @@ $('#saveConfirm').onclick=()=>{
     flash(`"${name}" 저장 완료`);
   }
   renderSaved();
+  if(window.ttSyncToCloud) window.ttSyncToCloud();
 };
 
 function loadTimetable(id){
@@ -1335,6 +1350,7 @@ function duplicateTimetable(id){
   });
   renderSaved();
   flash(`"${nn}"(으)로 복제됨`);
+  if(window.ttSyncToCloud) window.ttSyncToCloud();
 }
 function deleteTimetable(id){
   const item=savedTimetables.find(s=>s.id===id);
@@ -1342,6 +1358,7 @@ function deleteTimetable(id){
   if(!confirm(`"${item.name}"을(를) 삭제할까요?`)) return;
   savedTimetables=savedTimetables.filter(s=>s.id!==id);
   renderSaved();
+  if(window.ttSyncToCloud) window.ttSyncToCloud();
 }
 function renameTimetable(id){
   const item=savedTimetables.find(s=>s.id===id);
@@ -1350,6 +1367,7 @@ function renameTimetable(id){
   if(nn===null) return;
   const t=nn.trim(); if(!t) return;
   item.name=t; renderSaved();
+  if(window.ttSyncToCloud) window.ttSyncToCloud();
 }
 
 function renderSaved(){
@@ -2289,5 +2307,67 @@ renderAll();
 renderSaved();
 setupTabs();
 </script>
-</body>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let CU = null;
+let saveTimer = null;
+
+// 클라우드 동기화: 현재 목록을 통째로 timetables/main 문서에 저장
+window.ttSyncToCloud = function(){
+  if(!CU) return;
+  // 너무 잦은 저장 방지 (디바운스)
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try {
+      const list = window.ttGetSaved ? window.ttGetSaved() : [];
+      await setDoc(doc(db,'timetables','main'), {
+        list, updatedAt: Timestamp.now(), updatedBy: CU.name||''
+      });
+    } catch(e){ console.error('시간표 저장 실패', e); }
+  }, 600);
+};
+
+onAuthStateChanged(auth, async (user)=>{
+  const guard = document.getElementById('tt-guard');
+  if(!user){
+    // 로그인 안 됨 → 안내 후 차단
+    if(guard) guard.style.display='flex';
+    document.querySelector('.wrap')?.style.setProperty('display','none');
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(db,'staff',user.uid));
+    if(snap.exists()){
+      CU = { uid:user.uid, ...snap.data() };
+      try { localStorage.setItem('gyosa_role', CU.role||'teacher'); } catch(e){}
+    }
+  } catch(e){}
+  if(guard) guard.style.display='none';
+  document.querySelector('.wrap')?.style.removeProperty('display');
+  // 클라우드에서 저장된 시간표 불러오기
+  try {
+    const ts = await getDoc(doc(db,'timetables','main'));
+    if(ts.exists() && Array.isArray(ts.data().list)){
+      if(window.ttSetSaved) window.ttSetSaved(ts.data().list);
+    }
+  } catch(e){ console.error('시간표 불러오기 실패', e); }
+});
+</script>
 </html>
