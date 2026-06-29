@@ -112,7 +112,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -133,6 +133,8 @@ const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
 let CU = null;
 let POSTS = [];
 let curBoard = 'all';   // all | daniel | jihyebit
+let CATEGORIES = [];    // 글 분류 목록
+let searchKeyword = '';
 
 function toast(msg, type=''){ const t=$I('toast'); t.textContent=msg; t.className='toast show '+type; clearTimeout(window.__tt); window.__tt=setTimeout(()=>t.className='toast',2500); }
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -180,10 +182,18 @@ onAuthStateChanged(auth, async (user)=>{
     $I('hn').textContent = CU.name;
     $I('hi').textContent = `${ORGS[CU.org]||CU.org} · ${CU.dept||''}`;
     buildBoardTabs();
+    await loadCategories();
     await loadPosts();
     showBoard('all');
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
 });
+
+async function loadCategories(){
+  try {
+    const d = await getDoc(doc(db,'boardConfig','categories'));
+    CATEGORIES = d.exists() && Array.isArray(d.data().list) ? d.data().list : [];
+  } catch(e){ CATEGORIES = []; }
+}
 
 // 내가 볼 수 있는 게시판 목록
 function myBoards(){
@@ -221,33 +231,124 @@ function showBoard(key){
 window.showBoard = showBoard;
 
 function renderBoard(){
-  const list = POSTS.filter(p=>p.board===curBoard);
   const boardName = curBoard==='all'?'전체 게시판':ORGS[curBoard];
   const desc = curBoard==='all'
     ? '모든 기관 선생님이 함께 보는 게시판입니다.'
     : `${ORGS[curBoard]} 소속 선생님이 보는 게시판입니다.`;
-  const rows = list.map(p=>{
+  const now = Date.now();
+  const isPinned = p => p.pinned && (!p.pinUntil || (p.pinUntil?.toMillis?.()||0) > now);
+
+  // 검색 중이면 전체 게시판(내가 볼 수 있는) 통합 검색, 아니면 현재 게시판
+  let list;
+  const kw = searchKeyword.trim().toLowerCase();
+  if(kw){
+    const visibleBoards = myBoards().map(b=>b.key);
+    list = POSTS.filter(p=>visibleBoards.includes(p.board))
+      .filter(p=>(p.title||'').toLowerCase().includes(kw) || (p.content||'').toLowerCase().includes(kw));
+  } else {
+    list = POSTS.filter(p=>p.board===curBoard);
+  }
+
+  // 고정글 분리 (검색 중이 아닐 때만 고정 우선)
+  const pinned = !kw ? list.filter(isPinned) : [];
+  const normal = !kw ? list.filter(p=>!isPinned(p)) : list;
+
+  const catChip = p => p.category ? `<span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:1px 8px;border-radius:100px;font-weight:700;margin-right:4px">${esc(p.category)}</span>` : '';
+  const postRow = (p, pin) => {
     const vid = youtubeId(p.link);
     const img = !vid && isImageUrl(p.link);
     const badge = vid ? '<span class="vid-badge">▶ 영상</span>' : img ? '<span class="link-badge">🖼️ 이미지</span>' : (p.link?'<span class="link-badge">🔗 링크</span>':'');
     const cc = (p.commentCount||0);
-    return `<div class="post-item" onclick="openPost('${p.id}')">
-      <div class="post-top"><span class="post-title">${esc(p.title)}</span><span class="post-date">${fmtShort(p.createdAt)}</span></div>
-      <div class="post-meta">${esc(p.authorName)} ${badge} ${cc>0?`<span style="color:var(--gm)">💬 ${cc}</span>`:''}</div>
+    const likeCnt = (p.likes||[]).length;
+    const boardTag = kw ? `<span style="font-size:11px;color:var(--tl)">[${p.board==='all'?'전체':ORGS[p.board]}]</span> ` : '';
+    return `<div class="post-item" onclick="openPost('${p.id}')" ${pin?'style="background:#fffdf5;border-color:var(--gold)"':''}>
+      <div class="post-top"><span class="post-title">${pin?'📌 ':''}${boardTag}${catChip(p)}${esc(p.title)}</span><span class="post-date">${fmtShort(p.createdAt)}</span></div>
+      <div class="post-meta">${esc(p.authorName)} ${badge} ${cc>0?`<span style="color:var(--gm)">💬 ${cc}</span>`:''} ${likeCnt>0?`<span style="color:#dc2626">♥ ${likeCnt}</span>`:''}</div>
       ${p.content?`<div class="post-excerpt">${esc(p.content)}</div>`:''}
     </div>`;
-  }).join('');
+  };
+  const pinnedHtml = pinned.length ? pinned.map(p=>postRow(p,true)).join('') : '';
+  const normalHtml = normal.map(p=>postRow(p,false)).join('');
+
+  // 분류 필터 칩 (검색 아닐 때)
+  const catFilter = (!kw && CATEGORIES.length) ? `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="bm" style="${!catFilterVal?'background:var(--gm);color:#fff':''}" onclick="setCatFilter('')">전체</button>
+      ${CATEGORIES.map(c=>`<button class="bm" style="${catFilterVal===c?'background:var(--gm);color:#fff':''}" onclick="setCatFilter('${esc(c)}')">${esc(c)}</button>`).join('')}
+    </div>` : '';
+
+  // 분류 필터 적용
+  let shownNormal = normalHtml;
+  if(!kw && catFilterVal){
+    const filtered = normal.filter(p=>p.category===catFilterVal);
+    shownNormal = filtered.length ? filtered.map(p=>postRow(p,false)).join('') : '<div class="empty">이 분류의 글이 없습니다.</div>';
+  }
+
   $I('board-body').innerHTML = `
     <div class="acard">
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <input type="text" id="search-input" value="${esc(searchKeyword)}" placeholder="🔍 전체 게시판에서 제목·내용 검색" style="flex:1;border:1.5px solid var(--ivd);border-radius:8px;padding:10px 12px;font-size:14px;background:var(--iv)" onkeydown="if(event.key==='Enter')doSearch()">
+        <button class="bp" onclick="doSearch()">검색</button>
+        ${kw?`<button class="bs" onclick="clearSearch()">✕</button>`:''}
+      </div>
+      ${kw ? `<p class="adesc">🔍 "<b>${esc(searchKeyword)}</b>" 검색 결과 ${list.length}건</p>` : `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <h3 class="actitle" style="margin:0">${boardName}</h3>
         <button class="bp" onclick="openCompose()">✏️ 글쓰기</button>
       </div>
       <p class="adesc">${desc}</p>
-      ${rows || '<div class="empty">아직 게시글이 없습니다. 첫 글을 작성해보세요.</div>'}
+      ${isAdmin()?`<button class="bs" style="margin-bottom:12px" onclick="openCatManage()">⚙️ 분류 관리</button>`:''}
+      ${catFilter}`}
+      ${pinnedHtml}
+      ${(kw?normalHtml:shownNormal) || '<div class="empty">아직 게시글이 없습니다. 첫 글을 작성해보세요.</div>'}
     </div>`;
 }
 window.renderBoard = renderBoard;
+
+let catFilterVal = '';
+function setCatFilter(c){ catFilterVal = c; renderBoard(); }
+window.setCatFilter = setCatFilter;
+function doSearch(){ const el=$I('search-input'); if(el){ searchKeyword=el.value; renderBoard(); } }
+window.doSearch = doSearch;
+function clearSearch(){ searchKeyword=''; renderBoard(); }
+window.clearSearch = clearSearch;
+
+// ── 분류 관리 (관리자) ──
+function openCatManage(){
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">분류 관리</div>
+      <div class="msub">글을 분류할 말머리입니다. 추가·삭제할 수 있습니다.</div>
+      <div id="cat-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        ${CATEGORIES.length?CATEGORIES.map(c=>`<span style="display:inline-flex;align-items:center;gap:6px;background:var(--gp);color:var(--gm);padding:6px 10px;border-radius:100px;font-size:13px;font-weight:600">${esc(c)} <span style="color:#dc2626;cursor:pointer" onclick="delCategory('${esc(c)}')">✕</span></span>`).join(''):'<span style="color:var(--tl);font-size:13px">분류가 없습니다.</span>'}
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="new-cat" placeholder="새 분류 (예: 자료공유, 질문)" style="flex:1;border:1.5px solid var(--ivd);border-radius:8px;padding:10px 12px;font-size:14px;background:var(--iv)">
+        <button class="bp" onclick="addCategory()">추가</button>
+      </div>
+      <div class="mact"><button class="bp" onclick="closeMod()">닫기</button></div>
+    </div></div>`;
+}
+window.openCatManage = openCatManage;
+
+async function addCategory(){
+  const v = $I('new-cat').value.trim();
+  if(!v) return toast('분류명을 입력하세요.','err');
+  if(CATEGORIES.includes(v)) return toast('이미 있는 분류입니다.','err');
+  CATEGORIES.push(v);
+  try { await setDoc(doc(db,'boardConfig','categories'), {list:CATEGORIES}); toast('추가했습니다.','ok'); openCatManage(); }
+  catch(e){ toast('실패: '+e.message,'err'); CATEGORIES.pop(); }
+}
+window.addCategory = addCategory;
+
+async function delCategory(c){
+  if(!confirm(`'${c}' 분류를 삭제할까요?`)) return;
+  CATEGORIES = CATEGORIES.filter(x=>x!==c);
+  try { await setDoc(doc(db,'boardConfig','categories'), {list:CATEGORIES}); toast('삭제했습니다.'); openCatManage(); }
+  catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.delCategory = delCategory;
 
 // ── 글 작성 ──
 function openCompose(editId){
@@ -261,9 +362,22 @@ function openCompose(editId){
       <div class="mtitle">${editing?'글 수정':'새 글 작성'}</div>
       <div class="msub">유튜브 링크를 넣으면 게시글에서 바로 재생됩니다. 그 외 링크는 클릭하면 새 창으로 열립니다.</div>
       <div class="fgrp"><label>게시판</label><select id="cp-board">${boardOpts}</select></div>
+      ${CATEGORIES.length?`<div class="fgrp"><label>분류</label><select id="cp-cat"><option value="">분류 없음</option>${CATEGORIES.map(c=>`<option value="${esc(c)}"${editing&&editing.category===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
       <div class="fgrp"><label>제목</label><input type="text" id="cp-title" value="${editing?esc(editing.title).replace(/"/g,'&quot;'):''}" placeholder="제목"></div>
       <div class="fgrp"><label>내용</label><textarea id="cp-content" rows="6" placeholder="내용을 입력하세요...">${editing?esc(editing.content):''}</textarea></div>
       <div class="fgrp"><label>링크 (선택 · 유튜브는 영상 재생, 이미지 주소는 사진 표시)</label><input type="text" id="cp-link" value="${editing?esc(editing.link||'').replace(/"/g,'&quot;'):''}" placeholder="유튜브 / 이미지 주소(.jpg 등) / 기타 링크"></div>
+      <div class="fgrp" style="background:var(--iv);border-radius:8px;padding:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="cp-pin" ${editing&&editing.pinned?'checked':''} onchange="document.getElementById('cp-pin-days').style.display=this.checked?'block':'none'" style="width:16px;height:16px"> 📌 상단 고정</label>
+        <div id="cp-pin-days" style="display:${editing&&editing.pinned?'block':'none'};margin-top:8px">
+          <span style="font-size:12px;color:var(--ts)">고정 기간:</span>
+          <select id="cp-pin-period" style="border:1.5px solid var(--ivd);border-radius:6px;padding:6px 10px;font-size:13px;background:#fff;margin-left:6px">
+            <option value="7">7일간</option>
+            <option value="14">14일간</option>
+            <option value="30">30일간</option>
+            <option value="0">계속 (수동 해제)</option>
+          </select>
+        </div>
+      </div>
       <div class="mact">
         <button class="bs" onclick="closeMod()">취소</button>
         <button class="bp" onclick="${editing?`saveEdit('${editId}')`:'submitPost()'}">${editing?'수정 저장':'등록'}</button>
@@ -279,14 +393,19 @@ async function submitPost(){
   const title = $I('cp-title').value.trim();
   const content = $I('cp-content').value.trim();
   const link = $I('cp-link').value.trim();
+  const category = $I('cp-cat')?.value || '';
+  const pinned = $I('cp-pin')?.checked || false;
   if(!title) return toast('제목을 입력하세요.','err');
   if(!content && !link) return toast('내용이나 링크를 입력하세요.','err');
+  const data = {
+    board, title, content, link, category,
+    authorUid:CU.uid, authorName:CU.name, authorOrg:CU.org||'',
+    pinned, commentCount:0, likes:[],
+    createdAt:Timestamp.now()
+  };
+  if(pinned){ data.pinUntil = calcPinUntil(); }
   try {
-    await addDoc(collection(db,'boardPosts'), {
-      board, title, content, link,
-      authorUid:CU.uid, authorName:CU.name, authorOrg:CU.org||'',
-      createdAt:Timestamp.now()
-    });
+    await addDoc(collection(db,'boardPosts'), data);
     toast('게시글을 등록했습니다.','ok');
     closeMod();
     await loadPosts();
@@ -295,15 +414,27 @@ async function submitPost(){
 }
 window.submitPost = submitPost;
 
+// 고정 만료 시각 계산
+function calcPinUntil(){
+  const period = Number($I('cp-pin-period')?.value || '7');
+  if(period===0) return null; // 계속
+  return Timestamp.fromMillis(Date.now() + period*24*60*60*1000);
+}
+
 async function saveEdit(id){
   const p = POSTS.find(x=>x.id===id); if(!p) return;
   const board = $I('cp-board').value;
   const title = $I('cp-title').value.trim();
   const content = $I('cp-content').value.trim();
   const link = $I('cp-link').value.trim();
+  const category = $I('cp-cat')?.value || '';
+  const pinned = $I('cp-pin')?.checked || false;
   if(!title) return toast('제목을 입력하세요.','err');
+  const data = {board, title, content, link, category, pinned, updatedAt:Timestamp.now()};
+  if(pinned){ if(!p.pinned || $I('cp-pin-period')) data.pinUntil = calcPinUntil(); }
+  else { data.pinUntil = null; }
   try {
-    await updateDoc(doc(db,'boardPosts',id), {board, title, content, link, updatedAt:Timestamp.now()});
+    await updateDoc(doc(db,'boardPosts',id), data);
     toast('수정했습니다.','ok');
     closeMod();
     await loadPosts();
@@ -318,14 +449,19 @@ async function openPost(id){
   const media = linkMedia(p.link);
   const mine = p.authorUid===CU.uid;
   const canDelete = mine || isAdmin();
+  const canPin = mine || isAdmin();
+  const now = Date.now();
+  const pinnedNow = p.pinned && (!p.pinUntil || (p.pinUntil?.toMillis?.()||0) > now);
+  const catBadge = p.category ? `<span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:2px 8px;border-radius:100px;font-weight:700;margin-right:6px">${esc(p.category)}</span>` : '';
   $I('mwrap').innerHTML = `
     <div class="mov"><div class="mbk" onclick="closeMod()"></div>
     <div class="mbox">
-      <div class="mtitle">${esc(p.title)}</div>
-      <div class="msub">${esc(p.authorName)} · ${fmtFull(p.createdAt)}${p.updatedAt?' (수정됨)':''} · ${p.board==='all'?'전체':ORGS[p.board]}</div>
+      <div class="mtitle">${pinnedNow?'📌 ':''}${esc(p.title)}</div>
+      <div class="msub">${catBadge}${esc(p.authorName)} · ${fmtFull(p.createdAt)}${p.updatedAt?' (수정됨)':''} · ${p.board==='all'?'전체':ORGS[p.board]}</div>
       ${media}
       ${p.content?`<div class="readbody">${esc(p.content)}</div>`:''}
       <div class="mact">
+        ${canPin?`<button class="bs" onclick="togglePin('${p.id}')">${pinnedNow?'📌 고정 해제':'📌 상단 고정'}</button>`:''}
         ${mine?`<button class="bs" onclick="openCompose('${p.id}')">수정</button>`:''}
         ${canDelete?`<button class="bs" style="color:#dc2626" onclick="delPost('${p.id}')">삭제</button>`:''}
         <button class="bp" onclick="closeMod()">닫기</button>
@@ -368,34 +504,53 @@ async function loadComments(postId){
     curComments.sort((a,b)=>(a.createdAt?.toMillis?.()||0)-(b.createdAt?.toMillis?.()||0));
     const cntEl=$I('cmt-count'); if(cntEl) cntEl.textContent = curComments.length||'';
     if(!curComments.length){ box.innerHTML='<div class="empty" style="padding:14px">아직 댓글이 없습니다.</div>'; return; }
-    box.innerHTML = curComments.map(c=>{
-      const mine = c.authorUid===CU.uid;
-      const canDel = mine || isAdmin();
-      return `<div style="padding:10px 0;border-bottom:1px solid var(--ivd)">
-        <div style="display:flex;justify-content:space-between;gap:8px">
-          <span style="font-weight:600;font-size:13px;color:var(--gd)">${esc(c.authorName)}</span>
-          <span style="font-size:11px;color:var(--tl)">${fmtShort(c.createdAt)}${canDel?` · <span style="color:#dc2626;cursor:pointer" onclick="delComment('${c.id}','${c.postId}')">삭제</span>`:''}</span>
-        </div>
-        <div style="font-size:13px;color:var(--tx);margin-top:3px;white-space:pre-wrap">${esc(c.text)}</div>
-      </div>`;
-    }).join('');
+    // 부모 댓글(원댓글)과 답글 분리
+    const parents = curComments.filter(c=>!c.parentId);
+    const childrenOf = pid => curComments.filter(c=>c.parentId===pid);
+    box.innerHTML = parents.map(c=>commentHtml(c, postId, false) + childrenOf(c.id).map(ch=>commentHtml(ch, postId, true)).join('')).join('');
   } catch(e){ box.innerHTML='<div class="empty" style="padding:14px">댓글을 불러올 수 없습니다.</div>'; }
 }
 window.loadComments = loadComments;
 
-async function addComment(postId){
-  const input = $I('cmt-input'); if(!input) return;
+function commentHtml(c, postId, isReply){
+  const mine = c.authorUid===CU.uid;
+  const canDel = mine || isAdmin();
+  return `<div style="padding:10px 0;border-bottom:1px solid var(--ivd);${isReply?'margin-left:24px;border-left:2px solid var(--gp);padding-left:12px':''}">
+    <div style="display:flex;justify-content:space-between;gap:8px">
+      <span style="font-weight:600;font-size:13px;color:var(--gd)">${isReply?'↳ ':''}${esc(c.authorName)}</span>
+      <span style="font-size:11px;color:var(--tl)">${fmtShort(c.createdAt)}${canDel?` · <span style="color:#dc2626;cursor:pointer" onclick="delComment('${c.id}','${c.postId}')">삭제</span>`:''}</span>
+    </div>
+    <div style="font-size:13px;color:var(--tx);margin-top:3px;white-space:pre-wrap">${esc(c.text)}</div>
+    ${!isReply?`<button onclick="showReplyInput('${c.id}','${postId}')" style="background:none;border:none;color:var(--gm);font-size:12px;cursor:pointer;padding:4px 0;margin-top:2px">↩ 답글</button><div id="reply-box-${c.id}"></div>`:''}
+  </div>`;
+}
+
+function showReplyInput(parentId, postId){
+  const box = $I('reply-box-'+parentId); if(!box) return;
+  if(box.innerHTML){ box.innerHTML=''; return; } // 토글
+  box.innerHTML = `<div style="display:flex;gap:6px;margin:6px 0 2px 16px">
+    <input type="text" id="reply-input-${parentId}" placeholder="답글..." style="flex:1;border:1.5px solid var(--ivd);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--iv)" onkeydown="if(event.key==='Enter')addComment('${postId}','${parentId}')">
+    <button class="bm" onclick="addComment('${postId}','${parentId}')">등록</button>
+  </div>`;
+  $I('reply-input-'+parentId)?.focus();
+}
+window.showReplyInput = showReplyInput;
+
+async function addComment(postId, parentId){
+  const input = parentId ? $I('reply-input-'+parentId) : $I('cmt-input');
+  if(!input) return;
   const text = input.value.trim();
   if(!text) return;
   const post = POSTS.find(p=>p.id===postId);
   try {
     await addDoc(collection(db,'boardComments'), {
-      postId, text, authorUid:CU.uid, authorName:CU.name, createdAt:Timestamp.now()
+      postId, text, parentId: parentId||null,
+      authorUid:CU.uid, authorName:CU.name, createdAt:Timestamp.now()
     });
     const newCount = (post?.commentCount||0)+1;
     await updateDoc(doc(db,'boardPosts',postId), {commentCount:newCount});
     if(post) post.commentCount = newCount;
-    // 알림 대상: 글쓴이 + 이 글에 댓글 단 사람들 (나 제외, 중복 제거)
+    // 알림 대상: 글쓴이 + 이 글에 댓글 단 사람들 (나 제외)
     const targets = new Set();
     if(post && post.authorUid) targets.add(post.authorUid);
     curComments.forEach(c=>{ if(c.authorUid) targets.add(c.authorUid); });
@@ -416,11 +571,15 @@ async function addComment(postId){
 window.addComment = addComment;
 
 async function delComment(id, postId){
-  if(!confirm('댓글을 삭제할까요?')) return;
+  if(!confirm('댓글을 삭제할까요? (답글도 함께 삭제됩니다)')) return;
   const post = POSTS.find(p=>p.id===postId);
   try {
+    // 이 댓글 + 답글들 삭제
+    const children = curComments.filter(c=>c.parentId===id);
+    let removed = 1;
     await deleteDoc(doc(db,'boardComments',id));
-    const newCount = Math.max(0,(post?.commentCount||1)-1);
+    for(const ch of children){ await deleteDoc(doc(db,'boardComments',ch.id)); removed++; }
+    const newCount = Math.max(0,(post?.commentCount||removed)-removed);
     await updateDoc(doc(db,'boardPosts',postId), {commentCount:newCount});
     if(post) post.commentCount = newCount;
     loadComments(postId);
@@ -441,6 +600,26 @@ async function delPost(id){
   } catch(e){ toast('삭제 실패: '+e.message,'err'); }
 }
 window.delPost = delPost;
+
+// 빠른 고정/해제 (기본 7일)
+async function togglePin(id){
+  const p = POSTS.find(x=>x.id===id); if(!p) return;
+  const now = Date.now();
+  const pinnedNow = p.pinned && (!p.pinUntil || (p.pinUntil?.toMillis?.()||0) > now);
+  try {
+    if(pinnedNow){
+      await updateDoc(doc(db,'boardPosts',id), {pinned:false, pinUntil:null});
+      toast('고정을 해제했습니다.');
+    } else {
+      await updateDoc(doc(db,'boardPosts',id), {pinned:true, pinUntil:Timestamp.fromMillis(now+7*24*60*60*1000)});
+      toast('상단에 고정했습니다. (7일간)','ok');
+    }
+    closeMod();
+    await loadPosts();
+    renderBoard();
+  } catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.togglePin = togglePin;
 </script>
 </body>
 </html>
