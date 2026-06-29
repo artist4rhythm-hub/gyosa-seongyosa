@@ -1102,6 +1102,7 @@ function renderHome(){
   const summary = [
     {label:'결재 대기', value:n.approvalCnt, icon:'🗂️', color:'#f59e0b', href:'approval.html'},
     {label:'안 읽은 쪽지', value:n.msgCnt, icon:'✉️', color:'#ec4899', href:'message.html'},
+    {label:'새 댓글', value:n.boardCnt||0, icon:'💬', color:'#0891b2', href:'board.html'},
   ];
   const summaryHtml = summary.map(s=>`
     <div onclick="location.href='${s.href}'" style="flex:1;min-width:140px;background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:18px 20px;cursor:pointer;display:flex;align-items:center;gap:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
@@ -1181,13 +1182,19 @@ async function loadNotifications(){
       if((m.toUids||[]).includes(CU.uid) && !(m.readBy||[]).includes(CU.uid)) msgCnt++;
     });
   } catch(e){}
-  renderNotifBadges(approvalCnt, msgCnt);
-  window.__notif = {approvalCnt, msgCnt};
+  let boardCnt = 0;
+  try {
+    const snap = await getDocs(collection(db,'boardNotifs'));
+    snap.forEach(d=>{ const n=d.data(); if(n.toUid===CU.uid && !n.read) boardCnt++; });
+  } catch(e){}
+  renderNotifBadges(approvalCnt, msgCnt, boardCnt);
+  window.__notif = {approvalCnt, msgCnt, boardCnt};
   // 홈이 열려 있으면 숫자 갱신
   if($I('c-home') && $I('c-home').style.display!=='none') renderHome();
 }
 
-function renderNotifBadges(approvalCnt, msgCnt){
+function renderNotifBadges(approvalCnt, msgCnt, boardCnt){
+  boardCnt = boardCnt || 0;
   // 탭 배지
   const apTab = $I('t-approval'), msgTab = $I('t-message');
   if(apTab){
@@ -1200,11 +1207,12 @@ function renderNotifBadges(approvalCnt, msgCnt){
     if(msgCnt>0){ if(!b){ b=document.createElement('span'); b.className='tab-badge'; msgTab.appendChild(b);} b.textContent=msgCnt; }
     else if(b) b.remove();
   }
-  // 알림 배너 (둘 중 하나라도 있으면 표시)
-  if(approvalCnt>0 || msgCnt>0){
+  // 알림 배너
+  if(approvalCnt>0 || msgCnt>0 || boardCnt>0){
     const parts = [];
     if(approvalCnt>0) parts.push(`<a href="approval.html" style="color:#b45309;font-weight:700;text-decoration:none">🗂️ 결재할 문서 ${approvalCnt}건</a>`);
     if(msgCnt>0) parts.push(`<a href="message.html" style="color:var(--gm);font-weight:700;text-decoration:none">✉️ 새 쪽지 ${msgCnt}개</a>`);
+    if(boardCnt>0) parts.push(`<a href="board.html" style="color:#0891b2;font-weight:700;text-decoration:none">💬 새 댓글 ${boardCnt}개</a>`);
     let banner = $I('notif-banner');
     if(!banner){
       banner = document.createElement('div');

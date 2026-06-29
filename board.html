@@ -150,6 +150,22 @@ function youtubeId(url){
   for(const p of patterns){ const m=url.match(p); if(m) return m[1]; }
   return null;
 }
+// 이미지 링크 판정 (.jpg/.png/.gif/.webp 등으로 끝나거나 이미지 호스팅)
+function isImageUrl(url){
+  if(!url) return false;
+  if(/\.(jpe?g|png|gif|webp|bmp|svg)(\?.*)?$/i.test(url)) return true;
+  // 일부 이미지 호스팅 (직접 링크)
+  if(/(?:i\.imgur\.com|images\.unsplash\.com|cdn\.|googleusercontent\.com)/i.test(url)) return true;
+  return false;
+}
+// 링크 종류 → 미디어 HTML
+function linkMedia(url){
+  if(!url) return '';
+  const vid = youtubeId(url);
+  if(vid) return `<div class="video-wrap"><iframe src="https://www.youtube.com/embed/${vid}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
+  if(isImageUrl(url)) return `<img src="${esc(url)}" style="max-width:100%;border-radius:10px;margin:14px 0" loading="lazy" alt="첨부 이미지" onerror="this.style.display='none'">`;
+  return `<a class="link-card" href="${esc(url)}" target="_blank" rel="noopener">🔗 ${esc(url)}</a>`;
+}
 
 onAuthStateChanged(auth, async (user)=>{
   if(!user){ $I('gate-msg').textContent='로그인이 필요합니다. 메인 화면에서 먼저 로그인해주세요.'; $I('gate-btn').style.display='inline-block'; return; }
@@ -212,10 +228,12 @@ function renderBoard(){
     : `${ORGS[curBoard]} 소속 선생님이 보는 게시판입니다.`;
   const rows = list.map(p=>{
     const vid = youtubeId(p.link);
-    const badge = vid ? '<span class="vid-badge">▶ 영상</span>' : (p.link?'<span class="link-badge">🔗 링크</span>':'');
+    const img = !vid && isImageUrl(p.link);
+    const badge = vid ? '<span class="vid-badge">▶ 영상</span>' : img ? '<span class="link-badge">🖼️ 이미지</span>' : (p.link?'<span class="link-badge">🔗 링크</span>':'');
+    const cc = (p.commentCount||0);
     return `<div class="post-item" onclick="openPost('${p.id}')">
       <div class="post-top"><span class="post-title">${esc(p.title)}</span><span class="post-date">${fmtShort(p.createdAt)}</span></div>
-      <div class="post-meta">${esc(p.authorName)} ${badge}</div>
+      <div class="post-meta">${esc(p.authorName)} ${badge} ${cc>0?`<span style="color:var(--gm)">💬 ${cc}</span>`:''}</div>
       ${p.content?`<div class="post-excerpt">${esc(p.content)}</div>`:''}
     </div>`;
   }).join('');
@@ -245,7 +263,7 @@ function openCompose(editId){
       <div class="fgrp"><label>게시판</label><select id="cp-board">${boardOpts}</select></div>
       <div class="fgrp"><label>제목</label><input type="text" id="cp-title" value="${editing?esc(editing.title).replace(/"/g,'&quot;'):''}" placeholder="제목"></div>
       <div class="fgrp"><label>내용</label><textarea id="cp-content" rows="6" placeholder="내용을 입력하세요...">${editing?esc(editing.content):''}</textarea></div>
-      <div class="fgrp"><label>링크 (선택 · 유튜브 영상이면 바로 재생)</label><input type="text" id="cp-link" value="${editing?esc(editing.link||'').replace(/"/g,'&quot;'):''}" placeholder="https://youtu.be/... 또는 기타 링크"></div>
+      <div class="fgrp"><label>링크 (선택 · 유튜브는 영상 재생, 이미지 주소는 사진 표시)</label><input type="text" id="cp-link" value="${editing?esc(editing.link||'').replace(/"/g,'&quot;'):''}" placeholder="유튜브 / 이미지 주소(.jpg 등) / 기타 링크"></div>
       <div class="mact">
         <button class="bs" onclick="closeMod()">취소</button>
         <button class="bp" onclick="${editing?`saveEdit('${editId}')`:'submitPost()'}">${editing?'수정 저장':'등록'}</button>
@@ -295,15 +313,9 @@ async function saveEdit(id){
 window.saveEdit = saveEdit;
 
 // ── 글 상세 ──
-function openPost(id){
+async function openPost(id){
   const p = POSTS.find(x=>x.id===id); if(!p) return;
-  const vid = youtubeId(p.link);
-  let media = '';
-  if(vid){
-    media = `<div class="video-wrap"><iframe src="https://www.youtube.com/embed/${vid}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>`;
-  } else if(p.link){
-    media = `<a class="link-card" href="${esc(p.link)}" target="_blank" rel="noopener">🔗 ${esc(p.link)}</a>`;
-  }
+  const media = linkMedia(p.link);
   const mine = p.authorUid===CU.uid;
   const canDelete = mine || isAdmin();
   $I('mwrap').innerHTML = `
@@ -318,9 +330,104 @@ function openPost(id){
         ${canDelete?`<button class="bs" style="color:#dc2626" onclick="delPost('${p.id}')">삭제</button>`:''}
         <button class="bp" onclick="closeMod()">닫기</button>
       </div>
+      <div style="border-top:1px solid var(--ivd);margin-top:18px;padding-top:16px">
+        <div style="font-weight:700;font-size:14px;color:var(--gd);margin-bottom:10px">💬 댓글 <span id="cmt-count" style="color:var(--gm)"></span></div>
+        <div id="cmt-list"><div class="empty" style="padding:14px">불러오는 중...</div></div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <input type="text" id="cmt-input" placeholder="댓글을 입력하세요..." style="flex:1;border:1.5px solid var(--ivd);border-radius:8px;padding:10px 12px;font-size:14px;background:var(--iv)" onkeydown="if(event.key==='Enter')addComment('${p.id}')">
+          <button class="bp" onclick="addComment('${p.id}')">등록</button>
+        </div>
+      </div>
     </div></div>`;
+  loadComments(id);
+  markBoardNotifRead(id);
 }
 window.openPost = openPost;
+
+// 이 글에 대한 내 댓글 알림 읽음 처리
+async function markBoardNotifRead(postId){
+  try {
+    const snap = await getDocs(collection(db,'boardNotifs'));
+    snap.forEach(d=>{
+      const n=d.data();
+      if(n.postId===postId && n.toUid===CU.uid && !n.read){
+        updateDoc(doc(db,'boardNotifs',d.id), {read:true}).catch(()=>{});
+      }
+    });
+  } catch(e){}
+}
+
+// ── 댓글 ──
+let curComments = [];
+async function loadComments(postId){
+  const box = $I('cmt-list'); if(!box) return;
+  try {
+    const snap = await getDocs(collection(db,'boardComments'));
+    curComments = [];
+    snap.forEach(d=>{ const c={id:d.id, ...d.data()}; if(c.postId===postId) curComments.push(c); });
+    curComments.sort((a,b)=>(a.createdAt?.toMillis?.()||0)-(b.createdAt?.toMillis?.()||0));
+    const cntEl=$I('cmt-count'); if(cntEl) cntEl.textContent = curComments.length||'';
+    if(!curComments.length){ box.innerHTML='<div class="empty" style="padding:14px">아직 댓글이 없습니다.</div>'; return; }
+    box.innerHTML = curComments.map(c=>{
+      const mine = c.authorUid===CU.uid;
+      const canDel = mine || isAdmin();
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--ivd)">
+        <div style="display:flex;justify-content:space-between;gap:8px">
+          <span style="font-weight:600;font-size:13px;color:var(--gd)">${esc(c.authorName)}</span>
+          <span style="font-size:11px;color:var(--tl)">${fmtShort(c.createdAt)}${canDel?` · <span style="color:#dc2626;cursor:pointer" onclick="delComment('${c.id}','${c.postId}')">삭제</span>`:''}</span>
+        </div>
+        <div style="font-size:13px;color:var(--tx);margin-top:3px;white-space:pre-wrap">${esc(c.text)}</div>
+      </div>`;
+    }).join('');
+  } catch(e){ box.innerHTML='<div class="empty" style="padding:14px">댓글을 불러올 수 없습니다.</div>'; }
+}
+window.loadComments = loadComments;
+
+async function addComment(postId){
+  const input = $I('cmt-input'); if(!input) return;
+  const text = input.value.trim();
+  if(!text) return;
+  const post = POSTS.find(p=>p.id===postId);
+  try {
+    await addDoc(collection(db,'boardComments'), {
+      postId, text, authorUid:CU.uid, authorName:CU.name, createdAt:Timestamp.now()
+    });
+    const newCount = (post?.commentCount||0)+1;
+    await updateDoc(doc(db,'boardPosts',postId), {commentCount:newCount});
+    if(post) post.commentCount = newCount;
+    // 알림 대상: 글쓴이 + 이 글에 댓글 단 사람들 (나 제외, 중복 제거)
+    const targets = new Set();
+    if(post && post.authorUid) targets.add(post.authorUid);
+    curComments.forEach(c=>{ if(c.authorUid) targets.add(c.authorUid); });
+    targets.delete(CU.uid);
+    const postTitle = post?.title || '게시글';
+    for(const uid of targets){
+      addDoc(collection(db,'boardNotifs'), {
+        toUid:uid, postId, postTitle, board:post?.board||'',
+        fromName:CU.name, text:text.slice(0,40),
+        read:false, createdAt:Timestamp.now()
+      }).catch(()=>{});
+    }
+    input.value='';
+    loadComments(postId);
+    renderBoard();
+  } catch(e){ toast('댓글 등록 실패: '+e.message,'err'); }
+}
+window.addComment = addComment;
+
+async function delComment(id, postId){
+  if(!confirm('댓글을 삭제할까요?')) return;
+  const post = POSTS.find(p=>p.id===postId);
+  try {
+    await deleteDoc(doc(db,'boardComments',id));
+    const newCount = Math.max(0,(post?.commentCount||1)-1);
+    await updateDoc(doc(db,'boardPosts',postId), {commentCount:newCount});
+    if(post) post.commentCount = newCount;
+    loadComments(postId);
+    renderBoard();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.delComment = delComment;
 
 async function delPost(id){
   const p = POSTS.find(x=>x.id===id); if(!p) return;
