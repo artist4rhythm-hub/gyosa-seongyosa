@@ -310,6 +310,7 @@
 
   <div class="tabbar">
     <button class="tabbtn on" data-tab="frame">시간표 틀 만들기</button>
+    <button class="tabbtn" data-tab="store">시간표 틀 보관함</button>
     <button class="tabbtn" data-tab="plan">학년별 편성</button>
   </div>
 
@@ -430,6 +431,19 @@
   </div>
 
   </div><!-- /tab-frame -->
+
+  <div class="tabpane" id="tab-store" style="display:none">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>시간표 틀 보관함</h2>
+        <span class="faint" id="storeCount" style="font-size:12px"></span>
+      </div>
+      <div class="panel-body">
+        <p class="muted" style="margin:0 0 14px;font-size:13px">저장한 시간표 틀 목록입니다. 원하는 틀을 골라 <b>"이 틀로 편성하기"</b>를 누르면, 그 틀을 바탕으로 학년별 편성 화면으로 이동합니다.</p>
+        <div id="storeList"></div>
+      </div>
+    </div>
+  </div><!-- /tab-store -->
 
   <div class="tabpane" id="tab-plan" style="display:none">
     <div class="subtabbar">
@@ -1406,6 +1420,66 @@ function renderSaved(){
 }
 function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+/* ---------- 시간표 틀 보관함 ---------- */
+function renderStore(){
+  const list=$('#storeList'); const cnt=$('#storeCount');
+  if(cnt) cnt.textContent = savedTimetables.length ? `${savedTimetables.length}개` : '';
+  if(!savedTimetables.length){
+    list.innerHTML='<div class="muted" style="text-align:center;padding:40px 0;font-size:13px">저장된 시간표 틀이 없습니다.<br>"시간표 틀 만들기"에서 틀을 만들고 <b>이름 붙여 저장</b>하면 여기에 모입니다.</div>';
+    return;
+  }
+  list.innerHTML='';
+  const grid=document.createElement('div');
+  grid.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px';
+  savedTimetables.forEach(s=>{
+    const depts=(s.snapshot.departments||[]);
+    const deptNames=depts.map(d=>d.name).join(', ')||'부서 없음';
+    // 부서별 교시 수 요약
+    const wk=s.snapshot.weekArrangements||{};
+    const days=Object.keys(wk).length;
+    const card=document.createElement('div');
+    card.style.cssText='border:1px solid var(--line);border-radius:10px;padding:16px;background:var(--panel);box-shadow:var(--shadow)';
+    card.innerHTML=`
+      <div style="font-weight:650;font-size:15px;color:var(--ink);margin-bottom:4px">${escapeHtml(s.name)}</div>
+      <div style="font-size:12px;color:var(--ink-faint);margin-bottom:10px">저장: ${fmtDateTime(s.savedAt)}</div>
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:3px"><b>부서</b> · ${escapeHtml(deptNames)}</div>
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px"><b>요일</b> · ${days}일 구성</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" data-act="apply" data-id="${s.id}">이 틀로 편성하기</button>
+        <button class="btn btn-sm" data-act="load" data-id="${s.id}">틀 수정</button>
+        <button class="btn btn-ghost btn-sm" data-act="del" data-id="${s.id}">삭제</button>
+      </div>`;
+    grid.appendChild(card);
+  });
+  list.appendChild(grid);
+  list.querySelectorAll('button[data-act]').forEach(b=>{
+    const id=b.dataset.id, act=b.dataset.act;
+    b.onclick=()=>{
+      if(act==='apply') applyFrameToPlan(id);
+      else if(act==='load'){ loadTimetable(id); switchTab('frame'); }
+      else if(act==='del'){ deleteTimetable(id); renderStore(); }
+    };
+  });
+}
+
+// 탭 전환 (프로그램에서 호출)
+function switchTab(tab){
+  const btn=document.querySelector(`.tabbtn[data-tab="${tab}"]`);
+  if(btn) btn.click();
+}
+
+// 선택한 틀을 현재 작업 state로 불러오고 학년별 편성으로 이동
+function applyFrameToPlan(id){
+  const item=savedTimetables.find(s=>s.id===id);
+  if(!item) return;
+  state=JSON.parse(JSON.stringify(item.snapshot));
+  renderAll();
+  flash(`"${item.name}" 틀을 편성에 적용했습니다`);
+  switchTab('plan');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+
 /* ---------- excel export ---------- */
 function buildExcelRows(srcState){
   const timelines=compute(srcState);
@@ -1654,8 +1728,10 @@ function setupTabs(){
       document.querySelectorAll('.tabbtn').forEach(x=>x.classList.toggle('on',x===b));
       const tab=b.dataset.tab;
       document.getElementById('tab-frame').style.display = tab==='frame'?'':'none';
+      document.getElementById('tab-store').style.display = tab==='store'?'':'none';
       document.getElementById('tab-plan').style.display = tab==='plan'?'':'none';
       if(tab==='plan') renderPlanning();
+      if(tab==='store') renderStore();
     };
   });
   document.querySelectorAll('.subtabbtn').forEach(b=>{
