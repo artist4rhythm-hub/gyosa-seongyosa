@@ -470,15 +470,23 @@ window.setRosterLeave = setRosterLeave;
 function myOrgsHas(org){ return myOrgs().includes(org); }
 
 // 한 기관(또는 전체)의 학년별 표
+// 학년 → 부서 (다니엘). 지혜빛은 부서 없음
+function gradeToDept(grade){
+  const m = String(grade).match(/(\d+)\s*학년/);
+  if(!m) return '';
+  const n = Number(m[1]);
+  if(n>=1 && n<=5) return '초등부';
+  if(n>=6 && n<=9) return '중등부';
+  if(n>=10 && n<=12) return '고등부';
+  return '';
+}
+
 function rosterTable(orgKey){
   const isAll = orgKey==='__all__';
-  // 대상 학생: 재학(active) + (옵션) 휴학(leave)
   const statuses = rosterIncludeLeave ? ['active','leave'] : ['active'];
   const targetOrgs = isAll ? Object.keys(GRADE_ORDER).filter(myOrgsHas) : [orgKey];
-  // 학년 칼럼: 전체면 다니엘+지혜빛 학년 합침
   let grades = [];
   targetOrgs.forEach(o=>{ (GRADE_ORDER[o]||[]).forEach(g=>{ if(!grades.includes(g)) grades.push(g); }); });
-  // 학생을 학년별로 분류
   const byGrade = {}; grades.forEach(g=>byGrade[g]=[]);
   const unset = [];
   STUDENTS.forEach(s=>{
@@ -488,52 +496,96 @@ function rosterTable(orgKey){
     if(g && byGrade[g]) byGrade[g].push(s);
     else unset.push(s);
   });
-  // 각 학년 가나다 정렬
   grades.forEach(g=>byGrade[g].sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko')));
   unset.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
-  // 표 만들기: 가로=학년, 세로=행(가나다). 최대 행수 = 가장 많은 학년 인원
   const maxRows = Math.max(1, ...grades.map(g=>byGrade[g].length), unset.length);
   const genderTag = s => `<span style="color:${s.gender==='남'?'#2b6cb0':s.gender==='여'?'#d53f8c':'#888'};font-size:11px">(${s.gender||'-'})</span>`;
+  const cnt = g => { const arr=byGrade[g]||[]; const m=arr.filter(s=>s.gender==='남').length, f=arr.filter(s=>s.gender==='여').length; return {m,f,t:arr.length}; };
+  const bd = 'border:1px solid var(--ivd)';
+
+  // 부서 헤더 행 (다니엘 학년만 부서가 있음). 연속된 같은 부서를 colspan으로 묶음
+  let deptHeadCells = '';
+  let i2 = 0;
+  while(i2 < grades.length){
+    const dept = gradeToDept(grades[i2]);
+    if(!dept){ deptHeadCells += `<th style="${bd};padding:4px;background:#fff"></th>`; i2++; continue; }
+    let span = 1;
+    while(i2+span < grades.length && gradeToDept(grades[i2+span])===dept) span++;
+    deptHeadCells += `<th colspan="${span}" style="${bd};padding:5px;font-size:11px;background:#dde7fb;color:var(--gd);font-weight:700">${dept}</th>`;
+    i2 += span;
+  }
+  if(unset.length) deptHeadCells += `<th style="${bd};padding:4px;background:#fff"></th>`;
+  const hasAnyDept = grades.some(g=>gradeToDept(g));
+
+  // 학년 헤더
+  const headGrades = grades.map(g=>`<th style="${bd};padding:5px;font-size:11px;background:var(--gp);color:var(--gm)">${g}</th>`).join('') + (unset.length?`<th style="${bd};padding:5px;font-size:11px;background:#fafafa">미지정</th>`:'');
+
+  // 학생 행들
   let rowsHtml = '';
   for(let i=0;i<maxRows;i++){
     rowsHtml += '<tr>' + grades.map(g=>{
       const s = byGrade[g][i];
-      return `<td style="border:1px solid var(--ivd);padding:4px 8px;font-size:12px;${s&&(s.status==='leave')?'opacity:.5':''}">${s?esc(s.name)+' '+genderTag(s):''}</td>`;
+      return `<td style="${bd};padding:4px 8px;font-size:12px;${s&&(s.status==='leave')?'opacity:.5':''}">${s?esc(s.name)+' '+genderTag(s):''}</td>`;
     }).join('');
-    // 미지정 칼럼 (있으면)
-    if(unset.length) rowsHtml += `<td style="border:1px solid var(--ivd);padding:4px 8px;font-size:12px;background:#fafafa">${unset[i]?esc(unset[i].name)+' '+genderTag(unset[i]):''}</td>`;
+    if(unset.length) rowsHtml += `<td style="${bd};padding:4px 8px;font-size:12px;background:#fafafa">${unset[i]?esc(unset[i].name)+' '+genderTag(unset[i]):''}</td>`;
     rowsHtml += '</tr>';
   }
-  // 집계 행: 학년별 남/여/계
-  const cnt = g => { const arr=byGrade[g]||[]; const m=arr.filter(s=>s.gender==='남').length, f=arr.filter(s=>s.gender==='여').length; return {m,f,t:arr.length}; };
-  const sumRow = (label, fn) => `<tr style="background:var(--iv);font-weight:700"><td style="border:1px solid var(--ivd);padding:4px 8px;font-size:11px">${label}</td></tr>`;
-  // 학년별 집계 행들
-  let totM=0, totF=0;
-  const mRow = '<tr style="background:#eef4ff;font-size:11px;font-weight:700">' + grades.map(g=>{ const c=cnt(g); return `<td style="border:1px solid var(--ivd);padding:3px 6px;text-align:center">남${c.m}·여${c.f}<br>계${c.t}</td>`; }).join('') + (unset.length?`<td style="border:1px solid var(--ivd);padding:3px 6px;text-align:center">${(()=>{const m=unset.filter(s=>s.gender==='남').length,f=unset.filter(s=>s.gender==='여').length;return `남${m}·여${f}<br>계${unset.length}`;})()}</td>`:'') + '</tr>';
-  // 부서별/기관 총합
-  let totals = {};
+
+  // 집계 3줄: 남 / 여 / 계
+  const unsetCnt = (()=>{ const m=unset.filter(s=>s.gender==='남').length, f=unset.filter(s=>s.gender==='여').length; return {m,f,t:unset.length}; })();
+  const sumLine = (label, pick, bg) => '<tr style="font-size:11px;font-weight:700;background:'+bg+'">'
+    + grades.map(g=>{ const c=cnt(g); return `<td style="${bd};padding:3px 6px;text-align:center">${pick(c)}</td>`; }).join('')
+    + (unset.length?`<td style="${bd};padding:3px 6px;text-align:center">${pick(unsetCnt)}</td>`:'')
+    + '</tr>';
+  const aggRows =
+    sumLine('남', c=>c.m, '#eef4ff') +
+    sumLine('여', c=>c.f, '#fdeef5') +
+    sumLine('계', c=>c.t, '#f0ece4');
+
+  // 총원 표
+  let totM=0, totF=0, totals={};
   targetOrgs.forEach(o=>{
     const studs = STUDENTS.filter(s=>s.org===o && statuses.includes(s.status||'active'));
     const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
-    totals[o]={m,f,t:studs.length};
-    totM+=m; totF+=f;
+    totals[o]={m,f,t:studs.length}; totM+=m; totF+=f;
   });
-  const headGrades = grades.map(g=>`<th style="border:1px solid var(--ivd);padding:5px;font-size:11px;background:var(--gp);color:var(--gm)">${g}</th>`).join('') + (unset.length?'<th style="border:1px solid var(--ivd);padding:5px;font-size:11px;background:#fafafa">미지정</th>':'');
   const title = isAll ? '전체 (두 기관 합산)' : ORGS[orgKey];
-  // 기관별 합계 표시
-  const orgTotalsHtml = targetOrgs.map(o=>`${ORGS[o]}: 남 ${totals[o].m} · 여 ${totals[o].f} · 계 <b>${totals[o].t}</b>명`).join(' &nbsp;|&nbsp; ');
+  // 다니엘이면 부서별 총원도
+  let deptTotals = '';
+  if(!isAll && orgKey==='daniel'){
+    const depts = ['초등부','중등부','고등부'];
+    const dt = {};
+    depts.forEach(d=>dt[d]={m:0,f:0,t:0});
+    STUDENTS.forEach(s=>{
+      if(s.org!=='daniel' || !statuses.includes(s.status||'active')) return;
+      const d = gradeToDept(studentGrade(s.id));
+      if(!dt[d]) return;
+      if(s.gender==='남') dt[d].m++; else if(s.gender==='여') dt[d].f++;
+      dt[d].t++;
+    });
+    deptTotals = depts.map(d=>`<tr><td style="${bd};padding:6px 10px;font-weight:600">${d}</td><td style="${bd};padding:6px 10px;text-align:center">${dt[d].m}</td><td style="${bd};padding:6px 10px;text-align:center">${dt[d].f}</td><td style="${bd};padding:6px 10px;text-align:center;font-weight:700">${dt[d].t}</td></tr>`).join('');
+  }
+  const totalTable = `
+    <table style="border-collapse:collapse;margin-top:12px;font-size:13px;min-width:280px">
+      <thead><tr style="background:var(--gp)"><th style="${bd};padding:6px 10px;text-align:left">구분</th><th style="${bd};padding:6px 10px">남</th><th style="${bd};padding:6px 10px">여</th><th style="${bd};padding:6px 10px">합계</th></tr></thead>
+      <tbody>
+        ${deptTotals}
+        <tr style="background:var(--gd);color:#fff;font-weight:800"><td style="${bd};padding:7px 10px">${title} 총원</td><td style="${bd};padding:7px 10px;text-align:center">${totM}</td><td style="${bd};padding:7px 10px;text-align:center">${totF}</td><td style="${bd};padding:7px 10px;text-align:center;font-size:15px">${totM+totF}</td></tr>
+      </tbody>
+    </table>`;
+
   return `
     <div class="acard">
       <h3 class="actitle" style="font-size:15px">${title}</h3>
       <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">
-        <thead><tr>${headGrades}</tr></thead>
+        <thead>
+          ${hasAnyDept?`<tr>${deptHeadCells}</tr>`:''}
+          <tr>${headGrades}</tr>
+        </thead>
         <tbody>${rowsHtml}</tbody>
-        <tfoot>${mRow}</tfoot>
+        <tfoot>${aggRows}</tfoot>
       </table></div>
-      <div style="margin-top:12px;font-size:13px;line-height:1.9;background:var(--iv);border-radius:8px;padding:12px">
-        <div>${orgTotalsHtml}</div>
-        <div style="margin-top:6px;font-weight:800;color:var(--gd)">${title} 총원: 남 ${totM} · 여 ${totF} · <span style="font-size:15px">계 ${totM+totF}명</span></div>
-      </div>
+      ${totalTable}
     </div>`;
 }
 
