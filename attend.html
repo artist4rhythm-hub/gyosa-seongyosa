@@ -76,6 +76,20 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 .toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+.ck-mode-btn{padding:9px 16px;border:1.5px solid var(--ivd);background:var(--wh);border-radius:9px;font-size:14px;font-weight:600;color:var(--ts);cursor:pointer;}
+.ck-mode-btn.on{background:var(--gm);color:#fff;border-color:var(--gm);}
+.mtab{border-collapse:collapse;font-size:12px;white-space:nowrap;}
+.mtab th,.mtab td{border:1px solid var(--ivd);padding:0;text-align:center;}
+.mtab .nm{position:sticky;left:0;background:var(--wh);z-index:2;text-align:left;padding:4px 8px;font-weight:600;min-width:80px;}
+.mtab th.nm{z-index:3;background:var(--iv);}
+.mtab .dcell{width:30px;height:30px;cursor:pointer;font-size:11px;font-weight:700;}
+.mtab .dcell.blocked{background:#f0f0f0;color:#bbb;cursor:default;}
+.mtab .dcell.blocked.allow{cursor:pointer;}
+.mtab .wkhd{background:#fafafa;color:#999;}
+.mmenu{position:fixed;z-index:200;background:#fff;border:1px solid var(--ivd);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.2);padding:6px;min-width:130px;max-height:300px;overflow-y:auto;}
+.mmenu button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:none;background:none;border-radius:6px;font-size:13px;cursor:pointer;text-align:left;}
+.mmenu button:hover{background:var(--iv);}
+.mmenu .sep{border-top:1px solid var(--ivd);margin:4px 0;font-size:11px;color:var(--tl);padding:4px 10px 2px;}
 </style>
 <script src="topnav.js"></script>
 </head>
@@ -366,24 +380,45 @@ let checkDate = fmtDate(new Date());  // 선택된 날짜
 let checkClassId = '';                 // 선택된 반
 let checkGradeFilter = '';             // 학년 필터 (빈값=전체)
 let checkRecords = {};                 // {studentId: {typeId, memo}}
+let checkMode = 'daily';               // 'daily' | 'month'
+let monthClassId = '';                 // 월별 입력 선택 반
+let monthYM = '';                      // 월별 입력 YYYY-MM
+let monthAllowBlocked = false;         // 막힌 날짜(주말·공휴일·학기밖) 입력 허용
+let monthData = {};                    // {studentId: {day: {id, typeId}}}
 
 function renderCheck(){
-  const editable = sortClasses(CLASSES.filter(canEditClass));
-  const viewable = sortClasses(CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)));
-  const allSelectable = [...editable, ...viewable];
-
   if(!CLASSES.length){
     $I('c-check').innerHTML = `<div class="acard"><h3 class="actitle">✅ 출석 체크</h3>
       <div class="empty">${curYear}년에 편성된 반이 없습니다.<br>먼저 반 편성에서 반을 만들고 학생을 배정해주세요.</div></div>`;
     return;
   }
-  if(!checkClassId && editable.length) checkClassId = editable[0].id;
-  else if(!checkClassId && allSelectable.length) checkClassId = allSelectable[0].id;
-
-  const optgroup = (label, arr) => arr.length
-    ? `<optgroup label="${label}">${arr.map(c=>`<option value="${c.id}"${c.id===checkClassId?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name} (${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' '+c.dept:''})</option>`).join('')}</optgroup>` : '';
 
   $I('c-check').innerHTML = `
+    <div class="acard" style="padding-bottom:14px">
+      <div style="display:flex;gap:6px;margin-bottom:4px">
+        <button class="ck-mode-btn ${checkMode==='daily'?'on':''}" onclick="setCheckMode('daily')">📅 일일 체크</button>
+        <button class="ck-mode-btn ${checkMode==='month'?'on':''}" onclick="setCheckMode('month')">🗓️ 월별 입력</button>
+      </div>
+    </div>
+    <div id="ck-mode-body"></div>`;
+  if(checkMode==='daily') renderDailyCheck();
+  else renderMonthCheck();
+}
+window.renderCheck = renderCheck;
+
+function setCheckMode(m){ checkMode = m; renderCheck(); }
+window.setCheckMode = setCheckMode;
+
+function renderDailyCheck(){
+  const sortCls = sortClasses;
+  const editable = sortClasses(CLASSES.filter(canEditClass));
+  const viewable = sortClasses(CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)));
+  const allSelectable = [...editable, ...viewable];
+  if(!checkClassId && editable.length) checkClassId = editable[0].id;
+  else if(!checkClassId && allSelectable.length) checkClassId = allSelectable[0].id;
+  const optgroup = (label, arr) => arr.length
+    ? `<optgroup label="${label}">${arr.map(c=>`<option value="${c.id}"${c.id===checkClassId?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name} (${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' '+c.dept:''})</option>`).join('')}</optgroup>` : '';
+  $I('ck-mode-body').innerHTML = `
     <div class="acard">
       <h3 class="actitle">✅ 출석 체크</h3>
       <p class="adesc">날짜와 반을 선택하면 학생 명단이 나타납니다. 기본은 모두 출석이며, 변경이 필요한 학생만 바꾸고 저장하세요.</p>
@@ -403,9 +438,171 @@ function renderCheck(){
   fillCheckGradeFilter();
   loadCheckBody();
 }
-window.renderCheck = renderCheck;
 
-// 선택된 반의 학년 목록으로 필터 옵션 채우기
+// ── 월별 입력 ──
+function renderMonthCheck(){
+  const editable = sortClasses(CLASSES.filter(canEditClass));
+  const viewable = sortClasses(CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)));
+  if(!monthClassId && editable.length) monthClassId = editable[0].id;
+  else if(!monthClassId && viewable.length) monthClassId = viewable[0].id;
+  if(!monthYM){ const d=new Date(); monthYM = `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+  const optgroup = (label, arr) => arr.length
+    ? `<optgroup label="${label}">${arr.map(c=>`<option value="${c.id}"${c.id===monthClassId?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name} (${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' '+c.dept:''})</option>`).join('')}</optgroup>` : '';
+  $I('ck-mode-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">🗓️ 월별 출결 입력</h3>
+      <p class="adesc">반과 월을 선택하면 한 달 전체 출결을 표로 입력할 수 있습니다. 칸을 클릭해 상태를 고르세요. 과거 데이터 정리에 유용합니다.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fgrp" style="margin-bottom:0;flex:1;min-width:180px"><label>반</label>
+          <select id="m-class" onchange="onMonthCheckChange()">
+            ${optgroup('내가 기록하는 반', editable)}
+            ${optgroup('열람 전용 (다른 반)', viewable)}
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>월</label>
+          <input type="month" id="m-ym" value="${monthYM}" onchange="onMonthCheckChange()"></div>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding-bottom:8px">
+          <input type="checkbox" id="m-allow" ${monthAllowBlocked?'checked':''} onchange="toggleMonthAllow()" style="width:16px;height:16px"> 주말·공휴일·학기외 입력 허용
+        </label>
+      </div>
+    </div>
+    <div id="m-body"><div class="acard"><p class="empty">불러오는 중...</p></div></div>`;
+  loadMonthBody();
+}
+window.renderMonthCheck = renderMonthCheck;
+
+function onMonthCheckChange(){ monthClassId=$I('m-class').value; monthYM=$I('m-ym').value; loadMonthBody(); }
+window.onMonthCheckChange = onMonthCheckChange;
+function toggleMonthAllow(){ monthAllowBlocked=$I('m-allow').checked; loadMonthBody(); }
+window.toggleMonthAllow = toggleMonthAllow;
+
+async function loadMonthBody(){
+  const body = $I('m-body'); if(!body) return;
+  const c = CLASSES.find(x=>x.id===monthClassId);
+  if(!c){ body.innerHTML='<div class="acard"><p class="empty">반을 선택하세요.</p></div>'; return; }
+  const [y,m] = monthYM.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const grades = c.grades || {};
+  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
+    .filter(s=>(s.status||'active')==='active')
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  if(!studs.length){ body.innerHTML='<div class="acard"><p class="empty">이 반에 재학 중인 학생이 없습니다.</p></div>'; return; }
+  monthData = {};
+  const prefix = `${y}-${pad(m)}`;
+  const snap = await getDocs(collection(db,'studentAttendance'));
+  snap.forEach(d=>{
+    const r=d.data();
+    if(r.classId===monthClassId && (r.date||'').startsWith(prefix)){
+      const day = Number(r.date.slice(8,10));
+      if(!monthData[r.studentId]) monthData[r.studentId]={};
+      monthData[r.studentId][day] = {id:d.id, typeId:r.typeId};
+    }
+  });
+  const dayInfo = [];
+  for(let dd=1; dd<=daysInMonth; dd++){
+    const dateStr = `${y}-${pad(m)}-${pad(dd)}`;
+    const dow = new Date(dateStr+'T00:00:00').getDay();
+    const wknd = dow===0||dow===6;
+    const hol = !!holidayReason(dateStr, c.org);
+    const term = termOfDate(dateStr, c.org);
+    const outOfTerm = (term==='none' || term===null);
+    const blocked = wknd || hol || outOfTerm;
+    dayInfo.push({dd, dateStr, dow, blocked});
+  }
+  const dnames=['일','월','화','수','목','금','토'];
+  const headDays = dayInfo.map(di=>`<th class="${di.dow===0||di.dow===6?'wkhd':''}" style="padding:3px 2px">${di.dd}<br><span style="font-size:9px;font-weight:400">${dnames[di.dow]}</span></th>`).join('');
+  const rows = studs.map(s=>{
+    const cells = dayInfo.map(di=>{
+      const rec = monthData[s.id] && monthData[s.id][di.dd];
+      const t = rec ? TYPES.find(x=>x.id===rec.typeId) : null;
+      const blockedCls = di.blocked ? (monthAllowBlocked?'blocked allow':'blocked') : '';
+      const bg = t ? `background:${t.color};color:#fff` : '';
+      const label = t ? (t.name||'').slice(0,1) : '';
+      const clickable = (!di.blocked || monthAllowBlocked) && canEditClass(c);
+      return `<td class="dcell ${blockedCls}" style="${bg}" ${clickable?`onclick="openMonthMenu(event,'${s.id}',${di.dd})"`:''} title="${di.dateStr}${t?' · '+t.name:''}">${label}</td>`;
+    }).join('');
+    return `<tr><td class="nm" title="${esc(s.name)}">${esc(s.name)} <span style="color:${s.gender==='남'?'#2b6cb0':'#d53f8c'};font-size:10px">${s.gender||''}</span></td>${cells}</tr>`;
+  }).join('');
+  body.innerHTML = `
+    <div class="acard" style="overflow-x:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <h3 class="actitle" style="margin:0">${c.name} · ${y}년 ${m}월 (${studs.length}명)</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px">
+          ${TYPES.map(t=>`<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:11px;height:11px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}</span>`).join('')}
+        </div>
+      </div>
+      <table class="mtab"><thead><tr><th class="nm">학생</th>${headDays}</tr></thead><tbody>${rows}</tbody></table>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">칸을 클릭해 출결을 선택하면 <b>즉시 저장</b>됩니다. 회색 칸(주말·공휴일·학기외)은 위 토글을 켜면 입력할 수 있습니다.</p>
+    </div>`;
+}
+
+function openMonthMenu(ev, sid, day){
+  ev.stopPropagation();
+  closeMonthMenu();
+  const c = CLASSES.find(x=>x.id===monthClassId);
+  if(!c || !canEditClass(c)) return toast('기록 권한이 없습니다.','err');
+  const sorted = [...TYPES].sort((a,b)=>(a.order||0)-(b.order||0));
+  const menu = document.createElement('div');
+  menu.className='mmenu'; menu.id='month-menu';
+  const cur = monthData[sid] && monthData[sid][day];
+  let html = sorted.slice(0,5).map(t=>`<button onclick="setMonthCell('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}${cur&&cur.typeId===t.id?' ✓':''}</button>`).join('');
+  if(sorted.length>5){
+    html += `<div class="sep">기타</div>` + sorted.slice(5).map(t=>`<button onclick="setMonthCell('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}${cur&&cur.typeId===t.id?' ✓':''}</button>`).join('');
+  }
+  if(cur){ html += `<div class="sep"></div><button onclick="clearMonthCell('${sid}',${day})" style="color:#dc2626">✕ 삭제(미입력)</button>`; }
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const x=Math.min(ev.clientX, window.innerWidth-160), yy=Math.min(ev.clientY, window.innerHeight-260);
+  menu.style.left=x+'px'; menu.style.top=yy+'px';
+}
+window.openMonthMenu = openMonthMenu;
+function closeMonthMenu(){ const m=$I('month-menu'); if(m) m.remove(); }
+document.addEventListener('click', e=>{ if(!e.target.closest('.mmenu') && !e.target.closest('.dcell')) closeMonthMenu(); });
+
+async function setMonthCell(sid, day, typeId){
+  closeMonthMenu();
+  const c = CLASSES.find(x=>x.id===monthClassId); if(!c) return;
+  const [y,m]=monthYM.split('-').map(Number);
+  const dateStr=`${y}-${pad(m)}-${pad(day)}`;
+  const s = STUDENTS[sid]; if(!s) return;
+  const cur = monthData[sid] && monthData[sid][day];
+  try {
+    const data = {
+      studentId:sid, studentName:s.name, classId:c.id, className:c.name,
+      org:c.org, date:dateStr, typeId, memo:(cur&&cur.memo)||'',
+      by:CU.name, byUid:CU.uid, updatedAt:Timestamp.now()
+    };
+    if(cur && cur.id){ await updateDoc(doc(db,'studentAttendance',cur.id), data); monthData[sid][day]={id:cur.id, typeId}; }
+    else { data.createdAt=Timestamp.now(); const ref=await addDoc(collection(db,'studentAttendance'), data);
+      if(!monthData[sid]) monthData[sid]={}; monthData[sid][day]={id:ref.id, typeId}; }
+    updateMonthCellUI(sid, day, typeId);
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.setMonthCell = setMonthCell;
+
+async function clearMonthCell(sid, day){
+  closeMonthMenu();
+  const cur = monthData[sid] && monthData[sid][day];
+  if(!cur || !cur.id) return;
+  try {
+    await deleteDoc(doc(db,'studentAttendance',cur.id));
+    delete monthData[sid][day];
+    updateMonthCellUI(sid, day, null);
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.clearMonthCell = clearMonthCell;
+
+function updateMonthCellUI(sid, day, typeId){
+  const c = CLASSES.find(x=>x.id===monthClassId);
+  const studs = (c.students||[]).map(s=>STUDENTS[s]).filter(Boolean).filter(s=>(s.status||'active')==='active').sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  const idx = studs.findIndex(s=>s.id===sid);
+  if(idx<0) return;
+  const rows = $I('m-body').querySelectorAll('tbody tr');
+  const row = rows[idx]; if(!row) return;
+  const cell = row.querySelectorAll('td.dcell')[day-1]; if(!cell) return;
+  const t = typeId ? TYPES.find(x=>x.id===typeId) : null;
+  if(t){ cell.style.background=t.color; cell.style.color='#fff'; cell.textContent=(t.name||'').slice(0,1); }
+  else { cell.style.background=''; cell.style.color=''; cell.textContent=''; }
+}
 function fillCheckGradeFilter(){
   const el = $I('ck-grade'); if(!el) return;
   const c = CLASSES.find(x=>x.id===checkClassId);
