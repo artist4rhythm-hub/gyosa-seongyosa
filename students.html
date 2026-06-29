@@ -516,14 +516,16 @@ function rosterTable(orgKey){
   }
   if(unset.length) deptHeadCells += `<th style="${bd};padding:4px;background:#fff"></th>`;
   const hasAnyDept = grades.some(g=>gradeToDept(g));
+  // 왼쪽 레이블 열용 스타일
+  const lbl = `${bd};padding:4px 8px;font-size:11px;font-weight:700;background:var(--iv);color:var(--ts);position:sticky;left:0;white-space:nowrap`;
 
   // 학년 헤더
   const headGrades = grades.map(g=>`<th style="${bd};padding:5px;font-size:11px;background:var(--gp);color:var(--gm)">${g}</th>`).join('') + (unset.length?`<th style="${bd};padding:5px;font-size:11px;background:#fafafa">미지정</th>`:'');
 
-  // 학생 행들
+  // 학생 행들 (맨 앞에 번호)
   let rowsHtml = '';
   for(let i=0;i<maxRows;i++){
-    rowsHtml += '<tr>' + grades.map(g=>{
+    rowsHtml += `<tr><td style="${lbl}">${i+1}</td>` + grades.map(g=>{
       const s = byGrade[g][i];
       return `<td style="${bd};padding:4px 8px;font-size:12px;${s&&(s.status==='leave')?'opacity:.5':''}">${s?esc(s.name)+' '+genderTag(s):''}</td>`;
     }).join('');
@@ -531,9 +533,9 @@ function rosterTable(orgKey){
     rowsHtml += '</tr>';
   }
 
-  // 집계 3줄: 남 / 여 / 계
+  // 집계 3줄: 남 / 여 / 계 (맨 앞에 레이블)
   const unsetCnt = (()=>{ const m=unset.filter(s=>s.gender==='남').length, f=unset.filter(s=>s.gender==='여').length; return {m,f,t:unset.length}; })();
-  const sumLine = (label, pick, bg) => '<tr style="font-size:11px;font-weight:700;background:'+bg+'">'
+  const sumLine = (label, pick, bg) => `<tr style="font-size:11px;font-weight:700;background:${bg}"><td style="${bd};padding:3px 8px;text-align:center;position:sticky;left:0;background:${bg}">${label}</td>`
     + grades.map(g=>{ const c=cnt(g); return `<td style="${bd};padding:3px 6px;text-align:center">${pick(c)}</td>`; }).join('')
     + (unset.length?`<td style="${bd};padding:3px 6px;text-align:center">${pick(unsetCnt)}</td>`:'')
     + '</tr>';
@@ -579,8 +581,8 @@ function rosterTable(orgKey){
       <h3 class="actitle" style="font-size:15px">${title}</h3>
       <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">
         <thead>
-          ${hasAnyDept?`<tr>${deptHeadCells}</tr>`:''}
-          <tr>${headGrades}</tr>
+          ${hasAnyDept?`<tr><th style="${lbl};background:var(--iv)">부서</th>${deptHeadCells}</tr>`:''}
+          <tr><th style="${lbl};background:var(--iv)">학년</th>${headGrades}</tr>
         </thead>
         <tbody>${rowsHtml}</tbody>
         <tfoot>${aggRows}</tfoot>
