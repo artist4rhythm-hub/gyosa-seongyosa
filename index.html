@@ -233,6 +233,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     </div>
   </header>
   <div id="topnav-container"></div>
+  <!-- 대시보드 홈 -->
+  <div id="c-home" style="display:none;flex-direction:column;flex:1">
+    <div class="tc" id="home-body"></div>
+  </div>
   <div class="tb" style="display:none">
     <button class="tbtn" id="t-att" onclick="showTab('att')">📋 출근부</button>
     <button class="tbtn" id="t-notice" onclick="showTab('notice')">📢 공지<span id="notice-dot" style="display:none;width:8px;height:8px;background:#dc2626;border-radius:50%;margin-left:4px;vertical-align:middle"></span></button>
@@ -1051,13 +1055,108 @@ async function showMain(){
   await reloadStaffCache();
   updateNoticeDot();
   // 공통 상단 메뉴 렌더 (컨테이너에)
-  if(window.renderTopNav) renderTopNav('att', CU.role, 'topnav-container');
-  // 해시(#notice, #adm)로 들어온 경우 해당 탭 열기
+  if(window.renderTopNav) renderTopNav('home', CU.role, 'topnav-container');
+  // 해시로 들어온 경우 해당 탭 열기
   const hash = (location.hash||'').replace('#','');
   if(hash==='notice') showTab('notice');
   else if(hash==='adm' && isAdmin) showTab('adm');
-  else showTab('att');
+  else if(hash==='att') showTab('att');
+  else showTab('home');
   loadNotifications();  // 결재·쪽지 알림 (비동기)
+}
+
+// ── 대시보드 홈 (시안 B: 밝고 모던) ──
+function renderHome(){
+  const body = $I('home-body'); if(!body) return;
+  const n = window.__notif || {approvalCnt:0, msgCnt:0};
+  const now = new Date();
+  const days = ['일','월','화','수','목','금','토'];
+  const dateStr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${days[now.getDay()]}요일`;
+  const org = ORGS[CU.org]||CU.org;
+  const dept = CU.dept && CU.dept!=='전체' ? ' · '+CU.dept : '';
+  const pos = CU.position ? ' · '+CU.position : '';
+  const isAdmin = ['super','org_admin','tab_admin'].includes(CU.role);
+
+  // 바로가기 메뉴
+  const shortcuts = [
+    {icon:'📋', label:'출근부', color:'#3b82f6', onclick:`showTab('att')`},
+    {icon:'✅', label:'출석부', color:'#10b981', href:'attend.html'},
+    {icon:'🎓', label:'학생관리', color:'#8b5cf6', href:'students.html'},
+    {icon:'🗂️', label:'전자결재', color:'#f59e0b', href:'approval.html'},
+    {icon:'✉️', label:'쪽지함', color:'#ec4899', href:'message.html'},
+    {icon:'📌', label:'게시판', color:'#06b6d4', href:'board.html'},
+    {icon:'📅', label:'학사일정', color:'#6366f1', href:'calendar.html'},
+    {icon:'⏱️', label:'근무시간', color:'#14b8a6', href:'work.html'},
+  ];
+  const shortcutHtml = shortcuts.map(s=>{
+    const act = s.href ? `onclick="location.href='${s.href}'"` : `onclick="${s.onclick}"`;
+    return `<div ${act} style="background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:20px 12px;text-align:center;cursor:pointer;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,0.04)" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(0,0,0,0.08)'" onmouseout="this.style.transform='';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.04)'">
+      <div style="width:48px;height:48px;margin:0 auto 10px;border-radius:14px;background:${s.color}15;display:flex;align-items:center;justify-content:center;font-size:24px">${s.icon}</div>
+      <div style="font-size:13.5px;font-weight:700;color:#1f2937">${s.label}</div>
+    </div>`;
+  }).join('');
+
+  // 요약 카드
+  const summary = [
+    {label:'결재 대기', value:n.approvalCnt, icon:'🗂️', color:'#f59e0b', href:'approval.html'},
+    {label:'안 읽은 쪽지', value:n.msgCnt, icon:'✉️', color:'#ec4899', href:'message.html'},
+  ];
+  const summaryHtml = summary.map(s=>`
+    <div onclick="location.href='${s.href}'" style="flex:1;min-width:140px;background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:18px 20px;cursor:pointer;display:flex;align-items:center;gap:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+      <div style="width:46px;height:46px;border-radius:12px;background:${s.color}15;display:flex;align-items:center;justify-content:center;font-size:22px">${s.icon}</div>
+      <div>
+        <div style="font-size:26px;font-weight:800;color:${s.value>0?s.color:'#9ca3af'};line-height:1.1">${s.value}</div>
+        <div style="font-size:12.5px;color:#6b7280;margin-top:2px">${s.label}</div>
+      </div>
+    </div>`).join('');
+
+  body.innerHTML = `
+    <div style="max-width:880px;margin:0 auto;width:100%">
+      <div style="background:#fff;border:1px solid #eef0f4;border-radius:20px;padding:26px 28px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:13px;color:#9ca3af;margin-bottom:6px">${dateStr}</div>
+        <div style="font-size:23px;font-weight:800;color:#111827">안녕하세요, ${CU.name} 선생님 👋</div>
+        <div style="font-size:13.5px;color:#6b7280;margin-top:4px">${org}${dept}${pos}</div>
+      </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">${summaryHtml}</div>
+
+      <div style="font-size:15px;font-weight:800;color:#374151;margin:4px 4px 12px">바로가기</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px">${shortcutHtml}</div>
+
+      <div id="home-notice" style="background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:12px;display:flex;align-items:center;gap:7px"><span>📢</span> 최근 공지</div>
+        <div style="font-size:13px;color:#9ca3af">불러오는 중...</div>
+      </div>
+    </div>`;
+
+  loadHomeNotices();
+}
+window.renderHome = renderHome;
+
+// 홈 공지 요약 (최근 5건)
+async function loadHomeNotices(){
+  const box = $I('home-notice'); if(!box) return;
+  try {
+    const snap = await getDocs(collection(db,'notices'));
+    let list = [];
+    snap.forEach(d=>{ const x={id:d.id, ...d.data()}; if(noticeMatches(x,CU)||canWriteNotice()) list.push(x); });
+    list.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    list = list.slice(0,5);
+    const rows = list.map((x,i)=>{
+      const dt = x.createdAt?.seconds ? new Date(x.createdAt.seconds*1000) : null;
+      const dstr = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : '';
+      const title = (x.title||'(제목 없음)').replace(/</g,'&lt;');
+      return `<div onclick="showTab('notice')" style="font-size:13.5px;color:#374151;padding:9px 0;${i<list.length-1?'border-bottom:1px solid #f3f4f6':''};cursor:pointer;display:flex;justify-content:space-between;gap:10px">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.important?'<span style="color:#dc2626;font-weight:700">[중요] </span>':''}${title}</span>
+        <span style="color:#9ca3af;font-size:11.5px;white-space:nowrap">${dstr}</span>
+      </div>`;
+    }).join('');
+    box.innerHTML = `
+      <div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px;display:flex;align-items:center;gap:7px"><span>📢</span> 최근 공지</div>
+      ${rows || '<div style="font-size:13px;color:#9ca3af;padding:8px 0">공지가 없습니다.</div>'}`;
+  } catch(e){
+    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px">📢 최근 공지</div><div style="font-size:13px;color:#9ca3af">불러올 수 없습니다.</div>`;
+  }
 }
 
 // ── 메인 알림: 결재할 문서 + 안 읽은 쪽지 ──
@@ -1081,6 +1180,9 @@ async function loadNotifications(){
     });
   } catch(e){}
   renderNotifBadges(approvalCnt, msgCnt);
+  window.__notif = {approvalCnt, msgCnt};
+  // 홈이 열려 있으면 숫자 갱신
+  if($I('c-home') && $I('c-home').style.display!=='none') renderHome();
 }
 
 function renderNotifBadges(approvalCnt, msgCnt){
@@ -1133,7 +1235,11 @@ function showTab(t){
   // 공통 상단 메뉴 강조 갱신
   if(window.renderTopNav && CU) renderTopNav(t, CU.role, 'topnav-container');
   // 상위 탭 콘텐츠 전환
-  ['c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['c-home','c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  if(t==='home'){
+    $I('c-home').style.display='flex';
+    renderHome();
+  }
   if(t==='att'){
     $I('c-att').style.display='flex';
     showSubTab('cal');

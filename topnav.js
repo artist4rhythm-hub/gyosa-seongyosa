@@ -3,6 +3,7 @@
 // 페이지 키: att(출근부) notice(공지) students attend calendar work message approval adm
 
 const TOPNAV_ITEMS = [
+  { key:'home',     label:'홈',       icon:'🏠', href:'index.html#home' },
   { key:'att',      label:'출근부',   icon:'📋', href:'index.html' },
   { key:'notice',   label:'공지',     icon:'📢', href:'index.html#notice' },
   { key:'students', label:'학생관리', icon:'🎓', href:'students.html' },
@@ -22,7 +23,7 @@ function buildTopNav(current, role){
   const items = TOPNAV_ITEMS.filter(it => !it.adminOnly || isAdmin);
   // 현재 페이지가 index인지 (att/notice/adm 탭이 내부에 있는지)
   const onIndex = typeof window.showTab === 'function' && document.getElementById('t-att');
-  const innerKeys = ['att','notice','adm'];
+  const innerKeys = ['home','att','notice','adm'];
   return `<nav class="topnav">${items.map(it=>{
     const on = it.key===current ? ' on' : '';
     // index 내부 탭이고, 현재 index에 있으면 onclick으로
