@@ -91,7 +91,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 
 <div id="ms">
   <header class="ah">
-    <a class="ahl" href="index.html" style="text-decoration:none;color:inherit;cursor:pointer">
+    <a class="ahl" href="index.html#home" style="text-decoration:none;color:inherit;cursor:pointer">
       <div class="ahi">✅</div>
       <div class="aht">출석부</div>
     </a>
@@ -142,6 +142,25 @@ let TERMS = [];   // 학기 일정 캐시
 let HOLIDAYS = []; // 출근부 공휴일 (연동)
 let WORKPERIODS = []; // 출근부 근무/방학 기간 (연동)
 let CLASSES = [];  // 반 편성 캐시 (올해)
+
+// ── 학년 정렬 (4세→7세→1학년→12학년). 어디서나 공통 사용 ──
+function gradeRank(g){
+  if(!g) return 999;
+  const first = String(g).split(/[·,]/)[0].trim(); // 합반이면 첫 학년 기준
+  const age = first.match(/(\d+)\s*세/);
+  if(age) return Number(age[1]);            // 4~7세 → 4~7
+  const grd = first.match(/(\d+)\s*학년/);
+  if(grd) return 100 + Number(grd[1]);      // 1~12학년 → 101~112
+  return 998;
+}
+// 반 배열을 학년순(같으면 이름순)으로 정렬
+function sortClasses(arr){
+  return [...arr].sort((a,b)=> gradeRank(a.grade)-gradeRank(b.grade) || (a.name||'').localeCompare(b.name||'','ko'));
+}
+// 학년 문자열 배열을 나이순으로 정렬
+function sortGrades(arr){
+  return [...arr].sort((a,b)=> gradeRank(a)-gradeRank(b));
+}
 let STUDENTS = {}; // 학생 캐시 (id -> data)
 let curYear = new Date().getFullYear();
 
@@ -349,19 +368,8 @@ let checkGradeFilter = '';             // 학년 필터 (빈값=전체)
 let checkRecords = {};                 // {studentId: {typeId, memo}}
 
 function renderCheck(){
-  // 학년 순서값 (4세→7세→1학년→12학년). 작을수록 앞
-  const gradeRank = g => {
-    if(!g) return 999;
-    const first = String(g).split(/[·,]/)[0].trim(); // 합반이면 첫 학년 기준
-    const age = first.match(/(\d+)\s*세/);
-    if(age) return Number(age[1]);            // 4~7세 → 4~7
-    const grd = first.match(/(\d+)\s*학년/);
-    if(grd) return 100 + Number(grd[1]);      // 1~12학년 → 101~112
-    return 998;
-  };
-  const sortCls = (a,b)=> gradeRank(a.grade)-gradeRank(b.grade) || (a.name||'').localeCompare(b.name||'','ko');
-  const editable = CLASSES.filter(canEditClass).sort(sortCls);
-  const viewable = CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)).sort(sortCls);
+  const editable = sortClasses(CLASSES.filter(canEditClass));
+  const viewable = sortClasses(CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)));
   const allSelectable = [...editable, ...viewable];
 
   if(!CLASSES.length){
@@ -688,14 +696,14 @@ function fillStatFilters(){
   const clsEl = $I('st-class');
   if(clsEl){
     clsEl.innerHTML = '<option value="">전체 반</option>' +
-      orgClasses.sort((a,b)=>a.name.localeCompare(b.name,'ko')).map(c=>`<option value="${c.id}"${c.id===statClassFilter?' selected':''}>${c.name}${c.grade?' ('+c.grade+')':''}</option>`).join('');
+      sortClasses(orgClasses).map(c=>`<option value="${c.id}"${c.id===statClassFilter?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name}</option>`).join('');
   }
   // 학년 목록 (반 grades에 등장하는 학년 + 반 grade)
   const gradeSet = new Set();
   orgClasses.forEach(c=>{ Object.values(c.grades||{}).forEach(g=>gradeSet.add(g)); });
   const gEl = $I('st-grade');
   if(gEl){
-    const arr = Array.from(gradeSet).sort();
+    const arr = sortGrades(Array.from(gradeSet));
     gEl.innerHTML = '<option value="">전체 학년</option>' +
       arr.map(g=>`<option value="${g}"${g===statGradeFilter?' selected':''}>${g}</option>`).join('');
   }
@@ -860,7 +868,12 @@ function renderStatGroup(byStud, totalDays, key, label){
     Object.entries(b.counts).forEach(([k,v])=>groups[g].counts[k]=(groups[g].counts[k]||0)+v);
   });
   const cols = TYPES.map(t=>t.name);
-  const rows = Object.entries(groups).sort((a,b)=>a[0].localeCompare(b[0],'ko')).map(([g,d])=>{
+  // 학년별/반별은 학년순, 그 외(부서 등)는 이름순
+  const useGradeSort = (key==='grade' || key==='className');
+  const sortFn = useGradeSort
+    ? (a,b)=> gradeRank(a[0])-gradeRank(b[0]) || a[0].localeCompare(b[0],'ko')
+    : (a,b)=> a[0].localeCompare(b[0],'ko');
+  const rows = Object.entries(groups).sort(sortFn).map(([g,d])=>{
     const rate = d.possible? Math.round(d.present/d.possible*100):0;
     return `<tr>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${g}</td>
@@ -937,8 +950,8 @@ let statMonthClassId = '';
 
 async function buildMonthlyCalendar(){
   const body = $I('st-body'); if(!body) return;
-  // 이 기관 반 목록
-  const orgClasses = CLASSES.filter(c=>c.org===statOrg);
+  // 이 기관 반 목록 (학년순 정렬)
+  const orgClasses = sortClasses(CLASSES.filter(c=>c.org===statOrg));
   if(!orgClasses.length){
     body.innerHTML = `<div class="acard"><div class="empty">${statYear}년 ${ORGS[statOrg]}에 편성된 반이 없습니다.</div></div>`;
     return;
@@ -954,7 +967,7 @@ async function buildMonthlyCalendar(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px">
         <div class="fgrp" style="margin-bottom:0;flex:1;min-width:160px"><label>반</label>
           <select id="mc-class" onchange="onMonthChange()">
-            ${orgClasses.map(c=>`<option value="${c.id}"${c.id===statMonthClassId?' selected':''}>${c.name}${c.dept&&c.dept!=='전체'?' · '+c.dept:''}${c.grade?' · '+c.grade:''}</option>`).join('')}
+            ${orgClasses.map(c=>`<option value="${c.id}"${c.id===statMonthClassId?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name}${c.dept&&c.dept!=='전체'?' · '+c.dept:''}</option>`).join('')}
           </select></div>
         <div class="fgrp" style="margin-bottom:0"><label>월</label>
           <select id="mc-month" onchange="onMonthChange()">
