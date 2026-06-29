@@ -9,6 +9,7 @@ const TOPNAV_GROUPS = [
     { key:'attend',   label:'출석부',   icon:'✅', href:'attend.html' },
     { key:'class',    label:'반편성',   icon:'🧩', href:'class.html' },
     { key:'calendar', label:'학사일정', icon:'📅', href:'calendar.html' },
+    { key:'timetable',label:'시간표틀', icon:'🗓️', href:'timetable.html' },
   ]},
   { id:'work', label:'근무·행정', icon:'💼', items:[
     { key:'att',      label:'출근부',   icon:'📋', href:'index.html' },
