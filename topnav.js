@@ -130,3 +130,39 @@ function renderTopNav(current, role, containerId){
   }
 }
 window.renderTopNav = renderTopNav;
+
+// ── 모달 상단 닫기 버튼 자동 추가 (애플식) ──
+(function(){
+  function addCloseX(mbox){
+    if(mbox.querySelector('.ui-close-x')) return; // 이미 있음
+    const btn = document.createElement('button');
+    btn.className = 'ui-close-x';
+    btn.innerHTML = '✕';
+    btn.setAttribute('aria-label','닫기');
+    btn.onclick = function(e){
+      e.stopPropagation();
+      // 우선 closeMod() 시도, 없으면 오버레이 제거
+      if(typeof window.closeMod === 'function'){ window.closeMod(); return; }
+      const ov = mbox.closest('.mov, .modal, .overlay');
+      if(ov) ov.remove(); else mbox.remove();
+    };
+    mbox.appendChild(btn);
+  }
+  function scan(root){
+    if(!root || !root.querySelectorAll) return;
+    if(root.classList && root.classList.contains('mbox')) addCloseX(root);
+    root.querySelectorAll && root.querySelectorAll('.mbox').forEach(addCloseX);
+  }
+  const obs = new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(n=>{ if(n.nodeType===1) scan(n); }));
+  });
+  if(document.body){
+    obs.observe(document.body, {childList:true, subtree:true});
+    scan(document.body);
+  } else {
+    document.addEventListener('DOMContentLoaded', ()=>{
+      obs.observe(document.body, {childList:true, subtree:true});
+      scan(document.body);
+    });
+  }
+})();
