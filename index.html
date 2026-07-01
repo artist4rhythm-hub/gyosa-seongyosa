@@ -1084,16 +1084,18 @@ function renderHome(){
     {icon:'📋', label:'출근부', color:'#3b82f6', onclick:`showTab('att')`},
     {icon:'✅', label:'출석부', color:'#10b981', href:'attend.html'},
     {icon:'🎓', label:'학생관리', color:'#8b5cf6', href:'students.html'},
-    {icon:'🗂️', label:'전자결재', color:'#f59e0b', href:'approval.html'},
-    {icon:'✉️', label:'쪽지함', color:'#ec4899', href:'message.html'},
-    {icon:'📌', label:'게시판', color:'#06b6d4', href:'board.html'},
+    {icon:'🗂️', label:'전자결재', color:'#f59e0b', href:'approval.html', badge:n.approvalCnt},
+    {icon:'✉️', label:'쪽지함', color:'#ec4899', href:'message.html', badge:n.msgCnt},
+    {icon:'📌', label:'게시판', color:'#06b6d4', href:'board.html', badge:(n.boardCnt||0)+(n.newPostCnt||0)},
     {icon:'📅', label:'학사일정', color:'#6366f1', href:'calendar.html'},
     {icon:'⏱️', label:'근무시간', color:'#14b8a6', href:'work.html'},
     {icon:'🗓️', label:'시간표틀', color:'#0ea5e9', href:'timetable.html'},
   ];
   const shortcutHtml = shortcuts.map(s=>{
     const act = s.href ? `onclick="location.href='${s.href}'"` : `onclick="${s.onclick}"`;
-    return `<div ${act} style="background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:20px 12px;text-align:center;cursor:pointer;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,0.04)" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(0,0,0,0.08)'" onmouseout="this.style.transform='';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.04)'">
+    const badge = (s.badge && s.badge>0) ? `<div style="position:absolute;top:10px;right:10px;min-width:20px;height:20px;line-height:20px;background:#dc2626;color:#fff;font-size:11px;font-weight:700;border-radius:100px;padding:0 6px;text-align:center">${s.badge}</div>` : '';
+    return `<div ${act} style="position:relative;background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:20px 12px;text-align:center;cursor:pointer;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,0.04)" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(0,0,0,0.08)'" onmouseout="this.style.transform='';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.04)'">
+      ${badge}
       <div style="width:48px;height:48px;margin:0 auto 10px;border-radius:14px;background:${s.color}15;display:flex;align-items:center;justify-content:center;font-size:24px">${s.icon}</div>
       <div style="font-size:13.5px;font-weight:700;color:#1f2937">${s.label}</div>
     </div>`;
@@ -1103,6 +1105,7 @@ function renderHome(){
   const summary = [
     {label:'결재 대기', value:n.approvalCnt, icon:'🗂️', color:'#f59e0b', href:'approval.html'},
     {label:'안 읽은 쪽지', value:n.msgCnt, icon:'✉️', color:'#ec4899', href:'message.html'},
+    {label:'새 게시글', value:n.newPostCnt||0, icon:'📌', color:'#06b6d4', href:'board.html'},
     {label:'새 댓글', value:n.boardCnt||0, icon:'💬', color:'#0891b2', href:'board.html'},
   ];
   const summaryHtml = summary.map(s=>`
@@ -1188,14 +1191,28 @@ async function loadNotifications(){
     const snap = await getDocs(collection(db,'boardNotifs'));
     snap.forEach(d=>{ const n=d.data(); if(n.toUid===CU.uid && !n.read) boardCnt++; });
   } catch(e){}
-  renderNotifBadges(approvalCnt, msgCnt, boardCnt);
-  window.__notif = {approvalCnt, msgCnt, boardCnt};
+  // 새 게시글 (마지막 방문 이후 올라온 남의 글, 내가 볼 수 있는 게시판)
+  let newPostCnt = 0;
+  try {
+    const lastSeen = CU.lastBoardSeen?.toMillis?.() || 0;
+    const myOrgList = CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
+    const snap = await getDocs(collection(db,'boardPosts'));
+    snap.forEach(d=>{
+      const p = d.data();
+      const t = p.createdAt?.toMillis?.() || 0;
+      const visible = p.board==='all' || myOrgList.includes(p.board);
+      if(visible && p.authorUid!==CU.uid && t > lastSeen) newPostCnt++;
+    });
+  } catch(e){}
+  renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt);
+  window.__notif = {approvalCnt, msgCnt, boardCnt, newPostCnt};
   // 홈이 열려 있으면 숫자 갱신
   if($I('c-home') && $I('c-home').style.display!=='none') renderHome();
 }
 
-function renderNotifBadges(approvalCnt, msgCnt, boardCnt){
+function renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt){
   boardCnt = boardCnt || 0;
+  newPostCnt = newPostCnt || 0;
   // 탭 배지
   const apTab = $I('t-approval'), msgTab = $I('t-message');
   if(apTab){
@@ -1209,10 +1226,11 @@ function renderNotifBadges(approvalCnt, msgCnt, boardCnt){
     else if(b) b.remove();
   }
   // 알림 배너
-  if(approvalCnt>0 || msgCnt>0 || boardCnt>0){
+  if(approvalCnt>0 || msgCnt>0 || boardCnt>0 || newPostCnt>0){
     const parts = [];
     if(approvalCnt>0) parts.push(`<a href="approval.html" style="color:#b45309;font-weight:700;text-decoration:none">🗂️ 결재할 문서 ${approvalCnt}건</a>`);
     if(msgCnt>0) parts.push(`<a href="message.html" style="color:var(--gm);font-weight:700;text-decoration:none">✉️ 새 쪽지 ${msgCnt}개</a>`);
+    if(newPostCnt>0) parts.push(`<a href="board.html" style="color:#06b6d4;font-weight:700;text-decoration:none">📌 새 게시글 ${newPostCnt}개</a>`);
     if(boardCnt>0) parts.push(`<a href="board.html" style="color:#0891b2;font-weight:700;text-decoration:none">💬 새 댓글 ${boardCnt}개</a>`);
     let banner = $I('notif-banner');
     if(!banner){

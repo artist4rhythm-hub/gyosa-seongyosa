@@ -78,6 +78,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 .toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+.dept-btn{padding:6px 14px;border:1.5px solid var(--ivd);background:var(--wh);border-radius:100px;font-size:13px;font-weight:600;color:var(--ts);cursor:pointer;}
+.dept-btn.on{background:var(--gm);color:#fff;border-color:var(--gm);}
 </style>
 </head>
 <body>
@@ -104,6 +106,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     </div>
   </header>
   <div class="subtb" id="board-tabs"></div>
+  <div id="dept-tabs" style="display:none;gap:6px;padding:8px 16px;background:var(--iv);border-bottom:1px solid var(--ivd);flex-wrap:wrap"></div>
   <div class="tc" id="board-body"></div>
 </div>
 
@@ -134,6 +137,8 @@ const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
 let CU = null;
 let POSTS = [];
 let curBoard = 'all';   // all | daniel | jihyebit
+let curDept = '';       // 다니엘 부서 하위선택: '' (전체) | 초등부 | 중등부 | 행정실
+const BOARD_DEPTS = { daniel: ['초등부','중등부','행정실'], jihyebit: [] };
 let CATEGORIES = [];    // 글 분류 목록
 let searchKeyword = '';
 
@@ -187,6 +192,8 @@ onAuthStateChanged(auth, async (user)=>{
     await loadStaff();
     await loadPosts();
     showBoard('all');
+    // 마지막 게시판 방문 시각 갱신 (홈 '새 게시글' 알림 리셋용)
+    updateDoc(doc(db,'staff',CU.uid), {lastBoardSeen:Timestamp.now()}).catch(()=>{});
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
 });
 
@@ -235,17 +242,38 @@ function canSeeBoard(key){
 function showBoard(key){
   if(!canSeeBoard(key)){ toast('접근 권한이 없습니다.','err'); return; }
   curBoard = key;
+  curDept = '';  // 게시판 바꾸면 부서 선택 초기화
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('bt-'+key)?.classList.add('active');
+  renderDeptTabs();
   renderBoard();
 }
 window.showBoard = showBoard;
 
+// 부서 하위 탭 (다니엘 등 부서가 있는 게시판에서만)
+function renderDeptTabs(){
+  const wrap = $I('dept-tabs');
+  if(!wrap) return;
+  const depts = BOARD_DEPTS[curBoard] || [];
+  if(!depts.length){ wrap.innerHTML=''; wrap.style.display='none'; return; }
+  wrap.style.display='flex';
+  const btn = (key,label) => `<button class="dept-btn ${curDept===key?'on':''}" onclick="showDept('${key}')">${label}</button>`;
+  wrap.innerHTML = btn('','전체') + depts.map(d=>btn(d,d)).join('');
+}
+
+function showDept(dept){
+  curDept = dept;
+  renderDeptTabs();
+  renderBoard();
+}
+window.showDept = showDept;
+
 function renderBoard(){
   const boardName = curBoard==='all'?'전체 게시판':ORGS[curBoard];
+  const deptLabel = curDept ? ' · '+curDept : '';
   const desc = curBoard==='all'
     ? '모든 기관 선생님이 함께 보는 게시판입니다.'
-    : `${ORGS[curBoard]} 소속 선생님이 보는 게시판입니다.`;
+    : `${ORGS[curBoard]}${curDept?' '+curDept:''} 소속 선생님이 보는 게시판입니다.`;
   const now = Date.now();
   const isPinned = p => p.pinned && (!p.pinUntil || (p.pinUntil?.toMillis?.()||0) > now);
 
@@ -258,6 +286,8 @@ function renderBoard(){
       .filter(p=>(p.title||'').toLowerCase().includes(kw) || (p.content||'').toLowerCase().includes(kw));
   } else {
     list = POSTS.filter(p=>p.board===curBoard);
+    // 부서 필터: 특정 부서 선택 시 그 부서 글만, '전체'면 다 보임
+    if(curDept) list = list.filter(p=>(p.boardDept||'')===curDept);
   }
 
   // 고정글 분리 (검색 중이 아닐 때만 고정 우선)
@@ -265,6 +295,7 @@ function renderBoard(){
   const normal = !kw ? list.filter(p=>!isPinned(p)) : list;
 
   const catChip = p => p.category ? `<span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:1px 8px;border-radius:100px;font-weight:700;margin-right:4px">${esc(p.category)}</span>` : '';
+  const deptChip = p => p.boardDept ? `<span style="font-size:11px;background:#e0f2fe;color:#0369a1;padding:1px 8px;border-radius:100px;font-weight:700;margin-right:4px">${esc(p.boardDept)}</span>` : '';
   const postRow = (p, pin) => {
     const vid = youtubeId(p.link);
     const img = !vid && isImageUrl(p.link);
@@ -273,7 +304,7 @@ function renderBoard(){
     const likeCnt = (p.likes||[]).length;
     const boardTag = kw ? `<span style="font-size:11px;color:var(--tl)">[${p.board==='all'?'전체':ORGS[p.board]}]</span> ` : '';
     return `<div class="post-item" onclick="openPost('${p.id}')" ${pin?'style="background:#fffdf5;border-color:var(--gold)"':''}>
-      <div class="post-top"><span class="post-title">${pin?'📌 ':''}${boardTag}${catChip(p)}${esc(p.title)}</span><span class="post-date">${fmtShort(p.createdAt)}</span></div>
+      <div class="post-top"><span class="post-title">${pin?'📌 ':''}${boardTag}${deptChip(p)}${catChip(p)}${esc(p.title)}</span><span class="post-date">${fmtShort(p.createdAt)}</span></div>
       <div class="post-meta">${esc(p.authorName)} ${badge} ${cc>0?`<span style="color:var(--gm)">💬 ${cc}</span>`:''} ${likeCnt>0?`<span style="color:#dc2626">♥ ${likeCnt}</span>`:''}</div>
       ${p.content?`<div class="post-excerpt">${esc(p.content)}</div>`:''}
     </div>`;
@@ -304,7 +335,7 @@ function renderBoard(){
       </div>
       ${kw ? `<p class="adesc">🔍 "<b>${esc(searchKeyword)}</b>" 검색 결과 ${list.length}건</p>` : `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <h3 class="actitle" style="margin:0">${boardName}</h3>
+        <h3 class="actitle" style="margin:0">${boardName}${deptLabel}</h3>
         <button class="bp" onclick="openCompose()">✏️ 글쓰기</button>
       </div>
       <p class="adesc">${desc}</p>
@@ -372,7 +403,8 @@ function openCompose(editId){
     <div class="mbox">
       <div class="mtitle">${editing?'글 수정':'새 글 작성'}</div>
       <div class="msub">유튜브 링크를 넣으면 게시글에서 바로 재생됩니다. 그 외 링크는 클릭하면 새 창으로 열립니다.</div>
-      <div class="fgrp"><label>게시판</label><select id="cp-board">${boardOpts}</select></div>
+      <div class="fgrp"><label>게시판</label><select id="cp-board" onchange="updateCompDept()">${boardOpts}</select></div>
+      <div class="fgrp" id="cp-dept-wrap" style="display:none"><label>부서 (선택 안 하면 부서 공통)</label><select id="cp-dept"></select></div>
       ${CATEGORIES.length?`<div class="fgrp"><label>분류</label><select id="cp-cat"><option value="">분류 없음</option>${CATEGORIES.map(c=>`<option value="${esc(c)}"${editing&&editing.category===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
       <div class="fgrp"><label>제목</label><input type="text" id="cp-title" value="${editing?esc(editing.title).replace(/"/g,'&quot;'):''}" placeholder="제목"></div>
       <div class="fgrp"><label>내용 <span style="font-weight:400;color:var(--tl)">· @이름 으로 선생님을 언급하면 알림이 갑니다</span></label><textarea id="cp-content" rows="6" placeholder="내용을 입력하세요... (예: @홍길동 확인 부탁드려요)">${editing?esc(editing.content):''}</textarea></div>
@@ -395,6 +427,8 @@ function openCompose(editId){
         <button class="bp" onclick="${editing?`saveEdit('${editId}')`:'submitPost()'}">${editing?'수정 저장':'등록'}</button>
       </div>
     </div></div>`;
+  // 부서 드롭다운 초기화 (현재 부서 반영)
+  updateCompDept(editing ? editing.boardDept : curDept);
   // 새 글이고 임시저장분이 있으면 복원 제안
   if(!editing){
     const draft = loadDraft();
@@ -411,6 +445,18 @@ function openCompose(editId){
   }
 }
 window.openCompose = openCompose;
+
+// 게시판 선택에 따라 부서 드롭다운 표시/갱신
+function updateCompDept(preselect){
+  const board = $I('cp-board')?.value;
+  const wrap = $I('cp-dept-wrap'), sel = $I('cp-dept');
+  if(!wrap || !sel) return;
+  const depts = BOARD_DEPTS[board] || [];
+  if(!depts.length){ wrap.style.display='none'; sel.innerHTML=''; return; }
+  wrap.style.display='flex';
+  sel.innerHTML = `<option value="">부서 공통 (전체)</option>` + depts.map(d=>`<option value="${d}"${preselect===d?' selected':''}>${d}</option>`).join('');
+}
+window.updateCompDept = updateCompDept;
 
 // ── 임시저장 (localStorage) ──
 function saveDraft(){
@@ -440,11 +486,12 @@ async function submitPost(){
   const content = $I('cp-content').value.trim();
   const link = $I('cp-link').value.trim();
   const category = $I('cp-cat')?.value || '';
+  const boardDept = $I('cp-dept')?.value || '';
   const pinned = $I('cp-pin')?.checked || false;
   if(!title) return toast('제목을 입력하세요.','err');
   if(!content && !link) return toast('내용이나 링크를 입력하세요.','err');
   const data = {
-    board, title, content, link, category,
+    board, boardDept, title, content, link, category,
     authorUid:CU.uid, authorName:CU.name, authorOrg:CU.org||'',
     pinned, commentCount:0, likes:[], readBy:[],
     createdAt:Timestamp.now()
@@ -452,13 +499,13 @@ async function submitPost(){
   if(pinned){ data.pinUntil = calcPinUntil(); }
   try {
     const ref = await addDoc(collection(db,'boardPosts'), data);
-    // 멘션 처리: 내용·제목에서 @이름 찾아 알림
     notifyMentions(`${title} ${content}`, ref.id, title, board);
     clearDraft();
     toast('게시글을 등록했습니다.','ok');
     closeMod();
     await loadPosts();
     showBoard(board);
+    if(boardDept) showDept(boardDept);
   } catch(e){ toast('등록 실패: '+e.message,'err'); }
 }
 window.submitPost = submitPost;
@@ -497,9 +544,10 @@ async function saveEdit(id){
   const content = $I('cp-content').value.trim();
   const link = $I('cp-link').value.trim();
   const category = $I('cp-cat')?.value || '';
+  const boardDept = $I('cp-dept')?.value || '';
   const pinned = $I('cp-pin')?.checked || false;
   if(!title) return toast('제목을 입력하세요.','err');
-  const data = {board, title, content, link, category, pinned, updatedAt:Timestamp.now()};
+  const data = {board, boardDept, title, content, link, category, pinned, updatedAt:Timestamp.now()};
   if(pinned){ if(!p.pinned || $I('cp-pin-period')) data.pinUntil = calcPinUntil(); }
   else { data.pinUntil = null; }
   try {
