@@ -184,6 +184,7 @@ onAuthStateChanged(auth, async (user)=>{
     $I('hi').textContent = `${ORGS[CU.org]||CU.org} · ${CU.dept||''}`;
     buildBoardTabs();
     await loadCategories();
+    await loadStaff();
     await loadPosts();
     showBoard('all');
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
@@ -194,6 +195,15 @@ async function loadCategories(){
     const d = await getDoc(doc(db,'boardConfig','categories'));
     CATEGORIES = d.exists() && Array.isArray(d.data().list) ? d.data().list : [];
   } catch(e){ CATEGORIES = []; }
+}
+
+let STAFF = [];  // 멘션용 교직원 목록
+async function loadStaff(){
+  try {
+    const snap = await getDocs(collection(db,'staff'));
+    STAFF = [];
+    snap.forEach(d=>{ const s=d.data(); if((s.acStatus||'active')==='active') STAFF.push({uid:d.id, name:s.name}); });
+  } catch(e){ STAFF = []; }
 }
 
 // 내가 볼 수 있는 게시판 목록
@@ -365,7 +375,7 @@ function openCompose(editId){
       <div class="fgrp"><label>게시판</label><select id="cp-board">${boardOpts}</select></div>
       ${CATEGORIES.length?`<div class="fgrp"><label>분류</label><select id="cp-cat"><option value="">분류 없음</option>${CATEGORIES.map(c=>`<option value="${esc(c)}"${editing&&editing.category===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
       <div class="fgrp"><label>제목</label><input type="text" id="cp-title" value="${editing?esc(editing.title).replace(/"/g,'&quot;'):''}" placeholder="제목"></div>
-      <div class="fgrp"><label>내용</label><textarea id="cp-content" rows="6" placeholder="내용을 입력하세요...">${editing?esc(editing.content):''}</textarea></div>
+      <div class="fgrp"><label>내용 <span style="font-weight:400;color:var(--tl)">· @이름 으로 선생님을 언급하면 알림이 갑니다</span></label><textarea id="cp-content" rows="6" placeholder="내용을 입력하세요... (예: @홍길동 확인 부탁드려요)">${editing?esc(editing.content):''}</textarea></div>
       <div class="fgrp"><label>링크 (선택 · 유튜브는 영상 재생, 이미지 주소는 사진 표시)</label><input type="text" id="cp-link" value="${editing?esc(editing.link||'').replace(/"/g,'&quot;'):''}" placeholder="유튜브 / 이미지 주소(.jpg 등) / 기타 링크"></div>
       <div class="fgrp" style="background:var(--iv);border-radius:8px;padding:12px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="cp-pin" ${editing&&editing.pinned?'checked':''} onchange="document.getElementById('cp-pin-days').style.display=this.checked?'block':'none'" style="width:16px;height:16px"> 📌 상단 고정</label>
@@ -380,12 +390,47 @@ function openCompose(editId){
         </div>
       </div>
       <div class="mact">
+        ${!editing?`<button class="bs" onclick="saveDraft()">💾 임시저장</button>`:''}
         <button class="bs" onclick="closeMod()">취소</button>
         <button class="bp" onclick="${editing?`saveEdit('${editId}')`:'submitPost()'}">${editing?'수정 저장':'등록'}</button>
       </div>
     </div></div>`;
+  // 새 글이고 임시저장분이 있으면 복원 제안
+  if(!editing){
+    const draft = loadDraft();
+    if(draft){
+      setTimeout(()=>{
+        if(confirm('임시저장된 글이 있습니다. 불러올까요?')){
+          if($I('cp-title')) $I('cp-title').value = draft.title||'';
+          if($I('cp-content')) $I('cp-content').value = draft.content||'';
+          if($I('cp-link')) $I('cp-link').value = draft.link||'';
+          if($I('cp-cat') && draft.category) $I('cp-cat').value = draft.category;
+        }
+      }, 200);
+    }
+  }
 }
 window.openCompose = openCompose;
+
+// ── 임시저장 (localStorage) ──
+function saveDraft(){
+  const draft = {
+    title: $I('cp-title')?.value || '',
+    content: $I('cp-content')?.value || '',
+    link: $I('cp-link')?.value || '',
+    category: $I('cp-cat')?.value || '',
+    savedAt: Date.now()
+  };
+  if(!draft.title && !draft.content){ toast('저장할 내용이 없습니다.','err'); return; }
+  try { localStorage.setItem('board_draft', JSON.stringify(draft)); toast('임시저장했습니다.','ok'); }
+  catch(e){ toast('임시저장 실패','err'); }
+}
+window.saveDraft = saveDraft;
+function loadDraft(){
+  try { const d = localStorage.getItem('board_draft'); return d?JSON.parse(d):null; }
+  catch(e){ return null; }
+}
+function clearDraft(){ try{ localStorage.removeItem('board_draft'); }catch(e){} }
 function closeMod(){ $I('mwrap').innerHTML=''; }
 window.closeMod = closeMod;
 
@@ -401,12 +446,15 @@ async function submitPost(){
   const data = {
     board, title, content, link, category,
     authorUid:CU.uid, authorName:CU.name, authorOrg:CU.org||'',
-    pinned, commentCount:0, likes:[],
+    pinned, commentCount:0, likes:[], readBy:[],
     createdAt:Timestamp.now()
   };
   if(pinned){ data.pinUntil = calcPinUntil(); }
   try {
-    await addDoc(collection(db,'boardPosts'), data);
+    const ref = await addDoc(collection(db,'boardPosts'), data);
+    // 멘션 처리: 내용·제목에서 @이름 찾아 알림
+    notifyMentions(`${title} ${content}`, ref.id, title, board);
+    clearDraft();
     toast('게시글을 등록했습니다.','ok');
     closeMod();
     await loadPosts();
@@ -414,6 +462,26 @@ async function submitPost(){
   } catch(e){ toast('등록 실패: '+e.message,'err'); }
 }
 window.submitPost = submitPost;
+
+// @이름 멘션 → 해당 교직원에게 알림
+function notifyMentions(text, postId, postTitle, board){
+  if(!text || !STAFF.length) return;
+  const mentioned = new Set();
+  STAFF.forEach(st=>{
+    if(!st.name) return;
+    // "@이름" 패턴 (이름 앞에 @)
+    if(text.includes('@'+st.name) && st.uid!==CU.uid){
+      mentioned.add(st.uid);
+    }
+  });
+  mentioned.forEach(uid=>{
+    addDoc(collection(db,'boardNotifs'), {
+      toUid:uid, postId, postTitle, board:board||'',
+      fromName:CU.name, text:'회원님을 언급했습니다.',
+      type:'mention', read:false, createdAt:Timestamp.now()
+    }).catch(()=>{});
+  });
+}
 
 // 고정 만료 시각 계산
 function calcPinUntil(){
@@ -454,6 +522,9 @@ async function openPost(id){
   const now = Date.now();
   const pinnedNow = p.pinned && (!p.pinUntil || (p.pinUntil?.toMillis?.()||0) > now);
   const catBadge = p.category ? `<span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:2px 8px;border-radius:100px;font-weight:700;margin-right:6px">${esc(p.category)}</span>` : '';
+  const liked = (p.likes||[]).includes(CU.uid);
+  const likeCnt = (p.likes||[]).length;
+  const readCnt = (p.readBy||[]).length;
   $I('mwrap').innerHTML = `
     <div class="mov"><div class="mbk" onclick="closeMod()"></div>
     <div class="mbox">
@@ -461,6 +532,12 @@ async function openPost(id){
       <div class="msub">${catBadge}${esc(p.authorName)} · ${fmtFull(p.createdAt)}${p.updatedAt?' (수정됨)':''} · ${p.board==='all'?'전체':ORGS[p.board]}</div>
       ${media}
       ${p.content?`<div class="readbody">${esc(p.content)}</div>`:''}
+      <div style="display:flex;align-items:center;gap:12px;margin:14px 0 4px">
+        <button onclick="toggleLike('${p.id}')" style="display:inline-flex;align-items:center;gap:6px;background:${liked?'#fee2e2':'var(--iv)'};border:1.5px solid ${liked?'#fca5a5':'var(--ivd)'};border-radius:100px;padding:8px 16px;font-size:14px;font-weight:700;color:${liked?'#dc2626':'var(--ts)'};cursor:pointer">
+          ${liked?'♥':'♡'} 좋아요 <span id="like-cnt">${likeCnt}</span>
+        </button>
+        <span style="font-size:12px;color:var(--tl)" title="이 글을 읽은 사람 수">👁 ${readCnt}명 읽음 <span id="read-names" style="cursor:pointer;color:var(--gm);text-decoration:underline" onclick="showReaders('${p.id}')">보기</span></span>
+      </div>
       <div class="mact">
         ${canPin?`<button class="bs" onclick="togglePin('${p.id}')">${pinnedNow?'📌 고정 해제':'📌 상단 고정'}</button>`:''}
         ${mine?`<button class="bs" onclick="openCompose('${p.id}')">수정</button>`:''}
@@ -478,8 +555,52 @@ async function openPost(id){
     </div></div>`;
   loadComments(id);
   markBoardNotifRead(id);
+  markRead(id);
 }
 window.openPost = openPost;
+
+// 좋아요 토글
+async function toggleLike(id){
+  const p = POSTS.find(x=>x.id===id); if(!p) return;
+  const likes = p.likes || [];
+  const liked = likes.includes(CU.uid);
+  const newLikes = liked ? likes.filter(u=>u!==CU.uid) : [...likes, CU.uid];
+  p.likes = newLikes;
+  try {
+    await updateDoc(doc(db,'boardPosts',id), {likes:newLikes});
+    // 상세 버튼 갱신
+    openPost(id);
+    renderBoard();
+  } catch(e){ toast('실패: '+e.message,'err'); p.likes = likes; }
+}
+window.toggleLike = toggleLike;
+
+// 읽음 처리 (readBy에 내 uid 추가)
+async function markRead(id){
+  const p = POSTS.find(x=>x.id===id); if(!p) return;
+  const readBy = p.readBy || [];
+  if(readBy.includes(CU.uid)) return; // 이미 읽음
+  const newRead = [...readBy, CU.uid];
+  p.readBy = newRead;
+  try { await updateDoc(doc(db,'boardPosts',id), {readBy:newRead}); } catch(e){}
+}
+
+// 읽은 사람 목록 보기
+async function showReaders(id){
+  const p = POSTS.find(x=>x.id===id); if(!p) return;
+  const readBy = p.readBy || [];
+  if(!readBy.length){ toast('아직 읽은 사람이 없습니다.'); return; }
+  // uid → 이름
+  let names = [];
+  try {
+    const snap = await getDocs(collection(db,'staff'));
+    const map = {};
+    snap.forEach(d=>{ map[d.id] = d.data().name; });
+    names = readBy.map(uid=>map[uid]||'(알 수 없음)');
+  } catch(e){ names = readBy.map(()=>'(불러오기 실패)'); }
+  alert(`👁 읽은 사람 (${names.length}명)\n\n${names.join(', ')}`);
+}
+window.showReaders = showReaders;
 
 // 이 글에 대한 내 댓글 알림 읽음 처리
 async function markBoardNotifRead(postId){
@@ -565,6 +686,8 @@ async function addComment(postId, parentId){
       }).catch(()=>{});
     }
     input.value='';
+    // 댓글 내 멘션 처리
+    if(post) notifyMentions(text, postId, post.title||'게시글', post.board);
     loadComments(postId);
     renderBoard();
   } catch(e){ toast('댓글 등록 실패: '+e.message,'err'); }
