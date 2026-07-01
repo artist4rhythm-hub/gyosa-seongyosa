@@ -85,6 +85,9 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .mtab .dcell{width:30px;height:30px;cursor:pointer;font-size:11px;font-weight:700;}
 .mtab .dcell.blocked{background:#f0f0f0;color:#bbb;cursor:default;}
 .mtab .dcell.blocked.allow{cursor:pointer;}
+.mtab .dcell.drag-sel{outline:2px solid var(--gm);outline-offset:-2px;filter:brightness(0.92);}
+.mtab .dcell.auto-present{font-weight:400;opacity:0.85;}
+.mtab{user-select:none;}
 .mtab .wkhd{background:#fafafa;color:#999;}
 .mmenu{position:fixed;z-index:200;background:#fff;border:1px solid var(--ivd);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.2);padding:6px;min-width:130px;max-height:300px;overflow-y:auto;}
 .mmenu button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:none;background:none;border-radius:6px;font-size:13px;cursor:pointer;text-align:left;}
@@ -325,6 +328,18 @@ function termOfDate(dateStr, org){
   return hit || null;
 }
 
+// 이 날짜가 '자동 출석' 대상인지 (학기 중 평일, 공휴일 아님)
+function isAutoPresentDate(dateStr, org){
+  const dow = new Date(dateStr+'T00:00:00').getDay();
+  if(dow===0 || dow===6) return false;          // 주말 제외
+  if(holidayReason(dateStr, org)) return false; // 공휴일 제외
+  const term = termOfDate(dateStr, org);
+  if(term==='none' || term===null) return false; // 학기 밖 제외
+  return true;
+}
+// 출석 항목(isPresent:true) 찾기
+function presentType(){ return TYPES.find(t=>t.isPresent) || TYPES.find(t=>t.name==='출석') || TYPES[0]; }
+
 // 학생의 휴학 기간과 수업일 집합의 교집합 일수 (통계 분모 제외용)
 function leaveDaysInSet(s, daySet){
   if(!s || !s.leaves || !s.leaves.length) return 0;
@@ -509,19 +524,24 @@ async function loadMonthBody(){
     const term = termOfDate(dateStr, c.org);
     const outOfTerm = (term==='none' || term===null);
     const blocked = wknd || hol || outOfTerm;
-    dayInfo.push({dd, dateStr, dow, blocked});
+    const autoPresent = !blocked; // 학기 중 평일 = 자동 출석 대상
+    dayInfo.push({dd, dateStr, dow, blocked, autoPresent});
   }
   const dnames=['일','월','화','수','목','금','토'];
   const headDays = dayInfo.map(di=>`<th class="${di.dow===0||di.dow===6?'wkhd':''}" style="padding:3px 2px">${di.dd}<br><span style="font-size:9px;font-weight:400">${dnames[di.dow]}</span></th>`).join('');
+  const pType = presentType();
   const rows = studs.map(s=>{
     const cells = dayInfo.map(di=>{
       const rec = monthData[s.id] && monthData[s.id][di.dd];
       const t = rec ? TYPES.find(x=>x.id===rec.typeId) : null;
       const blockedCls = di.blocked ? (monthAllowBlocked?'blocked allow':'blocked') : '';
-      const bg = t ? `background:${t.color};color:#fff` : '';
-      const label = t ? (t.name||'').slice(0,1) : '';
       const clickable = (!di.blocked || monthAllowBlocked) && canEditClass(c);
-      return `<td class="dcell ${blockedCls}" style="${bg}" ${clickable?`onclick="openMonthMenu(event,'${s.id}',${di.dd})"`:''} title="${di.dateStr}${t?' · '+t.name:''}">${label}</td>`;
+      let bg='', label='', autoCls='';
+      if(t){ bg=`background:${t.color};color:#fff`; label=(t.name||'').slice(0,1); }
+      else if(di.autoPresent && pType){ // 자동 출석: 연한 초록 흐리게
+        bg=`background:${pType.color}22;color:${pType.color}`; label='출'; autoCls='auto-present';
+      }
+      return `<td class="dcell ${blockedCls} ${autoCls}" data-sid="${s.id}" data-day="${di.dd}" style="${bg}" ${clickable?`onmousedown="startDrag(event,'${s.id}',${di.dd})" onmouseenter="dragOver('${s.id}',${di.dd})"`:''} title="${di.dateStr}${t?' · '+t.name:di.autoPresent?' · 자동 출석':''}">${label}</td>`;
     }).join('');
     return `<tr><td class="nm" title="${esc(s.name)}">${esc(s.name)} <span style="color:${s.gender==='남'?'#2b6cb0':'#d53f8c'};font-size:10px">${s.gender||''}</span></td>${cells}</tr>`;
   }).join('');
@@ -534,13 +554,106 @@ async function loadMonthBody(){
         </div>
       </div>
       <table class="mtab"><thead><tr><th class="nm">학생</th>${headDays}</tr></thead><tbody>${rows}</tbody></table>
-      <p style="font-size:12px;color:var(--tl);margin-top:10px">칸을 클릭해 출결을 선택하면 <b>즉시 저장</b>됩니다. 회색 칸(주말·공휴일·학기외)은 위 토글을 켜면 입력할 수 있습니다.</p>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">
+        연한 초록 <b style="color:${pType?pType.color:'#16a34a'}">출</b> = 자동 출석 처리된 날입니다. 예외인 학생 칸만 클릭해 바꾸면 됩니다.<br>
+        칸을 <b>클릭</b>하거나 <b>마우스로 여러 칸을 드래그</b>한 뒤 상태를 고르면 한 번에 입력됩니다. 회색 칸(주말·공휴일·학기외)은 위 토글을 켜면 입력할 수 있습니다.
+      </p>
     </div>`;
   } catch(e){
     body.innerHTML = `<div class="acard"><div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:14px;font-size:13px">월별 표를 그리는 중 오류가 발생했습니다.<br>${esc(e.message)}</div></div>`;
     console.error('loadMonthBody 오류', e);
   }
 }
+
+// ── 드래그 일괄 선택 ──
+let dragging = false;
+let dragCells = [];   // [{sid, day}]
+
+function startDrag(ev, sid, day){
+  ev.preventDefault();
+  closeMonthMenu();
+  const c = CLASSES.find(x=>x.id===monthClassId);
+  if(!c || !canEditClass(c)) return;
+  dragging = true;
+  dragCells = [];
+  addDragCell(sid, day);
+}
+window.startDrag = startDrag;
+
+function dragOver(sid, day){
+  if(!dragging) return;
+  addDragCell(sid, day);
+}
+window.dragOver = dragOver;
+
+function addDragCell(sid, day){
+  if(dragCells.some(c=>c.sid===sid && c.day===day)) return;
+  dragCells.push({sid, day});
+  const cell = document.querySelector(`.dcell[data-sid="${sid}"][data-day="${day}"]`);
+  if(cell) cell.classList.add('drag-sel');
+}
+
+function clearDragSel(){
+  document.querySelectorAll('.dcell.drag-sel').forEach(c=>c.classList.remove('drag-sel'));
+}
+
+// 마우스 놓으면: 1칸이면 단일 메뉴, 여러 칸이면 일괄 메뉴
+document.addEventListener('mouseup', (e)=>{
+  if(!dragging) return;
+  dragging = false;
+  if(dragCells.length===0){ return; }
+  if(dragCells.length===1){
+    const {sid, day} = dragCells[0];
+    clearDragSel(); 
+    openMonthMenu(e, sid, day);
+    dragCells = [];
+  } else {
+    openBulkMenu(e);
+  }
+});
+
+// 일괄 입력 메뉴
+function openBulkMenu(ev){
+  closeMonthMenu();
+  const sorted = [...TYPES].sort((a,b)=>(a.order||0)-(b.order||0));
+  const menu = document.createElement('div');
+  menu.className='mmenu'; menu.id='month-menu';
+  const cnt = dragCells.length;
+  let html = `<div class="sep" style="color:var(--gm);font-weight:700">${cnt}칸 일괄 입력</div>`;
+  html += sorted.map(t=>`<button onclick="applyBulk('${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}</button>`).join('');
+  html += `<div class="sep"></div><button onclick="applyBulkClear()" style="color:#dc2626">✕ 삭제(미입력)</button>`;
+  html += `<button onclick="cancelBulk()" style="color:var(--tl)">취소</button>`;
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const x=Math.min((ev.clientX||200), window.innerWidth-170), yy=Math.min((ev.clientY||200), window.innerHeight-300);
+  menu.style.left=x+'px'; menu.style.top=yy+'px';
+}
+
+async function applyBulk(typeId){
+  closeMonthMenu();
+  const cells = [...dragCells];
+  clearDragSel(); dragCells=[];
+  let ok=0;
+  for(const {sid, day} of cells){
+    try { await setMonthCell(sid, day, typeId, true); ok++; } catch(e){}
+  }
+  toast(`${ok}칸 입력 완료`,'ok');
+}
+window.applyBulk = applyBulk;
+
+async function applyBulkClear(){
+  closeMonthMenu();
+  const cells = [...dragCells];
+  clearDragSel(); dragCells=[];
+  for(const {sid, day} of cells){
+    try { await clearMonthCell(sid, day, true); } catch(e){}
+  }
+  toast('삭제 완료','ok');
+}
+window.applyBulkClear = applyBulkClear;
+
+function cancelBulk(){ closeMonthMenu(); clearDragSel(); dragCells=[]; }
+window.cancelBulk = cancelBulk;
 
 function openMonthMenu(ev, sid, day){
   ev.stopPropagation();
@@ -565,8 +678,8 @@ window.openMonthMenu = openMonthMenu;
 function closeMonthMenu(){ const m=$I('month-menu'); if(m) m.remove(); }
 document.addEventListener('click', e=>{ if(!e.target.closest('.mmenu') && !e.target.closest('.dcell')) closeMonthMenu(); });
 
-async function setMonthCell(sid, day, typeId){
-  closeMonthMenu();
+async function setMonthCell(sid, day, typeId, bulk){
+  if(!bulk) closeMonthMenu();
   const c = CLASSES.find(x=>x.id===monthClassId); if(!c) return;
   const [y,m]=monthYM.split('-').map(Number);
   const dateStr=`${y}-${pad(m)}-${pad(day)}`;
@@ -586,8 +699,8 @@ async function setMonthCell(sid, day, typeId){
 }
 window.setMonthCell = setMonthCell;
 
-async function clearMonthCell(sid, day){
-  closeMonthMenu();
+async function clearMonthCell(sid, day, bulk){
+  if(!bulk) closeMonthMenu();
   const cur = monthData[sid] && monthData[sid][day];
   if(!cur || !cur.id) return;
   try {
@@ -607,8 +720,18 @@ function updateMonthCellUI(sid, day, typeId){
   const row = rows[idx]; if(!row) return;
   const cell = row.querySelectorAll('td.dcell')[day-1]; if(!cell) return;
   const t = typeId ? TYPES.find(x=>x.id===typeId) : null;
+  cell.classList.remove('auto-present');
   if(t){ cell.style.background=t.color; cell.style.color='#fff'; cell.textContent=(t.name||'').slice(0,1); }
-  else { cell.style.background=''; cell.style.color=''; cell.textContent=''; }
+  else {
+    // 삭제됨 → 자동출석 대상이면 연한 초록 '출'로 복원
+    const [y,m]=monthYM.split('-').map(Number);
+    const dateStr=`${y}-${pad(m)}-${pad(day)}`;
+    const pType = presentType();
+    if(isAutoPresentDate(dateStr, c.org) && pType){
+      cell.style.background=pType.color+'22'; cell.style.color=pType.color; cell.textContent='출';
+      cell.classList.add('auto-present');
+    } else { cell.style.background=''; cell.style.color=''; cell.textContent=''; }
+  }
 }
 function fillCheckGradeFilter(){
   const el = $I('ck-grade'); if(!el) return;
@@ -718,14 +841,18 @@ async function loadCheckBody(){
       </div>`).join('')}
     </div>` : '';
 
+  // 이 날짜가 자동 출석 대상인지 (학기 중 평일)
+  const autoPresentToday = isAutoPresentDate(checkDate, c.org);
+  const pType = presentType();
   // 정사각 박스 현황 그리드 (한눈에 전체 상태)
   const gridBoxes = studs.map(s=>{
     const rec = checkRecords[s.id];
     const t = rec && rec.typeId ? TYPES.find(x=>x.id===rec.typeId) : null;
-    const color = t ? t.color : '#e5e7eb';
-    const tn = t ? t.name : '미입력';
-    // 글자색: 배경이 진하면 흰색
-    return `<div id="box-${s.id}" onclick="scrollToStud('${s.id}')" title="${s.name} · ${tn}" style="aspect-ratio:1;background:${color};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:4px;overflow:hidden;border:1.5px solid rgba(0,0,0,0.06)" data-name="${s.name}">
+    let color, tn, faint=false;
+    if(t){ color=t.color; tn=t.name; }
+    else if(autoPresentToday && pType){ color=pType.color; tn='출석(자동)'; faint=true; }
+    else { color='#e5e7eb'; tn='미입력'; }
+    return `<div id="box-${s.id}" onclick="scrollToStud('${s.id}')" title="${s.name} · ${tn}" style="aspect-ratio:1;background:${color};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:4px;overflow:hidden;border:1.5px solid rgba(0,0,0,0.06);${faint?'opacity:.65':''}" data-name="${s.name}">
       <span style="font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:center;line-height:1.2">${s.name}</span>
       <span class="box-state" style="font-size:9px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.3);margin-top:2px">${tn}</span>
     </div>`;
