@@ -963,10 +963,60 @@ async function saveCheck(){
     }
     logActivity('수정','출석부',`${c.name} ${checkDate} (${cnt}명)`);
     toast(`${cnt}명 출결이 저장되었습니다.`,'ok');
+    // 결석·지각 알림 (담임·대리 + 부서장·관리자에게, 본인 제외)
+    sendAbsenceAlert(c, checkDate, studs);
     loadCheckBody();
   } catch(e){ toast('저장 실패: '+e.message,'err'); }
 }
 window.saveCheck = saveCheck;
+
+// 결석·지각 요약 알림
+async function sendAbsenceAlert(c, dateStr, studs){
+  try {
+    // 결석/지각 등 '출석 아닌' 학생 모으기
+    const abnormal = [];
+    studs.forEach(s=>{
+      const rec = checkRecords[s.id];
+      if(!rec || !rec.typeId) return;
+      const t = TYPES.find(x=>x.id===rec.typeId);
+      if(t && !t.isPresent){ abnormal.push({name:s.name, type:t.name}); }
+    });
+    if(!abnormal.length) return; // 다 정상 출석이면 알림 없음
+
+    // 알림 대상 uid 수집: 담임 + 대리 + 같은 기관 관리자(org_admin/super) + 같은 부서 부서장(tab_admin)
+    const targets = new Set();
+    if(c.teacherUid) targets.add(c.teacherUid);
+    (c.deputies||[]).forEach(u=>targets.add(u));
+    const snap = await getDocs(collection(db,'staff'));
+    snap.forEach(d=>{
+      const st = d.data();
+      if((st.acStatus||'active')!=='active') return;
+      const stOrgs = st.role==='super' ? ['jihyebit','daniel'] : (st.orgs&&st.orgs.length?st.orgs:[st.org]);
+      // 슈퍼·기관관리자: 해당 기관이면
+      if((st.role==='super'||st.role==='org_admin') && stOrgs.includes(c.org)) targets.add(d.id);
+      // 부서장: 같은 기관+같은 부서
+      if(st.role==='tab_admin' && stOrgs.includes(c.org) && (st.dept===c.dept || c.dept==='행정실')) targets.add(d.id);
+    });
+    targets.delete(CU.uid); // 방금 체크한 본인 제외
+    const toUids = [...targets];
+    if(!toUids.length) return;
+    // 대상 이름
+    const nameMap = {};
+    snap.forEach(d=>{ nameMap[d.id]=d.data().name; });
+    const toNames = toUids.map(u=>nameMap[u]||'');
+    // 메시지 작성
+    const summary = abnormal.map(a=>`${a.name}(${a.type})`).join(', ');
+    const [y,m,dd] = dateStr.split('-');
+    const subject = `[출결] ${c.name} ${Number(m)}/${Number(dd)} 결석·지각 ${abnormal.length}명`;
+    const body = `${ORGS[c.org]||c.org} ${c.name}\n${dateStr} 출결 특이사항\n\n${summary}\n\n(기록: ${CU.name})`;
+    await addDoc(collection(db,'messages'), {
+      fromUid:CU.uid, fromName:CU.name,
+      toUids, toNames,
+      subject, body, readBy:[],
+      createdAt:Timestamp.now()
+    });
+  } catch(e){ console.error('결석 알림 실패', e); }
+}
 
 // ── 출석 통계 ──
 let statRecords = null;  // 출결 기록 캐시 (한 번만 로드)
@@ -1002,6 +1052,7 @@ function renderStat(){
         <div class="fgrp" style="margin-bottom:0"><label>보기</label>
           <select id="st-view" onchange="onStatChange()">
             <option value="month"${statView==='month'?' selected':''}>월별 달력</option>
+            <option value="week"${statView==='week'?' selected':''}>주간 통계</option>
             <option value="student"${statView==='student'?' selected':''}>학생별</option>
             <option value="class"${statView==='class'?' selected':''}>반별</option>
             <option value="grade"${statView==='grade'?' selected':''}>학년별</option>
@@ -1073,6 +1124,7 @@ async function buildStat(){
 
   // 월별 달력 보기는 별도 흐름
   if(statView==='month'){ buildMonthlyCalendar(); return; }
+  if(statView==='week'){ buildWeeklyStat(); return; }
 
   const terms = getStatTerms();
   if(!terms.length){
@@ -1278,6 +1330,78 @@ window.downloadStatExcel = downloadStatExcel;
 // ── 월별 달력형 보기 ──
 let statMonth = new Date().getMonth()+1;  // 1~12
 let statMonthClassId = '';
+
+// ── 주간 통계 ──
+let statWeekMonday = null; // 그 주 월요일 Date
+
+function mondayOf(d){ const x=new Date(d); const day=x.getDay(); const diff=(day===0?-6:1-day); x.setDate(x.getDate()+diff); x.setHours(0,0,0,0); return x; }
+
+async function buildWeeklyStat(){
+  const body = $I('st-body'); if(!body) return;
+  if(!statWeekMonday) statWeekMonday = mondayOf(new Date());
+  const mon = new Date(statWeekMonday);
+  const days = [];
+  for(let i=0;i<7;i++){ const d=new Date(mon); d.setDate(mon.getDate()+i); days.push(d); }
+  const dstr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const weekStart = dstr(days[0]), weekEnd = dstr(days[6]);
+  const dowName=['월','화','수','목','금','토','일'];
+
+  const orgClasses = sortClasses(CLASSES.filter(c=>c.org===statOrg));
+  // 이 주 출결 기록 로드
+  const snap = await getDocs(collection(db,'studentAttendance'));
+  const recs = [];
+  snap.forEach(d0=>{ const r=d0.data(); if(r.org===statOrg && r.date>=weekStart && r.date<=weekEnd) recs.push(r); });
+  const typeById={}; TYPES.forEach(t=>typeById[t.id]=t);
+
+  // 반별 집계 (결석·지각 등 비출석만)
+  const rows = orgClasses.map(c=>{
+    const cRecs = recs.filter(r=>r.classId===c.id);
+    const abn = cRecs.filter(r=>{ const t=typeById[r.typeId]; return t && !t.isPresent; });
+    if(!abn.length) return `<tr><td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${c.grade?'['+c.grade+'] ':''}${c.name}</td><td colspan="2" style="padding:7px 10px;border-bottom:1px solid var(--ivd);color:var(--tl)">특이사항 없음</td></tr>`;
+    // 유형별 카운트
+    const byType={};
+    abn.forEach(r=>{ const n=typeById[r.typeId]?.name||'기타'; byType[n]=(byType[n]||0)+1; });
+    const typeSummary = Object.entries(byType).map(([n,cnt])=>`${n} ${cnt}`).join(', ');
+    const detail = abn.sort((a,b)=>a.date.localeCompare(b.date)).map(r=>{
+      const dt=new Date(r.date+'T00:00:00'); const t=typeById[r.typeId];
+      return `<span style="display:inline-block;font-size:11px;background:${t?t.color:'#999'}22;color:${t?t.color:'#999'};padding:1px 7px;border-radius:100px;margin:1px">${r.studentName} ${Number(r.date.slice(5,7))}/${Number(r.date.slice(8,10))} ${t?t.name:''}</span>`;
+    }).join(' ');
+    return `<tr><td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600;white-space:nowrap">${c.grade?'['+c.grade+'] ':''}${c.name}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-size:12px;font-weight:700;color:var(--gm);white-space:nowrap">${typeSummary}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${detail}</td></tr>`;
+  }).join('');
+
+  // 전체 요약
+  const allAbn = recs.filter(r=>{ const t=typeById[r.typeId]; return t && !t.isPresent; });
+  const totalByType={};
+  allAbn.forEach(r=>{ const n=typeById[r.typeId]?.name||'기타'; totalByType[n]=(totalByType[n]||0)+1; });
+  const totalSummary = Object.entries(totalByType).map(([n,cnt])=>`${n} ${cnt}건`).join(' · ') || '특이사항 없음';
+
+  body.innerHTML = `
+    <div class="acard">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="bs" onclick="weekShift(-1)" style="padding:6px 12px">‹ 이전주</button>
+          <span style="font-weight:700;font-size:14px">${weekStart} ~ ${weekEnd}</span>
+          <button class="bs" onclick="weekShift(1)" style="padding:6px 12px">다음주 ›</button>
+          <button class="bs" onclick="weekThis()" style="padding:6px 12px">이번주</button>
+        </div>
+      </div>
+      <div style="background:var(--gp);border-radius:8px;padding:12px;margin-bottom:14px;font-size:14px">
+        <b>${ORGS[statOrg]} 이번 주 요약:</b> ${totalSummary}
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">반</th><th style="padding:8px 10px;text-align:left;white-space:nowrap">요약</th><th style="padding:8px 10px;text-align:left">상세</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--tl)">편성된 반이 없습니다.</td></tr>'}</tbody>
+      </table></div>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">출석을 제외한 결석·지각·조퇴 등 특이사항만 표시합니다.</p>
+    </div>`;
+}
+window.buildWeeklyStat = buildWeeklyStat;
+function weekShift(n){ const d=new Date(statWeekMonday); d.setDate(d.getDate()+n*7); statWeekMonday=d; buildWeeklyStat(); }
+window.weekShift = weekShift;
+function weekThis(){ statWeekMonday = mondayOf(new Date()); buildWeeklyStat(); }
+window.weekThis = weekThis;
 
 async function buildMonthlyCalendar(){
   const body = $I('st-body'); if(!body) return;
