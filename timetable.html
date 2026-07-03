@@ -1065,7 +1065,7 @@ function renderOutput(){
   if(!unit||unit<1) unit=5;
   if(unit>5) unit=5; // 5분 단위 표시를 보장(너무 큰 격자 방지)
 
-  const ROW_H=11; // 격자 1칸(5분)=11px → 20분=44px, 60분=132px (정확히 3배 비례 유지)
+  const ROW_H=13; // 격자 1칸(5분)=13px → 40분=104px, 50분=130px (시간 정비례)
   const nRows=Math.round((maxT-minT)/unit);
 
   // 각 부서별: 격자 인덱스 → 블록 시작 여부 맵
@@ -1092,7 +1092,7 @@ function renderOutput(){
     const allSameCommon = cov0 && cov0.kind==='common' &&
       depts.every(d=>{const b=blockCovering(d.id,t);return b&&b.kind==='common'&&b.name===cov0.name&&b.start===cov0.start&&b.end===cov0.end;});
 
-    html+='<tr>';
+    html+=`<tr style="height:${ROW_H}px">`;
 
     // 시각 칸: 블록 경계마다 표시, 비례 높이로 rowspan
     if(timeSkip>0){ timeSkip--; }
@@ -1142,12 +1142,14 @@ function renderOutput(){
     html+='</tr>';
   }
   html+='</tbody></table>';
-  // 격자 높이 비례 보장: td 높이는 인라인 지정, 콘텐츠는 cellwrap이 넘침 없이 가둠
+  // 격자 높이 비례 보장: 각 행(tr) 고정 높이 + 셀 내용이 높이를 밀어내지 않도록 고정
   html=`<style>
-    #output table.tt{border-collapse:collapse}
-    #output table.tt td{padding:0 6px;vertical-align:middle;line-height:1.15;overflow:hidden}
-    #output table.tt td .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;overflow:hidden}
-    #output table.tt td.tm .cellwrap{font-size:10.5px}
+    #output table.tt{border-collapse:collapse;table-layout:fixed}
+    #output table.tt td{padding:0 6px;vertical-align:middle;line-height:1.1;overflow:hidden;position:relative}
+    #output table.tt td .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;position:absolute;inset:0;overflow:hidden;padding:1px 4px}
+    #output table.tt td .lab{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+    #output table.tt td .sub{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+    #output table.tt td.tm .cellwrap{font-size:10px}
   </style>`+html;
   $('#output').innerHTML=html;
 
@@ -1575,7 +1577,9 @@ function exportImage(){
   if(!window.html2canvas){ flash('이미지 모듈 로드 실패(인터넷 확인)'); return; }
   flash('이미지 생성 중…');
   // 캡처 시 흰 배경 + 여백 확보를 위해 임시 래퍼
-  const opts={backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false};
+  const opts={backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false,
+    windowWidth:area.scrollWidth, windowHeight:area.scrollHeight,
+    scrollX:0, scrollY:0};
   html2canvas(area,opts).then(canvas=>{
     canvas.toBlob(blob=>{
       const a=document.createElement('a');
@@ -1595,17 +1599,25 @@ function printTimetable(){
   w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>시간표 인쇄</title>
     <style>
       body{font-family:-apple-system,'Malgun Gothic',sans-serif;padding:18px;color:#1C2421}
-      table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
-      td{border:1px solid #ccc;text-align:center;padding:2px 5px;vertical-align:middle}
-      td .lab{font-weight:600} td .sub{font-size:10px;opacity:.75}
-      .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%}
+      table.tt{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
+      table.tt td{border:1px solid #ccc;text-align:center;padding:0 5px;vertical-align:middle;overflow:hidden;line-height:1.15}
+      table.tt th{border:1px solid #ccc;text-align:center;padding:6px 5px;font-size:12px}
+      table.tt td .lab{font-weight:600} table.tt td .sub{font-size:10px;opacity:.75}
+      table.tt td .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;overflow:hidden}
+      /* 다른 표(주간통계 등)는 기본 */
+      table:not(.tt){border-collapse:collapse;width:100%;font-size:12px}
+      table:not(.tt) td{border:1px solid #ccc;text-align:center;padding:2px 5px}
       .legend{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;margin-bottom:10px}
       .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px}
       .summary{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:11px}
       .dept-stat{border:1px solid #ddd;border-radius:8px;padding:8px 11px}
       .ds-name{font-weight:700;margin-bottom:4px} .ds-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
       .ds-k{color:#888}
-      @media print{@page{margin:12mm}}
+      /* 인쇄 시 셀 높이(인라인 style)를 그대로 유지 → 시간 비례 보존 */
+      @media print{
+        @page{margin:12mm}
+        table.tt td{ height:auto; }
+      }
     </style></head><body>${area}</body></html>`);
   w.document.close();
   setTimeout(()=>{ w.focus(); w.print(); },350);
