@@ -1076,9 +1076,9 @@ function renderOutput(){
     return (timelines[deptId]||[]).find(b=>b.start<=t && b.end>t);
   }
 
-  let html=`<table class="tt"><colgroup><col style="width:118px">`;
+  let html=`<table class="tt"><colgroup><col style="width:0"><col style="width:118px">`;
   depts.forEach(()=>html+='<col>');
-  html+='</colgroup><thead><tr><th class="tm">시각</th>';
+  html+='</colgroup><thead><tr><th style="width:0;padding:0;border:none"></th><th class="tm">시각</th>';
   depts.forEach(d=> html+=`<th style="color:${d.color}">${d.name}</th>`);
   html+='</tr></thead><tbody>';
 
@@ -1092,7 +1092,8 @@ function renderOutput(){
     const allSameCommon = cov0 && cov0.kind==='common' &&
       depts.every(d=>{const b=blockCovering(d.id,t);return b&&b.kind==='common'&&b.name===cov0.name&&b.start===cov0.start&&b.end===cov0.end;});
 
-    html+=`<tr style="height:${ROW_H}px">`;
+    // 매 행: 폭0 spacer 셀이 행 높이를 정확히 ROW_H로 강제 (rowspan 셀도 이 높이 합을 따름)
+    html+=`<tr><td class="spacer" style="width:0;height:${ROW_H}px;padding:0;border:none;font-size:0;line-height:0">&nbsp;</td>`;
 
     // 시각 칸: 블록 경계마다 표시, 비례 높이로 rowspan
     if(timeSkip>0){ timeSkip--; }
@@ -1106,13 +1107,13 @@ function renderOutput(){
       const segLen=nextB-t;
       const span=Math.max(1,Math.round(segLen/unit));
       timeSkip=span-1;
-      html+=`<td class="tm" rowspan="${span}" style="height:${span*ROW_H}px"><div class="cellwrap">${toStr(t)}–${toStr(nextB)}</div></td>`;
+      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap">${toStr(t)}–${toStr(nextB)}</div></td>`;
     }
 
     if(allSameCommon){
       if(cov0.start===t){
         const span=Math.round(cov0.dur/unit);
-        html+=`<td colspan="${depts.length}" rowspan="${span}" style="height:${span*ROW_H}px;background:${tint(cov0.color)};color:${deepen(cov0.color)}"><div class="cellwrap"><span class="lab">${cov0.name}</span><div class="sub">${toStr(cov0.start)}–${toStr(cov0.end)} · ${cov0.dur}분</div></div></td>`;
+        html+=`<td colspan="${depts.length}" rowspan="${span}" style="background:${tint(cov0.color)};color:${deepen(cov0.color)}"><div class="cellwrap"><span class="lab">${cov0.name}</span><div class="sub">${toStr(cov0.start)}–${toStr(cov0.end)} · ${cov0.dur}분</div></div></td>`;
       }
       html+='</tr>'; continue;
     }
@@ -1121,31 +1122,31 @@ function renderOutput(){
       if(skip[d.id]>0){ skip[d.id]--; return; }
       const b=blockStartingAt(d.id,t);
       if(!b){
-        html+=`<td style="height:${ROW_H}px;background:#FBFAF6"></td>`;
+        html+=`<td style="background:#FBFAF6"></td>`;
         return;
       }
       const span=Math.round(b.dur/unit);
       skip[d.id]=span-1;
       const bg = b.kind==='wait'?'#F6E7DA':(b.kind==='rest'?'#EDEBE4':tint(b.color));
       const fg = b.kind==='wait'?'#8A4B1E':(b.kind==='rest'?'#6A716D':deepen(b.color));
-      const H=span*ROW_H;
       if(b.dur>=15){
-        html+=`<td rowspan="${span}" style="height:${H}px;background:${bg};color:${fg}">`+
+        html+=`<td rowspan="${span}" style="background:${bg};color:${fg}">`+
           `<div class="cellwrap"><span class="lab">${b.name}</span>`+
           `<div class="sub">${toStr(b.start)}–${toStr(b.end)} · ${b.dur}분</div></div></td>`;
       } else {
         // 짧은 블록: 이름 · 분 한 줄
-        html+=`<td rowspan="${span}" style="height:${H}px;background:${bg};color:${fg};padding:0 6px">`+
+        html+=`<td rowspan="${span}" style="background:${bg};color:${fg};padding:0 6px">`+
           `<div class="cellwrap"><span class="lab" style="font-size:10.5px">${b.name} · ${b.dur}분</span></div></td>`;
       }
     });
     html+='</tr>';
   }
   html+='</tbody></table>';
-  // 격자 높이 비례 보장: 각 행(tr) 고정 높이 + 셀 내용이 높이를 밀어내지 않도록 고정
+  // 격자 높이 비례 보장: 폭0 spacer 셀이 각 행 높이를 ROW_H로 고정 → rowspan 셀은 정확히 (칸수×ROW_H)
   html=`<style>
     #output table.tt{border-collapse:collapse;table-layout:fixed}
     #output table.tt td{padding:0 6px;vertical-align:middle;line-height:1.1;overflow:hidden;position:relative}
+    #output table.tt td.spacer{width:0!important;min-width:0;max-width:0;padding:0!important;border:none!important;overflow:hidden}
     #output table.tt td .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;position:absolute;inset:0;overflow:hidden;padding:1px 4px}
     #output table.tt td .lab{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
     #output table.tt td .sub{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
@@ -1600,10 +1601,11 @@ function printTimetable(){
     <style>
       body{font-family:-apple-system,'Malgun Gothic',sans-serif;padding:18px;color:#1C2421}
       table.tt{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}
-      table.tt td{border:1px solid #ccc;text-align:center;padding:0 5px;vertical-align:middle;overflow:hidden;line-height:1.15}
+      table.tt td{border:1px solid #ccc;text-align:center;padding:0 5px;vertical-align:middle;overflow:hidden;line-height:1.15;position:relative}
+      table.tt td.spacer{width:0!important;padding:0!important;border:none!important}
       table.tt th{border:1px solid #ccc;text-align:center;padding:6px 5px;font-size:12px}
       table.tt td .lab{font-weight:600} table.tt td .sub{font-size:10px;opacity:.75}
-      table.tt td .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;overflow:hidden}
+      table.tt td .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;position:absolute;inset:0;overflow:hidden;padding:1px 4px}
       /* 다른 표(주간통계 등)는 기본 */
       table:not(.tt){border-collapse:collapse;width:100%;font-size:12px}
       table:not(.tt) td{border:1px solid #ccc;text-align:center;padding:2px 5px}
