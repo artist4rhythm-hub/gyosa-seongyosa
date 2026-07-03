@@ -438,6 +438,7 @@
       <div class="panel-head">
         <h2>시간표 틀 보관함</h2>
         <span class="faint" id="storeCount" style="font-size:12px"></span>
+        <button class="btn btn-sm" id="btnPlanAccess" style="display:none;margin-left:auto">⚙️ 편성 담당자 지정</button>
       </div>
       <div class="panel-body">
         <p class="muted" style="margin:0 0 14px;font-size:13px">저장한 시간표 틀 목록입니다. 원하는 틀을 골라 <b>"이 틀로 편성하기"</b>를 누르면, 그 틀을 바탕으로 학년별 편성 화면으로 이동합니다.</p>
@@ -1336,17 +1337,31 @@ $('#saveConfirm').onclick=()=>{
   if(!name){ flash('이름을 입력하세요'); return; }
   const snapshot=JSON.parse(JSON.stringify(state));
   const now=new Date().toISOString();
+  const myUid = localStorage.getItem('gyosa_uid')||'';
+  const myName = localStorage.getItem('gyosa_name')||'';
   const existing=savedTimetables.find(s=>s.name===name);
   if(existing){
+    // 담당자만 수정 가능 (본인 또는 슈퍼)
+    if(!canEditSaved(existing)){ flash('이 시간표는 저장한 담당자만 수정할 수 있습니다'); return; }
     existing.snapshot=snapshot; existing.savedAt=now;
     flash(`"${name}" 덮어쓰기 완료`);
   } else {
-    savedTimetables.unshift({id:uid(),name,savedAt:now,snapshot});
+    savedTimetables.unshift({id:uid(),name,savedAt:now,snapshot,savedByUid:myUid,savedByName:myName});
     flash(`"${name}" 저장 완료`);
   }
   renderSaved();
   if(window.ttSyncToCloud) window.ttSyncToCloud();
 };
+
+// 저장된 시간표를 수정/삭제할 권한 (본인이 저장했거나 슈퍼)
+function canEditSaved(item){
+  const myUid = localStorage.getItem('gyosa_uid')||'';
+  const myRole = localStorage.getItem('gyosa_role')||'teacher';
+  if(myRole==='super') return true;
+  if(!item.savedByUid) return true; // 예전 데이터(저장자 없음)는 누구나
+  return item.savedByUid===myUid;
+}
+window.canEditSaved = canEditSaved;
 
 function loadTimetable(id){
   const item=savedTimetables.find(s=>s.id===id);
@@ -1438,20 +1453,23 @@ function renderStore(){
   savedTimetables.forEach(s=>{
     const depts=(s.snapshot.departments||[]);
     const deptNames=depts.map(d=>d.name).join(', ')||'부서 없음';
-    // 부서별 교시 수 요약
     const wk=s.snapshot.weekArrangements||{};
     const days=Object.keys(wk).length;
+    const canEdit = canEditSaved(s);
+    const byName = s.savedByName || '';
     const card=document.createElement('div');
     card.style.cssText='border:1px solid var(--line);border-radius:10px;padding:16px;background:var(--panel);box-shadow:var(--shadow)';
     card.innerHTML=`
-      <div style="font-weight:650;font-size:15px;color:var(--ink);margin-bottom:4px">${escapeHtml(s.name)}</div>
-      <div style="font-size:12px;color:var(--ink-faint);margin-bottom:10px">저장: ${fmtDateTime(s.savedAt)}</div>
+      <div style="font-weight:650;font-size:15px;color:var(--ink);margin-bottom:4px">${escapeHtml(s.name)} ${canEdit?'':'<span title="담당자만 수정 가능" style="font-size:12px">🔒</span>'}</div>
+      <div style="font-size:12px;color:var(--ink-faint);margin-bottom:2px">저장: ${fmtDateTime(s.savedAt)}</div>
+      ${byName?`<div style="font-size:12px;color:var(--ink-faint);margin-bottom:10px">담당: ${escapeHtml(byName)}</div>`:'<div style="margin-bottom:10px"></div>'}
       <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:3px"><b>부서</b> · ${escapeHtml(deptNames)}</div>
       <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px"><b>요일</b> · ${days}일 구성</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" data-act="apply" data-id="${s.id}">이 틀로 편성하기</button>
-        <button class="btn btn-sm" data-act="load" data-id="${s.id}">틀 수정</button>
-        <button class="btn btn-ghost btn-sm" data-act="del" data-id="${s.id}">삭제</button>
+        <button class="btn btn-sm" data-act="dup" data-id="${s.id}">복제</button>
+        ${canEdit?`<button class="btn btn-sm" data-act="load" data-id="${s.id}">틀 수정</button>`:''}
+        ${canEdit?`<button class="btn btn-ghost btn-sm" data-act="del" data-id="${s.id}">삭제</button>`:''}
       </div>`;
     grid.appendChild(card);
   });
@@ -1460,8 +1478,13 @@ function renderStore(){
     const id=b.dataset.id, act=b.dataset.act;
     b.onclick=()=>{
       if(act==='apply') applyFrameToPlan(id);
+      else if(act==='dup'){ duplicateTimetable(id); renderStore(); }
       else if(act==='load'){ loadTimetable(id); switchTab('frame'); }
-      else if(act==='del'){ deleteTimetable(id); renderStore(); }
+      else if(act==='del'){
+        const item=savedTimetables.find(x=>x.id===id);
+        if(item && !canEditSaved(item)){ flash('담당자만 삭제할 수 있습니다'); return; }
+        if(confirm('이 시간표 틀을 삭제할까요?')){ deleteTimetable(id); renderStore(); }
+      }
     };
   });
 }
@@ -1740,8 +1763,13 @@ function renderWeekStats(){
 function setupTabs(){
   document.querySelectorAll('.tabbtn').forEach(b=>{
     b.onclick=()=>{
-      document.querySelectorAll('.tabbtn').forEach(x=>x.classList.toggle('on',x===b));
       const tab=b.dataset.tab;
+      // 학년별 편성은 지정된 선생님만 접근
+      if(tab==='plan' && !canAccessPlan()){
+        alert('학년별 편성은 슈퍼 관리자가 지정한 담당자만 접근할 수 있습니다.\n\n접근이 필요하면 관리자에게 요청해주세요.');
+        return;
+      }
+      document.querySelectorAll('.tabbtn').forEach(x=>x.classList.toggle('on',x===b));
       document.getElementById('tab-frame').style.display = tab==='frame'?'':'none';
       document.getElementById('tab-store').style.display = tab==='store'?'':'none';
       document.getElementById('tab-plan').style.display = tab==='plan'?'':'none';
@@ -1759,6 +1787,25 @@ function setupTabs(){
       if(sub==='place') renderPlace();
     };
   });
+}
+
+// 편성 접근 권한 (슈퍼이거나, 지정된 uid 목록에 포함)
+let _planAccessUids = [];
+let _cuForPlan = null;
+window.__setPlanAccess = function(uids, cu){ _planAccessUids = uids||[]; _cuForPlan = cu; updatePlanTabUI(); };
+window.__setCU = function(cu){ _cuForPlan = cu; updatePlanTabUI(); };
+function canAccessPlan(){
+  const role = (_cuForPlan&&_cuForPlan.role) || localStorage.getItem('gyosa_role') || 'teacher';
+  if(role==='super') return true;
+  const myUid = (_cuForPlan&&_cuForPlan.uid) || localStorage.getItem('gyosa_uid') || '';
+  return _planAccessUids.includes(myUid);
+}
+// 접근 권한 없으면 편성 탭 버튼을 흐리게 + 자물쇠
+function updatePlanTabUI(){
+  const btn=document.querySelector('.tabbtn[data-tab="plan"]');
+  if(!btn) return;
+  if(canAccessPlan()){ btn.style.opacity=''; btn.textContent='학년별 편성'; }
+  else { btn.style.opacity='0.5'; btn.textContent='학년별 편성 🔒'; }
 }
 
 /* ===================== 시간표 배치 (입체 레이어) ===================== */
@@ -2402,7 +2449,7 @@ setupTabs();
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, getDocs, collection, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -2447,11 +2494,28 @@ onAuthStateChanged(auth, async (user)=>{
     const snap = await getDoc(doc(db,'staff',user.uid));
     if(snap.exists()){
       CU = { uid:user.uid, ...snap.data() };
-      try { localStorage.setItem('gyosa_role', CU.role||'teacher'); } catch(e){}
+      try {
+        localStorage.setItem('gyosa_role', CU.role||'teacher');
+        localStorage.setItem('gyosa_uid', CU.uid);
+        localStorage.setItem('gyosa_name', CU.name||'');
+      } catch(e){}
+      if(window.__setCU) window.__setCU(CU);
     }
   } catch(e){}
   if(guard) guard.style.display='none';
   document.querySelector('.wrap')?.style.removeProperty('display');
+  // 학년별 편성 접근 권한 로드 (슈퍼가 지정한 uid 목록)
+  try {
+    const pa = await getDoc(doc(db,'timetables','planAccess'));
+    const allowed = pa.exists() && Array.isArray(pa.data().uids) ? pa.data().uids : [];
+    if(window.__setPlanAccess) window.__setPlanAccess(allowed, CU);
+  } catch(e){ if(window.__setPlanAccess) window.__setPlanAccess([], CU); }
+
+  // 슈퍼 관리자면 '편성 담당자 지정' 버튼 노출
+  if(CU && CU.role==='super'){
+    const btn = document.getElementById('btnPlanAccess');
+    if(btn){ btn.style.display='inline-block'; btn.onclick = openPlanAccessDlg; }
+  }
   // 클라우드에서 저장된 시간표 불러오기
   try {
     const ts = await getDoc(doc(db,'timetables','main'));
@@ -2460,5 +2524,52 @@ onAuthStateChanged(auth, async (user)=>{
     }
   } catch(e){ console.error('시간표 불러오기 실패', e); }
 });
+
+// ── 편성 담당자 지정 (슈퍼 전용) ──
+async function openPlanAccessDlg(){
+  // 현재 지정된 목록
+  let allowed = [];
+  try {
+    const pa = await getDoc(doc(db,'timetables','planAccess'));
+    allowed = pa.exists() && Array.isArray(pa.data().uids) ? pa.data().uids : [];
+  } catch(e){}
+  // 교직원 목록
+  const snap = await getDocs(collection(db,'staff'));
+  const staff = [];
+  snap.forEach(d=>{ const s=d.data(); if((s.acStatus||'active')==='active') staff.push({uid:d.id, name:s.name, role:s.role, org:s.org}); });
+  staff.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  const orgName = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+  const rows = staff.map(s=>`
+    <label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;cursor:pointer;margin-bottom:6px">
+      <input type="checkbox" value="${s.uid}" ${allowed.includes(s.uid)||s.role==='super'?'checked':''} ${s.role==='super'?'disabled':''} style="width:16px;height:16px">
+      <span style="font-weight:600">${s.name||'(이름없음)'}</span>
+      <span style="font-size:12px;color:var(--ink-faint)">${orgName[s.org]||s.org||''} · ${s.role==='super'?'슈퍼관리자(항상 허용)':s.role==='org_admin'?'기관관리자':s.role==='tab_admin'?'부서장':'교사'}</span>
+    </label>`).join('');
+  const dlg = document.createElement('dialog');
+  dlg.style.cssText='border:none;border-radius:16px;padding:0;max-width:480px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.3)';
+  dlg.innerHTML=`
+    <div style="padding:22px">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">학년별 편성 담당자 지정</div>
+      <div style="font-size:13px;color:var(--ink-soft);margin-bottom:16px">체크한 선생님만 '학년별 편성' 탭에 접근할 수 있습니다. (슈퍼 관리자는 항상 접근 가능)</div>
+      <div style="max-height:50vh;overflow-y:auto;margin-bottom:16px">${rows||'<div style="color:var(--ink-faint)">교직원이 없습니다.</div>'}</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-sm" id="paCancel">취소</button>
+        <button class="btn btn-primary btn-sm" id="paSave">저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  dlg.querySelector('#paCancel').onclick=()=>{ dlg.close(); dlg.remove(); };
+  dlg.querySelector('#paSave').onclick=async()=>{
+    const uids = [...dlg.querySelectorAll('input[type=checkbox]:checked:not(:disabled)')].map(c=>c.value);
+    try {
+      await setDoc(doc(db,'timetables','planAccess'), {uids, updatedAt:Timestamp.now(), updatedBy:CU.name||''});
+      if(window.__setPlanAccess) window.__setPlanAccess(uids, CU);
+      dlg.close(); dlg.remove();
+      alert('편성 담당자를 저장했습니다.');
+    } catch(e){ alert('저장 실패: '+e.message); }
+  };
+}
+
 </script>
 </html>
