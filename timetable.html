@@ -1457,18 +1457,22 @@ function renderStore(){
     const days=Object.keys(wk).length;
     const canEdit = canEditSaved(s);
     const byName = s.savedByName || '';
+    const myRole = localStorage.getItem('gyosa_role')||'teacher';
+    // 권한 설정 가능: 슈퍼, 또는 현재 수정권한이 있는 사람(담당자/미지정)
+    const canManage = myRole==='super' || canEdit;
     const card=document.createElement('div');
     card.style.cssText='border:1px solid var(--line);border-radius:10px;padding:16px;background:var(--panel);box-shadow:var(--shadow)';
     card.innerHTML=`
-      <div style="font-weight:650;font-size:15px;color:var(--ink);margin-bottom:4px">${escapeHtml(s.name)} ${canEdit?'':'<span title="담당자만 수정 가능" style="font-size:12px">🔒</span>'}</div>
+      <div style="font-weight:650;font-size:15px;color:var(--ink);margin-bottom:4px">${escapeHtml(s.name)} ${(s.savedByUid?'<span title="담당자만 수정 가능" style="font-size:12px">🔒</span>':'')}</div>
       <div style="font-size:12px;color:var(--ink-faint);margin-bottom:2px">저장: ${fmtDateTime(s.savedAt)}</div>
-      ${byName?`<div style="font-size:12px;color:var(--ink-faint);margin-bottom:10px">담당: ${escapeHtml(byName)}</div>`:'<div style="margin-bottom:10px"></div>'}
+      <div style="font-size:12px;color:${byName?'var(--ink-faint)':'#c0392b'};margin-bottom:10px">담당: ${byName?escapeHtml(byName):'미지정 (누구나 수정 가능)'}</div>
       <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:3px"><b>부서</b> · ${escapeHtml(deptNames)}</div>
       <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px"><b>요일</b> · ${days}일 구성</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" data-act="apply" data-id="${s.id}">이 틀로 편성하기</button>
         <button class="btn btn-sm" data-act="dup" data-id="${s.id}">복제</button>
         ${canEdit?`<button class="btn btn-sm" data-act="load" data-id="${s.id}">틀 수정</button>`:''}
+        ${canManage?`<button class="btn btn-sm" data-act="perm" data-id="${s.id}">🔑 권한</button>`:''}
         ${canEdit?`<button class="btn btn-ghost btn-sm" data-act="del" data-id="${s.id}">삭제</button>`:''}
       </div>`;
     grid.appendChild(card);
@@ -1480,6 +1484,7 @@ function renderStore(){
       if(act==='apply') applyFrameToPlan(id);
       else if(act==='dup'){ duplicateTimetable(id); renderStore(); }
       else if(act==='load'){ loadTimetable(id); switchTab('frame'); }
+      else if(act==='perm'){ if(window.openTtPermDlg) window.openTtPermDlg(id); }
       else if(act==='del'){
         const item=savedTimetables.find(x=>x.id===id);
         if(item && !canEditSaved(item)){ flash('담당자만 삭제할 수 있습니다'); return; }
@@ -1488,6 +1493,7 @@ function renderStore(){
     };
   });
 }
+window.renderStore = renderStore;
 
 // 탭 전환 (프로그램에서 호출)
 function switchTab(tab){
@@ -2524,6 +2530,57 @@ onAuthStateChanged(auth, async (user)=>{
     }
   } catch(e){ console.error('시간표 불러오기 실패', e); }
 });
+
+// ── 시간표 틀 권한(담당자) 설정 ──
+window.openTtPermDlg = async function(ttId){
+  const saved = window.ttGetSaved ? window.ttGetSaved() : [];
+  const item = saved.find(s=>s.id===ttId);
+  if(!item){ alert('틀을 찾을 수 없습니다.'); return; }
+  // 권한 확인: 슈퍼 또는 (담당자 본인/미지정)
+  const myRole = CU?.role || localStorage.getItem('gyosa_role') || 'teacher';
+  const myUid = CU?.uid || localStorage.getItem('gyosa_uid') || '';
+  const canManage = myRole==='super' || !item.savedByUid || item.savedByUid===myUid;
+  if(!canManage){ alert('이 틀의 담당자 또는 슈퍼 관리자만 권한을 바꿀 수 있습니다.'); return; }
+
+  const snap = await getDocs(collection(db,'staff'));
+  const staff = [];
+  snap.forEach(d=>{ const s=d.data(); if((s.acStatus||'active')==='active') staff.push({uid:d.id, name:s.name, role:s.role, org:s.org}); });
+  staff.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  const orgName = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+  const opts = `<option value="">— 미지정 (누구나 수정 가능) —</option>` +
+    staff.map(s=>`<option value="${s.uid}|${escapeHtml2(s.name||'')}" ${item.savedByUid===s.uid?'selected':''}>${s.name||'(이름없음)'} · ${orgName[s.org]||s.org||''}</option>`).join('');
+
+  const dlg = document.createElement('dialog');
+  dlg.style.cssText='border:none;border-radius:16px;padding:0;max-width:440px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,0.3)';
+  dlg.innerHTML=`
+    <div style="padding:22px">
+      <div style="font-size:18px;font-weight:700;margin-bottom:4px">틀 담당자 · 잠금 설정</div>
+      <div style="font-size:13px;color:#667;margin-bottom:4px"><b>${escapeHtml2(item.name)}</b></div>
+      <div style="font-size:13px;color:#667;margin-bottom:16px">담당자를 지정하면 그 사람과 슈퍼 관리자만 이 틀을 수정·삭제할 수 있습니다. 모두 열람·복제는 가능합니다.</div>
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">담당자</label>
+      <select id="ttPermSel" style="width:100%;padding:10px;border:1px solid #ccc;border-radius:8px;font-size:14px;margin-bottom:18px">${opts}</select>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-sm" id="ttPermCancel">취소</button>
+        <button class="btn btn-primary btn-sm" id="ttPermSave">저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  dlg.querySelector('#ttPermCancel').onclick=()=>{ dlg.close(); dlg.remove(); };
+  dlg.querySelector('#ttPermSave').onclick=async()=>{
+    const val = dlg.querySelector('#ttPermSel').value;
+    if(val){ const [uid,name]=val.split('|'); item.savedByUid=uid; item.savedByName=name; }
+    else { item.savedByUid=''; item.savedByName=''; }
+    // 클라우드 반영
+    try {
+      await setDoc(doc(db,'timetables','main'), {list: saved, updatedAt: Timestamp.now(), updatedBy: CU?.name||''});
+      dlg.close(); dlg.remove();
+      if(window.renderStore) window.renderStore();
+      alert('담당자를 저장했습니다.');
+    } catch(e){ alert('저장 실패: '+e.message); }
+  };
+};
+function escapeHtml2(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ── 편성 담당자 지정 (슈퍼 전용) ──
 async function openPlanAccessDlg(){
