@@ -90,15 +90,15 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
   border:0.5px solid #c9a84c;pointer-events:none;z-index:2;
 }
 .cert-bg{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:110mm;opacity:0.06;pointer-events:none;z-index:0;}
-.cert-inner{position:relative;z-index:1;padding:6mm 8mm;}
-.cert-docno{text-align:right;font-size:10.5pt;color:#555;letter-spacing:1px;margin-bottom:16mm;}
+.cert-inner{position:relative;z-index:1;padding:2mm 8mm;}
+.cert-docno{text-align:right;font-size:10.5pt;color:#555;letter-spacing:1px;margin-bottom:12mm;}
 .cert-title{
   text-align:center;font-size:34pt;font-weight:800;letter-spacing:16px;color:#1a2440;
   margin:0 0 4mm;text-indent:16px;
 }
-.cert-title-line{width:52mm;height:2px;background:linear-gradient(90deg,transparent,#b8935a,transparent);margin:0 auto 20mm;}
-.cert-fields{margin:0 10mm 14mm;}
-.cert-row{display:flex;font-size:13.5pt;margin-bottom:8mm;line-height:1.5;align-items:baseline;}
+.cert-title-line{width:52mm;height:2px;background:linear-gradient(90deg,transparent,#b8935a,transparent);margin:0 auto 16mm;}
+.cert-fields{margin:0 10mm 12mm;}
+.cert-row{display:flex;font-size:13.5pt;margin-bottom:7.5mm;line-height:1.5;align-items:baseline;}
 .cert-label{width:26mm;flex-shrink:0;color:#333;font-weight:600;display:inline-flex;justify-content:space-between;}
 .cert-label>span{display:inline-block;}
 .cert-colon{width:6mm;flex-shrink:0;color:#999;}
@@ -119,26 +119,6 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 /* 미리보기 축소 */
 .cert-preview-wrap{background:#e8e8ee;padding:20px;border-radius:12px;overflow:auto;max-height:70vh;}
 .cert-scale{transform:scale(0.62);transform-origin:top center;}
-
-@media print{
-  body *{visibility:hidden;}
-  #print-area, #print-area *{visibility:visible;}
-  #print-area{position:absolute;top:0;left:0;width:100%;}
-  .cert-sheet{width:210mm;min-height:297mm;margin:0;box-shadow:none;background:#fffdf9;}
-  @page{size:A4;margin:0;}
-}
-
-/* 미리보기 축소 */
-.cert-preview-wrap{background:#e8e8ee;padding:20px;border-radius:12px;overflow:auto;max-height:70vh;}
-.cert-scale{transform:scale(0.62);transform-origin:top center;}
-
-@media print{
-  body *{visibility:hidden;}
-  #print-area, #print-area *{visibility:visible;}
-  #print-area{position:absolute;top:0;left:0;width:100%;}
-  .cert-sheet{width:210mm;min-height:297mm;margin:0;box-shadow:none;}
-  @page{size:A4;margin:0;}
-}
 </style>
 <link rel="stylesheet" href="ui.css">
 <script src="topnav.js"></script>
@@ -277,10 +257,17 @@ function canIssue(s){
 }
 
 // 날짜 포맷: YYYY-MM-DD → "YYYY년 M월 D일"
-function korDate(ymd){
-  if(!ymd || ymd.length<10) return ymd||'';
-  const [y,m,d] = ymd.split('-');
-  return `${Number(y)}년 ${Number(m)}월 ${Number(d)}일`;
+function korDate(raw){
+  if(!raw) return '';
+  const str = String(raw).trim();
+  // 숫자 그룹 3개 추출 (구분자: - / . 공백 년월일 등 무엇이든)
+  const nums = str.match(/\d+/g);
+  if(!nums || nums.length<3) return str; // 파싱 불가 시 원본
+  let [y, m, d] = nums.map(Number);
+  // 2자리 연도 보정 (예: 05 → 2005, 99 → 1999)
+  if(y < 100){ y += (y <= 40 ? 2000 : 1900); }
+  if(m<1||m>12||d<1||d>31) return str; // 이상값이면 원본
+  return `${y}년 ${m}월 ${d}일`;
 }
 function todayYMD(){ const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; }
 
@@ -589,11 +576,53 @@ function previewCert(id){
 }
 window.previewCert = previewCert;
 
-// A4 인쇄
+// 증명서 인쇄용 CSS (새 창에 삽입)
+function certPrintCSS(){
+  return `
+    @import url('https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&family=Noto+Serif+KR:wght@400;600;700;900&display=swap');
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#fff;}
+    .cert-sheet{position:relative;background:#fffdf9;width:210mm;min-height:297mm;padding:22mm 20mm;margin:0 auto;font-family:'Nanum Myeongjo','Noto Serif KR',serif;color:#1a1a1a;}
+    .cert-sheet::before{content:'';position:absolute;top:10mm;left:10mm;right:10mm;bottom:10mm;border:1.5px solid #b8935a;pointer-events:none;}
+    .cert-sheet::after{content:'';position:absolute;top:11.5mm;left:11.5mm;right:11.5mm;bottom:11.5mm;border:0.5px solid #c9a84c;pointer-events:none;}
+    .cert-bg{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:110mm;opacity:0.06;pointer-events:none;}
+    .cert-inner{position:relative;z-index:1;padding:6mm 8mm;}
+    .cert-docno{text-align:right;font-size:10.5pt;color:#555;letter-spacing:1px;margin-bottom:16mm;}
+    .cert-title{text-align:center;font-size:34pt;font-weight:800;letter-spacing:16px;color:#1a2440;margin:0 0 4mm;text-indent:16px;}
+    .cert-title-line{width:52mm;height:2px;background:linear-gradient(90deg,transparent,#b8935a,transparent);margin:0 auto 20mm;}
+    .cert-fields{margin:0 10mm 14mm;}
+    .cert-row{display:flex;font-size:13.5pt;margin-bottom:8mm;line-height:1.5;align-items:baseline;}
+    .cert-label{width:26mm;flex-shrink:0;color:#333;font-weight:600;display:inline-flex;justify-content:space-between;}
+    .cert-label>span{display:inline-block;}
+    .cert-colon{width:6mm;flex-shrink:0;color:#999;}
+    .cert-value{flex:1;color:#111;border-bottom:0.5px dotted #ccc;padding-bottom:1mm;}
+    .cert-statement{text-align:center;font-size:13.5pt;line-height:2.1;margin:16mm 0 22mm;color:#222;}
+    .cert-statement b{font-weight:700;color:#1a2440;}
+    .cert-org{text-align:center;margin-top:8mm;}
+    .cert-orgname{font-size:22pt;font-weight:800;letter-spacing:3px;color:#1a2440;}
+    .cert-orgen{font-size:8.5pt;letter-spacing:4px;color:#888;margin-top:2px;}
+    .cert-rep{position:relative;display:inline-block;margin-top:10mm;font-size:15pt;letter-spacing:2px;}
+    .cert-rep .repname{font-weight:700;letter-spacing:4px;}
+    .cert-rep .stamp{position:absolute;right:-19mm;top:50%;transform:translateY(-50%);width:21mm;opacity:0.92;}
+    .cert-footer{position:absolute;bottom:16mm;left:20mm;right:20mm;font-size:8.5pt;color:#555;padding:0 8mm;}
+    .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,#b8935a 20%,#b8935a 80%,transparent);margin-bottom:3mm;}
+    .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
+    .cert-footer .note{color:#777;font-size:7.8pt;line-height:1.65;}
+    @page{size:A4;margin:0;}
+    @media print{ html,body{width:210mm;} }
+  `;
+}
+
+// A4 인쇄 (별도 창)
 function printCert(id){
   const c = CERTS.find(x=>x.id===id); if(!c) return;
-  $I('print-area').innerHTML = buildCertFromRecord(c);
-  setTimeout(()=>{ window.print(); }, 200);
+  const w = window.open('', '_blank', 'width=800,height=1000');
+  if(!w){ toast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.','err'); return; }
+  w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${esc(c.type)}증명서 - ${esc(c.studentName)}</title>
+    <style>${certPrintCSS()}</style></head><body>${buildCertFromRecord(c)}</body></html>`);
+  w.document.close();
+  // 폰트·이미지 로딩 대기 후 인쇄
+  w.onload = () => { setTimeout(()=>{ w.focus(); w.print(); }, 600); };
 }
 window.printCert = printCert;
 
