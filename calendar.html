@@ -227,10 +227,14 @@ function manageCardHTML(){
   return `
     <div class="acard">
       <h3 class="actitle">⚙️ 캘린더 관리</h3>
-      <p class="adesc">표시할 구글 캘린더를 등록합니다. 캘린더는 "공개"로 설정되어 있어야 표시됩니다.</p>
+      <p class="adesc">표시할 구글 캘린더를 등록합니다. 캘린더는 "공개"로 설정되어 있어야 표시됩니다. <b>↑↓ 버튼으로 순서를 바꾸면 홈 화면의 학사일정 순서도 함께 바뀝니다.</b></p>
       <button class="bp" onclick="openCalForm()">＋ 캘린더 추가</button>
       <div class="callist">
-        ${CALS.length?CALS.map(c=>`<div class="calitem">
+        ${CALS.length?CALS.map((c,i)=>`<div class="calitem">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <button class="bm" style="padding:2px 8px;${i===0?'opacity:.3;pointer-events:none':''}" onclick="moveCal('${c.id}',-1)">↑</button>
+            <button class="bm" style="padding:2px 8px;${i===CALS.length-1?'opacity:.3;pointer-events:none':''}" onclick="moveCal('${c.id}',1)">↓</button>
+          </div>
           <div style="flex:1">
             <div class="calname">${c.name}</div>
             <div class="calid">${c.calId}</div>
@@ -303,6 +307,29 @@ async function delCal(id){
   } catch(e){ toast('삭제 실패: '+e.message,'err'); }
 }
 window.delCal = delCal;
+
+// 캘린더 순서 이동 (배열 재배치 후 order 전체 재부여)
+async function moveCal(id, dir){
+  const idx = CALS.findIndex(c=>c.id===id);
+  if(idx<0) return;
+  const swapIdx = idx + dir;
+  if(swapIdx<0 || swapIdx>=CALS.length) return;
+  // 배열에서 위치 교환
+  const arr = [...CALS];
+  [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+  try {
+    // 새 순서대로 order 0,1,2... 재부여
+    for(let i=0;i<arr.length;i++){
+      if((arr[i].order ?? -1) !== i){
+        await updateDoc(doc(db,'calendars',arr[i].id), {order:i});
+      }
+    }
+    await loadCals();
+    renderMain();
+    toast('순서를 변경했습니다.','ok');
+  } catch(e){ toast('변경 실패: '+e.message,'err'); }
+}
+window.moveCal = moveCal;
 </script>
 </body>
 </html>
