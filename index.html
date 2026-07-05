@@ -311,6 +311,7 @@ TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
 const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사'};
 const pad=n=>String(n).padStart(2,'0');
+function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── 공통 유틸 함수 ───────────────────────────
 const $I = id => document.getElementById(id);
@@ -573,7 +574,8 @@ async function saveEditStaff(uid) {
     orgs = [org];
   }
 
-  await updateDoc(doc(db, 'staff', uid), { name, org, orgs, dept, role, acStatus });
+  const birth = $I('es-birth')?.value || '';
+  await updateDoc(doc(db, 'staff', uid), { name, org, orgs, dept, role, acStatus, birth });
   logActivity('수정', '계정', `${name} 정보 수정 (상태: ${acStatus==='active'?'재직':acStatus==='leave'?'휴직':'퇴직'})`);
   toast(`${name} 선생님 정보가 수정되었습니다.`, 'ok');
   document.getElementById('edit-staff-mod')?.remove();
@@ -1130,15 +1132,83 @@ function renderHome(){
       <div style="font-size:15px;font-weight:800;color:#374151;margin:4px 4px 12px">바로가기</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:18px">${shortcutHtml}</div>
 
+      <div id="home-birthday" style="background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04);margin-bottom:16px">
+        <div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:12px;display:flex;align-items:center;gap:7px"><span>🎂</span> 이번 달 생일</div>
+        <div style="font-size:13px;color:#9ca3af">불러오는 중...</div>
+      </div>
+
       <div id="home-notice" style="background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
         <div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:12px;display:flex;align-items:center;gap:7px"><span>📢</span> 최근 공지</div>
         <div style="font-size:13px;color:#9ca3af">불러오는 중...</div>
       </div>
     </div>`;
 
+  loadHomeBirthdays();
   loadHomeNotices();
 }
 window.renderHome = renderHome;
+
+// 이번 달 생일 (학생 + 선생님, 기관별)
+async function loadHomeBirthdays(){
+  const box = $I('home-birthday');
+  if(!box) return;
+  const thisMonth = new Date().getMonth()+1; // 1~12
+  const today = new Date().getDate();
+  const orgNames = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+  const myOrgList = CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
+
+  try {
+    // 학생 로드
+    const studSnap = await getDocs(collection(db,'students'));
+    const students = [];
+    studSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if(myOrgList.includes(s.org)) students.push(s); });
+    // 선생님 로드
+    const staffSnap = await getDocs(collection(db,'staff'));
+    const teachers = [];
+    staffSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if((s.acStatus||'active')==='active'){
+      const sOrgs = s.role==='super'?['jihyebit','daniel']:(s.orgs&&s.orgs.length?s.orgs:[s.org]);
+      if(sOrgs.some(o=>myOrgList.includes(o))) teachers.push(s);
+    }});
+
+    // 이번 달 생일자 필터 (birth: YYYY-MM-DD)
+    const inMonth = arr => arr.filter(p=>{
+      const b = p.birth||'';
+      return b.length>=7 && Number(b.slice(5,7))===thisMonth;
+    }).map(p=>({name:p.name, day:Number((p.birth||'').slice(8,10))||0, org:p.org, birth:p.birth}))
+      .sort((a,b)=>a.day-b.day);
+
+    // 기관별로 구성
+    let html = '';
+    for(const org of myOrgList){
+      const orgStuds = inMonth(students.filter(s=>s.org===org));
+      const orgTeachers = inMonth(teachers.filter(t=>{
+        const tOrgs = t.role==='super'?['jihyebit','daniel']:(t.orgs&&t.orgs.length?t.orgs:[t.org]);
+        return tOrgs.includes(org);
+      }));
+      if(!orgStuds.length && !orgTeachers.length) continue;
+      html += `<div style="margin-bottom:16px">
+        <div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #f0f0f4">${orgNames[org]||org}</div>`;
+      const chip = (p, isTeacher) => {
+        const isToday = p.day===today;
+        return `<span style="display:inline-flex;align-items:center;gap:5px;background:${isToday?'#fef3c7':'#f9fafb'};border:1px solid ${isToday?'#fcd34d':'#eef0f4'};border-radius:100px;padding:5px 12px;margin:0 6px 6px 0;font-size:13px">
+          ${isToday?'🎉 ':''}${isTeacher?'👩‍🏫':'🧒'} <b>${esc(p.name)}</b> <span style="color:#9ca3af;font-size:12px">${thisMonth}/${p.day}</span></span>`;
+      };
+      if(orgTeachers.length){
+        html += `<div style="margin-bottom:6px"><span style="font-size:11px;color:#9ca3af;margin-right:6px">선생님</span>${orgTeachers.map(t=>chip(t,true)).join('')}</div>`;
+      }
+      if(orgStuds.length){
+        html += `<div><span style="font-size:11px;color:#9ca3af;margin-right:6px">학생</span>${orgStuds.map(s=>chip(s,false)).join('')}</div>`;
+      }
+      html += `</div>`;
+    }
+
+    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:12px;display:flex;align-items:center;gap:7px"><span>🎂</span> 이번 달 생일 <span style="font-size:12px;color:#9ca3af;font-weight:400">(${thisMonth}월)</span></div>`
+      + (html || '<div style="font-size:13px;color:#9ca3af">이번 달 생일인 사람이 없습니다.</div>');
+  } catch(e){
+    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px">🎂 이번 달 생일</div><div style="font-size:13px;color:#9ca3af">불러올 수 없습니다.</div>`;
+  }
+}
+window.loadHomeBirthdays = loadHomeBirthdays;
 
 // 홈 공지 요약 (최근 5건)
 async function loadHomeNotices(){
@@ -2368,6 +2438,8 @@ function openEditStaff(uid, name, org, dept, role){
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
           <div class="fgrp"><label>이름</label>
             <input id="es-name" type="text" value="${name}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+          <div class="fgrp"><label>생일 (선택)</label>
+            <input id="es-birth" type="date" value="${cur.birth||''}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
           <div class="fgrp"><label>권한</label>
             <select id="es-role" onchange="updEditOrgMode()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
               <option value="teacher"${role==='teacher'?' selected':''}>교사</option>
