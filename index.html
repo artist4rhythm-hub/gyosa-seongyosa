@@ -1137,6 +1137,11 @@ function renderHome(){
         <div style="font-size:13px;color:#9ca3af">불러오는 중...</div>
       </div>
 
+      <div id="home-schedule" style="background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04);margin-bottom:16px">
+        <div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:12px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정</div>
+        <div style="font-size:13px;color:#9ca3af">불러오는 중...</div>
+      </div>
+
       <div id="home-notice" style="background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
         <div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:12px;display:flex;align-items:center;gap:7px"><span>📢</span> 최근 공지</div>
         <div style="font-size:13px;color:#9ca3af">불러오는 중...</div>
@@ -1144,6 +1149,7 @@ function renderHome(){
     </div>`;
 
   loadHomeBirthdays();
+  loadHomeSchedule();
   loadHomeNotices();
 }
 window.renderHome = renderHome;
@@ -1231,6 +1237,112 @@ async function loadHomeBirthdays(){
   }
 }
 window.loadHomeBirthdays = loadHomeBirthdays;
+
+// ── 학사일정 (구글 캘린더 API로 읽기) ──
+const GCAL_API_KEY = 'AIzaSyD0PFJeynpexhNLmZhHm1l8M7kfEQW57cg';
+async function loadHomeSchedule(){
+  const box = $I('home-schedule');
+  if(!box) return;
+  try {
+    // 등록된 캘린더 목록
+    const snap = await getDocs(collection(db,'calendars'));
+    const cals = [];
+    snap.forEach(d=>{ const c=d.data(); if(c.calId) cals.push({name:c.name||'', calId:c.calId}); });
+    if(!cals.length){
+      box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px">📅 학사일정</div><div style="font-size:13px;color:#9ca3af">등록된 캘린더가 없습니다. 학사일정에서 캘린더를 먼저 등록하세요.</div>`;
+      return;
+    }
+    // 기간: 오늘 0시 ~ 7일 뒤
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const end = new Date(start); end.setDate(end.getDate()+8); // 오늘+7일
+    const timeMin = start.toISOString();
+    const timeMax = end.toISOString();
+
+    // 각 캘린더에서 일정 가져오기
+    let events = [];
+    for(const cal of cals){
+      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.calId)}/events`
+        + `?key=${GCAL_API_KEY}&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`
+        + `&singleEvents=true&orderBy=startTime&maxResults=50`;
+      try {
+        const res = await fetch(url);
+        if(!res.ok) continue;
+        const data = await res.json();
+        (data.items||[]).forEach(ev=>{
+          const s = ev.start?.dateTime || ev.start?.date;
+          const isAllDay = !ev.start?.dateTime;
+          if(!s) return;
+          events.push({
+            title: ev.summary || '(제목 없음)',
+            start: s,
+            isAllDay,
+            calName: cal.name,
+            date: s.slice(0,10)
+          });
+        });
+      } catch(e){}
+    }
+
+    if(!events.length){
+      box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정</div><div style="font-size:13px;color:#9ca3af">앞으로 7일간 등록된 일정이 없습니다.</div>`;
+      return;
+    }
+
+    // 날짜별 분류
+    const todayStr = ymd(start);
+    const tmr = new Date(start); tmr.setDate(tmr.getDate()+1);
+    const tmrStr = ymd(tmr);
+    events.sort((a,b)=>a.start.localeCompare(b.start));
+
+    const fmtTime = ev => {
+      if(ev.isAllDay) return '종일';
+      const d = new Date(ev.start);
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    const evChip = ev => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f4f4f7">
+      <span style="min-width:52px;font-size:12px;color:#6b7280;font-weight:600">${fmtTime(ev)}</span>
+      <span style="flex:1;font-size:14px;color:#1f2937">${esc(ev.title)}</span>
+      ${ev.calName?`<span style="font-size:11px;color:#9ca3af">${esc(ev.calName)}</span>`:''}
+    </div>`;
+
+    const todayEvs = events.filter(e=>e.date===todayStr);
+    const tmrEvs = events.filter(e=>e.date===tmrStr);
+    const weekEvs = events.filter(e=>e.date>tmrStr);
+
+    const dnames=['일','월','화','수','목','금','토'];
+    let html = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정 <span style="font-size:12px;color:#9ca3af;font-weight:400">(앞으로 7일)</span></div>`;
+
+    html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#0891b2;margin-bottom:4px">오늘 · ${start.getMonth()+1}/${start.getDate()}(${dnames[start.getDay()]})</div>`;
+    html += todayEvs.length ? todayEvs.map(evChip).join('') : '<div style="font-size:13px;color:#9ca3af;padding:6px 0">오늘 일정이 없습니다.</div>';
+    html += `</div>`;
+
+    html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:4px">내일 · ${tmr.getMonth()+1}/${tmr.getDate()}(${dnames[tmr.getDay()]})</div>`;
+    html += tmrEvs.length ? tmrEvs.map(evChip).join('') : '<div style="font-size:13px;color:#9ca3af;padding:6px 0">내일 일정이 없습니다.</div>';
+    html += `</div>`;
+
+    if(weekEvs.length){
+      html += `<div><div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:4px">이번 주 그 이후</div>`;
+      // 날짜별 그룹
+      let curDate = '';
+      weekEvs.forEach(ev=>{
+        if(ev.date!==curDate){
+          curDate = ev.date;
+          const d = new Date(ev.date+'T00:00:00');
+          html += `<div style="font-size:12px;color:#9ca3af;margin-top:8px;margin-bottom:2px">${d.getMonth()+1}/${d.getDate()}(${dnames[d.getDay()]})</div>`;
+        }
+        html += evChip(ev);
+      });
+      html += `</div>`;
+    }
+
+    box.innerHTML = html;
+  } catch(e){
+    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px">📅 학사일정</div><div style="font-size:13px;color:#9ca3af">일정을 불러올 수 없습니다. (${esc(e.message||'')})</div>`;
+  }
+}
+window.loadHomeSchedule = loadHomeSchedule;
+function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 
 // 홈 공지 요약 (최근 5건)
 async function loadHomeNotices(){
