@@ -1244,104 +1244,112 @@ async function loadHomeSchedule(){
   const box = $I('home-schedule');
   if(!box) return;
   try {
-    // 등록된 캘린더 목록
     const snap = await getDocs(collection(db,'calendars'));
     const cals = [];
-    snap.forEach(d=>{ const c=d.data(); if(c.calId) cals.push({name:c.name||'', calId:c.calId}); });
+    snap.forEach(d=>{ const c=d.data(); if(c.calId) cals.push({name:c.name||'(이름없음)', calId:c.calId}); });
     if(!cals.length){
-      box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px">📅 학사일정</div><div style="font-size:13px;color:#9ca3af">등록된 캘린더가 없습니다. 학사일정에서 캘린더를 먼저 등록하세요.</div>`;
+      box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정</div><div style="font-size:13px;color:#9ca3af">등록된 캘린더가 없습니다. 학사일정에서 캘린더를 먼저 등록하세요.</div>`;
       return;
     }
-    // 기간: 오늘 0시 ~ 7일 뒤
+    // 기간: 오늘 0시 ~ 다음 주 일요일까지 (넉넉히 21일)
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const end = new Date(start); end.setDate(end.getDate()+8); // 오늘+7일
+    const end = new Date(start); end.setDate(end.getDate()+21);
     const timeMin = start.toISOString();
     const timeMax = end.toISOString();
 
-    // 각 캘린더에서 일정 가져오기
-    let events = [];
+    // 캘린더별로 일정 저장
+    const calData = []; // {name, calId, events:[]}
     for(const cal of cals){
       const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.calId)}/events`
         + `?key=${GCAL_API_KEY}&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`
-        + `&singleEvents=true&orderBy=startTime&maxResults=50`;
+        + `&singleEvents=true&orderBy=startTime&maxResults=100`;
+      const evs = [];
       try {
         const res = await fetch(url);
-        if(!res.ok) continue;
-        const data = await res.json();
-        (data.items||[]).forEach(ev=>{
-          const s = ev.start?.dateTime || ev.start?.date;
-          const isAllDay = !ev.start?.dateTime;
-          if(!s) return;
-          events.push({
-            title: ev.summary || '(제목 없음)',
-            start: s,
-            isAllDay,
-            calName: cal.name,
-            date: s.slice(0,10)
+        if(res.ok){
+          const data = await res.json();
+          (data.items||[]).forEach(ev=>{
+            const s = ev.start?.dateTime || ev.start?.date;
+            if(!s) return;
+            evs.push({ title: ev.summary||'(제목 없음)', start:s, isAllDay:!ev.start?.dateTime, date:s.slice(0,10) });
           });
-        });
+        }
       } catch(e){}
+      evs.sort((a,b)=>a.start.localeCompare(b.start));
+      calData.push({...cal, events:evs});
     }
 
-    if(!events.length){
-      box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정</div><div style="font-size:13px;color:#9ca3af">앞으로 7일간 등록된 일정이 없습니다.</div>`;
-      return;
-    }
-
-    // 날짜별 분류
+    // 날짜 경계 계산
     const todayStr = ymd(start);
     const tmr = new Date(start); tmr.setDate(tmr.getDate()+1);
     const tmrStr = ymd(tmr);
-    events.sort((a,b)=>a.start.localeCompare(b.start));
-
-    const fmtTime = ev => {
-      if(ev.isAllDay) return '종일';
-      const d = new Date(ev.start);
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    };
-    const evChip = ev => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f4f4f7">
-      <span style="min-width:52px;font-size:12px;color:#6b7280;font-weight:600">${fmtTime(ev)}</span>
-      <span style="flex:1;font-size:14px;color:#1f2937">${esc(ev.title)}</span>
-      ${ev.calName?`<span style="font-size:11px;color:#9ca3af">${esc(ev.calName)}</span>`:''}
-    </div>`;
-
-    const todayEvs = events.filter(e=>e.date===todayStr);
-    const tmrEvs = events.filter(e=>e.date===tmrStr);
-    const weekEvs = events.filter(e=>e.date>tmrStr);
+    // 이번 주 일요일(주말 끝) 계산: 월요일 시작 기준 이번주 끝(일)
+    const dow = start.getDay(); // 0=일
+    const daysToSun = dow===0 ? 0 : 7-dow;
+    const thisWeekEnd = new Date(start); thisWeekEnd.setDate(thisWeekEnd.getDate()+daysToSun);
+    const thisWeekEndStr = ymd(thisWeekEnd);
+    const nextWeekEnd = new Date(thisWeekEnd); nextWeekEnd.setDate(nextWeekEnd.getDate()+7);
+    const nextWeekEndStr = ymd(nextWeekEnd);
 
     const dnames=['일','월','화','수','목','금','토'];
-    let html = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정 <span style="font-size:12px;color:#9ca3af;font-weight:400">(앞으로 7일)</span></div>`;
+    const fmtTime = ev => { if(ev.isAllDay) return '종일'; const d=new Date(ev.start); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+    const evRow = ev => {
+      const d = new Date(ev.date+'T00:00:00');
+      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f4f4f7">
+        <span style="min-width:60px;font-size:11px;color:#9ca3af">${d.getMonth()+1}/${d.getDate()}(${dnames[d.getDay()]})</span>
+        <span style="min-width:44px;font-size:12px;color:#6b7280;font-weight:600">${fmtTime(ev)}</span>
+        <span style="flex:1;font-size:13.5px;color:#1f2937">${esc(ev.title)}</span>
+      </div>`;
+    };
+    // 그룹 분류 함수
+    const groupEvents = evs => {
+      const today = evs.filter(e=>e.date===todayStr);
+      const tomorrow = evs.filter(e=>e.date===tmrStr);
+      const thisWeek = evs.filter(e=>e.date>tmrStr && e.date<=thisWeekEndStr);
+      const nextWeek = evs.filter(e=>e.date>thisWeekEndStr && e.date<=nextWeekEndStr);
+      return {today, tomorrow, thisWeek, nextWeek};
+    };
+    const groupBlock = (label, arr, color) => {
+      if(!arr.length) return '';
+      return `<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:${color};margin-bottom:2px">${label}</div>${arr.map(evRow).join('')}</div>`;
+    };
 
-    html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#0891b2;margin-bottom:4px">오늘 · ${start.getMonth()+1}/${start.getDate()}(${dnames[start.getDay()]})</div>`;
-    html += todayEvs.length ? todayEvs.map(evChip).join('') : '<div style="font-size:13px;color:#9ca3af;padding:6px 0">오늘 일정이 없습니다.</div>';
-    html += `</div>`;
-
-    html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:4px">내일 · ${tmr.getMonth()+1}/${tmr.getDate()}(${dnames[tmr.getDay()]})</div>`;
-    html += tmrEvs.length ? tmrEvs.map(evChip).join('') : '<div style="font-size:13px;color:#9ca3af;padding:6px 0">내일 일정이 없습니다.</div>';
-    html += `</div>`;
-
-    if(weekEvs.length){
-      html += `<div><div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:4px">이번 주 그 이후</div>`;
-      // 날짜별 그룹
-      let curDate = '';
-      weekEvs.forEach(ev=>{
-        if(ev.date!==curDate){
-          curDate = ev.date;
-          const d = new Date(ev.date+'T00:00:00');
-          html += `<div style="font-size:12px;color:#9ca3af;margin-top:8px;margin-bottom:2px">${d.getMonth()+1}/${d.getDate()}(${dnames[d.getDay()]})</div>`;
-        }
-        html += evChip(ev);
-      });
-      html += `</div>`;
-    }
-
+    // 캘린더별 아코디언 카드
+    let html = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정 <span style="font-size:12px;color:#9ca3af;font-weight:400">(캘린더를 눌러 펼치기)</span></div>`;
+    const palette = ['#0891b2','#7c3aed','#db2777','#d97706','#059669','#2563eb','#dc2626','#4f46e5'];
+    calData.forEach((cal,ci)=>{
+      const g = groupEvents(cal.events);
+      const total = g.today.length+g.tomorrow.length+g.thisWeek.length+g.nextWeek.length;
+      const accent = palette[ci % palette.length];
+      const inner = (groupBlock('오늘', g.today, '#0891b2')
+        + groupBlock('내일', g.tomorrow, '#6b7280')
+        + groupBlock('이번 주', g.thisWeek, '#6b7280')
+        + groupBlock('다음 주', g.nextWeek, '#b0b4bd')) || '<div style="font-size:13px;color:#9ca3af;padding:6px 0">예정된 일정이 없습니다.</div>';
+      html += `<div style="border:1px solid #eef0f4;border-radius:12px;margin-bottom:8px;overflow:hidden">
+        <div onclick="toggleCalAcc(${ci})" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;background:#fafbfc">
+          <span style="width:10px;height:10px;border-radius:50%;background:${accent};flex-shrink:0"></span>
+          <span style="flex:1;font-size:14px;font-weight:700;color:#374151">${esc(cal.name)}</span>
+          <span style="font-size:12px;color:#9ca3af">${total>0?total+'건':'없음'}</span>
+          <span id="cal-arrow-${ci}" style="font-size:12px;color:#9ca3af;transition:transform .15s">▼</span>
+        </div>
+        <div id="cal-body-${ci}" style="display:none;padding:10px 14px 14px">${inner}</div>
+      </div>`;
+    });
     box.innerHTML = html;
   } catch(e){
     box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px">📅 학사일정</div><div style="font-size:13px;color:#9ca3af">일정을 불러올 수 없습니다. (${esc(e.message||'')})</div>`;
   }
 }
 window.loadHomeSchedule = loadHomeSchedule;
+function toggleCalAcc(ci){
+  const body = $I('cal-body-'+ci), arrow = $I('cal-arrow-'+ci);
+  if(!body) return;
+  const open = body.style.display!=='none';
+  body.style.display = open ? 'none' : 'block';
+  if(arrow) arrow.style.transform = open ? '' : 'rotate(180deg)';
+}
+window.toggleCalAcc = toggleCalAcc;
 function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 
 // 홈 공지 요약 (최근 5건)
