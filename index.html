@@ -1148,21 +1148,20 @@ function renderHome(){
 }
 window.renderHome = renderHome;
 
-// 이번 달 생일 (학생 + 선생님, 기관별)
+// 이번 달 생일 (학생 + 선생님, 기관별, 시점별 구분)
 async function loadHomeBirthdays(){
   const box = $I('home-birthday');
   if(!box) return;
-  const thisMonth = new Date().getMonth()+1; // 1~12
-  const today = new Date().getDate();
+  const now = new Date();
+  const thisMonth = now.getMonth()+1; // 1~12
+  const today = now.getDate();
   const orgNames = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
   const myOrgList = CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
 
   try {
-    // 학생 로드
     const studSnap = await getDocs(collection(db,'students'));
     const students = [];
     studSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if(myOrgList.includes(s.org)) students.push(s); });
-    // 선생님 로드
     const staffSnap = await getDocs(collection(db,'staff'));
     const teachers = [];
     staffSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if((s.acStatus||'active')==='active'){
@@ -1170,42 +1169,65 @@ async function loadHomeBirthdays(){
       if(sOrgs.some(o=>myOrgList.includes(o))) teachers.push(s);
     }});
 
-    // 이번 달 생일자 필터 (birth: YYYY-MM-DD)
-    const inMonth = arr => arr.filter(p=>{
+    // 사람 → {name, day, month, gender, isTeacher, org, orgsList}
+    const toPerson = (p, isTeacher) => {
       const b = p.birth||'';
-      return b.length>=7 && Number(b.slice(5,7))===thisMonth;
-    }).map(p=>({name:p.name, day:Number((p.birth||'').slice(8,10))||0, org:p.org, birth:p.birth}))
-      .sort((a,b)=>a.day-b.day);
+      if(b.length<7) return null;
+      const mm = Number(b.slice(5,7)), dd = Number(b.slice(8,10))||0;
+      const orgsList = isTeacher
+        ? (p.role==='super'?['jihyebit','daniel']:(p.orgs&&p.orgs.length?p.orgs:[p.org]))
+        : [p.org];
+      return {name:p.name, month:mm, day:dd, gender:p.gender||'', isTeacher, orgsList};
+    };
+    // 다가올 생일 계산용: 오늘부터 며칠 뒤인지 (같은 해 기준, 월/일만)
+    const daysUntil = (mm, dd) => {
+      const y = now.getFullYear();
+      let target = new Date(y, mm-1, dd);
+      target.setHours(0,0,0,0);
+      const t0 = new Date(y, now.getMonth(), today); t0.setHours(0,0,0,0);
+      let diff = Math.round((target - t0)/(1000*60*60*24));
+      if(diff < -180) diff += 365; // 연말→연초 넘어가는 경우 보정
+      return diff;
+    };
 
-    // 기관별로 구성
+    const allPeople = [
+      ...students.map(s=>toPerson(s,false)),
+      ...teachers.map(t=>toPerson(t,true))
+    ].filter(Boolean);
+
+    const icon = p => p.isTeacher ? '👩‍🏫' : (p.gender==='남' ? '👦' : p.gender==='여' ? '👧' : '🧒');
+    const orgTag = p => {
+      if(myOrgList.length<=1) return '';
+      const names = p.orgsList.filter(o=>myOrgList.includes(o)).map(o=>orgNames[o]||o);
+      return names.length ? `<span style="font-size:11px;color:#9ca3af">${names.join('·')}</span>` : '';
+    };
+    const chip = (p, bg, border, extra) => `<span style="display:inline-flex;align-items:center;gap:5px;background:${bg};border:1px solid ${border};border-radius:100px;padding:5px 12px;margin:0 6px 6px 0;font-size:13px">
+      ${icon(p)} <b>${esc(p.name)}</b> <span style="color:#9ca3af;font-size:12px">${p.month}/${p.day}</span> ${orgTag(p)}${extra||''}</span>`;
+
+    // 분류
+    const todayList = allPeople.filter(p=>p.month===thisMonth && p.day===today).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const upcoming = allPeople.filter(p=>{ const d=daysUntil(p.month,p.day); return d>=1 && d<=7; }).sort((a,b)=>daysUntil(a.month,a.day)-daysUntil(b.month,b.day));
+    const restMonth = allPeople.filter(p=>p.month===thisMonth && p.day>today && daysUntil(p.month,p.day)>7).sort((a,b)=>a.day-b.day);
+    const pastMonth = allPeople.filter(p=>p.month===thisMonth && p.day<today).sort((a,b)=>a.day-b.day);
+
     let html = '';
-    for(const org of myOrgList){
-      const orgStuds = inMonth(students.filter(s=>s.org===org));
-      const orgTeachers = inMonth(teachers.filter(t=>{
-        const tOrgs = t.role==='super'?['jihyebit','daniel']:(t.orgs&&t.orgs.length?t.orgs:[t.org]);
-        return tOrgs.includes(org);
-      }));
-      if(!orgStuds.length && !orgTeachers.length) continue;
-      html += `<div style="margin-bottom:16px">
-        <div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid #f0f0f4">${orgNames[org]||org}</div>`;
-      const chip = (p, isTeacher) => {
-        const isToday = p.day===today;
-        return `<span style="display:inline-flex;align-items:center;gap:5px;background:${isToday?'#fef3c7':'#f9fafb'};border:1px solid ${isToday?'#fcd34d':'#eef0f4'};border-radius:100px;padding:5px 12px;margin:0 6px 6px 0;font-size:13px">
-          ${isToday?'🎉 ':''}${isTeacher?'👩‍🏫':'🧒'} <b>${esc(p.name)}</b> <span style="color:#9ca3af;font-size:12px">${thisMonth}/${p.day}</span></span>`;
-      };
-      if(orgTeachers.length){
-        html += `<div style="margin-bottom:6px"><span style="font-size:11px;color:#9ca3af;margin-right:6px">선생님</span>${orgTeachers.map(t=>chip(t,true)).join('')}</div>`;
-      }
-      if(orgStuds.length){
-        html += `<div><span style="font-size:11px;color:#9ca3af;margin-right:6px">학생</span>${orgStuds.map(s=>chip(s,false)).join('')}</div>`;
-      }
-      html += `</div>`;
+    if(todayList.length){
+      html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#d97706;margin-bottom:8px">🎉 오늘 생일</div>${todayList.map(p=>chip(p,'#fef3c7','#fcd34d')).join('')}</div>`;
+    }
+    if(upcoming.length){
+      html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#0891b2;margin-bottom:8px">⏰ 다가올 생일 (7일 이내)</div>${upcoming.map(p=>{ const d=daysUntil(p.month,p.day); return chip(p,'#e0f2fe','#bae6fd',`<span style="font-size:11px;color:#0891b2;font-weight:700">D-${d}</span>`); }).join('')}</div>`;
+    }
+    if(restMonth.length){
+      html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:8px">📅 이번 달 남은 생일</div>${restMonth.map(p=>chip(p,'#f9fafb','#eef0f4')).join('')}</div>`;
+    }
+    if(pastMonth.length){
+      html += `<div style="margin-bottom:4px"><div style="font-size:13px;font-weight:700;color:#b0b4bd;margin-bottom:8px">✓ 이번 달 지난 생일</div><div style="opacity:0.6">${pastMonth.map(p=>chip(p,'#f9fafb','#eef0f4')).join('')}</div></div>`;
     }
 
-    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:12px;display:flex;align-items:center;gap:7px"><span>🎂</span> 이번 달 생일 <span style="font-size:12px;color:#9ca3af;font-weight:400">(${thisMonth}월)</span></div>`
+    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>🎂</span> 생일 <span style="font-size:12px;color:#9ca3af;font-weight:400">(${thisMonth}월 기준)</span></div>`
       + (html || '<div style="font-size:13px;color:#9ca3af">이번 달 생일인 사람이 없습니다.</div>');
   } catch(e){
-    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px">🎂 이번 달 생일</div><div style="font-size:13px;color:#9ca3af">불러올 수 없습니다.</div>`;
+    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:#374151;margin-bottom:8px">🎂 생일</div><div style="font-size:13px;color:#9ca3af">불러올 수 없습니다.</div>`;
   }
 }
 window.loadHomeBirthdays = loadHomeBirthdays;
