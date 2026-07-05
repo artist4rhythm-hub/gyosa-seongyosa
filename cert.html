@@ -337,6 +337,7 @@ function renderIssue(){
 window.renderIssue = renderIssue;
 
 // 학생 목록만 갱신 (입력창은 건드리지 않음 → 검색 중복입력 방지)
+let openGrades = {}; // 펼쳐진 학년 기억
 function renderStudentList(){
   const list = $I('issue-slist');
   if(!list) return;
@@ -344,20 +345,70 @@ function renderStudentList(){
     .filter(s=>(s.status||'active')==='active')
     .filter(s=>s.org==='daniel')
     .filter(s=>canIssue(s))
-    .filter(s=>!issueSearch || (s.name||'').includes(issueSearch))
-    .sort((a,b)=>(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'));
-  list.innerHTML = students.length ? students.map(s=>{
-    const g = studentGrade(s.id);
+    .filter(s=>!issueSearch || (s.name||'').includes(issueSearch));
+
+  if(!students.length){
+    list.innerHTML = '<p class="empty">발급 가능한 학생이 없습니다.</p>';
+    return;
+  }
+
+  // 검색 중이면 평면 목록 (결과 바로 보이게)
+  if(issueSearch){
+    const sorted = [...students].sort((a,b)=>(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'));
+    list.innerHTML = sorted.map(s=>studentItemHTML(s)).join('');
+    return;
+  }
+
+  // 학년별 그룹
+  const byGrade = {};
+  students.forEach(s=>{
+    const g = studentGrade(s.id) || '(학년 미지정)';
+    (byGrade[g] = byGrade[g] || []).push(s);
+  });
+  // 학년 정렬 (숫자 학년 우선, 미지정 맨뒤)
+  const grades = Object.keys(byGrade).sort((a,b)=>{
+    const na=parseInt(a,10), nb=parseInt(b,10);
+    if(isNaN(na)&&isNaN(nb)) return 0;
+    if(isNaN(na)) return 1;
+    if(isNaN(nb)) return -1;
+    return na-nb;
+  });
+
+  const palette = ['#0891b2','#7c3aed','#db2777','#d97706','#059669','#2563eb','#dc2626','#4f46e5','#0d9488','#c026d3','#ea580c','#65a30d'];
+  list.innerHTML = grades.map((g,gi)=>{
+    const arr = byGrade[g].sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
     const dept = gradeToDept(g);
-    return `<div class="sitem" onclick="openPreview('${s.id}')">
-      <div style="flex:1">
-        <div class="sname">${esc(s.name)} <span style="font-size:12px;color:${s.gender==='남'?'#2b6cb0':'#d53f8c'}">${esc(s.gender||'')}</span></div>
-        <div class="smeta">${g?g+' · ':''}${dept||''}${s.birth?' · '+s.birth:''}</div>
+    const accent = palette[gi % palette.length];
+    const open = !!openGrades[g];
+    return `<div style="border:1px solid var(--ivd);border-radius:12px;margin-bottom:8px;overflow:hidden">
+      <div onclick="toggleGrade('${esc(g)}')" style="display:flex;align-items:center;gap:10px;padding:13px 15px;cursor:pointer;background:#fafbfc">
+        <span style="width:10px;height:10px;border-radius:50%;background:${accent};flex-shrink:0"></span>
+        <span style="flex:1;font-size:15px;font-weight:700;color:var(--gd)">${esc(g)}${dept?` <span style="font-size:12px;color:var(--tl);font-weight:400">· ${dept}</span>`:''}</span>
+        <span style="font-size:12px;color:var(--tl)">${arr.length}명</span>
+        <span style="font-size:12px;color:var(--tl);transition:transform .15s;${open?'transform:rotate(180deg)':''}">▼</span>
       </div>
-      <button class="bm">증명서 확인 ›</button>
+      <div style="display:${open?'block':'none'};padding:8px 12px 12px">
+        ${arr.map(s=>studentItemHTML(s)).join('')}
+      </div>
     </div>`;
-  }).join('') : '<p class="empty">발급 가능한 학생이 없습니다.</p>';
+  }).join('');
 }
+function studentItemHTML(s){
+  const g = studentGrade(s.id);
+  const dept = gradeToDept(g);
+  return `<div class="sitem" onclick="openPreview('${s.id}')" style="margin-bottom:6px">
+    <div style="flex:1">
+      <div class="sname">${esc(s.name)} <span style="font-size:12px;color:${s.gender==='남'?'#2b6cb0':'#d53f8c'}">${esc(s.gender||'')}</span></div>
+      <div class="smeta">${g?g+' · ':''}${dept||''}${s.birth?' · '+s.birth:''}</div>
+    </div>
+    <button class="bm">증명서 확인 ›</button>
+  </div>`;
+}
+function toggleGrade(g){
+  openGrades[g] = !openGrades[g];
+  renderStudentList();
+}
+window.toggleGrade = toggleGrade;
 
 // ── 증명서 HTML 생성 ──
 function buildCertHTML(s, opts){
@@ -429,6 +480,7 @@ function openPreview(sid){
       </div>
       <div class="mact">
         <button class="bs" onclick="closePreview()">취소</button>
+        <button class="bs" onclick="gotoStudentEdit('${s.id}')">✏️ 학생 정보 수정</button>
         <button class="bp" onclick="doIssue('${s.id}')">✅ 발급하기</button>
       </div>
     </div>`;
@@ -442,6 +494,12 @@ function openPreview(sid){
 window.openPreview = openPreview;
 function closePreview(){ $I('preview-mod')?.remove(); previewStudent=null; }
 window.closePreview = closePreview;
+
+// 학생 정보 수정 화면으로 이동 (해당 학생 편집창 자동 열기)
+function gotoStudentEdit(sid){
+  location.href = `students.html?edit=${encodeURIComponent(sid)}`;
+}
+window.gotoStudentEdit = gotoStudentEdit;
 
 // ── 발급 실행 ──
 async function doIssue(sid){
