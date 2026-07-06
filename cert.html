@@ -605,9 +605,11 @@ function buildCertHTML(s, opts){
   const dept = gradeToDept(g);
   return buildCert({
     org: s.org, docNo: opts.docNo, issueDate: opts.issueDate,
-    grade: g, name: s.name, birth: s.birth,
+    grade: g, name: s.name,
+    birth: opts.birth != null ? opts.birth : (s.birth||''),
     address: opts.address != null ? opts.address : (s.address||''),
-    admitDate: s.admitDate, course: deptCourse(dept)
+    admitDate: opts.admitDate != null ? opts.admitDate : (s.admitDate||''),
+    course: deptCourse(dept)
   });
 }
 
@@ -617,21 +619,50 @@ function openPreview(sid){
   const s = STUDENTS.find(x=>x.id===sid);
   if(!s){ toast('학생을 찾을 수 없습니다.','err'); return; }
   previewStudent = s;
+  const cfg = ORG_CONFIG[s.org];
   const g = studentGrade(s.id);
   const dept = gradeToDept(g);
   const issueDate = todayYMD();
-  const tempDocNo = (ORG_CONFIG[s.org]?.code||'DA') + '-C-' + issueDate.slice(2).replace(/-/g,'') + '-XX';
+  const tempDocNo = (cfg?.code||'DA') + '-C-' + issueDate.slice(2).replace(/-/g,'') + '-XX';
+
+  // 기관별 확인·입력 항목 정의
+  // key: 학생 필드명, label, type, always(항상 표시) 또는 required(비면 필수)
+  const fieldDefs = [];
+  fieldDefs.push({key:'address', label:'주소', type:'text', placeholder:'주소를 입력하세요', always:true});
+  fieldDefs.push({key:'birth', label:'생년월일', type:'date', required:true});
+  if(cfg?.layout==='grade'){
+    // 다니엘: 입학일 필요
+    fieldDefs.push({key:'admitDate', label:'입학일', type:'date', required:true});
+  }
+
+  // 비어있는 필수 항목 목록
+  const missing = fieldDefs.filter(f=>f.required && !(s[f.key]||'').trim());
+
+  const buildPreview = () => {
+    const vals = {};
+    fieldDefs.forEach(f=>{ vals[f.key] = $I('pv-'+f.key)?.value || (s[f.key]||''); });
+    return buildCertHTML(s, {docNo:tempDocNo, issueDate, address:vals.address, birth:vals.birth, admitDate:vals.admitDate});
+  };
   const certHtml = buildCertHTML(s, {docNo:tempDocNo, issueDate, address:s.address||''});
+
+  // 입력 필드 HTML
+  const fieldsHTML = fieldDefs.map(f=>{
+    const empty = !(s[f.key]||'').trim();
+    const warn = (f.required && empty);
+    return `<div class="fgrp" style="${warn?'background:#fef3c7;padding:10px 12px;border-radius:8px;border:1px solid #fcd34d':''}">
+      <label>${f.label} ${f.always?'확인 / 수정':warn?'<span style="color:#dc2626">· 입력 필요</span>':'확인 / 수정'}</label>
+      <input type="${f.type}" id="pv-${f.key}" value="${esc(s[f.key]||'')}" placeholder="${esc(f.placeholder||f.label+'을(를) 입력하세요')}">
+    </div>`;
+  }).join('');
 
   const mv = document.createElement('div'); mv.className='mov'; mv.id='preview-mod';
   mv.innerHTML = `<div class="mbk" onclick="closePreview()"></div>
     <div class="mbox" style="max-width:720px">
       <div class="mtitle">증명서 확인 후 발급</div>
-      <div class="msub">아래 내용을 확인하세요. <b>주소가 바뀌었으면 수정</b>한 뒤 발급하면 학생 정보에도 반영됩니다.</div>
-      ${!dept ? '<div style="background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px">⚠️ 이 학생은 반 편성에서 학년 정보가 없어 교육과정이 정확히 표시되지 않을 수 있습니다. 반편성을 먼저 확인하세요.</div>' : ''}
-      <div class="fgrp"><label>주소 확인 / 수정</label>
-        <input type="text" id="pv-addr" value="${esc(s.address||'')}" placeholder="주소를 입력하세요">
-      </div>
+      <div class="msub">아래 내용을 확인하세요. <b>빈 항목이나 바뀐 정보를 수정</b>한 뒤 발급하면 학생 정보에도 반영됩니다.</div>
+      ${missing.length ? `<div style="background:#fef2f2;color:#b91c1c;padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;border:1px solid #fecaca">⚠️ <b>${missing.map(f=>f.label).join(', ')}</b> 항목이 비어 있습니다. 아래에서 입력한 뒤 발급하세요.</div>` : ''}
+      ${!dept && cfg?.layout==='grade' ? '<div style="background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px">⚠️ 이 학생은 반 편성에서 학년 정보가 없어 교육과정이 정확히 표시되지 않을 수 있습니다. 반편성을 먼저 확인하세요.</div>' : ''}
+      ${fieldsHTML}
       <div class="zoom-bar">
         <button class="zoom-btn" onclick="zoomCert(-1)">−</button>
         <span class="zoom-label" id="zoom-label">62%</span>
@@ -649,11 +680,11 @@ function openPreview(sid){
     </div>`;
   $I('mwrap').appendChild(mv);
   _certZoom = 0.62; applyCertZoom();
-  // 주소 수정 시 미리보기 갱신
-  const ai = $I('pv-addr');
-  if(ai) ai.oninput = () => {
-    $I('pv-cert').innerHTML = buildCertHTML(s, {docNo:tempDocNo, issueDate, address:ai.value});
-  };
+  // 입력 변경 시 미리보기 갱신
+  fieldDefs.forEach(f=>{
+    const el = $I('pv-'+f.key);
+    if(el) el.oninput = () => { $I('pv-cert').innerHTML = buildPreview(); };
+  });
 }
 window.openPreview = openPreview;
 function closePreview(){ $I('preview-mod')?.remove(); previewStudent=null; }
@@ -671,13 +702,35 @@ async function doIssue(sid){
   if(!s) return;
   const cfg = ORG_CONFIG[s.org];
   if(!cfg){ toast('이 기관은 증명서 발급을 지원하지 않습니다.','err'); return; }
-  const newAddr = $I('pv-addr')?.value.trim() || '';
   const issueDate = todayYMD();
+
+  // 입력 필드에서 값 수집
+  const newAddr = $I('pv-addr')?.value.trim() || '';
+  const newBirth = $I('pv-birth')?.value.trim() || '';
+  const newAdmit = $I('pv-admitDate')?.value.trim() || '';
+
+  // 필수 항목 검증
+  const missing = [];
+  if(!newBirth) missing.push('생년월일');
+  if(cfg.layout==='grade' && !newAdmit) missing.push('입학일');
+  if(missing.length){
+    toast(`${missing.join(', ')}을(를) 입력해주세요.`,'err');
+    const first = $I('pv-'+(missing[0]==='생년월일'?'birth':'admitDate'));
+    if(first){ first.focus(); first.style.borderColor='#dc2626'; }
+    return;
+  }
+
   try {
-    if(newAddr !== (s.address||'')){
-      await updateDoc(doc(db,'students',sid), {address:newAddr});
-      s.address = newAddr;
+    // 바뀐/입력된 정보를 학생 정보에 반영
+    const updates = {};
+    if(newAddr !== (s.address||'')) updates.address = newAddr;
+    if(newBirth !== (s.birth||'')) updates.birth = newBirth;
+    if($I('pv-admitDate') && newAdmit !== (s.admitDate||'')) updates.admitDate = newAdmit;
+    if(Object.keys(updates).length){
+      await updateDoc(doc(db,'students',sid), updates);
+      Object.assign(s, updates);
     }
+
     // 문서번호: [코드]-C-YYMMDD-NN (그날+기관 발급 순번)
     const datePart = issueDate.slice(2).replace(/-/g,''); // YYMMDD
     const prefix = `${cfg.code}-C-${datePart}-`;
@@ -692,12 +745,11 @@ async function doIssue(sid){
       type: cfg.verb, org: s.org,
       studentId: sid, studentName: s.name||'',
       grade: g||'', dept: dept||'', course: deptCourse(dept),
-      birth: s.birth||'', address: newAddr, admitDate: s.admitDate||'',
+      birth: s.birth||'', address: s.address||'', admitDate: s.admitDate||'',
       issueDate,
       issuedByUid: CU.uid, issuedByName: CU.name||'',
       createdAt: Timestamp.now()
     };
-    // 지혜빛: 발급 시점 만 나이 저장 (나중에 나이 바뀌어도 발급 당시 기준 유지)
     if(cfg.layout==='age'){ record.ageText = `만 ${calcAge(s.birth, issueDate)}세`; }
     await addDoc(collection(db,'certificates'), record);
     closePreview();
