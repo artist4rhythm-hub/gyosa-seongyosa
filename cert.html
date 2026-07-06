@@ -522,6 +522,7 @@ function buildCert(rec){
   if(!cfg) return '<div class="cert-sheet">알 수 없는 기관</div>';
   const th = cfg.theme || {accent:'#1a2440', line:'#b8935a', line2:'#c9a84c', bg:'#fffdf9'};
   const styleVars = `--c-accent:${th.accent};--c-line:${th.line};--c-line2:${th.line2};--c-bg:${th.bg};`;
+  const stampHTML = rec.hideStamp ? '' : `<img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">`;
 
   if(cfg.layout==='age'){
     // ===== 지혜빛 재원증명서 =====
@@ -555,7 +556,7 @@ function buildCert(rec){
           <div class="cert-orgname">${esc(cfg.orgName)}</div>
           <div class="cert-rep">
             ${esc(cfg.repTitle||'원장')} &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
-            <img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">
+            ${stampHTML}
           </div>
         </div>
       </div>
@@ -586,7 +587,7 @@ function buildCert(rec){
         <div class="cert-orgen">${esc(cfg.orgEn)}</div>
         <div class="cert-rep">
           대표자 &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
-          <img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">
+          ${stampHTML}
         </div>
       </div>
     </div>
@@ -729,7 +730,7 @@ async function renderList(){
   box.innerHTML = `
     <div class="acard">
       <h3 class="actitle">📋 발급 목록</h3>
-      <p class="adesc">발급된 증명서 목록입니다. 같은 기관 선생님과 관리자가 열람할 수 있습니다. 각 항목에서 A4 인쇄 또는 이미지로 저장하세요.</p>
+      <p class="adesc">발급된 증명서 목록입니다. 같은 기관 선생님과 관리자가 열람할 수 있습니다. <b>PDF</b>는 도장 없이 출력용(인쇄 후 행정실에서 직인 날인), <b>이미지</b>는 도장이 포함되어 바로 사용할 수 있습니다.</p>
       <div class="clist">
         ${CERTS.length ? CERTS.map(c=>`
           <div class="citem">
@@ -738,8 +739,8 @@ async function renderList(){
               <div style="font-size:12px;color:var(--tl);margin-top:2px">${esc(c.docNo)} · 발급일 ${esc(c.issueDate)} · ${esc(c.issuedByName||'')}</div>
             </div>
             <button class="bm" onclick="previewCert('${c.id}')">미리보기</button>
-            <button class="bs" style="padding:8px 14px" onclick="printCert('${c.id}')">🖨️ A4 인쇄</button>
-            <button class="bs" style="padding:8px 14px" onclick="imageCert('${c.id}')">🖼️ 이미지 저장</button>
+            <button class="bs" style="padding:8px 14px" onclick="pdfCert('${c.id}')">📄 PDF (도장 없이)</button>
+            <button class="bs" style="padding:8px 14px" onclick="imageCert('${c.id}')">🖼️ 이미지 (도장 포함)</button>
             ${CU.role==='super' ? `<button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delCert('${c.id}')">삭제</button>` : ''}
           </div>`).join('') : '<p class="empty">아직 발급된 증명서가 없습니다.</p>'}
       </div>
@@ -748,13 +749,14 @@ async function renderList(){
 window.renderList = renderList;
 
 // 발급 기록으로부터 증명서 HTML 재생성 (발급 당시 값 사용)
-function buildCertFromRecord(c){
+function buildCertFromRecord(c, opts){
   return buildCert({
     org: c.org, docNo: c.docNo, issueDate: c.issueDate,
     grade: c.grade, name: c.studentName, birth: c.birth,
     address: c.address, admitDate: c.admitDate,
     course: c.course || deptCourse(c.dept),
-    ageText: c.ageText
+    ageText: c.ageText,
+    hideStamp: opts && opts.hideStamp
   });
 }
 
@@ -773,8 +775,8 @@ function previewCert(id){
       <div class="cert-preview-wrap"><div class="cert-scale" id="pv-cert">${buildCertFromRecord(c)}</div></div>
       <div class="mact">
         <button class="bs" onclick="document.getElementById('cview-mod').remove()">닫기</button>
-        <button class="bs" onclick="printCert('${c.id}')">🖨️ A4 인쇄</button>
-        <button class="bp" onclick="imageCert('${c.id}')">🖼️ 이미지 저장</button>
+        <button class="bs" onclick="pdfCert('${c.id}')">📄 PDF (도장 없이)</button>
+        <button class="bp" onclick="imageCert('${c.id}')">🖼️ 이미지 (도장 포함)</button>
       </div>
     </div>`;
   $I('mwrap').appendChild(mv);
@@ -842,33 +844,17 @@ function certPrintCSS(){
   `;
 }
 
-// A4 인쇄 (별도 창)
-function printCert(id){
-  const c = CERTS.find(x=>x.id===id); if(!c) return;
-  const w = window.open('', '_blank', 'width=800,height=1000');
-  if(!w){ toast('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.','err'); return; }
-  w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${esc(c.type)}증명서 - ${esc(c.studentName)}</title>
-    <style>${certPrintCSS()}</style></head><body>${buildCertFromRecord(c)}</body></html>`);
-  w.document.close();
-  // 폰트·이미지 로딩 대기 후 인쇄
-  w.onload = () => { setTimeout(()=>{ w.focus(); w.print(); }, 600); };
-}
-window.printCert = printCert;
-
-// 이미지 저장 (html2canvas) — A4 세로 규격(210×297mm)에 정확히 맞춤
-async function imageCert(id){
-  const c = CERTS.find(x=>x.id===id); if(!c) return;
-  if(!window.html2canvas){ toast('이미지 모듈 로딩 중... 잠시 후 다시 시도하세요.','err'); loadHtml2Canvas(); return; }
-  // A4 픽셀 크기 (96dpi: 1mm ≈ 3.7795px)
+// 증명서를 A4 캔버스로 렌더 (공통) — hideStamp로 도장 유무
+async function renderCertCanvas(c, hideStamp){
+  if(!window.html2canvas){ loadHtml2Canvas(); throw new Error('이미지 모듈 로딩 중입니다. 잠시 후 다시 시도하세요.'); }
   const MM = 3.779527559;
   const W = Math.round(210 * MM);   // 794px
   const H = Math.round(297 * MM);   // 1123px
   const holder = document.createElement('div');
   holder.style.cssText = `position:fixed;left:-9999px;top:0;width:${W}px;height:${H}px;background:#fff;overflow:hidden;`;
-  holder.innerHTML = buildCertFromRecord(c);
+  holder.innerHTML = buildCertFromRecord(c, {hideStamp});
   document.body.appendChild(holder);
   const sheet = holder.querySelector('.cert-sheet');
-  // sheet를 A4 폭 고정 + 최소높이 A4 (footer가 bottom 기준 정상 배치되도록)
   if(sheet){ sheet.style.width = W+'px'; sheet.style.minHeight = H+'px'; sheet.style.height = H+'px'; sheet.style.margin = '0'; sheet.style.boxSizing='border-box'; }
   try {
     if(document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(e){} }
@@ -878,13 +864,39 @@ async function imageCert(id){
       width: W, height: H, windowWidth: W, windowHeight: H,
       scale: 2, useCORS:true, logging:false
     });
+    return canvas;
+  } finally { holder.remove(); }
+}
+
+// PDF 저장 (도장 없이) — 인쇄 후 행정실 직인 날인용
+async function pdfCert(id){
+  const c = CERTS.find(x=>x.id===id); if(!c) return;
+  toast('PDF를 만드는 중…');
+  try {
+    await ensureJsPDF();
+    const canvas = await renderCertCanvas(c, true); // 도장 없이
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+    pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+    pdf.save(`${c.type}증명서_${c.studentName}_${c.docNo}.pdf`);
+    toast('PDF를 저장했습니다. (도장 없이)','ok');
+  } catch(e){ toast('PDF 저장 실패: '+(e.message||''),'err'); }
+}
+window.pdfCert = pdfCert;
+
+// 이미지 저장 (도장 포함) — 바로 사용
+async function imageCert(id){
+  const c = CERTS.find(x=>x.id===id); if(!c) return;
+  toast('이미지를 만드는 중…');
+  try {
+    const canvas = await renderCertCanvas(c, false); // 도장 포함
     const link = document.createElement('a');
     link.download = `${c.type}증명서_${c.studentName}_${c.docNo}.png`;
     link.href = canvas.toDataURL('image/png');
     link.click();
-    toast('이미지를 저장했습니다.','ok');
-  } catch(e){ toast('이미지 저장 실패: '+e.message,'err'); }
-  finally { holder.remove(); }
+    toast('이미지를 저장했습니다. (도장 포함)','ok');
+  } catch(e){ toast('이미지 저장 실패: '+(e.message||''),'err'); }
 }
 window.imageCert = imageCert;
 
@@ -896,6 +908,26 @@ function loadHtml2Canvas(){
   document.head.appendChild(sc);
 }
 loadHtml2Canvas();
+
+// jsPDF 동적 로드
+function ensureJsPDF(){
+  return new Promise((resolve, reject)=>{
+    if(window.jspdf && window.jspdf.jsPDF) return resolve();
+    let sc = document.getElementById('jspdf-script');
+    if(sc){
+      // 로딩 중이면 대기
+      const chk = setInterval(()=>{ if(window.jspdf&&window.jspdf.jsPDF){ clearInterval(chk); resolve(); } }, 100);
+      setTimeout(()=>{ clearInterval(chk); if(!(window.jspdf&&window.jspdf.jsPDF)) reject(new Error('PDF 모듈 로드 실패')); }, 8000);
+      return;
+    }
+    sc = document.createElement('script');
+    sc.id = 'jspdf-script';
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    sc.onload = ()=> resolve();
+    sc.onerror = ()=> reject(new Error('PDF 모듈을 불러올 수 없습니다.'));
+    document.head.appendChild(sc);
+  });
+}
 
 async function delCert(id){
   if(CU.role!=='super'){ toast('슈퍼관리자만 삭제할 수 있습니다.','err'); return; }
