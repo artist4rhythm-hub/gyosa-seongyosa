@@ -104,6 +104,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
 </style>
 <link rel="stylesheet" href="ui.css">
+<script src="loading.js"></script>
 <script src="topnav.js"></script>
 </head>
 <body>
@@ -226,8 +227,12 @@ onAuthStateChanged(auth, async (user) => {
     const org = ORGS[CU.org] || CU.org;
     $I('hn').textContent = CU.name;
     $I('hi').textContent = `${org} · ${CU.dept||''}`;
+    window.showLoading && window.showLoading('학생 정보를 불러오는 중…');
+    window.setLoadStep && window.setLoadStep('학생 명단 불러오는 중…', 35);
     await loadStudents();
+    window.setLoadStep && window.setLoadStep('반 편성 불러오는 중…', 75);
     await loadClasses();
+    window.hideLoading && window.hideLoading();
     showStudentTab('all');
     // 증명서 발급 등에서 ?edit=학생ID로 들어오면 편집창 자동 열기
     const editId = new URLSearchParams(location.search).get('edit');
@@ -235,6 +240,7 @@ onAuthStateChanged(auth, async (user) => {
       setTimeout(()=>{ openStudentForm(editId); }, 300);
     }
   } catch(e){
+    window.hideLoading && window.hideLoading();
     $I('gate-msg').textContent = '오류가 발생했습니다: ' + e.message;
     $I('gate-btn').style.display = 'inline-block';
   }
