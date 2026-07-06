@@ -144,6 +144,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 </style>
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
+<script src="modal-close.js"></script>
 <script src="topnav.js"></script>
 </head>
 <body>
@@ -625,18 +626,13 @@ function openPreview(sid){
   const issueDate = todayYMD();
   const tempDocNo = (cfg?.code||'DA') + '-C-' + issueDate.slice(2).replace(/-/g,'') + '-XX';
 
-  // 기관별 확인·입력 항목 정의
-  // key: 학생 필드명, label, type, always(항상 표시) 또는 required(비면 필수)
+  // 기관별 확인·입력 항목 정의 (모두 필수)
   const fieldDefs = [];
-  fieldDefs.push({key:'address', label:'주소', type:'text', placeholder:'주소를 입력하세요', always:true});
+  fieldDefs.push({key:'address', label:'주소', type:'text', placeholder:'주소를 입력하세요', required:true});
   fieldDefs.push({key:'birth', label:'생년월일', type:'date', required:true});
   if(cfg?.layout==='grade'){
-    // 다니엘: 입학일 필요
     fieldDefs.push({key:'admitDate', label:'입학일', type:'date', required:true});
   }
-
-  // 비어있는 필수 항목 목록
-  const missing = fieldDefs.filter(f=>f.required && !(s[f.key]||'').trim());
 
   const buildPreview = () => {
     const vals = {};
@@ -648,9 +644,8 @@ function openPreview(sid){
   // 입력 필드 HTML
   const fieldsHTML = fieldDefs.map(f=>{
     const empty = !(s[f.key]||'').trim();
-    const warn = (f.required && empty);
-    return `<div class="fgrp" style="${warn?'background:#fef3c7;padding:10px 12px;border-radius:8px;border:1px solid #fcd34d':''}">
-      <label>${f.label} ${f.always?'확인 / 수정':warn?'<span style="color:#dc2626">· 입력 필요</span>':'확인 / 수정'}</label>
+    return `<div class="fgrp" data-fkey="${f.key}" style="${empty?'background:#fef3c7;padding:10px 12px;border-radius:8px;border:1px solid #fcd34d':''}">
+      <label>${f.label} <span class="fgrp-hint" style="color:${empty?'#dc2626':'#9ca3af'};font-weight:400">${empty?'· 입력 필요':'· 확인 / 수정'}</span></label>
       <input type="${f.type}" id="pv-${f.key}" value="${esc(s[f.key]||'')}" placeholder="${esc(f.placeholder||f.label+'을(를) 입력하세요')}">
     </div>`;
   }).join('');
@@ -659,10 +654,10 @@ function openPreview(sid){
   mv.innerHTML = `<div class="mbk" onclick="closePreview()"></div>
     <div class="mbox" style="max-width:720px">
       <div class="mtitle">증명서 확인 후 발급</div>
-      <div class="msub">아래 내용을 확인하세요. <b>빈 항목이나 바뀐 정보를 수정</b>한 뒤 발급하면 학생 정보에도 반영됩니다.</div>
-      ${missing.length ? `<div style="background:#fef2f2;color:#b91c1c;padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:12px;border:1px solid #fecaca">⚠️ <b>${missing.map(f=>f.label).join(', ')}</b> 항목이 비어 있습니다. 아래에서 입력한 뒤 발급하세요.</div>` : ''}
+      <div class="msub">아래 항목이 <b>모두 정확한지 확인</b>하세요. 빈 항목이나 바뀐 정보를 수정하면 학생 정보에도 반영됩니다.</div>
       ${!dept && cfg?.layout==='grade' ? '<div style="background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px">⚠️ 이 학생은 반 편성에서 학년 정보가 없어 교육과정이 정확히 표시되지 않을 수 있습니다. 반편성을 먼저 확인하세요.</div>' : ''}
       ${fieldsHTML}
+      <div id="pv-warn" style="display:none;background:#fef2f2;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:13px;margin:4px 0 12px;border:1px solid #fecaca"></div>
       <div class="zoom-bar">
         <button class="zoom-btn" onclick="zoomCert(-1)">−</button>
         <span class="zoom-label" id="zoom-label">62%</span>
@@ -672,19 +667,50 @@ function openPreview(sid){
       <div class="cert-preview-wrap">
         <div class="cert-scale" id="pv-cert">${certHtml}</div>
       </div>
+      <label id="pv-confirm-box" style="display:flex;align-items:center;gap:9px;margin:14px 0 4px;padding:12px 14px;background:var(--gp);border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;color:var(--gd)">
+        <input type="checkbox" id="pv-confirm" style="width:18px;height:18px;cursor:pointer;accent-color:var(--gm)">
+        위 모든 항목이 정확함을 확인했습니다. (이상 없음)
+      </label>
       <div class="mact">
         <button class="bs" onclick="closePreview()">취소</button>
         <button class="bs" onclick="gotoStudentEdit('${s.id}')">✏️ 학생 정보 수정</button>
-        <button class="bp" onclick="doIssue('${s.id}')">✅ 발급하기</button>
+        <button class="bp" id="pv-issue-btn" onclick="doIssue('${s.id}')" disabled style="opacity:.45;cursor:not-allowed">✅ 발급하기</button>
       </div>
     </div>`;
   $I('mwrap').appendChild(mv);
   _certZoom = 0.62; applyCertZoom();
-  // 입력 변경 시 미리보기 갱신
+
+  // 발급 버튼 활성/비활성 갱신
+  const refreshIssueState = () => {
+    const empties = fieldDefs.filter(f=>!($I('pv-'+f.key)?.value||'').trim());
+    const confirmed = $I('pv-confirm')?.checked;
+    const btn = $I('pv-issue-btn');
+    const warn = $I('pv-warn');
+    // 빈칸 표시 갱신
+    fieldDefs.forEach(f=>{
+      const wrap = document.querySelector(`[data-fkey="${f.key}"]`);
+      const val = ($I('pv-'+f.key)?.value||'').trim();
+      const hint = wrap?.querySelector('.fgrp-hint');
+      if(wrap){
+        if(!val){ wrap.style.cssText='background:#fef3c7;padding:10px 12px;border-radius:8px;border:1px solid #fcd34d'; if(hint){hint.textContent='· 입력 필요';hint.style.color='#dc2626';} }
+        else { wrap.style.cssText=''; if(hint){hint.textContent='· 확인 완료';hint.style.color='#16a34a';} }
+      }
+    });
+    if(empties.length){
+      if(warn){ warn.style.display='block'; warn.innerHTML = `⚠️ <b>${empties.map(f=>f.label).join(', ')}</b> 항목이 비어 있습니다. 입력해야 발급할 수 있습니다.`; }
+    } else if(warn){ warn.style.display='none'; }
+    const ok = empties.length===0 && confirmed;
+    if(btn){ btn.disabled = !ok; btn.style.opacity = ok?'1':'.45'; btn.style.cursor = ok?'pointer':'not-allowed'; }
+  };
+
+  // 입력 변경 시 미리보기·상태 갱신
   fieldDefs.forEach(f=>{
     const el = $I('pv-'+f.key);
-    if(el) el.oninput = () => { $I('pv-cert').innerHTML = buildPreview(); };
+    if(el) el.oninput = () => { $I('pv-cert').innerHTML = buildPreview(); refreshIssueState(); };
   });
+  const cb = $I('pv-confirm');
+  if(cb) cb.onchange = refreshIssueState;
+  refreshIssueState();
 }
 window.openPreview = openPreview;
 function closePreview(){ $I('preview-mod')?.remove(); previewStudent=null; }
@@ -705,18 +731,25 @@ async function doIssue(sid){
   const issueDate = todayYMD();
 
   // 입력 필드에서 값 수집
-  const newAddr = $I('pv-addr')?.value.trim() || '';
+  const newAddr = $I('pv-address')?.value.trim() || '';
   const newBirth = $I('pv-birth')?.value.trim() || '';
   const newAdmit = $I('pv-admitDate')?.value.trim() || '';
 
   // 필수 항목 검증
   const missing = [];
+  if(!newAddr) missing.push('주소');
   if(!newBirth) missing.push('생년월일');
   if(cfg.layout==='grade' && !newAdmit) missing.push('입학일');
   if(missing.length){
     toast(`${missing.join(', ')}을(를) 입력해주세요.`,'err');
-    const first = $I('pv-'+(missing[0]==='생년월일'?'birth':'admitDate'));
+    const km = missing[0]==='주소'?'address':missing[0]==='생년월일'?'birth':'admitDate';
+    const first = $I('pv-'+km);
     if(first){ first.focus(); first.style.borderColor='#dc2626'; }
+    return;
+  }
+  // 확인 체크 검증
+  if(!$I('pv-confirm')?.checked){
+    toast('내용 확인 후 "이상 없음"에 체크해주세요.','err');
     return;
   }
 

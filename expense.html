@@ -94,6 +94,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
 </style>
 <script src="loading.js"></script>
+<script src="modal-close.js"></script>
 <script src="topnav.js"></script>
 </head>
 <body>
@@ -1201,42 +1202,12 @@ async function renderReport(){
     </div>
 
     <div class="acard">
-      <h3 class="actitle">👦 학생별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순)</span></h3>
-      ${students.length ? `
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:13.5px">
-          <thead>
-            <tr style="background:var(--iv);text-align:left">
-              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd)">이름</th>
-              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd)">반·학년</th>
-              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd);text-align:center">건수</th>
-              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd);text-align:right">청구</th>
-              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd);text-align:right">반환</th>
-              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd);text-align:right">순 청구액</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${students.map(s=>{
-              const netS = s.charge - s.refund;
-              return `<tr style="border-bottom:1px solid var(--ivd);cursor:pointer" onclick="viewStudentDetail('${s.id}')">
-                <td style="padding:9px 10px;font-weight:700;color:var(--gd)">${esc(s.name)}</td>
-                <td style="padding:9px 10px;color:var(--ts)">${esc(s.className||'-')}${s.grade?` · ${esc(s.grade)}`:''}</td>
-                <td style="padding:9px 10px;text-align:center;color:var(--ts)">${s.cnt}</td>
-                <td style="padding:9px 10px;text-align:right;color:var(--gm)">${s.charge?'₩'+won(s.charge):'-'}</td>
-                <td style="padding:9px 10px;text-align:right;color:#0d9488">${s.refund?'₩'+won(s.refund):'-'}</td>
-                <td style="padding:9px 10px;text-align:right;font-weight:800;color:var(--goldd)">₩${won(netS)}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-          <tfoot>
-            <tr style="background:var(--iv);font-weight:800">
-              <td style="padding:10px" colspan="3">합계</td>
-              <td style="padding:10px;text-align:right;color:var(--gm)">₩${won(totalCharge)}</td>
-              <td style="padding:10px;text-align:right;color:#0d9488">₩${won(totalRefund)}</td>
-              <td style="padding:10px;text-align:right;color:var(--goldd)">₩${won(net)}</td>
-            </tr>
-          </tfoot>
-        </table>
+      <h3 class="actitle">👦 반별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순 · 반을 눌러 펼치기)</span></h3>
+      ${students.length ? `<div id="rp-class-groups">${renderReportClassGroups(list, students)}</div>
+      <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px;padding-top:12px;border-top:2px solid var(--ivd);font-size:14px;font-weight:800">
+        <span>총 청구 <b style="color:var(--gm)">₩${won(totalCharge)}</b></span>
+        <span>총 반환 <b style="color:#0d9488">₩${won(totalRefund)}</b></span>
+        <span>순 청구 <b style="color:var(--goldd)">₩${won(net)}</b></span>
       </div>` : '<p class="empty">이 학기에 취합할 신청 내역이 없습니다.</p>'}
     </div>
 
@@ -1277,6 +1248,171 @@ function setReportOrg(o){ reportOrg = o; reportSem = ''; renderReport(); }
 window.setReportOrg = setReportOrg;
 function setReportSem(s){ reportSem = s; renderReport(); }
 window.setReportSem = setReportSem;
+
+// 반별 그룹 렌더 (아코디언)
+let openRepCls = {};
+function renderReportClassGroups(list, students){
+  // 학생을 반별로 묶기 (className 기준, 없으면 반 미지정)
+  const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
+  const byCls = {};
+  students.forEach(s=>{
+    const k = s.className || '반 미지정';
+    (byCls[k] = byCls[k] || []).push(s);
+  });
+  // 반 정렬: 각 반의 최소 학년 순
+  const clsKeys = Object.keys(byCls).sort((a,b)=>{
+    const ma = Math.min(...byCls[a].map(s=>gradeNum(s.grade)));
+    const mb = Math.min(...byCls[b].map(s=>gradeNum(s.grade)));
+    return ma-mb || a.localeCompare(b,'ko');
+  });
+  const palette = ['#0891b2','#7c3aed','#db2777','#d97706','#059669','#2563eb','#dc2626','#4f46e5','#0d9488','#c026d3'];
+  return clsKeys.map((k,ki)=>{
+    const studs = byCls[k].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.name||'').localeCompare(b.name||'','ko'));
+    const clsCharge = studs.reduce((t,s)=>t+s.charge,0);
+    const clsRefund = studs.reduce((t,s)=>t+s.refund,0);
+    const clsNet = clsCharge - clsRefund;
+    const accent = palette[ki%palette.length];
+    const open = !!openRepCls[k];
+    return `<div class="gr-card ${open?'open':''}" data-rcls="${esc(k)}">
+      <div class="gr-head" onclick="toggleRepCls('${esc(k).replace(/'/g,"\\'")}')">
+        <span style="width:10px;height:10px;border-radius:50%;background:${accent};flex-shrink:0"></span>
+        <span style="flex:1;font-size:15px;font-weight:700;color:var(--gd)">${esc(k)} <span style="font-size:12px;color:var(--tl);font-weight:400">· ${studs.length}명</span></span>
+        <span style="font-size:13px;font-weight:800;color:var(--goldd)">₩${won(clsNet)}</span>
+        <span class="gr-arrow">▼</span>
+      </div>
+      <div class="gr-body">
+        <div class="gr-body-inner">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+            <button class="bm" onclick="event.stopPropagation();viewClassSheet('${esc(k).replace(/'/g,"\\'")}')">📄 반별 청구 상세표 보기</button>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead><tr style="background:var(--iv);text-align:left">
+                <th style="padding:7px 9px">이름</th><th style="padding:7px 9px">학년</th>
+                <th style="padding:7px 9px;text-align:center">건수</th>
+                <th style="padding:7px 9px;text-align:right">청구</th>
+                <th style="padding:7px 9px;text-align:right">반환</th>
+                <th style="padding:7px 9px;text-align:right">순 청구액</th>
+              </tr></thead>
+              <tbody>
+                ${studs.map(s=>`<tr style="border-bottom:1px solid var(--ivd);cursor:pointer" onclick="viewStudentDetail('${s.id}')">
+                  <td style="padding:7px 9px;font-weight:700;color:var(--gd)">${esc(s.name)}</td>
+                  <td style="padding:7px 9px;color:var(--ts)">${esc(s.grade||'-')}</td>
+                  <td style="padding:7px 9px;text-align:center;color:var(--ts)">${s.cnt}</td>
+                  <td style="padding:7px 9px;text-align:right;color:var(--gm)">${s.charge?'₩'+won(s.charge):'-'}</td>
+                  <td style="padding:7px 9px;text-align:right;color:#0d9488">${s.refund?'₩'+won(s.refund):'-'}</td>
+                  <td style="padding:7px 9px;text-align:right;font-weight:800;color:var(--goldd)">₩${won(s.charge-s.refund)}</td>
+                </tr>`).join('')}
+              </tbody>
+              <tfoot><tr style="background:var(--iv);font-weight:800">
+                <td style="padding:8px" colspan="3">${esc(k)} 합계</td>
+                <td style="padding:8px;text-align:right;color:var(--gm)">₩${won(clsCharge)}</td>
+                <td style="padding:8px;text-align:right;color:#0d9488">₩${won(clsRefund)}</td>
+                <td style="padding:8px;text-align:right;color:var(--goldd)">₩${won(clsNet)}</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleRepCls(k){
+  openRepCls[k] = !openRepCls[k];
+  const card = document.querySelector(`.gr-card[data-rcls="${k.replace(/"/g,'\\"')}"]`);
+  if(!card) return;
+  const body = card.querySelector('.gr-body');
+  const inner = card.querySelector('.gr-body-inner');
+  if(openRepCls[k]){
+    card.classList.add('open');
+    body.style.maxHeight = inner.scrollHeight + 'px';
+    setTimeout(()=>{ if(openRepCls[k]) body.style.maxHeight='none'; }, 320);
+  } else {
+    body.style.maxHeight = inner.scrollHeight + 'px';
+    requestAnimationFrame(()=>{ body.style.maxHeight='0px'; card.classList.remove('open'); });
+  }
+}
+window.toggleRepCls = toggleRepCls;
+
+// 반별 청구 상세표 (안내장 형태) — 항목 가로, 학생 세로, ✓ + 개인 합계
+function viewClassSheet(className){
+  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  // 이 반 학생이 참여한 신청만
+  const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
+  // 이 반에 속한(=이 신청들에서 className이 일치하는) 학생 집합
+  const stuMap = new Map();
+  const items = [];
+  list.forEach(e=>{
+    const members = (e.students||[]).filter(s=>(s.className||'반 미지정')===className);
+    if(!members.length) return;
+    items.push(e);
+    members.forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id, {id:s.id, name:s.name, grade:s.grade}); });
+  });
+  const students = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.name||'').localeCompare(b.name||'','ko'));
+  // 학생별·항목별 금액 매트릭스
+  const amtOf = (e, sid) => { const s=(e.students||[]).find(x=>x.id===sid); return s? (e.mode==='refund'? -(s.amt||0) : (s.amt||0)) : null; };
+
+  const mv = document.createElement('div'); mv.className='mov'; mv.id='class-sheet-mod';
+  mv.innerHTML = `<div class="mbk" onclick="document.getElementById('class-sheet-mod').remove()"></div>
+    <div class="mbox" style="max-width:${Math.min(1100, 340+items.length*120)}px">
+      <div class="mtitle">${esc(className)} 청구 상세표</div>
+      <div class="msub">${esc(semKor(reportSem))} · ${ORGS[reportOrg]||reportOrg} · 항목 ${items.length}개 · 학생 ${students.length}명</div>
+      ${items.length ? `
+      <div style="overflow-x:auto">
+        <table style="border-collapse:collapse;font-size:12.5px;min-width:100%">
+          <thead>
+            <tr style="background:var(--gd);color:#fff">
+              <th style="padding:8px 10px;text-align:left;position:sticky;left:0;background:var(--gd);z-index:2;min-width:80px">이름</th>
+              ${items.map(e=>`<th style="padding:8px 10px;text-align:center;min-width:110px;border-left:1px solid rgba(255,255,255,.15)">
+                <div style="font-weight:800">${esc(e.subject)}</div>
+                <div style="font-size:10.5px;opacity:.75;font-weight:400">${esc(e.date)}${e.mode==='refund'?' · 반환':''}</div>
+                <div style="font-size:10.5px;opacity:.75;font-weight:400">${esc(e.items||'')}</div>
+                <div style="font-size:10.5px;opacity:.9;margin-top:2px">${e.mode==='refund'?'↩️ ':''}₩${won(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0))}${e.mode==='equal'?'/인':''}</div>
+              </th>`).join('')}
+              <th style="padding:8px 10px;text-align:right;min-width:90px;border-left:2px solid rgba(255,255,255,.3);position:sticky;right:0;background:var(--gd)">개인 합계</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${students.map((s,ri)=>{
+              let sum = 0;
+              const cells = items.map(e=>{
+                const a = amtOf(e, s.id);
+                if(a===null) return `<td style="padding:7px 10px;text-align:center;color:#ccc;border-left:1px solid var(--ivd)">·</td>`;
+                sum += a;
+                const isRef = a<0;
+                return `<td style="padding:7px 10px;text-align:center;border-left:1px solid var(--ivd);background:${isRef?'#e6f7f4':'var(--gp)'}">
+                  <span style="color:${isRef?'#0d9488':'var(--gm)'};font-weight:700">✓</span>
+                  <div style="font-size:11px;color:${isRef?'#0d9488':'var(--gm)'}">${isRef?'−':''}₩${won(Math.abs(a))}</div>
+                </td>`;
+              }).join('');
+              return `<tr style="border-bottom:1px solid var(--ivd);background:${ri%2?'#fafbfc':'#fff'}">
+                <td style="padding:7px 10px;font-weight:700;color:var(--gd);position:sticky;left:0;background:${ri%2?'#fafbfc':'#fff'};z-index:1">${esc(s.name)} <span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.grade||'')}</span></td>
+                ${cells}
+                <td style="padding:7px 10px;text-align:right;font-weight:800;color:var(--goldd);border-left:2px solid var(--ivd);position:sticky;right:0;background:${ri%2?'#fafbfc':'#fff'}">₩${won(sum)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--iv);font-weight:800">
+              <td style="padding:8px 10px;position:sticky;left:0;background:var(--iv)">항목 합계</td>
+              ${items.map(e=>{
+                const t = students.reduce((tt,s)=>{ const a=amtOf(e,s.id); return tt+(a||0); },0);
+                return `<td style="padding:8px 10px;text-align:center;border-left:1px solid var(--ivd);color:${e.mode==='refund'?'#0d9488':'var(--gm)'}">₩${won(Math.abs(t))}</td>`;
+              }).join('')}
+              <td style="padding:8px 10px;text-align:right;color:var(--goldd);border-left:2px solid var(--ivd);position:sticky;right:0;background:var(--iv)">₩${won(students.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">✓ 파란색은 청구, 초록색은 반환입니다. 가로로 스크롤하면 모든 항목을 볼 수 있습니다.</p>
+      ` : '<p class="empty">이 반의 청구 내역이 없습니다.</p>'}
+      <div class="mact"><button class="bs" onclick="document.getElementById('class-sheet-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+}
+window.viewClassSheet = viewClassSheet;
 
 // 학생 상세: 이 학생이 참여한 항목들
 function viewStudentDetail(sid){
