@@ -136,7 +136,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -238,7 +238,12 @@ window.showTab = showTab;
 let expOrg = '';
 let expMode = 'equal';   // equal(1/N) | indiv(개별 청구) | refund(개별 반환)
 let indivAmts = {};      // 개별 모드: sid → 금액
-let receipts = [];       // 영수증 dataURL 배열 (최대 10장)
+let receipts = [];       // 영수증 dataURL 배열 (새로 추가한 것)
+let editingId = null;        // 수정 중인 신청 ID
+let existingReceipts = [];   // 수정 시 기존 영수증 [{id,dataUrl,idx}]
+let removedReceiptIds = new Set(); // 수정 중 삭제한 기존 영수증 ID
+let STAFF = [];              // 관리자 지정용 교직원 목록
+let EXP_MANAGERS = {};       // 기관별 경비 관리자 {daniel:[uid], jihyebit:[uid]}
 let checkedIds = new Set();
 let openCls = {};
 
@@ -246,14 +251,15 @@ function renderNew(){
   const box = $I('tab-new');
   const orgs = myOrgs();
   if(!expOrg || !orgs.includes(expOrg)) expOrg = orgs[0];
-  const orgTabs = orgs.length>1 ? `
+  const orgTabs = (!editingId && orgs.length>1) ? `
     <div style="display:flex;gap:8px;margin-bottom:14px">
       ${orgs.map(o=>`<button class="subtbtn ${o===expOrg?'on':''}" onclick="setExpOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
     </div>` : '';
 
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">➕ 수행성 경비 신청 (${ORGS[expOrg]||expOrg})</h3>
+      <h3 class="actitle">${editingId?'✏️ 경비 신청 수정':'➕ 수행성 경비 신청'} (${ORGS[expOrg]||expOrg})</h3>
+      ${editingId?'<p class="adesc" style="background:var(--goldp);padding:9px 12px;border-radius:8px;color:var(--goldd)"><b>수정 모드</b>입니다. 내용을 변경한 뒤 하단의 "수정 저장"을 누르세요.</p>':''}
       ${orgTabs}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
         <button class="subtbtn ${expMode==='equal'?'on':''}" onclick="setExpMode('equal')" style="padding:8px 16px">➗ 균등 청구 (1/N)</button>
@@ -302,7 +308,7 @@ function renderNew(){
         <span><span class="si">1인당 청구</span> <span class="sv" id="sum-per">-</span></span>
         <span><span class="si" id="sum-total-label">학생 청구 합계</span> <span class="sv" id="sum-total">-</span></span>
         <span><span class="si">학교 청구</span> <span class="sv" id="sum-school">-</span></span>
-        <button class="bp" style="margin-left:auto;background:#fff;color:var(--gd)" onclick="submitExpense()">✅ 신청하기</button>
+        ${editingId?`<button class="bs" style="margin-left:auto;background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.4)" onclick="cancelEdit()">취소</button><button class="bp" style="background:#fff;color:var(--gd)" onclick="submitExpense()">💾 수정 저장</button>`:`<button class="bp" style="margin-left:auto;background:#fff;color:var(--gd)" onclick="submitExpense()">✅ 신청하기</button>`}
       </div>
     </div>`;
   renderClassChecks();
@@ -400,8 +406,8 @@ function compressImage(file){
 async function onReceiptPick(e){
   const files = Array.from(e.target.files || []);
   if(!files.length) return;
-  if(receipts.length + files.length > 10){
-    toast(`영수증은 최대 10장까지입니다. (현재 ${receipts.length}장)`,'err');
+  if(existingReceipts.length + receipts.length + files.length > 10){
+    toast(`영수증은 최대 10장까지입니다. (현재 ${existingReceipts.length + receipts.length}장)`,'err');
     e.target.value = '';
     return;
   }
@@ -420,14 +426,28 @@ async function onReceiptPick(e){
 function renderReceipts(){
   const box = $I('receipt-list');
   if(!box) return;
-  box.innerHTML = receipts.map((d,i)=>`
+  const totalCnt = existingReceipts.length + receipts.length;
+  box.innerHTML =
+    existingReceipts.map(r=>`
+    <div style="position:relative;width:76px;height:76px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
+      <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)">
+      <button onclick="removeExReceipt('${r.id}')" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;cursor:pointer;line-height:1">×</button>
+    </div>`).join('')
+    + receipts.map((d,i)=>`
     <div style="position:relative;width:76px;height:76px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
       <img src="${d}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="viewReceiptBig(${i})">
       <button onclick="removeReceipt(${i})" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;cursor:pointer;line-height:1">×</button>
-    </div>`).join('') + (receipts.length ? `<div style="align-self:center;font-size:12px;color:var(--tl)">${receipts.length}/10장</div>` : '');
+    </div>`).join('')
+    + (totalCnt ? `<div style="align-self:center;font-size:12px;color:var(--tl)">${totalCnt}/10장</div>` : '');
 }
 function removeReceipt(i){ receipts.splice(i,1); renderReceipts(); }
 window.removeReceipt = removeReceipt;
+function removeExReceipt(id){
+  removedReceiptIds.add(id);
+  existingReceipts = existingReceipts.filter(r=>r.id!==id);
+  renderReceipts();
+}
+window.removeExReceipt = removeExReceipt;
 
 function viewReceiptBig(i){
   const d = receipts[i]; if(!d) return;
@@ -447,6 +467,52 @@ function openImageOverlay(src){
   $I('mwrap').appendChild(ov);
 }
 window.openImageOverlay = openImageOverlay;
+
+// ── 신청 수정 (작성자·슈퍼관리자) ──
+async function editExpense(id){
+  const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+  if(!(CU.role==='super' || e.createdByUid===CU.uid)){ toast('작성자와 슈퍼관리자만 수정할 수 있습니다.','err'); return; }
+  editingId = id;
+  expOrg = e.org;
+  expMode = e.mode || 'equal';
+  checkedIds = new Set((e.students||[]).map(s=>s.id));
+  indivAmts = {};
+  if(expMode!=='equal') (e.students||[]).forEach(s=>{ if(s.amt!=null) indivAmts[s.id]=s.amt; });
+  receipts = []; removedReceiptIds = new Set(); existingReceipts = [];
+  openCls = {};
+  showTab('new');
+  // 필드 채우기
+  if($I('ex-date')) $I('ex-date').value = e.date || todayYMD();
+  if($I('ex-subject')) $I('ex-subject').value = e.subject||'';
+  if($I('ex-items')) $I('ex-items').value = e.items||'';
+  if($I('ex-detail')) $I('ex-detail').value = e.detail||'';
+  if($I('ex-total')) $I('ex-total').value = (e.mode==='equal'||!e.mode) ? (e.total||'') : '';
+  if($I('ex-schoolqty')) $I('ex-schoolqty').value = e.schoolQty||0;
+  if($I('ex-school')) $I('ex-school').value = e.schoolNote||'';
+  if($I('ex-bank')) $I('ex-bank').value = e.bank||'';
+  if($I('ex-holder')) $I('ex-holder').value = e.holder||'';
+  if($I('ex-account')) $I('ex-account').value = e.account||'';
+  refreshSum();
+  // 기존 영수증 로드
+  try {
+    const rs = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',id)));
+    const arr = []; rs.forEach(d=>arr.push({id:d.id, ...d.data()}));
+    arr.sort((a,b)=>(a.idx||0)-(b.idx||0));
+    existingReceipts = arr.map(r=>({id:r.id, dataUrl:r.dataUrl, idx:r.idx||0}));
+    renderReceipts();
+  } catch(err){}
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+window.editExpense = editExpense;
+
+function cancelEdit(){
+  editingId = null;
+  receipts = []; existingReceipts = []; removedReceiptIds = new Set();
+  checkedIds = new Set(); indivAmts = {};
+  renderNew();
+  toast('수정을 취소했습니다.');
+}
+window.cancelEdit = cancelEdit;
 
 function renderClassChecks(){
   const wrap = $I('ex-classes');
@@ -633,7 +699,7 @@ async function submitExpense(){
   if(!subject){ toast('수업 과목을 입력하세요.','err'); $I('ex-subject')?.focus(); return; }
   if(!items){ toast('구매 목록을 입력하세요.','err'); $I('ex-items')?.focus(); return; }
   if(!ids.length){ toast('참여 학생을 1명 이상 체크하세요.','err'); return; }
-  if(!receipts.length){ toast('영수증을 1장 이상 첨부하세요.','err'); return; }
+  if(existingReceipts.length + receipts.length < 1){ toast('영수증을 1장 이상 첨부하세요.','err'); return; }
 
   let record;
   if(expMode==='equal'){
@@ -684,20 +750,45 @@ async function submitExpense(){
   }
 
   try {
-    window.showLoading && window.showLoading('신청서를 저장하는 중…');
-    record.receiptCount = receipts.length;
-    const ref = await addDoc(collection(db,'expenses'), record);
-    // 영수증을 별도 컬렉션에 저장 (관리자 취합·보고서용 메타데이터 포함)
-    for(let i=0;i<receipts.length;i++){
-      window.setLoadStep && window.setLoadStep(`영수증 업로드 중… (${i+1}/${receipts.length})`, 30 + Math.round((i+1)/receipts.length*60));
-      await addDoc(collection(db,'expenseReceipts'), {
-        expenseId: ref.id,
-        org: expOrg, date, subject,
-        idx: i+1,
-        dataUrl: receipts[i],
-        createdByUid: CU.uid, createdByName: CU.name||'',
-        createdAt: Timestamp.now()
-      });
+    window.showLoading && window.showLoading(editingId?'수정 내용을 저장하는 중…':'신청서를 저장하는 중…');
+    if(editingId){
+      // ── 수정 저장 ──
+      const upd = {...record};
+      delete upd.createdByUid; delete upd.createdByName; delete upd.createdAt; delete upd.org;
+      upd.receiptCount = existingReceipts.length + receipts.length;
+      upd.updatedAt = Timestamp.now();
+      upd.updatedByName = CU.name||'';
+      await updateDoc(doc(db,'expenses',editingId), upd);
+      // 삭제한 기존 영수증 제거
+      for(const rid of removedReceiptIds){
+        try { await deleteDoc(doc(db,'expenseReceipts',rid)); } catch(e4){}
+      }
+      // 새 영수증 추가
+      let baseIdx = existingReceipts.reduce((m,r)=>Math.max(m, r.idx||0), 0);
+      for(let i=0;i<receipts.length;i++){
+        window.setLoadStep && window.setLoadStep(`영수증 업로드 중… (${i+1}/${receipts.length})`, 40 + Math.round((i+1)/Math.max(1,receipts.length)*50));
+        await addDoc(collection(db,'expenseReceipts'), {
+          expenseId: editingId, org: expOrg, date, subject,
+          idx: ++baseIdx, dataUrl: receipts[i],
+          createdByUid: CU.uid, createdByName: CU.name||'',
+          createdAt: Timestamp.now()
+        });
+      }
+    } else {
+      // ── 새 신청 ──
+      record.receiptCount = receipts.length;
+      const ref = await addDoc(collection(db,'expenses'), record);
+      for(let i=0;i<receipts.length;i++){
+        window.setLoadStep && window.setLoadStep(`영수증 업로드 중… (${i+1}/${receipts.length})`, 30 + Math.round((i+1)/receipts.length*60));
+        await addDoc(collection(db,'expenseReceipts'), {
+          expenseId: ref.id,
+          org: expOrg, date, subject,
+          idx: i+1,
+          dataUrl: receipts[i],
+          createdByUid: CU.uid, createdByName: CU.name||'',
+          createdAt: Timestamp.now()
+        });
+      }
     }
     // 계좌 정보를 내 계정에 저장 (다음 신청 시 자동 입력)
     if(bank!==(CU.bankName||'') || account!==(CU.bankAccount||'') || holder!==(CU.bankHolder||'')){
@@ -707,12 +798,14 @@ async function submitExpense(){
       } catch(e2){}
     }
     window.hideLoading && window.hideLoading();
-    toast('경비 신청이 완료되었습니다.','ok');
+    toast(editingId?'수정을 저장했습니다.':'경비 신청이 완료되었습니다.','ok');
+    editingId = null;
+    existingReceipts = []; removedReceiptIds = new Set();
     checkedIds = new Set();
     indivAmts = {};
     receipts = [];
     showTab('list');
-  } catch(e){ window.hideLoading && window.hideLoading(); toast('신청 실패: '+e.message,'err'); }
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('저장 실패: '+e.message,'err'); }
 }
 window.submitExpense = submitExpense;
 
@@ -760,7 +853,7 @@ async function renderList(){
               </div>
             </div>
             <button class="bm" onclick="viewExpense('${e.id}')">상세보기</button>
-            ${(CU.role==='super' || e.createdByUid===CU.uid) ? `<button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delExpense('${e.id}')">삭제</button>` : ''}
+            ${(CU.role==='super' || e.createdByUid===CU.uid) ? `<button class="bm" onclick="editExpense('${e.id}')">수정</button><button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delExpense('${e.id}')">삭제</button>` : ''}
           </div>`).join('') : '<p class="empty">아직 신청 내역이 없습니다.</p>'}
       </div>
     </div>`;
@@ -771,17 +864,50 @@ window.setListOrg = setListOrg;
 
 function viewExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
-  // 반별로 그룹
-  const byCls = {};
-  (e.students||[]).forEach(st=>{
-    const k = st.className || '반 미지정';
-    (byCls[k] = byCls[k] || []).push(st);
-  });
-  const clsHTML = Object.keys(byCls).sort((a,b)=>a.localeCompare(b,'ko')).map(k=>`
-    <div style="margin-bottom:10px">
-      <div style="font-size:13px;font-weight:700;color:var(--gm);margin-bottom:4px">${esc(k)} <span style="color:var(--tl);font-weight:400">(${byCls[k].length}명)</span></div>
-      <div style="font-size:13.5px;color:var(--tx);line-height:1.9">${byCls[k].map(st=>esc(st.name)+(st.grade?` <span style="font-size:11px;color:var(--tl)">${esc(st.grade)}</span>`:'')+((e.mode==='indiv'||e.mode==='refund')&&st.amt!=null?` <b style="color:${e.mode==='refund'?'#0d9488':'var(--gm)'};font-size:12.5px">₩${won(st.amt)}</b>`:'')).join(', ')}</div>
-    </div>`).join('');
+  // 전체 학생 명단에 체크 표시 (누가 빠졌는지 한눈에)
+  const charged = new Map();
+  (e.students||[]).forEach(st=>charged.set(st.id, st));
+  const indivMode = (e.mode==='indiv'||e.mode==='refund');
+  const giFn = c => {
+    const gs = new Set();
+    (c.students||[]).forEach(sid=>{ const g=(c.grades||{})[sid]; if(g) gs.add(g); });
+    const arr = [...gs].sort((a,b)=>(parseInt(a,10)||99)-(parseInt(b,10)||99));
+    return { label: arr.length ? arr.map(g=>String(g).replace('학년','')).join('·')+'학년' : '', min: arr.length ? (parseInt(arr[0],10)||99) : 999 };
+  };
+  const orgClasses = CLASSES.filter(c=>c.org===e.org)
+    .map(c=>({...c, __gi: giFn(c)}))
+    .sort((a,b)=> a.__gi.min - b.__gi.min || (a.name||'').localeCompare(b.name||'','ko'));
+  const seen = new Set();
+  let rosterHTML = orgClasses.map(c=>{
+    const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(s=>s && (s.status||'active')!=='quit');
+    if(!studs.length) return '';
+    studs.sort((a,b)=>{
+      const ga = parseInt(studentGrade(a.id),10)||99, gb = parseInt(studentGrade(b.id),10)||99;
+      return ga-gb || (a.name||'').localeCompare(b.name||'','ko');
+    });
+    const chk = studs.filter(s=>charged.has(s.id)).length;
+    return `<div style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:var(--gm);margin-bottom:5px">${esc(c.name||'')}${c.__gi.label?` <span style="color:var(--tl);font-weight:400">· ${esc(c.__gi.label)}</span>`:''} <span style="color:var(--tl);font-weight:400">— 체크 ${chk}/${studs.length}명</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">
+        ${studs.map(s=>{
+          seen.add(s.id);
+          const st = charged.get(s.id);
+          const isLeave = (s.status||'active')==='leave';
+          if(st) return `<span style="background:var(--gp);color:var(--gm);border:1px solid var(--gl);border-radius:7px;padding:3px 9px;font-size:12.5px;font-weight:700">✓ ${esc(s.name)}${indivMode&&st.amt!=null?` <b style="color:${e.mode==='refund'?'#0d9488':'var(--gm)'}">₩${won(st.amt)}</b>`:''}</span>`;
+          return `<span style="background:#f4f4f6;color:#b6bac4;border:1px solid #e8e9ee;border-radius:7px;padding:3px 9px;font-size:12.5px">${esc(s.name)}${isLeave?' (휴학)':''}</span>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  // 현재 반편성에 없는 청구 학생 (반 변경·퇴원 등)
+  const extra = (e.students||[]).filter(st=>!seen.has(st.id));
+  if(extra.length){
+    rosterHTML += `<div style="margin-bottom:8px">
+      <div style="font-size:13px;font-weight:700;color:var(--tl);margin-bottom:5px">현재 명단 외 (반 변경·퇴원 등)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px">${extra.map(st=>`<span style="background:var(--gp);color:var(--gm);border-radius:7px;padding:3px 9px;font-size:12.5px;font-weight:700">✓ ${esc(st.name)}${indivMode&&st.amt!=null?` ₩${won(st.amt)}`:''}</span>`).join('')}</div>
+    </div>`;
+  }
+  const clsHTML = rosterHTML;
 
   const mv = document.createElement('div'); mv.className='mov'; mv.id='exview-mod';
   mv.innerHTML = `<div class="mbk" onclick="document.getElementById('exview-mod').remove()"></div>
@@ -797,7 +923,7 @@ function viewExpense(id){
         ${e.bank||e.account?`<div><b>정산 계좌</b> : ${esc(e.bank||'')} ${esc(e.account||'')} (${esc(e.holder||'')})</div>`:''}
         ${(e.schoolQty||e.schoolNote)?`<div><b>학교 청구분</b> : ${e.schoolQty?`${e.schoolQty}개분 ₩${won(e.schoolTotal!=null?e.schoolTotal:(e.per||0)*(e.schoolQty||0))}`:''}${e.schoolNote?` ${e.schoolQty?'— ':''}${esc(e.schoolNote)}`:''}</div>`:''}
       </div>
-      <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">청구 대상 학생 (${e.count}명)</div>
+      <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">청구 체크 현황 (${e.count}명 체크) <span style="font-size:12px;color:var(--tl);font-weight:400">— ✓ 파란색이 청구 대상, 회색은 미청구</span></div>
       ${clsHTML}
       <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">🧾 영수증 ${e.receiptCount?`(${e.receiptCount}장)`:''}</div>
       <div id="rc-list" style="display:flex;gap:8px;flex-wrap:wrap"><span style="font-size:13px;color:var(--tl)">불러오는 중…</span></div>
@@ -880,6 +1006,13 @@ async function renderBackup(){
   try {
     const snap = await getDocs(collection(db,'expenses'));
     backupAll = []; snap.forEach(d=>backupAll.push({id:d.id, ...d.data()}));
+    // 교직원 목록 + 기관별 경비 관리자 설정
+    const st = await getDocs(collection(db,'staff'));
+    STAFF = []; st.forEach(d=>STAFF.push({uid:d.id, ...d.data()}));
+    try {
+      const mgr = await getDoc(doc(db,'expenseConfig','managers'));
+      EXP_MANAGERS = mgr.exists() ? (mgr.data()||{}) : {};
+    } catch(e2){ EXP_MANAGERS = {}; }
   } catch(e){
     window.hideLoading && window.hideLoading();
     box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
@@ -894,6 +1027,34 @@ async function renderBackup(){
   });
 
   box.innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">👥 기관별 경비 관리자 지정</h3>
+      <p class="adesc">지정된 선생님은 앞으로 각 기관의 수행성 경비를 모니터링하고 취합하는 담당자가 됩니다. (관리자 지정은 슈퍼관리자만 할 수 있습니다.)</p>
+      ${myOrgs().map(o=>{
+        const mgrs = (EXP_MANAGERS[o]||[]);
+        const orgStaff = STAFF.filter(s=>{
+          if((s.acStatus||'active')!=='active') return false;
+          const so = s.orgs && s.orgs.length ? s.orgs : [s.org];
+          return s.role==='super' || so.includes(o);
+        }).sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+        return `<div style="border:1px solid var(--ivd);border-radius:10px;padding:14px;margin-bottom:10px">
+          <div style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:8px">${ORGS[o]||o}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+            ${mgrs.length ? mgrs.map(uid=>{
+              const s = STAFF.find(x=>x.uid===uid);
+              return `<span style="background:var(--gp);color:var(--gm);border:1px solid var(--gl);border-radius:100px;padding:4px 10px 4px 12px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px">${esc(s?.name||uid)}<button onclick="removeManager('${o}','${uid}')" style="border:none;background:none;color:var(--gm);cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`;
+            }).join('') : '<span style="font-size:13px;color:var(--tl)">아직 지정된 관리자가 없습니다.</span>'}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="mgr-sel-${o}" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;background:var(--iv);font-family:inherit;min-width:180px">
+              <option value="">+ 관리자 추가…</option>
+              ${orgStaff.filter(s=>!mgrs.includes(s.uid)).map(s=>`<option value="${s.uid}">${esc(s.name||'')}${s.role==='super'?' (슈퍼)':s.dept?' · '+esc(s.dept):''}</option>`).join('')}
+            </select>
+            <button class="bm" onclick="addManager('${o}')">추가</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
     <div class="acard">
       <h3 class="actitle">💾 연도별 백업·정리</h3>
       <p class="adesc">1년 단위로 수행성 경비 전체(신청 내역 + 영수증)를 <b>ZIP 파일로 다운로드</b>합니다. ZIP 안에는 엑셀에서 열 수 있는 CSV, 원본 데이터(JSON), 영수증 이미지가 들어 있습니다. 백업 후 아래 정리 기능으로 온라인 용량을 비울 수 있습니다.</p>
@@ -914,6 +1075,33 @@ async function renderBackup(){
     </div>`;
 }
 window.renderBackup = renderBackup;
+
+// 기관별 경비 관리자 추가/삭제
+async function addManager(org){
+  const sel = $I('mgr-sel-'+org);
+  const uid = sel?.value;
+  if(!uid){ toast('추가할 선생님을 선택하세요.','err'); return; }
+  const cur = EXP_MANAGERS[org] || [];
+  if(cur.includes(uid)) return;
+  EXP_MANAGERS[org] = [...cur, uid];
+  try {
+    await setDoc(doc(db,'expenseConfig','managers'), EXP_MANAGERS);
+    toast('관리자를 추가했습니다.','ok');
+    renderBackup();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.addManager = addManager;
+
+async function removeManager(org, uid){
+  const cur = EXP_MANAGERS[org] || [];
+  EXP_MANAGERS[org] = cur.filter(u=>u!==uid);
+  try {
+    await setDoc(doc(db,'expenseConfig','managers'), EXP_MANAGERS);
+    toast('관리자를 해제했습니다.');
+    renderBackup();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.removeManager = removeManager;
 
 async function backupYear(){
   const y = $I('bk-year')?.value;
