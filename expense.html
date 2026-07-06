@@ -122,10 +122,12 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="subtabs">
       <button class="subtbtn on" id="tb-new" onclick="showTab('new')">➕ 경비 신청</button>
       <button class="subtbtn" id="tb-list" onclick="showTab('list')">📋 신청 내역</button>
+      <button class="subtbtn" id="tb-report" onclick="showTab('report')">📊 취합</button>
       <button class="subtbtn" id="tb-backup" onclick="showTab('backup')" style="display:none">💾 백업·정리</button>
     </div>
     <div id="tab-new"></div>
     <div id="tab-list" style="display:none"></div>
+    <div id="tab-report" style="display:none"></div>
     <div id="tab-backup" style="display:none"></div>
   </div>
 </div>
@@ -171,6 +173,19 @@ function toast(msg, type=''){
 }
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+// 이 기관의 경비 관리자인가 (슈퍼 포함)
+function isExpManager(org){
+  if(!CU) return false;
+  if(CU.role==='super') return true;
+  const mgrs = EXP_MANAGERS[org] || [];
+  return mgrs.includes(CU.uid);
+}
+// 어느 기관이든 경비 관리자거나 슈퍼인가
+function isAnyExpManager(){
+  if(!CU) return false;
+  if(CU.role==='super') return true;
+  return myOrgs().some(o=>(EXP_MANAGERS[o]||[]).includes(CU.uid));
+}
 const myOrgs = () => CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
 function todayYMD(){ const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; }
 function studentGrade(sid){
@@ -227,6 +242,10 @@ async function loadData(){
       const w = await getDoc(doc(db,'expenseConfig','window'));
       if(w.exists()){ const d=w.data()||{}; EXP_WINDOW = {afterDays: d.afterDays??8, beforeDays: d.beforeDays??14}; }
     } catch(e2){}
+    try {
+      const mgr = await getDoc(doc(db,'expenseConfig','managers'));
+      EXP_MANAGERS = mgr.exists() ? (mgr.data()||{}) : {};
+    } catch(e3){ EXP_MANAGERS = {}; }
   } catch(e){ toast('데이터 로드 실패: '+e.message,'err'); }
   finally { window.hideLoading && window.hideLoading(); }
 }
@@ -281,12 +300,13 @@ function currentInputTerm(org){
 
 function showTab(t){
   curTab = t;
-  ['new','list','backup'].forEach(k=>{
+  ['new','list','report','backup'].forEach(k=>{
     const b = $I('tb-'+k); if(b) b.classList.toggle('on', t===k);
     const p = $I('tab-'+k); if(p) p.style.display = t===k?'':'none';
   });
   if(t==='new') renderNew();
   if(t==='list') renderList();
+  if(t==='report') renderReport();
   if(t==='backup') renderBackup();
 }
 window.showTab = showTab;
@@ -562,7 +582,7 @@ window.openImageOverlay = openImageOverlay;
 // ── 신청 수정 (작성자·슈퍼관리자) ──
 async function editExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
-  if(!(CU.role==='super' || e.createdByUid===CU.uid)){ toast('작성자와 슈퍼관리자만 수정할 수 있습니다.','err'); return; }
+  if(!isExpManager(e.org)){ toast('경비 관리자와 슈퍼관리자만 수정할 수 있습니다.','err'); return; }
   editingId = id;
   editingSemester = e.semester || '';
   expOrg = e.org;
@@ -951,7 +971,7 @@ async function renderList(){
               </div>
             </div>
             <button class="bm" onclick="viewExpense('${e.id}')">상세보기</button>
-            ${(CU.role==='super' || e.createdByUid===CU.uid) ? `<button class="bm" onclick="editExpense('${e.id}')">수정</button><button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delExpense('${e.id}')">삭제</button>` : ''}
+            ${(isExpManager(e.org)) ? `<button class="bm" onclick="editExpense('${e.id}')">수정</button><button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delExpense('${e.id}')">삭제</button>` : ''}
           </div>`).join('') : '<p class="empty">아직 신청 내역이 없습니다.</p>'}
       </div>
     </div>`;
@@ -1055,7 +1075,7 @@ async function loadReceipts(expenseId){
 
 async function delExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
-  if(!(CU.role==='super' || e.createdByUid===CU.uid)){ toast('삭제 권한이 없습니다.','err'); return; }
+  if(!isExpManager(e.org)){ toast('경비 관리자와 슈퍼관리자만 삭제할 수 있습니다.','err'); return; }
   if(!confirm(`"${e.subject}" (${e.date}) 신청을 삭제할까요?\n청구 대상 ${e.count}명의 기록과 영수증이 함께 삭제됩니다.`)) return;
   try {
     // 영수증 먼저 삭제
@@ -1071,6 +1091,267 @@ async function delExpense(id){
   } catch(e2){ toast('삭제 실패: '+e2.message,'err'); }
 }
 window.delExpense = delExpense;
+
+// ══════════ 📊 취합 ══════════
+let reportOrg = '';
+let reportSem = '';
+let DEPOSITS = [];  // 예치금 입금 기록
+
+async function renderReport(){
+  const box = $I('tab-report');
+  const orgs = myOrgs();
+  if(!reportOrg || !orgs.includes(reportOrg)) reportOrg = orgs[0];
+  box.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
+  window.showLoading && window.showLoading('취합 자료를 계산하는 중…');
+  try {
+    const snap = await getDocs(collection(db,'expenses'));
+    EXPENSES = []; snap.forEach(d=>EXPENSES.push({id:d.id, ...d.data()}));
+    const dsnap = await getDocs(collection(db,'expenseDeposits'));
+    DEPOSITS = []; dsnap.forEach(d=>DEPOSITS.push({id:d.id, ...d.data()}));
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
+    return;
+  } finally { window.hideLoading && window.hideLoading(); }
+
+  // 이 기관의 학기 목록 (신청 데이터 기준 + 등록된 학기)
+  const semSet = new Set();
+  EXPENSES.filter(e=>e.org===reportOrg && e.semester).forEach(e=>semSet.add(e.semester));
+  orgTerms(reportOrg).forEach(t=>semSet.add(termKey(t)));
+  const sems = [...semSet].sort().reverse();
+  if(!reportSem || !sems.includes(reportSem)) reportSem = sems[0] || '';
+
+  const orgTabs = orgs.length>1 ? `
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      ${orgs.map(o=>`<button class="subtbtn ${o===reportOrg?'on':''}" onclick="setReportOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
+    </div>` : '';
+
+  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem);
+  const canManage = isExpManager(reportOrg);
+
+  // 요약
+  let totalCharge=0, totalRefund=0, totalSchool=0;
+  list.forEach(e=>{
+    const sum = (e.students||[]).reduce((t,s)=>t+(s.amt||0),0);
+    if(e.mode==='refund') totalRefund += sum; else totalCharge += sum;
+    totalSchool += (e.schoolTotal||0);
+  });
+  const net = totalCharge - totalRefund;
+
+  // 학생별 합산 (청구 +, 반환 −)
+  const stuMap = new Map(); // sid → {name, grade, className, charge, refund, items:[]}
+  list.forEach(e=>{
+    (e.students||[]).forEach(s=>{
+      let r = stuMap.get(s.id);
+      if(!r){ r = {id:s.id, name:s.name, grade:s.grade, className:s.className, charge:0, refund:0, cnt:0}; stuMap.set(s.id, r); }
+      if(e.mode==='refund') r.refund += (s.amt||0);
+      else r.charge += (s.amt||0);
+      r.cnt++;
+    });
+  });
+  // 반별·학년순 정렬
+  const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
+  const students = [...stuMap.values()].sort((a,b)=>
+    gradeNum(a.grade)-gradeNum(b.grade) || (a.className||'').localeCompare(b.className||'','ko') || (a.name||'').localeCompare(b.name||'','ko')
+  );
+
+  // 예치금 (이 기관·학기)
+  const deposits = DEPOSITS.filter(d=>d.org===reportOrg && d.semester===reportSem)
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const depTotal = deposits.reduce((t,d)=>t+(d.amount||0),0);
+  // 선생님별 예치금 합계
+  const depByTeacher = {};
+  deposits.forEach(d=>{ depByTeacher[d.teacher] = (depByTeacher[d.teacher]||0)+(d.amount||0); });
+
+  box.innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📊 수행성 경비 취합</h3>
+      <p class="adesc">기관·학기별로 학생별 청구 금액을 합산합니다. 반환은 자동으로 차감됩니다. (모든 선생님이 열람할 수 있습니다.)</p>
+      ${orgTabs}
+      <div class="fgrp" style="max-width:280px"><label>학기</label>
+        <select id="rp-sem" onchange="setReportSem(this.value)">
+          ${sems.length ? sems.map(s=>`<option value="${s}" ${s===reportSem?'selected':''}>${esc(semKor(s))}</option>`).join('') : '<option value="">학기 없음</option>'}
+        </select>
+      </div>
+    </div>
+
+    <div class="acard">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+        <div style="background:var(--gp);border-radius:10px;padding:14px;text-align:center">
+          <div style="font-size:12px;color:var(--ts)">신청 건수</div>
+          <div style="font-size:20px;font-weight:800;color:var(--gd)">${list.length}건</div>
+        </div>
+        <div style="background:var(--gp);border-radius:10px;padding:14px;text-align:center">
+          <div style="font-size:12px;color:var(--ts)">총 청구</div>
+          <div style="font-size:20px;font-weight:800;color:var(--gm)">₩${won(totalCharge)}</div>
+        </div>
+        <div style="background:#e6f7f4;border-radius:10px;padding:14px;text-align:center">
+          <div style="font-size:12px;color:var(--ts)">총 반환</div>
+          <div style="font-size:20px;font-weight:800;color:#0d9488">₩${won(totalRefund)}</div>
+        </div>
+        <div style="background:var(--goldp);border-radius:10px;padding:14px;text-align:center">
+          <div style="font-size:12px;color:var(--ts)">순 청구 (청구−반환)</div>
+          <div style="font-size:20px;font-weight:800;color:var(--goldd)">₩${won(net)}</div>
+        </div>
+        <div style="background:#f4f4f6;border-radius:10px;padding:14px;text-align:center">
+          <div style="font-size:12px;color:var(--ts)">학교 청구분</div>
+          <div style="font-size:20px;font-weight:800;color:var(--ts)">₩${won(totalSchool)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle">👦 학생별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순)</span></h3>
+      ${students.length ? `
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13.5px">
+          <thead>
+            <tr style="background:var(--iv);text-align:left">
+              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd)">이름</th>
+              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd)">반·학년</th>
+              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd);text-align:center">건수</th>
+              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd);text-align:right">청구</th>
+              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd);text-align:right">반환</th>
+              <th style="padding:9px 10px;border-bottom:2px solid var(--ivd);text-align:right">순 청구액</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${students.map(s=>{
+              const netS = s.charge - s.refund;
+              return `<tr style="border-bottom:1px solid var(--ivd);cursor:pointer" onclick="viewStudentDetail('${s.id}')">
+                <td style="padding:9px 10px;font-weight:700;color:var(--gd)">${esc(s.name)}</td>
+                <td style="padding:9px 10px;color:var(--ts)">${esc(s.className||'-')}${s.grade?` · ${esc(s.grade)}`:''}</td>
+                <td style="padding:9px 10px;text-align:center;color:var(--ts)">${s.cnt}</td>
+                <td style="padding:9px 10px;text-align:right;color:var(--gm)">${s.charge?'₩'+won(s.charge):'-'}</td>
+                <td style="padding:9px 10px;text-align:right;color:#0d9488">${s.refund?'₩'+won(s.refund):'-'}</td>
+                <td style="padding:9px 10px;text-align:right;font-weight:800;color:var(--goldd)">₩${won(netS)}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:var(--iv);font-weight:800">
+              <td style="padding:10px" colspan="3">합계</td>
+              <td style="padding:10px;text-align:right;color:var(--gm)">₩${won(totalCharge)}</td>
+              <td style="padding:10px;text-align:right;color:#0d9488">₩${won(totalRefund)}</td>
+              <td style="padding:10px;text-align:right;color:var(--goldd)">₩${won(net)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>` : '<p class="empty">이 학기에 취합할 신청 내역이 없습니다.</p>'}
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle">💵 예치금 입금 기록 <span style="font-size:12px;color:var(--tl);font-weight:400">(선생님께 선지급한 예치금)</span></h3>
+      <p class="adesc">학교에서 선생님께 미리 지급한 예치금 내역입니다. ${canManage?'':'(입력은 경비 관리자·슈퍼관리자만 가능합니다.)'}</p>
+      ${canManage ? `
+      <div class="frow" style="max-width:640px">
+        <div class="fgrp"><label>입금 날짜</label><input type="date" id="dep-date" value="${todayYMD()}"></div>
+        <div class="fgrp"><label>받는 선생님</label><input type="text" id="dep-teacher" placeholder="선생님 이름"></div>
+      </div>
+      <div class="frow" style="max-width:640px">
+        <div class="fgrp"><label>금액 (원)</label><input type="number" id="dep-amount" placeholder="예: 1000000" min="0" inputmode="numeric"></div>
+        <div class="fgrp"><label>메모 (선택)</label><input type="text" id="dep-memo" placeholder="예: 1학기 2차 예치금"></div>
+      </div>
+      <button class="bp" onclick="addDeposit()">＋ 예치금 입금 기록 추가</button>
+      ` : ''}
+      <div style="margin-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:2px solid var(--ivd);font-size:13px;font-weight:800;color:var(--gd)">
+          <span>총 예치금 입금액</span><span style="color:var(--gm)">₩${won(depTotal)}</span>
+        </div>
+        ${Object.keys(depByTeacher).length ? `<div style="font-size:12.5px;color:var(--ts);padding:8px 0;line-height:1.9">${Object.entries(depByTeacher).sort((a,b)=>b[1]-a[1]).map(([t,a])=>`${esc(t)}: <b style="color:var(--gm)">₩${won(a)}</b>`).join(' · ')}</div>`:''}
+        <div style="margin-top:8px">
+          ${deposits.length ? deposits.map(d=>`
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--ivd);border-radius:9px;margin-bottom:6px;flex-wrap:wrap">
+              <span style="font-size:12px;color:var(--tl)">${esc(d.date||'')}</span>
+              <span style="font-weight:700;color:var(--gd)">${esc(d.teacher||'')}</span>
+              <span style="font-weight:800;color:var(--gm)">₩${won(d.amount)}</span>
+              ${d.memo?`<span style="font-size:12.5px;color:var(--ts)">${esc(d.memo)}</span>`:''}
+              ${canManage?`<button class="bm" style="background:#fee2e2;color:#dc2626;margin-left:auto" onclick="delDeposit('${d.id}')">삭제</button>`:''}
+            </div>`).join('') : '<p class="empty" style="padding:16px">예치금 입금 기록이 없습니다.</p>'}
+        </div>
+      </div>
+    </div>`;
+}
+window.renderReport = renderReport;
+function setReportOrg(o){ reportOrg = o; reportSem = ''; renderReport(); }
+window.setReportOrg = setReportOrg;
+function setReportSem(s){ reportSem = s; renderReport(); }
+window.setReportSem = setReportSem;
+
+// 학생 상세: 이 학생이 참여한 항목들
+function viewStudentDetail(sid){
+  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem);
+  const items = [];
+  list.forEach(e=>{
+    const s = (e.students||[]).find(x=>x.id===sid);
+    if(s) items.push({date:e.date, subject:e.subject, mode:e.mode, amt:s.amt||0});
+  });
+  const stu = (list.flatMap(e=>e.students||[]).find(x=>x.id===sid))||{};
+  items.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const charge = items.filter(i=>i.mode!=='refund').reduce((t,i)=>t+i.amt,0);
+  const refund = items.filter(i=>i.mode==='refund').reduce((t,i)=>t+i.amt,0);
+
+  const mv = document.createElement('div'); mv.className='mov'; mv.id='stu-detail-mod';
+  mv.innerHTML = `<div class="mbk" onclick="document.getElementById('stu-detail-mod').remove()"></div>
+    <div class="mbox">
+      <div class="mtitle">${esc(stu.name||'')} <span style="font-size:13px;color:var(--tl);font-weight:400">${esc(stu.className||'')}${stu.grade?' · '+esc(stu.grade):''}</span></div>
+      <div class="msub">${esc(semKor(reportSem))} · 참여 ${items.length}건</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:var(--iv);text-align:left">
+            <th style="padding:8px">날짜</th><th style="padding:8px">수업</th><th style="padding:8px;text-align:right">금액</th>
+          </tr></thead>
+          <tbody>
+            ${items.map(i=>`<tr style="border-bottom:1px solid var(--ivd)">
+              <td style="padding:8px;color:var(--ts)">${esc(i.date)}</td>
+              <td style="padding:8px">${esc(i.subject)}${i.mode==='refund'?' <span style="color:#0d9488;font-size:11px">(반환)</span>':''}</td>
+              <td style="padding:8px;text-align:right;color:${i.mode==='refund'?'#0d9488':'var(--gm)'};font-weight:700">${i.mode==='refund'?'−':''}₩${won(i.amt)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;padding:12px;background:var(--iv);border-radius:8px;font-size:13.5px;line-height:1.8">
+        <div style="display:flex;justify-content:space-between"><span>청구 합계</span><b style="color:var(--gm)">₩${won(charge)}</b></div>
+        <div style="display:flex;justify-content:space-between"><span>반환 합계</span><b style="color:#0d9488">₩${won(refund)}</b></div>
+        <div style="display:flex;justify-content:space-between;border-top:1px solid var(--ivd);margin-top:6px;padding-top:6px"><span style="font-weight:700">순 청구액</span><b style="color:var(--goldd);font-size:15px">₩${won(charge-refund)}</b></div>
+      </div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('stu-detail-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+}
+window.viewStudentDetail = viewStudentDetail;
+
+// 예치금 추가/삭제
+async function addDeposit(){
+  if(!isExpManager(reportOrg)){ toast('경비 관리자만 입력할 수 있습니다.','err'); return; }
+  const date = $I('dep-date')?.value || '';
+  const teacher = $I('dep-teacher')?.value.trim() || '';
+  const amount = parseInt($I('dep-amount')?.value||'0',10) || 0;
+  const memo = $I('dep-memo')?.value.trim() || '';
+  if(!date){ toast('입금 날짜를 입력하세요.','err'); return; }
+  if(!teacher){ toast('받는 선생님을 입력하세요.','err'); return; }
+  if(!amount || amount<=0){ toast('금액을 입력하세요.','err'); return; }
+  try {
+    await addDoc(collection(db,'expenseDeposits'), {
+      org: reportOrg, semester: reportSem, date, teacher, amount, memo,
+      createdByUid: CU.uid, createdByName: CU.name||'', createdAt: Timestamp.now()
+    });
+    toast('예치금 입금 기록을 추가했습니다.','ok');
+    renderReport();
+  } catch(e){ toast('추가 실패: '+e.message,'err'); }
+}
+window.addDeposit = addDeposit;
+
+async function delDeposit(id){
+  if(!isExpManager(reportOrg)){ toast('경비 관리자만 삭제할 수 있습니다.','err'); return; }
+  if(!confirm('이 예치금 입금 기록을 삭제할까요?')) return;
+  try {
+    await deleteDoc(doc(db,'expenseDeposits',id));
+    toast('삭제했습니다.');
+    renderReport();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.delDeposit = delDeposit;
 
 // ══════════ 백업·정리 (슈퍼관리자) ══════════
 // JSZip 동적 로드
