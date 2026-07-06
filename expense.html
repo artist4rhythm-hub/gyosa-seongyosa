@@ -134,7 +134,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -234,6 +234,7 @@ window.showTab = showTab;
 let expOrg = '';
 let expMode = 'equal';   // equal(1/N) | indiv(개별 청구) | refund(개별 반환)
 let indivAmts = {};      // 개별 모드: sid → 금액
+let receipts = [];       // 영수증 dataURL 배열 (최대 10장)
 let checkedIds = new Set();
 let openCls = {};
 
@@ -275,6 +276,11 @@ function renderNew(){
         <div class="fgrp" id="wrap-schoolqty"><label>학교 청구분 수량 (교사 사용분·학교 보관분)</label><input type="number" id="ex-schoolqty" value="0" min="0" inputmode="numeric"></div>
         <div class="fgrp"><label>학교 청구분 메모 (선택)</label><input type="text" id="ex-school" placeholder="예: 교사 시연용 1개, 잔여 2개 학교 보관"></div>
       </div>
+      <div class="fgrp">
+        <label>영수증 첨부 * <span style="color:var(--tl);font-weight:400">(최대 10장 · 사진은 자동으로 용량이 축소됩니다)</span></label>
+        <input type="file" id="ex-receipt" accept="image/*" multiple style="padding:8px;height:auto">
+        <div id="receipt-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+      </div>
 
       <div style="font-size:14px;font-weight:800;color:var(--gd);margin:18px 0 8px">참여 학생 체크 <span style="font-size:12px;color:var(--tl);font-weight:400">(반을 눌러 펼치고, 참여한 학생만 체크)</span></div>
       <div id="indiv-bar" style="display:none;background:var(--goldp);border:1px solid var(--ivd);border-radius:10px;padding:12px 14px;margin-bottom:10px">
@@ -298,6 +304,9 @@ function renderNew(){
   renderClassChecks();
   $I('ex-total').oninput = refreshSum;
   $I('ex-schoolqty').oninput = refreshSum;
+  const rf = $I('ex-receipt');
+  if(rf) rf.onchange = onReceiptPick;
+  renderReceipts();
   applyModeUI();
   refreshSum();
 }
@@ -358,6 +367,82 @@ function applyBase(){
   toast(`${checkedIds.size}명에게 ₩${won(v)} 적용됨`,'ok');
 }
 window.applyBase = applyBase;
+
+// ── 영수증: 자동 압축 (긴 변 1000px, 700KB 초과 시 추가 압축) ──
+function compressImage(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1000;
+        let w = img.width, h = img.height;
+        if(Math.max(w,h) > MAX){ const r = MAX/Math.max(w,h); w = Math.round(w*r); h = Math.round(h*r); }
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        let q = 0.62;
+        let data = cv.toDataURL('image/jpeg', q);
+        while(data.length > 700*1024 && q > 0.3){ q -= 0.1; data = cv.toDataURL('image/jpeg', q); }
+        resolve(data);
+      };
+      img.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function onReceiptPick(e){
+  const files = Array.from(e.target.files || []);
+  if(!files.length) return;
+  if(receipts.length + files.length > 10){
+    toast(`영수증은 최대 10장까지입니다. (현재 ${receipts.length}장)`,'err');
+    e.target.value = '';
+    return;
+  }
+  window.showLoading && window.showLoading('영수증 압축 중…');
+  try {
+    for(let i=0;i<files.length;i++){
+      window.setLoadStep && window.setLoadStep(`영수증 압축 중… (${i+1}/${files.length})`, Math.round((i+1)/files.length*90));
+      const data = await compressImage(files[i]);
+      receipts.push(data);
+    }
+    renderReceipts();
+  } catch(err){ toast('영수증 처리 실패: '+(err.message||''),'err'); }
+  finally { window.hideLoading && window.hideLoading(); e.target.value = ''; }
+}
+
+function renderReceipts(){
+  const box = $I('receipt-list');
+  if(!box) return;
+  box.innerHTML = receipts.map((d,i)=>`
+    <div style="position:relative;width:76px;height:76px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
+      <img src="${d}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="viewReceiptBig(${i})">
+      <button onclick="removeReceipt(${i})" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;cursor:pointer;line-height:1">×</button>
+    </div>`).join('') + (receipts.length ? `<div style="align-self:center;font-size:12px;color:var(--tl)">${receipts.length}/10장</div>` : '');
+}
+function removeReceipt(i){ receipts.splice(i,1); renderReceipts(); }
+window.removeReceipt = removeReceipt;
+
+function viewReceiptBig(i){
+  const d = receipts[i]; if(!d) return;
+  openImageOverlay(d);
+}
+window.viewReceiptBig = viewReceiptBig;
+
+function openImageOverlay(src){
+  const ov = document.createElement('div');
+  ov.className = 'mov';
+  ov.id = 'img-overlay';
+  ov.innerHTML = `<div class="mbk" onclick="document.getElementById('img-overlay').remove()"></div>
+    <div style="position:relative;max-width:92vw;max-height:88vh;z-index:1">
+      <img src="${src}" style="max-width:92vw;max-height:88vh;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+      <button onclick="document.getElementById('img-overlay').remove()" style="position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:50%;border:none;background:#fff;font-size:16px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3)">×</button>
+    </div>`;
+  $I('mwrap').appendChild(ov);
+}
+window.openImageOverlay = openImageOverlay;
 
 function renderClassChecks(){
   const wrap = $I('ex-classes');
@@ -544,6 +629,7 @@ async function submitExpense(){
   if(!subject){ toast('수업 과목을 입력하세요.','err'); $I('ex-subject')?.focus(); return; }
   if(!items){ toast('구매 목록을 입력하세요.','err'); $I('ex-items')?.focus(); return; }
   if(!ids.length){ toast('참여 학생을 1명 이상 체크하세요.','err'); return; }
+  if(!receipts.length){ toast('영수증을 1장 이상 첨부하세요.','err'); return; }
 
   let record;
   if(expMode==='equal'){
@@ -594,7 +680,21 @@ async function submitExpense(){
   }
 
   try {
-    await addDoc(collection(db,'expenses'), record);
+    window.showLoading && window.showLoading('신청서를 저장하는 중…');
+    record.receiptCount = receipts.length;
+    const ref = await addDoc(collection(db,'expenses'), record);
+    // 영수증을 별도 컬렉션에 저장 (관리자 취합·보고서용 메타데이터 포함)
+    for(let i=0;i<receipts.length;i++){
+      window.setLoadStep && window.setLoadStep(`영수증 업로드 중… (${i+1}/${receipts.length})`, 30 + Math.round((i+1)/receipts.length*60));
+      await addDoc(collection(db,'expenseReceipts'), {
+        expenseId: ref.id,
+        org: expOrg, date, subject,
+        idx: i+1,
+        dataUrl: receipts[i],
+        createdByUid: CU.uid, createdByName: CU.name||'',
+        createdAt: Timestamp.now()
+      });
+    }
     // 계좌 정보를 내 계정에 저장 (다음 신청 시 자동 입력)
     if(bank!==(CU.bankName||'') || account!==(CU.bankAccount||'') || holder!==(CU.bankHolder||'')){
       try {
@@ -602,11 +702,13 @@ async function submitExpense(){
         Object.assign(CU, {bankName:bank, bankAccount:account, bankHolder:holder});
       } catch(e2){}
     }
+    window.hideLoading && window.hideLoading();
     toast('경비 신청이 완료되었습니다.','ok');
     checkedIds = new Set();
     indivAmts = {};
+    receipts = [];
     showTab('list');
-  } catch(e){ toast('신청 실패: '+e.message,'err'); }
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('신청 실패: '+e.message,'err'); }
 }
 window.submitExpense = submitExpense;
 
@@ -645,7 +747,7 @@ async function renderList(){
         ${shown.length ? shown.map(e=>`
           <div class="citem">
             <div style="flex:1;min-width:200px">
-              <div style="font-size:15px;font-weight:700;color:var(--gd)">${esc(e.subject)} <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(e.items||'')}</span></div>
+              <div style="font-size:15px;font-weight:700;color:var(--gd)">${esc(e.subject)} <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(e.items||'')}</span>${e.receiptCount?` <span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:2px 7px;border-radius:100px;font-weight:700">🧾 ${e.receiptCount}장</span>`:''}</div>
               <div style="font-size:12px;color:var(--tl);margin-top:3px">
                 ${esc(e.date)} · ${ORGS[e.org]||e.org} · ${esc(e.createdByName||'')} ·
                 ${e.mode==='indiv' ? `<b style="color:var(--gm)">✏️ 개별 청구</b> · ${e.count}명 · 합계 <b style="color:var(--gm)">₩${won(e.total)}</b>`
@@ -693,19 +795,48 @@ function viewExpense(id){
       </div>
       <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">청구 대상 학생 (${e.count}명)</div>
       ${clsHTML}
+      <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">🧾 영수증 ${e.receiptCount?`(${e.receiptCount}장)`:''}</div>
+      <div id="rc-list" style="display:flex;gap:8px;flex-wrap:wrap"><span style="font-size:13px;color:var(--tl)">불러오는 중…</span></div>
       <div class="mact">
         <button class="bs" onclick="document.getElementById('exview-mod').remove()">닫기</button>
       </div>
     </div>`;
   $I('mwrap').appendChild(mv);
+  loadReceipts(e.id);
 }
 window.viewExpense = viewExpense;
+
+// 영수증 불러오기 (상세보기)
+async function loadReceipts(expenseId){
+  const box = $I('rc-list');
+  if(!box) return;
+  try {
+    const snap = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',expenseId)));
+    const arr = [];
+    snap.forEach(d=>arr.push({id:d.id, ...d.data()}));
+    arr.sort((a,b)=>(a.idx||0)-(b.idx||0));
+    if(!arr.length){ box.innerHTML = '<span style="font-size:13px;color:var(--tl)">첨부된 영수증이 없습니다.</span>'; return; }
+    box.innerHTML = arr.map(r=>`
+      <div style="width:86px;height:86px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
+        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)" title="영수증 ${r.idx||''}">
+      </div>`).join('');
+  } catch(err){
+    box.innerHTML = `<span style="font-size:13px;color:#dc2626">영수증을 불러올 수 없습니다: ${esc(err.message||'')}</span>`;
+  }
+}
 
 async function delExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
   if(!(CU.role==='super' || e.createdByUid===CU.uid)){ toast('삭제 권한이 없습니다.','err'); return; }
-  if(!confirm(`"${e.subject}" (${e.date}) 신청을 삭제할까요?\n청구 대상 ${e.count}명의 기록이 함께 삭제됩니다.`)) return;
+  if(!confirm(`"${e.subject}" (${e.date}) 신청을 삭제할까요?\n청구 대상 ${e.count}명의 기록과 영수증이 함께 삭제됩니다.`)) return;
   try {
+    // 영수증 먼저 삭제
+    try {
+      const snap = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',id)));
+      const dels = [];
+      snap.forEach(d=>dels.push(deleteDoc(doc(db,'expenseReceipts',d.id))));
+      await Promise.all(dels);
+    } catch(e3){}
     await deleteDoc(doc(db,'expenses',id));
     toast('삭제했습니다.');
     renderList();
