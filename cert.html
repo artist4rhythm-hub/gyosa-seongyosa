@@ -128,15 +128,19 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .cert-orginfo-row .cert-colon{width:5mm;}
 .cert-sheet.jh .cert-org{margin-top:14mm;}
 .cert-rep .repname{font-weight:700;letter-spacing:4px;}
-.cert-rep .stamp{position:absolute;right:-26mm;top:50%;transform:translateY(-50%);width:28mm;height:28mm;object-fit:contain;opacity:0.9;}
+.cert-rep .stamp{position:absolute;left:calc(100% - 4mm);top:50%;transform:translateY(-50%);width:23mm;height:23mm;object-fit:contain;opacity:0.88;}
 .cert-footer{position:absolute;bottom:16mm;left:20mm;right:20mm;font-size:8.5pt;color:#555;z-index:1;padding:0 8mm;}
 .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,#b8935a 20%,#b8935a 80%,transparent);margin-bottom:3mm;}
 .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
 .cert-footer .note{color:#777;font-size:7.8pt;line-height:1.65;}
 
 /* 미리보기 축소 */
-.cert-preview-wrap{background:#e8e8ee;padding:20px;border-radius:12px;overflow:auto;max-height:70vh;}
-.cert-scale{transform:scale(0.62);transform-origin:top center;}
+.cert-preview-wrap{background:#e8e8ee;padding:20px;border-radius:12px;overflow:auto;max-height:66vh;}
+.cert-scale{transform:scale(0.62);transform-origin:top center;transition:transform .15s ease;}
+.zoom-bar{display:flex;align-items:center;justify-content:center;gap:8px;margin:10px 0 4px;}
+.zoom-btn{width:34px;height:34px;border-radius:8px;border:1.5px solid var(--ivd);background:var(--wh);font-size:18px;font-weight:700;color:var(--gd);cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.zoom-btn:hover{background:var(--gp);border-color:var(--gm);}
+.zoom-label{font-size:13px;color:var(--ts);min-width:52px;text-align:center;font-variant-numeric:tabular-nums;}
 </style>
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
@@ -627,6 +631,12 @@ function openPreview(sid){
       <div class="fgrp"><label>주소 확인 / 수정</label>
         <input type="text" id="pv-addr" value="${esc(s.address||'')}" placeholder="주소를 입력하세요">
       </div>
+      <div class="zoom-bar">
+        <button class="zoom-btn" onclick="zoomCert(-1)">−</button>
+        <span class="zoom-label" id="zoom-label">62%</span>
+        <button class="zoom-btn" onclick="zoomCert(1)">＋</button>
+        <button class="zoom-btn" style="width:auto;padding:0 10px;font-size:13px" onclick="zoomCert(0)">맞춤</button>
+      </div>
       <div class="cert-preview-wrap">
         <div class="cert-scale" id="pv-cert">${certHtml}</div>
       </div>
@@ -637,6 +647,7 @@ function openPreview(sid){
       </div>
     </div>`;
   $I('mwrap').appendChild(mv);
+  _certZoom = 0.62; applyCertZoom();
   // 주소 수정 시 미리보기 갱신
   const ai = $I('pv-addr');
   if(ai) ai.oninput = () => {
@@ -753,7 +764,13 @@ function previewCert(id){
   mv.innerHTML = `<div class="mbk" onclick="document.getElementById('cview-mod').remove()"></div>
     <div class="mbox" style="max-width:720px">
       <div class="mtitle">${esc(c.docNo)}</div>
-      <div class="cert-preview-wrap"><div class="cert-scale">${buildCertFromRecord(c)}</div></div>
+      <div class="zoom-bar">
+        <button class="zoom-btn" onclick="zoomCert(-1)">−</button>
+        <span class="zoom-label" id="zoom-label">62%</span>
+        <button class="zoom-btn" onclick="zoomCert(1)">＋</button>
+        <button class="zoom-btn" style="width:auto;padding:0 10px;font-size:13px" onclick="zoomCert(0)">맞춤</button>
+      </div>
+      <div class="cert-preview-wrap"><div class="cert-scale" id="pv-cert">${buildCertFromRecord(c)}</div></div>
       <div class="mact">
         <button class="bs" onclick="document.getElementById('cview-mod').remove()">닫기</button>
         <button class="bs" onclick="printCert('${c.id}')">🖨️ A4 인쇄</button>
@@ -761,16 +778,32 @@ function previewCert(id){
       </div>
     </div>`;
   $I('mwrap').appendChild(mv);
+  _certZoom = 0.62; applyCertZoom();
 }
 window.previewCert = previewCert;
+
+// 미리보기 확대/축소
+let _certZoom = 0.62;
+function zoomCert(dir){
+  if(dir===0){ _certZoom = 0.62; }
+  else { _certZoom = Math.min(1.5, Math.max(0.3, _certZoom + dir*0.12)); }
+  applyCertZoom();
+}
+function applyCertZoom(){
+  const el = $I('pv-cert');
+  if(el){ el.style.transform = `scale(${_certZoom})`; }
+  const lb = $I('zoom-label');
+  if(lb){ lb.textContent = Math.round(_certZoom*100)+'%'; }
+}
+window.zoomCert = zoomCert;
 
 // 증명서 인쇄용 CSS (새 창에 삽입)
 function certPrintCSS(){
   return `
     @import url('https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&family=Noto+Serif+KR:wght@400;600;700;900&display=swap');
     *{margin:0;padding:0;box-sizing:border-box;}
-    body{background:#fff;}
-    .cert-sheet{position:relative;background:var(--c-bg,#fffdf9);width:210mm;height:297mm;min-height:297mm;padding:22mm 20mm;margin:0 auto;font-family:'Nanum Myeongjo','Noto Serif KR',serif;color:#1a1a1a;overflow:hidden;}
+    html,body{background:#fff;width:210mm;height:297mm;}
+    .cert-sheet{position:relative;background:var(--c-bg,#fffdf9);width:210mm;height:297mm;padding:24mm 22mm;margin:0;font-family:'Nanum Myeongjo','Noto Serif KR',serif;color:#1a1a1a;overflow:hidden;}
     .cert-sheet::before{content:'';position:absolute;top:10mm;left:10mm;right:10mm;bottom:10mm;border:1.5px solid var(--c-line,#b8935a);pointer-events:none;}
     .cert-sheet::after{content:'';position:absolute;top:11.5mm;left:11.5mm;right:11.5mm;bottom:11.5mm;border:0.5px solid var(--c-line2,#c9a84c);pointer-events:none;}
     .cert-bg{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:110mm;opacity:0.06;pointer-events:none;}
@@ -799,7 +832,7 @@ function certPrintCSS(){
     .cert-orgen{font-size:8.5pt;letter-spacing:4px;color:#888;margin-top:2px;}
     .cert-rep{position:relative;display:inline-block;margin-top:10mm;font-size:15pt;letter-spacing:2px;}
     .cert-rep .repname{font-weight:700;letter-spacing:4px;}
-    .cert-rep .stamp{position:absolute;right:-26mm;top:50%;transform:translateY(-50%);width:28mm;height:28mm;object-fit:contain;opacity:0.9;}
+    .cert-rep .stamp{position:absolute;left:calc(100% - 4mm);top:50%;transform:translateY(-50%);width:23mm;height:23mm;object-fit:contain;opacity:0.88;}
     .cert-footer{position:absolute;bottom:16mm;left:20mm;right:20mm;font-size:8.5pt;color:#555;padding:0 8mm;}
     .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,var(--c-line,#b8935a) 20%,var(--c-line,#b8935a) 80%,transparent);margin-bottom:3mm;}
     .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
