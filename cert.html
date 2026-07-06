@@ -128,7 +128,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .cert-orginfo-row .cert-colon{width:5mm;}
 .cert-sheet.jh .cert-org{margin-top:14mm;}
 .cert-rep .repname{font-weight:700;letter-spacing:4px;}
-.cert-rep .stamp{position:absolute;right:-19mm;top:50%;transform:translateY(-50%);width:21mm;opacity:0.92;}
+.cert-rep .stamp{position:absolute;right:-26mm;top:50%;transform:translateY(-50%);width:28mm;height:28mm;object-fit:contain;opacity:0.9;}
 .cert-footer{position:absolute;bottom:16mm;left:20mm;right:20mm;font-size:8.5pt;color:#555;z-index:1;padding:0 8mm;}
 .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,#b8935a 20%,#b8935a 80%,transparent);margin-bottom:3mm;}
 .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
@@ -526,7 +526,7 @@ function buildCert(rec){
     <div class="cert-sheet jh" style="${styleVars}">
       <img class="cert-bg" src="${cfg.logo}" alt="" onerror="this.style.display='none'">
       <div class="cert-inner">
-        <div class="cert-docno">Document No : ${esc(rec.docNo)}</div>
+        <div class="cert-docno">문서번호 : ${esc(rec.docNo)}</div>
         <div class="cert-title">${esc(cfg.certTitle)}</div>
         <div class="cert-title-line"></div>
         <div class="cert-fields">
@@ -770,7 +770,7 @@ function certPrintCSS(){
     @import url('https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&family=Noto+Serif+KR:wght@400;600;700;900&display=swap');
     *{margin:0;padding:0;box-sizing:border-box;}
     body{background:#fff;}
-    .cert-sheet{position:relative;background:var(--c-bg,#fffdf9);width:210mm;min-height:297mm;padding:22mm 20mm;margin:0 auto;font-family:'Nanum Myeongjo','Noto Serif KR',serif;color:#1a1a1a;}
+    .cert-sheet{position:relative;background:var(--c-bg,#fffdf9);width:210mm;height:297mm;min-height:297mm;padding:22mm 20mm;margin:0 auto;font-family:'Nanum Myeongjo','Noto Serif KR',serif;color:#1a1a1a;overflow:hidden;}
     .cert-sheet::before{content:'';position:absolute;top:10mm;left:10mm;right:10mm;bottom:10mm;border:1.5px solid var(--c-line,#b8935a);pointer-events:none;}
     .cert-sheet::after{content:'';position:absolute;top:11.5mm;left:11.5mm;right:11.5mm;bottom:11.5mm;border:0.5px solid var(--c-line2,#c9a84c);pointer-events:none;}
     .cert-bg{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:110mm;opacity:0.06;pointer-events:none;}
@@ -799,7 +799,7 @@ function certPrintCSS(){
     .cert-orgen{font-size:8.5pt;letter-spacing:4px;color:#888;margin-top:2px;}
     .cert-rep{position:relative;display:inline-block;margin-top:10mm;font-size:15pt;letter-spacing:2px;}
     .cert-rep .repname{font-weight:700;letter-spacing:4px;}
-    .cert-rep .stamp{position:absolute;right:-19mm;top:50%;transform:translateY(-50%);width:21mm;opacity:0.92;}
+    .cert-rep .stamp{position:absolute;right:-26mm;top:50%;transform:translateY(-50%);width:28mm;height:28mm;object-fit:contain;opacity:0.9;}
     .cert-footer{position:absolute;bottom:16mm;left:20mm;right:20mm;font-size:8.5pt;color:#555;padding:0 8mm;}
     .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,var(--c-line,#b8935a) 20%,var(--c-line,#b8935a) 80%,transparent);margin-bottom:3mm;}
     .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
@@ -822,21 +822,29 @@ function printCert(id){
 }
 window.printCert = printCert;
 
-// 이미지 저장 (html2canvas)
+// 이미지 저장 (html2canvas) — A4 세로 규격(210×297mm)에 정확히 맞춤
 async function imageCert(id){
   const c = CERTS.find(x=>x.id===id); if(!c) return;
   if(!window.html2canvas){ toast('이미지 모듈 로딩 중... 잠시 후 다시 시도하세요.','err'); loadHtml2Canvas(); return; }
-  // 임시 렌더 (실측 크기)
+  // A4 픽셀 크기 (96dpi: 1mm ≈ 3.7795px)
+  const MM = 3.779527559;
+  const W = Math.round(210 * MM);   // 794px
+  const H = Math.round(297 * MM);   // 1123px
   const holder = document.createElement('div');
-  holder.style.cssText='position:fixed;left:-9999px;top:0;background:#fff;';
+  holder.style.cssText = `position:fixed;left:-9999px;top:0;width:${W}px;height:${H}px;background:#fff;overflow:hidden;`;
   holder.innerHTML = buildCertFromRecord(c);
   document.body.appendChild(holder);
   const sheet = holder.querySelector('.cert-sheet');
+  // sheet를 A4 폭 고정 + 최소높이 A4 (footer가 bottom 기준 정상 배치되도록)
+  if(sheet){ sheet.style.width = W+'px'; sheet.style.minHeight = H+'px'; sheet.style.height = H+'px'; sheet.style.margin = '0'; sheet.style.boxSizing='border-box'; }
   try {
-    // 웹폰트·이미지 로딩 대기
     if(document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(e){} }
     await new Promise(r=>setTimeout(r,400));
-    const canvas = await window.html2canvas(sheet, {backgroundColor:'#fffdf9', scale:2, useCORS:true, logging:false});
+    const canvas = await window.html2canvas(sheet, {
+      backgroundColor: (ORG_CONFIG[c.org]?.theme?.bg)||'#fffdf9',
+      width: W, height: H, windowWidth: W, windowHeight: H,
+      scale: 2, useCORS:true, logging:false
+    });
     const link = document.createElement('a');
     link.download = `${c.type}증명서_${c.studentName}_${c.docNo}.png`;
     link.href = canvas.toDataURL('image/png');
