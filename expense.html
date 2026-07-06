@@ -122,9 +122,11 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="subtabs">
       <button class="subtbtn on" id="tb-new" onclick="showTab('new')">➕ 경비 신청</button>
       <button class="subtbtn" id="tb-list" onclick="showTab('list')">📋 신청 내역</button>
+      <button class="subtbtn" id="tb-backup" onclick="showTab('backup')" style="display:none">💾 백업·정리</button>
     </div>
     <div id="tab-new"></div>
     <div id="tab-list" style="display:none"></div>
+    <div id="tab-backup" style="display:none"></div>
   </div>
 </div>
 
@@ -201,6 +203,7 @@ onAuthStateChanged(auth, async (user) => {
   $I('hn').textContent = CU.name||'';
   $I('hi').textContent = `${ORGS[CU.org]||CU.org} · ${CU.role==='super'?'슈퍼관리자':CU.role==='org_admin'?'기관관리자':CU.role==='tab_admin'?'부서장':'교사'}`;
   if(window.renderTopNav) renderTopNav('expense', CU.role);
+  if(CU.role==='super'){ const tb=$I('tb-backup'); if(tb) tb.style.display=''; }
 
   await loadData();
   renderNew();
@@ -221,12 +224,13 @@ async function loadData(){
 
 function showTab(t){
   curTab = t;
-  $I('tb-new').classList.toggle('on', t==='new');
-  $I('tb-list').classList.toggle('on', t==='list');
-  $I('tab-new').style.display = t==='new'?'':'none';
-  $I('tab-list').style.display = t==='list'?'':'none';
+  ['new','list','backup'].forEach(k=>{
+    const b = $I('tb-'+k); if(b) b.classList.toggle('on', t===k);
+    const p = $I('tab-'+k); if(p) p.style.display = t===k?'':'none';
+  });
   if(t==='new') renderNew();
   if(t==='list') renderList();
+  if(t==='backup') renderBackup();
 }
 window.showTab = showTab;
 
@@ -843,6 +847,171 @@ async function delExpense(id){
   } catch(e2){ toast('삭제 실패: '+e2.message,'err'); }
 }
 window.delExpense = delExpense;
+
+// ══════════ 백업·정리 (슈퍼관리자) ══════════
+// JSZip 동적 로드
+function ensureJSZip(){
+  return new Promise((resolve, reject)=>{
+    if(window.JSZip) return resolve();
+    let sc = document.getElementById('jszip-script');
+    if(sc){
+      const chk = setInterval(()=>{ if(window.JSZip){ clearInterval(chk); resolve(); } }, 100);
+      setTimeout(()=>{ clearInterval(chk); if(!window.JSZip) reject(new Error('압축 모듈 로드 실패')); }, 8000);
+      return;
+    }
+    sc = document.createElement('script');
+    sc.id = 'jszip-script';
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    sc.onload = ()=> resolve();
+    sc.onerror = ()=> reject(new Error('압축 모듈을 불러올 수 없습니다.'));
+    document.head.appendChild(sc);
+  });
+}
+
+let backupAll = [];
+async function renderBackup(){
+  const box = $I('tab-backup');
+  if(CU.role!=='super'){
+    box.innerHTML = '<div class="acard"><p class="empty">슈퍼관리자만 사용할 수 있습니다.</p></div>';
+    return;
+  }
+  box.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
+  window.showLoading && window.showLoading('경비 데이터를 확인하는 중…');
+  try {
+    const snap = await getDocs(collection(db,'expenses'));
+    backupAll = []; snap.forEach(d=>backupAll.push({id:d.id, ...d.data()}));
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
+    return;
+  } finally { window.hideLoading && window.hideLoading(); }
+
+  const years = [...new Set(backupAll.map(e=>(e.date||'').slice(0,4)).filter(y=>y.length===4))].sort().reverse();
+  const yearStats = years.map(y=>{
+    const list = backupAll.filter(e=>(e.date||'').startsWith(y));
+    const rc = list.reduce((t,e)=>t+(e.receiptCount||0),0);
+    return {y, cnt:list.length, rc};
+  });
+
+  box.innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">💾 연도별 백업·정리</h3>
+      <p class="adesc">1년 단위로 수행성 경비 전체(신청 내역 + 영수증)를 <b>ZIP 파일로 다운로드</b>합니다. ZIP 안에는 엑셀에서 열 수 있는 CSV, 원본 데이터(JSON), 영수증 이미지가 들어 있습니다. 백업 후 아래 정리 기능으로 온라인 용량을 비울 수 있습니다.</p>
+      ${years.length ? `
+      <div class="fgrp" style="max-width:340px"><label>백업할 연도</label>
+        <select id="bk-year">${yearStats.map(s=>`<option value="${s.y}">${s.y}년 — 신청 ${s.cnt}건 · 영수증 ${s.rc}장</option>`).join('')}</select>
+      </div>
+      <button class="bp" onclick="backupYear()">📦 백업 파일 다운로드 (ZIP)</button>
+
+      <div style="margin-top:26px;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px">
+        <div style="font-size:14px;font-weight:800;color:#b91c1c;margin-bottom:6px">⚠️ 데이터 정리 (되돌릴 수 없음)</div>
+        <p style="font-size:12.5px;color:#7f1d1d;line-height:1.6;margin-bottom:10px">선택한 연도의 신청 내역과 영수증을 <b>온라인에서 완전히 삭제</b>합니다. 반드시 위에서 <b>백업 파일을 먼저 다운로드하고, 파일이 잘 열리는지 확인한 후</b> 진행하세요. 삭제하면 복구할 수 없습니다.</p>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="bk-del-year" placeholder="삭제할 연도를 직접 입력 (예: ${years[years.length-1]})" style="height:38px;border:1.5px solid #fecaca;border-radius:8px;padding:0 12px;width:250px;background:#fff;font-family:inherit">
+          <button class="bs" style="background:#fee2e2;color:#dc2626;border-color:#fecaca" onclick="deleteYear()">🗑️ 해당 연도 데이터 삭제</button>
+        </div>
+      </div>` : '<p class="empty">아직 백업할 데이터가 없습니다.</p>'}
+    </div>`;
+}
+window.renderBackup = renderBackup;
+
+async function backupYear(){
+  const y = $I('bk-year')?.value;
+  if(!y) return;
+  const list = backupAll.filter(e=>(e.date||'').startsWith(y));
+  if(!list.length){ toast('해당 연도 데이터가 없습니다.','err'); return; }
+  window.showLoading && window.showLoading(`${y}년 백업 준비 중…`);
+  try {
+    await ensureJSZip();
+    const zip = new window.JSZip();
+
+    // 원본 JSON
+    const jsonData = list.map(e=>({...e, createdAt: e.createdAt?.seconds || null}));
+    zip.file(`expenses_${y}.json`, JSON.stringify(jsonData, null, 2));
+
+    // 엑셀용 CSV (UTF-8 BOM)
+    const rows = [['날짜','기관','방식','수업과목','구매목록','세부내용','총액','1인당','학생수','학교수량','학교청구','은행','계좌','예금주','작성자','영수증장수','학생명단(이름:금액)']];
+    list.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    list.forEach(e=>{
+      rows.push([
+        e.date, ORGS[e.org]||e.org,
+        e.mode==='refund'?'개별반환':e.mode==='indiv'?'개별청구':'균등(1/N)',
+        e.subject, e.items, e.detail||'',
+        e.total, e.per??'', e.count, e.schoolQty||0, e.schoolTotal||0,
+        e.bank||'', e.account||'', e.holder||'', e.createdByName||'',
+        e.receiptCount||0,
+        (e.students||[]).map(s=>`${s.name}:${s.amt??e.per??''}`).join('; ')
+      ]);
+    });
+    const csv = '\ufeff' + rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+    zip.file(`수행성경비_${y}.csv`, csv);
+
+    // 영수증 이미지
+    let done = 0;
+    for(const e of list){
+      const rs = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',e.id)));
+      const arr = []; rs.forEach(d=>arr.push(d.data()));
+      arr.sort((a,b)=>(a.idx||0)-(b.idx||0));
+      arr.forEach(r=>{
+        const b64 = (r.dataUrl||'').split(',')[1];
+        if(b64){
+          const safe = (e.subject||'').replace(/[\\/:*?"<>|]/g,'').slice(0,20);
+          zip.file(`영수증/${e.date}_${safe}_${e.id.slice(0,6)}_${r.idx||1}.jpg`, b64, {base64:true});
+        }
+      });
+      done++;
+      window.setLoadStep && window.setLoadStep(`영수증 수집 중… (${done}/${list.length})`, 10 + Math.round(done/list.length*70));
+    }
+
+    window.setLoadStep && window.setLoadStep('ZIP 파일 생성 중…', 88);
+    const blob = await zip.generateAsync({type:'blob'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `수행성경비_백업_${y}.zip`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    window.hideLoading && window.hideLoading();
+    toast(`${y}년 백업 파일을 다운로드했습니다. 파일이 잘 열리는지 확인하세요!`,'ok');
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('백업 실패: '+(e.message||''),'err');
+  }
+}
+window.backupYear = backupYear;
+
+async function deleteYear(){
+  const y = $I('bk-year')?.value;
+  const typed = $I('bk-del-year')?.value.trim();
+  if(!y) return;
+  if(typed !== y){
+    toast(`삭제하려면 입력칸에 연도(${y})를 똑같이 입력하세요.`,'err');
+    $I('bk-del-year')?.focus();
+    return;
+  }
+  const list = backupAll.filter(e=>(e.date||'').startsWith(y));
+  if(!list.length){ toast('해당 연도 데이터가 없습니다.','err'); return; }
+  if(!confirm(`⚠️ ${y}년 수행성 경비 ${list.length}건과 영수증을 모두 삭제합니다.\n\n백업 파일을 먼저 다운로드하고 열어서 확인하셨나요?\n삭제하면 복구할 수 없습니다.\n\n정말 삭제할까요?`)) return;
+  window.showLoading && window.showLoading(`${y}년 데이터 삭제 중…`);
+  let done = 0;
+  try {
+    for(const e of list){
+      const rs = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',e.id)));
+      const dels = []; rs.forEach(d=>dels.push(deleteDoc(doc(db,'expenseReceipts',d.id))));
+      await Promise.all(dels);
+      await deleteDoc(doc(db,'expenses',e.id));
+      done++;
+      window.setLoadStep && window.setLoadStep(`삭제 중… (${done}/${list.length})`, Math.round(done/list.length*95));
+    }
+    window.hideLoading && window.hideLoading();
+    toast(`${y}년 데이터 ${done}건을 삭제했습니다.`,'ok');
+    renderBackup();
+  } catch(err){
+    window.hideLoading && window.hideLoading();
+    toast(`삭제 중 오류: ${err.message||''} (${done}건은 삭제됨)`,'err');
+    renderBackup();
+  }
+}
+window.deleteYear = deleteYear;
 </script>
 </body>
 </html>
