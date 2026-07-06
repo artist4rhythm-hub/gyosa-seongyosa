@@ -134,7 +134,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, collection, getDocs, addDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -157,6 +157,7 @@ let CU = null;
 let STUDENTS = [];
 let CLASSES = [];
 let EXPENSES = [];
+let listOrg = '';
 let curTab = 'new';
 
 function toast(msg, type=''){
@@ -259,11 +260,14 @@ function renderNew(){
       <div class="fgrp"><label>구매 목록 *</label><input type="text" id="ex-items" placeholder="예: 전통모빌 만들기 키트"></div>
       <div class="fgrp"><label>세부 내용 (선택)</label><input type="text" id="ex-detail" placeholder="예: 크라프트 A4노트 외"></div>
       <div class="frow">
-        <div class="fgrp"><label>은행 이름</label><input type="text" id="ex-bank" placeholder="예: 신한"></div>
-        <div class="fgrp"><label>예금주</label><input type="text" id="ex-holder" value="${esc(CU.name||'')}"></div>
+        <div class="fgrp"><label>은행 이름</label><input type="text" id="ex-bank" value="${esc(CU.bankName||'')}" placeholder="예: 신한"></div>
+        <div class="fgrp"><label>예금주</label><input type="text" id="ex-holder" value="${esc(CU.bankHolder||CU.name||'')}"></div>
       </div>
-      <div class="fgrp"><label>계좌번호</label><input type="text" id="ex-account" placeholder="숫자만 입력"></div>
-      <div class="fgrp"><label>학교 청구분 메모 (선택 — 교사 사용분·학교 보관분)</label><input type="text" id="ex-school" placeholder="예: 교사 시연용 1개, 잔여 2개 학교 보관"></div>
+      <div class="fgrp"><label>계좌번호 <span style="color:var(--tl);font-weight:400">(한 번 입력하면 다음부터 자동으로 채워집니다)</span></label><input type="text" id="ex-account" value="${esc(CU.bankAccount||'')}" placeholder="숫자만 입력"></div>
+      <div class="frow">
+        <div class="fgrp"><label>학교 청구분 수량 (교사 사용분·학교 보관분)</label><input type="number" id="ex-schoolqty" value="0" min="0" inputmode="numeric"></div>
+        <div class="fgrp"><label>학교 청구분 메모 (선택)</label><input type="text" id="ex-school" placeholder="예: 교사 시연용 1개, 잔여 2개 학교 보관"></div>
+      </div>
 
       <div style="font-size:14px;font-weight:800;color:var(--gd);margin:18px 0 8px">참여 학생 체크 <span style="font-size:12px;color:var(--tl);font-weight:400">(반을 눌러 펼치고, 참여한 학생만 체크)</span></div>
       <div id="ex-classes"></div>
@@ -272,11 +276,13 @@ function renderNew(){
         <span><span class="si">선택 인원</span> <span class="sv" id="sum-count">0명</span></span>
         <span><span class="si">1인당 청구</span> <span class="sv" id="sum-per">-</span></span>
         <span><span class="si">학생 청구 합계</span> <span class="sv" id="sum-total">-</span></span>
+        <span><span class="si">학교 청구</span> <span class="sv" id="sum-school">-</span></span>
         <button class="bp" style="margin-left:auto;background:#fff;color:var(--gd)" onclick="submitExpense()">✅ 신청하기</button>
       </div>
     </div>`;
   renderClassChecks();
   $I('ex-total').oninput = refreshSum;
+  $I('ex-schoolqty').oninput = refreshSum;
   refreshSum();
 }
 window.renderNew = renderNew;
@@ -286,29 +292,40 @@ window.setExpOrg = setExpOrg;
 function renderClassChecks(){
   const wrap = $I('ex-classes');
   if(!wrap) return;
-  // 해당 기관 반들 (이름순)
-  const classes = CLASSES.filter(c=>c.org===expOrg).sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  // 반의 학년 정보 (※ 모든 정렬은 학년순)
+  const gradeInfo = c => {
+    const gs = new Set();
+    (c.students||[]).forEach(id=>{ const g=(c.grades||{})[id]; if(g) gs.add(g); });
+    const arr = [...gs].sort((a,b)=>(parseInt(a,10)||99)-(parseInt(b,10)||99));
+    return { label: arr.length ? arr.map(g=>String(g).replace('학년','')).join('·')+'학년' : '', min: arr.length ? (parseInt(arr[0],10)||99) : 999 };
+  };
+  const classes = CLASSES.filter(c=>c.org===expOrg)
+    .map(c=>({...c, __gi: gradeInfo(c)}))
+    .sort((a,b)=> a.__gi.min - b.__gi.min || (a.name||'').localeCompare(b.name||'','ko'));
   // 반 없는 학생
   const inClassIds = new Set(); classes.forEach(c=>(c.students||[]).forEach(id=>inClassIds.add(id)));
   const noClass = STUDENTS.filter(s=>s.org===expOrg && (s.status||'active')!=='quit' && !inClassIds.has(s.id));
 
   const palette = ['#0891b2','#7c3aed','#db2777','#d97706','#059669','#2563eb','#dc2626','#4f46e5','#0d9488','#c026d3'];
   let html = '';
-  const groups = classes.map(c=>({key:c.id, name:c.name||'(이름없음)', ids:(c.students||[])}));
-  if(noClass.length) groups.push({key:'__noclass', name:'반 미지정', ids:noClass.map(s=>s.id)});
+  const groups = classes.map(c=>({key:c.id, name:c.name||'(이름없음)', gradeLabel:c.__gi.label, ids:(c.students||[])}));
+  if(noClass.length) groups.push({key:'__noclass', name:'반 미지정', gradeLabel:'', ids:noClass.map(s=>s.id)});
 
   groups.forEach((grp,gi)=>{
     // 이 반 학생들 (퇴원 제외)
     const studs = grp.ids.map(id=>STUDENTS.find(s=>s.id===id)).filter(s=>s && (s.status||'active')!=='quit');
     if(!studs.length) return;
-    studs.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+    studs.sort((a,b)=>{
+      const ga = parseInt(studentGrade(a.id),10)||99, gb = parseInt(studentGrade(b.id),10)||99;
+      return ga-gb || (a.name||'').localeCompare(b.name||'','ko');
+    });
     const accent = palette[gi % palette.length];
     const open = !!openCls[grp.key];
     const selCount = studs.filter(s=>checkedIds.has(s.id)).length;
     html += `<div class="gr-card ${open?'open':''}" data-cls="${esc(grp.key)}">
       <div class="gr-head" onclick="toggleCls('${esc(grp.key)}')">
         <span style="width:10px;height:10px;border-radius:50%;background:${accent};flex-shrink:0"></span>
-        <span style="flex:1;font-size:15px;font-weight:700;color:var(--gd)">${esc(grp.name)}</span>
+        <span style="flex:1;font-size:15px;font-weight:700;color:var(--gd)">${esc(grp.name)}${grp.gradeLabel?` <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(grp.gradeLabel)}</span>`:''}</span>
         <span style="font-size:12px;color:${selCount?'var(--gm)':'var(--tl)'};font-weight:${selCount?'700':'400'}" id="cls-sel-${esc(grp.key)}">${selCount?selCount+'명 선택':''}</span>
         <span style="font-size:12px;color:var(--tl)">${studs.length}명</span>
         <span class="gr-arrow">▼</span>
@@ -414,11 +431,15 @@ function refreshClsCounts(){
 
 function refreshSum(){
   const n = checkedIds.size;
+  const sq = parseInt($I('ex-schoolqty')?.value||'0',10) || 0;
   const total = parseInt($I('ex-total')?.value||'0',10) || 0;
-  const per = perAmount(total, n);
-  $I('sum-count').textContent = n+'명';
-  $I('sum-per').textContent = (n&&total) ? '₩'+won(per) : '-';
-  $I('sum-total').textContent = (n&&total) ? '₩'+won(per*n) : '-';
+  const divisor = n + sq;
+  const per = perAmount(total, divisor);
+  $I('sum-count').textContent = n+'명' + (sq?` + 학교 ${sq}`:'');
+  $I('sum-per').textContent = (divisor&&total) ? '₩'+won(per) : '-';
+  $I('sum-total').textContent = (n&&total&&divisor) ? '₩'+won(per*n) : '-';
+  const se = $I('sum-school');
+  if(se) se.textContent = (sq&&total&&divisor) ? '₩'+won(per*sq) : '-';
 }
 
 async function submitExpense(){
@@ -439,23 +460,33 @@ async function submitExpense(){
   if(!total || total<=0){ toast('청구 금액을 입력하세요.','err'); $I('ex-total')?.focus(); return; }
   if(!ids.length){ toast('참여 학생을 1명 이상 체크하세요.','err'); return; }
 
-  const per = perAmount(total, ids.length);
+  const sq = parseInt($I('ex-schoolqty')?.value||'0',10) || 0;
+  const divisor = ids.length + sq;
+  const per = perAmount(total, divisor);
   const students = ids.map(id=>{
     const s = STUDENTS.find(x=>x.id===id);
     return {id, name:s?.name||'', grade:studentGrade(id)||'', classId:studentClass(id)?.id||'', className:studentClass(id)?.name||''};
   });
 
-  if(!confirm(`총 ${ids.length}명에게 1인당 ₩${won(per)}씩 청구합니다.\n(청구금액 ₩${won(total)} ÷ ${ids.length}명, 10원 올림)\n\n신청할까요?`)) return;
+  if(!confirm(`청구금액 ₩${won(total)} ÷ ${divisor} (학생 ${ids.length}명${sq?` + 학교 ${sq}`:''}) = 1인당 ₩${won(per)} (10원 올림)\n\n· 학생 청구 합계: ₩${won(per*ids.length)}${sq?`\n· 학교 청구분: ₩${won(per*sq)}`:''}\n\n신청할까요?`)) return;
 
   try {
     await addDoc(collection(db,'expenses'), {
       org: expOrg, date, subject, items, detail,
       total, per, count: ids.length,
+      schoolQty: sq, schoolTotal: per*sq,
       students,
       bank, holder, account, schoolNote,
       createdByUid: CU.uid, createdByName: CU.name||'',
       createdAt: Timestamp.now()
     });
+    // 계좌 정보를 내 계정에 저장 (다음 신청 시 자동 입력)
+    if(bank!==(CU.bankName||'') || account!==(CU.bankAccount||'') || holder!==(CU.bankHolder||'')){
+      try {
+        await updateDoc(doc(db,'staff',CU.uid), {bankName:bank, bankAccount:account, bankHolder:holder});
+        Object.assign(CU, {bankName:bank, bankAccount:account, bankHolder:holder});
+      } catch(e2){}
+    }
     toast('경비 신청이 완료되었습니다.','ok');
     checkedIds = new Set();
     showTab('list');
@@ -481,12 +512,21 @@ async function renderList(){
     return;
   } finally { window.hideLoading && window.hideLoading(); }
 
+  const orgs2 = myOrgs();
+  if(!listOrg || !orgs2.includes(listOrg)) listOrg = orgs2[0];
+  const shown = EXPENSES.filter(e=>e.org===listOrg);
+  const orgTabs = orgs2.length>1 ? `
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      ${orgs2.map(o=>`<button class="subtbtn ${o===listOrg?'on':''}" onclick="setListOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
+    </div>` : '';
+
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">📋 신청 내역</h3>
+      <h3 class="actitle">📋 신청 내역 (${ORGS[listOrg]||listOrg})</h3>
       <p class="adesc">날짜순으로 정리된 수행성 경비 신청 내역입니다. 같은 기관 선생님과 관리자가 열람할 수 있습니다.</p>
+      ${orgTabs}
       <div class="clist">
-        ${EXPENSES.length ? EXPENSES.map(e=>`
+        ${shown.length ? shown.map(e=>`
           <div class="citem">
             <div style="flex:1;min-width:200px">
               <div style="font-size:15px;font-weight:700;color:var(--gd)">${esc(e.subject)} <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(e.items||'')}</span></div>
@@ -502,6 +542,8 @@ async function renderList(){
     </div>`;
 }
 window.renderList = renderList;
+function setListOrg(o){ listOrg = o; renderList(); }
+window.setListOrg = setListOrg;
 
 function viewExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
@@ -528,7 +570,7 @@ function viewExpense(id){
         <div><b>청구 금액</b> : ₩${won(e.total)}</div>
         <div><b>1인당 청구</b> : ₩${won(e.per)} × ${e.count}명 = ₩${won(e.per*e.count)}</div>
         ${e.bank||e.account?`<div><b>정산 계좌</b> : ${esc(e.bank||'')} ${esc(e.account||'')} (${esc(e.holder||'')})</div>`:''}
-        ${e.schoolNote?`<div><b>학교 청구분</b> : ${esc(e.schoolNote)}</div>`:''}
+        ${(e.schoolQty||e.schoolNote)?`<div><b>학교 청구분</b> : ${e.schoolQty?`${e.schoolQty}개분 ₩${won(e.schoolTotal!=null?e.schoolTotal:(e.per||0)*(e.schoolQty||0))}`:''}${e.schoolNote?` ${e.schoolQty?'— ':''}${esc(e.schoolNote)}`:''}</div>`:''}
       </div>
       <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">청구 대상 학생 (${e.count}명)</div>
       ${clsHTML}
