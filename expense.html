@@ -289,6 +289,8 @@ async function loadData(){
     window.setLoadStep && window.setLoadStep('학기 일정 불러오는 중…', 80);
     const ts = await getDocs(collection(db,'terms'));
     TERMS = []; ts.forEach(d=>TERMS.push({id:d.id, ...d.data()}));
+    const st = await getDocs(collection(db,'staff'));
+    STAFF = []; st.forEach(d=>STAFF.push({uid:d.id, ...d.data()}));
     try {
       const w = await getDoc(doc(db,'expenseConfig','window'));
       if(w.exists()){ const d=w.data()||{}; EXP_WINDOW = {afterDays: d.afterDays??8, beforeDays: d.beforeDays??14}; }
@@ -1061,6 +1063,27 @@ function refreshSum(){
   if(se) se.textContent = (sq&&total&&divisor) ? '₩'+won(per*sq) : '-';
 }
 
+// ── 쪽지 발송 헬퍼 ──
+// 기관의 경비 관리자 uid 목록 (없으면 슈퍼관리자들)
+function expManagerUids(org){
+  const mgrs = (EXP_MANAGERS[org]||[]).filter(uid=>STAFF.some(s=>s.uid===uid));
+  if(mgrs.length) return mgrs;
+  // 미지정 → 슈퍼관리자 전원
+  return STAFF.filter(s=>s.role==='super').map(s=>s.uid);
+}
+async function sendMsg(toUids, subject, body){
+  const uids = [...new Set(toUids)].filter(Boolean);
+  if(!uids.length) return;
+  const toNames = uids.map(u=>STAFF.find(s=>s.uid===u)?.name||'?');
+  try {
+    await addDoc(collection(db,'messages'), {
+      fromUid: CU.uid, fromName: CU.name||'', fromOrg: CU.org||'',
+      toUids: uids, toNames, subject, body,
+      readBy: [], createdAt: Timestamp.now()
+    });
+  } catch(e){ console.error('쪽지 발송 실패', e); }
+}
+
 async function submitExpense(){
   const date = $I('ex-date')?.value || '';
   const semester = $I('ex-semester')?.value || '';
@@ -1171,6 +1194,14 @@ async function submitExpense(){
           createdAt: Timestamp.now()
         });
       }
+      // 경비 관리자에게 알림 쪽지
+      const modeName = record.mode==='refund'?'개별 반환':record.mode==='indiv'?'개별 청구':'균등 청구';
+      const amtLine = record.mode==='refund'?`반환 합계 ₩${won(record.total)}`:`청구 합계 ₩${won(record.total)}`;
+      await sendMsg(
+        expManagerUids(expOrg),
+        `[수행성 경비 신청] ${teacher} · ${subject}`,
+        `${ORGS[expOrg]||expOrg} · ${semKor(semester)}\n담당: ${teacher}\n과목: ${subject}\n구매: ${items}\n방식: ${modeName}\n${amtLine} (대상 ${record.count}명)\n신청일: ${date}\n\n확인 후 입금 처리를 부탁드립니다. (수행성 경비 → 신청 내역에서 확인)`
+      );
     }
     // 계좌 정보를 내 계정에 저장 (다음 신청 시 자동 입력)
     if(bank!==(CU.bankName||'') || account!==(CU.bankAccount||'') || holder!==(CU.bankHolder||'')){
@@ -1226,16 +1257,20 @@ async function renderList(){
         ${shown.length ? shown.map(e=>`
           <div class="citem">
             <div style="flex:1;min-width:200px">
-              <div style="font-size:15px;font-weight:700;color:var(--gd)">${esc(e.subject)} <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(e.items||'')}</span>${e.receiptCount?` <span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:2px 7px;border-radius:100px;font-weight:700">🧾 ${e.receiptCount}장</span>`:''}</div>
+              <div style="font-size:15px;font-weight:700;color:var(--gd)">${esc(e.subject)} <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(e.items||'')}</span>${e.receiptCount?` <span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:2px 7px;border-radius:100px;font-weight:700">🧾 ${e.receiptCount}장</span>`:''}${e.paid?` <span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:100px;font-weight:700">✅ 입금완료</span>`:` <span style="font-size:11px;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:100px;font-weight:700">⏳ 입금대기</span>`}</div>
               <div style="font-size:12px;color:var(--tl);margin-top:3px">
                 ${esc(e.date)} · ${e.semester?`<b style="color:var(--goldd)">${esc(semKor(e.semester))}</b> · `:''}${ORGS[e.org]||e.org} · ${esc(e.teacher||e.createdByName||'')} ·
                 ${e.mode==='indiv' ? `<b style="color:var(--gm)">✏️ 개별 청구</b> · ${e.count}명 · 합계 <b style="color:var(--gm)">₩${won(e.total)}</b>`
                 : e.mode==='refund' ? `<b style="color:#0d9488">↩️ 개별 반환</b> · ${e.count}명 · 합계 <b style="color:#0d9488">₩${won(e.total)}</b>`
                 : `<b style="color:var(--gm)">₩${won(e.total)}</b> ÷ ${e.count}${e.schoolQty?`+${e.schoolQty}`:''} = <b style="color:var(--gm)">₩${won(e.per)}/인</b>`}
               </div>
+              ${e.paid&&e.paidAt?`<div style="font-size:11.5px;color:#16a34a;margin-top:3px">💰 ${esc(e.paidByName||'')} · ${esc(fmtDateTime(e.paidAt))} 입금 확인</div>`:''}
             </div>
             <button class="bm" onclick="viewExpense('${e.id}')">상세보기</button>
-            ${(isExpManager(e.org)) ? `<button class="bm" onclick="editExpense('${e.id}')">수정</button><button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delExpense('${e.id}')">삭제</button>` : ''}
+            ${isExpManager(e.org) ? (e.paid
+              ? `<button class="bm" style="background:#fef2f2;color:#b45309" onclick="togglePaid('${e.id}',false)">입금확인 취소</button>`
+              : `<button class="bm" style="background:#dcfce7;color:#16a34a;font-weight:700" onclick="togglePaid('${e.id}',true)">💰 입금 확인</button>`) : ''}
+            ${isExpManager(e.org) ? `<button class="bm" onclick="editExpense('${e.id}')">수정</button><button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delExpense('${e.id}')">삭제</button>` : ''}
           </div>`).join('') : '<p class="empty">아직 신청 내역이 없습니다.</p>'}
       </div>
     </div>`;
@@ -1355,6 +1390,43 @@ async function delExpense(id){
   } catch(e2){ toast('삭제 실패: '+e2.message,'err'); }
 }
 window.delExpense = delExpense;
+
+// 날짜시각 포맷 (Timestamp → "2026-07-07 14:30")
+function fmtDateTime(ts){
+  try {
+    const d = ts?.toDate ? ts.toDate() : (ts?.seconds ? new Date(ts.seconds*1000) : new Date(ts));
+    if(isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch(e){ return ''; }
+}
+
+// 입금 확인 체크/취소 (경비 관리자·슈퍼만)
+async function togglePaid(id, paid){
+  const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+  if(!isExpManager(e.org)){ toast('경비 관리자만 입금 확인을 할 수 있습니다.','err'); return; }
+  if(paid && !confirm(`"${e.subject}" (${e.teacher||e.createdByName}) 건을 입금 완료로 표시할까요?\n신청한 선생님께 입금 안내 쪽지가 발송됩니다.`)) return;
+  if(!paid && !confirm('입금 확인을 취소할까요?')) return;
+  try {
+    window.showLoading && window.showLoading(paid?'입금 확인 처리 중…':'취소 처리 중…');
+    const upd = paid
+      ? { paid:true, paidAt:Timestamp.now(), paidByUid:CU.uid, paidByName:CU.name||'' }
+      : { paid:false, paidAt:null, paidByUid:null, paidByName:null };
+    await updateDoc(doc(db,'expenses',id), upd);
+    Object.assign(e, upd);
+    // 입금 완료 시 신청자에게 쪽지
+    if(paid && e.createdByUid){
+      await sendMsg(
+        [e.createdByUid],
+        `[입금 완료] ${e.subject} 수행성 경비`,
+        `${ORGS[e.org]||e.org} · ${e.semester?semKor(e.semester):''}\n과목: ${e.subject}\n${e.mode==='refund'?'반환':'청구'} 합계: ₩${won(e.total)}\n\n신청하신 수행성 경비가 입금 처리되었습니다.\n입금 확인: ${CU.name||''} · ${fmtDateTime(upd.paidAt)}`
+      );
+    }
+    window.hideLoading && window.hideLoading();
+    toast(paid?'입금 완료로 표시했습니다. 신청자에게 쪽지를 보냈습니다.':'입금 확인을 취소했습니다.','ok');
+    renderList();
+  } catch(err){ window.hideLoading && window.hideLoading(); toast('처리 실패: '+err.message,'err'); }
+}
+window.togglePaid = togglePaid;
 
 // ══════════ 📊 취합 ══════════
 let reportOrg = '';
@@ -1621,11 +1693,20 @@ function viewClassSheet(gradeKey){
   // 학생별·항목별 금액 매트릭스
   const amtOf = (e, sid) => { const s=(e.students||[]).find(x=>x.id===sid); return s? (e.mode==='refund'? -(s.amt||0) : (s.amt||0)) : null; };
 
+  // 출력용 전역 저장
+  lastSheet = { gradeKey, semKor: semKor(reportSem), orgName: ORGS[reportOrg]||reportOrg, items, students, amtOf };
+
   const mv = document.createElement('div'); mv.className='mov'; mv.id='class-sheet-mod';
   mv.innerHTML = `<div class="mbk" onclick="document.getElementById('class-sheet-mod').remove()"></div>
     <div class="mbox" style="max-width:${Math.min(1100, 340+items.length*120)}px">
       <div class="mtitle">${esc(gradeKey)} 청구 상세표</div>
       <div class="msub">${esc(semKor(reportSem))} · ${ORGS[reportOrg]||reportOrg} · 항목 ${items.length}개 · 학생 ${students.length}명</div>
+      ${items.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="bm" onclick="printSheet('auto')">🖨️ PDF 출력 (자동)</button>
+        <button class="bm" onclick="printSheet('a5')">A5 세로</button>
+        <button class="bm" onclick="printSheet('a4')">A4 가로</button>
+        <button class="bm" onclick="imageSheet()">🖼️ 이미지 저장</button>
+      </div>`:''}
       ${items.length ? `
       <div style="overflow-x:auto">
         <table style="border-collapse:collapse;font-size:12.5px;min-width:100%">
@@ -1691,6 +1772,169 @@ function viewClassSheet(gradeKey){
   $I('mwrap').appendChild(mv);
 }
 window.viewClassSheet = viewClassSheet;
+
+// ── 안내장 출력 (PDF/이미지) ──
+let lastSheet = null;
+
+// PDF 라이브러리 동적 로드
+function loadH2C(){ if(window.html2canvas||document.getElementById('h2c-script'))return; const sc=document.createElement('script'); sc.id='h2c-script'; sc.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'; document.head.appendChild(sc); }
+loadH2C();
+function ensureJsPDF(){
+  return new Promise((resolve,reject)=>{
+    if(window.jspdf&&window.jspdf.jsPDF) return resolve();
+    let sc=document.getElementById('jspdf-script');
+    if(sc){ const chk=setInterval(()=>{ if(window.jspdf&&window.jspdf.jsPDF){clearInterval(chk);resolve();} },100); setTimeout(()=>{clearInterval(chk); if(!(window.jspdf&&window.jspdf.jsPDF))reject(new Error('PDF 모듈 로드 실패'));},8000); return; }
+    sc=document.createElement('script'); sc.id='jspdf-script'; sc.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    sc.onload=()=>resolve(); sc.onerror=()=>reject(new Error('PDF 모듈을 불러올 수 없습니다.')); document.head.appendChild(sc);
+  });
+}
+function ensureH2C(){
+  return new Promise((resolve,reject)=>{
+    if(window.html2canvas) return resolve();
+    loadH2C();
+    const chk=setInterval(()=>{ if(window.html2canvas){clearInterval(chk);resolve();} },100);
+    setTimeout(()=>{clearInterval(chk); if(!window.html2canvas)reject(new Error('이미지 모듈 로드 실패'));},8000);
+  });
+}
+
+// 안내장 HTML 생성 (인쇄용, 세로/가로 레이아웃)
+function buildSheetHTML(landscape){
+  const s = lastSheet; if(!s) return '';
+  const { gradeKey, semKor:sem, orgName, items, students, amtOf } = s;
+  const won2 = n => (n||0).toLocaleString('ko-KR');
+  // 가로형이면 항목을 좌우 2블록으로 나눔
+  const perLine = (e)=> e.mode==='refund'?`↩️₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0)}${e.mode==='equal'?'/인':''}`;
+  const th = (e)=>`<th class="ic">
+      <div class="subj">${esc(e.subject)}${e.mode==='refund'?' (반환)':''}</div>
+      <div class="meta">${esc(e.teacher||'')} · ${esc(e.date||'')}</div>
+      <div class="meta2">${esc(e.items||'')}${e.detail?' / '+esc(e.detail):''}</div>
+      <div class="per">${perLine(e)}</div>
+    </th>`;
+  const cell = (e,sid)=>{ const a=amtOf(e,sid); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">✓<br>${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; };
+  const bodyRows = students.map(st=>{
+    let sum=0;
+    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; return cell(e,st.id); }).join('');
+    return `<tr><th class="nm">${esc(st.name)}<span class="cls">${esc(st.className||'')}</span></th>${tds}<td class="tot">₩${won2(sum)}</td></tr>`;
+  }).join('');
+  const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
+  const grand = students.reduce((tt,st)=>tt+items.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
+
+  const table = `<table class="sheet-tbl">
+    <thead><tr><th class="nm hd">이름</th>${items.map(th).join('')}<th class="tot hd">개인합계</th></tr></thead>
+    <tbody>${bodyRows}</tbody>
+    <tfoot><tr><th class="nm">항목합계</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr></tfoot>
+  </table>`;
+
+  return `<div class="sheet-doc ${landscape?'land':'port'}">
+    <div class="sheet-head">
+      <div class="sh-title">${esc(orgName)} 수행성 경비 안내</div>
+      <div class="sh-sub">${esc(sem)} · ${esc(gradeKey)}</div>
+    </div>
+    ${table}
+    <div class="sheet-foot">※ ✓ 표시는 청구 항목이며, 반환은 (−)로 표시됩니다. 문의는 담당 선생님께 해주세요.</div>
+  </div>`;
+}
+
+const SHEET_CSS = `
+.sheet-doc{background:#fff;color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;box-sizing:border-box;}
+.sheet-doc.port{width:559px;padding:24px;}   /* A5 세로 @96dpi ≈ 559x794 */
+.sheet-doc.land{width:1123px;padding:28px;}  /* A4 가로 @96dpi ≈ 1123x794 */
+.sheet-head{text-align:center;margin-bottom:14px;border-bottom:2.5px solid #1e2e5c;padding-bottom:10px;}
+.sh-title{font-size:19px;font-weight:800;color:#1e2e5c;}
+.sh-sub{font-size:13px;color:#555;margin-top:3px;}
+.sheet-tbl{width:100%;border-collapse:collapse;font-size:11px;}
+.sheet-tbl th,.sheet-tbl td{border:1px solid #c9cad4;padding:5px 6px;text-align:center;}
+.sheet-tbl thead th{background:#1e2e5c;color:#fff;font-weight:700;vertical-align:middle;}
+.sheet-tbl .ic .subj{font-weight:800;font-size:11.5px;}
+.sheet-tbl .ic .meta{font-size:9.5px;opacity:.9;font-weight:400;margin-top:1px;}
+.sheet-tbl .ic .meta2{font-size:9px;opacity:.8;font-weight:400;}
+.sheet-tbl .ic .per{font-size:10.5px;font-weight:700;margin-top:2px;}
+.sheet-tbl .nm{background:#eef0f8;font-weight:700;text-align:left;min-width:64px;}
+.sheet-tbl .nm .cls{display:block;font-size:9px;color:#777;font-weight:400;}
+.sheet-tbl .nm.hd{background:#1e2e5c;color:#fff;}
+.sheet-tbl td.chg{background:#eef3ff;color:#2b3990;font-weight:700;font-size:10px;}
+.sheet-tbl td.ref{background:#e6f7f4;color:#0d9488;font-weight:700;font-size:10px;}
+.sheet-tbl td.x{color:#ccc;}
+.sheet-tbl .tot{background:#fdf3d8;font-weight:800;color:#8a6d1a;}
+.sheet-tbl .tot.hd{background:#1e2e5c;color:#fff;}
+.sheet-tbl .ft{background:#f4f4f6;font-weight:700;}
+.sheet-tbl tfoot .nm{background:#e8e9ee;}
+.sheet-foot{font-size:10px;color:#666;margin-top:10px;}
+`;
+
+async function printSheet(mode){
+  if(!lastSheet){ toast('출력할 표가 없습니다.','err'); return; }
+  // auto: 항목 수 기준 (5개 이하 세로 A5, 초과 가로 A4)
+  let landscape;
+  if(mode==='a5') landscape=false;
+  else if(mode==='a4') landscape=true;
+  else landscape = lastSheet.items.length > 5;
+  window.showLoading && window.showLoading('안내장을 만드는 중…');
+  try {
+    await ensureH2C();
+    await ensureJsPDF();
+    // 임시 렌더 컨테이너
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
+    holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
+    document.body.appendChild(holder);
+    const node = holder.querySelector('.sheet-doc');
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+    document.body.removeChild(holder);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({orientation: landscape?'landscape':'portrait', unit:'mm', format:'a4'});
+    const pw = pdf.internal.pageSize.getWidth();
+    const ph = pdf.internal.pageSize.getHeight();
+    const margin = 8;
+    const iw = pw - margin*2;
+    const ih = canvas.height * iw / canvas.width;
+    const img = canvas.toDataURL('image/jpeg', 0.92);
+    if(ih <= ph - margin*2){
+      pdf.addImage(img, 'JPEG', margin, margin, iw, ih);
+    } else {
+      // 길면 여러 페이지 분할
+      let remaining = canvas.height, pos = 0;
+      const pageCanvasH = Math.floor(canvas.width * (ph - margin*2) / iw);
+      while(remaining > 0){
+        const slice = document.createElement('canvas');
+        slice.width = canvas.width; slice.height = Math.min(pageCanvasH, remaining);
+        slice.getContext('2d').drawImage(canvas, 0, pos, canvas.width, slice.height, 0, 0, canvas.width, slice.height);
+        const sliceImg = slice.toDataURL('image/jpeg', 0.92);
+        const sliceH = slice.height * iw / canvas.width;
+        if(pos>0) pdf.addPage();
+        pdf.addImage(sliceImg, 'JPEG', margin, margin, iw, sliceH);
+        remaining -= slice.height; pos += slice.height;
+      }
+    }
+    pdf.save(`수행성경비_${lastSheet.gradeKey}_${lastSheet.semKor}.pdf`);
+    window.hideLoading && window.hideLoading();
+    toast('PDF를 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.printSheet = printSheet;
+
+async function imageSheet(){
+  if(!lastSheet){ toast('출력할 표가 없습니다.','err'); return; }
+  const landscape = lastSheet.items.length > 5;
+  window.showLoading && window.showLoading('이미지를 만드는 중…');
+  try {
+    await ensureH2C();
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
+    holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
+    document.body.appendChild(holder);
+    const node = holder.querySelector('.sheet-doc');
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+    document.body.removeChild(holder);
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = `수행성경비_${lastSheet.gradeKey}_${lastSheet.semKor}.png`;
+    a.click();
+    window.hideLoading && window.hideLoading();
+    toast('이미지를 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.imageSheet = imageSheet;
 
 // ── 전체 상세표 (학년 그룹 접기/펼치기 + 항목 그룹핑 + 영수증 열람) ──
 let allSheetGroupBy = 'none';   // none | teacher | subject
