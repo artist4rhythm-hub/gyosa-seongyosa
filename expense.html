@@ -1539,7 +1539,7 @@ async function renderReport(){
     <div class="acard">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <h3 class="actitle" style="margin:0">👦 학년별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순 · 학년을 눌러 펼치기)</span></h3>
-        ${students.length?`<button class="bp" style="padding:8px 16px" onclick="viewAllSheet()">📋 전체 상세표 보기</button>`:''}
+        ${students.length?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bm" onclick="excelReport()">📊 엑셀 다운로드</button><button class="bp" style="padding:8px 16px" onclick="viewAllSheet()">📋 전체 상세표 보기</button></div>`:''}
       </div>
       ${students.length ? `<div id="rp-class-groups" style="margin-top:12px">${renderReportClassGroups(list, students)}</div>
       <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px;padding-top:12px;border-top:2px solid var(--ivd);font-size:14px;font-weight:800">
@@ -1802,15 +1802,25 @@ function buildSheetHTML(landscape){
   const s = lastSheet; if(!s) return '';
   const { gradeKey, semKor:sem, orgName, items, students, amtOf } = s;
   const won2 = n => (n||0).toLocaleString('ko-KR');
-  // 가로형이면 항목을 좌우 2블록으로 나눔
-  const perLine = (e)=> e.mode==='refund'?`↩️₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0)}${e.mode==='equal'?'/인':''}`;
-  const th = (e)=>`<th class="ic">
-      <div class="subj">${esc(e.subject)}${e.mode==='refund'?' (반환)':''}</div>
-      <div class="meta">${esc(e.teacher||'')} · ${esc(e.date||'')}</div>
-      <div class="meta2">${esc(e.items||'')}${e.detail?' / '+esc(e.detail):''}</div>
-      <div class="per">${perLine(e)}</div>
-    </th>`;
+  const perLine = (e)=> e.mode==='refund'?`↩️ ₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0)}${e.mode==='equal'?'/인':''}`;
   const cell = (e,sid)=>{ const a=amtOf(e,sid); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">✓<br>${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; };
+
+  // 칸 폭 균등: 이름칸 + 항목N칸 + 합계칸. 항목칸을 모두 동일 폭으로.
+  const itemColW = landscape ? Math.max(72, Math.floor((1123-24-60-80)/items.length)) : Math.max(60, Math.floor((559-24-52-64)/items.length));
+  const colgroup = `<colgroup>
+    <col style="width:${landscape?60:52}px">
+    ${items.map(()=>`<col style="width:${itemColW}px">`).join('')}
+    <col style="width:${landscape?80:64}px">
+  </colgroup>`;
+
+  // 헤더: 항목 정보를 행별로 분리 (라벨 행 + 항목 값)
+  const headRows2 = `
+    <tr class="h-subj"><th class="nm hd">이름</th>${items.map(e=>`<th class="ic subj">${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}<th class="tot hd">개인<br>합계</th></tr>
+    <tr class="h-sub"><td class="rl">담당</td>${items.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr class="h-sub"><td class="rl">신청일</td>${items.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr class="h-sub"><td class="rl">세부내용</td>${items.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr class="h-per"><td class="rl">1인당</td>${items.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}<td class="rl2"></td></tr>`;
+
   const bodyRows = students.map(st=>{
     let sum=0;
     const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; return cell(e,st.id); }).join('');
@@ -1820,7 +1830,8 @@ function buildSheetHTML(landscape){
   const grand = students.reduce((tt,st)=>tt+items.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
 
   const table = `<table class="sheet-tbl">
-    <thead><tr><th class="nm hd">이름</th>${items.map(th).join('')}<th class="tot hd">개인합계</th></tr></thead>
+    ${colgroup}
+    <thead>${headRows2}</thead>
     <tbody>${bodyRows}</tbody>
     <tfoot><tr><th class="nm">항목합계</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr></tfoot>
   </table>`;
@@ -1837,29 +1848,31 @@ function buildSheetHTML(landscape){
 
 const SHEET_CSS = `
 .sheet-doc{background:#fff;color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;box-sizing:border-box;}
-.sheet-doc.port{width:559px;padding:24px;}   /* A5 세로 @96dpi ≈ 559x794 */
-.sheet-doc.land{width:1123px;padding:28px;}  /* A4 가로 @96dpi ≈ 1123x794 */
+.sheet-doc.port{width:559px;padding:24px;}
+.sheet-doc.land{width:1123px;padding:28px;}
 .sheet-head{text-align:center;margin-bottom:14px;border-bottom:2.5px solid #1e2e5c;padding-bottom:10px;}
-.sh-title{font-size:19px;font-weight:800;color:#1e2e5c;}
-.sh-sub{font-size:13px;color:#555;margin-top:3px;}
-.sheet-tbl{width:100%;border-collapse:collapse;font-size:11px;}
-.sheet-tbl th,.sheet-tbl td{border:1px solid #c9cad4;padding:5px 6px;text-align:center;}
-.sheet-tbl thead th{background:#1e2e5c;color:#fff;font-weight:700;vertical-align:middle;}
-.sheet-tbl .ic .subj{font-weight:800;font-size:11.5px;}
-.sheet-tbl .ic .meta{font-size:9.5px;opacity:.9;font-weight:400;margin-top:1px;}
-.sheet-tbl .ic .meta2{font-size:9px;opacity:.8;font-weight:400;}
-.sheet-tbl .ic .per{font-size:10.5px;font-weight:700;margin-top:2px;}
-.sheet-tbl .nm{background:#eef0f8;font-weight:700;text-align:left;min-width:64px;}
-.sheet-tbl .nm .cls{display:block;font-size:9px;color:#777;font-weight:400;}
-.sheet-tbl .nm.hd{background:#1e2e5c;color:#fff;}
-.sheet-tbl td.chg{background:#eef3ff;color:#2b3990;font-weight:700;font-size:10px;}
-.sheet-tbl td.ref{background:#e6f7f4;color:#0d9488;font-weight:700;font-size:10px;}
+.sh-title{font-size:19px;font-weight:800;color:#1e2e5c;text-align:center;}
+.sh-sub{font-size:13px;color:#555;margin-top:3px;text-align:center;}
+.sheet-tbl{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10.5px;}
+.sheet-tbl th,.sheet-tbl td{border:1px solid #b8bacb;padding:4px 4px;text-align:center;vertical-align:middle;word-break:break-word;overflow-wrap:break-word;}
+/* 헤더 항목명 (세로로 길어질 수 있게 줄바꿈 허용) */
+.sheet-tbl .subj{background:#1e2e5c;color:#fff;font-weight:800;font-size:11px;text-align:center;line-height:1.3;}
+.sheet-tbl .rl{background:#2a3a68;color:#fff;font-weight:600;font-size:9.5px;text-align:center;}
+.sheet-tbl .rl2{background:#2a3a68;border-color:#2a3a68;}
+.sheet-tbl .ic2{background:#f2f4fb;font-size:9.5px;color:#333;text-align:center;line-height:1.35;}
+.sheet-tbl .ic2.det{font-size:9px;color:#555;}
+.sheet-tbl .ic2.per{font-weight:800;color:#2b3990;font-size:10.5px;background:#e9edfb;}
+.sheet-tbl .nm{background:#eef0f8;font-weight:700;text-align:center;line-height:1.25;}
+.sheet-tbl .nm .cls{display:block;font-size:8.5px;color:#777;font-weight:400;}
+.sheet-tbl .nm.hd{background:#1e2e5c;color:#fff;font-size:11px;}
+.sheet-tbl .tot.hd{background:#1e2e5c;color:#fff;font-size:11px;}
+.sheet-tbl td.chg{background:#eef3ff;color:#2b3990;font-weight:700;font-size:9.5px;line-height:1.3;}
+.sheet-tbl td.ref{background:#e6f7f4;color:#0d9488;font-weight:700;font-size:9.5px;line-height:1.3;}
 .sheet-tbl td.x{color:#ccc;}
-.sheet-tbl .tot{background:#fdf3d8;font-weight:800;color:#8a6d1a;}
-.sheet-tbl .tot.hd{background:#1e2e5c;color:#fff;}
+.sheet-tbl .tot{background:#fdf3d8;font-weight:800;color:#8a6d1a;text-align:center;}
 .sheet-tbl .ft{background:#f4f4f6;font-weight:700;}
 .sheet-tbl tfoot .nm{background:#e8e9ee;}
-.sheet-foot{font-size:10px;color:#666;margin-top:10px;}
+.sheet-foot{font-size:10px;color:#666;margin-top:10px;text-align:center;}
 `;
 
 async function printSheet(mode){
@@ -1935,6 +1948,92 @@ async function imageSheet(){
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
 }
 window.imageSheet = imageSheet;
+
+// SheetJS 동적 로드
+function ensureXLSX(){
+  return new Promise((resolve,reject)=>{
+    if(window.XLSX) return resolve();
+    let sc=document.getElementById('xlsx-script');
+    if(sc){ const chk=setInterval(()=>{ if(window.XLSX){clearInterval(chk);resolve();} },100); setTimeout(()=>{clearInterval(chk); if(!window.XLSX)reject(new Error('엑셀 모듈 로드 실패'));},8000); return; }
+    sc=document.createElement('script'); sc.id='xlsx-script'; sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload=()=>resolve(); sc.onerror=()=>reject(new Error('엑셀 모듈을 불러올 수 없습니다.')); document.head.appendChild(sc);
+  });
+}
+
+// 취합을 엑셀로 (학생별 합산 시트 + 항목 매트릭스 시트)
+async function excelReport(){
+  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  if(!list.length){ toast('내보낼 데이터가 없습니다.','err'); return; }
+  window.showLoading && window.showLoading('엑셀 파일을 만드는 중…');
+  try {
+    await ensureXLSX();
+    const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
+    const amtOf = (e, sid) => { const s=(e.students||[]).find(x=>x.id===sid); return s? (e.mode==='refund'? -(s.amt||0) : (s.amt||0)) : null; };
+
+    // 전체 학생 (학년→반→이름)
+    const stuMap = new Map();
+    list.forEach(e=>(e.students||[]).forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id,{id:s.id,name:s.name,grade:s.grade,className:s.className}); }));
+    const students = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.className||'').localeCompare(b.className||'','ko')||(a.name||'').localeCompare(b.name||'','ko'));
+
+    const wb = window.XLSX.utils.book_new();
+
+    // ── 시트1: 학생별 합산 ──
+    const rows1 = [['학년','반','이름','참여건수','청구','반환','순청구액']];
+    students.forEach(s=>{
+      let charge=0, refund=0, cnt=0;
+      list.forEach(e=>{ const a=amtOf(e,s.id); if(a!==null){ cnt++; if(a<0) refund+=-a; else charge+=a; } });
+      rows1.push([s.grade||'', s.className||'', s.name||'', cnt, charge, refund, charge-refund]);
+    });
+    // 합계행
+    const tc=students.reduce((t,s)=>t+list.reduce((x,e)=>{const a=amtOf(e,s.id);return x+(a>0?a:0);},0),0);
+    const tr=students.reduce((t,s)=>t+list.reduce((x,e)=>{const a=amtOf(e,s.id);return x+(a<0?-a:0);},0),0);
+    rows1.push(['','','합계','',tc,tr,tc-tr]);
+    const ws1 = window.XLSX.utils.aoa_to_sheet(rows1);
+    ws1['!cols'] = [{wch:8},{wch:12},{wch:10},{wch:8},{wch:12},{wch:12},{wch:12}];
+    window.XLSX.utils.book_append_sheet(wb, ws1, '학생별 합산');
+
+    // ── 시트2: 항목 매트릭스 (학생 × 항목) ──
+    const header = ['학년','반','이름', ...list.map(e=>`${e.subject}(${e.date})${e.mode==='refund'?'[반환]':''}`), '개인합계'];
+    const rows2 = [
+      ['','','담당', ...list.map(e=>e.teacher||''), ''],
+      ['','','1인당', ...list.map(e=>e.mode==='refund'?-(e.per||0):(e.per||0)), ''],
+      header
+    ];
+    students.forEach(s=>{
+      let sum=0;
+      const cells = list.map(e=>{ const a=amtOf(e,s.id); if(a!==null) sum+=a; return a===null?'':a; });
+      rows2.push([s.grade||'', s.className||'', s.name||'', ...cells, sum]);
+    });
+    // 항목합계
+    const footCells = list.map(e=>students.reduce((t,s)=>t+(amtOf(e,s.id)||0),0));
+    const grand = footCells.reduce((a,b)=>a+b,0);
+    rows2.push(['','','항목합계', ...footCells, grand]);
+    const ws2 = window.XLSX.utils.aoa_to_sheet(rows2);
+    ws2['!cols'] = [{wch:8},{wch:12},{wch:10}, ...list.map(()=>({wch:16})), {wch:12}];
+    window.XLSX.utils.book_append_sheet(wb, ws2, '항목별 상세');
+
+    // ── 시트3: 신청 목록 ──
+    const rows3 = [['날짜','학기','담당','과목','구매목록','세부','방식','총액','1인당','인원','입금상태','입금확인일','입금담당']];
+    list.forEach(e=>{
+      rows3.push([
+        e.date, e.semester?semKor(e.semester):'', e.teacher||'', e.subject, e.items, e.detail||'',
+        e.mode==='refund'?'개별반환':e.mode==='indiv'?'개별청구':'균등(1/N)',
+        e.total, e.per??'', e.count,
+        e.paid?'입금완료':'입금대기', e.paid&&e.paidAt?fmtDateTime(e.paidAt):'', e.paidByName||''
+      ]);
+    });
+    const ws3 = window.XLSX.utils.aoa_to_sheet(rows3);
+    ws3['!cols'] = [{wch:11},{wch:12},{wch:8},{wch:12},{wch:16},{wch:12},{wch:10},{wch:11},{wch:9},{wch:6},{wch:9},{wch:16},{wch:8}];
+    window.XLSX.utils.book_append_sheet(wb, ws3, '신청 목록');
+
+    const gradeKeys = [...new Set(students.map(s=>{const n=gradeNum(s.grade);return n<99?n+'학년':'';}).filter(Boolean))];
+    window.XLSX.writeFile(wb, `수행성경비_취합_${ORGS[reportOrg]||reportOrg}_${semKor(reportSem)}.xlsx`);
+    window.hideLoading && window.hideLoading();
+    toast('엑셀 파일을 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('엑셀 생성 실패: '+(e.message||''),'err'); }
+}
+window.excelReport = excelReport;
 
 // ── 전체 상세표 (학년 그룹 접기/펼치기 + 항목 그룹핑 + 영수증 열람) ──
 let allSheetGroupBy = 'none';   // none | teacher | subject
