@@ -1202,8 +1202,11 @@ async function renderReport(){
     </div>
 
     <div class="acard">
-      <h3 class="actitle">👦 학년별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순 · 학년을 눌러 펼치기)</span></h3>
-      ${students.length ? `<div id="rp-class-groups">${renderReportClassGroups(list, students)}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <h3 class="actitle" style="margin:0">👦 학년별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순 · 학년을 눌러 펼치기)</span></h3>
+        ${students.length?`<button class="bp" style="padding:8px 16px" onclick="viewAllSheet()">📋 전체 상세표 보기</button>`:''}
+      </div>
+      ${students.length ? `<div id="rp-class-groups" style="margin-top:12px">${renderReportClassGroups(list, students)}</div>
       <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px;padding-top:12px;border-top:2px solid var(--ivd);font-size:14px;font-weight:800">
         <span>총 청구 <b style="color:var(--gm)">₩${won(totalCharge)}</b></span>
         <span>총 반환 <b style="color:#0d9488">₩${won(totalRefund)}</b></span>
@@ -1425,6 +1428,201 @@ function viewClassSheet(gradeKey){
   $I('mwrap').appendChild(mv);
 }
 window.viewClassSheet = viewClassSheet;
+
+// ── 전체 상세표 (학년 그룹 접기/펼치기 + 항목 그룹핑 + 영수증 열람) ──
+let allSheetGroupBy = 'none';   // none | teacher | subject
+let allSheetOpenGrades = {};    // 학년별 펼침 상태
+
+function viewAllSheet(){
+  allSheetGroupBy = 'none';
+  allSheetOpenGrades = {};
+  const mv = document.createElement('div'); mv.className='mov'; mv.id='all-sheet-mod';
+  mv.innerHTML = `<div class="mbk" onclick="document.getElementById('all-sheet-mod').remove()"></div>
+    <div class="mbox" style="max-width:96vw;width:96vw;max-height:92vh;display:flex;flex-direction:column">
+      <div class="mtitle">전체 청구 상세표</div>
+      <div class="msub">${esc(semKor(reportSem))} · ${ORGS[reportOrg]||reportOrg}</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <span style="font-size:12.5px;color:var(--ts);font-weight:700">항목 묶기:</span>
+        <button class="subtbtn ${allSheetGroupBy==='none'?'on':''}" id="asg-none" onclick="setAllGroup('none')" style="padding:6px 14px">묶지 않음</button>
+        <button class="subtbtn" id="asg-teacher" onclick="setAllGroup('teacher')" style="padding:6px 14px">선생님별</button>
+        <button class="subtbtn" id="asg-subject" onclick="setAllGroup('subject')" style="padding:6px 14px">과목별</button>
+      </div>
+      <div id="all-sheet-body" style="overflow:auto;flex:1;border:1px solid var(--ivd);border-radius:10px"></div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('all-sheet-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+  renderAllSheet();
+}
+window.viewAllSheet = viewAllSheet;
+
+function setAllGroup(g){
+  allSheetGroupBy = g;
+  ['none','teacher','subject'].forEach(k=>{ const b=$I('asg-'+k); if(b) b.classList.toggle('on', k===g); });
+  renderAllSheet();
+}
+window.setAllGroup = setAllGroup;
+
+function toggleGradeRow(gk){
+  allSheetOpenGrades[gk] = !allSheetOpenGrades[gk];
+  renderAllSheet();
+}
+window.toggleGradeRow = toggleGradeRow;
+
+function renderAllSheet(){
+  const box = $I('all-sheet-body');
+  if(!box) return;
+  const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+
+  let list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem);
+  // 항목 정렬/그룹
+  const groupKey = e => allSheetGroupBy==='teacher' ? (e.teacher||'담당 미지정')
+                      : allSheetGroupBy==='subject' ? (e.subject||'과목 미지정') : null;
+  if(allSheetGroupBy!=='none'){
+    list = [...list].sort((a,b)=> (groupKey(a)||'').localeCompare(groupKey(b)||'','ko') || (a.date||'').localeCompare(b.date||''));
+  } else {
+    list = [...list].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  }
+  const items = list;
+  if(!items.length){ box.innerHTML='<p class="empty" style="padding:20px">신청 내역이 없습니다.</p>'; return; }
+
+  const amtOf = (e, sid) => { const s=(e.students||[]).find(x=>x.id===sid); return s? (e.mode==='refund'? -(s.amt||0) : (s.amt||0)) : null; };
+
+  // 전체 학생 (학년→반→이름)
+  const stuMap = new Map();
+  items.forEach(e=>(e.students||[]).forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id,{id:s.id,name:s.name,grade:s.grade,className:s.className}); }));
+  const allStudents = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.className||'').localeCompare(b.className||'','ko')||(a.name||'').localeCompare(b.name||'','ko'));
+
+  // 학년별 그룹
+  const byGrade = {};
+  allStudents.forEach(s=>{ const k=gradeLabel(s.grade); (byGrade[k]=byGrade[k]||[]).push(s); });
+  const gradeKeys = Object.keys(byGrade).sort((a,b)=>{
+    const na=parseInt(a,10)||99, nb=parseInt(b,10)||99; return na-nb || a.localeCompare(b,'ko');
+  });
+  // 기본: 모든 학년 펼침 (처음 열 때)
+  if(Object.keys(allSheetOpenGrades).length===0){ gradeKeys.forEach(k=>allSheetOpenGrades[k]=true); }
+
+  const colCount = items.length;
+  // 그룹 헤더 행 (선생님/과목)
+  let groupHeaderRow = '';
+  if(allSheetGroupBy!=='none'){
+    const spans = [];
+    let cur=null, cnt=0;
+    items.forEach(e=>{ const g=groupKey(e); if(g===cur){cnt++;} else { if(cur!==null) spans.push({g:cur,c:cnt}); cur=g; cnt=1; } });
+    if(cur!==null) spans.push({g:cur,c:cnt});
+    groupHeaderRow = `<tr style="background:var(--goldd);color:#fff">
+      <th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--goldd);z-index:3">${allSheetGroupBy==='teacher'?'선생님':'과목'}</th>
+      ${spans.map(sp=>`<th colspan="${sp.c}" style="padding:6px 10px;text-align:center;border-left:2px solid rgba(255,255,255,.3);font-weight:800">${esc(sp.g)} <span style="font-size:10px;opacity:.8;font-weight:400">(${sp.c})</span></th>`).join('')}
+      <th style="position:sticky;right:0;background:var(--goldd)"></th>
+    </tr>`;
+  }
+
+  // 영수증 열람 행
+  const receiptRow = `<tr style="background:#eef0f8">
+    <th style="padding:5px 10px;text-align:left;position:sticky;left:0;background:#eef0f8;z-index:3;font-size:11px;color:var(--ts)">🧾 영수증</th>
+    ${items.map(e=>`<th style="padding:5px 6px;text-align:center;border-left:1px solid var(--ivd)">${e.receiptCount?`<button class="bm" style="padding:3px 8px;font-size:11px" onclick="openReceiptsOf('${e.id}','${esc((e.subject||'').replace(/'/g,"\\'"))}')">${e.receiptCount}장 보기</button>`:'<span style="font-size:10px;color:var(--tl)">없음</span>'}</th>`).join('')}
+    <th style="position:sticky;right:0;background:#eef0f8"></th>
+  </tr>`;
+
+  // 항목 헤더(과목/담당/신청일/세부/1인당)
+  const headRows = `
+    <tr style="background:var(--gd);color:#fff">
+      <th style="padding:7px 10px;text-align:left;position:sticky;left:0;background:var(--gd);z-index:3;min-width:110px">과목</th>
+      ${items.map(e=>`<th style="padding:7px 10px;text-align:center;min-width:116px;border-left:1px solid rgba(255,255,255,.15);font-weight:800">${esc(e.subject)}${e.mode==='refund'?' <span style="font-size:10px;font-weight:400">(반환)</span>':''}</th>`).join('')}
+      <th style="padding:7px 10px;text-align:right;min-width:88px;border-left:2px solid rgba(255,255,255,.3);position:sticky;right:0;background:var(--gd)">개인합계</th>
+    </tr>
+    <tr style="background:#2a3a68;color:#fff">
+      <th style="padding:4px 10px;text-align:left;position:sticky;left:0;background:#2a3a68;z-index:3;font-size:11px">담당</th>
+      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.12);font-weight:400;font-size:11px">${esc(e.teacher||'-')}</th>`).join('')}
+      <th style="position:sticky;right:0;background:#2a3a68"></th>
+    </tr>
+    <tr style="background:#2a3a68;color:#fff">
+      <th style="padding:4px 10px;text-align:left;position:sticky;left:0;background:#2a3a68;z-index:3;font-size:11px">신청일</th>
+      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.12);font-weight:400;font-size:10.5px;opacity:.85">${esc(e.date||'-')}</th>`).join('')}
+      <th style="position:sticky;right:0;background:#2a3a68"></th>
+    </tr>
+    <tr style="background:#2a3a68;color:#fff">
+      <th style="padding:4px 10px;text-align:left;position:sticky;left:0;background:#2a3a68;z-index:3;font-size:11px">세부내용</th>
+      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.12);font-weight:400;font-size:10.5px;opacity:.85">${esc(e.items||'')}${e.detail?`<div style="opacity:.7">${esc(e.detail)}</div>`:''}</th>`).join('')}
+      <th style="position:sticky;right:0;background:#2a3a68"></th>
+    </tr>
+    <tr style="background:#3a4a80;color:#fff">
+      <th style="padding:5px 10px;text-align:left;position:sticky;left:0;background:#3a4a80;z-index:3;font-size:11px">이름 \\ 1인당</th>
+      ${items.map(e=>`<th style="padding:5px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.12);font-weight:700;font-size:11.5px">${e.mode==='refund'?'↩️ ':''}₩${won(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0))}${e.mode==='equal'?'/인':''}</th>`).join('')}
+      <th style="position:sticky;right:0;background:#3a4a80"></th>
+    </tr>`;
+
+  // 학년 그룹별 학생 행
+  const bodyRows = gradeKeys.map(gk=>{
+    const studs = byGrade[gk];
+    const open = !!allSheetOpenGrades[gk];
+    // 학년 소계
+    const gradeItemTotals = items.map(e=> studs.reduce((t,s)=>t+(amtOf(e,s.id)||0),0));
+    const gradeGrand = gradeItemTotals.reduce((a,b)=>a+b,0);
+    const headerTr = `<tr style="background:var(--gp);cursor:pointer" onclick="toggleGradeRow('${gk.replace(/'/g,"\\'")}')">
+      <td style="padding:7px 10px;font-weight:800;color:var(--gm);position:sticky;left:0;background:var(--gp);z-index:2">
+        <span style="display:inline-block;transition:transform .2s;transform:rotate(${open?90:0}deg)">▶</span> ${esc(gk)} <span style="font-size:11px;color:var(--tl);font-weight:400">(${studs.length}명)</span>
+      </td>
+      ${gradeItemTotals.map(t=>`<td style="padding:7px 10px;text-align:center;border-left:1px solid var(--ivd);font-size:11px;color:var(--ts)">${t?'₩'+won(Math.abs(t)):''}</td>`).join('')}
+      <td style="padding:7px 10px;text-align:right;font-weight:800;color:var(--goldd);border-left:2px solid var(--ivd);position:sticky;right:0;background:var(--gp)">₩${won(gradeGrand)}</td>
+    </tr>`;
+    if(!open) return headerTr;
+    const studentTrs = studs.map((s,ri)=>{
+      let sum=0;
+      const cells = items.map(e=>{
+        const a = amtOf(e,s.id);
+        if(a===null) return `<td style="padding:6px 10px;text-align:center;color:#d0d0d8;border-left:1px solid var(--ivd)">·</td>`;
+        sum+=a; const isRef=a<0;
+        return `<td style="padding:6px 10px;text-align:center;border-left:1px solid var(--ivd);background:${isRef?'#e6f7f4':'#f7f9ff'}">
+          <span style="color:${isRef?'#0d9488':'var(--gm)'};font-weight:700">✓</span>
+          <div style="font-size:10.5px;color:${isRef?'#0d9488':'var(--gm)'}">${isRef?'−':''}₩${won(Math.abs(a))}</div></td>`;
+      }).join('');
+      return `<tr style="border-bottom:1px solid var(--ivd);background:${ri%2?'#fafbfc':'#fff'}">
+        <td style="padding:6px 10px 6px 26px;font-weight:600;color:var(--gd);position:sticky;left:0;background:${ri%2?'#fafbfc':'#fff'};z-index:1">${esc(s.name)} <span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
+        ${cells}
+        <td style="padding:6px 10px;text-align:right;font-weight:800;color:var(--goldd);border-left:2px solid var(--ivd);position:sticky;right:0;background:${ri%2?'#fafbfc':'#fff'}">₩${won(sum)}</td>
+      </tr>`;
+    }).join('');
+    return headerTr + studentTrs;
+  }).join('');
+
+  // 전체 항목 합계
+  const footTr = `<tr style="background:var(--gd);color:#fff;font-weight:800">
+    <td style="padding:8px 10px;position:sticky;left:0;background:var(--gd);z-index:2">전체 합계</td>
+    ${items.map(e=>{ const t=allStudents.reduce((tt,s)=>tt+(amtOf(e,s.id)||0),0); return `<td style="padding:8px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.2)">₩${won(Math.abs(t))}</td>`; }).join('')}
+    <td style="padding:8px 10px;text-align:right;border-left:2px solid rgba(255,255,255,.3);position:sticky;right:0;background:var(--gd)">₩${won(allStudents.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
+  </tr>`;
+
+  box.innerHTML = `<table style="border-collapse:collapse;font-size:12px;min-width:100%">
+    <thead style="position:sticky;top:0;z-index:4">${groupHeaderRow}${headRows}${receiptRow}</thead>
+    <tbody>${bodyRows}</tbody>
+    <tfoot>${footTr}</tfoot>
+  </table>`;
+}
+window.renderAllSheet = renderAllSheet;
+
+// 특정 신청의 영수증 팝업으로 열람
+async function openReceiptsOf(expenseId, subject){
+  const mv = document.createElement('div'); mv.className='mov'; mv.id='rc-view-mod';
+  mv.innerHTML = `<div class="mbk" onclick="document.getElementById('rc-view-mod').remove()"></div>
+    <div class="mbox" style="max-width:560px">
+      <div class="mtitle">🧾 ${esc(subject||'')} 영수증</div>
+      <div id="rc-view-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><span style="font-size:13px;color:var(--tl)">불러오는 중…</span></div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('rc-view-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+  try {
+    const snap = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',expenseId)));
+    const arr=[]; snap.forEach(d=>arr.push({id:d.id,...d.data()}));
+    arr.sort((a,b)=>(a.idx||0)-(b.idx||0));
+    const box=$I('rc-view-list'); if(!box) return;
+    box.innerHTML = arr.length ? arr.map(r=>`
+      <div style="width:90px;height:90px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
+        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)" title="영수증 ${r.idx||''}">
+      </div>`).join('') : '<span style="font-size:13px;color:var(--tl)">첨부된 영수증이 없습니다.</span>';
+  } catch(e){ const box=$I('rc-view-list'); if(box) box.innerHTML=`<span style="font-size:13px;color:#dc2626">불러올 수 없습니다: ${esc(e.message||'')}</span>`; }
+}
+window.openReceiptsOf = openReceiptsOf;
 
 // 학생 상세: 이 학생이 참여한 항목들
 function viewStudentDetail(sid){
