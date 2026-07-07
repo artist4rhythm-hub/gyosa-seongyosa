@@ -367,6 +367,13 @@ let expOrg = '';
 let expMode = 'equal';   // equal(1/N) | indiv(개별 청구) | refund(개별 반환)
 let indivAmts = {};      // 개별 모드: sid → 금액
 let receipts = [];       // 영수증 dataURL 배열 (새로 추가한 것)
+// 크롭 편집기 상태
+let cropQueue = [];      // 편집 대기 dataURL들
+let cropIndex = 0;
+let cropImg = null;      // 현재 Image 객체
+let cropRotation = 0;    // 0/90/180/270
+let cropBox = {x:0,y:0,w:0,h:0};      // 화면(캔버스) 좌표 기준 박스
+let cropCanvasSize = {w:0,h:0};
 let editingId = null;        // 수정 중인 신청 ID
 let editingSemester = '';    // 수정 중인 신청의 학기(유지용)
 let existingReceipts = [];   // 수정 시 기존 영수증 [{id,dataUrl,idx}]
@@ -578,7 +585,7 @@ async function onReceiptPick(e){
   cropQueue = [];
   for(const f of files){
     try {
-      const dataUrl = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.target.result); r.onerror=()=>rej(); r.readAsDataURL(f); });
+      const dataUrl = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=()=>rej(new Error('read fail')); r.readAsDataURL(f); });
       cropQueue.push(dataUrl);
     } catch(err){}
   }
@@ -587,13 +594,6 @@ async function onReceiptPick(e){
 }
 
 // ── 크롭 편집기 ──
-let cropQueue = [];      // 편집 대기 dataURL들
-let cropIndex = 0;
-let cropImg = null;      // 현재 Image 객체
-let cropRotation = 0;    // 0/90/180/270
-let cropBox = {x:0,y:0,w:0,h:0};      // 화면(캔버스) 좌표 기준 박스
-let cropCanvasSize = {w:0,h:0};
-
 function startCropForCurrent(){
   if(cropIndex >= cropQueue.length){
     // 모두 끝 → 렌더
