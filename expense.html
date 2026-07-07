@@ -92,6 +92,29 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 .toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+
+/* 영수증 크롭 편집기 */
+#cropOverlay{position:fixed;inset:0;z-index:4000;display:none;flex-direction:column;background:rgba(15,18,40,0.92);padding:14px;}
+#cropOverlay.show{display:flex;}
+.crop-top{display:flex;align-items:center;justify-content:space-between;color:#fff;margin-bottom:10px;flex-shrink:0;}
+.crop-top .ct-title{font-size:15px;font-weight:700;}
+.crop-top .ct-count{font-size:12px;opacity:.7;}
+.crop-stage{flex:1;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;}
+.crop-canvas-wrap{position:relative;touch-action:none;}
+#cropCanvas{max-width:100%;max-height:100%;display:block;border-radius:8px;background:#000;}
+.crop-box{position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);cursor:move;}
+.crop-handle{position:absolute;width:22px;height:22px;background:rgba(255,255,255,0.95);border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,0.4);}
+.crop-handle.tl{top:-11px;left:-11px;cursor:nwse-resize;}
+.crop-handle.tr{top:-11px;right:-11px;cursor:nesw-resize;}
+.crop-handle.bl{bottom:-11px;left:-11px;cursor:nesw-resize;}
+.crop-handle.br{bottom:-11px;right:-11px;cursor:nwse-resize;}
+.crop-tools{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:12px 0;flex-shrink:0;}
+.crop-btn{background:rgba(255,255,255,0.15);color:#fff;border:1.5px solid rgba(255,255,255,0.3);border-radius:8px;padding:9px 15px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;}
+.crop-btn:hover{background:rgba(255,255,255,0.25);}
+.crop-btn.primary{background:#2b3990;border-color:#2b3990;}
+.crop-btn.primary:hover{background:#3546a8;}
+.crop-btn.ghost{background:transparent;}
+.crop-actions{display:flex;gap:8px;justify-content:space-between;flex-shrink:0;}
 </style>
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
@@ -135,6 +158,33 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 
 <div id="mwrap"></div>
 <div id="toast" class="toast"></div>
+
+<div id="cropOverlay">
+  <div class="crop-top">
+    <span class="ct-title">🧾 영수증 편집</span>
+    <span class="ct-count" id="crop-count"></span>
+  </div>
+  <div class="crop-stage">
+    <div class="crop-canvas-wrap" id="crop-wrap">
+      <canvas id="cropCanvas"></canvas>
+      <div class="crop-box" id="crop-box">
+        <div class="crop-handle tl" data-h="tl"></div>
+        <div class="crop-handle tr" data-h="tr"></div>
+        <div class="crop-handle bl" data-h="bl"></div>
+        <div class="crop-handle br" data-h="br"></div>
+      </div>
+    </div>
+  </div>
+  <div class="crop-tools">
+    <button class="crop-btn" onclick="cropRotate()">↻ 회전</button>
+    <button class="crop-btn" onclick="cropAuto()">✨ 자동 여백 제거</button>
+    <button class="crop-btn ghost" onclick="cropReset()">↺ 전체선택</button>
+  </div>
+  <div class="crop-actions">
+    <button class="crop-btn ghost" onclick="cropSkip()">크롭 없이 사용</button>
+    <button class="crop-btn primary" onclick="cropApply()">✓ 적용</button>
+  </div>
+</div>
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
@@ -385,7 +435,7 @@ function renderNew(){
         <div class="fgrp"><label>학교 청구분 메모 (선택)</label><input type="text" id="ex-school" placeholder="예: 교사 시연용 1개, 잔여 2개 학교 보관"></div>
       </div>
       <div class="fgrp">
-        <label>영수증 첨부 * <span style="color:var(--tl);font-weight:400">(최대 10장 · 사진은 자동으로 용량이 축소됩니다)</span></label>
+        <label>영수증 첨부 * <span style="color:var(--tl);font-weight:400">(최대 10장 · 첨부 시 크롭·회전·여백 제거 편집 · 자동 용량 축소)</span></label>
         <input type="file" id="ex-receipt" accept="image/*" multiple style="padding:8px;height:auto">
         <div id="receipt-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
       </div>
@@ -523,17 +573,218 @@ async function onReceiptPick(e){
     e.target.value = '';
     return;
   }
-  window.showLoading && window.showLoading('영수증 압축 중…');
-  try {
-    for(let i=0;i<files.length;i++){
-      window.setLoadStep && window.setLoadStep(`영수증 압축 중… (${i+1}/${files.length})`, Math.round((i+1)/files.length*90));
-      const data = await compressImage(files[i]);
-      receipts.push(data);
-    }
-    renderReceipts();
-  } catch(err){ toast('영수증 처리 실패: '+(err.message||''),'err'); }
-  finally { window.hideLoading && window.hideLoading(); e.target.value = ''; }
+  e.target.value = '';
+  // 파일을 이미지로 읽어서 크롭 큐에 넣기
+  cropQueue = [];
+  for(const f of files){
+    try {
+      const dataUrl = await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.target.result); r.onerror=()=>rej(); r.readAsDataURL(f); });
+      cropQueue.push(dataUrl);
+    } catch(err){}
+  }
+  cropIndex = 0;
+  startCropForCurrent();
 }
+
+// ── 크롭 편집기 ──
+let cropQueue = [];      // 편집 대기 dataURL들
+let cropIndex = 0;
+let cropImg = null;      // 현재 Image 객체
+let cropRotation = 0;    // 0/90/180/270
+let cropBox = {x:0,y:0,w:0,h:0};      // 화면(캔버스) 좌표 기준 박스
+let cropCanvasSize = {w:0,h:0};
+
+function startCropForCurrent(){
+  if(cropIndex >= cropQueue.length){
+    // 모두 끝 → 렌더
+    renderReceipts();
+    return;
+  }
+  cropRotation = 0;
+  const img = new Image();
+  img.onload = () => { cropImg = img; drawCropCanvas(); showCrop(); };
+  img.onerror = () => { toast('이미지를 열 수 없습니다.','err'); cropIndex++; startCropForCurrent(); };
+  img.src = cropQueue[cropIndex];
+}
+
+function showCrop(){
+  const ov = $I('cropOverlay'); if(ov) ov.classList.add('show');
+  const cc = $I('crop-count'); if(cc) cc.textContent = `${cropIndex+1} / ${cropQueue.length}`;
+}
+function hideCrop(){ const ov=$I('cropOverlay'); if(ov) ov.classList.remove('show'); }
+
+// 회전 반영해서 캔버스에 그림, 박스 초기화
+function drawCropCanvas(){
+  const canvas = $I('cropCanvas'); if(!canvas || !cropImg) return;
+  // 회전 후 원본 크기
+  let iw = cropImg.naturalWidth, ih = cropImg.naturalHeight;
+  const rot = cropRotation % 360;
+  const swap = (rot===90 || rot===270);
+  const srcW = swap ? ih : iw, srcH = swap ? iw : ih;
+  // 화면에 맞춰 스케일 (스테이지 크기 기준)
+  const stage = document.querySelector('.crop-stage');
+  const maxW = Math.min(stage?.clientWidth||600, 900) - 8;
+  const maxH = (stage?.clientHeight||400) - 8;
+  let scale = Math.min(maxW/srcW, maxH/srcH, 1);
+  if(!isFinite(scale) || scale<=0) scale = Math.min(600/srcW, 400/srcH);
+  const cw = Math.round(srcW*scale), ch = Math.round(srcH*scale);
+  canvas.width = cw; canvas.height = ch;
+  cropCanvasSize = {w:cw, h:ch};
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.clearRect(0,0,cw,ch);
+  ctx.translate(cw/2, ch/2);
+  ctx.rotate(rot*Math.PI/180);
+  // 회전 기준 원본을 중앙에 그림
+  const dw = iw*scale, dh = ih*scale;
+  ctx.drawImage(cropImg, -dw/2, -dh/2, dw, dh);
+  ctx.restore();
+  // 박스 전체로 초기화
+  cropBox = {x:0, y:0, w:cw, h:ch};
+  layoutCropBox();
+}
+
+function layoutCropBox(){
+  const wrap = $I('crop-wrap'), box = $I('crop-box'), canvas = $I('cropCanvas');
+  if(!wrap || !box || !canvas) return;
+  // wrap을 캔버스 크기에 맞춤
+  wrap.style.width = canvas.width+'px';
+  wrap.style.height = canvas.height+'px';
+  box.style.left = cropBox.x+'px';
+  box.style.top = cropBox.y+'px';
+  box.style.width = cropBox.w+'px';
+  box.style.height = cropBox.h+'px';
+}
+
+function cropRotate(){ cropRotation = (cropRotation+90)%360; drawCropCanvas(); }
+window.cropRotate = cropRotate;
+
+function cropReset(){ cropBox = {x:0,y:0,w:cropCanvasSize.w,h:cropCanvasSize.h}; layoutCropBox(); }
+window.cropReset = cropReset;
+
+// 자동 여백 제거: 밝은 배경 감지해서 내용 경계 찾기
+function cropAuto(){
+  const canvas = $I('cropCanvas'); if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const {width:w, height:h} = canvas;
+  let data;
+  try { data = ctx.getImageData(0,0,w,h).data; } catch(e){ toast('자동 감지를 사용할 수 없습니다.','err'); return; }
+  // 밝기 임계값: 밝으면 배경으로 간주
+  const TH = 218;
+  const isContent = (x,y)=>{
+    const i=(y*w+x)*4;
+    const bright = 0.299*data[i]+0.587*data[i+1]+0.114*data[i+2];
+    return bright < TH;
+  };
+  let minX=w, minY=h, maxX=0, maxY=0, found=false;
+  const step = Math.max(1, Math.floor(Math.min(w,h)/300)); // 성능
+  for(let y=0;y<h;y+=step){
+    for(let x=0;x<w;x+=step){
+      if(isContent(x,y)){ found=true; if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+    }
+  }
+  if(!found){ toast('내용을 감지하지 못했어요. 수동으로 조정해주세요.','err'); return; }
+  // 약간의 여백(패딩) 남기기
+  const pad = Math.round(Math.min(w,h)*0.015);
+  minX=Math.max(0,minX-pad); minY=Math.max(0,minY-pad);
+  maxX=Math.min(w,maxX+pad); maxY=Math.min(h,maxY+pad);
+  cropBox = {x:minX, y:minY, w:maxX-minX, h:maxY-minY};
+  layoutCropBox();
+  toast('여백을 자동으로 감지했어요. 필요하면 조정하세요.','ok');
+}
+window.cropAuto = cropAuto;
+
+// 크롭 적용 → 압축 후 receipts에 추가
+async function cropApply(){
+  const canvas = $I('cropCanvas'); if(!canvas){ cropSkip(); return; }
+  // 박스 영역을 잘라서 새 캔버스에
+  const sx = Math.max(0, Math.round(cropBox.x));
+  const sy = Math.max(0, Math.round(cropBox.y));
+  const sw = Math.min(canvas.width-sx, Math.round(cropBox.w));
+  const sh = Math.min(canvas.height-sy, Math.round(cropBox.h));
+  if(sw<=4 || sh<=4){ toast('선택 영역이 너무 작아요.','err'); return; }
+  const out = document.createElement('canvas'); out.width=sw; out.height=sh;
+  out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  // 압축 (최대 1000px, 700KB 이하)
+  const data = compressCanvas(out);
+  receipts.push(data);
+  cropIndex++;
+  startCropForCurrent();
+  if(cropIndex >= cropQueue.length) hideCrop();
+}
+window.cropApply = cropApply;
+
+function cropSkip(){
+  // 크롭 없이 원본 압축
+  if(cropImg){
+    const c = document.createElement('canvas');
+    let iw=cropImg.naturalWidth, ih=cropImg.naturalHeight;
+    const MAX=1000; let scale=Math.min(MAX/Math.max(iw,ih),1);
+    c.width=Math.round(iw*scale); c.height=Math.round(ih*scale);
+    c.getContext('2d').drawImage(cropImg,0,0,c.width,c.height);
+    receipts.push(compressCanvas(c));
+  }
+  cropIndex++;
+  startCropForCurrent();
+  if(cropIndex >= cropQueue.length) hideCrop();
+}
+window.cropSkip = cropSkip;
+
+// 캔버스 → JPEG dataURL (700KB 이하)
+function compressCanvas(cv){
+  // 1000px 넘으면 축소
+  let src = cv;
+  const MAX = 1000;
+  if(Math.max(cv.width, cv.height) > MAX){
+    const r = MAX/Math.max(cv.width, cv.height);
+    const c2 = document.createElement('canvas');
+    c2.width = Math.round(cv.width*r); c2.height = Math.round(cv.height*r);
+    c2.getContext('2d').drawImage(cv,0,0,c2.width,c2.height);
+    src = c2;
+  }
+  let q=0.7, data=src.toDataURL('image/jpeg',q);
+  while(data.length>700*1024 && q>0.3){ q-=0.1; data=src.toDataURL('image/jpeg',q); }
+  return data;
+}
+
+// ── 크롭 박스 드래그/리사이즈 ──
+(function initCropDrag(){
+  let mode=null, start=null, orig=null, handle=null;
+  function pt(e){ const t=e.touches?e.touches[0]:e; return {x:t.clientX, y:t.clientY}; }
+  function onDown(e){
+    const box=$I('crop-box'); if(!box) return;
+    const h = e.target.getAttribute && e.target.getAttribute('data-h');
+    if(h){ mode='resize'; handle=h; }
+    else if(e.target===box){ mode='move'; }
+    else return;
+    start = pt(e); orig = {...cropBox};
+    e.preventDefault();
+  }
+  function onMove(e){
+    if(!mode) return;
+    const p = pt(e); const dx=p.x-start.x, dy=p.y-start.y;
+    const CW=cropCanvasSize.w, CH=cropCanvasSize.h;
+    let b={...orig};
+    if(mode==='move'){
+      b.x=Math.max(0,Math.min(CW-b.w, orig.x+dx));
+      b.y=Math.max(0,Math.min(CH-b.h, orig.y+dy));
+    } else {
+      if(handle.includes('l')){ const nx=Math.max(0,Math.min(orig.x+orig.w-20, orig.x+dx)); b.w=orig.w+(orig.x-nx); b.x=nx; }
+      if(handle.includes('r')){ b.w=Math.max(20,Math.min(CW-orig.x, orig.w+dx)); }
+      if(handle.includes('t')){ const ny=Math.max(0,Math.min(orig.y+orig.h-20, orig.y+dy)); b.h=orig.h+(orig.y-ny); b.y=ny; }
+      if(handle.includes('b')){ b.h=Math.max(20,Math.min(CH-orig.y, orig.h+dy)); }
+    }
+    cropBox=b; layoutCropBox();
+    e.preventDefault();
+  }
+  function onUp(){ mode=null; }
+  document.addEventListener('mousedown', e=>{ if($I('cropOverlay')?.classList.contains('show')) onDown(e); });
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchstart', e=>{ if($I('cropOverlay')?.classList.contains('show')) onDown(e); }, {passive:false});
+  document.addEventListener('touchmove', onMove, {passive:false});
+  document.addEventListener('touchend', onUp);
+})();
 
 function renderReceipts(){
   const box = $I('receipt-list');
