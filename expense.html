@@ -597,14 +597,22 @@ let cropCanvasSize = {w:0,h:0};
 function startCropForCurrent(){
   if(cropIndex >= cropQueue.length){
     // 모두 끝 → 렌더
+    hideCrop();
     renderReceipts();
     return;
   }
   cropRotation = 0;
   const img = new Image();
-  img.onload = () => { cropImg = img; drawCropCanvas(); showCrop(); };
-  img.onerror = () => { toast('이미지를 열 수 없습니다.','err'); cropIndex++; startCropForCurrent(); };
-  img.src = cropQueue[cropIndex];
+  img.onload = () => {
+    try {
+      cropImg = img;
+      showCrop();               // 먼저 오버레이를 보이게 (stage 크기 확보)
+      requestAnimationFrame(()=>{ try { drawCropCanvas(); } catch(err){ console.error('crop draw', err); toast('편집 화면 오류: '+(err.message||''),'err'); } });
+    } catch(err){ console.error(err); toast('편집 오류: '+(err.message||''),'err'); }
+  };
+  img.onerror = () => { toast('이미지 형식을 열 수 없어요. HEIC 사진은 JPG로 올려주세요.','err'); cropIndex++; startCropForCurrent(); };
+  try { img.src = cropQueue[cropIndex]; }
+  catch(err){ toast('이미지를 불러올 수 없습니다.','err'); cropIndex++; startCropForCurrent(); }
 }
 
 function showCrop(){
@@ -621,12 +629,16 @@ function drawCropCanvas(){
   const rot = cropRotation % 360;
   const swap = (rot===90 || rot===270);
   const srcW = swap ? ih : iw, srcH = swap ? iw : ih;
-  // 화면에 맞춰 스케일 (스테이지 크기 기준)
+  // 화면에 맞춰 스케일 (스테이지 크기 기준, 0이면 window 기준 fallback)
   const stage = document.querySelector('.crop-stage');
-  const maxW = Math.min(stage?.clientWidth||600, 900) - 8;
-  const maxH = (stage?.clientHeight||400) - 8;
+  let stageW = stage?.clientWidth || 0;
+  let stageH = stage?.clientHeight || 0;
+  if(stageW < 40) stageW = Math.min(window.innerWidth - 28, 900);
+  if(stageH < 40) stageH = Math.max(240, window.innerHeight - 220);
+  const maxW = Math.max(120, stageW - 8);
+  const maxH = Math.max(120, stageH - 8);
   let scale = Math.min(maxW/srcW, maxH/srcH, 1);
-  if(!isFinite(scale) || scale<=0) scale = Math.min(600/srcW, 400/srcH);
+  if(!isFinite(scale) || scale<=0) scale = Math.min(600/srcW, 400/srcH) || 0.5;
   const cw = Math.round(srcW*scale), ch = Math.round(srcH*scale);
   canvas.width = cw; canvas.height = ch;
   cropCanvasSize = {w:cw, h:ch};
