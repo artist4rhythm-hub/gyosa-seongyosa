@@ -103,18 +103,25 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .rp-tbl tfoot td,.rp-tbl tfoot th{background:var(--iv);font-weight:800;}
 /* 상세 매트릭스 표 (학년별·전체) */
 .mx-tbl{border-collapse:collapse;font-size:12px;table-layout:fixed;}
-.mx-tbl th,.mx-tbl td{border:1px solid var(--ivd);padding:7px 6px;text-align:center;vertical-align:middle;word-break:break-word;overflow-wrap:break-word;}
-.mx-tbl .mx-name{position:sticky;left:0;z-index:2;background:var(--gd);color:#fff;min-width:96px;width:96px;}
+.mx-tbl th,.mx-tbl td{border:1px solid #e2e8e5;padding:7px 6px;text-align:center;vertical-align:middle;word-break:break-word;overflow-wrap:break-word;}
+.mx-tbl .mx-name{position:sticky;left:0;z-index:2;background:#2d6a4f;color:#fff;min-width:96px;width:96px;}
 .mx-tbl .mx-item{min-width:118px;width:118px;}
 .mx-tbl .mx-tot{position:sticky;right:0;z-index:2;min-width:92px;width:92px;}
-.mx-tbl thead .mx-h{background:var(--gd);color:#fff;font-weight:800;}
-.mx-tbl thead .mx-h2{background:#2a3a68;color:#fff;font-weight:400;font-size:11px;}
-.mx-tbl thead .mx-h3{background:#3a4a80;color:#fff;font-weight:700;}
-.mx-tbl td.mx-chg{background:#f0f4ff;color:var(--gm);font-weight:700;}
-.mx-tbl td.mx-ref{background:#e6f7f4;color:#0d9488;font-weight:700;}
-.mx-tbl td.mx-empty{color:#d0d0d8;}
-.mx-tbl .mx-namecell{font-weight:700;color:var(--gd);position:sticky;left:0;z-index:1;}
-.mx-tbl .mx-totcell{font-weight:800;color:var(--goldd);position:sticky;right:0;z-index:1;}
+.mx-tbl thead .mx-h{background:#2d6a4f;color:#fff;font-weight:800;border-color:#2d6a4f;}
+.mx-tbl thead .mx-h2{background:#f4f8f6;color:#5a7267;font-weight:400;font-size:11px;}
+.mx-tbl thead .mx-h3{background:#e9f0ec;color:#3a5a48;font-weight:700;}
+.mx-tbl thead .mx-h.mx-tot{background:#1d4d3d;border-color:#1d4d3d;}
+.mx-tbl td.mx-chg{color:#6b8579;font-weight:500;}
+.mx-tbl td.mx-ref{background:#eef6f3;color:#4a7a68;font-weight:500;}
+.mx-tbl td.mx-empty{color:#d0d8d3;}
+.mx-tbl .mx-namecell{font-weight:700;color:#1b4332;position:sticky;left:0;z-index:1;background:#fff;}
+.mx-tbl tbody tr:nth-child(even) .mx-namecell{background:#fafbfc;}
+.mx-tbl tbody tr:nth-child(even) td{background:#fafbfc;}
+.mx-tbl tbody tr:nth-child(even) td.mx-ref{background:#eaf4f1;}
+.mx-tbl .mx-totcell{font-weight:900;color:#8a6410;background:#f7efd8;position:sticky;right:0;z-index:1;}
+.mx-tbl tbody tr:nth-child(even) td.mx-totcell{background:#f4ead0;}
+.mx-tbl tfoot td,.mx-tbl tfoot .mx-namecell{background:#eef4f1;font-weight:800;color:#2f5c48;}
+.mx-tbl tfoot .mx-totcell{background:#f0e4c4;color:#8a6410;}
 
 /* 영수증 크롭 편집기 */
 #cropOverlay{position:fixed;inset:0;z-index:4000;display:none;flex-direction:column;background:rgba(15,18,40,0.92);padding:14px;}
@@ -1717,7 +1724,9 @@ function viewClassSheet(gradeKey){
   const amtOf = (e, sid) => { const s=(e.students||[]).find(x=>x.id===sid); return s? (e.mode==='refund'? -(s.amt||0) : (s.amt||0)) : null; };
 
   // 출력용 전역 저장
-  lastSheet = { gradeKey, semKor: semKor(reportSem), orgName: ORGS[reportOrg]||reportOrg, items, students, amtOf };
+  // 이 학년에 포함된 반 이름들 (학년순 정렬된 students에서 추출)
+  const classNames = [...new Set(students.map(s=>s.className).filter(Boolean))];
+  lastSheet = { gradeKey, classNames, semKor: semKor(reportSem), orgName: ORGS[reportOrg]||reportOrg, items, students, amtOf };
 
   const mv = document.createElement('div'); mv.className='mov'; mv.id='class-sheet-mod';
   mv.innerHTML = `<div class="mbk" onclick="document.getElementById('class-sheet-mod').remove()"></div>
@@ -1766,28 +1775,28 @@ function viewClassSheet(gradeKey){
                 if(a===null) return `<td class="mx-empty">·</td>`;
                 sum += a;
                 const isRef = a<0;
-                return `<td class="${isRef?'mx-ref':'mx-chg'}">✓<br><span style="font-size:11px">${isRef?'−':''}₩${won(Math.abs(a))}</span></td>`;
+                return `<td class="${isRef?'mx-ref':'mx-chg'}"><span style="font-size:11px">${isRef?'−':''}₩${won(Math.abs(a))}</span></td>`;
               }).join('');
               return `<tr>
-                <td class="mx-namecell" style="background:${bg}">${esc(s.name)}<br><span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
+                <td class="mx-namecell">${esc(s.name)}<br><span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
                 ${cells}
-                <td class="mx-totcell" style="background:${bg}">₩${won(sum)}</td>
+                <td class="mx-totcell">₩${won(sum)}</td>
               </tr>`;
             }).join('')}
           </tbody>
           <tfoot>
             <tr>
-              <td class="mx-namecell" style="background:var(--iv);color:var(--gd)">항목 합계</td>
+              <td class="mx-namecell">항목 합계</td>
               ${items.map(e=>{
                 const t = students.reduce((tt,s)=>{ const a=amtOf(e,s.id); return tt+(a||0); },0);
-                return `<td style="background:var(--iv);font-weight:800;color:${e.mode==='refund'?'#0d9488':'var(--gm)'}">₩${won(Math.abs(t))}</td>`;
+                return `<td>₩${won(Math.abs(t))}</td>`;
               }).join('')}
-              <td class="mx-totcell" style="background:var(--iv)">₩${won(students.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
+              <td class="mx-totcell">₩${won(students.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-      <p style="font-size:12px;color:var(--tl);margin-top:10px">✓ 파란색은 청구, 초록색은 반환입니다. 가로로 스크롤하면 모든 항목을 볼 수 있습니다.</p>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">청구는 파란색, 반환은 초록색(−)으로 표시됩니다. 가로로 스크롤하면 모든 항목을 볼 수 있습니다.</p>
       ` : '<p class="empty">이 반의 청구 내역이 없습니다.</p>'}
       <div class="mact"><button class="bs" onclick="document.getElementById('class-sheet-mod').remove()">닫기</button></div>
     </div>`;
@@ -1822,17 +1831,35 @@ function ensureH2C(){
 // 안내장 HTML 생성 (인쇄용, 세로/가로 레이아웃)
 function buildSheetHTML(landscape){
   const s = lastSheet; if(!s) return '';
-  const { gradeKey, semKor:sem, orgName, items, students, amtOf } = s;
+  const { gradeKey, classNames, semKor:sem, orgName, items, students, amtOf } = s;
+  // 제목 부제: 학년 + 반 이름 (반 하나면 "2학년 로이반", 여러 개면 "2학년 (로이반·이레반)")
+  const cls = classNames||[];
+  const gradeTitle = cls.length===1 ? `${gradeKey} ${cls[0]}` : cls.length>1 ? `${gradeKey} (${cls.join('·')})` : gradeKey;
   const won2 = n => (n||0).toLocaleString('ko-KR');
   const perLine = (e)=> e.mode==='refund'?`↩️ ₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0)}${e.mode==='equal'?'/인':''}`;
-  const cell = (e,sid)=>{ const a=amtOf(e,sid); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}"><span class="ck">✓</span><br>${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; };
+  const cell = (e,sid)=>{ const a=amtOf(e,sid); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; };
 
-  // 칸 폭 균등: 이름칸 + 항목N칸 + 합계칸. 항목칸을 모두 동일 폭으로.
-  const itemColW = landscape ? Math.max(72, Math.floor((1123-24-60-80)/items.length)) : Math.max(60, Math.floor((559-24-52-64)/items.length));
+  // 칸 폭 계산: 이름칸 + 항목N칸 + 합계칸
+  const nameW = landscape ? 60 : 52;
+  const totW = landscape ? 80 : 64;
+  const pad = landscape ? 30 : 26;
+  // 문서 최대 내부폭 (A5세로 559-2*26=507, A4가로 1123-2*30=1063)
+  const maxInner = landscape ? 1063 : 507;
+  // 항목칸 폭: 남는 폭을 항목수로 나눔 (최소값 보장)
+  const availForItems = maxInner - nameW - totW;
+  let itemColW = Math.floor(availForItems / items.length);
+  const minItemW = landscape ? 72 : 64;
+  itemColW = Math.max(minItemW, itemColW);
+  // 실제 표 폭
+  const tableW = nameW + itemColW*items.length + totW;
+  // 문서 내부폭 = 표폭(최대 maxInner). 이보다 표가 작으면 문서를 표폭에 맞춤 → 좌우 여백 동일
+  const innerW = Math.min(tableW, maxInner);
+  const docW = innerW + pad*2;
+
   const colgroup = `<colgroup>
-    <col style="width:${landscape?60:52}px">
+    <col style="width:${nameW}px">
     ${items.map(()=>`<col style="width:${itemColW}px">`).join('')}
-    <col style="width:${landscape?80:64}px">
+    <col style="width:${totW}px">
   </colgroup>`;
 
   // 헤더: 항목 정보를 행별로 분리 (라벨 행 + 항목 값)
@@ -1858,20 +1885,20 @@ function buildSheetHTML(landscape){
     <tfoot><tr><th class="nm">항목합계</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr></tfoot>
   </table>`;
 
-  return `<div class="sheet-doc ${landscape?'land':'port'}">
+  return `<div class="sheet-doc ${landscape?'land':'port'}" style="width:${docW}px;padding:${pad}px">
     <div class="sheet-head">
       <div class="sh-title">${esc(orgName)} 수행성 경비 안내</div>
-      <div class="sh-sub">${esc(sem)} · ${esc(gradeKey)}</div>
+      <div class="sh-sub">${esc(sem)} · ${esc(gradeTitle)}</div>
     </div>
     ${table}
-    <div class="sheet-foot">※ ✓ 표시는 청구 항목이며, 반환은 (−)로 표시됩니다. 문의는 담당 선생님께 해주세요.</div>
+    <div class="sheet-foot">※ 금액이 적힌 칸이 청구 항목이며, 반환은 (−)로 표시됩니다. 문의는 담당 선생님께 해주세요.</div>
   </div>`;
 }
 
 const SHEET_CSS = `
 .sheet-doc{background:#fff;color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;box-sizing:border-box;}
-.sheet-doc.port{width:559px;padding:26px;}
-.sheet-doc.land{width:1123px;padding:30px;}
+.sheet-doc.port{}
+.sheet-doc.land{}
 .sheet-head{text-align:center;margin-bottom:18px;}
 .sh-title{font-size:20px;font-weight:800;color:#1b4332;text-align:center;letter-spacing:-0.5px;}
 .sh-sub{font-size:12px;color:#8ba396;margin-top:6px;text-align:center;letter-spacing:0.5px;}
@@ -2114,31 +2141,42 @@ function buildAllSheetHTML(){
   if(!items.length || !students.length) return '';
   const won2 = n => (n||0).toLocaleString('ko-KR');
   const perLine = (e)=> e.mode==='refund'?`↩️ ₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per||0)}${e.mode==='equal'?'/인':''}`;
-  const itemColW = Math.max(70, Math.floor((1123-28-60-80)/items.length));
-  const colgroup = `<colgroup><col style="width:60px">${items.map(()=>`<col style="width:${itemColW}px">`).join('')}<col style="width:80px"></colgroup>`;
+  const gradeW=56, nameW=64, totW=80, pad=30, maxInner=1063;
+  const availForItems = maxInner - gradeW - nameW - totW;
+  let itemColW = Math.max(64, Math.floor(availForItems / items.length));
+  const tableW = gradeW + nameW + itemColW*items.length + totW;
+  const innerW = Math.min(tableW, maxInner);
+  const docW = innerW + pad*2;
+  const colgroup = `<colgroup><col style="width:${gradeW}px"><col style="width:${nameW}px">${items.map(()=>`<col style="width:${itemColW}px">`).join('')}<col style="width:${totW}px"></colgroup>`;
   const headRows = `
-    <tr><th class="nm hd">이름</th>${items.map(e=>`<th class="ic subj">${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}<th class="tot hd">개인<br>합계</th></tr>
-    <tr><td class="rl">담당</td>${items.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl">신청일</td>${items.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl">세부내용</td>${items.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl">1인당</td>${items.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}<td class="rl2"></td></tr>`;
-  // 학년별 그룹 + 소계
-  let curGrade = null;
+    <tr><th class="nm hd">학년·반</th><th class="nm hd">이름</th>${items.map(e=>`<th class="ic subj">${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}<th class="tot hd">개인<br>합계</th></tr>
+    <tr><td class="rl" colspan="2">담당</td>${items.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr><td class="rl" colspan="2">신청일</td>${items.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr><td class="rl" colspan="2">세부내용</td>${items.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr><td class="rl" colspan="2">1인당</td>${items.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}<td class="rl2"></td></tr>`;
+
+  // 학년·반 그룹핑: 같은 (학년+반)은 rowspan으로 병합
+  const grpKey = st => `${gradeLabel(st.grade)}||${st.className||'-'}`;
+  const grpLabel = st => `${gradeLabel(st.grade)}<br><span style="font-size:9px;font-weight:400;opacity:.8">${esc(st.className||'')}</span>`;
+  // 각 그룹의 학생 수 계산
+  const groupCount = {};
+  students.forEach(st=>{ const k=grpKey(st); groupCount[k]=(groupCount[k]||0)+1; });
+  let prevKey = null;
   const bodyRows = students.map(st=>{
-    const gl = gradeLabel(st.grade);
-    let gradeHeader = '';
-    if(gl !== curGrade){ curGrade = gl; gradeHeader = `<tr class="grow"><td class="gcell" colspan="${items.length+2}">${esc(gl)}</td></tr>`; }
     let sum=0;
-    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}"><span class="ck">✓</span><br>${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; }).join('');
-    return gradeHeader + `<tr><th class="nm">${esc(st.name)}<span class="cls">${esc(st.className||'')}</span></th>${tds}<td class="tot">₩${won2(sum)}</td></tr>`;
+    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; }).join('');
+    const k = grpKey(st);
+    let grpCell = '';
+    if(k !== prevKey){ prevKey = k; grpCell = `<td class="grpcell" rowspan="${groupCount[k]}">${grpLabel(st)}</td>`; }
+    return `<tr>${grpCell}<td class="nm">${esc(st.name)}</td>${tds}<td class="tot">₩${won2(sum)}</td></tr>`;
   }).join('');
   const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
   const grand = students.reduce((tt,st)=>tt+items.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
-  return `<div class="sheet-doc land">
+  return `<div class="sheet-doc land" style="width:${docW}px;padding:${pad}px">
     <div class="sheet-head"><div class="sh-title">${esc(ORGS[reportOrg]||reportOrg)} 수행성 경비 전체 취합</div><div class="sh-sub">${esc(semKor(reportSem))} · 전체 학년 · 학생 ${students.length}명 · 항목 ${items.length}개</div></div>
     <table class="sheet-tbl">${colgroup}<thead>${headRows}</thead><tbody>${bodyRows}</tbody>
-    <tfoot><tr><th class="nm">항목합계</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr></tfoot></table>
-    <div class="sheet-foot">※ ✓ 표시는 청구, 반환은 (−)로 표시됩니다.</div>
+    <tfoot><tr><th class="nm" colspan="2">항목합계</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr></tfoot></table>
+    <div class="sheet-foot">※ 금액이 적힌 칸이 청구, 반환은 (−)로 표시됩니다.</div>
   </div>`;
 }
 
@@ -2193,7 +2231,7 @@ async function imageAllSheet(){
 window.imageAllSheet = imageAllSheet;
 
 const ALLSHEET_CSS = `
-.sheet-tbl .grow .gcell{background:#3a4a80;color:#fff;font-weight:800;text-align:left;padding:4px 10px;font-size:11px;}
+.sheet-tbl .grpcell{background:#e4ede8;color:#1b4332;font-weight:800;font-size:10px;line-height:1.3;vertical-align:middle;border-color:#cdddd4;}
 `;
 
 function setAllGroup(g){
@@ -2251,46 +2289,46 @@ function renderAllSheet(){
     let cur=null, cnt=0;
     items.forEach(e=>{ const g=groupKey(e); if(g===cur){cnt++;} else { if(cur!==null) spans.push({g:cur,c:cnt}); cur=g; cnt=1; } });
     if(cur!==null) spans.push({g:cur,c:cnt});
-    groupHeaderRow = `<tr style="background:var(--goldd);color:#fff">
-      <th style="padding:6px 10px;text-align:left;position:sticky;left:0;background:var(--goldd);z-index:3">${allSheetGroupBy==='teacher'?'선생님':'과목'}</th>
+    groupHeaderRow = `<tr style="background:#1d4d3d;color:#fff">
+      <th style="padding:6px 10px;text-align:center;position:sticky;left:0;background:#1d4d3d;z-index:3">${allSheetGroupBy==='teacher'?'선생님':'과목'}</th>
       ${spans.map(sp=>`<th colspan="${sp.c}" style="padding:6px 10px;text-align:center;border-left:2px solid rgba(255,255,255,.3);font-weight:800">${esc(sp.g)} <span style="font-size:10px;opacity:.8;font-weight:400">(${sp.c})</span></th>`).join('')}
-      <th style="position:sticky;right:0;background:var(--goldd)"></th>
+      <th style="position:sticky;right:0;background:#1d4d3d"></th>
     </tr>`;
   }
 
   // 영수증 열람 행
-  const receiptRow = `<tr style="background:#eef0f8">
-    <th style="padding:5px 10px;text-align:left;position:sticky;left:0;background:#eef0f8;z-index:3;font-size:11px;color:var(--ts)">🧾 영수증</th>
-    ${items.map(e=>`<th style="padding:5px 6px;text-align:center;border-left:1px solid var(--ivd)">${e.receiptCount?`<button class="bm" style="padding:3px 8px;font-size:11px" onclick="openReceiptsOf('${e.id}','${esc((e.subject||'').replace(/'/g,"\\'"))}')">${e.receiptCount}장 보기</button>`:'<span style="font-size:10px;color:var(--tl)">없음</span>'}</th>`).join('')}
-    <th style="position:sticky;right:0;background:#eef0f8"></th>
+  const receiptRow = `<tr style="background:#e9f0ec">
+    <th style="padding:5px 10px;text-align:center;position:sticky;left:0;background:#e9f0ec;z-index:3;font-size:11px;color:#5a7267">🧾 영수증</th>
+    ${items.map(e=>`<th style="padding:5px 6px;text-align:center;border-left:1px solid #e2e8e5">${e.receiptCount?`<button class="bm" style="padding:3px 8px;font-size:11px" onclick="openReceiptsOf('${e.id}','${esc((e.subject||'').replace(/'/g,"\\'"))}')">${e.receiptCount}장 보기</button>`:'<span style="font-size:10px;color:var(--tl)">없음</span>'}</th>`).join('')}
+    <th style="position:sticky;right:0;background:#e9f0ec"></th>
   </tr>`;
 
   // 항목 헤더(과목/담당/신청일/세부/1인당)
   const headRows = `
-    <tr style="background:var(--gd);color:#fff">
-      <th style="padding:7px 10px;text-align:left;position:sticky;left:0;background:var(--gd);z-index:3;min-width:110px">과목</th>
+    <tr style="background:#2d6a4f;color:#fff">
+      <th style="padding:7px 10px;text-align:center;position:sticky;left:0;background:#2d6a4f;z-index:3;min-width:110px">과목</th>
       ${items.map(e=>`<th style="padding:7px 10px;text-align:center;min-width:116px;border-left:1px solid rgba(255,255,255,.15);font-weight:800">${esc(e.subject)}${e.mode==='refund'?' <span style="font-size:10px;font-weight:400">(반환)</span>':''}</th>`).join('')}
-      <th style="padding:7px 10px;text-align:right;min-width:88px;border-left:2px solid rgba(255,255,255,.3);position:sticky;right:0;background:var(--gd)">개인합계</th>
+      <th style="padding:7px 10px;text-align:center;min-width:88px;border-left:2px solid rgba(255,255,255,.3);position:sticky;right:0;background:#1d4d3d">개인합계</th>
     </tr>
-    <tr style="background:#2a3a68;color:#fff">
-      <th style="padding:4px 10px;text-align:left;position:sticky;left:0;background:#2a3a68;z-index:3;font-size:11px">담당</th>
-      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.12);font-weight:400;font-size:11px">${esc(e.teacher||'-')}</th>`).join('')}
-      <th style="position:sticky;right:0;background:#2a3a68"></th>
+    <tr style="background:#f4f8f6;color:#5a7267">
+      <th style="padding:4px 10px;text-align:center;position:sticky;left:0;background:#f4f8f6;z-index:3;font-size:11px;font-weight:600">담당</th>
+      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid #e2e8e5;font-weight:400;font-size:11px">${esc(e.teacher||'-')}</th>`).join('')}
+      <th style="position:sticky;right:0;background:#f4f8f6"></th>
     </tr>
-    <tr style="background:#2a3a68;color:#fff">
-      <th style="padding:4px 10px;text-align:left;position:sticky;left:0;background:#2a3a68;z-index:3;font-size:11px">신청일</th>
-      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.12);font-weight:400;font-size:10.5px;opacity:.85">${esc(e.date||'-')}</th>`).join('')}
-      <th style="position:sticky;right:0;background:#2a3a68"></th>
+    <tr style="background:#f4f8f6;color:#5a7267">
+      <th style="padding:4px 10px;text-align:center;position:sticky;left:0;background:#f4f8f6;z-index:3;font-size:11px;font-weight:600">신청일</th>
+      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid #e2e8e5;font-weight:400;font-size:10.5px">${esc(e.date||'-')}</th>`).join('')}
+      <th style="position:sticky;right:0;background:#f4f8f6"></th>
     </tr>
-    <tr style="background:#2a3a68;color:#fff">
-      <th style="padding:4px 10px;text-align:left;position:sticky;left:0;background:#2a3a68;z-index:3;font-size:11px">세부내용</th>
-      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.12);font-weight:400;font-size:10.5px;opacity:.85">${esc(e.items||'')}${e.detail?`<div style="opacity:.7">${esc(e.detail)}</div>`:''}</th>`).join('')}
-      <th style="position:sticky;right:0;background:#2a3a68"></th>
+    <tr style="background:#f4f8f6;color:#5a7267">
+      <th style="padding:4px 10px;text-align:center;position:sticky;left:0;background:#f4f8f6;z-index:3;font-size:11px;font-weight:600">세부내용</th>
+      ${items.map(e=>`<th style="padding:4px 10px;text-align:center;border-left:1px solid #e2e8e5;font-weight:400;font-size:10.5px">${esc(e.items||'')}${e.detail?`<div style="opacity:.75">${esc(e.detail)}</div>`:''}</th>`).join('')}
+      <th style="position:sticky;right:0;background:#f4f8f6"></th>
     </tr>
-    <tr style="background:#3a4a80;color:#fff">
-      <th style="padding:5px 10px;text-align:left;position:sticky;left:0;background:#3a4a80;z-index:3;font-size:11px">이름 \\ 1인당</th>
-      ${items.map(e=>`<th style="padding:5px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.12);font-weight:700;font-size:11.5px">${e.mode==='refund'?'↩️ ':''}₩${won(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0))}${e.mode==='equal'?'/인':''}</th>`).join('')}
-      <th style="position:sticky;right:0;background:#3a4a80"></th>
+    <tr style="background:#e9f0ec;color:#3a5a48">
+      <th style="padding:5px 10px;text-align:center;position:sticky;left:0;background:#e9f0ec;z-index:3;font-size:11px;font-weight:700">이름 \\ 1인당</th>
+      ${items.map(e=>`<th style="padding:5px 10px;text-align:center;border-left:1px solid #e2e8e5;font-weight:700;font-size:11.5px">${e.mode==='refund'?'↩️ ':''}₩${won(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0))}${e.mode==='equal'?'/인':''}</th>`).join('')}
+      <th style="position:sticky;right:0;background:#e9f0ec"></th>
     </tr>`;
 
   // 학년 그룹별 학생 행
@@ -2300,38 +2338,38 @@ function renderAllSheet(){
     // 학년 소계
     const gradeItemTotals = items.map(e=> studs.reduce((t,s)=>t+(amtOf(e,s.id)||0),0));
     const gradeGrand = gradeItemTotals.reduce((a,b)=>a+b,0);
-    const headerTr = `<tr style="background:var(--gp);cursor:pointer" onclick="toggleGradeRow('${gk.replace(/'/g,"\\'")}')">
-      <td style="padding:7px 10px;font-weight:800;color:var(--gm);position:sticky;left:0;background:var(--gp);z-index:2">
+    const headerTr = `<tr style="background:#e4ede8;cursor:pointer" onclick="toggleGradeRow('${gk.replace(/'/g,"\\'")}')">
+      <td style="padding:7px 10px;font-weight:800;color:#1b4332;position:sticky;left:0;background:#e4ede8;z-index:2;text-align:left">
         <span style="display:inline-block;transition:transform .2s;transform:rotate(${open?90:0}deg)">▶</span> ${esc(gk)} <span style="font-size:11px;color:var(--tl);font-weight:400">(${studs.length}명)</span>
       </td>
-      ${gradeItemTotals.map(t=>`<td style="padding:7px 10px;text-align:center;border-left:1px solid var(--ivd);font-size:11px;color:var(--ts)">${t?'₩'+won(Math.abs(t)):''}</td>`).join('')}
-      <td style="padding:7px 10px;text-align:right;font-weight:800;color:var(--goldd);border-left:2px solid var(--ivd);position:sticky;right:0;background:var(--gp)">₩${won(gradeGrand)}</td>
+      ${gradeItemTotals.map(t=>`<td style="padding:7px 10px;text-align:center;border-left:1px solid #e2e8e5;font-size:11px;color:#5a7267">${t?'₩'+won(Math.abs(t)):''}</td>`).join('')}
+      <td style="padding:7px 10px;text-align:center;font-weight:900;color:#8a6410;background:#f7efd8;border-left:2px solid #e2e8e5;position:sticky;right:0">₩${won(gradeGrand)}</td>
     </tr>`;
     if(!open) return headerTr;
     const studentTrs = studs.map((s,ri)=>{
       let sum=0;
+      const rowbg = ri%2?'#fafbfc':'#fff';
       const cells = items.map(e=>{
         const a = amtOf(e,s.id);
-        if(a===null) return `<td style="padding:6px 10px;text-align:center;color:#d0d0d8;border-left:1px solid var(--ivd)">·</td>`;
+        if(a===null) return `<td style="padding:6px 10px;text-align:center;color:#d0d8d3;border-left:1px solid #e2e8e5;background:${rowbg}">·</td>`;
         sum+=a; const isRef=a<0;
-        return `<td style="padding:6px 10px;text-align:center;border-left:1px solid var(--ivd);background:${isRef?'#e6f7f4':'#f7f9ff'}">
-          <span style="color:${isRef?'#0d9488':'var(--gm)'};font-weight:700">✓</span>
-          <div style="font-size:10.5px;color:${isRef?'#0d9488':'var(--gm)'}">${isRef?'−':''}₩${won(Math.abs(a))}</div></td>`;
+        return `<td style="padding:6px 10px;text-align:center;border-left:1px solid #e2e8e5;background:${isRef?'#eef6f3':rowbg}">
+          <span style="font-size:11px;color:${isRef?'#4a7a68':'#6b8579'};font-weight:500">${isRef?'−':''}₩${won(Math.abs(a))}</span></td>`;
       }).join('');
-      return `<tr style="border-bottom:1px solid var(--ivd);background:${ri%2?'#fafbfc':'#fff'}">
-        <td style="padding:6px 10px 6px 26px;font-weight:600;color:var(--gd);position:sticky;left:0;background:${ri%2?'#fafbfc':'#fff'};z-index:1">${esc(s.name)} <span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
+      return `<tr>
+        <td style="padding:6px 10px 6px 26px;font-weight:600;color:#1b4332;position:sticky;left:0;background:${rowbg};z-index:1;text-align:left">${esc(s.name)} <span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
         ${cells}
-        <td style="padding:6px 10px;text-align:right;font-weight:800;color:var(--goldd);border-left:2px solid var(--ivd);position:sticky;right:0;background:${ri%2?'#fafbfc':'#fff'}">₩${won(sum)}</td>
+        <td style="padding:6px 10px;text-align:center;font-weight:900;color:#8a6410;background:#f7efd8;border-left:2px solid #e2e8e5;position:sticky;right:0">₩${won(sum)}</td>
       </tr>`;
     }).join('');
     return headerTr + studentTrs;
   }).join('');
 
   // 전체 항목 합계
-  const footTr = `<tr style="background:var(--gd);color:#fff;font-weight:800">
-    <td style="padding:8px 10px;position:sticky;left:0;background:var(--gd);z-index:2">전체 합계</td>
-    ${items.map(e=>{ const t=allStudents.reduce((tt,s)=>tt+(amtOf(e,s.id)||0),0); return `<td style="padding:8px 10px;text-align:center;border-left:1px solid rgba(255,255,255,.2)">₩${won(Math.abs(t))}</td>`; }).join('')}
-    <td style="padding:8px 10px;text-align:right;border-left:2px solid rgba(255,255,255,.3);position:sticky;right:0;background:var(--gd)">₩${won(allStudents.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
+  const footTr = `<tr style="background:#eef4f1;color:#1b4332;font-weight:800">
+    <td style="padding:8px 10px;position:sticky;left:0;background:#eef4f1;z-index:2;text-align:left">전체 합계</td>
+    ${items.map(e=>{ const t=allStudents.reduce((tt,s)=>tt+(amtOf(e,s.id)||0),0); return `<td style="padding:8px 10px;text-align:center;border-left:1px solid #d5e2db;color:#2f5c48">₩${won(Math.abs(t))}</td>`; }).join('')}
+    <td style="padding:8px 10px;text-align:center;border-left:2px solid #d5e2db;position:sticky;right:0;background:#f0e4c4;color:#8a6410;font-weight:900">₩${won(allStudents.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
   </tr>`;
 
   box.innerHTML = `<table style="border-collapse:collapse;font-size:12px;min-width:100%">
