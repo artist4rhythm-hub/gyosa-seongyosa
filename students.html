@@ -137,6 +137,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
   <div class="subtb" id="sub-tabs">
     <button class="subtbtn active" id="st-all" onclick="showStudentTab('all')">📋 전체 목록</button>
     <button class="subtbtn" id="st-roster" onclick="showStudentTab('roster')">📊 재학생 명단</button>
+    <button class="subtbtn" id="st-extract" onclick="showStudentTab('extract')">🔍 명단 추출</button>
     <button class="subtbtn" id="st-stat" onclick="showStudentTab('stat')">📈 재적 통계</button>
     <button class="subtbtn" id="st-birth" onclick="showStudentTab('birth')">🎂 생일 명단</button>
     <button class="subtbtn" id="st-contact" onclick="showStudentTab('contact')">📞 연락처</button>
@@ -249,6 +250,7 @@ onAuthStateChanged(auth, async (user) => {
 
 // ── 메인 화면 ──
 let CLASSES = [];   // 반편성 (학생 학년 정보용)
+let STAFF = [];     // 교직원 (담임 이름 조회용)
 let studentTab = 'all';
 
 async function loadClasses(){
@@ -256,7 +258,15 @@ async function loadClasses(){
     const snap = await getDocs(collection(db,'classes'));
     CLASSES = []; snap.forEach(d=>CLASSES.push({id:d.id, ...d.data()}));
   } catch(e){ CLASSES = []; }
+  try {
+    const st = await getDocs(collection(db,'staff'));
+    STAFF = []; st.forEach(d=>STAFF.push({uid:d.id, ...d.data()}));
+  } catch(e){ STAFF = []; }
 }
+// 학생이 속한 반 객체
+function studentClass(sid){ return CLASSES.find(c=>(c.students||[]).includes(sid)) || null; }
+// 반의 담임 이름
+function classTeacherName(c){ if(!c||!c.teacherUid) return ''; const t=STAFF.find(s=>s.uid===c.teacherUid); return t?t.name:''; }
 
 // 학생의 현재 학년 찾기 (반편성 grades 기준). 없으면 ''
 function studentGrade(sid){
@@ -277,6 +287,7 @@ function showStudentTab(t){
   $I('st-'+t)?.classList.add('active');
   if(t==='all') renderMain();
   else if(t==='roster') renderRoster();
+  else if(t==='extract') renderExtract();
   else if(t==='stat') renderStat();
   else if(t==='birth') renderBirth();
   else if(t==='contact') renderContact();
@@ -717,6 +728,352 @@ function setContactOrg(){ contactOrg = $I('ct-org').value; contactGrade=''; rend
 window.setContactOrg = setContactOrg;
 function setContactGrade(){ contactGrade = $I('ct-grade').value; renderContact(); }
 window.setContactGrade = setContactGrade;
+
+// ══════════ 🔍 명단 추출 (필터 + 그룹핑 + 집계 + 담임) ══════════
+let exFilter = { orgs:[], depts:[], grades:[], genders:[], status:'active' };
+let exGroupBy = 'grade';   // grade | dept | gender | class | org | none
+
+function renderExtract(){
+  const myo = myOrgs();
+  // 선택 가능한 학년 목록 (재학생 기준)
+  const allGrades = Array.from(new Set(STUDENTS.map(s=>studentGrade(s.id)).filter(Boolean)))
+    .sort((a,b)=>(parseInt(a)||99)-(parseInt(b)||99)||a.localeCompare(b,'ko'));
+
+  const orgChips2 = myo.map(o=>`<button class="ex-chip${exFilter.orgs.includes(o)?' on':''}" onclick="exToggle('orgs','${o}')">${ORGS[o]||o}</button>`).join('');
+  const deptChips = ['초등부','중등부','고등부'].map(d=>`<button class="ex-chip${exFilter.depts.includes(d)?' on':''}" onclick="exToggle('depts','${d}')">${d}</button>`).join('');
+  const gradeChips = allGrades.map(g=>`<button class="ex-chip${exFilter.grades.includes(g)?' on':''}" onclick="exToggle('grades','${g.replace(/'/g,"\\'")}')">${g}</button>`).join('') || '<span style="font-size:12px;color:var(--tl)">학년 정보 없음</span>';
+  const genderChips = ['남','여'].map(g=>`<button class="ex-chip${exFilter.genders.includes(g)?' on':''}" onclick="exToggle('genders','${g}')">${g}</button>`).join('');
+
+  const groupOpts = [['grade','학년별'],['dept','부서별'],['gender','성별'],['class','반별'],['org','기관별'],['none','묶지 않음']]
+    .map(([v,l])=>`<button class="ex-gbtn${exGroupBy===v?' on':''}" onclick="exSetGroup('${v}')">${l}</button>`).join('');
+
+  const ctrl = `
+    <div class="acard">
+      <h3 class="actitle">🔍 명단 추출</h3>
+      <p class="adesc">원하는 조건으로 재학생을 골라내고, 기준별로 묶어 인원을 집계합니다. 각 반의 담임 선생님도 함께 표시됩니다.</p>
+      <style>
+        .ex-chip{padding:6px 13px;border:1.5px solid var(--ivd);border-radius:100px;background:#fff;font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;transition:all .15s;}
+        .ex-chip:hover{border-color:var(--gm);}
+        .ex-chip.on{background:var(--gm);border-color:var(--gm);color:#fff;}
+        .ex-gbtn{padding:7px 15px;border:1.5px solid var(--ivd);border-radius:8px;background:#fff;font-size:13px;font-weight:700;color:var(--ts);cursor:pointer;}
+        .ex-gbtn.on{background:var(--gd);border-color:var(--gd);color:#fff;}
+        .ex-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 14px;}
+        .ex-lbl{font-size:12.5px;font-weight:800;color:var(--gd);min-width:52px;}
+      </style>
+      <div class="ex-row"><span class="ex-lbl">기관</span>${orgChips2}</div>
+      <div class="ex-row"><span class="ex-lbl">부서</span>${deptChips}</div>
+      <div class="ex-row"><span class="ex-lbl">학년</span>${gradeChips}</div>
+      <div class="ex-row"><span class="ex-lbl">성별</span>${genderChips}</div>
+      <div class="ex-row"><span class="ex-lbl">상태</span>
+        <button class="ex-chip${exFilter.status==='active'?' on':''}" onclick="exSetStatus('active')">재학</button>
+        <button class="ex-chip${exFilter.status==='leave'?' on':''}" onclick="exSetStatus('leave')">휴학</button>
+        <button class="ex-chip${exFilter.status==='all'?' on':''}" onclick="exSetStatus('all')">전체</button>
+      </div>
+      <div style="border-top:1px solid var(--ivd);margin:10px 0;padding-top:12px">
+        <div class="ex-row"><span class="ex-lbl">묶기</span>${groupOpts}
+          <button class="ex-chip" style="margin-left:auto" onclick="exReset()">↺ 초기화</button>
+        </div>
+      </div>
+    </div>
+    <div id="ex-result"></div>`;
+  $I('main-body').innerHTML = ctrl;
+  renderExtractResult();
+}
+window.renderExtract = renderExtract;
+
+function exToggle(field, val){
+  const arr = exFilter[field];
+  const i = arr.indexOf(val);
+  if(i>=0) arr.splice(i,1); else arr.push(val);
+  renderExtract();
+}
+window.exToggle = exToggle;
+function exSetStatus(s){ exFilter.status=s; renderExtract(); }
+window.exSetStatus = exSetStatus;
+function exSetGroup(g){ exGroupBy=g; renderExtractResult(); }
+window.exSetGroup = exSetGroup;
+function exReset(){ exFilter={orgs:[],depts:[],grades:[],genders:[],status:'active'}; exGroupBy='grade'; renderExtract(); }
+window.exReset = exReset;
+
+// 현재 필터로 걸러진 학생 목록
+function exGetFiltered(){
+  return STUDENTS.filter(s=>{
+    const st = s.status||'active';
+    if(exFilter.status!=='all' && st!==exFilter.status) return false;
+    if(exFilter.orgs.length && !exFilter.orgs.includes(s.org)) return false;
+    const g = studentGrade(s.id);
+    if(exFilter.depts.length){ const d=gradeToDept(g); if(!exFilter.depts.includes(d)) return false; }
+    if(exFilter.grades.length && !exFilter.grades.includes(g)) return false;
+    if(exFilter.genders.length && !exFilter.genders.includes(s.gender)) return false;
+    return true;
+  });
+}
+
+// 그룹 키/라벨
+function exGroupKeyLabel(s){
+  const g = studentGrade(s.id);
+  switch(exGroupBy){
+    case 'grade': return { k: g||'zzz미지정', label: g||'학년 미지정' };
+    case 'dept': { const d=gradeToDept(g)||'zz기타'; return { k:d, label:gradeToDept(g)||'부서 미지정' }; }
+    case 'gender': return { k: s.gender||'z', label: s.gender||'미지정' };
+    case 'class': { const c=studentClass(s.id); return { k: c?c.name:'zz미배정', label: c?c.name:'반 미배정' }; }
+    case 'org': return { k: s.org, label: ORGS[s.org]||s.org };
+    default: return { k:'all', label:'전체' };
+  }
+}
+
+function renderExtractResult(){
+  const box = $I('ex-result'); if(!box) return;
+  const list = exGetFiltered();
+  if(!list.length){ box.innerHTML = '<div class="acard"><p class="empty">조건에 맞는 학생이 없습니다. 필터를 조정해보세요.</p></div>'; return; }
+
+  // 그룹핑
+  const groups = {};
+  list.forEach(s=>{ const {k,label}=exGroupKeyLabel(s); if(!groups[k]) groups[k]={label,students:[]}; groups[k].students.push(s); });
+  const gKeys = Object.keys(groups).sort((a,b)=>{
+    // 학년/부서는 숫자 우선
+    const na=parseInt(groups[a].label)||999, nb=parseInt(groups[b].label)||999;
+    if(exGroupBy==='dept'){ const order={'초등부':1,'중등부':2,'고등부':3}; return (order[groups[a].label]||9)-(order[groups[b].label]||9); }
+    return na-nb || groups[a].label.localeCompare(groups[b].label,'ko');
+  });
+
+  const totM = list.filter(s=>s.gender==='남').length;
+  const totF = list.filter(s=>s.gender==='여').length;
+
+  // 요약 카드
+  let html = `<div class="acard">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+      <h3 class="actitle" style="margin:0">📋 추출 결과</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="bm" onclick="exExcel()">📊 엑셀</button>
+        <button class="bm" onclick="exImage()">🖼️ 이미지</button>
+        <button class="bm" onclick="exPDF()">🖨️ PDF</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px">
+      <div class="ex-sum" style="background:var(--gp)"><div class="ex-sn">${list.length}</div><div class="ex-sl">전체 인원</div></div>
+      <div class="ex-sum" style="background:#e6f0fb"><div class="ex-sn" style="color:#2b6cb0">${totM}</div><div class="ex-sl">남</div></div>
+      <div class="ex-sum" style="background:#fce8f3"><div class="ex-sn" style="color:#d53f8c">${totF}</div><div class="ex-sl">여</div></div>
+      <div class="ex-sum" style="background:var(--goldp)"><div class="ex-sn" style="color:var(--goldd)">${gKeys.length}</div><div class="ex-sl">그룹 수</div></div>
+    </div>
+    <style>
+      .ex-sum{padding:12px 20px;border-radius:12px;text-align:center;min-width:90px;}
+      .ex-sn{font-size:26px;font-weight:900;color:var(--gm);line-height:1;}
+      .ex-sl{font-size:11px;color:var(--ts);margin-top:4px;font-weight:600;}
+    </style>
+  </div>`;
+
+  // 그룹별 상세
+  html += `<div id="ex-sheet">`;
+  gKeys.forEach(k=>{
+    const g = groups[k];
+    const studs = g.students.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+    const m = studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
+    // 이 그룹 학생들이 속한 반들의 담임 (중복 제거)
+    const teacherSet = new Map();
+    studs.forEach(s=>{ const c=studentClass(s.id); if(c){ const tn=classTeacherName(c); if(tn) teacherSet.set(c.name+'|'+tn, {cls:c.name, t:tn}); } });
+    const teachers = [...teacherSet.values()];
+    const teacherLine = teachers.length ? teachers.map(x=> exGroupBy==='class' ? `담임 ${x.t}` : `${x.cls} ${x.t}`).join(' · ') : '담임 미지정';
+
+    html += `<div class="acard" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;border-bottom:2px solid var(--gm);padding-bottom:8px;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800;color:var(--gd)">${esc(g.label)}
+          <span style="font-size:13px;color:var(--gm);font-weight:700">${studs.length}명</span>
+          <span style="font-size:12px;color:var(--tl);font-weight:400">(남 ${m} · 여 ${f})</span>
+        </div>
+        <div style="font-size:12px;color:var(--goldd);font-weight:600">👩‍🏫 ${esc(teacherLine)}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${studs.map(s=>{
+          const gc = s.gender==='남'?'#2b6cb0':s.gender==='여'?'#d53f8c':'#888';
+          const gbg = s.gender==='남'?'#e6f0fb':s.gender==='여'?'#fce8f3':'#f0f0f0';
+          const leave = (s.status||'active')==='leave';
+          return `<span style="padding:5px 11px;border-radius:100px;background:${gbg};color:${gc};font-size:12.5px;font-weight:600;${leave?'opacity:.5;text-decoration:line-through':''}">${esc(s.name)}<span style="font-size:10px;opacity:.8"> ${s.gender||''}</span></span>`;
+        }).join('')}
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+  box.innerHTML = html;
+}
+window.renderExtractResult = renderExtractResult;
+
+// 라이브러리 동적 로드 (html2canvas, jspdf)
+function exEnsureH2C(){
+  return new Promise((resolve,reject)=>{
+    if(window.html2canvas) return resolve();
+    let sc=document.getElementById('h2c-script');
+    if(!sc){ sc=document.createElement('script'); sc.id='h2c-script'; sc.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'; document.head.appendChild(sc); }
+    const chk=setInterval(()=>{ if(window.html2canvas){clearInterval(chk);resolve();} },100);
+    setTimeout(()=>{clearInterval(chk); if(!window.html2canvas)reject(new Error('이미지 모듈 로드 실패'));},8000);
+  });
+}
+function exEnsureJsPDF(){
+  return new Promise((resolve,reject)=>{
+    if(window.jspdf&&window.jspdf.jsPDF) return resolve();
+    let sc=document.getElementById('jspdf-script');
+    if(!sc){ sc=document.createElement('script'); sc.id='jspdf-script'; sc.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; document.head.appendChild(sc); }
+    const chk=setInterval(()=>{ if(window.jspdf&&window.jspdf.jsPDF){clearInterval(chk);resolve();} },100);
+    setTimeout(()=>{clearInterval(chk); if(!(window.jspdf&&window.jspdf.jsPDF))reject(new Error('PDF 모듈 로드 실패'));},8000);
+  });
+}
+
+const exGroupLabel = () => ({grade:'학년별',dept:'부서별',gender:'성별',class:'반별',org:'기관별',none:'전체'}[exGroupBy]||'');
+
+// 필터 요약 텍스트
+function exFilterSummary(){
+  const p=[];
+  if(exFilter.orgs.length) p.push(exFilter.orgs.map(o=>ORGS[o]||o).join('·'));
+  if(exFilter.depts.length) p.push(exFilter.depts.join('·'));
+  if(exFilter.grades.length) p.push(exFilter.grades.join('·'));
+  if(exFilter.genders.length) p.push(exFilter.genders.join('·'));
+  p.push(exFilter.status==='active'?'재학':exFilter.status==='leave'?'휴학':'재학+휴학');
+  return p.join(' / ');
+}
+
+// 인쇄용 HTML 생성
+function exBuildHTML(){
+  const list = exGetFiltered();
+  const groups = {};
+  list.forEach(s=>{ const {k,label}=exGroupKeyLabel(s); if(!groups[k]) groups[k]={label,students:[]}; groups[k].students.push(s); });
+  const gKeys = Object.keys(groups).sort((a,b)=>{
+    if(exGroupBy==='dept'){ const order={'초등부':1,'중등부':2,'고등부':3}; return (order[groups[a].label]||9)-(order[groups[b].label]||9); }
+    const na=parseInt(groups[a].label)||999, nb=parseInt(groups[b].label)||999;
+    return na-nb || groups[a].label.localeCompare(groups[b].label,'ko');
+  });
+  const totM=list.filter(s=>s.gender==='남').length, totF=list.filter(s=>s.gender==='여').length;
+
+  const rows = gKeys.map(k=>{
+    const g=groups[k]; const studs=g.students.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+    const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
+    const tset=new Map();
+    studs.forEach(s=>{ const c=studentClass(s.id); if(c){ const tn=classTeacherName(c); if(tn) tset.set(c.name+'|'+tn,{cls:c.name,t:tn}); } });
+    const teachers=[...tset.values()];
+    const tline = teachers.length ? teachers.map(x=> exGroupBy==='class'?x.t:`${x.cls} ${x.t}`).join(', ') : '미지정';
+    const names = studs.map(s=>`${esc(s.name)}<span class="gd ${s.gender==='남'?'m':'f'}">${s.gender||''}</span>`).join('<span class="sep">·</span>');
+    return `<tr>
+      <td class="exg">${esc(g.label)}</td>
+      <td class="exc">${studs.length}<span class="exmf">남${m}·여${f}</span></td>
+      <td class="ext">${esc(tline)}</td>
+      <td class="exn">${names}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="ex-doc">
+    <div class="ex-head">
+      <div class="ex-title">재학생 명단 추출</div>
+      <div class="ex-sub">${esc(exFilterSummary())} · ${exGroupLabel()} 묶기</div>
+    </div>
+    <div class="ex-total">전체 <b>${list.length}명</b> (남 ${totM} · 여 ${totF}) · ${gKeys.length}개 그룹</div>
+    <table class="ex-tbl">
+      <thead><tr><th style="width:90px">그룹</th><th style="width:76px">인원</th><th style="width:150px">담임</th><th>명단</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="ex-foot">추출일 ${todayStr()} · 다니엘 아마츠 · 지혜빛</div>
+  </div>`;
+}
+
+const EX_CSS = `
+.ex-doc{background:#fff;color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;width:960px;padding:34px;box-sizing:border-box;}
+.ex-head{text-align:center;margin-bottom:8px;}
+.ex-title{font-size:22px;font-weight:800;color:#1b4332;}
+.ex-sub{font-size:12.5px;color:#8ba396;margin-top:6px;}
+.ex-total{text-align:center;font-size:13px;color:#2f5c48;margin-bottom:16px;font-weight:600;}
+.ex-total b{color:#1b4332;font-size:15px;}
+.ex-tbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
+.ex-tbl th,.ex-tbl td{border:1px solid #d9e2dd;padding:8px 9px;vertical-align:middle;word-break:break-word;}
+.ex-tbl thead th{background:#2d6a4f;color:#fff;font-weight:700;text-align:center;}
+.ex-tbl .exg{background:#eef4f1;font-weight:800;color:#1b4332;text-align:center;}
+.ex-tbl .exc{text-align:center;font-weight:800;color:#8a6410;background:#faf6ec;}
+.ex-tbl .exc .exmf{display:block;font-size:9.5px;color:#96865a;font-weight:500;margin-top:2px;}
+.ex-tbl .ext{font-size:11px;color:#4a6357;text-align:center;background:#f7faf8;}
+.ex-tbl .exn{line-height:1.9;}
+.ex-tbl .exn .gd{font-size:9px;margin-left:2px;padding:1px 4px;border-radius:6px;}
+.ex-tbl .exn .gd.m{background:#e6f0fb;color:#2b6cb0;}
+.ex-tbl .exn .gd.f{background:#fce8f3;color:#d53f8c;}
+.ex-tbl .exn .sep{color:#cfd8d3;margin:0 5px;}
+.ex-foot{text-align:center;font-size:10.5px;color:#a8b5ac;margin-top:14px;}
+`;
+
+async function exImage(){
+  const list=exGetFiltered(); if(!list.length){ toast('추출된 명단이 없습니다.','err'); return; }
+  window.showLoading && window.showLoading('이미지를 만드는 중…');
+  try{
+    await exEnsureH2C();
+    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;';
+    holder.innerHTML=`<style>${EX_CSS}</style>`+exBuildHTML();
+    document.body.appendChild(holder);
+    const node=holder.querySelector('.ex-doc');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+    document.body.removeChild(holder);
+    const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`명단추출_${exGroupLabel()}_${todayStr()}.png`; a.click();
+    window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
+  }catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.exImage = exImage;
+
+async function exPDF(){
+  const list=exGetFiltered(); if(!list.length){ toast('추출된 명단이 없습니다.','err'); return; }
+  window.showLoading && window.showLoading('PDF를 만드는 중…');
+  try{
+    await exEnsureH2C(); await exEnsureJsPDF();
+    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;';
+    holder.innerHTML=`<style>${EX_CSS}</style>`+exBuildHTML();
+    document.body.appendChild(holder);
+    const node=holder.querySelector('.ex-doc');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+    document.body.removeChild(holder);
+    const { jsPDF }=window.jspdf;
+    const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), margin=8;
+    const iw=pw-margin*2, ih=canvas.height*iw/canvas.width;
+    const img=canvas.toDataURL('image/jpeg',0.92);
+    if(ih<=ph-margin*2){ pdf.addImage(img,'JPEG',margin,margin,iw,ih); }
+    else { let rem=canvas.height,pos=0; const pageH=Math.floor(canvas.width*(ph-margin*2)/iw);
+      while(rem>0){ const sl=document.createElement('canvas'); sl.width=canvas.width; sl.height=Math.min(pageH,rem);
+        sl.getContext('2d').drawImage(canvas,0,pos,canvas.width,sl.height,0,0,canvas.width,sl.height);
+        const sh=sl.height*iw/canvas.width; if(pos>0)pdf.addPage(); pdf.addImage(sl.toDataURL('image/jpeg',0.92),'JPEG',margin,margin,iw,sh);
+        rem-=sl.height; pos+=sl.height; } }
+    pdf.save(`명단추출_${exGroupLabel()}_${todayStr()}.pdf`);
+    window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
+  }catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.exPDF = exPDF;
+
+function exExcel(){
+  const list=exGetFiltered(); if(!list.length){ toast('추출된 명단이 없습니다.','err'); return; }
+  try{
+    const groups={};
+    list.forEach(s=>{ const {k,label}=exGroupKeyLabel(s); if(!groups[k]) groups[k]={label,students:[]}; groups[k].students.push(s); });
+    const gKeys=Object.keys(groups).sort((a,b)=>{
+      if(exGroupBy==='dept'){ const o={'초등부':1,'중등부':2,'고등부':3}; return (o[groups[a].label]||9)-(o[groups[b].label]||9); }
+      const na=parseInt(groups[a].label)||999,nb=parseInt(groups[b].label)||999; return na-nb||groups[a].label.localeCompare(groups[b].label,'ko');
+    });
+    const wb=XLSX.utils.book_new();
+    // 시트1: 그룹 요약
+    const sum=[['그룹','인원','남','여','담임']];
+    gKeys.forEach(k=>{ const g=groups[k]; const studs=g.students;
+      const m=studs.filter(s=>s.gender==='남').length,f=studs.filter(s=>s.gender==='여').length;
+      const tset=new Map(); studs.forEach(s=>{ const c=studentClass(s.id); if(c){const tn=classTeacherName(c); if(tn)tset.set(c.name+'|'+tn,`${c.name} ${tn}`);} });
+      sum.push([g.label, studs.length, m, f, [...tset.values()].join(', ')||'미지정']);
+    });
+    const tm=list.filter(s=>s.gender==='남').length, tf=list.filter(s=>s.gender==='여').length;
+    sum.push(['합계', list.length, tm, tf, '']);
+    const ws1=XLSX.utils.aoa_to_sheet(sum); ws1['!cols']=[{wch:14},{wch:8},{wch:6},{wch:6},{wch:30}];
+    XLSX.utils.book_append_sheet(wb, ws1, '그룹 요약');
+    // 시트2: 전체 명단
+    const det=[['그룹','이름','성별','기관','학년','반','담임','상태']];
+    gKeys.forEach(k=>{ const g=groups[k]; g.students.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko')).forEach(s=>{
+      const c=studentClass(s.id);
+      det.push([g.label, s.name, s.gender||'', ORGS[s.org]||s.org, studentGrade(s.id)||'', c?c.name:'', c?classTeacherName(c):'', (s.status||'active')==='leave'?'휴학':'재학']);
+    }); });
+    const ws2=XLSX.utils.aoa_to_sheet(det); ws2['!cols']=[{wch:12},{wch:10},{wch:6},{wch:12},{wch:8},{wch:10},{wch:8},{wch:6}];
+    XLSX.utils.book_append_sheet(wb, ws2, '전체 명단');
+    XLSX.writeFile(wb, `명단추출_${exGroupLabel()}_${todayStr()}.xlsx`);
+    toast('엑셀 파일을 저장했습니다.','ok');
+  }catch(e){ toast('엑셀 생성 실패: '+(e.message||''),'err'); }
+}
+window.exExcel = exExcel;
 
 function downloadContactExcel(){
   let list = STUDENTS.filter(s=>(s.status||'active')==='active');
