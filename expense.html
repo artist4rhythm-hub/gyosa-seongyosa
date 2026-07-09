@@ -2227,19 +2227,52 @@ async function printReceiptCollection(){
     holder.innerHTML = `<style>${RCCOL_CSS}</style>` + await buildReceiptCollectionHTML(withReceipts);
     document.body.appendChild(holder);
     const node=holder.querySelector('.rc-doc');
-    // 이미지 로드 대기
     await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
     const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
-    document.body.removeChild(holder);
+
     const { jsPDF }=window.jspdf;
     const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), margin=6;
     const iw=pw-margin*2;
-    let rem=canvas.height, pos=0; const pageH=Math.floor(canvas.width*(ph-margin*2)/iw);
-    while(rem>0){ const sl=document.createElement('canvas'); sl.width=canvas.width; sl.height=Math.min(pageH,rem);
-      sl.getContext('2d').drawImage(canvas,0,pos,canvas.width,sl.height,0,0,canvas.width,sl.height);
-      const sh=sl.height*iw/canvas.width; if(pos>0)pdf.addPage(); pdf.addImage(sl.toDataURL('image/jpeg',0.9),'JPEG',margin,margin,iw,sh);
-      rem-=sl.height; pos+=sl.height; }
+    const scale = canvas.width / node.offsetWidth;    // DOM px → canvas px 비율
+    const pageH = Math.floor(canvas.width*(ph-margin*2)/iw);   // 한 페이지 canvas 높이
+
+    // 카드(및 헤더)의 경계 위치를 canvas 좌표로 수집 → 이 지점에서만 페이지를 끊음
+    const docTop = node.getBoundingClientRect().top;
+    const breakEls = [...node.querySelectorAll('.rc-card')];
+    // 각 카드의 시작 y (canvas 좌표)
+    const cardTops = breakEls.map(el => Math.round((el.getBoundingClientRect().top - docTop) * scale));
+
+    document.body.removeChild(holder);
+
+    // 페이지 경계 계산: pos부터 pageH를 넘지 않는 선에서, 카드 경계에 맞춰 자름
+    const slices = [];
+    let pos = 0;
+    const total = canvas.height;
+    while(pos < total){
+      let end = pos + pageH;
+      if(end >= total){ end = total; }
+      else {
+        // pos~end 사이에 걸치는 카드 경계 중, end보다 작은 마지막 경계로 end를 당김
+        // (카드가 페이지 중간에서 시작해 넘어가면, 그 카드 시작에서 끊어 다음 페이지로)
+        const candidates = cardTops.filter(t => t > pos + 10 && t < end);
+        if(candidates.length){
+          const cut = Math.max(...candidates);
+          // 너무 짧게 잘리는 것 방지 (페이지의 15% 이상은 채우게)
+          if(cut - pos > pageH*0.15) end = cut;
+        }
+      }
+      slices.push({ y:pos, h:end-pos });
+      pos = end;
+    }
+
+    slices.forEach((sl,i)=>{
+      const c=document.createElement('canvas'); c.width=canvas.width; c.height=sl.h;
+      c.getContext('2d').drawImage(canvas,0,sl.y,canvas.width,sl.h,0,0,canvas.width,sl.h);
+      const sh=sl.h*iw/canvas.width;
+      if(i>0) pdf.addPage();
+      pdf.addImage(c.toDataURL('image/jpeg',0.9),'JPEG',margin,margin,iw,sh);
+    });
     pdf.save(`영수증취합_${semKor(reportSem)}.pdf`);
     window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
