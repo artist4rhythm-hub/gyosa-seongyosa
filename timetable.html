@@ -555,6 +555,93 @@
 
 <script>
 /* ============================================================
+   터치 드래그 지원 (iPad/폰) — HTML5 Drag&Drop을 터치로 에뮬레이트
+   기존 draggable/ondragstart/ondrop 코드를 그대로 두고,
+   터치 기기에서 손가락 드래그를 마우스 드래그처럼 변환한다.
+   ============================================================ */
+(function enableTouchDnD(){
+  if(!('ontouchstart' in window)) return;  // 터치 기기에서만 작동
+  let dragEl=null, ghost=null, lastOver=null, started=false, startX=0, startY=0, dt=null;
+
+  // 간이 DataTransfer (기존 코드가 effectAllowed/setData 호출해도 오류 안 나게)
+  function mkDT(){ const store={}; return {
+    effectAllowed:'', dropEffect:'', 
+    setData:(k,v)=>{store[k]=v;}, getData:k=>store[k]||'', 
+    setDragImage:()=>{}, types:[] }; }
+
+  function fire(el, type, cx, cy){
+    if(!el) return;
+    const ev = new Event(type, {bubbles:true, cancelable:true});
+    ev.clientX=cx; ev.clientY=cy; ev.dataTransfer=dt;
+    // preventDefault 호출돼도 안전
+    el.dispatchEvent(ev);
+    return ev;
+  }
+  function elUnder(x,y){
+    if(ghost) ghost.style.display='none';
+    const el=document.elementFromPoint(x,y);
+    if(ghost) ghost.style.display='';
+    return el;
+  }
+  // draggable 조상 찾기
+  function draggableAncestor(el){
+    while(el && el!==document.body){
+      if(el.getAttribute && el.getAttribute('draggable')==='true') return el;
+      el=el.parentElement;
+    }
+    return null;
+  }
+
+  document.addEventListener('touchstart', e=>{
+    const t=e.touches[0];
+    const dg=draggableAncestor(document.elementFromPoint(t.clientX,t.clientY));
+    if(!dg) return;
+    dragEl=dg; started=false; startX=t.clientX; startY=t.clientY;
+  }, {passive:false});
+
+  document.addEventListener('touchmove', e=>{
+    if(!dragEl) return;
+    const t=e.touches[0];
+    const dx=t.clientX-startX, dy=t.clientY-startY;
+    if(!started){
+      if(Math.abs(dx)<8 && Math.abs(dy)<8) return;  // 살짝 움직임은 무시(탭/스크롤 보존)
+      // 드래그 시작
+      started=true;
+      dt=mkDT();
+      fire(dragEl,'dragstart',t.clientX,t.clientY);
+      // 고스트 이미지 생성
+      const r=dragEl.getBoundingClientRect();
+      ghost=dragEl.cloneNode(true);
+      ghost.style.cssText=`position:fixed;left:0;top:0;width:${r.width}px;height:${r.height}px;pointer-events:none;opacity:.8;z-index:99999;transform:translate(${r.left}px,${r.top}px);box-shadow:0 6px 20px rgba(0,0,0,.25);border-radius:8px;`;
+      document.body.appendChild(ghost);
+    }
+    e.preventDefault();  // 스크롤 방지 (드래그 중)
+    // 고스트 따라오기
+    if(ghost){ const r=dragEl.getBoundingClientRect(); ghost.style.transform=`translate(${t.clientX-r.width/2}px,${t.clientY-r.height/2}px)`; }
+    // 아래 요소에 dragover/dragenter/dragleave 발생
+    const over=elUnder(t.clientX,t.clientY);
+    if(over!==lastOver){
+      if(lastOver) fire(lastOver,'dragleave',t.clientX,t.clientY);
+      if(over) fire(over,'dragenter',t.clientX,t.clientY);
+      lastOver=over;
+    }
+    if(over) fire(over,'dragover',t.clientX,t.clientY);
+  }, {passive:false});
+
+  document.addEventListener('touchend', e=>{
+    if(!dragEl){ return; }
+    if(started){
+      const t=e.changedTouches[0];
+      const over=elUnder(t.clientX,t.clientY);
+      if(over){ fire(over,'drop',t.clientX,t.clientY); }
+      fire(dragEl,'dragend',t.clientX,t.clientY);
+    }
+    if(ghost){ ghost.remove(); ghost=null; }
+    dragEl=null; lastOver=null; started=false; dt=null;
+  }, {passive:false});
+})();
+
+/* ============================================================
    DATA MODEL  (Firebase 이전을 고려해 평탄한 구조로 분리)
    state = {
      departments: [{id,name,color,start}],
