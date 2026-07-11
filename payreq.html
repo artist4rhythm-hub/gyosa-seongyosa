@@ -375,7 +375,7 @@ onAuthStateChanged(auth, async (user) => {
   const anyMgr = CU.role==='super' || myOrgs().some(o=>(PAY_MANAGERS[o]||[]).includes(CU.uid));
   if(anyMgr){ ['tb-report','tb-backup'].forEach(id=>{ const t=$I(id); if(t) t.style.display=''; }); }
   // 결재자(교감·교장·부서장) → 결재함 탭
-  const isApprover = PAY_ROLES.principal===CU.uid || PAY_ROLES.vp===CU.uid || Object.values(PAY_ROLES.heads||{}).includes(CU.uid);
+  const isApprover = ['초등부장','중고등부장','행정실장','원장','교감','교장'].includes(myPosition());
   if(isApprover){ const t=$I('tb-approve'); if(t) t.style.display=''; }
   renderNew();
 });
@@ -415,11 +415,7 @@ async function loadData(){
       const me = STAFF.find(s=>s.uid===CU.uid);
       if(me && me.payBank){ prBank = { bank:me.payBank.bank||'', holder:me.payBank.holder||'', account:me.payBank.account||'' }; }
     } catch(e5){}
-    // 결재 역할 (교감·교장·부서장)
-    try {
-      const rl = await getDoc(doc(db,'payConfig','roles'));
-      if(rl.exists()){ const d=rl.data()||{}; PAY_ROLES={ vp:d.vp||'', principal:d.principal||'', heads:d.heads||{} }; }
-    } catch(e6){}
+    // 결재 직책은 전자결재와 공유 (staff.position) — 별도 설정 불필요
     // 회계(경비지급) 관리자
     try {
       const pm = await getDoc(doc(db,'payConfig','managers'));
@@ -674,51 +670,61 @@ window.pickPrReceipt = pickPrReceipt;
 function delPrReceipt(i,ri){ saveVisibleRows(); if(prRows[i]&&prRows[i].receipts) prRows[i].receipts.splice(ri,1); renderNew(); }
 window.delPrReceipt = delPrReceipt;
 
-// 제출 (1단계: 저장까지. 결재라인은 2단계에서)
-// ── 결재 라인 판정 ──
-// 직책: payConfig/roles = { vp:uid(교감), principal:uid(교장), heads:{초등부:uid,중등부:uid,행정실:uid,지혜빛:uid,...} }
-let PAY_ROLES = { vp:'', principal:'', heads:{} };
-// 신청자 직책 파악
-function myPayRole(uid, dept){
-  if(PAY_ROLES.principal===uid) return 'principal';
-  if(PAY_ROLES.vp===uid) return 'vp';
-  const heads=PAY_ROLES.heads||{};
-  for(const d in heads){ if(heads[d]===uid) return 'head:'+d; }
-  return 'teacher';
-}
-// 총액·신청자직책 → 결재 단계 배열 생성
-function buildApprovalChain(total, applicantUid, dept){
-  const role = myPayRole(applicantUid, dept);
-  const heads=PAY_ROLES.heads||{};
-  const headUid = heads[dept] || '';
-  const chain=[]; // [{step, role, uid, name, status:'pending'}]
-  const addStep=(r,uid)=>{ if(uid) chain.push({role:r, uid, name:staffName(uid), status:'pending', at:null}); };
+// ══════════ 결재 라인 (전자결재의 직책 체계 공유: staff.position) ══════════
+// 직책: 교사 / 초등부장 / 중고등부장 / 행정실장 / 교감 / 교장 / 원장
+// 부서 → 부서장 직책 (전자결재와 동일)
+const PR_DEPT_TO_POS = {'초등부':'초등부장','중등부':'중고등부장','고등부':'중고등부장','중고등부':'중고등부장','행정실':'행정실장','지혜빛':'원장','유아부':'원장'};
 
-  if(total < 50000){
-    // 5만 미만: 결재 없음 → 바로 상신
-    return { chain:[], needApproval:false };
-  }
+function staffName(uid){ const s=STAFF.find(x=>x.uid===uid); return s?s.name:''; }
+// 특정 직책을 가진 사람 찾기 (해당 기관 기준)
+function findByPosition(pos, org){
+  const cands = STAFF.filter(s=>s.position===pos);
+  if(!cands.length) return null;
+  // 기관이 맞는 사람 우선 (positionOrgs 있으면 그것 기준)
+  const inOrg = cands.find(s=>{
+    const orgs = (s.positionOrgs && s.positionOrgs.length) ? s.positionOrgs : [s.org];
+    return orgs.includes(org);
+  });
+  return inOrg || cands[0];
+}
+// 내 직책
+function myPosition(){ const me=STAFF.find(s=>s.uid===CU.uid); return (me&&me.position)||'교사'; }
+
+// 총액·신청자직책 → 결재 단계 생성
+function buildApprovalChain(total, applicantUid, dept, org){
+  const me = STAFF.find(s=>s.uid===applicantUid);
+  const myPos = (me&&me.position) || '교사';
+  const chain=[];
+  const addStep=(label,pos)=>{
+    const p=findByPosition(pos, org);
+    if(p) chain.push({ role:label, position:pos, uid:p.uid, name:p.name, status:'pending', at:null });
+  };
+
+  if(total < 50000) return { chain:[], needApproval:false };   // 5만 미만: 결재 없음
   const under20 = total < 200000;
-  // 신청자 직책별 시작점
-  if(role==='principal'){ return { chain:[], needApproval:false }; }  // 교장 신청 → 바로 상신
-  if(role==='vp'){
-    // 교감 신청: 5~20만 바로 상신 / 20만↑ 교장
+
+  // 교장: 승인 불필요
+  if(myPos==='교장') return { chain:[], needApproval:false };
+  // 교감: 5~20만 바로 상신 / 20만↑ 교장
+  if(myPos==='교감'){
     if(under20) return { chain:[], needApproval:false };
-    addStep('principal', PAY_ROLES.principal);
+    addStep('교장','교장');
     return { chain, needApproval:chain.length>0 };
   }
-  if(role.startsWith('head:')){
-    // 부서장/원장 신청: 5~20만 교감전결 / 20만↑ 교감→교장
-    addStep('vp', PAY_ROLES.vp);
-    if(!under20) addStep('principal', PAY_ROLES.principal);
+  // 부서장·원장: 교감 전결 (20만↑이면 교감→교장)
+  const isHead = ['초등부장','중고등부장','행정실장','원장'].includes(myPos);
+  if(isHead){
+    addStep('교감','교감');
+    if(!under20) addStep('교장','교장');
     return { chain, needApproval:chain.length>0 };
   }
-  // 일반 교사
-  addStep('head', headUid);   // 부서장
-  if(!under20){ addStep('vp', PAY_ROLES.vp); addStep('principal', PAY_ROLES.principal); }
+  // 일반 교사: 부서장 (20만↑이면 부서장→교감→교장)
+  const headPos = PR_DEPT_TO_POS[dept] || '';
+  if(headPos) addStep('부서장', headPos);
+  if(!under20){ addStep('교감','교감'); addStep('교장','교장'); }
   return { chain, needApproval:chain.length>0 };
 }
-function staffName(uid){ const s=STAFF.find(x=>x.uid===uid); return s?s.name:''; }
+
 
 async function submitPayReq(){
   saveVisibleRows();
@@ -738,7 +744,7 @@ async function submitPayReq(){
   // 결재 라인 (지출만)
   let chain=[], needApproval=false, status='';
   if(prMode==='expense'){
-    const r=buildApprovalChain(total, CU.uid, dept);
+    const r=buildApprovalChain(total, CU.uid, dept, prOrg);
     chain=r.chain; needApproval=r.needApproval;
     status = needApproval ? 'approving' : 'submitted';  // 승인중 / 상신완료(회계 대기)
   } else {

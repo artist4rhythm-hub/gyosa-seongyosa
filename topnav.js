@@ -15,9 +15,10 @@ const TOPNAV_GROUPS = [
     { key:'att',      label:'출근부',   icon:'📋', href:'index.html' },
     { key:'work',     label:'근무시간', icon:'⏱️', href:'work.html' },
     { key:'approval', label:'전자결재', icon:'🗂️', href:'approval.html' },
+    { key:'timetable',label:'시간표틀', icon:'🗓️', href:'timetable.html' },
+    { sep:'경비' },
     { key:'payreq',   label:'경비 지급 요청서', icon:'💳', href:'payreq.html' },
     { key:'expense',  label:'수행성 경비', icon:'💰', href:'expense.html' },
-    { key:'timetable',label:'시간표틀', icon:'🗓️', href:'timetable.html' },
   ]},
   { id:'talk', label:'소통', icon:'💬', items:[
     { key:'notice',   label:'공지',     icon:'📢', href:'index.html#notice' },
@@ -60,6 +61,7 @@ function buildTopNav(current, role){
     if(!items.length) return;
     const on = g.id===curGroup ? ' on' : '';
     const menuItems = items.map(it=>{
+      if(it.sep) return `<div class="topnav-sep">${it.sep}</div>`;
       const itOn = it.key===current ? ' style="background:#e8ecf8;color:#2b3990;font-weight:700"' : '';
       return `<a class="topnav-item" ${navItemAttr(it)}${itOn}>${it.icon} ${it.label}</a>`;
     }).join('');
@@ -83,6 +85,7 @@ function injectTopNavStyle(){
     .topnav-drop{display:none;position:absolute;top:calc(100% + 4px);left:0;background:#fff;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.18);padding:6px;min-width:160px;z-index:40;}
     .topnav-drop.open{display:block;}
     .topnav-item{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;font-size:14px;color:#374151;text-decoration:none;white-space:nowrap;cursor:pointer;}
+    .topnav-sep{margin:6px 4px 3px;padding:5px 8px 3px;border-top:1px solid #e5e7eb;font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:0.5px;}
     .topnav-item:hover{background:#f3f4f6;}
     @media(max-width:520px){
       .topnav{gap:2px;padding:8px 8px;}
