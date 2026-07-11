@@ -15,6 +15,7 @@ const TOPNAV_GROUPS = [
     { key:'att',      label:'출근부',   icon:'📋', href:'index.html' },
     { key:'work',     label:'근무시간', icon:'⏱️', href:'work.html' },
     { key:'approval', label:'전자결재', icon:'🗂️', href:'approval.html' },
+    { key:'payreq',   label:'경비 지급 요청서', icon:'💳', href:'payreq.html' },
     { key:'expense',  label:'수행성 경비', icon:'💰', href:'expense.html' },
     { key:'timetable',label:'시간표틀', icon:'🗓️', href:'timetable.html' },
   ]},
