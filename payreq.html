@@ -372,7 +372,7 @@ onAuthStateChanged(auth, async (user) => {
 
   await loadData();
   // 회계(경비지급) 관리자 or 슈퍼 → 취합·설정 탭
-  const anyMgr = CU.role==='super' || myOrgs().some(o=>(PAY_MANAGERS[o]||[]).includes(CU.uid));
+  const anyMgr = isPayManager();
   if(anyMgr){ ['tb-report','tb-backup'].forEach(id=>{ const t=$I(id); if(t) t.style.display=''; }); }
   // 결재자(교감·교장·부서장) → 결재함 탭
   const isApprover = ['초등부장','중고등부장','행정실장','원장','교감','교장'].includes(myPosition());
@@ -426,8 +426,8 @@ async function loadData(){
     // 회계(경비지급) 관리자
     try {
       const pm = await getDoc(doc(db,'payConfig','managers'));
-      PAY_MANAGERS = pm.exists() ? (pm.data()||{}) : {};
-    } catch(e7){ PAY_MANAGERS={}; }
+      PAY_MANAGERS = pm.exists() ? { list: (pm.data().list)||[] } : { list: [] };
+    } catch(e7){ PAY_MANAGERS={list:[]}; }
   } catch(e){ toast('데이터 로드 실패: '+e.message,'err'); }
   finally { window.hideLoading && window.hideLoading(); }
 }
@@ -544,7 +544,7 @@ function renderNew(){
         <div class="pr-fld"><label>소속 부서</label>
           <select id="pr-dept">
             <option value="">— 선택 —</option>
-            ${['초등부','중등부','고등부','유아부','행정실','지혜빛'].map(d=>`<option value="${d}">${d}</option>`).join('')}
+            ${PR_DEPTS(prOrg).map(d=>`<option value="${d}">${d}</option>`).join('')}
           </select>
         </div>
         <div class="pr-fld pr-full"><label>사용 용도 / 세부 내용 확인</label><input type="text" id="pr-purpose" placeholder="예: 행정실 운영 프로그램 제작용"></div>
@@ -679,8 +679,14 @@ window.delPrReceipt = delPrReceipt;
 
 // ══════════ 결재 라인 (전자결재의 직책 체계 공유: staff.position) ══════════
 // 직책: 교사 / 초등부장 / 중고등부장 / 행정실장 / 교감 / 교장 / 원장
+// 기관별 부서 목록 (행정실은 다니엘 아마츠 전용)
+const PR_ORG_DEPTS = {
+  daniel:   ['초등부','중등부','고등부','행정실'],
+  jihyebit: ['유아부'],
+};
+function PR_DEPTS(org){ return PR_ORG_DEPTS[org] || ['초등부','중등부','고등부','행정실']; }
 // 부서 → 부서장 직책 (전자결재와 동일)
-const PR_DEPT_TO_POS = {'초등부':'초등부장','중등부':'중고등부장','고등부':'중고등부장','중고등부':'중고등부장','행정실':'행정실장','지혜빛':'원장','유아부':'원장'};
+const PR_DEPT_TO_POS = {'초등부':'초등부장','중등부':'중고등부장','고등부':'중고등부장','중고등부':'중고등부장','행정실':'행정실장','유아부':'원장','지혜빛':'원장'};
 
 function staffName(uid){ const s=STAFF.find(x=>x.uid===uid); return s?s.name:''; }
 // 특정 직책을 가진 사람 찾기 (해당 기관 기준)
@@ -801,7 +807,7 @@ async function submitPayReq(){
         await sendMsg([chain[0].uid], `[경비 결재 요청] ${name} · ₩${won(total)}`,
           `${ORGS[prOrg]||prOrg} · ${dept}\n용도: ${purpose}\n금액: ₩${won(total)}\n\n결재함에서 승인/반려해주세요.`);
       } else {
-        await sendMsg(payManagerUids(prOrg), `[경비 지급 상신] ${name} · ₩${won(total)}`,
+        await sendMsg(payManagerUids(), `[경비 지급 상신] ${name} · ₩${won(total)}`,
           `${ORGS[prOrg]||prOrg} · ${dept}\n용도: ${purpose}\n금액: ₩${won(total)}\n\n(5만원 미만, 결재 없이 상신)`);
       }
     }
@@ -817,13 +823,14 @@ async function submitPayReq(){
 window.submitPayReq = submitPayReq;
 
 // 경비 관리자(회계) uid — payConfig/managers, 없으면 슈퍼
-function payManagerUids(org){
-  const m=(PAY_MANAGERS[org]||[]).filter(uid=>STAFF.some(s=>s.uid===uid));
+// 경비 지급 요청서(지출 결의) 관리자 — 두 기관 공통, 소속 무관
+let PAY_MANAGERS = { list: [] };
+function payManagerUids(){
+  const m=(PAY_MANAGERS.list||[]).filter(uid=>STAFF.some(s=>s.uid===uid));
   if(m.length) return m;
   return STAFF.filter(s=>s.role==='super').map(s=>s.uid);
 }
-let PAY_MANAGERS = {};
-function isPayManager(org){ return CU && (CU.role==='super' || (PAY_MANAGERS[org]||[]).includes(CU.uid)); }
+function isPayManager(){ return CU && (CU.role==='super' || (PAY_MANAGERS.list||[]).includes(CU.uid)); }
 
 // 내 요청서 로드
 let PAY_REQUESTS = [];
@@ -928,7 +935,7 @@ async function approvePayReq(id){
     await updateDoc(doc(db,'payRequests',id), upd);
     // 쪽지
     if(isLast){
-      await sendMsg(payManagerUids(r.org), `[경비 지급 상신] ${r.applicantName} · ₩${won(r.total)}`,
+      await sendMsg(payManagerUids(), `[경비 지급 상신] ${r.applicantName} · ₩${won(r.total)}`,
         `${ORGS[r.org]||r.org} · ${r.dept||''}\n용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n\n모든 결재가 완료되어 상신되었습니다.`);
       await sendMsg([r.createdByUid], `[결재 완료] 지급 요청이 상신되었습니다`,
         `용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n\n모든 결재가 완료되어 회계 담당자에게 상신되었습니다.`);
@@ -1986,7 +1993,7 @@ let rpFilter = 'all';   // all | waiting(지급대기) | paid(지급완료) | ap
 
 async function renderReport(){
   const box=$I('tab-report');
-  if(!isPayManager(rpOrg||myOrgs()[0]) && CU.role!=='super'){
+  if(!isPayManager()){
     box.innerHTML='<div class="acard"><p class="empty">회계 담당자만 볼 수 있습니다.</p></div>'; return;
   }
   await loadPayRequests();
@@ -3561,101 +3568,231 @@ function ensureJSZip(){
 }
 
 let backupAll = [];
+// ══════════ ⚙️ 설정 (관리자 지정 · 계정과목 · 로그) ══════════
+let bkTab = 'mgr';   // mgr | cats | logs
 async function renderBackup(){
-  const box = $I('tab-backup');
-  if(CU.role!=='super'){
-    box.innerHTML = '<div class="acard"><p class="empty">슈퍼관리자만 사용할 수 있습니다.</p></div>';
-    return;
-  }
-  box.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
-  window.showLoading && window.showLoading('경비 데이터를 확인하는 중…');
-  try {
-    const snap = await getDocs(collection(db,'expenses'));
-    backupAll = []; snap.forEach(d=>backupAll.push({id:d.id, ...d.data()}));
-    // 교직원 목록 + 기관별 경비 관리자 설정
-    const st = await getDocs(collection(db,'staff'));
-    STAFF = []; st.forEach(d=>STAFF.push({uid:d.id, ...d.data()}));
-    try {
-      const mgr = await getDoc(doc(db,'expenseConfig','managers'));
-      EXP_MANAGERS = mgr.exists() ? (mgr.data()||{}) : {};
-    } catch(e2){ EXP_MANAGERS = {}; }
-  } catch(e){
-    window.hideLoading && window.hideLoading();
-    box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
-    return;
-  } finally { window.hideLoading && window.hideLoading(); }
+  const box=$I('tab-backup');
+  if(!isPayManager()){ box.innerHTML='<div class="acard"><p class="empty">회계 담당자 또는 슈퍼관리자만 사용할 수 있습니다.</p></div>'; return; }
+  box.innerHTML = `
+    <div class="acard">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="ex-chip2 ${bkTab==='mgr'?'on':''}" onclick="setBkTab('mgr')">👥 담당자 지정</button>
+        <button class="ex-chip2 ${bkTab==='cats'?'on':''}" onclick="setBkTab('cats')">📑 계정과목 관리</button>
+        <button class="ex-chip2 ${bkTab==='logs'?'on':''}" onclick="setBkTab('logs')">📜 변경 로그</button>
+      </div>
+      <style>
+        .ex-chip2{padding:8px 16px;border:1.5px solid var(--ivd);border-radius:100px;background:#fff;font-size:13px;font-weight:700;color:var(--ts);cursor:pointer;}
+        .ex-chip2.on{background:var(--gm);border-color:var(--gm);color:#fff;}
+        .mg-box{border:1px solid var(--ivd);border-radius:12px;padding:14px;margin-bottom:12px;}
+        .mg-t{font-size:14.5px;font-weight:800;color:var(--gd);margin-bottom:3px;}
+        .mg-d{font-size:12px;color:var(--tl);margin-bottom:10px;}
+        .mg-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;min-height:30px;}
+        .mg-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;background:var(--gp);color:var(--gm);border-radius:100px;font-size:12.5px;font-weight:700;}
+        .mg-chip b{font-size:10px;opacity:.75;font-weight:500;}
+        .mg-chip button{border:none;background:none;color:#dc2626;cursor:pointer;font-weight:800;padding:0;font-size:13px;}
+        .cat-major{border:1px solid var(--ivd);border-radius:10px;margin-bottom:10px;overflow:hidden;}
+        .cat-mh{background:var(--iv);padding:9px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+        .cat-mh input{flex:1;min-width:120px;padding:6px 9px;border:1px solid var(--ivd);border-radius:6px;font-size:13.5px;font-weight:700;}
+        .cat-items{padding:10px 12px;display:flex;gap:6px;flex-wrap:wrap;}
+        .cat-it{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;background:#f4f8f6;border:1px solid var(--ivd);border-radius:8px;font-size:12.5px;}
+        .cat-it button{border:none;background:none;color:#dc2626;cursor:pointer;font-weight:800;padding:0;}
+        .cat-add{padding:5px 10px;border:1.5px dashed var(--gm);background:#fff;color:var(--gm);border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;}
+      </style>
+    </div>
+    <div id="bk-body"></div>`;
+  if(bkTab==='mgr') renderMgrSetup();
+  else if(bkTab==='cats') renderCatSetup();
+  else renderLogs();
+}
+window.renderBackup = renderBackup;
+function setBkTab(t){ bkTab=t; renderBackup(); }
+window.setBkTab = setBkTab;
 
-  const years = [...new Set(backupAll.map(e=>(e.date||'').slice(0,4)).filter(y=>y.length===4))].sort().reverse();
-  const yearStats = years.map(y=>{
-    const list = backupAll.filter(e=>(e.date||'').startsWith(y));
-    const rc = list.reduce((t,e)=>t+(e.receiptCount||0),0);
-    return {y, cnt:list.length, rc};
-  });
+// ── 담당자 지정 (3종) ──
+function renderMgrSetup(){
+  const box=$I('bk-body'); if(!box) return;
+  // 소속 무관하게 전체 교직원에서 선택
+  const staffOpts = STAFF.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'))
+    .map(s=>`<option value="${s.uid}">${esc(s.name)} (${ORGS[s.org]||s.org}${s.position?' · '+esc(s.position):''})</option>`).join('');
+
+  const chips = (uids, kind, org) => (uids||[]).map(uid=>{
+    const s=STAFF.find(x=>x.uid===uid);
+    return `<span class="mg-chip">${esc(s?s.name:uid)} <b>${s?(ORGS[s.org]||s.org):''}</b>
+      <button onclick="removeMgr('${kind}','${org||''}','${uid}')">×</button></span>`;
+  }).join('') || '<span style="font-size:12px;color:var(--tl)">지정된 담당자가 없습니다 (슈퍼관리자가 대행)</span>';
 
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">⏱️ 신청 가능 기간 설정</h3>
-      <p class="adesc">수행성 경비는 <b>학기 중</b>에만 신청할 수 있습니다. 아래 값으로 여유 기간을 조정하세요. (출석부의 학기 일정과 연동됩니다.)</p>
-      <div class="frow" style="max-width:560px">
-        <div class="fgrp"><label>학기 종료 후 며칠까지 신청 허용</label>
-          <input type="number" id="cfg-after" value="${EXP_WINDOW.afterDays}" min="0" max="60" inputmode="numeric">
-          <span style="font-size:12px;color:var(--tl);margin-top:4px">예: 8 → 학기 종료 8일 뒤까지 신청 가능 (방학 초 정산)</span>
-        </div>
-        <div class="fgrp"><label>다음 학기 시작 며칠 전부터 신청 허용</label>
-          <input type="number" id="cfg-before" value="${EXP_WINDOW.beforeDays}" min="0" max="60" inputmode="numeric">
-          <span style="font-size:12px;color:var(--tl);margin-top:4px">예: 14 → 다음 학기 시작 14일 전부터 미리 신청 가능</span>
-        </div>
-      </div>
-      <button class="bp" onclick="saveWindow()">저장</button>
-    </div>
-    <div class="acard">
-      <h3 class="actitle">👥 기관별 경비 관리자 지정</h3>
-      <p class="adesc">지정된 선생님은 앞으로 각 기관의 수행성 경비를 모니터링하고 취합하는 담당자가 됩니다. (관리자 지정은 슈퍼관리자만 할 수 있습니다.)</p>
-      ${myOrgs().map(o=>{
-        const mgrs = (EXP_MANAGERS[o]||[]);
-        const orgStaff = STAFF.filter(s=>{
-          if((s.acStatus||'active')!=='active') return false;
-          const so = s.orgs && s.orgs.length ? s.orgs : [s.org];
-          return s.role==='super' || so.includes(o);
-        }).sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
-        return `<div style="border:1px solid var(--ivd);border-radius:10px;padding:14px;margin-bottom:10px">
-          <div style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:8px">${ORGS[o]||o}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-            ${mgrs.length ? mgrs.map(uid=>{
-              const s = STAFF.find(x=>x.uid===uid);
-              return `<span style="background:var(--gp);color:var(--gm);border:1px solid var(--gl);border-radius:100px;padding:4px 10px 4px 12px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px">${esc(s?.name||uid)}<button onclick="removeManager('${o}','${uid}')" style="border:none;background:none;color:var(--gm);cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`;
-            }).join('') : '<span style="font-size:13px;color:var(--tl)">아직 지정된 관리자가 없습니다.</span>'}
-          </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <select id="mgr-sel-${o}" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;background:var(--iv);font-family:inherit;min-width:180px">
-              <option value="">+ 관리자 추가…</option>
-              ${orgStaff.filter(s=>!mgrs.includes(s.uid)).map(s=>`<option value="${s.uid}">${esc(s.name||'')}${s.role==='super'?' (슈퍼)':s.dept?' · '+esc(s.dept):''}</option>`).join('')}
-            </select>
-            <button class="bm" onclick="addManager('${o}')">추가</button>
-          </div>
-        </div>`;
-      }).join('')}
-    </div>
-    <div class="acard">
-      <h3 class="actitle">💾 연도별 백업·정리</h3>
-      <p class="adesc">1년 단위로 수행성 경비 전체(신청 내역 + 영수증)를 <b>ZIP 파일로 다운로드</b>합니다. ZIP 안에는 엑셀에서 열 수 있는 CSV, 원본 데이터(JSON), 영수증 이미지가 들어 있습니다. 백업 후 아래 정리 기능으로 온라인 용량을 비울 수 있습니다.</p>
-      ${years.length ? `
-      <div class="fgrp" style="max-width:340px"><label>백업할 연도</label>
-        <select id="bk-year">${yearStats.map(s=>`<option value="${s.y}">${s.y}년 — 신청 ${s.cnt}건 · 영수증 ${s.rc}장</option>`).join('')}</select>
-      </div>
-      <button class="bp" onclick="backupYear()">📦 백업 파일 다운로드 (ZIP)</button>
+      <h3 class="actitle">👥 담당자 지정</h3>
+      <p class="adesc">소속 기관과 관계없이 누구든 담당자로 지정할 수 있습니다.</p>
 
-      <div style="margin-top:26px;padding:16px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px">
-        <div style="font-size:14px;font-weight:800;color:#b91c1c;margin-bottom:6px">⚠️ 데이터 정리 (되돌릴 수 없음)</div>
-        <p style="font-size:12.5px;color:#7f1d1d;line-height:1.6;margin-bottom:10px">선택한 연도의 신청 내역과 영수증을 <b>온라인에서 완전히 삭제</b>합니다. 반드시 위에서 <b>백업 파일을 먼저 다운로드하고, 파일이 잘 열리는지 확인한 후</b> 진행하세요. 삭제하면 복구할 수 없습니다.</p>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="text" id="bk-del-year" placeholder="삭제할 연도를 직접 입력 (예: ${years[years.length-1]})" style="height:38px;border:1.5px solid #fecaca;border-radius:8px;padding:0 12px;width:250px;background:#fff;font-family:inherit">
-          <button class="bs" style="background:#fee2e2;color:#dc2626;border-color:#fecaca" onclick="deleteYear()">🗑️ 해당 연도 데이터 삭제</button>
+      <div class="mg-box" style="border-left:4px solid #2d6a4f">
+        <div class="mg-t">💳 경비 지급 요청서 (지출 결의) 담당자</div>
+        <div class="mg-d">두 기관 공통 · 취합·지급완료 처리·설정 권한</div>
+        <div class="mg-chips">${chips(PAY_MANAGERS.list,'pay')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <select id="mg-pay" style="flex:1;min-width:200px;padding:8px;border:1px solid var(--ivd);border-radius:8px"><option value="">— 교직원 선택 —</option>${staffOpts}</select>
+          <button class="bm" onclick="addMgr('pay','')">＋ 추가</button>
         </div>
-      </div>` : '<p class="empty">아직 백업할 데이터가 없습니다.</p>'}
+      </div>
+
+      ${myOrgs().map(o=>`
+      <div class="mg-box" style="border-left:4px solid #b08d3c">
+        <div class="mg-t">💰 ${ORGS[o]||o} — 수행성 경비 담당자</div>
+        <div class="mg-d">해당 기관의 수행성 경비 취합·입금확인 권한</div>
+        <div class="mg-chips">${chips(EXP_MANAGERS[o],'exp',o)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <select id="mg-exp-${o}" style="flex:1;min-width:200px;padding:8px;border:1px solid var(--ivd);border-radius:8px"><option value="">— 교직원 선택 —</option>${staffOpts}</select>
+          <button class="bm" onclick="addMgr('exp','${o}')">＋ 추가</button>
+        </div>
+      </div>`).join('')}
+
+      <p style="font-size:12px;color:var(--tl);margin-top:6px">※ 수행성 경비와 경비 지급 요청서(지출 결의)는 별개 시스템이며, 담당자도 따로 지정됩니다.</p>
     </div>`;
 }
-window.renderBackup = renderBackup;
+
+async function addMgr(kind, org){
+  const sel = kind==='pay' ? $I('mg-pay') : $I('mg-exp-'+org);
+  const uid = sel?.value; if(!uid){ toast('교직원을 선택하세요.','err'); return; }
+  try {
+    if(kind==='pay'){
+      const list=[...new Set([...(PAY_MANAGERS.list||[]), uid])];
+      await setDoc(doc(db,'payConfig','managers'), { list }, {merge:true});
+      PAY_MANAGERS={list};
+      await addLog('담당자 추가', `경비 지급 요청서 담당자에 ${staffName(uid)} 추가`);
+    } else {
+      const cur = EXP_MANAGERS[org]||[];
+      const list=[...new Set([...cur, uid])];
+      const next={...EXP_MANAGERS, [org]:list};
+      await setDoc(doc(db,'expenseConfig','managers'), next, {merge:true});
+      EXP_MANAGERS=next;
+      await addLog('담당자 추가', `${ORGS[org]||org} 수행성 경비 담당자에 ${staffName(uid)} 추가`);
+    }
+    toast('담당자를 추가했습니다.','ok'); renderMgrSetup();
+  } catch(e){ toast('추가 실패: '+(e.message||''),'err'); }
+}
+window.addMgr = addMgr;
+
+async function removeMgr(kind, org, uid){
+  if(!confirm(`${staffName(uid)}님을 담당자에서 제외할까요?`)) return;
+  try {
+    if(kind==='pay'){
+      const list=(PAY_MANAGERS.list||[]).filter(u=>u!==uid);
+      await setDoc(doc(db,'payConfig','managers'), { list }, {merge:true});
+      PAY_MANAGERS={list};
+      await addLog('담당자 제외', `경비 지급 요청서 담당자에서 ${staffName(uid)} 제외`);
+    } else {
+      const list=(EXP_MANAGERS[org]||[]).filter(u=>u!==uid);
+      const next={...EXP_MANAGERS, [org]:list};
+      await setDoc(doc(db,'expenseConfig','managers'), next, {merge:true});
+      EXP_MANAGERS=next;
+      await addLog('담당자 제외', `${ORGS[org]||org} 수행성 경비 담당자에서 ${staffName(uid)} 제외`);
+    }
+    toast('담당자를 제외했습니다.','ok'); renderMgrSetup();
+  } catch(e){ toast('제외 실패: '+(e.message||''),'err'); }
+}
+window.removeMgr = removeMgr;
+
+// ── 계정과목 관리 ──
+function renderCatSetup(){
+  const box=$I('bk-body'); if(!box) return;
+  box.innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📑 계정과목 관리 — 지출</h3>
+      <p class="adesc">대분류와 세부 항목을 추가·수정·삭제할 수 있습니다. ⚠️ 표시는 별도 통장 관리 항목입니다.</p>
+      <div id="cat-list">
+        ${EXPENSE_CATS.map((c,i)=>`
+          <div class="cat-major">
+            <div class="cat-mh">
+              <input id="cat-m-${i}" value="${esc(c.major)}" onchange="renameMajor(${i})">
+              <label style="font-size:12px;display:flex;align-items:center;gap:4px;color:${c.special?'#dc2626':'var(--tl)'};font-weight:${c.special?'700':'400'}">
+                <input type="checkbox" ${c.special?'checked':''} onchange="toggleSpecial(${i})"> 별도 통장
+              </label>
+              <button class="bm" style="background:#fee2e2;color:#dc2626;padding:5px 10px" onclick="delMajor(${i})">대분류 삭제</button>
+            </div>
+            <div class="cat-items">
+              ${(c.items||[]).map((it,j)=>`<span class="cat-it">${esc(it)} <button onclick="delItem(${i},${j})">×</button></span>`).join('')}
+              <button class="cat-add" onclick="addItem(${i})">＋ 세부 추가</button>
+            </div>
+          </div>`).join('')}
+      </div>
+      <button class="bp" style="padding:9px 18px;margin-top:6px" onclick="addMajor()">＋ 대분류 추가</button>
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle">📑 계정과목 관리 — 수입</h3>
+      <p class="adesc">수입 항목은 한 단계로 관리됩니다.</p>
+      <div class="cat-items" style="padding:0">
+        ${INCOME_CATS.map((it,j)=>`<span class="cat-it">${esc(it)} <button onclick="delIncome(${j})">×</button></span>`).join('')}
+        <button class="cat-add" onclick="addIncome()">＋ 수입 항목 추가</button>
+      </div>
+    </div>
+
+    <div class="acard">
+      <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
+        <button class="bm" style="background:#fef3c7;color:#b45309" onclick="resetCats()">↺ 기본값으로 되돌리기</button>
+        <button class="bp" style="padding:10px 24px" onclick="saveCats()">💾 저장</button>
+      </div>
+      <p style="font-size:12px;color:var(--tl);margin-top:8px">※ 저장하면 모든 사용자의 신청 화면에 즉시 반영됩니다. 변경 내역은 로그에 남습니다.</p>
+    </div>`;
+}
+
+function renameMajor(i){ const v=$I('cat-m-'+i)?.value?.trim(); if(v) EXPENSE_CATS[i].major=v; }
+window.renameMajor = renameMajor;
+function toggleSpecial(i){ EXPENSE_CATS[i].special=!EXPENSE_CATS[i].special; renderCatSetup(); }
+window.toggleSpecial = toggleSpecial;
+function delMajor(i){ if(!confirm(`"${EXPENSE_CATS[i].major}" 대분류를 삭제할까요?`)) return; EXPENSE_CATS.splice(i,1); renderCatSetup(); }
+window.delMajor = delMajor;
+function addMajor(){ const n=prompt('새 대분류 이름'); if(!n||!n.trim()) return; EXPENSE_CATS.push({major:n.trim(), items:[]}); renderCatSetup(); }
+window.addMajor = addMajor;
+function addItem(i){ const n=prompt(`"${EXPENSE_CATS[i].major}"에 추가할 세부 항목`); if(!n||!n.trim()) return; EXPENSE_CATS[i].items=[...(EXPENSE_CATS[i].items||[]), n.trim()]; renderCatSetup(); }
+window.addItem = addItem;
+function delItem(i,j){ EXPENSE_CATS[i].items.splice(j,1); renderCatSetup(); }
+window.delItem = delItem;
+function addIncome(){ const n=prompt('새 수입 항목'); if(!n||!n.trim()) return; INCOME_CATS.push(n.trim()); renderCatSetup(); }
+window.addIncome = addIncome;
+function delIncome(j){ INCOME_CATS.splice(j,1); renderCatSetup(); }
+window.delIncome = delIncome;
+function resetCats(){ if(!confirm('계정과목을 기본값으로 되돌릴까요? (저장해야 반영됩니다)')) return;
+  EXPENSE_CATS=JSON.parse(JSON.stringify(DEFAULT_EXPENSE_CATS)); INCOME_CATS=[...DEFAULT_INCOME_CATS]; renderCatSetup(); toast('기본값으로 되돌렸습니다. 저장을 눌러주세요.','ok'); }
+window.resetCats = resetCats;
+
+async function saveCats(){
+  // 화면의 대분류 이름 반영
+  EXPENSE_CATS.forEach((c,i)=>{ const v=$I('cat-m-'+i)?.value?.trim(); if(v) c.major=v; });
+  try {
+    await setDoc(doc(db,'payConfig','categories'), { expense:EXPENSE_CATS, income:INCOME_CATS, updatedAt:Timestamp.now(), updatedBy:CU.name||'' });
+    await addLog('계정과목 수정', `지출 대분류 ${EXPENSE_CATS.length}개 · 수입 ${INCOME_CATS.length}개로 저장`);
+    toast('계정과목을 저장했습니다.','ok');
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}
+window.saveCats = saveCats;
+
+// ── 변경 로그 ──
+async function addLog(action, detail){
+  try { await addDoc(collection(db,'payLogs'), { action, detail, byUid:CU.uid, byName:CU.name||'', createdAt:Timestamp.now() }); } catch(e){}
+}
+async function renderLogs(){
+  const box=$I('bk-body'); if(!box) return;
+  box.innerHTML='<div class="acard"><p class="empty">로그를 불러오는 중…</p></div>';
+  try {
+    const snap=await getDocs(collection(db,'payLogs'));
+    const arr=[]; snap.forEach(d=>arr.push({id:d.id,...d.data()}));
+    arr.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    const list=arr.slice(0,100);
+    box.innerHTML=`<div class="acard">
+      <h3 class="actitle">📜 변경 로그 <span style="font-size:12px;color:var(--tl);font-weight:400">(최근 ${list.length}건)</span></h3>
+      <p class="adesc">담당자 지정·계정과목 변경 내역입니다. 실수한 부분을 확인하고 다시 설정할 수 있습니다.</p>
+      ${list.length? `<table class="pr-vtbl"><thead><tr><th style="width:150px">시각</th><th style="width:110px">작업</th><th>내용</th><th style="width:90px">처리자</th></tr></thead>
+        <tbody>${list.map(l=>`<tr>
+          <td style="font-size:11.5px">${esc(fmtDT(l.createdAt))}</td>
+          <td style="font-weight:700;color:var(--gd)">${esc(l.action||'')}</td>
+          <td>${esc(l.detail||'')}</td>
+          <td style="text-align:center">${esc(l.byName||'')}</td>
+        </tr>`).join('')}</tbody></table>` : '<p class="empty">로그가 없습니다.</p>'}
+    </div>`;
+  } catch(e){ box.innerHTML=`<div class="acard"><p class="empty">로그 로드 실패: ${esc(e.message||'')}</p></div>`; }
+}
 
 // 신청 가능 기간 저장
 async function saveWindow(){

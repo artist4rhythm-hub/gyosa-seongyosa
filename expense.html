@@ -2756,27 +2756,25 @@ async function renderBackup(){
       <button class="bp" onclick="saveWindow()">저장</button>
     </div>
     <div class="acard">
-      <h3 class="actitle">👥 기관별 경비 관리자 지정</h3>
-      <p class="adesc">지정된 선생님은 앞으로 각 기관의 수행성 경비를 모니터링하고 취합하는 담당자가 됩니다. (관리자 지정은 슈퍼관리자만 할 수 있습니다.)</p>
+      <h3 class="actitle">👥 기관별 수행성 경비 관리자 지정</h3>
+      <p class="adesc">지정된 선생님은 해당 기관의 <b>수행성 경비</b>를 모니터링하고 취합하는 담당자가 됩니다. 소속 기관과 관계없이 누구든 지정할 수 있습니다. <span style="color:var(--tl)">(경비 지급 요청서 담당자는 별도로 지정합니다.)</span></p>
       ${myOrgs().map(o=>{
         const mgrs = (EXP_MANAGERS[o]||[]);
-        const orgStaff = STAFF.filter(s=>{
-          if((s.acStatus||'active')!=='active') return false;
-          const so = s.orgs && s.orgs.length ? s.orgs : [s.org];
-          return s.role==='super' || so.includes(o);
-        }).sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+        // 소속 무관: 재직 중인 전체 교직원에서 선택
+        const orgStaff = STAFF.filter(s=>(s.acStatus||'active')==='active')
+          .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
         return `<div style="border:1px solid var(--ivd);border-radius:10px;padding:14px;margin-bottom:10px">
           <div style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:8px">${ORGS[o]||o}</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
             ${mgrs.length ? mgrs.map(uid=>{
               const s = STAFF.find(x=>x.uid===uid);
-              return `<span style="background:var(--gp);color:var(--gm);border:1px solid var(--gl);border-radius:100px;padding:4px 10px 4px 12px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px">${esc(s?.name||uid)}<button onclick="removeManager('${o}','${uid}')" style="border:none;background:none;color:var(--gm);cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`;
+              return `<span style="background:var(--gp);color:var(--gm);border:1px solid var(--gl);border-radius:100px;padding:4px 10px 4px 12px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px">${esc(s?.name||uid)}<span style="font-size:10px;opacity:.7;font-weight:500">${s?(ORGS[s.org]||s.org):''}</span><button onclick="removeManager('${o}','${uid}')" style="border:none;background:none;color:var(--gm);cursor:pointer;font-size:15px;line-height:1;padding:0">×</button></span>`;
             }).join('') : '<span style="font-size:13px;color:var(--tl)">아직 지정된 관리자가 없습니다.</span>'}
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <select id="mgr-sel-${o}" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;background:var(--iv);font-family:inherit;min-width:180px">
+            <select id="mgr-sel-${o}" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;background:var(--iv);font-family:inherit;min-width:220px">
               <option value="">+ 관리자 추가…</option>
-              ${orgStaff.filter(s=>!mgrs.includes(s.uid)).map(s=>`<option value="${s.uid}">${esc(s.name||'')}${s.role==='super'?' (슈퍼)':s.dept?' · '+esc(s.dept):''}</option>`).join('')}
+              ${orgStaff.filter(s=>!mgrs.includes(s.uid)).map(s=>`<option value="${s.uid}">${esc(s.name||'')} (${ORGS[s.org]||s.org}${s.role==='super'?' · 슈퍼':s.position?' · '+esc(s.position):''})</option>`).join('')}
             </select>
             <button class="bm" onclick="addManager('${o}')">추가</button>
           </div>
