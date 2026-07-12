@@ -82,7 +82,9 @@ function renderShell(activeKey, user){
     document.body.insertBefore(app, document.body.firstChild);
     if(existing){
       document.getElementById('mn').appendChild(existing);
-      existing.style.display = '';
+      existing.style.display = 'flex';
+      existing.style.flexDirection = 'column';
+      existing.style.width = '100%';
     }
   }
   renderSidebar();

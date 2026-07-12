@@ -4,15 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>경비 지급 요청서 · 교사 선교사</title>
-<meta name="theme-color" content="#1e2e5c">
+<meta name="theme-color" content="#1E3932">
 <link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="theme.css">
 <style>
 :root {
-  --gd:#1e2e5c; --gm:#2b3990; --gl:#5a70cc; --gp:#e8ecf8;
-  --gold:#c9a84c; --goldd:#a8873a; --goldp:#fdf3d8;
-  --iv:#f5f0e8; --ivd:#e8e0d0;
-  --tx:#1a1a2e; --ts:#4a4a6a; --tl:#8888aa; --wh:#ffffff;
-  --sh:0 2px 12px rgba(30,46,92,0.10); --r:12px; --rs:8px;
+  --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
+  --gold:#B08D3C; --goldd:#8A6410; --goldp:#F7EFD8;
+  --iv:#F2F0EB; --ivd:#E3E1DA;
+  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#ffffff;
+  --sh:0 2px 12px rgba(30,57,50,0.08); --r:12px; --rs:8px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--iv);color:var(--tx);min-height:100vh;}
@@ -23,8 +24,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .gsub{font-size:14px;color:var(--ts);line-height:1.6;margin-bottom:20px;}
 .gbtn{display:inline-block;width:100%;padding:14px;background:linear-gradient(135deg,#2b3990,#1e2e5c);color:var(--wh);border:none;border-radius:var(--rs);font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;}
 
-#ms{display:none;flex-direction:column;min-height:100vh;}
-.ah{background:linear-gradient(135deg,#1e2e5c,#12194a);color:var(--wh);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+#ms{display:none;flex-direction:column;width:100%;}
+.ah{display:none;}
+.tc{padding:0;max-width:1100px;margin:0 auto;width:100%;}
+.subtabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
 .ahl{display:flex;align-items:center;gap:12px;}
 .ahi{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
 .aht{font-size:16px;font-weight:700;}
@@ -33,7 +36,6 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 #hi{font-size:11px;opacity:.7;margin-top:2px;}
 .homebtn{background:rgba(255,255,255,0.15);color:var(--wh);border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;margin-top:4px;text-decoration:none;display:inline-block;}
 
-.tc{padding:20px 16px;max-width:1100px;margin:0 auto;width:100%;}
 .actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
 .adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
 .acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
@@ -186,30 +188,20 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 </style>
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
-<script src="topnav.js"></script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
 </head>
 <body>
 
 <div id="gate">
   <div class="gbox">
-    <div class="gtitle">수행성 경비</div>
+    <div class="gtitle">경비 지급 요청서</div>
     <div class="gsub" id="gate-msg">로그인 확인 중...</div>
     <a class="gbtn" id="gate-btn" href="index.html" style="display:none">로그인 화면으로</a>
   </div>
 </div>
 
 <div id="ms">
-  <header class="ah">
-    <div class="ahl" onclick="location.href='index.html#home'" style="cursor:pointer">
-      <div class="ahi">💳</div>
-      <div class="aht">경비 지급 요청서</div>
-    </div>
-    <div class="ahr">
-      <div id="hn"></div>
-      <div id="hi"></div>
-      <a class="homebtn" href="index.html">← 메인으로</a>
-    </div>
-  </header>
   <div class="tc">
     <div class="subtabs">
       <button class="subtbtn on" id="tb-new" onclick="showTab('new')">➕ 지급 요청</button>
@@ -366,9 +358,8 @@ onAuthStateChanged(auth, async (user) => {
 
   $I('gate').style.display='none';
   $I('ms').style.display='flex';
-  $I('hn').textContent = CU.name||'';
-  $I('hi').textContent = `${ORGS[CU.org]||CU.org} · ${CU.role==='super'?'슈퍼관리자':CU.role==='org_admin'?'기관관리자':CU.role==='tab_admin'?'부서장':'교사'}`;
-  if(window.renderTopNav) renderTopNav('payreq', CU.role);
+  window.ORGS = ORGS;
+  renderShell('payreq', CU);   // 사이드바 + 모바일 하단탭
 
   await loadData();
   // 회계(경비지급) 관리자 or 슈퍼 → 취합·설정 탭
@@ -378,14 +369,42 @@ onAuthStateChanged(auth, async (user) => {
   const isApprover = ['초등부장','중고등부장','행정실장','원장','교감','교장'].includes(myPosition());
   // 직책이 없더라도, 실제 내 차례인 결재건이 있으면 탭을 보여줌 (안전장치)
   let hasPending = false;
+  let myApproveCount = 0;
   try {
     await loadPayRequests();
-    hasPending = PAY_REQUESTS.some(r=> r.status==='approving' && r.chain?.[r.chainIndex]?.uid===CU.uid)
-      || PAY_REQUESTS.some(r=> (r.chain||[]).some(c=>c.uid===CU.uid));
+    myApproveCount = PAY_REQUESTS.filter(r=> r.status==='approving' && r.chain?.[r.chainIndex]?.uid===CU.uid).length;
+    hasPending = myApproveCount>0 || PAY_REQUESTS.some(r=> (r.chain||[]).some(c=>c.uid===CU.uid));
   } catch(e){}
   if(isApprover || hasPending){ const t=$I('tb-approve'); if(t) t.style.display=''; }
+
+  // 사이드바 뱃지 (내가 결재할 건수 + 회계면 지급대기 건수)
+  let payBadge = myApproveCount;
+  if(anyMgr){ payBadge += PAY_REQUESTS.filter(r=>!r.paid && r.status==='submitted').length; }
+  setBadges({ payreq: payBadge });
+  loadSideBadges();   // 쪽지·전자결재 뱃지
+
   renderNew();
 });
+
+// 다른 시스템의 뱃지 (쪽지 안읽음 · 전자결재 대기)
+async function loadSideBadges(){
+  try {
+    const snap = await getDocs(collection(db,'messages'));
+    let unread = 0;
+    snap.forEach(d=>{ const m=d.data();
+      if((m.toUids||[]).includes(CU.uid) && !(m.readBy||[]).includes(CU.uid)) unread++;
+    });
+    setBadges({ message: unread });
+  } catch(e){}
+  try {
+    const snap = await getDocs(collection(db,'approvals'));
+    let waiting = 0;
+    snap.forEach(d=>{ const a=d.data();
+      if(a.status==='progress' && a.line && a.line[a.currentIdx]?.uid===CU.uid) waiting++;
+    });
+    setBadges({ approval: waiting });
+  } catch(e){}
+}
 
 async function loadData(){
   window.showLoading && window.showLoading('학생·반 정보를 불러오는 중…');
