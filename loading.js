@@ -10,15 +10,15 @@
   // ---- CSS 주입 ----
   const css = `
   #loadOverlay{position:fixed;inset:0;z-index:3000;display:none;flex-direction:column;align-items:center;justify-content:center;
-    background:linear-gradient(150deg,#eef0f8 0%,#f5f0e8 55%,#fdf3d8 100%);}
+    background:linear-gradient(150deg,#eef0f8 0%,#F2F0EB 55%,#F7EFD8 100%);}
   #loadOverlay.show{display:flex;}
   #loadOverlay .load-stage{width:200px;height:160px;position:relative;margin-bottom:8px;}
   #loadOverlay .load-svg{width:100%;height:100%;}
-  #loadOverlay .load-caption{font-size:15px;font-weight:700;color:#1e2e5c;margin-bottom:4px;min-height:20px;text-align:center;}
-  #loadOverlay .load-sub{font-size:12.5px;color:#8888aa;margin-bottom:18px;min-height:16px;text-align:center;padding:0 20px;}
+  #loadOverlay .load-caption{font-size:15px;font-weight:700;color:#1E3932;margin-bottom:4px;min-height:20px;text-align:center;}
+  #loadOverlay .load-sub{font-size:12.5px;color:#93A09A;margin-bottom:18px;min-height:16px;text-align:center;padding:0 20px;}
   #loadOverlay .load-bar{width:220px;height:8px;background:#e2ddd0;border-radius:100px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,0.08);}
-  #loadOverlay .load-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#2b3990,#5a70cc);border-radius:100px;transition:width .4s ease;}
-  #loadOverlay .load-pct{font-size:11px;color:#8888aa;margin-top:8px;font-variant-numeric:tabular-nums;}
+  #loadOverlay .load-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#00704A,#4DA98A);border-radius:100px;transition:width .4s ease;}
+  #loadOverlay .load-pct{font-size:11px;color:#93A09A;margin-top:8px;font-variant-numeric:tabular-nums;}
   @keyframes sm-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
   @keyframes sm-armL{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-24deg)}}
   @keyframes sm-armR{0%,100%{transform:rotate(0deg)}50%{transform:rotate(24deg)}}
@@ -60,19 +60,19 @@
   // ---- 졸라맨 SVG ----
   const STICK_FIGURES = [
     { name:'드럼', emoji:'🥁', inst:`
-      <ellipse cx="100" cy="150" rx="26" ry="7" fill="#c9a84c" opacity="0.3"/>
-      <g class="sm-inst"><ellipse cx="78" cy="128" rx="15" ry="6" fill="#2b3990"/><rect x="63" y="128" width="30" height="14" fill="#3a4aa8"/><ellipse cx="78" cy="142" rx="15" ry="6" fill="#1e2e5c"/>
-      <ellipse cx="122" cy="128" rx="15" ry="6" fill="#c9a84c"/><rect x="107" y="128" width="30" height="14" fill="#d4b968"/><ellipse cx="122" cy="142" rx="15" ry="6" fill="#a8873a"/></g>` },
+      <ellipse cx="100" cy="150" rx="26" ry="7" fill="#B08D3C" opacity="0.3"/>
+      <g class="sm-inst"><ellipse cx="78" cy="128" rx="15" ry="6" fill="#00704A"/><rect x="63" y="128" width="30" height="14" fill="#008558"/><ellipse cx="78" cy="142" rx="15" ry="6" fill="#1E3932"/>
+      <ellipse cx="122" cy="128" rx="15" ry="6" fill="#B08D3C"/><rect x="107" y="128" width="30" height="14" fill="#d4b968"/><ellipse cx="122" cy="142" rx="15" ry="6" fill="#8A6410"/></g>` },
     { name:'기타', emoji:'🎸', inst:`
       <g class="sm-inst"><rect x="95" y="95" width="6" height="52" rx="3" fill="#8B4513" transform="rotate(28 98 120)"/>
       <ellipse cx="118" cy="135" rx="17" ry="21" fill="#c9702a"/><ellipse cx="118" cy="135" rx="7" ry="8" fill="#3a2410"/></g>` },
     { name:'피아노', emoji:'🎹', inst:`
-      <g class="sm-inst"><rect x="72" y="128" width="56" height="16" rx="2" fill="#1a1a2e"/>
+      <g class="sm-inst"><rect x="72" y="128" width="56" height="16" rx="2" fill="#1F2320"/>
       <rect x="74" y="130" width="7" height="12" fill="#fff"/><rect x="82" y="130" width="7" height="12" fill="#fff"/><rect x="90" y="130" width="7" height="12" fill="#fff"/><rect x="98" y="130" width="7" height="12" fill="#fff"/><rect x="106" y="130" width="7" height="12" fill="#fff"/><rect x="114" y="130" width="7" height="12" fill="#fff"/>
-      <rect x="79" y="130" width="4" height="7" fill="#1a1a2e"/><rect x="88" y="130" width="4" height="7" fill="#1a1a2e"/><rect x="104" y="130" width="4" height="7" fill="#1a1a2e"/><rect x="112" y="130" width="4" height="7" fill="#1a1a2e"/></g>` },
+      <rect x="79" y="130" width="4" height="7" fill="#1F2320"/><rect x="88" y="130" width="4" height="7" fill="#1F2320"/><rect x="104" y="130" width="4" height="7" fill="#1F2320"/><rect x="112" y="130" width="4" height="7" fill="#1F2320"/></g>` },
     { name:'트럼펫', emoji:'🎺', inst:`
-      <g class="sm-inst"><rect x="95" y="112" width="34" height="7" rx="3" fill="#c9a84c"/>
-      <path d="M125 108 L140 100 L140 130 L125 122 Z" fill="#d4b968"/><circle cx="102" cy="115" r="2.5" fill="#a8873a"/><circle cx="110" cy="115" r="2.5" fill="#a8873a"/><circle cx="118" cy="115" r="2.5" fill="#a8873a"/></g>` },
+      <g class="sm-inst"><rect x="95" y="112" width="34" height="7" rx="3" fill="#B08D3C"/>
+      <path d="M125 108 L140 100 L140 130 L125 122 Z" fill="#d4b968"/><circle cx="102" cy="115" r="2.5" fill="#8A6410"/><circle cx="110" cy="115" r="2.5" fill="#8A6410"/><circle cx="118" cy="115" r="2.5" fill="#8A6410"/></g>` },
     { name:'바이올린', emoji:'🎻', inst:`
       <g class="sm-inst"><ellipse cx="112" cy="118" rx="13" ry="19" fill="#8B4513" transform="rotate(-30 112 118)"/>
       <rect x="118" y="90" width="4" height="30" rx="2" fill="#5a3410" transform="rotate(-30 120 105)"/>
@@ -85,16 +85,16 @@
 
   function stickFigureSVG(fig){
     return `<svg viewBox="0 0 200 170" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">
-      <text class="sm-note" x="50" y="60" font-size="20" fill="#2b3990">♪</text>
-      <text class="sm-note n2" x="140" y="50" font-size="24" fill="#c9a84c">♫</text>
-      <text class="sm-note n3" x="95" y="35" font-size="18" fill="#5a70cc">♪</text>
+      <text class="sm-note" x="50" y="60" font-size="20" fill="#00704A">♪</text>
+      <text class="sm-note n2" x="140" y="50" font-size="24" fill="#B08D3C">♫</text>
+      <text class="sm-note n3" x="95" y="35" font-size="18" fill="#4DA98A">♪</text>
       <g class="sm-body">
-        <circle cx="100" cy="55" r="15" fill="none" stroke="#1e2e5c" stroke-width="3.5"/>
-        <line x1="100" y1="70" x2="100" y2="112" stroke="#1e2e5c" stroke-width="3.5" stroke-linecap="round"/>
-        <line class="sm-armL" x1="100" y1="82" x2="78" y2="105" stroke="#1e2e5c" stroke-width="3.5" stroke-linecap="round"/>
-        <line class="sm-armR" x1="100" y1="82" x2="122" y2="105" stroke="#1e2e5c" stroke-width="3.5" stroke-linecap="round"/>
-        <line class="sm-legL" x1="100" y1="112" x2="86" y2="145" stroke="#1e2e5c" stroke-width="3.5" stroke-linecap="round"/>
-        <line class="sm-legR" x1="100" y1="112" x2="114" y2="145" stroke="#1e2e5c" stroke-width="3.5" stroke-linecap="round"/>
+        <circle cx="100" cy="55" r="15" fill="none" stroke="#1E3932" stroke-width="3.5"/>
+        <line x1="100" y1="70" x2="100" y2="112" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
+        <line class="sm-armL" x1="100" y1="82" x2="78" y2="105" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
+        <line class="sm-armR" x1="100" y1="82" x2="122" y2="105" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
+        <line class="sm-legL" x1="100" y1="112" x2="86" y2="145" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
+        <line class="sm-legR" x1="100" y1="112" x2="114" y2="145" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
       </g>
       ${fig.inst}
     </svg>`;
