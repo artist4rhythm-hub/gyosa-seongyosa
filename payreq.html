@@ -376,7 +376,14 @@ onAuthStateChanged(auth, async (user) => {
   if(anyMgr){ ['tb-report','tb-backup'].forEach(id=>{ const t=$I(id); if(t) t.style.display=''; }); }
   // 결재자(교감·교장·부서장) → 결재함 탭
   const isApprover = ['초등부장','중고등부장','행정실장','원장','교감','교장'].includes(myPosition());
-  if(isApprover){ const t=$I('tb-approve'); if(t) t.style.display=''; }
+  // 직책이 없더라도, 실제 내 차례인 결재건이 있으면 탭을 보여줌 (안전장치)
+  let hasPending = false;
+  try {
+    await loadPayRequests();
+    hasPending = PAY_REQUESTS.some(r=> r.status==='approving' && r.chain?.[r.chainIndex]?.uid===CU.uid)
+      || PAY_REQUESTS.some(r=> (r.chain||[]).some(c=>c.uid===CU.uid));
+  } catch(e){}
+  if(isApprover || hasPending){ const t=$I('tb-approve'); if(t) t.style.display=''; }
   renderNew();
 });
 
@@ -827,7 +834,140 @@ async function loadPayRequests(){
   } catch(e){ PAY_REQUESTS=[]; }
 }
 
-function renderApprove(){ const b=$I('tab-approve'); if(b) b.innerHTML='<div class="acard"><p class="empty">결재함은 다음 단계에서 이어집니다.</p></div>'; }
+// ══════════ ✅ 결재함 ══════════
+async function renderApprove(){
+  const box=$I('tab-approve');
+  await loadPayRequests();
+  // 내 차례인 것 (결재중 + 현재 단계가 나)
+  const mine = PAY_REQUESTS.filter(r=>
+    r.status==='approving' && r.chain && r.chain[r.chainIndex] && r.chain[r.chainIndex].uid===CU.uid
+  ).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+  // 내가 이미 처리한 것 (이력)
+  const done = PAY_REQUESTS.filter(r=>
+    (r.chain||[]).some(c=>c.uid===CU.uid && (c.status==='approved'||c.status==='rejected'))
+  ).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).slice(0,20);
+
+  const card = (r, isPending) => {
+    const rows=(r.rows||[]).map((row,i)=>`<tr>
+      <td style="text-align:center">${i+1}</td>
+      <td>${esc(row.cat_major||'')}${row.cat_item?' › '+esc(row.cat_item):''}</td>
+      <td>${esc(row.name||'')}</td>
+      <td style="text-align:center">${row.qty||''}</td>
+      <td style="text-align:right">₩${won(row.price)}</td>
+      <td style="text-align:right;font-weight:700">₩${won(row.sub)}</td>
+      <td style="text-align:center">${row.receiptCount?`🧾${row.receiptCount}`:''}</td>
+    </tr>`).join('');
+    const chainLine=(r.chain||[]).map((c,i)=>{
+      const st=c.status==='approved'?'✅':c.status==='rejected'?'❌':(i===r.chainIndex?'⏳':'○');
+      return `${st} ${esc(c.name)}(${esc(c.role)})`;
+    }).join(' → ');
+    const myStep=(r.chain||[]).find(c=>c.uid===CU.uid);
+    return `<div class="acard" style="margin-bottom:12px;${isPending?'border-left:4px solid var(--gm)':''}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:16px;font-weight:800;color:var(--gd)">${esc(r.purpose||'(용도 미기재)')}</div>
+          <div style="font-size:12.5px;color:var(--tl);margin-top:3px">
+            ${esc(r.applicantName||r.createdByName||'')} · ${esc(r.dept||'')} · ${ORGS[r.org]||r.org} · ${esc(r.date||'')}
+          </div>
+        </div>
+        <div style="font-size:19px;font-weight:900;color:var(--goldd)">₩${won(r.total)}</div>
+      </div>
+      <div style="overflow-x:auto;margin-top:10px"><table class="pr-vtbl">
+        <thead><tr><th>번호</th><th>계정과목</th><th>품목</th><th>수량</th><th>단가</th><th>소계</th><th>영수증</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      ${r.bank?`<div style="margin-top:8px;font-size:12.5px;color:var(--ts)">💳 ${esc(r.bank.bank||'')} ${esc(r.bank.account||'')} (${esc(r.bank.holder||'')})</div>`:''}
+      <div style="margin-top:8px;font-size:12.5px;color:var(--ts)">결재선: ${chainLine}</div>
+      <div id="apv-rc-${r.id}" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+      ${isPending?`<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="bm" style="background:#fee2e2;color:#dc2626" onclick="rejectPayReq('${r.id}')">✕ 반려</button>
+        <button class="bp" style="padding:9px 22px" onclick="approvePayReq('${r.id}')">✓ 승인</button>
+      </div>`:`<div style="margin-top:8px;font-size:12px;color:${myStep?.status==='approved'?'#16a34a':'#dc2626'};font-weight:700">
+        ${myStep?.status==='approved'?'✅ 내가 승인함':'❌ 내가 반려함'} ${myStep?.at?'· '+fmtDT(myStep.at):''}
+      </div>`}
+    </div>`;
+  };
+
+  box.innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">✅ 결재할 요청서</h3>
+      <p class="adesc">내 차례인 경비 지급 요청서입니다. 승인하면 다음 결재자에게, 마지막이면 회계 담당자에게 상신됩니다.</p>
+    </div>
+    ${mine.length? mine.map(r=>card(r,true)).join('') : '<div class="acard"><p class="empty">결재할 요청서가 없습니다.</p></div>'}
+    ${done.length? `<div class="acard" style="margin-top:16px"><h3 class="actitle">📚 내가 처리한 이력 <span style="font-size:12px;color:var(--tl);font-weight:400">(최근 ${done.length}건)</span></h3></div>
+      ${done.map(r=>card(r,false)).join('')}` : ''}
+  `;
+  // 영수증 썸네일 로드
+  [...mine, ...done].forEach(r=>loadApvReceipts(r.id));
+}
+window.renderApprove = renderApprove;
+
+async function loadApvReceipts(id){
+  try{
+    const snap=await getDocs(query(collection(db,'payReceipts'), where('requestId','==',id)));
+    const arr=[]; snap.forEach(d=>arr.push(d.data()));
+    arr.sort((a,b)=>(a.rowIdx-b.rowIdx)||(a.idx-b.idx));
+    const box=$I('apv-rc-'+id); if(!box||!arr.length) return;
+    box.innerHTML = arr.map(rc=>`<div style="width:58px;height:58px;border:1px solid var(--ivd);border-radius:6px;overflow:hidden"><img src="${rc.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)"></div>`).join('');
+  }catch(e){}
+}
+
+// 승인
+async function approvePayReq(id){
+  const r=PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  const idx=r.chainIndex;
+  const step=r.chain?.[idx];
+  if(!step || step.uid!==CU.uid){ toast('결재 권한이 없습니다.','err'); return; }
+  if(!confirm(`₩${won(r.total)} 요청을 승인할까요?`)) return;
+  window.showLoading && window.showLoading('승인 처리 중…');
+  try {
+    const chain=[...r.chain];
+    chain[idx]={...chain[idx], status:'approved', at:Timestamp.now()};
+    const isLast = idx >= chain.length-1;
+    const upd = { chain, chainIndex: isLast?idx:idx+1, status: isLast?'submitted':'approving' };
+    await updateDoc(doc(db,'payRequests',id), upd);
+    // 쪽지
+    if(isLast){
+      await sendMsg(payManagerUids(r.org), `[경비 지급 상신] ${r.applicantName} · ₩${won(r.total)}`,
+        `${ORGS[r.org]||r.org} · ${r.dept||''}\n용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n\n모든 결재가 완료되어 상신되었습니다.`);
+      await sendMsg([r.createdByUid], `[결재 완료] 지급 요청이 상신되었습니다`,
+        `용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n\n모든 결재가 완료되어 회계 담당자에게 상신되었습니다.`);
+    } else {
+      const next=chain[idx+1];
+      await sendMsg([next.uid], `[경비 결재 요청] ${r.applicantName} · ₩${won(r.total)}`,
+        `${ORGS[r.org]||r.org} · ${r.dept||''}\n용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n\n결재함에서 승인/반려해주세요.`);
+      await sendMsg([r.createdByUid], `[결재 진행] ${step.name} 승인 완료`,
+        `용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n\n다음 결재자(${next.name})에게 넘어갔습니다.`);
+    }
+    window.hideLoading && window.hideLoading();
+    toast(isLast?'승인 완료 — 회계에 상신되었습니다.':'승인했습니다. 다음 결재자에게 넘어갔습니다.','ok');
+    await renderApprove();
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('승인 실패: '+(e.message||''),'err'); }
+}
+window.approvePayReq = approvePayReq;
+
+// 반려
+async function rejectPayReq(id){
+  const r=PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  const idx=r.chainIndex;
+  const step=r.chain?.[idx];
+  if(!step || step.uid!==CU.uid){ toast('결재 권한이 없습니다.','err'); return; }
+  const reason=prompt('반려 사유를 입력하세요 (신청자에게 전달됩니다)');
+  if(reason===null) return;
+  if(!reason.trim()){ toast('반려 사유를 입력해주세요.','err'); return; }
+  window.showLoading && window.showLoading('반려 처리 중…');
+  try {
+    const chain=[...r.chain];
+    chain[idx]={...chain[idx], status:'rejected', at:Timestamp.now()};
+    await updateDoc(doc(db,'payRequests',id), { chain, status:'rejected', rejectReason:reason.trim(), rejectedBy:CU.name||'', rejectedAt:Timestamp.now() });
+    await sendMsg([r.createdByUid], `[반려] 경비 지급 요청이 반려되었습니다`,
+      `용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n반려자: ${CU.name||''}\n\n사유: ${reason.trim()}\n\n내용을 수정하여 다시 신청해주세요.`);
+    window.hideLoading && window.hideLoading();
+    toast('반려했습니다. 신청자에게 사유가 전달됩니다.','ok');
+    await renderApprove();
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('반려 실패: '+(e.message||''),'err'); }
+}
+window.rejectPayReq = rejectPayReq;
 window.renderApprove = renderApprove;
 window.renderNew = renderNew;
 function setExpOrg(o){ prOrg = o; renderNew(); }
