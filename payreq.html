@@ -1979,155 +1979,492 @@ let reportOrg = '';
 let reportSem = '';
 let DEPOSITS = [];  // 예치금 입금 기록
 
+// ══════════ 📊 회계 취합 (회계 담당자 전용) ══════════
+let rpMonth = '';   // YYYY-MM (기본: 이번 달)
+let rpOrg = '';
+let rpFilter = 'all';   // all | waiting(지급대기) | paid(지급완료) | approving(결재중)
+
 async function renderReport(){
-  const box = $I('tab-report');
-  const orgs = myOrgs();
-  if(!reportOrg || !orgs.includes(reportOrg)) reportOrg = orgs[0];
-  box.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
-  window.showLoading && window.showLoading('취합 자료를 계산하는 중…');
-  try {
-    const snap = await getDocs(collection(db,'expenses'));
-    EXPENSES = []; snap.forEach(d=>EXPENSES.push({id:d.id, ...d.data()}));
-    const dsnap = await getDocs(collection(db,'expenseDeposits'));
-    DEPOSITS = []; dsnap.forEach(d=>DEPOSITS.push({id:d.id, ...d.data()}));
-  } catch(e){
-    window.hideLoading && window.hideLoading();
-    box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
-    return;
-  } finally { window.hideLoading && window.hideLoading(); }
+  const box=$I('tab-report');
+  if(!isPayManager(rpOrg||myOrgs()[0]) && CU.role!=='super'){
+    box.innerHTML='<div class="acard"><p class="empty">회계 담당자만 볼 수 있습니다.</p></div>'; return;
+  }
+  await loadPayRequests();
+  const orgs=myOrgs();
+  if(!rpOrg||!orgs.includes(rpOrg)) rpOrg=orgs[0];
+  if(!rpMonth){ const n=new Date(); rpMonth=`${n.getFullYear()}-${pad(n.getMonth()+1)}`; }
 
-  // 이 기관의 학기 목록 (신청 데이터 기준 + 등록된 학기)
-  const semSet = new Set();
-  EXPENSES.filter(e=>e.org===reportOrg && e.semester).forEach(e=>semSet.add(e.semester));
-  orgTerms(reportOrg).forEach(t=>semSet.add(termKey(t)));
-  const sems = [...semSet].sort().reverse();
-  if(!reportSem || !sems.includes(reportSem)) reportSem = sems[0] || '';
+  // 해당 월(신청일 기준) + 기관
+  const inMonth = r => (r.date||'').startsWith(rpMonth);
+  let list = PAY_REQUESTS.filter(r=> r.org===rpOrg && inMonth(r));
+  // 상태 필터
+  if(rpFilter==='waiting') list=list.filter(r=>!r.paid && (r.status==='submitted'||r.status==='income'));
+  else if(rpFilter==='paid') list=list.filter(r=>r.paid);
+  else if(rpFilter==='approving') list=list.filter(r=>r.status==='approving');
+  list.sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
 
-  const orgTabs = orgs.length>1 ? `
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      ${orgs.map(o=>`<button class="subtbtn ${o===reportOrg?'on':''}" onclick="setReportOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
-    </div>` : '';
+  // 집계
+  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && inMonth(r));
+  const expList = all.filter(r=>r.mode!=='income');
+  const incList = all.filter(r=>r.mode==='income');
+  const expTotal = expList.reduce((s,r)=>s+(r.total||0),0);
+  const incTotal = incList.reduce((s,r)=>s+(r.total||0),0);
+  const paidTotal = expList.filter(r=>r.paid).reduce((s,r)=>s+(r.total||0),0);
+  const waitTotal = expList.filter(r=>!r.paid && r.status==='submitted').reduce((s,r)=>s+(r.total||0),0);
+  const apvTotal = expList.filter(r=>r.status==='approving').reduce((s,r)=>s+(r.total||0),0);
 
-  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem);
-  const canManage = isExpManager(reportOrg);
+  // 월 선택지 (최근 18개월)
+  const monthOpts=[]; const nd=new Date();
+  for(let i=0;i<18;i++){ const d=new Date(nd.getFullYear(), nd.getMonth()-i, 1); monthOpts.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}`); }
 
-  // 요약
-  let totalCharge=0, totalRefund=0, totalSchool=0;
-  list.forEach(e=>{
-    const sum = (e.students||[]).reduce((t,s)=>t+(s.amt||0),0);
-    if(e.mode==='refund') totalRefund += sum; else totalCharge += sum;
-    totalSchool += (e.schoolTotal||0);
-  });
-  const net = totalCharge - totalRefund;
-
-  // 학생별 합산 (청구 +, 반환 −)
-  const stuMap = new Map(); // sid → {name, grade, className, charge, refund, items:[]}
-  list.forEach(e=>{
-    (e.students||[]).forEach(s=>{
-      let r = stuMap.get(s.id);
-      if(!r){ r = {id:s.id, name:s.name, grade:s.grade, className:s.className, charge:0, refund:0, cnt:0}; stuMap.set(s.id, r); }
-      if(e.mode==='refund') r.refund += (s.amt||0);
-      else r.charge += (s.amt||0);
-      r.cnt++;
-    });
-  });
-  // 반별·학년순 정렬
-  const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
-  const students = [...stuMap.values()].sort((a,b)=>
-    gradeNum(a.grade)-gradeNum(b.grade) || (a.className||'').localeCompare(b.className||'','ko') || (a.name||'').localeCompare(b.name||'','ko')
-  );
-
-  // 예치금 (이 기관·학기)
-  const deposits = DEPOSITS.filter(d=>d.org===reportOrg && d.semester===reportSem)
-    .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const depTotal = deposits.reduce((t,d)=>t+(d.amount||0),0);
-  // 선생님별 예치금 합계
-  const depByTeacher = {};
-  deposits.forEach(d=>{ depByTeacher[d.teacher] = (depByTeacher[d.teacher]||0)+(d.amount||0); });
+  const statusBadge = r=>{
+    if(r.mode==='income') return '<span class="pr-badge inc">수입</span>';
+    if(r.status==='rejected') return '<span class="pr-badge rej">반려</span>';
+    if(r.paid) return '<span class="pr-badge paid">지급완료</span>';
+    if(r.status==='approving'){ const c=r.chain?.[r.chainIndex]; return `<span class="pr-badge wait">결재중 ${c?'('+esc(c.name)+')':''}</span>`; }
+    if(r.status==='submitted') return '<span class="pr-badge sub">지급대기</span>';
+    return '';
+  };
 
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">📊 수행성 경비 취합</h3>
-      <p class="adesc">기관·학기별로 학생별 청구 금액을 합산합니다. 반환은 자동으로 차감됩니다. (모든 선생님이 열람할 수 있습니다.)</p>
-      ${orgTabs}
-      <div class="fgrp" style="max-width:280px"><label>학기</label>
-        <select id="rp-sem" onchange="setReportSem(this.value)">
-          ${sems.length ? sems.map(s=>`<option value="${s}" ${s===reportSem?'selected':''}>${esc(semKor(s))}</option>`).join('') : '<option value="">학기 없음</option>'}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        ${orgs.length>1?orgs.map(o=>`<button class="subtbtn ${o===rpOrg?'on':''}" onclick="setRpOrg('${o}')" style="padding:7px 15px">${ORGS[o]||o}</button>`).join(''):''}
+        <select onchange="setRpMonth(this.value)" style="padding:8px 12px;border:1px solid var(--ivd);border-radius:8px;font-size:14px;font-weight:600">
+          ${monthOpts.map(m=>`<option value="${m}" ${m===rpMonth?'selected':''}>${m.replace('-','년 ')}월</option>`).join('')}
         </select>
+        <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="bm" onclick="exportPayExcel()">📊 엑셀</button>
+          <button class="bm" onclick="viewPayReceiptCollection()">🧾 영수증 취합</button>
+          <button class="bp" style="padding:8px 16px" onclick="viewMonthlySheet()">📋 월별 취합표</button>
+        </div>
       </div>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="rp-sum" style="background:#fef2f2"><div class="rp-sn" style="color:#dc2626">₩${won(expTotal)}</div><div class="rp-sl">지출 합계 (${expList.length}건)</div></div>
+        <div class="rp-sum" style="background:#eff6ff"><div class="rp-sn" style="color:#2563eb">₩${won(incTotal)}</div><div class="rp-sl">수입 합계 (${incList.length}건)</div></div>
+        <div class="rp-sum" style="background:#f0fdf4"><div class="rp-sn" style="color:#16a34a">₩${won(paidTotal)}</div><div class="rp-sl">지급 완료</div></div>
+        <div class="rp-sum" style="background:#fffbeb"><div class="rp-sn" style="color:#b45309">₩${won(waitTotal)}</div><div class="rp-sl">지급 대기</div></div>
+        <div class="rp-sum" style="background:#f5f3ff"><div class="rp-sn" style="color:#7c3aed">₩${won(apvTotal)}</div><div class="rp-sl">결재 중</div></div>
+      </div>
+      <style>
+        .rp-sum{padding:12px 18px;border-radius:12px;text-align:center;min-width:130px;flex:1;}
+        .rp-sn{font-size:19px;font-weight:900;line-height:1.2;}
+        .rp-sl{font-size:11px;color:var(--ts);margin-top:4px;font-weight:600;}
+        .rp-item{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--ivd);border-radius:10px;margin-bottom:8px;flex-wrap:wrap;background:#fff;}
+      </style>
+
+      <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
+        ${[['all','전체'],['waiting','지급대기'],['paid','지급완료'],['approving','결재중']].map(([v,l])=>
+          `<button class="ex-chip2 ${rpFilter===v?'on':''}" onclick="setRpFilter('${v}')">${l}</button>`).join('')}
+      </div>
+      <style>
+        .ex-chip2{padding:6px 14px;border:1.5px solid var(--ivd);border-radius:100px;background:#fff;font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;}
+        .ex-chip2.on{background:var(--gm);border-color:var(--gm);color:#fff;}
+      </style>
     </div>
 
     <div class="acard">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
-        <div style="background:var(--gp);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:12px;color:var(--ts)">신청 건수</div>
-          <div style="font-size:20px;font-weight:800;color:var(--gd)">${list.length}건</div>
-        </div>
-        <div style="background:var(--gp);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:12px;color:var(--ts)">총 청구</div>
-          <div style="font-size:20px;font-weight:800;color:var(--gm)">₩${won(totalCharge)}</div>
-        </div>
-        <div style="background:#e6f7f4;border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:12px;color:var(--ts)">총 반환</div>
-          <div style="font-size:20px;font-weight:800;color:#0d9488">₩${won(totalRefund)}</div>
-        </div>
-        <div style="background:var(--goldp);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:12px;color:var(--ts)">순 청구 (청구−반환)</div>
-          <div style="font-size:20px;font-weight:800;color:var(--goldd)">₩${won(net)}</div>
-        </div>
-        <div style="background:#f4f4f6;border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:12px;color:var(--ts)">학교 청구분</div>
-          <div style="font-size:20px;font-weight:800;color:var(--ts)">₩${won(totalSchool)}</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="acard">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <h3 class="actitle" style="margin:0">👦 학년별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순 · 학년을 눌러 펼치기)</span></h3>
-        ${students.length?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bm" onclick="excelReport()">📊 엑셀 다운로드</button><button class="bm" onclick="viewReceiptCollection()">🧾 영수증 취합</button><button class="bp" style="padding:8px 16px" onclick="viewAllSheet()">📋 전체 상세표 보기</button></div>`:''}
-      </div>
-      ${students.length ? `<div id="rp-class-groups" style="margin-top:12px">${renderReportClassGroups(list, students)}</div>
-      <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px;padding-top:12px;border-top:2px solid var(--ivd);font-size:14px;font-weight:800">
-        <span>총 청구 <b style="color:var(--gm)">₩${won(totalCharge)}</b></span>
-        <span>총 반환 <b style="color:#0d9488">₩${won(totalRefund)}</b></span>
-        <span>순 청구 <b style="color:var(--goldd)">₩${won(net)}</b></span>
-      </div>` : '<p class="empty">이 학기에 취합할 신청 내역이 없습니다.</p>'}
-    </div>
-
-    <div class="acard">
-      <h3 class="actitle">💵 예치금 입금 기록 <span style="font-size:12px;color:var(--tl);font-weight:400">(선생님께 선지급한 예치금)</span></h3>
-      <p class="adesc">학교에서 선생님께 미리 지급한 예치금 내역입니다. ${canManage?'':'(입력은 경비 관리자·슈퍼관리자만 가능합니다.)'}</p>
-      ${canManage ? `
-      <div class="frow" style="max-width:640px">
-        <div class="fgrp"><label>입금 날짜</label><input type="date" id="dep-date" value="${todayYMD()}"></div>
-        <div class="fgrp"><label>받는 선생님</label><input type="text" id="dep-teacher" placeholder="선생님 이름"></div>
-      </div>
-      <div class="frow" style="max-width:640px">
-        <div class="fgrp"><label>금액 (원)</label><input type="number" id="dep-amount" placeholder="예: 1000000" min="0" inputmode="numeric"></div>
-        <div class="fgrp"><label>메모 (선택)</label><input type="text" id="dep-memo" placeholder="예: 1학기 2차 예치금"></div>
-      </div>
-      <button class="bp" onclick="addDeposit()">＋ 예치금 입금 기록 추가</button>
-      ` : ''}
-      <div style="margin-top:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:2px solid var(--ivd);font-size:13px;font-weight:800;color:var(--gd)">
-          <span>총 예치금 입금액</span><span style="color:var(--gm)">₩${won(depTotal)}</span>
-        </div>
-        ${Object.keys(depByTeacher).length ? `<div style="font-size:12.5px;color:var(--ts);padding:8px 0;line-height:1.9">${Object.entries(depByTeacher).sort((a,b)=>b[1]-a[1]).map(([t,a])=>`${esc(t)}: <b style="color:var(--gm)">₩${won(a)}</b>`).join(' · ')}</div>`:''}
-        <div style="margin-top:8px">
-          ${deposits.length ? deposits.map(d=>`
-            <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--ivd);border-radius:9px;margin-bottom:6px;flex-wrap:wrap">
-              <span style="font-size:12px;color:var(--tl)">${esc(d.date||'')}</span>
-              <span style="font-weight:700;color:var(--gd)">${esc(d.teacher||'')}</span>
-              <span style="font-weight:800;color:var(--gm)">₩${won(d.amount)}</span>
-              ${d.memo?`<span style="font-size:12.5px;color:var(--ts)">${esc(d.memo)}</span>`:''}
-              ${canManage?`<button class="bm" style="background:#fee2e2;color:#dc2626;margin-left:auto" onclick="delDeposit('${d.id}')">삭제</button>`:''}
-            </div>`).join('') : '<p class="empty" style="padding:16px">예치금 입금 기록이 없습니다.</p>'}
-        </div>
-      </div>
+      <h3 class="actitle">📋 요청서 목록 <span style="font-size:12px;color:var(--tl);font-weight:400">(${list.length}건)</span></h3>
+      ${list.length? list.map(r=>{
+        const canPay = !r.paid && (r.status==='submitted'||r.status==='income');
+        return `<div class="rp-item">
+          <div style="flex:1;min-width:220px">
+            <div style="font-size:14.5px;font-weight:700;color:var(--gd)">
+              ${r.mode==='income'?'💵':'💸'} ${esc(r.purpose||(r.rows?.[0]?.name)||'(용도 미기재)')} ${statusBadge(r)}
+            </div>
+            <div style="font-size:12px;color:var(--tl);margin-top:3px">
+              ${esc(r.date||'')} · ${esc(r.applicantName||r.createdByName||'')} ${r.dept?'· '+esc(r.dept):''} · 항목 ${(r.rows||[]).length}개
+              ${r.bank?` · 💳 ${esc(r.bank.bank||'')} ${esc(r.bank.account||'')}`:''}
+            </div>
+            ${r.paid&&r.paidAt?`<div style="font-size:11.5px;color:#16a34a;margin-top:2px">💰 ${esc(r.paidByName||'')} · ${esc(fmtDT(r.paidAt))} 지급</div>`:''}
+          </div>
+          <div style="font-size:16px;font-weight:900;color:var(--goldd);min-width:100px;text-align:right">₩${won(r.total)}</div>
+          <button class="bm" onclick="viewPayReq('${r.id}')">상세</button>
+          ${canPay?`<button class="bp" style="padding:7px 14px" onclick="markPaid('${r.id}',true)">💰 지급완료</button>`
+            : r.paid?`<button class="bm" style="background:#f3f4f6" onclick="markPaid('${r.id}',false)">취소</button>`:''}
+        </div>`;
+      }).join('') : '<p class="empty">해당 조건의 요청서가 없습니다.</p>'}
     </div>`;
 }
 window.renderReport = renderReport;
+function setRpOrg(o){ rpOrg=o; renderReport(); }
+window.setRpOrg = setRpOrg;
+function setRpMonth(m){ rpMonth=m; renderReport(); }
+window.setRpMonth = setRpMonth;
+function setRpFilter(f){ rpFilter=f; renderReport(); }
+window.setRpFilter = setRpFilter;
+
+// 지급 완료 체크 (+ 자동 쪽지)
+async function markPaid(id, paid){
+  const r=PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  if(paid && !confirm(`₩${won(r.total)} 지급 완료로 처리할까요?\n신청자에게 자동으로 알림이 발송됩니다.`)) return;
+  if(!paid && !confirm('지급 완료를 취소할까요?')) return;
+  try {
+    const upd = paid
+      ? { paid:true, paidAt:Timestamp.now(), paidByUid:CU.uid, paidByName:CU.name||'' }
+      : { paid:false, paidAt:null, paidByUid:'', paidByName:'' };
+    await updateDoc(doc(db,'payRequests',id), upd);
+    if(paid && r.mode!=='income'){
+      await sendMsg([r.createdByUid], `[지급 완료] ₩${won(r.total)} 지급되었습니다`,
+        `용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n입금계좌: ${r.bank?.bank||''} ${r.bank?.account||''}\n처리: ${CU.name||''}\n\n지급이 완료되었습니다. 확인해주세요.`);
+    }
+    toast(paid?'지급 완료로 처리했습니다. (신청자에게 알림 발송)':'지급 완료를 취소했습니다.','ok');
+    await renderReport();
+  } catch(e){ toast('처리 실패: '+(e.message||''),'err'); }
+}
+window.markPaid = markPaid;
+
+// 엑셀 내보내기
+function exportPayExcel(){
+  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth));
+  if(!all.length){ toast('해당 월에 데이터가 없습니다.','err'); return; }
+  try {
+    ensureXLSX().then(()=>{
+      const wb=XLSX.utils.book_new();
+      // 요청서 목록
+      const a1=[['날짜','구분','신청자','부서','용도','금액','상태','지급일','은행','계좌','예금주']];
+      all.forEach(r=>{
+        const st = r.mode==='income'?'수입' : r.status==='rejected'?'반려' : r.paid?'지급완료' : r.status==='approving'?'결재중':'지급대기';
+        a1.push([r.date||'', r.mode==='income'?'수입':'지출', r.applicantName||r.createdByName||'', r.dept||'', r.purpose||'', r.total||0, st,
+          r.paidAt?fmtDT(r.paidAt):'', r.bank?.bank||'', r.bank?.account||'', r.bank?.holder||'']);
+      });
+      const ws1=XLSX.utils.aoa_to_sheet(a1); ws1['!cols']=[{wch:11},{wch:6},{wch:9},{wch:9},{wch:26},{wch:12},{wch:9},{wch:16},{wch:11},{wch:16},{wch:9}];
+      XLSX.utils.book_append_sheet(wb, ws1, '요청서 목록');
+      // 항목 상세
+      const a2=[['날짜','신청자','대분류','세부','품목','수량','단가','소계','비고']];
+      all.forEach(r=>(r.rows||[]).forEach(row=>{
+        a2.push([r.date||'', r.applicantName||'', row.cat_major||'', row.cat_item||'', row.name||'', row.qty||0, row.price||0, row.sub||0, row.note||'']);
+      }));
+      const ws2=XLSX.utils.aoa_to_sheet(a2); ws2['!cols']=[{wch:11},{wch:9},{wch:14},{wch:16},{wch:20},{wch:6},{wch:11},{wch:12},{wch:16}];
+      XLSX.utils.book_append_sheet(wb, ws2, '항목 상세');
+      // 계정과목별 집계
+      const bymap={};
+      all.filter(r=>r.mode!=='income').forEach(r=>(r.rows||[]).forEach(row=>{
+        const k=row.cat_major||'미분류'; bymap[k]=(bymap[k]||0)+(row.sub||0);
+      }));
+      const a3=[['계정과목(대분류)','금액']];
+      Object.keys(bymap).sort().forEach(k=>a3.push([k,bymap[k]]));
+      a3.push(['합계', Object.values(bymap).reduce((s,v)=>s+v,0)]);
+      const ws3=XLSX.utils.aoa_to_sheet(a3); ws3['!cols']=[{wch:20},{wch:14}];
+      XLSX.utils.book_append_sheet(wb, ws3, '계정과목별 집계');
+      XLSX.writeFile(wb, `경비지급_${rpMonth}_${ORGS[rpOrg]||rpOrg}.xlsx`);
+      toast('엑셀 파일을 저장했습니다.','ok');
+    });
+  } catch(e){ toast('엑셀 실패: '+(e.message||''),'err'); }
+}
+window.exportPayExcel = exportPayExcel;
+
+// ══════════ 📋 월별 취합표 (계정과목 대분류별) ══════════
+function buildMonthlySheetHTML(){
+  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth) && r.status!=='rejected');
+  const exp = all.filter(r=>r.mode!=='income');
+  const inc = all.filter(r=>r.mode==='income');
+  // 지출: 대분류 > 세부 집계
+  const tree={};
+  exp.forEach(r=>(r.rows||[]).forEach(row=>{
+    const M=row.cat_major||'미분류', S=row.cat_item||'-';
+    if(!tree[M]) tree[M]={items:{}, total:0};
+    tree[M].items[S]=(tree[M].items[S]||0)+(row.sub||0);
+    tree[M].total+=(row.sub||0);
+  }));
+  const majors=Object.keys(tree).sort((a,b)=>tree[b].total-tree[a].total);
+  const expTotal=majors.reduce((s,m)=>s+tree[m].total,0);
+  // 수입 집계
+  const incMap={};
+  inc.forEach(r=>(r.rows||[]).forEach(row=>{ const k=row.cat_major||'기타'; incMap[k]=(incMap[k]||0)+(row.sub||0); }));
+  const incTotal=Object.values(incMap).reduce((s,v)=>s+v,0);
+
+  const specialSet=new Set(EXPENSE_CATS.filter(c=>c.special).map(c=>c.major));
+
+  const expRows = majors.map(M=>{
+    const items=Object.keys(tree[M].items).sort();
+    const isSp=specialSet.has(M);
+    return items.map((S,i)=>`<tr>
+      ${i===0?`<td class="ms-major" rowspan="${items.length}">${esc(M)}${isSp?'<div class="ms-sp">별도 통장</div>':''}</td>`:''}
+      <td class="ms-item">${esc(S)}</td>
+      <td class="ms-amt">₩${won(tree[M].items[S])}</td>
+      ${i===0?`<td class="ms-mtot" rowspan="${items.length}">₩${won(tree[M].total)}</td>`:''}
+    </tr>`).join('');
+  }).join('');
+
+  const incRows = Object.keys(incMap).sort().map(k=>`<tr>
+    <td class="ms-item" colspan="2">${esc(k)}</td><td class="ms-amt">₩${won(incMap[k])}</td><td class="ms-mtot">₩${won(incMap[k])}</td>
+  </tr>`).join('');
+
+  const [y,m]=rpMonth.split('-');
+  return `<div class="ms-doc">
+    <div class="ms-head">
+      <div class="ms-title">${esc(ORGS[rpOrg]||rpOrg)} 월별 경비 취합표</div>
+      <div class="ms-sub">${y}년 ${Number(m)}월 (1일~말일) · 지출 ${exp.length}건 · 수입 ${inc.length}건 · 출력일 ${todayYMD()}</div>
+    </div>
+    <table class="ms-tbl">
+      <thead><tr><th style="width:130px">대분류</th><th>세부 항목</th><th style="width:120px">금액</th><th style="width:120px">소계</th></tr></thead>
+      <tbody>
+        <tr class="ms-sec"><td colspan="4">■ 지출</td></tr>
+        ${expRows||'<tr><td colspan="4" class="ms-empty">지출 내역 없음</td></tr>'}
+        <tr class="ms-sum"><td colspan="3">지출 합계</td><td class="ms-mtot">₩${won(expTotal)}</td></tr>
+        <tr class="ms-sec"><td colspan="4">■ 수입</td></tr>
+        ${incRows||'<tr><td colspan="4" class="ms-empty">수입 내역 없음</td></tr>'}
+        <tr class="ms-sum"><td colspan="3">수입 합계</td><td class="ms-mtot">₩${won(incTotal)}</td></tr>
+      </tbody>
+      <tfoot><tr><td colspan="3">월 수입 − 지출 차액</td><td class="ms-diff">₩${won(incTotal-expTotal)}</td></tr></tfoot>
+    </table>
+  </div>`;
+}
+
+const MS_CSS = `
+.ms-doc{width:794px;background:#fff;padding:32px;box-sizing:border-box;font-family:'Noto Sans KR',sans-serif;color:#1a1a1a;}
+.ms-head{text-align:center;margin-bottom:18px;}
+.ms-title{font-size:20px;font-weight:800;color:#1b4332;}
+.ms-sub{font-size:12px;color:#8ba396;margin-top:6px;}
+.ms-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.ms-tbl th,.ms-tbl td{border:1px solid #d9e2dd;padding:7px 9px;}
+.ms-tbl thead th{background:#2d6a4f;color:#fff;font-weight:700;text-align:center;}
+.ms-sec td{background:#e4ede8;font-weight:800;color:#1b4332;padding:6px 9px;}
+.ms-major{background:#f4f8f6;font-weight:800;color:#1b4332;text-align:center;vertical-align:middle;}
+.ms-sp{font-size:9px;color:#dc2626;font-weight:700;margin-top:3px;}
+.ms-item{color:#3a5a48;}
+.ms-amt{text-align:right;color:#6b8579;font-weight:500;}
+.ms-mtot{text-align:right;font-weight:900;color:#8a6410;background:#f7efd8;vertical-align:middle;}
+.ms-sum td{background:#eef4f1;font-weight:800;color:#2f5c48;text-align:right;}
+.ms-empty{text-align:center;color:#bbb;padding:12px;}
+.ms-tbl tfoot td{background:#f0e4c4;font-weight:900;color:#8a6410;text-align:right;border-top:2px solid #b08d3c;font-size:13px;}
+.ms-diff{text-align:right;}
+`;
+
+function viewMonthlySheet(){
+  const mv=document.createElement('div'); mv.className='mov'; mv.id='ms-mod';
+  mv.innerHTML=`<div class="mbk" onclick="document.getElementById('ms-mod').remove()"></div>
+    <div class="mbox" style="max-width:96vw;width:900px;max-height:92vh;display:flex;flex-direction:column">
+      <div class="mtitle">📋 월별 취합표</div>
+      <div class="msub">${rpMonth.replace('-','년 ')}월 · ${ORGS[rpOrg]||rpOrg}</div>
+      <div style="display:flex;gap:8px;margin:10px 0">
+        <button class="bm" onclick="printMonthlySheet()">🖨️ PDF 저장</button>
+        <button class="bm" onclick="imageMonthlySheet()">🖼️ 이미지 저장</button>
+      </div>
+      <div style="overflow:auto;flex:1;border:1px solid var(--ivd);border-radius:10px;background:#f0f0f2;padding:16px;display:flex;justify-content:center;align-items:flex-start">
+        <div style="box-shadow:0 4px 20px rgba(0,0,0,.15)"><style>${MS_CSS}</style>${buildMonthlySheetHTML()}</div>
+      </div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('ms-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+}
+window.viewMonthlySheet = viewMonthlySheet;
+
+async function printMonthlySheet(){
+  window.showLoading && window.showLoading('PDF를 만드는 중…');
+  try {
+    await ensureH2C(); await ensureJsPDF();
+    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;';
+    h.innerHTML=`<style>${MS_CSS}</style>`+buildMonthlySheetHTML();
+    document.body.appendChild(h);
+    const node=h.querySelector('.ms-doc');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+    document.body.removeChild(h);
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), mg=8;
+    const iw=pw-mg*2, ih=canvas.height*iw/canvas.width;
+    if(ih<=ph-mg*2){ pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',mg,mg,iw,ih); }
+    else { let rem=canvas.height,pos=0; const pageH=Math.floor(canvas.width*(ph-mg*2)/iw);
+      while(rem>0){ const sl=document.createElement('canvas'); sl.width=canvas.width; sl.height=Math.min(pageH,rem);
+        sl.getContext('2d').drawImage(canvas,0,pos,canvas.width,sl.height,0,0,canvas.width,sl.height);
+        const sh=sl.height*iw/canvas.width; if(pos>0)pdf.addPage(); pdf.addImage(sl.toDataURL('image/jpeg',0.92),'JPEG',mg,mg,iw,sh);
+        rem-=sl.height; pos+=sl.height; } }
+    pdf.save(`월별취합표_${rpMonth}.pdf`);
+    window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.printMonthlySheet = printMonthlySheet;
+
+async function imageMonthlySheet(){
+  window.showLoading && window.showLoading('이미지를 만드는 중…');
+  try {
+    await ensureH2C();
+    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;';
+    h.innerHTML=`<style>${MS_CSS}</style>`+buildMonthlySheetHTML();
+    document.body.appendChild(h);
+    const node=h.querySelector('.ms-doc');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+    document.body.removeChild(h);
+    const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`월별취합표_${rpMonth}.png`; a.click();
+    window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.imageMonthlySheet = imageMonthlySheet;
+
+// ══════════ 🧾 영수증 취합 (월별, 잘림방지) ══════════
+let _payRcCache = null;
+function paySeqMap(){
+  const list = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth) && r.status!=='rejected')
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+  const map={}; list.forEach((r,i)=>{ map[r.id]='P'+String(i+1).padStart(3,'0'); });
+  return { list, map };
+}
+
+async function buildPayReceiptHTML(){
+  const { list, map } = paySeqMap();
+  const withRc = list.filter(r=>(r.rows||[]).some(x=>x.receiptCount>0));
+  const blocks=[];
+  for(const r of withRc){
+    const snap=await getDocs(query(collection(db,'payReceipts'), where('requestId','==',r.id)));
+    const arr=[]; snap.forEach(d=>arr.push(d.data()));
+    arr.sort((a,b)=>(a.rowIdx-b.rowIdx)||(a.idx-b.idx));
+    blocks.push({ req:r, seq:map[r.id], receipts:arr });
+  }
+  _payRcCache = blocks;
+
+  const classify = (dataUrl)=> new Promise(res=>{
+    const im=new Image();
+    im.onload=()=>{ const ra=im.naturalWidth/im.naturalHeight;
+      res(ra>1.15?'wide':ra<0.72?'tall':'short'); };
+    im.onerror=()=>res('short');
+    im.src=dataUrl;
+  });
+
+  let cards='';
+  for(const b of blocks){
+    const r=b.req;
+    let cells='';
+    for(let i=0;i<b.receipts.length;i++){
+      const rc=b.receipts[i];
+      const type=await classify(rc.dataUrl);
+      const row=(r.rows||[])[rc.rowIdx];
+      const label=row?`${row.cat_major||''}${row.cat_item?' › '+row.cat_item:''} · ${row.name||''}`:'';
+      cells+=`<div class="prc-cell ${type}">
+        <div class="prc-no">${b.seq}-${rc.rowIdx+1}.${rc.idx}</div>
+        <img src="${rc.dataUrl}">
+        ${label?`<div class="prc-lbl">${esc(label)}</div>`:''}
+      </div>`;
+    }
+    cards+=`<div class="prc-card">
+      <div class="prc-hd">
+        <span class="prc-seq">${b.seq}</span>
+        <span class="prc-purpose">${esc(r.purpose||'(용도 미기재)')}</span>
+        <span class="prc-meta">${esc(r.applicantName||'')} · ${esc(r.dept||'')} · ${esc(r.date||'')} · <b>₩${won(r.total)}</b> · 영수증 ${b.receipts.length}장</span>
+      </div>
+      <div class="prc-grid">${cells}</div>
+    </div>`;
+  }
+  const [y,m]=rpMonth.split('-');
+  return `<div class="prc-doc">
+    <div class="prc-head">
+      <div class="prc-title">${esc(ORGS[rpOrg]||rpOrg)} 경비 지급 영수증 취합</div>
+      <div class="prc-sub">${y}년 ${Number(m)}월 (1일~말일) · 신청 ${blocks.length}건 · 날짜순 · 출력일 ${todayYMD()}</div>
+    </div>
+    ${cards||'<p style="text-align:center;color:#bbb;padding:30px">첨부된 영수증이 없습니다.</p>'}
+    <div class="prc-foot">※ 번호(P###)는 신청 건, P###-항목.장 순으로 표기됩니다. 취합표의 번호와 대조하세요.</div>
+  </div>`;
+}
+
+const PRC_CSS = `
+.prc-doc{width:794px;background:#fff;padding:30px;box-sizing:border-box;font-family:'Noto Sans KR',sans-serif;color:#1a1a1a;}
+.prc-head{text-align:center;border-bottom:2.5px solid #2d6a4f;padding-bottom:12px;margin-bottom:16px;}
+.prc-title{font-size:19px;font-weight:800;color:#1b4332;}
+.prc-sub{font-size:11.5px;color:#8ba396;margin-top:5px;}
+.prc-card{border:1px solid #d9e2dd;border-radius:10px;margin-bottom:14px;overflow:hidden;break-inside:avoid;page-break-inside:avoid;}
+.prc-hd{background:#eef4f1;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid #d9e2dd;}
+.prc-seq{background:#2d6a4f;color:#fff;font-size:12px;font-weight:800;padding:2px 9px;border-radius:6px;}
+.prc-purpose{font-size:14px;font-weight:800;color:#1b4332;}
+.prc-meta{font-size:11px;color:#5a7267;}
+.prc-meta b{color:#8a6410;}
+.prc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px;}
+.prc-cell{border:1px solid #e2e8e5;border-radius:6px;background:#fafbfa;position:relative;overflow:hidden;text-align:center;padding:6px;}
+.prc-cell.wide{grid-column:1 / -1;}
+.prc-cell img{max-width:100%;object-fit:contain;display:block;margin:0 auto;}
+.prc-cell.tall img{max-height:400px;}
+.prc-cell.short img{max-height:220px;}
+.prc-cell.wide img{max-height:290px;}
+.prc-no{position:absolute;top:4px;left:4px;background:rgba(45,106,79,.9);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;z-index:1;}
+.prc-lbl{font-size:9.5px;color:#5a7267;margin-top:4px;line-height:1.3;}
+.prc-foot{text-align:center;font-size:10px;color:#a8b5ac;margin-top:14px;}
+`;
+
+async function viewPayReceiptCollection(){
+  const mv=document.createElement('div'); mv.className='mov'; mv.id='prc-mod';
+  mv.innerHTML=`<div class="mbk" onclick="document.getElementById('prc-mod').remove()"></div>
+    <div class="mbox" style="max-width:96vw;width:900px;max-height:92vh;display:flex;flex-direction:column">
+      <div class="mtitle">🧾 영수증 취합 (${rpMonth.replace('-','년 ')}월)</div>
+      <div class="msub">${ORGS[rpOrg]||rpOrg} · 1일~말일 · 영수증이 잘리지 않게 페이지가 나뉩니다.</div>
+      <div style="display:flex;gap:8px;margin:10px 0">
+        <button class="bm" onclick="printPayReceipts()">🖨️ PDF 저장</button>
+        <button class="bm" onclick="imagePayReceipts()">🖼️ 이미지 저장</button>
+      </div>
+      <div id="prc-body" style="overflow:auto;flex:1;border:1px solid var(--ivd);border-radius:10px;background:#f0f0f2;padding:16px;display:flex;justify-content:center;align-items:flex-start">
+        <div style="padding:30px;color:var(--tl);font-size:13px">영수증을 불러오는 중…</div>
+      </div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('prc-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+  try {
+    const html=await buildPayReceiptHTML();
+    const b=$I('prc-body'); if(b) b.innerHTML=`<div style="box-shadow:0 4px 20px rgba(0,0,0,.15)"><style>${PRC_CSS}</style>${html}</div>`;
+  } catch(e){ const b=$I('prc-body'); if(b) b.innerHTML=`<div style="color:#dc2626;padding:20px">불러오기 실패: ${esc(e.message||'')}</div>`; }
+}
+window.viewPayReceiptCollection = viewPayReceiptCollection;
+
+async function printPayReceipts(){
+  window.showLoading && window.showLoading('영수증 취합 PDF를 만드는 중…');
+  try {
+    await ensureH2C(); await ensureJsPDF();
+    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;';
+    h.innerHTML=`<style>${PRC_CSS}</style>`+await buildPayReceiptHTML();
+    document.body.appendChild(h);
+    const node=h.querySelector('.prc-doc');
+    await Promise.all([...node.querySelectorAll('img')].map(im=>im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), mg=6;
+    const iw=pw-mg*2;
+    const scale=canvas.width/node.offsetWidth;
+    const pageH=Math.floor(canvas.width*(ph-mg*2)/iw);
+    // 카드 시작 위치 (잘림 방지)
+    const docTop=node.getBoundingClientRect().top;
+    const cardTops=[...node.querySelectorAll('.prc-card')].map(el=>Math.round((el.getBoundingClientRect().top-docTop)*scale));
+    document.body.removeChild(h);
+
+    const slices=[]; let pos=0; const total=canvas.height;
+    while(pos<total){
+      let end=pos+pageH;
+      if(end>=total) end=total;
+      else {
+        const cand=cardTops.filter(t=>t>pos+10 && t<end);
+        if(cand.length){ const cut=Math.max(...cand); if(cut-pos>pageH*0.15) end=cut; }
+      }
+      slices.push({y:pos,h:end-pos}); pos=end;
+    }
+    slices.forEach((sl,i)=>{
+      const c=document.createElement('canvas'); c.width=canvas.width; c.height=sl.h;
+      c.getContext('2d').drawImage(canvas,0,sl.y,canvas.width,sl.h,0,0,canvas.width,sl.h);
+      const sh=sl.h*iw/canvas.width;
+      if(i>0) pdf.addPage();
+      pdf.addImage(c.toDataURL('image/jpeg',0.9),'JPEG',mg,mg,iw,sh);
+    });
+    pdf.save(`영수증취합_${rpMonth}_${ORGS[rpOrg]||rpOrg}.pdf`);
+    window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.printPayReceipts = printPayReceipts;
+
+async function imagePayReceipts(){
+  window.showLoading && window.showLoading('이미지를 만드는 중…');
+  try {
+    await ensureH2C();
+    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;';
+    h.innerHTML=`<style>${PRC_CSS}</style>`+await buildPayReceiptHTML();
+    document.body.appendChild(h);
+    const node=h.querySelector('.prc-doc');
+    await Promise.all([...node.querySelectorAll('img')].map(im=>im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    document.body.removeChild(h);
+    const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`영수증취합_${rpMonth}.png`; a.click();
+    window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.imagePayReceipts = imagePayReceipts;
 function setReportOrg(o){ reportOrg = o; reportSem = ''; renderReport(); }
 window.setReportOrg = setReportOrg;
 function setReportSem(s){ reportSem = s; renderReport(); }
