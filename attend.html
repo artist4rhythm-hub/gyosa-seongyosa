@@ -4,19 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>출석부 · 교사 선교사</title>
-<meta name="theme-color" content="#1e2e5c">
+<meta name="theme-color" content="#1E3932">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="출석부">
 <link rel="icon" type="image/png" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="theme.css">
 <style>
 :root {
-  --gd:#1e2e5c; --gm:#2b3990; --gl:#5a70cc; --gp:#e8ecf8;
-  --gold:#c9a84c; --goldd:#a8873a; --goldp:#fdf3d8;
-  --iv:#f5f0e8; --ivd:#e8e0d0;
-  --tx:#1a1a2e; --ts:#4a4a6a; --tl:#8888aa; --wh:#ffffff;
-  --sh:0 2px 12px rgba(30,46,92,0.10); --r:12px; --rs:8px;
+  --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
+  --gold:#B08D3C; --goldd:#8A6410; --goldp:#F7EFD8;
+  --iv:#F2F0EB; --ivd:#E3E1DA;
+  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#ffffff;
+  --sh:0 2px 12px rgba(30,57,50,0.08); --r:12px; --rs:8px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--iv);color:var(--tx);min-height:100vh;}
@@ -27,7 +28,11 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .gsub{font-size:14px;color:var(--ts);line-height:1.6;margin-bottom:20px;}
 .gbtn{display:inline-block;width:100%;padding:14px;background:linear-gradient(135deg,#2b3990,#1e2e5c);color:var(--wh);border:none;border-radius:var(--rs);font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;}
 
-#ms{display:none;flex-direction:column;min-height:100vh;}
+#ms{display:none;flex-direction:column;width:100%;}
+.ah{display:none;}
+.pg-links{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.pg-link{padding:7px 14px;border-radius:8px;background:var(--wh);border:1px solid var(--ivd);color:var(--gm);font-size:13px;font-weight:600;text-decoration:none;}
+.pg-link:hover{background:var(--gp);}
 .ah{background:linear-gradient(135deg,#1e2e5c,#12194a);color:var(--wh);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
 .ahl{display:flex;align-items:center;gap:12px;}
 .ahi{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
@@ -42,7 +47,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .subtbtn{padding:8px 14px;background:transparent;border:none;border-radius:8px;font-size:14px;font-weight:600;color:var(--ts);cursor:pointer;white-space:nowrap;}
 .subtbtn.active{background:var(--gp);color:var(--gm);}
 
-.tc{padding:20px 16px;max-width:960px;margin:0 auto;width:100%;}
+.tc{padding:0;max-width:960px;margin:0 auto;width:100%;}
 .actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
 .adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
 .acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
@@ -97,7 +102,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
-<script src="topnav.js"></script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
 </head>
 <body>
 
@@ -110,17 +116,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 </div>
 
 <div id="ms">
-  <header class="ah">
-    <a class="ahl" href="index.html#home" style="text-decoration:none;color:inherit;cursor:pointer">
-      <div class="ahi">✅</div>
-      <div class="aht">출석부</div>
-    </a>
-    <div class="ahr">
-      <div id="hn"></div>
-      <div id="hi"></div>
-      <a class="homebtn" href="index.html">← 메인으로</a>
-    </div>
-  </header>
+  
   <div class="subtb" id="subtb">
     <button class="subtbtn active" id="tb-check" onclick="showTab('check')">✅ 출석 체크</button>
     <button class="subtbtn" id="tb-stat" onclick="showTab('stat')">📊 통계</button>
@@ -233,10 +229,12 @@ onAuthStateChanged(auth, async (user) => {
     const ac = CU.acStatus || 'active';
     if(ac==='leave'||ac==='quit'){ $I('gate-msg').textContent = ac==='quit'?'퇴직 처리된 계정입니다.':'휴직 중인 계정입니다.'; $I('gate-btn').style.display='inline-block'; return; }
     $I('gate').style.display='none'; $I('ms').style.display='flex';
-    if(window.renderTopNav) renderTopNav('attend', CU.role);
+    window.ORGS = ORGS;
+  renderShell('attend', CU);
+  if(window.loadSideBadges) loadSideBadges();
     window.showLoading && window.showLoading('불러오는 중…');
-    $I('hn').textContent = CU.name;
-    $I('hi').textContent = `${ORGS[CU.org]||CU.org} · ${CU.dept||''} · ${ROLES[CU.role]||''}`;
+    
+    
     // 설정 탭은 기관관리자/슈퍼만
     if(canSetup()) $I('tb-set').style.display='';
     await loadTypes();

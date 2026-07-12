@@ -9,7 +9,9 @@
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
-<script src="topnav.js"></script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
+<link rel="stylesheet" href="theme.css">
 <style>
   :root{
     --bg:#F3F1EC;
@@ -210,6 +212,12 @@
   .place-wrap{display:grid;grid-template-columns:280px 1fr;gap:20px;align-items:start}
   @media(max-width:900px){.place-wrap{grid-template-columns:1fr}}
   .lesson-drag{display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--line-soft);border-left:4px solid #888;border-radius:8px;background:#fff;margin-bottom:7px;cursor:grab}
+  /* 드래그 가능한 요소: 터치 시 텍스트 선택·기본 제스처 차단 (iPad/폰) */
+  [draggable="true"]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
+  .slot,.lesson-drag{-webkit-user-select:none;user-select:none;}
+  /* 드래그 진행 중 전체 텍스트 선택 차단 */
+  body.dnd-dragging{-webkit-user-select:none !important;user-select:none !important;}
+  body.dnd-dragging *{-webkit-user-select:none !important;user-select:none !important;}
   .lesson-drag.dragging{opacity:.4}
   .lesson-drag.done{opacity:.5}
   .lesson-drag.picking{box-shadow:0 0 0 2px var(--accent);border-color:var(--accent)}
@@ -280,22 +288,14 @@
 </style>
 </head>
 <body>
-<div id="topnav-container"></div>
+<div id="ms" style="display:flex;flex-direction:column;width:100%">
 <div id="tt-guard" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:70vh;text-align:center;padding:24px">
   <div style="font-size:40px;margin-bottom:12px">🔒</div>
   <div style="font-size:18px;font-weight:700;color:#1C2421;margin-bottom:6px">로그인이 필요합니다</div>
   <div style="font-size:14px;color:#5A625E;margin-bottom:18px">시간표는 로그인 후 온라인으로 저장·공유됩니다.</div>
   <a href="index.html" style="display:inline-block;padding:12px 24px;background:#2F6E5B;color:#fff;border-radius:8px;text-decoration:none;font-weight:700">로그인 화면으로</a>
 </div>
-<script>
-  // 공통 상단 메뉴 렌더 (로그인 정보가 없으므로 기본 권한으로 표시)
-  if(window.renderTopNav){
-    try {
-      const role = localStorage.getItem('gyosa_role') || 'teacher';
-      renderTopNav('timetable', role, 'topnav-container');
-    } catch(e){ renderTopNav('timetable', 'teacher', 'topnav-container'); }
-  }
-</script>
+
 <header class="top">
   <div class="eyebrow">다니엘 아마츠 · 지혜빛</div>
   <h1>시간표 틀 빌더</h1>
@@ -607,6 +607,9 @@
       if(Math.abs(dx)<8 && Math.abs(dy)<8) return;  // 살짝 움직임은 무시(탭/스크롤 보존)
       // 드래그 시작
       started=true;
+      document.body.classList.add('dnd-dragging');   // 전역 텍스트선택 차단
+      // 혹시 이미 잡힌 선택 해제
+      const sel=window.getSelection && window.getSelection(); if(sel && sel.removeAllRanges) sel.removeAllRanges();
       dt=mkDT();
       fire(dragEl,'dragstart',t.clientX,t.clientY);
       // 고스트 이미지 생성
@@ -615,7 +618,7 @@
       ghost.style.cssText=`position:fixed;left:0;top:0;width:${r.width}px;height:${r.height}px;pointer-events:none;opacity:.8;z-index:99999;transform:translate(${r.left}px,${r.top}px);box-shadow:0 6px 20px rgba(0,0,0,.25);border-radius:8px;`;
       document.body.appendChild(ghost);
     }
-    e.preventDefault();  // 스크롤 방지 (드래그 중)
+    e.preventDefault();  // 스크롤·텍스트선택 방지 (드래그 중)
     // 고스트 따라오기
     if(ghost){ const r=dragEl.getBoundingClientRect(); ghost.style.transform=`translate(${t.clientX-r.width/2}px,${t.clientY-r.height/2}px)`; }
     // 아래 요소에 dragover/dragenter/dragleave 발생
@@ -637,6 +640,13 @@
       fire(dragEl,'dragend',t.clientX,t.clientY);
     }
     if(ghost){ ghost.remove(); ghost=null; }
+    document.body.classList.remove('dnd-dragging');
+    dragEl=null; lastOver=null; started=false; dt=null;
+  }, {passive:false});
+  // 취소된 터치도 정리
+  document.addEventListener('touchcancel', ()=>{
+    if(ghost){ ghost.remove(); ghost=null; }
+    document.body.classList.remove('dnd-dragging');
     dragEl=null; lastOver=null; started=false; dt=null;
   }, {passive:false});
 })();
@@ -2717,5 +2727,14 @@ async function openPlanAccessDlg(){
   };
 }
 
+</script>
+</div>
+<script>
+  (function(){
+    var role='teacher', nm='';
+    try{ role = localStorage.getItem('gyosa_role') || 'teacher'; nm = localStorage.getItem('gyosa_name') || ''; }catch(e){}
+    window.ORGS = window.ORGS || {daniel:'다니엘 아마츠', jihyebit:'지혜빛'};
+    if(window.renderShell) renderShell('timetable', { name:nm, role:role, org:'daniel' });
+  })();
 </script>
 </html>
