@@ -2203,28 +2203,34 @@ function normPhone(v){
 function openBulkImport(){
   const el = document.createElement('div'); el.id='bulk-mod';
   el.innerHTML = `
-    <div class="mov">
+    <div class="mov" style="align-items:center;padding:20px">
       <div class="mbk" onclick="document.getElementById('bulk-mod').remove()"></div>
-      <div class="mbox" style="max-width:900px">
+      <div class="mbox" style="max-width:920px;border-radius:20px;max-height:90vh">
         <div class="mtitle">📥 교직원 정보 일괄 입력</div>
-        <div class="msub">엑셀에서 <b>표 전체를 복사</b>해 아래에 붙여넣으세요. 첫 줄은 반드시 <b>제목 줄(이름·생년월일·주소…)</b>이어야 합니다.</div>
+        <div class="msub">엑셀 파일을 선택하면 자동으로 읽어옵니다. (드린 양식 그대로 사용하시면 됩니다)</div>
 
-        <div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:9px;padding:11px 13px;margin-bottom:12px;font-size:12px;color:#991B1B;line-height:1.6">
-          🔒 <b>주민등록번호 열은 붙여넣어도 저장되지 않습니다.</b> 재직증명서에는 생년월일만 사용합니다.
+        <div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:9px;padding:10px 13px;margin-bottom:14px;font-size:12px;color:#991B1B">
+          🔒 <b>주민등록번호는 읽지 않습니다.</b> 재직증명서에는 생년월일만 사용합니다.
         </div>
 
-        <textarea id="bulk-ta" placeholder="이름	담당	구분	입사일자	생년월일	본인 휴대전화번호	주소&#10;박수경	　	정교사	2009-03-02	1967-11-06	010-2777-4329	경기도 용인시 ..."
-          style="width:100%;height:150px;border:1.5px solid var(--ivd);border-radius:10px;padding:11px 13px;font-size:12.5px;
-                 font-family:ui-monospace,SFMono-Regular,Menlo,monospace;outline:none;background:var(--iv);resize:vertical"></textarea>
-
-        <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap">
-          <label style="font-size:12.5px;font-weight:700;color:var(--gd)">기관</label>
-          <select id="bulk-org" style="height:36px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv);font-family:inherit">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+          <label style="font-size:13px;font-weight:700;color:var(--gd)">기관</label>
+          <select id="bulk-org" style="height:40px;border:1.5px solid var(--ivd);border-radius:9px;padding:0 12px;font-size:13.5px;background:var(--iv);font-family:inherit">
             ${myOrgs().map(o=>`<option value="${o}">${ORGS[o]||o}</option>`).join('')}
           </select>
-          <button class="bm" onclick="parseBulk()">🔍 미리보기</button>
+          <button class="bp" style="padding:10px 18px" onclick="document.getElementById('bulk-file').click()">📂 엑셀 파일 선택</button>
+          <input type="file" id="bulk-file" accept=".xlsx,.xls" style="display:none" onchange="readBulkFile(this.files[0])">
+          <span id="bulk-fname" style="font-size:12px;color:var(--tl)"></span>
           <button class="bs" style="margin-left:auto" onclick="document.getElementById('bulk-mod').remove()">닫기</button>
         </div>
+
+        <details style="margin-bottom:14px">
+          <summary style="font-size:12.5px;color:var(--gm);font-weight:600;cursor:pointer">또는 직접 붙여넣기 (엑셀에서 표 복사)</summary>
+          <textarea id="bulk-ta" placeholder="엑셀에서 제목 줄(이름·담당·구분…)부터 복사해서 여기에 붙여넣으세요."
+            style="width:100%;height:110px;border:1.5px solid var(--ivd);border-radius:10px;padding:11px 13px;font-size:12.5px;margin-top:8px;
+                   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;outline:none;background:var(--iv);resize:vertical"></textarea>
+          <button class="bm" style="margin-top:8px" onclick="parseBulkText()">🔍 붙여넣은 내용 미리보기</button>
+        </details>
 
         <div id="bulk-preview"></div>
       </div>
@@ -2233,7 +2239,59 @@ function openBulkImport(){
 }
 window.openBulkImport = openBulkImport;
 
-function parseBulk(){
+// ── 엑셀 파일 직접 읽기 (SheetJS를 필요할 때만 로드) ──
+function loadSheetJS(){
+  return new Promise((resolve, reject)=>{
+    if(window.XLSX) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = ()=>resolve();
+    s.onerror = ()=>reject(new Error('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하세요.'));
+    document.head.appendChild(s);
+  });
+}
+
+async function readBulkFile(file){
+  if(!file) return;
+  const fname = $I('bulk-fname'); if(fname) fname.textContent = '📄 ' + file.name + ' 읽는 중…';
+  try {
+    await loadSheetJS();
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { cellDates:false });
+
+    // 기관에 맞는 시트 찾기 (없으면 첫 시트)
+    const orgSel = $I('bulk-org')?.value || myOrgs()[0];
+    const orgName = ORGS[orgSel] || orgSel;
+    let sheetName = wb.SheetNames.find(n => n.includes(orgName) || orgName.includes(n));
+    if(!sheetName) sheetName = wb.SheetNames.find(n => n !== '사용법') || wb.SheetNames[0];
+
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header:1, raw:false, dateNF:'yyyy-mm-dd', defval:'' });
+
+    // 제목 줄 찾기 ("이름"이 있는 행)
+    const hi = rows.findIndex(r => (r||[]).some(c => String(c).trim() === '이름'));
+    if(hi < 0){
+      if(fname) fname.textContent = '';
+      $I('bulk-preview').innerHTML = '<p class="empty" style="color:#dc2626">「이름」 제목 줄을 찾지 못했습니다. 드린 양식의 시트인지 확인하세요.</p>';
+      return;
+    }
+
+    // 제목 줄부터 TSV로 만들어 기존 파서 재사용
+    const tsv = rows.slice(hi)
+      .filter(r => (r||[]).some(c => String(c).trim()))
+      .map(r => (r||[]).map(c => String(c==null?'':c).replace(/\t/g,' ')).join('\t'))
+      .join('\n');
+    const ta = $I('bulk-ta'); if(ta) ta.value = tsv;
+    if(fname) fname.textContent = `📄 ${file.name} · 「${sheetName}」 시트`;
+    parseBulkText();
+  } catch(e){
+    if(fname) fname.textContent = '';
+    $I('bulk-preview').innerHTML = `<p class="empty" style="color:#dc2626">파일을 읽지 못했습니다: ${esc(e.message||'')}</p>`;
+  }
+}
+window.readBulkFile = readBulkFile;
+
+function parseBulkText(){
   const raw = ($I('bulk-ta')?.value || '').trim();
   const box = $I('bulk-preview');
   if(!raw){ box.innerHTML = '<p class="empty">붙여넣은 내용이 없습니다.</p>'; return; }
@@ -2317,7 +2375,8 @@ function parseBulk(){
       <button class="bp" onclick="applyBulk()">✅ ${BULK_ROWS.length}명 적용하기</button>
     </div>`;
 }
-window.parseBulk = parseBulk;
+window.parseBulkText = parseBulkText;
+window.parseBulk = parseBulkText;  // 호환
 
 async function applyBulk(){
   if(!BULK_ROWS.length) return;
@@ -2373,7 +2432,7 @@ async function applyBulk(){
             ${fails.slice(0,10).map(f=>`· ${esc(f.name)}: ${esc(f.msg.slice(0,80))}`).join('<br>')}
             ${fails.length>10?`<br>… 외 ${fails.length-10}건`:''}
           </div>
-          <button class="bm" style="margin-top:10px" onclick="parseBulk()">← 미리보기로 돌아가기</button>
+          <button class="bm" style="margin-top:10px" onclick="parseBulkText()">← 미리보기로 돌아가기</button>
         </div>`;
       toast(`실패 ${fails.length}명 — 아래에서 원인을 확인하세요.`,'err');
     } else {
