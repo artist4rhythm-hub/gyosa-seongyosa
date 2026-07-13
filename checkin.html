@@ -278,10 +278,12 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="subtb" id="att-subtb">
       <button class="subtbtn active" id="st-cal" onclick="showSubTab('cal')">📅 달력</button>
       <button class="subtbtn" id="st-stat" onclick="showSubTab('stat')">📊 통계</button>
+      <button class="subtbtn" id="st-dir" onclick="showSubTab('dir')">📇 교직원 명부</button>
     </div>
     <!-- 하위 탭 콘텐츠 -->
     <div id="c-cal" class="tc"></div>
     <div id="c-stat" class="tc" style="display:none"></div>
+    <div id="c-dir" class="tc" style="display:none"></div>
   </div>
   <div id="c-notice" style="display:none;flex-direction:column;flex:1">
     <div class="tc" id="notice-body"></div>
@@ -292,12 +294,14 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="subtb">
       <button class="subtbtn active" id="sa-sys" onclick="showAdmTab('sys')">🏢 통합관리</button>
       <button class="subtbtn" id="sa-att" onclick="showAdmTab('att')">📋 출근부 설정</button>
+      <button class="subtbtn" id="sa-hr" onclick="showAdmTab('hr')" style="display:none">📇 인사정보</button>
       <button class="subtbtn" id="sa-sec" onclick="showAdmTab('sec')" style="display:none">🛡️ 접속·보안</button>
       <button class="subtbtn" id="sa-log" onclick="showAdmTab('log')" style="display:none">🔐 로그인 기록</button>
       <button class="subtbtn" id="sa-act" onclick="showAdmTab('act')" style="display:none">📜 활동 로그</button>
     </div>
     <div id="ca-sys" class="tc"></div>
     <div id="ca-att" class="tc" style="display:none"></div>
+    <div id="ca-hr" class="tc" style="display:none"></div>
     <div id="ca-sec" class="tc" style="display:none"></div>
     <div id="ca-log" class="tc" style="display:none"></div>
     <div id="ca-act" class="tc" style="display:none"></div>
@@ -619,7 +623,18 @@ async function saveEditStaff(uid) {
   }
 
   const birth = $I('es-birth')?.value || '';
-  await updateDoc(doc(db, 'staff', uid), { name, org, orgs, dept, role, acStatus, birth });
+  // 인사정보
+  const phone    = ($I('es-phone')?.value    || '').trim();
+  const address  = ($I('es-addr')?.value     || '').trim();
+  const hireDate = $I('es-hire')?.value      || '';
+  const leaveDate= $I('es-leave')?.value     || '';
+  const position = $I('es-position')?.value  || '';
+  const empType  = $I('es-emptype')?.value   || '';
+  const duty     = ($I('es-duty')?.value     || '').trim();
+  await updateDoc(doc(db, 'staff', uid), {
+    name, org, orgs, dept, role, acStatus, birth,
+    phone, address, hireDate, leaveDate, position, empType, duty
+  });
   logActivity('수정', '계정', `${name} 정보 수정 (상태: ${acStatus==='active'?'재직':acStatus==='leave'?'휴직':'퇴직'})`);
   toast(`${name} 선생님 정보가 수정되었습니다.`, 'ok');
   document.getElementById('edit-staff-mod')?.remove();
@@ -1097,6 +1112,7 @@ async function showMain(){
   $I('st-stat').style.display=isAdmin?'':'none';
   $I('t-adm').style.display=isAdmin?'flex':'none';
   // 로그인 기록은 슈퍼관리자만
+  const hrTab = $I('sa-hr'); if(hrTab) hrTab.style.display = ['super','org_admin'].includes(CU.role) ? '' : 'none';
   const secTab = $I('sa-sec'); if(secTab) secTab.style.display = CU.role==='super' ? '' : 'none';
   const logTab = $I('sa-log'); if(logTab) logTab.style.display = CU.role==='super' ? '' : 'none';
   const actTab = $I('sa-act'); if(actTab) actTab.style.display = CU.role==='super' ? '' : 'none';
@@ -1582,9 +1598,10 @@ function showTab(t){
 function showSubTab(sub){
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('st-'+sub)?.classList.add('active');
-  ['c-cal','c-stat'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['c-cal','c-stat','c-dir'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   if(sub==='cal'){ $I('c-cal').style.display='block'; renderAtt(); }
   if(sub==='stat'){ $I('c-stat').style.display='block'; renderStat(); }
+  if(sub==='dir'){ $I('c-dir').style.display='block'; renderDirectory(); }
 }
 
 // ── 출근부 달력 ──────────────────────────────
@@ -2343,14 +2360,271 @@ function renderStat(){
 function showAdmTab(sub){
   document.querySelectorAll('#c-adm .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att','ca-sec','ca-log','ca-act'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-hr','ca-sec','ca-log','ca-act'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
+  if(sub==='hr') renderHRStatus();
   if(sub==='sec') renderSecurity();
   if(sub==='log') renderLoginLog();
   if(sub==='act') renderActivityLog();
 }
+
+// ══════════ 관리자 > 인사정보 현황 ══════════
+const HR_FIELDS = [
+  { k:'birth',    l:'생년월일', self:true },
+  { k:'phone',    l:'휴대폰',   self:true },
+  { k:'address',  l:'집 주소',  self:true },
+  { k:'hireDate', l:'입사일',   self:false },
+  { k:'position', l:'직책',     self:false },
+];
+
+async function renderHRStatus(){
+  const box = $I('ca-hr');
+  if(!['super','org_admin'].includes(CU.role)){ box.innerHTML='<div class="asc"><p class="empty">권한이 없습니다.</p></div>'; return; }
+  await reloadStaffCache();
+
+  const myo = myOrgs();
+  const list = Object.values(STAFF_CACHE||{})
+    .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).some(o=>myo.includes(o)))
+    .filter(s => (s.acStatus||'active') !== 'quit')
+    .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(a.dept||'').localeCompare(b.dept||'','ko')||(a.name||'').localeCompare(b.name||'','ko'));
+
+  const missingOf = (s)=> HR_FIELDS.filter(f=>!s[f.k]);
+  const incomplete = list.filter(s=>missingOf(s).length>0);
+  const complete = list.length - incomplete.length;
+
+  const rows = list.map(s=>{
+    const miss = missingOf(s);
+    const ok = miss.length===0;
+    return `<tr style="${ok?'':'background:#FEF2F2'}">
+      <td style="font-weight:700;color:var(--gd)">${esc(s.name||'')}</td>
+      <td style="font-size:12px;color:var(--tl)">${ORGS[s.org]||s.org||''}${s.dept?' · '+esc(s.dept):''}</td>
+      ${HR_FIELDS.map(f=>`
+        <td style="text-align:center">
+          ${s[f.k]
+            ? `<span title="${esc(String(s[f.k]))}" style="color:#16a34a;font-weight:800">✓</span>`
+            : '<span style="color:#dc2626;font-weight:800">✕</span>'}
+        </td>`).join('')}
+      <td style="text-align:center">
+        ${ok ? '<span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:3px 9px;border-radius:100px;font-weight:700">완료</span>'
+             : `<span style="font-size:11px;background:#fee2e2;color:#dc2626;padding:3px 9px;border-radius:100px;font-weight:700">${miss.length}개 미입력</span>`}
+      </td>
+      <td style="text-align:center">
+        <button class="bm" style="padding:5px 11px;font-size:11.5px" onclick="openEditStaff('${s.uid}','${esc(s.name||'')}','${s.org||''}','${esc(s.dept||'')}','${s.role||'teacher'}')">입력</button>
+        ${!ok?`<button class="bm" style="padding:5px 11px;font-size:11.5px;margin-left:4px" onclick="askHRInfo('${s.uid}','${esc(s.name||'')}')">쪽지 요청</button>`:''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="asc">
+      <h3 class="actitle">📇 인사정보 현황</h3>
+      <p class="adesc">재직증명서 발급에 필요한 정보입니다. 빠진 항목이 있으면 증명서를 발급할 수 없습니다.</p>
+
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:130px;background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:12px 14px">
+          <div style="font-size:22px;font-weight:900;color:var(--gm)">${complete}</div>
+          <div style="font-size:12px;color:var(--ts);font-weight:600">정보 완료</div>
+        </div>
+        <div style="flex:1;min-width:130px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:10px;padding:12px 14px">
+          <div style="font-size:22px;font-weight:900;color:#dc2626">${incomplete.length}</div>
+          <div style="font-size:12px;color:var(--ts);font-weight:600">미입력 있음</div>
+        </div>
+        ${incomplete.length?`<button class="bp" style="align-self:center;padding:11px 18px" onclick="askHRInfoAll()">✉️ 미입력자 전체에게 요청</button>`:''}
+      </div>
+
+      <div style="overflow-x:auto">
+        <table class="gt" style="width:100%;min-width:640px">
+          <thead>
+            <tr>
+              <th style="text-align:left">이름</th>
+              <th style="text-align:left">소속</th>
+              ${HR_FIELDS.map(f=>`<th>${f.l}</th>`).join('')}
+              <th>상태</th>
+              <th>관리</th>
+            </tr>
+          </thead>
+          <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--tl)">교직원이 없습니다.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <p style="font-size:11.5px;color:var(--tl);margin-top:10px">
+        생년월일·휴대폰·집 주소는 <b>본인이 「내 정보 → 인사정보」</b>에서 직접 입력할 수 있습니다.
+        입사일·직책은 관리자가 입력합니다.
+      </p>
+    </div>`;
+}
+window.renderHRStatus = renderHRStatus;
+
+// 인사정보 입력 요청 쪽지
+async function sendHRMsg(uids){
+  const targets = uids.filter(Boolean);
+  if(!targets.length) return;
+  const names = targets.map(u=>STAFF_CACHE[u]?.name||'?');
+  try {
+    await addDoc(collection(db,'messages'), {
+      category:'general',
+      fromUid:CU.uid, fromName:CU.name||'', fromOrg:CU.org||'',
+      toUids:targets, toNames:names,
+      subject:'[인사정보] 정보 입력을 부탁드립니다',
+      body:'재직증명서 발급을 위해 인사정보가 필요합니다.\n\n홈 화면 우측 상단의 「👤 내 정보」 → 「📇 인사정보」 탭에서\n생년월일 · 휴대폰 번호 · 집 주소를 입력해 주세요.\n\n감사합니다.',
+      readBy:[], createdAt:Timestamp.now()
+    });
+    toast(`${targets.length}명에게 요청 쪽지를 보냈습니다.`,'ok');
+  } catch(e){ toast('쪽지 발송 실패: '+(e.message||''),'err'); }
+}
+async function askHRInfo(uid){ await sendHRMsg([uid]); }
+window.askHRInfo = askHRInfo;
+async function askHRInfoAll(){
+  const myo = myOrgs();
+  const targets = Object.values(STAFF_CACHE||{})
+    .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).some(o=>myo.includes(o)))
+    .filter(s => (s.acStatus||'active') !== 'quit')
+    .filter(s => HR_FIELDS.some(f=>!s[f.k]))
+    .map(s=>s.uid);
+  if(!targets.length) return toast('미입력자가 없습니다.','ok');
+  if(!confirm(`미입력자 ${targets.length}명에게 입력 요청 쪽지를 보낼까요?`)) return;
+  await sendHRMsg(targets);
+}
+window.askHRInfoAll = askHRInfoAll;
+
+// ══════════ 📇 교직원 명부 (모든 선생님 열람) ══════════
+let dirQuery = '';
+let dirOrg = '';
+
+function maskPhone(p){
+  if(!p) return '';
+  const d = String(p).replace(/[^0-9]/g,'');
+  if(d.length < 8) return p;
+  return `${d.slice(0,3)}-****-${d.slice(-4)}`;
+}
+function telHref(p){ return String(p||'').replace(/[^0-9]/g,''); }
+
+function renderDirectory(){
+  const box = $I('c-dir');
+  const isAdmin = ['super','org_admin'].includes(CU.role);
+  const myo = myOrgs();
+  if(!dirOrg || !myo.includes(dirOrg)) dirOrg = myo[0];
+
+  let list = Object.values(STAFF_CACHE||{})
+    .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(dirOrg))
+    .filter(s => (s.acStatus||'active') !== 'quit');
+
+  if(dirQuery){
+    const q = dirQuery.toLowerCase();
+    list = list.filter(s =>
+      (s.name||'').toLowerCase().includes(q) ||
+      (s.dept||'').toLowerCase().includes(q) ||
+      (s.position||'').toLowerCase().includes(q) ||
+      (s.duty||'').toLowerCase().includes(q)
+    );
+  }
+
+  // 부서 → 직책 → 이름 순
+  const POS_ORDER = {'원장':1,'교장':2,'교감':3,'행정실장':4,'초등부장':5,'중고등부장':6,'교사':7};
+  list.sort((a,b)=>
+    (a.dept||'').localeCompare(b.dept||'','ko') ||
+    (POS_ORDER[a.position]||9)-(POS_ORDER[b.position]||9) ||
+    (a.name||'').localeCompare(b.name||'','ko')
+  );
+
+  // 부서별 묶기
+  const groups = {};
+  list.forEach(s=>{ const d = s.dept || '기타'; (groups[d] = groups[d] || []).push(s); });
+
+  const card = (s)=>{
+    const isSelf = s.uid === CU.uid;
+    const canSee = isSelf || isAdmin;           // 주소·생일은 본인·관리자만
+    const initial = (s.name||'?').slice(0,1);
+    const leave = (s.acStatus||'active')==='leave';
+    return `<div class="dir-c">
+      <div class="dir-av">${esc(initial)}</div>
+      <div style="flex:1;min-width:0">
+        <div class="dir-n">
+          ${esc(s.name||'')}
+          ${s.position?`<span class="dir-p">${esc(s.position)}</span>`:''}
+          ${leave?'<span class="dir-l">휴직</span>':''}
+          ${isSelf?'<span class="dir-me">나</span>':''}
+        </div>
+        <div class="dir-d">${esc(s.dept||'')}${s.duty?` · ${esc(s.duty)}`:''}</div>
+        <div class="dir-ct">
+          ${s.phone
+            ? `<a class="dir-tel" href="tel:${telHref(s.phone)}">📱 ${esc(s.phone)}</a>`
+            : '<span class="dir-no">📱 번호 미등록</span>'}
+          ${s.email?`<a class="dir-mail" href="mailto:${esc(s.email)}">✉️ ${esc(s.email)}</a>`:''}
+        </div>
+        ${canSee && (s.birth || s.address) ? `
+          <div class="dir-priv">
+            🔒 ${s.birth?`<span>${esc(s.birth)}</span>`:''}${s.birth&&s.address?' · ':''}${s.address?`<span>${esc(s.address)}</span>`:''}
+          </div>` : ''}
+      </div>
+      <div style="display:flex;gap:5px;flex:none">
+        ${s.phone?`<button class="dir-b" onclick="copyText('${telHref(s.phone)}')">복사</button>`:''}
+        <button class="dir-b" onclick="sendDirMsg('${s.uid}','${esc(s.name||'')}')">쪽지</button>
+      </div>
+    </div>`;
+  };
+
+  const orgTabs = myo.length>1 ? `
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      ${myo.map(o=>`<button class="subtbtn ${o===dirOrg?'on':''}" style="padding:8px 18px" onclick="setDirOrg('${o}')">${ORGS[o]||o}</button>`).join('')}
+    </div>` : '';
+
+  box.innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📇 교직원 명부</h3>
+      <p class="adesc">같은 기관 선생님들의 연락처입니다. 주소·생년월일은 본인과 관리자만 볼 수 있습니다.</p>
+      <style>
+        .dir-c{display:flex;align-items:flex-start;gap:12px;padding:13px 15px;border:1px solid var(--ivd);border-radius:12px;margin-bottom:8px;background:#fff;transition:all .13s}
+        .dir-c:hover{border-color:var(--gm);box-shadow:0 3px 12px rgba(30,57,50,.07)}
+        .dir-av{width:40px;height:40px;border-radius:50%;background:var(--gp);color:var(--gd);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex:none}
+        .dir-n{font-size:15px;font-weight:700;color:var(--gd);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+        .dir-p{font-size:10.5px;background:var(--gm);color:#fff;padding:2px 8px;border-radius:100px;font-weight:700}
+        .dir-l{font-size:10.5px;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:100px;font-weight:700}
+        .dir-me{font-size:10.5px;background:var(--goldp);color:var(--goldd);padding:2px 8px;border-radius:100px;font-weight:700}
+        .dir-d{font-size:12px;color:var(--tl);margin-top:2px}
+        .dir-ct{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px}
+        .dir-tel,.dir-mail{font-size:12.5px;color:var(--gm);font-weight:600;text-decoration:none}
+        .dir-tel:hover,.dir-mail:hover{text-decoration:underline}
+        .dir-no{font-size:12px;color:#dc2626;font-weight:600}
+        .dir-priv{font-size:11.5px;color:var(--tl);margin-top:5px;background:var(--iv);padding:5px 9px;border-radius:6px;display:inline-block}
+        .dir-b{padding:5px 11px;border:1px solid var(--ivd);border-radius:7px;background:#fff;font-size:11.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit}
+        .dir-b:hover{border-color:var(--gm);color:var(--gm)}
+        .dir-gt{font-size:12.5px;font-weight:800;color:var(--gm);margin:14px 2px 8px}
+        .dir-s{width:100%;max-width:320px;height:40px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 14px;font-size:14px;outline:none;background:var(--iv);font-family:inherit;margin-bottom:14px}
+        .dir-s:focus{border-color:var(--gm);background:#fff}
+      </style>
+      ${orgTabs}
+      <input class="dir-s" id="dir-q" placeholder="🔍 이름 · 부서 · 직책으로 검색" value="${esc(dirQuery)}" oninput="setDirQuery(this.value)">
+      ${Object.keys(groups).length
+        ? Object.entries(groups).map(([d, arr])=>`
+            <div class="dir-gt">${esc(d)} <span style="color:var(--tl);font-weight:600">${arr.length}명</span></div>
+            ${arr.map(card).join('')}`).join('')
+        : '<p class="empty">검색 결과가 없습니다.</p>'}
+    </div>`;
+
+  // 커서 유지
+  const q = $I('dir-q');
+  if(q && dirQuery){ q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+}
+window.renderDirectory = renderDirectory;
+function setDirOrg(o){ dirOrg = o; renderDirectory(); }
+window.setDirOrg = setDirOrg;
+function setDirQuery(v){ dirQuery = v; renderDirectory(); }
+window.setDirQuery = setDirQuery;
+
+function copyText(t){
+  navigator.clipboard?.writeText(t).then(
+    ()=>toast('복사했습니다.','ok'),
+    ()=>toast('복사에 실패했습니다.','err')
+  );
+}
+window.copyText = copyText;
+
+function sendDirMsg(uid, name){
+  location.href = `message.html?to=${encodeURIComponent(uid)}`;
+}
+window.sendDirMsg = sendDirMsg;
 
 // ══════════ 관리자 > 접속·보안 (슈퍼관리자) ══════════
 let SEC_TIMER = null;
@@ -2792,37 +3066,111 @@ window.updEditOrgMode = updEditOrgMode;
 
 function openMyInfo(){
   const el=document.createElement('div'); el.id='my-info-mod';
+  const c = STAFF_CACHE[CU.uid] || CU || {};
+  const IN = 'height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none;font-family:inherit';
+  const need = (v)=> v ? '' : '<span style="font-size:11px;color:#dc2626;font-weight:700;margin-left:5px">미입력</span>';
+
   el.innerHTML=`
     <div class="mov">
       <div class="mbk" onclick="document.getElementById('my-info-mod').remove()"></div>
       <div class="mbox">
         <div class="mtitle">내 정보</div>
-        <div style="background:var(--iv);border-radius:10px;padding:16px;margin-bottom:20px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
-            <div><span style="color:var(--tl)">이름</span><div style="font-weight:700;margin-top:2px">${CU.name}</div></div>
-            <div><span style="color:var(--tl)">아이디</span><div style="font-weight:700;margin-top:2px">${CU.id}</div></div>
-            <div><span style="color:var(--tl)">기관</span><div style="font-weight:700;margin-top:2px">${ORGS[CU.org]||CU.org}</div></div>
-            <div><span style="color:var(--tl)">부서</span><div style="font-weight:700;margin-top:2px">${CU.dept||'-'}</div></div>
-            <div><span style="color:var(--tl)">권한</span><div style="font-weight:700;margin-top:2px">${ROLES[CU.role]||CU.role}</div></div>
+
+        <div style="display:flex;gap:6px;margin-bottom:16px">
+          <button class="subtbtn on" id="mi-t1" onclick="switchMyTab('basic')" style="padding:8px 16px">👤 기본</button>
+          <button class="subtbtn" id="mi-t2" onclick="switchMyTab('hr')" style="padding:8px 16px">📇 인사정보</button>
+          <button class="subtbtn" id="mi-t3" onclick="switchMyTab('pw')" style="padding:8px 16px">🔑 비밀번호</button>
+        </div>
+
+        <!-- 기본 -->
+        <div id="mi-basic">
+          <div style="background:var(--iv);border-radius:10px;padding:16px;margin-bottom:8px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+              <div><span style="color:var(--tl)">이름</span><div style="font-weight:700;margin-top:2px">${esc(CU.name||'')}</div></div>
+              <div><span style="color:var(--tl)">아이디</span><div style="font-weight:700;margin-top:2px">${esc(CU.id||'')}</div></div>
+              <div><span style="color:var(--tl)">기관</span><div style="font-weight:700;margin-top:2px">${ORGS[CU.org]||CU.org||''}</div></div>
+              <div><span style="color:var(--tl)">부서</span><div style="font-weight:700;margin-top:2px">${esc(CU.dept||'-')}</div></div>
+              <div><span style="color:var(--tl)">권한</span><div style="font-weight:700;margin-top:2px">${ROLES[CU.role]||CU.role||''}</div></div>
+              <div><span style="color:var(--tl)">직책</span><div style="font-weight:700;margin-top:2px">${esc(c.position||'-')}</div></div>
+            </div>
+          </div>
+          <p style="font-size:11.5px;color:var(--tl)">기관·부서·권한·직책은 관리자만 바꿀 수 있습니다.</p>
+        </div>
+
+        <!-- 인사정보 -->
+        <div id="mi-hr" style="display:none">
+          <div style="background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--gd);line-height:1.6">
+            🔒 <b>재직증명서 발급에 필요한 정보</b>입니다. 주소·생년월일·연락처는 <b>본인과 관리자만</b> 볼 수 있습니다.
+            (다른 선생님에게는 휴대폰 번호만 명부에 공개됩니다.)
+          </div>
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div class="fgrp"><label>생년월일 ${need(c.birth)}</label>
+              <input id="mi-birth" type="date" value="${c.birth||''}" style="${IN}"></div>
+            <div class="fgrp"><label>휴대폰 번호 ${need(c.phone)}</label>
+              <input id="mi-phone" type="tel" value="${esc(c.phone||'')}" placeholder="010-1234-5678" style="${IN}"></div>
+            <div class="fgrp"><label>집 주소 ${need(c.address)}</label>
+              <input id="mi-addr" type="text" value="${esc(c.address||'')}" placeholder="경기도 용인시 ..." style="${IN}"></div>
+            <div class="fgrp"><label>담당 업무 (선택)</label>
+              <input id="mi-duty" type="text" value="${esc(c.duty||'')}" placeholder="예: 초등 3학년 담임 · 음악" style="${IN}"></div>
+          </div>
+          <div style="background:var(--iv);border-radius:9px;padding:11px 13px;margin-top:14px;font-size:12px;color:var(--ts)">
+            <b style="color:var(--gd)">입사일</b> ${c.hireDate ? esc(c.hireDate) : '<span style="color:#dc2626;font-weight:700">미입력 — 관리자에게 요청하세요</span>'}
+            <div style="font-size:11px;color:var(--tl);margin-top:3px">입사일·직책·고용형태는 관리자가 입력합니다.</div>
+          </div>
+          <div class="mact" style="margin-top:16px">
+            <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+            <button class="bp" onclick="saveMyHR()">인사정보 저장</button>
           </div>
         </div>
-        <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:12px">🔑 비밀번호 변경</div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
-          <div class="fgrp"><label>현재 비밀번호</label>
-            <input id="cp-cur" type="password" placeholder="현재 비밀번호" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-          <div class="fgrp"><label>새 비밀번호</label>
-            <input id="cp-new" type="password" placeholder="새 비밀번호 (6자 이상)" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-          <div class="fgrp"><label>새 비밀번호 확인</label>
-            <input id="cp-con" type="password" placeholder="새 비밀번호 재입력" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-        </div>
-        <div class="mact">
-          <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
-          <button class="bp" onclick="changeMyPw()">비밀번호 변경</button>
+
+        <!-- 비밀번호 -->
+        <div id="mi-pw" style="display:none">
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+            <div class="fgrp"><label>현재 비밀번호</label>
+              <input id="cp-cur" type="password" placeholder="현재 비밀번호" style="${IN}"></div>
+            <div class="fgrp"><label>새 비밀번호</label>
+              <input id="cp-new" type="password" placeholder="새 비밀번호 (6자 이상)" style="${IN}"></div>
+            <div class="fgrp"><label>새 비밀번호 확인</label>
+              <input id="cp-con" type="password" placeholder="새 비밀번호 재입력" style="${IN}"></div>
+          </div>
+          <div class="mact">
+            <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+            <button class="bp" onclick="changeMyPw()">비밀번호 변경</button>
+          </div>
         </div>
       </div>
     </div>`;
   document.body.appendChild(el);
 }
+window.openMyInfo = openMyInfo;
+
+function switchMyTab(t){
+  ['basic','hr','pw'].forEach(k=>{ const e=$I('mi-'+k); if(e) e.style.display='none'; });
+  ['mi-t1','mi-t2','mi-t3'].forEach(id=>{ const e=$I(id); if(e) e.classList.remove('on'); });
+  const map = {basic:'mi-t1', hr:'mi-t2', pw:'mi-t3'};
+  const e = $I('mi-'+t); if(e) e.style.display='block';
+  const b = $I(map[t]); if(b) b.classList.add('on');
+}
+window.switchMyTab = switchMyTab;
+
+// 본인 인사정보 저장
+async function saveMyHR(){
+  const birth   = $I('mi-birth')?.value || '';
+  const phone   = ($I('mi-phone')?.value || '').trim();
+  const address = ($I('mi-addr')?.value  || '').trim();
+  const duty    = ($I('mi-duty')?.value  || '').trim();
+  if(phone && !/^01[016789][-\s]?\d{3,4}[-\s]?\d{4}$/.test(phone.replace(/\s/g,''))){
+    return toast('휴대폰 번호 형식을 확인하세요. (예: 010-1234-5678)','err');
+  }
+  try {
+    await updateDoc(doc(db,'staff',CU.uid), { birth, phone, address, duty });
+    CU.birth=birth; CU.phone=phone; CU.address=address; CU.duty=duty;
+    if(STAFF_CACHE[CU.uid]) Object.assign(STAFF_CACHE[CU.uid], {birth, phone, address, duty});
+    toast('인사정보를 저장했습니다.','ok');
+    document.getElementById('my-info-mod')?.remove();
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}
+window.saveMyHR = saveMyHR;
 
 function openEditStaff(uid, name, org, dept, role){
   const el=document.createElement('div'); el.id='edit-staff-mod';
@@ -2870,6 +3218,37 @@ function openEditStaff(uid, name, org, dept, role){
               <option value="leave"${acStatus==='leave'?' selected':''}>휴직 (로그인 차단)</option>
               <option value="quit"${acStatus==='quit'?' selected':''}>퇴직 (로그인 차단)</option>
             </select></div>
+        </div>
+
+        <div style="border-top:1px solid var(--ivd);padding-top:16px;margin-bottom:14px">
+          <div style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:4px">📇 인사정보</div>
+          <div style="font-size:11.5px;color:var(--tl);margin-bottom:12px">재직증명서 발급에 사용됩니다. 빈 항목이 있으면 증명서를 발급할 수 없습니다.</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="fgrp"><label>휴대폰 번호</label>
+              <input id="es-phone" type="tel" value="${esc(cur.phone||'')}" placeholder="010-1234-5678" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+            <div class="fgrp"><label>집 주소</label>
+              <input id="es-addr" type="text" value="${esc(cur.address||'')}" placeholder="경기도 용인시 ..." style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="fgrp"><label>입사일</label>
+                <input id="es-hire" type="date" value="${cur.hireDate||''}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+              <div class="fgrp"><label>퇴직일 (퇴직 시)</label>
+                <input id="es-leave" type="date" value="${cur.leaveDate||''}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="fgrp"><label>직책 (직위)</label>
+                <select id="es-position" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+                  <option value="">— 선택 —</option>
+                  ${['교사','초등부장','중고등부장','행정실장','교감','교장','원장'].map(p=>`<option value="${p}" ${cur.position===p?'selected':''}>${p}</option>`).join('')}
+                </select></div>
+              <div class="fgrp"><label>고용형태</label>
+                <select id="es-emptype" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+                  <option value="">— 선택 —</option>
+                  ${['정규직','계약직','파트타임','자원봉사'].map(t=>`<option value="${t}" ${cur.empType===t?'selected':''}>${t}</option>`).join('')}
+                </select></div>
+            </div>
+            <div class="fgrp"><label>담당 업무 (선택)</label>
+              <input id="es-duty" type="text" value="${esc(cur.duty||'')}" placeholder="예: 초등 3학년 담임 · 음악" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+          </div>
         </div>
         <div class="mact">
           <button class="bs" onclick="document.getElementById('edit-staff-mod').remove()">취소</button>
