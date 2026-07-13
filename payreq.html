@@ -307,6 +307,8 @@ let prOrg = '';
 let prRows = [];          // 항목 행들
 let prBank = { bank:'', holder:'', account:'' };
 let prReceiptTargetRow = null;  // 현재 영수증 첨부 대상 행 인덱스
+let prEditId = null;           // 수정 중인 요청서 id (없으면 신규)
+let prPending = null;          // 폼에 미리 채울 머리정보
 
 function toast(msg, type=''){
   const t = $I('toast'); t.textContent = msg;
@@ -525,8 +527,17 @@ function renderNew(){
   const isIncome = prMode==='income';
   const total = prRows.reduce((s,r)=>s + (Number(r.qty)||0)*(Number(r.price)||0), 0);
 
+  const P = prPending || {};
+  const editBar = prEditId ? `
+    <div style="display:flex;align-items:center;gap:10px;background:var(--goldp);border:1px solid var(--gold);border-radius:10px;padding:10px 14px;margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-size:13px;font-weight:800;color:var(--goldd)">✏️ 수정 중</span>
+      <span style="font-size:12px;color:var(--ts)">저장하면 기존 요청서가 갱신됩니다.</span>
+      <button class="bm" style="margin-left:auto" onclick="cancelEdit()">수정 취소</button>
+    </div>` : '';
+
   box.innerHTML = `
     ${orgTabs}
+    ${editBar}
     <div class="acard">
       <div style="display:flex;gap:8px;margin-bottom:16px">
         <button class="pr-modebtn ${!isIncome?'on':''}" onclick="setPrMode('expense')">💸 지출 (경비 지급 요청)</button>
@@ -534,15 +545,15 @@ function renderNew(){
       </div>
 
       <div class="pr-form">
-        <div class="pr-fld"><label>신청 날짜</label><input type="date" id="pr-date" value="${todayYMD()}"></div>
-        <div class="pr-fld"><label>신청자명</label><input type="text" id="pr-name" value="${esc(CU?.name||'')}" placeholder="이름"></div>
+        <div class="pr-fld"><label>신청 날짜</label><input type="date" id="pr-date" value="${esc(P.date||todayYMD())}"></div>
+        <div class="pr-fld"><label>신청자명</label><input type="text" id="pr-name" value="${esc(P.name||CU?.name||'')}" placeholder="이름"></div>
         <div class="pr-fld"><label>소속 부서</label>
           <select id="pr-dept">
             <option value="">— 선택 —</option>
-            ${PR_DEPTS(prOrg).map(d=>`<option value="${d}">${d}</option>`).join('')}
+            ${PR_DEPTS(prOrg).map(d=>`<option value="${d}" ${P.dept===d?'selected':''}>${d}</option>`).join('')}
           </select>
         </div>
-        <div class="pr-fld pr-full"><label>사용 용도 / 세부 내용 확인</label><input type="text" id="pr-purpose" placeholder="예: 행정실 운영 프로그램 제작용"></div>
+        <div class="pr-fld pr-full"><label>사용 용도 / 세부 내용 확인</label><input type="text" id="pr-purpose" value="${esc(P.purpose||'')}" placeholder="예: 행정실 운영 프로그램 제작용"></div>
       </div>
     </div>
 
@@ -768,15 +779,34 @@ async function submitPayReq(){
       note:r.note||'', receiptCount:(r.receipts||[]).length
     }));
 
+    const isEdit = !!prEditId;
     const record = {
       mode:prMode, org:prOrg, date, applicantName:name, dept, purpose,
       rows:rowsForSave, total,
       bank: prMode==='expense'?prBank:null,
       chain, chainIndex:0, status,
-      createdByUid:CU.uid, createdByName:CU.name||name, createdAt:Timestamp.now(),
-      paid:false
+      paid:false, deleted:false
     };
-    const ref = await addDoc(collection(db,'payRequests'), record);
+
+    let reqId;
+    if(isEdit){
+      // 수정: 기존 문서 갱신 (작성자·작성시각은 유지)
+      reqId = prEditId;
+      await updateDoc(doc(db,'payRequests',reqId), {
+        ...record,
+        updatedAt: Timestamp.now(), updatedByName: CU.name||''
+      });
+      // 기존 영수증 제거 후 다시 저장
+      const oldRc = await getDocs(query(collection(db,'payReceipts'), where('requestId','==',reqId)));
+      for(const d of oldRc.docs){ await deleteDoc(doc(db,'payReceipts',d.id)); }
+      await addLog('요청서 수정', `${name} · ₩${won(total)}`);
+    } else {
+      const ref = await addDoc(collection(db,'payRequests'), {
+        ...record,
+        createdByUid:CU.uid, createdByName:CU.name||name, createdAt:Timestamp.now()
+      });
+      reqId = ref.id;
+    }
 
     // 영수증 저장 (항목별)
     let saved=0, totalRc=rows.reduce((s,r)=>s+(r.receipts||[]).length,0);
@@ -785,7 +815,7 @@ async function submitPayReq(){
       for(let j=0;j<rcs.length;j++){
         saved++; window.setLoadStep && window.setLoadStep(`영수증 업로드 중… (${saved}/${totalRc})`, 30+Math.round(saved/Math.max(1,totalRc)*60));
         await addDoc(collection(db,'payReceipts'), {
-          requestId:ref.id, rowIdx:i, idx:j+1, dataUrl:rcs[j],
+          requestId:reqId, rowIdx:i, idx:j+1, dataUrl:rcs[j],
           org:prOrg, date, createdByUid:CU.uid, createdAt:Timestamp.now()
         });
       }
@@ -797,7 +827,7 @@ async function submitPayReq(){
     }
 
     // 쪽지: 결재 필요하면 첫 결재자에게, 아니면 회계 담당자에게
-    if(prMode==='expense'){
+    if(prMode==='expense' && !isEdit){
       if(needApproval && chain[0]){
         await sendMsg([chain[0].uid], `[경비 결재 요청] ${name} · ₩${won(total)}`,
           `${ORGS[prOrg]||prOrg} · ${dept}\n용도: ${purpose}\n금액: ₩${won(total)}\n\n결재함에서 승인/반려해주세요.`);
@@ -808,9 +838,9 @@ async function submitPayReq(){
     }
 
     window.hideLoading && window.hideLoading();
-    toast(needApproval?'결재 요청을 상신했습니다.':'지급 요청을 상신했습니다.','ok');
+    toast(isEdit ? '요청서를 수정했습니다.' : (needApproval?'결재 요청을 상신했습니다.':'지급 요청을 상신했습니다.'),'ok');
     // 폼 초기화
-    prRows=[newPrRow()]; prReceiptTargetRow=null;
+    prRows=[newPrRow()]; prReceiptTargetRow=null; prEditId=null; prPending=null;
     await loadPayRequests();
     showTab('list');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('저장 실패: '+(e.message||''),'err'); }
@@ -842,11 +872,11 @@ async function renderApprove(){
   await loadPayRequests();
   // 내 차례인 것 (결재중 + 현재 단계가 나)
   const mine = PAY_REQUESTS.filter(r=>
-    r.status==='approving' && r.chain && r.chain[r.chainIndex] && r.chain[r.chainIndex].uid===CU.uid
+    !r.deleted && r.status==='approving' && r.chain && r.chain[r.chainIndex] && r.chain[r.chainIndex].uid===CU.uid
   ).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   // 내가 이미 처리한 것 (이력)
   const done = PAY_REQUESTS.filter(r=>
-    (r.chain||[]).some(c=>c.uid===CU.uid && (c.status==='approved'||c.status==='rejected'))
+    !r.deleted && (r.chain||[]).some(c=>c.uid===CU.uid && (c.status==='approved'||c.status==='rejected'))
   ).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).slice(0,20);
 
   const card = (r, isPending) => {
@@ -1389,9 +1419,8 @@ async function editExpense(id){
 window.editExpense = editExpense;
 
 function cancelEdit(){
-  editingId = null; editingSemester = '';
-  receipts = []; existingReceipts = []; removedReceiptIds = new Set();
-  checkedIds = new Set(); indivAmts = {};
+  prEditId = null; prPending = null;
+  prRows = [newPrRow()]; prReceiptTargetRow = null;
   renderNew();
   toast('수정을 취소했습니다.');
 }
@@ -1727,26 +1756,63 @@ async function submitExpense(){
 window.submitExpense = submitExpense;
 
 // ══════════ 신청 내역 ══════════
+let listTrash = false;   // 휴지통 보기
+
+// 수정 가능 여부
+//  - 신청자 본인: 아무도 결재하지 않았고, 지급 전일 때만
+//  - 회계(경비지급) 담당자: 언제나 가능
+function canEditReq(r){
+  if(r.deleted) return false;
+  if(isPayManager()) return true;
+  if(r.createdByUid !== CU.uid) return false;
+  if(r.paid) return false;
+  const anyApproved = (r.chain||[]).some(c=>c.status==='approved');
+  return !anyApproved;
+}
+// 왜 못 고치는지 안내
+function editBlockReason(r){
+  if(r.paid) return '지급이 완료되어 수정할 수 없습니다. (회계 담당자에게 문의)';
+  if((r.chain||[]).some(c=>c.status==='approved')) return '이미 결재가 시작되어 수정할 수 없습니다. (회계 담당자에게 문의)';
+  return '';
+}
+
 async function renderList(){
   const box=$I('tab-list');
   await loadPayRequests();
-  // 내 것만 (회계 관리자는 취합탭에서 전체를 봄)
-  const mine = PAY_REQUESTS.filter(r=>r.createdByUid===CU.uid)
+  const mineAll = PAY_REQUESTS.filter(r=>r.createdByUid===CU.uid);
+  const mine = mineAll.filter(r=> listTrash ? r.deleted : !r.deleted)
     .sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  const trashCnt = mineAll.filter(r=>r.deleted).length;
+
   const statusBadge = r=>{
+    if(r.deleted) return '<span class="pr-badge rej">삭제됨</span>';
     if(r.mode==='income') return '<span class="pr-badge inc">수입</span>';
     if(r.status==='rejected') return '<span class="pr-badge rej">반려됨</span>';
     if(r.paid) return '<span class="pr-badge paid">지급완료</span>';
-    if(r.status==='approving'){ const cur=r.chain?.[r.chainIndex]; return `<span class="pr-badge wait">결재중 (${cur?cur.name+' '+({head:'부서장',vp:'교감',principal:'교장'}[cur.role]||''):''})</span>`; }
+    if(r.status==='approving'){ const cur=r.chain?.[r.chainIndex]; return `<span class="pr-badge wait">결재중 (${cur?esc(cur.name)+' '+esc(cur.role||''):''})</span>`; }
     if(r.status==='submitted') return '<span class="pr-badge sub">상신완료 (지급대기)</span>';
     return '<span class="pr-badge">-</span>';
   };
+
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">📋 내 신청내역 <span style="font-size:12px;color:var(--tl);font-weight:400">(${mine.length}건)</span></h3>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <h3 class="actitle" style="margin:0">${listTrash?'🗑️ 휴지통':'📋 내 신청내역'} <span style="font-size:12px;color:var(--tl);font-weight:400">(${mine.length}건)</span></h3>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button class="ex-chip2 ${!listTrash?'on':''}" onclick="setListTrash(false)">📋 신청내역</button>
+          <button class="ex-chip2 ${listTrash?'on':''}" onclick="setListTrash(true)">🗑️ 휴지통 ${trashCnt?`<b>${trashCnt}</b>`:''}</button>
+        </div>
+      </div>
+      <style>
+        .ex-chip2{padding:6px 14px;border:1.5px solid var(--ivd);border-radius:100px;background:#fff;font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit;}
+        .ex-chip2.on{background:var(--gm);border-color:var(--gm);color:#fff;}
+      </style>
+      ${listTrash ? '<p class="adesc">삭제한 요청서입니다. 30일 보관 후에도 남아 있으니 언제든 되돌릴 수 있습니다.</p>' : ''}
       ${mine.length? mine.map(r=>{
         const cnt=(r.rows||[]).length;
-        return `<div class="citem">
+        const editable = canEditReq(r);
+        const reason = editBlockReason(r);
+        return `<div class="citem" style="${r.deleted?'opacity:.72':''}">
           <div style="flex:1;min-width:200px">
             <div style="font-size:15px;font-weight:700;color:var(--gd)">
               ${r.mode==='income'?'💵':'💸'} ${esc(r.purpose||(r.rows?.[0]?.name)||'(용도 미기재)')} ${statusBadge(r)}
@@ -1756,13 +1822,25 @@ async function renderList(){
             </div>
             ${r.status==='rejected'&&r.rejectReason?`<div style="font-size:12px;color:#dc2626;margin-top:3px">반려 사유: ${esc(r.rejectReason)}</div>`:''}
             ${r.paid&&r.paidAt?`<div style="font-size:11.5px;color:#16a34a;margin-top:3px">💰 ${esc(r.paidByName||'')} · ${esc(fmtDT(r.paidAt))} 지급완료</div>`:''}
+            ${r.deleted&&r.deletedAt?`<div style="font-size:11.5px;color:var(--tl);margin-top:3px">🗑️ ${esc(r.deletedByName||'')} · ${esc(fmtDT(r.deletedAt))} 삭제</div>`:''}
+            ${!r.deleted&&!editable&&reason?`<div style="font-size:11.5px;color:var(--tl);margin-top:3px">🔒 ${esc(reason)}</div>`:''}
           </div>
           <button class="bm" onclick="viewPayReq('${r.id}')">상세보기</button>
-          ${(r.status==='approving'||r.status==='rejected')&&!r.paid?`<button class="bm" style="background:#fef2f2;color:#b45309" onclick="deletePayReq('${r.id}')">취소</button>`:''}
+          ${r.deleted ? `
+            <button class="bp" style="padding:7px 14px" onclick="restorePayReq('${r.id}')">↩︎ 되돌리기</button>
+            ${isPayManager()?`<button class="bm" style="background:#fee2e2;color:#dc2626" onclick="purgePayReq('${r.id}')">영구 삭제</button>`:''}
+          ` : `
+            ${editable?`<button class="bm" onclick="editPayReq('${r.id}')">✏️ 수정</button>`:''}
+            <button class="bm" onclick="clonePayReq('${r.id}')">⧉ 복제</button>
+            ${editable?`<button class="bm" style="background:#fef2f2;color:#b45309" onclick="deletePayReq('${r.id}')">🗑️ 삭제</button>`:''}
+          `}
         </div>`;
-      }).join('') : '<p class="empty">아직 신청한 내역이 없습니다.</p>'}
+      }).join('') : `<p class="empty">${listTrash?'휴지통이 비어 있습니다.':'아직 신청한 내역이 없습니다.'}</p>`}
     </div>`;
 }
+window.renderList = renderList;
+function setListTrash(v){ listTrash = v; renderList(); }
+window.setListTrash = setListTrash;
 window.renderList = renderList;
 
 function fmtDT(ts){ try{ const d=ts?.toDate?ts.toDate():new Date(ts?.seconds*1000); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }catch(e){return '';} }
@@ -1815,16 +1893,98 @@ async function loadReqReceipts(id){
   } catch(e){}
 }
 
+// ── 삭제 = 휴지통으로 (되돌리기 가능) ──
 async function deletePayReq(id){
-  if(!confirm('이 신청을 취소(삭제)할까요?')) return;
+  const r = PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  if(!confirm('이 요청서를 휴지통으로 옮길까요?\n휴지통에서 언제든 되돌릴 수 있습니다.')) return;
   try {
-    const rs=await getDocs(query(collection(db,'payReceipts'), where('requestId','==',id)));
-    for(const d of rs.docs){ await deleteDoc(doc(db,'payReceipts',d.id)); }
-    await deleteDoc(doc(db,'payRequests',id));
-    toast('취소했습니다.','ok'); await renderList();
-  } catch(e){ toast('취소 실패: '+e.message,'err'); }
+    await updateDoc(doc(db,'payRequests',id), {
+      deleted:true, deletedAt:Timestamp.now(), deletedByUid:CU.uid, deletedByName:CU.name||''
+    });
+    await addLog('요청서 삭제', `${r.applicantName||''} · ₩${won(r.total)} → 휴지통`);
+    toast('휴지통으로 옮겼습니다.','ok');
+    if(curTab==='report') await renderReport(); else await renderList();
+  } catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
 }
 window.deletePayReq = deletePayReq;
+
+// ── 되돌리기 ──
+async function restorePayReq(id){
+  const r = PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  try {
+    await updateDoc(doc(db,'payRequests',id), {
+      deleted:false, restoredAt:Timestamp.now(), restoredByName:CU.name||''
+    });
+    await addLog('요청서 복구', `${r.applicantName||''} · ₩${won(r.total)} 되돌림`);
+    toast('되돌렸습니다.','ok');
+    if(curTab==='report') await renderReport(); else await renderList();
+  } catch(e){ toast('복구 실패: '+(e.message||''),'err'); }
+}
+window.restorePayReq = restorePayReq;
+
+// ── 영구 삭제 (회계 담당자만) ──
+async function purgePayReq(id){
+  if(!isPayManager()){ toast('권한이 없습니다.','err'); return; }
+  const r = PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  if(!confirm('영구 삭제하면 되돌릴 수 없습니다.\n영수증까지 모두 지웁니다. 진행할까요?')) return;
+  window.showLoading && window.showLoading('삭제하는 중…');
+  try {
+    const rs = await getDocs(query(collection(db,'payReceipts'), where('requestId','==',id)));
+    for(const d of rs.docs){ await deleteDoc(doc(db,'payReceipts',d.id)); }
+    await deleteDoc(doc(db,'payRequests',id));
+    await addLog('요청서 영구삭제', `${r.applicantName||''} · ₩${won(r.total)}`);
+    window.hideLoading && window.hideLoading();
+    toast('영구 삭제했습니다.','ok');
+    if(curTab==='report') await renderReport(); else await renderList();
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('삭제 실패: '+(e.message||''),'err'); }
+}
+window.purgePayReq = purgePayReq;
+
+// ── 수정: 폼에 불러오기 ──
+async function editPayReq(id){
+  const r = PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  if(!canEditReq(r)){ toast(editBlockReason(r)||'수정할 수 없습니다.','err'); return; }
+  await loadIntoForm(r, id);
+  toast('수정 모드입니다. 저장하면 기존 요청서가 갱신됩니다.','ok');
+}
+window.editPayReq = editPayReq;
+
+// ── 복제: 폼에 불러오되 새 요청서로 ──
+async function clonePayReq(id){
+  const r = PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  await loadIntoForm(r, null);
+  toast('복제했습니다. 내용을 확인하고 상신하세요.','ok');
+}
+window.clonePayReq = clonePayReq;
+
+// 요청서 → 신청 폼에 채우기 (editId가 있으면 수정 모드)
+async function loadIntoForm(r, editId){
+  window.showLoading && window.showLoading('불러오는 중…');
+  try {
+    prEditId = editId || null;
+    prMode = r.mode==='income' ? 'income' : 'expense';
+    prOrg  = r.org || myOrgs()[0];
+    if(r.bank) prBank = { bank:r.bank.bank||'', holder:r.bank.holder||'', account:r.bank.account||'' };
+    // 영수증 불러오기 (항목별)
+    const rcMap = {};
+    try {
+      const snap = await getDocs(query(collection(db,'payReceipts'), where('requestId','==',r.id)));
+      snap.forEach(d=>{ const rc=d.data();
+        if(!rcMap[rc.rowIdx]) rcMap[rc.rowIdx]=[];
+        rcMap[rc.rowIdx].push(rc.dataUrl);
+      });
+    } catch(e){}
+    prRows = (r.rows||[]).map((row,i)=>({
+      cat_major: row.cat_major||'', cat_item: row.cat_item||'',
+      name: row.name||'', qty: row.qty||1, price: row.price||0, note: row.note||'',
+      receipts: rcMap[i] || []
+    }));
+    if(!prRows.length) prRows = [newPrRow()];
+    prPending = { date:r.date||todayYMD(), name:r.applicantName||CU.name||'', dept:r.dept||'', purpose:r.purpose||'' };
+    window.hideLoading && window.hideLoading();
+    showTab('new');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('불러오기 실패: '+(e.message||''),'err'); }
+}
 function setListOrg(o){ listOrg = o; renderList(); }
 window.setListOrg = setListOrg;
 
@@ -1999,7 +2159,7 @@ async function renderReport(){
 
   // 해당 월(신청일 기준) + 기관
   const inMonth = r => (r.date||'').startsWith(rpMonth);
-  let list = PAY_REQUESTS.filter(r=> r.org===rpOrg && inMonth(r));
+  let list = PAY_REQUESTS.filter(r=> r.org===rpOrg && inMonth(r) && (rpFilter==='trash' ? r.deleted : !r.deleted));
   // 상태 필터
   if(rpFilter==='waiting') list=list.filter(r=>!r.paid && (r.status==='submitted'||r.status==='income'));
   else if(rpFilter==='paid') list=list.filter(r=>r.paid);
@@ -2007,7 +2167,7 @@ async function renderReport(){
   list.sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
 
   // 집계
-  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && inMonth(r));
+  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && inMonth(r) && !r.deleted);
   const expList = all.filter(r=>r.mode!=='income');
   const incList = all.filter(r=>r.mode==='income');
   const expTotal = expList.reduce((s,r)=>s+(r.total||0),0);
@@ -2058,7 +2218,7 @@ async function renderReport(){
       </style>
 
       <div style="display:flex;gap:6px;margin-top:14px;flex-wrap:wrap">
-        ${[['all','전체'],['waiting','지급대기'],['paid','지급완료'],['approving','결재중']].map(([v,l])=>
+        ${[['all','전체'],['waiting','지급대기'],['paid','지급완료'],['approving','결재중'],['trash','🗑️ 휴지통']].map(([v,l])=>
           `<button class="ex-chip2 ${rpFilter===v?'on':''}" onclick="setRpFilter('${v}')">${l}</button>`).join('')}
       </div>
       <style>
@@ -2084,8 +2244,16 @@ async function renderReport(){
           </div>
           <div style="font-size:16px;font-weight:900;color:var(--goldd);min-width:100px;text-align:right">₩${won(r.total)}</div>
           <button class="bm" onclick="viewPayReq('${r.id}')">상세</button>
-          ${canPay?`<button class="bp" style="padding:7px 14px" onclick="markPaid('${r.id}',true)">💰 지급완료</button>`
-            : r.paid?`<button class="bm" style="background:#f3f4f6" onclick="markPaid('${r.id}',false)">취소</button>`:''}
+          ${r.deleted ? `
+            <button class="bp" style="padding:7px 14px" onclick="restorePayReq('${r.id}')">↩︎ 되돌리기</button>
+            <button class="bm" style="background:#fee2e2;color:#dc2626" onclick="purgePayReq('${r.id}')">영구 삭제</button>
+          ` : `
+            ${canPay?`<button class="bp" style="padding:7px 14px" onclick="markPaid('${r.id}',true)">💰 지급완료</button>`
+              : r.paid?`<button class="bm" style="background:#f3f4f6" onclick="markPaid('${r.id}',false)">지급취소</button>`:''}
+            <button class="bm" onclick="editPayReq('${r.id}')">✏️ 수정</button>
+            <button class="bm" onclick="clonePayReq('${r.id}')">⧉ 복제</button>
+            <button class="bm" style="background:#fef2f2;color:#b45309" onclick="deletePayReq('${r.id}')">🗑️ 삭제</button>
+          `}
         </div>`;
       }).join('') : '<p class="empty">해당 조건의 요청서가 없습니다.</p>'}
     </div>`;
@@ -2120,7 +2288,7 @@ window.markPaid = markPaid;
 
 // 엑셀 내보내기
 function exportPayExcel(){
-  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth));
+  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth) && !r.deleted);
   if(!all.length){ toast('해당 월에 데이터가 없습니다.','err'); return; }
   try {
     ensureXLSX().then(()=>{
@@ -2160,7 +2328,7 @@ window.exportPayExcel = exportPayExcel;
 
 // ══════════ 📋 월별 취합표 (계정과목 대분류별) ══════════
 function buildMonthlySheetHTML(){
-  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth) && r.status!=='rejected');
+  const all = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth) && r.status!=='rejected' && !r.deleted);
   const exp = all.filter(r=>r.mode!=='income');
   const inc = all.filter(r=>r.mode==='income');
   // 지출: 대분류 > 세부 집계
@@ -2300,7 +2468,7 @@ window.imageMonthlySheet = imageMonthlySheet;
 // ══════════ 🧾 영수증 취합 (월별, 잘림방지) ══════════
 let _payRcCache = null;
 function paySeqMap(){
-  const list = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth) && r.status!=='rejected')
+  const list = PAY_REQUESTS.filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth) && r.status!=='rejected' && !r.deleted)
     .sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   const map={}; list.forEach((r,i)=>{ map[r.id]='P'+String(i+1).padStart(3,'0'); });
   return { list, map };

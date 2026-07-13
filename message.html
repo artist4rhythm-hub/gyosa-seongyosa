@@ -122,7 +122,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -176,14 +176,18 @@ onAuthStateChanged(auth, async (user) => {
     $I('gate').style.display='none'; $I('ms').style.display='flex';
     window.ORGS = ORGS;
   renderShell('message', CU);
-    window.showLoading && window.showLoading('불러오는 중…');
-    
-    
-    await loadStaff();
-    await loadMsgs();
-    window.hideLoading && window.hideLoading();
+    window.showLoading && window.showLoading('쪽지를 불러오는 중…');
+    try {
+      await loadStaff();
+      await loadMsgs();
+    } finally {
+      window.hideLoading && window.hideLoading();
+    }
     showTab('inbox');
-  } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block';
+  }
 });
 
 async function loadStaff(){
@@ -199,13 +203,16 @@ async function loadStaff(){
 }
 
 async function loadMsgs(){
-  const snap = await getDocs(collection(db,'messages'));
-  MSGS = [];
-  snap.forEach(d=>{
-    const m={id:d.id, ...d.data()};
-    // 내가 받은 것 또는 보낸 것만
-    if((m.toUids||[]).includes(CU.uid) || m.fromUid===CU.uid) MSGS.push(m);
-  });
+  // 전체를 읽지 않고 내 것만 조회 (받은 것 + 보낸 것)
+  const col = collection(db,'messages');
+  const [rcv, snt] = await Promise.all([
+    getDocs(query(col, where('toUids','array-contains', CU.uid))),
+    getDocs(query(col, where('fromUid','==', CU.uid)))
+  ]);
+  const map = {};
+  rcv.forEach(d=>{ map[d.id] = {id:d.id, ...d.data()}; });
+  snt.forEach(d=>{ map[d.id] = {id:d.id, ...d.data()}; });
+  MSGS = Object.values(map);
   MSGS.sort((a,b)=>{
     const ta=a.createdAt?.toMillis?.()||0, tb=b.createdAt?.toMillis?.()||0;
     return tb-ta;

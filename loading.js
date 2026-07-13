@@ -1,135 +1,197 @@
-/* ===== 공통 졸라맨 로딩 화면 (loading.js) =====
-   사용법: 페이지에서 <script src="loading.js"></script> 로드 후
-   window.showLoading('문구'), window.setLoadStep('문구', 퍼센트), window.hideLoading()
-   CSS·HTML은 이 파일이 자동으로 주입합니다. */
+/* ═══════════════════════════════════════════════
+   loading.js — 전체 화면 로딩 오버레이
+   API:
+     window.showLoading('문구')
+     window.setLoadStep('문구', 퍼센트)
+     window.hideLoading()
+   ═══════════════════════════════════════════════ */
 (function(){
-  // 중복 로드 방지
-  if(window.__loadingReady) return;
-  window.__loadingReady = true;
+  const CSS = `
+  #loadOverlay{
+    position:fixed; inset:0; z-index:9999;
+    display:none; align-items:center; justify-content:center;
+    background:rgba(242,240,235,0.82);
+    -webkit-backdrop-filter:blur(10px) saturate(1.05);
+    backdrop-filter:blur(10px) saturate(1.05);
+    opacity:0; transition:opacity .22s ease;
+  }
+  #loadOverlay.on{ display:flex; opacity:1; }
+  #loadOverlay .lo-card{
+    display:flex; flex-direction:column; align-items:center; gap:20px;
+    padding:34px 42px;
+    transform:translateY(6px) scale(.98);
+    transition:transform .28s cubic-bezier(.2,.8,.2,1);
+  }
+  #loadOverlay.on .lo-card{ transform:none; }
 
-  // ---- CSS 주입 ----
-  const css = `
-  #loadOverlay{position:fixed;inset:0;z-index:3000;display:none;flex-direction:column;align-items:center;justify-content:center;
-    background:linear-gradient(150deg,#eef0f8 0%,#F2F0EB 55%,#F7EFD8 100%);}
-  #loadOverlay.show{display:flex;}
-  #loadOverlay .load-stage{width:200px;height:160px;position:relative;margin-bottom:8px;}
-  #loadOverlay .load-svg{width:100%;height:100%;}
-  #loadOverlay .load-caption{font-size:15px;font-weight:700;color:#1E3932;margin-bottom:4px;min-height:20px;text-align:center;}
-  #loadOverlay .load-sub{font-size:12.5px;color:#93A09A;margin-bottom:18px;min-height:16px;text-align:center;padding:0 20px;}
-  #loadOverlay .load-bar{width:220px;height:8px;background:#e2ddd0;border-radius:100px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,0.08);}
-  #loadOverlay .load-bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#00704A,#4DA98A);border-radius:100px;transition:width .4s ease;}
-  #loadOverlay .load-pct{font-size:11px;color:#93A09A;margin-top:8px;font-variant-numeric:tabular-nums;}
-  @keyframes sm-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
-  @keyframes sm-armL{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-24deg)}}
-  @keyframes sm-armR{0%,100%{transform:rotate(0deg)}50%{transform:rotate(24deg)}}
-  @keyframes sm-legL{0%,100%{transform:rotate(6deg)}50%{transform:rotate(-6deg)}}
-  @keyframes sm-legR{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(6deg)}}
-  @keyframes sm-note{0%{opacity:0;transform:translateY(0) scale(.6)}30%{opacity:1}100%{opacity:0;transform:translateY(-40px) scale(1.1)}}
-  @keyframes sm-shake{0%,100%{transform:rotate(0)}25%{transform:rotate(-4deg)}75%{transform:rotate(4deg)}}
-  #loadOverlay .sm-body{animation:sm-bounce 0.6s ease-in-out infinite;transform-origin:center;}
-  #loadOverlay .sm-armL{animation:sm-armL 0.35s ease-in-out infinite;transform-origin:top center;}
-  #loadOverlay .sm-armR{animation:sm-armR 0.35s ease-in-out infinite;transform-origin:top center;}
-  #loadOverlay .sm-legL{animation:sm-legL 0.6s ease-in-out infinite;transform-origin:top center;}
-  #loadOverlay .sm-legR{animation:sm-legR 0.6s ease-in-out infinite;transform-origin:top center;}
-  #loadOverlay .sm-note{animation:sm-note 1.1s ease-out infinite;}
-  #loadOverlay .sm-note.n2{animation-delay:.4s;} #loadOverlay .sm-note.n3{animation-delay:.8s;}
-  #loadOverlay .sm-inst{animation:sm-shake 0.4s ease-in-out infinite;transform-origin:center;}
+  /* ── 링 + 파동 ── */
+  .lo-mark{ position:relative; width:96px; height:96px; }
+  .lo-mark svg{ width:96px; height:96px; display:block; }
+
+  /* 바깥 파동 (은은하게 번짐) */
+  .lo-wave{
+    position:absolute; inset:0; border-radius:50%;
+    border:1.5px solid rgba(0,112,74,0.30);
+    animation:loWave 2.1s cubic-bezier(.2,.7,.3,1) infinite;
+  }
+  .lo-wave:nth-child(2){ animation-delay:.7s; }
+  @keyframes loWave{
+    0%   { transform:scale(.72); opacity:.55; }
+    70%  { opacity:0; }
+    100% { transform:scale(1.28); opacity:0; }
+  }
+
+  /* 회전하는 호 */
+  .lo-arc{
+    transform-origin:50% 50%;
+    animation:loSpin 1.15s cubic-bezier(.55,.15,.45,.85) infinite;
+  }
+  @keyframes loSpin{ to{ transform:rotate(360deg); } }
+
+  /* 가운데 점 (숨쉬듯) */
+  .lo-core{ animation:loPulse 1.7s ease-in-out infinite; transform-origin:50% 50%; }
+  @keyframes loPulse{
+    0%,100% { transform:scale(1);    opacity:1; }
+    50%     { transform:scale(.78);  opacity:.72; }
+  }
+
+  /* 궤도 도는 작은 점 */
+  .lo-orbit{ transform-origin:48px 48px; animation:loSpin 2.6s linear infinite; }
+
+  /* ── 문구 ── */
+  .lo-cap{
+    font-size:15px; font-weight:700; color:#1E3932;
+    letter-spacing:-.2px; min-height:20px; text-align:center;
+    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+  }
+  .lo-sub{
+    font-size:12px; color:#93A09A; margin-top:-14px; min-height:16px; text-align:center;
+    font-family:inherit;
+  }
+
+  /* ── 진행 바 ── */
+  .lo-bar{
+    width:190px; height:4px; border-radius:100px;
+    background:rgba(30,57,50,0.10); overflow:hidden; position:relative;
+  }
+  .lo-fill{
+    height:100%; width:0%; border-radius:100px;
+    background:linear-gradient(90deg,#00704A,#4DA98A);
+    transition:width .45s cubic-bezier(.2,.8,.2,1);
+  }
+  /* 퍼센트를 모를 때: 좌우로 흐르는 표시 */
+  .lo-bar.indet .lo-fill{
+    width:38% !important; transition:none;
+    animation:loSlide 1.25s cubic-bezier(.5,0,.5,1) infinite;
+  }
+  @keyframes loSlide{
+    0%   { transform:translateX(-110%); }
+    100% { transform:translateX(300%); }
+  }
+
   @media (prefers-reduced-motion:reduce){
-    #loadOverlay .sm-body,#loadOverlay .sm-armL,#loadOverlay .sm-armR,#loadOverlay .sm-legL,#loadOverlay .sm-legR,#loadOverlay .sm-note,#loadOverlay .sm-inst{animation:none;}
+    .lo-wave,.lo-arc,.lo-core,.lo-orbit,.lo-bar.indet .lo-fill{ animation:none !important; }
   }`;
-  const st = document.createElement('style');
-  st.textContent = css;
-  document.head.appendChild(st);
 
-  // ---- HTML 주입 ----
-  function injectHTML(){
-    if(document.getElementById('loadOverlay')) return;
-    const ov = document.createElement('div');
+  const st = document.createElement('style');
+  st.textContent = CSS;
+  (document.head || document.documentElement).appendChild(st);
+
+  let ov = null, sub = '';
+
+  function build(){
+    ov = document.createElement('div');
     ov.id = 'loadOverlay';
     ov.innerHTML = `
-      <div class="load-stage"><div class="load-svg" id="load-svg"></div></div>
-      <div class="load-caption" id="load-caption">준비하는 중…</div>
-      <div class="load-sub" id="load-sub"></div>
-      <div class="load-bar"><div class="load-bar-fill" id="load-bar-fill"></div></div>
-      <div class="load-pct" id="load-pct">0%</div>`;
+      <div class="lo-card">
+        <div class="lo-mark">
+          <span class="lo-wave"></span>
+          <span class="lo-wave"></span>
+          <svg viewBox="0 0 96 96" aria-hidden="true">
+            <!-- 바탕 링 -->
+            <circle cx="48" cy="48" r="34" fill="none" stroke="rgba(30,57,50,0.10)" stroke-width="4"/>
+            <!-- 회전 호 -->
+            <g class="lo-arc">
+              <circle cx="48" cy="48" r="34" fill="none" stroke="#00704A" stroke-width="4"
+                      stroke-linecap="round" stroke-dasharray="54 160"/>
+            </g>
+            <!-- 궤도 점 -->
+            <g class="lo-orbit">
+              <circle cx="48" cy="14" r="3.2" fill="#B08D3C"/>
+            </g>
+            <!-- 가운데 -->
+            <g class="lo-core">
+              <circle cx="48" cy="48" r="13" fill="#1E3932"/>
+              <circle cx="48" cy="48" r="5"  fill="#D4E9E2"/>
+            </g>
+          </svg>
+        </div>
+        <div class="lo-cap" id="lo-cap">불러오는 중…</div>
+        <div class="lo-sub" id="lo-sub"></div>
+        <div class="lo-bar indet" id="lo-bar"><div class="lo-fill" id="lo-fill"></div></div>
+      </div>`;
     document.body.appendChild(ov);
   }
-  if(document.body) injectHTML();
-  else document.addEventListener('DOMContentLoaded', injectHTML);
 
-  // ---- 졸라맨 SVG ----
-  const STICK_FIGURES = [
-    { name:'드럼', emoji:'🥁', inst:`
-      <ellipse cx="100" cy="150" rx="26" ry="7" fill="#B08D3C" opacity="0.3"/>
-      <g class="sm-inst"><ellipse cx="78" cy="128" rx="15" ry="6" fill="#00704A"/><rect x="63" y="128" width="30" height="14" fill="#008558"/><ellipse cx="78" cy="142" rx="15" ry="6" fill="#1E3932"/>
-      <ellipse cx="122" cy="128" rx="15" ry="6" fill="#B08D3C"/><rect x="107" y="128" width="30" height="14" fill="#d4b968"/><ellipse cx="122" cy="142" rx="15" ry="6" fill="#8A6410"/></g>` },
-    { name:'기타', emoji:'🎸', inst:`
-      <g class="sm-inst"><rect x="95" y="95" width="6" height="52" rx="3" fill="#8B4513" transform="rotate(28 98 120)"/>
-      <ellipse cx="118" cy="135" rx="17" ry="21" fill="#c9702a"/><ellipse cx="118" cy="135" rx="7" ry="8" fill="#3a2410"/></g>` },
-    { name:'피아노', emoji:'🎹', inst:`
-      <g class="sm-inst"><rect x="72" y="128" width="56" height="16" rx="2" fill="#1F2320"/>
-      <rect x="74" y="130" width="7" height="12" fill="#fff"/><rect x="82" y="130" width="7" height="12" fill="#fff"/><rect x="90" y="130" width="7" height="12" fill="#fff"/><rect x="98" y="130" width="7" height="12" fill="#fff"/><rect x="106" y="130" width="7" height="12" fill="#fff"/><rect x="114" y="130" width="7" height="12" fill="#fff"/>
-      <rect x="79" y="130" width="4" height="7" fill="#1F2320"/><rect x="88" y="130" width="4" height="7" fill="#1F2320"/><rect x="104" y="130" width="4" height="7" fill="#1F2320"/><rect x="112" y="130" width="4" height="7" fill="#1F2320"/></g>` },
-    { name:'트럼펫', emoji:'🎺', inst:`
-      <g class="sm-inst"><rect x="95" y="112" width="34" height="7" rx="3" fill="#B08D3C"/>
-      <path d="M125 108 L140 100 L140 130 L125 122 Z" fill="#d4b968"/><circle cx="102" cy="115" r="2.5" fill="#8A6410"/><circle cx="110" cy="115" r="2.5" fill="#8A6410"/><circle cx="118" cy="115" r="2.5" fill="#8A6410"/></g>` },
-    { name:'바이올린', emoji:'🎻', inst:`
-      <g class="sm-inst"><ellipse cx="112" cy="118" rx="13" ry="19" fill="#8B4513" transform="rotate(-30 112 118)"/>
-      <rect x="118" y="90" width="4" height="30" rx="2" fill="#5a3410" transform="rotate(-30 120 105)"/>
-      <rect x="70" y="118" width="52" height="3" rx="1.5" fill="#3a2410" transform="rotate(-12 96 120)"/></g>` },
-    { name:'마이크', emoji:'🎤', inst:`
-      <g class="sm-inst"><circle cx="118" cy="108" r="9" fill="#444"/><rect x="115" y="115" width="6" height="26" rx="3" fill="#888"/></g>` },
-    { name:'탬버린', emoji:'🪘', inst:`
-      <g class="sm-inst"><circle cx="120" cy="118" r="16" fill="none" stroke="#c9702a" stroke-width="4"/><circle cx="108" cy="107" r="2.5" fill="#d4b968"/><circle cx="132" cy="107" r="2.5" fill="#d4b968"/><circle cx="132" cy="129" r="2.5" fill="#d4b968"/><circle cx="108" cy="129" r="2.5" fill="#d4b968"/></g>` },
-  ];
-
-  function stickFigureSVG(fig){
-    return `<svg viewBox="0 0 200 170" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;overflow:visible">
-      <text class="sm-note" x="50" y="60" font-size="20" fill="#00704A">♪</text>
-      <text class="sm-note n2" x="140" y="50" font-size="24" fill="#B08D3C">♫</text>
-      <text class="sm-note n3" x="95" y="35" font-size="18" fill="#4DA98A">♪</text>
-      <g class="sm-body">
-        <circle cx="100" cy="55" r="15" fill="none" stroke="#1E3932" stroke-width="3.5"/>
-        <line x1="100" y1="70" x2="100" y2="112" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
-        <line class="sm-armL" x1="100" y1="82" x2="78" y2="105" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
-        <line class="sm-armR" x1="100" y1="82" x2="122" y2="105" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
-        <line class="sm-legL" x1="100" y1="112" x2="86" y2="145" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
-        <line class="sm-legR" x1="100" y1="112" x2="114" y2="145" stroke="#1E3932" stroke-width="3.5" stroke-linecap="round"/>
-      </g>
-      ${fig.inst}
-    </svg>`;
+  function ensure(){
+    if(!ov || !document.body.contains(ov)){
+      if(!document.body){ return null; }
+      build();
+    }
+    return ov;
   }
 
-  const LOAD_MSGS = ['잠시만요, 준비하고 있어요','신나게 불러오는 중…','거의 다 왔어요','리듬을 타고 가져오는 중…','한 박자만 기다려 주세요'];
-  let _loadTimer = null, _loadPct = 0;
-  const $ = id => document.getElementById(id);
-
   window.showLoading = function(caption){
-    injectHTML();
-    const ov = $('loadOverlay'); if(!ov) return;
-    const fig = STICK_FIGURES[Math.floor(Math.random()*STICK_FIGURES.length)];
-    $('load-svg').innerHTML = stickFigureSVG(fig);
-    $('load-caption').textContent = caption || '불러오는 중…';
-    $('load-sub').textContent = `${fig.emoji} ${fig.name} 연주하며 ${LOAD_MSGS[Math.floor(Math.random()*LOAD_MSGS.length)]}`;
-    _loadPct = 0; window.setLoadPct(8);
-    ov.classList.add('show');
-    clearInterval(_loadTimer);
-    _loadTimer = setInterval(()=>{
-      if(_loadPct < 90) window.setLoadPct(_loadPct + Math.max(1, Math.round((90-_loadPct)/8)));
-    }, 260);
+    const o = ensure(); if(!o) return;
+    const cap = document.getElementById('lo-cap');
+    if(cap) cap.textContent = caption || '불러오는 중…';
+    const s = document.getElementById('lo-sub'); if(s) s.textContent = '';
+    const bar = document.getElementById('lo-bar');
+    const fill = document.getElementById('lo-fill');
+    if(bar) bar.classList.add('indet');
+    if(fill) fill.style.width = '0%';
+    o.classList.add('on');
   };
+
   window.setLoadStep = function(caption, pct){
-    if(caption && $('load-caption')) $('load-caption').textContent = caption;
-    if(pct!=null) window.setLoadPct(pct);
+    const o = ensure(); if(!o) return;
+    if(!o.classList.contains('on')) o.classList.add('on');
+    const cap = document.getElementById('lo-cap');
+    if(cap && caption) cap.textContent = caption;
+    const bar = document.getElementById('lo-bar');
+    const fill = document.getElementById('lo-fill');
+    if(typeof pct === 'number' && !isNaN(pct)){
+      if(bar) bar.classList.remove('indet');
+      if(fill) fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+      const s = document.getElementById('lo-sub');
+      if(s) s.textContent = Math.round(pct) + '%';
+    }
   };
-  window.setLoadPct = function(p){
-    _loadPct = Math.min(100, Math.max(0, p));
-    const f = $('load-bar-fill'); if(f) f.style.width = _loadPct+'%';
-    const t = $('load-pct'); if(t) t.textContent = _loadPct+'%';
-  };
+
   window.hideLoading = function(){
-    clearInterval(_loadTimer);
-    window.setLoadPct(100);
-    setTimeout(()=>{ const ov=$('loadOverlay'); if(ov) ov.classList.remove('show'); }, 350);
+    if(!ov) return;
+    ov.classList.remove('on');
   };
+
+  /* ── 페이지 이동 시 자동 표시 ──
+     사이드바·카드 등 내부 링크를 누르면 곧바로 로딩을 띄워
+     "아무 반응 없는 것처럼 보이는" 구간을 없앱니다. */
+  document.addEventListener('click', function(e){
+    const a = e.target.closest && e.target.closest('a[href]');
+    if(!a) return;
+    const href = a.getAttribute('href') || '';
+    if(!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+    if(a.target === '_blank' || a.hasAttribute('download')) return;
+    if(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    // 같은 사이트의 다른 페이지로 이동할 때만
+    try {
+      const url = new URL(href, location.href);
+      if(url.origin !== location.origin) return;
+      if(url.pathname === location.pathname) return;   // 같은 페이지 내 이동은 제외
+    } catch(err){ return; }
+    window.showLoading('페이지를 여는 중…');
+  }, true);
+
+  // 뒤로가기 등으로 복귀했을 때 남아있지 않도록
+  window.addEventListener('pageshow', function(){ window.hideLoading(); });
 })();

@@ -1272,7 +1272,9 @@ async function renderList(){
 
   const orgs2 = myOrgs();
   if(!listOrg || !orgs2.includes(listOrg)) listOrg = orgs2[0];
-  const shown = EXPENSES.filter(e=>e.org===listOrg);
+  const inOrg = EXPENSES.filter(e=>e.org===listOrg);
+  const shown = inOrg.filter(e=> expTrash ? e.deleted : !e.deleted);
+  const trashCnt = inOrg.filter(e=>e.deleted).length;
   const orgTabs = orgs2.length>1 ? `
     <div style="display:flex;gap:8px;margin-bottom:14px">
       ${orgs2.map(o=>`<button class="subtbtn ${o===listOrg?'on':''}" onclick="setListOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
@@ -1280,8 +1282,16 @@ async function renderList(){
 
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">📋 신청 내역 (${ORGS[listOrg]||listOrg})</h3>
-      <p class="adesc">날짜순으로 정리된 수행성 경비 신청 내역입니다. 같은 기관 선생님과 관리자가 열람할 수 있습니다.</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h3 class="actitle" style="margin:0">${expTrash?'🗑️ 휴지통':'📋 신청 내역'} (${ORGS[listOrg]||listOrg})</h3>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button class="ex-chip2 ${!expTrash?'on':''}" onclick="setExpTrash(false)">📋 신청내역</button>
+          <button class="ex-chip2 ${expTrash?'on':''}" onclick="setExpTrash(true)">🗑️ 휴지통 ${trashCnt?`<b>${trashCnt}</b>`:''}</button>
+        </div>
+      </div>
+      <style>.ex-chip2{padding:6px 14px;border:1.5px solid var(--ivd);border-radius:100px;background:#fff;font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit;}
+      .ex-chip2.on{background:var(--gm);border-color:var(--gm);color:#fff;}</style>
+      <p class="adesc">${expTrash?'삭제한 신청입니다. 언제든 되돌릴 수 있습니다.':'날짜순으로 정리된 수행성 경비 신청 내역입니다. 같은 기관 선생님과 관리자가 열람할 수 있습니다.'}</p>
       ${orgTabs}
       <div class="clist">
         ${shown.length ? shown.map(e=>`
@@ -1297,17 +1307,25 @@ async function renderList(){
               ${e.paid&&e.paidAt?`<div style="font-size:11.5px;color:#16a34a;margin-top:3px">💰 ${esc(e.paidByName||'')} · ${esc(fmtDateTime(e.paidAt))} 입금 확인</div>`:''}
             </div>
             <button class="bm" onclick="viewExpense('${e.id}')">상세보기</button>
-            ${isExpManager(e.org) ? (e.paid
-              ? `<button class="bm" style="background:#fef2f2;color:#b45309" onclick="togglePaid('${e.id}',false)">입금확인 취소</button>`
-              : `<button class="bm" style="background:#dcfce7;color:#16a34a;font-weight:700" onclick="togglePaid('${e.id}',true)">💰 입금 확인</button>`) : ''}
-            ${isExpManager(e.org) ? `<button class="bm" onclick="editExpense('${e.id}')">수정</button><button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delExpense('${e.id}')">삭제</button>` : ''}
-          </div>`).join('') : '<p class="empty">아직 신청 내역이 없습니다.</p>'}
+            ${e.deleted ? `
+              <button class="bp" style="padding:7px 14px" onclick="restoreExpense('${e.id}')">↩︎ 되돌리기</button>
+              ${(CU.role==='super'||isExpManager(e.org))?`<button class="bm" style="background:#fee2e2;color:#dc2626" onclick="purgeExpense('${e.id}')">영구 삭제</button>`:''}
+            ` : `
+              ${isExpManager(e.org) ? (e.paid
+                ? `<button class="bm" style="background:#fef2f2;color:#b45309" onclick="togglePaid('${e.id}',false)">입금확인 취소</button>`
+                : `<button class="bm" style="background:#dcfce7;color:#16a34a;font-weight:700" onclick="togglePaid('${e.id}',true)">💰 입금 확인</button>`) : ''}
+              ${isExpManager(e.org) ? `<button class="bm" onclick="editExpense('${e.id}')">✏️ 수정</button><button class="bm" style="background:#fef2f2;color:#b45309" onclick="delExpense('${e.id}')">🗑️ 삭제</button>` : ''}
+            `}
+          </div>`).join('') : `<p class="empty">${expTrash?'휴지통이 비어 있습니다.':'아직 신청 내역이 없습니다.'}</p>`}
       </div>
     </div>`;
 }
 window.renderList = renderList;
 function setListOrg(o){ listOrg = o; renderList(); }
 window.setListOrg = setListOrg;
+let expTrash = false;
+function setExpTrash(v){ expTrash = v; renderList(); }
+window.setExpTrash = setExpTrash;
 
 function viewExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
@@ -1405,9 +1423,34 @@ async function loadReceipts(expenseId){
 async function delExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
   if(!isExpManager(e.org)){ toast('경비 관리자와 슈퍼관리자만 삭제할 수 있습니다.','err'); return; }
-  if(!confirm(`"${e.subject}" (${e.date}) 신청을 삭제할까요?\n청구 대상 ${e.count}명의 기록과 영수증이 함께 삭제됩니다.`)) return;
+  if(!confirm(`"${e.subject}" (${e.date}) 신청을 휴지통으로 옮길까요?\n휴지통에서 언제든 되돌릴 수 있습니다.`)) return;
   try {
-    // 영수증 먼저 삭제
+    await updateDoc(doc(db,'expenses',id), {
+      deleted:true, deletedAt:Timestamp.now(), deletedByUid:CU.uid, deletedByName:CU.name||''
+    });
+    toast('휴지통으로 옮겼습니다.');
+    renderList();
+  } catch(e2){ toast('삭제 실패: '+e2.message,'err'); }
+}
+window.delExpense = delExpense;
+
+// ── 되돌리기 ──
+async function restoreExpense(id){
+  try {
+    await updateDoc(doc(db,'expenses',id), { deleted:false, restoredAt:Timestamp.now(), restoredByName:CU.name||'' });
+    toast('되돌렸습니다.','ok');
+    renderList();
+  } catch(e){ toast('복구 실패: '+(e.message||''),'err'); }
+}
+window.restoreExpense = restoreExpense;
+
+// ── 영구 삭제 (경비 관리자·슈퍼만) ──
+async function purgeExpense(id){
+  const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+  if(!(CU.role==='super' || isExpManager(e.org))){ toast('권한이 없습니다.','err'); return; }
+  if(!confirm('영구 삭제하면 되돌릴 수 없습니다.\n영수증까지 모두 지웁니다. 진행할까요?')) return;
+  window.showLoading && window.showLoading('삭제하는 중…');
+  try {
     try {
       const snap = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',id)));
       const dels = [];
@@ -1415,11 +1458,12 @@ async function delExpense(id){
       await Promise.all(dels);
     } catch(e3){}
     await deleteDoc(doc(db,'expenses',id));
-    toast('삭제했습니다.');
+    window.hideLoading && window.hideLoading();
+    toast('영구 삭제했습니다.','ok');
     renderList();
-  } catch(e2){ toast('삭제 실패: '+e2.message,'err'); }
+  } catch(e2){ window.hideLoading && window.hideLoading(); toast('삭제 실패: '+e2.message,'err'); }
 }
-window.delExpense = delExpense;
+window.purgeExpense = purgeExpense;
 
 // 날짜시각 포맷 (Timestamp → "2026-07-07 14:30")
 function fmtDateTime(ts){
@@ -1482,7 +1526,7 @@ async function renderReport(){
 
   // 이 기관의 학기 목록 (신청 데이터 기준 + 등록된 학기)
   const semSet = new Set();
-  EXPENSES.filter(e=>e.org===reportOrg && e.semester).forEach(e=>semSet.add(e.semester));
+  EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester).forEach(e=>semSet.add(e.semester));
   orgTerms(reportOrg).forEach(t=>semSet.add(termKey(t)));
   const sems = [...semSet].sort().reverse();
   if(!reportSem || !sems.includes(reportSem)) reportSem = sems[0] || '';
@@ -1492,7 +1536,7 @@ async function renderReport(){
       ${orgs.map(o=>`<button class="subtbtn ${o===reportOrg?'on':''}" onclick="setReportOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
     </div>` : '';
 
-  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem);
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
   const canManage = isExpManager(reportOrg);
 
   // 요약
@@ -1706,7 +1750,7 @@ window.toggleRepCls = toggleRepCls;
 
 // 학년별 청구 상세표 (안내장 형태) — 항목 가로, 학생 세로, ✓ + 개인 합계
 function viewClassSheet(gradeKey){
-  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem)
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem)
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
   const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
@@ -2017,7 +2061,7 @@ function ensureXLSX(){
 
 // 취합을 엑셀로 (학생별 합산 시트 + 항목 매트릭스 시트)
 async function excelReport(){
-  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem)
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem)
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   if(!list.length){ toast('내보낼 데이터가 없습니다.','err'); return; }
   window.showLoading && window.showLoading('엑셀 파일을 만드는 중…');
@@ -2093,7 +2137,7 @@ window.excelReport = excelReport;
 // ══════════ 🧾 영수증 취합 (A4) ══════════
 // 신청 건 고유번호: 기관·학기 내 날짜순 순번 (#001, #002…)
 function expenseSeqMap(){
-  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem)
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem)
     .sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   const map = {};
   list.forEach((e,i)=>{ map[e.id] = 'R'+String(i+1).padStart(3,'0'); });
@@ -2333,7 +2377,7 @@ window.viewAllSheet = viewAllSheet;
 function buildAllSheetData(){
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
   const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
-  let list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem);
+  let list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
   const groupKey = e => allSheetGroupBy==='teacher' ? (e.teacher||'담당 미지정') : allSheetGroupBy==='subject' ? (e.subject||'과목 미지정') : null;
   if(allSheetGroupBy!=='none') list=[...list].sort((a,b)=>(groupKey(a)||'').localeCompare(groupKey(b)||'','ko')||(a.date||'').localeCompare(b.date||''));
   else list=[...list].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -2462,7 +2506,7 @@ function renderAllSheet(){
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
   const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
 
-  let list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem);
+  let list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
   // 항목 정렬/그룹
   const groupKey = e => allSheetGroupBy==='teacher' ? (e.teacher||'담당 미지정')
                       : allSheetGroupBy==='subject' ? (e.subject||'과목 미지정') : null;
@@ -2614,7 +2658,7 @@ window.openReceiptsOf = openReceiptsOf;
 
 // 학생 상세: 이 학생이 참여한 항목들
 function viewStudentDetail(sid){
-  const list = EXPENSES.filter(e=>e.org===reportOrg && e.semester===reportSem);
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
   const items = [];
   list.forEach(e=>{
     const s = (e.students||[]).find(x=>x.id===sid);
