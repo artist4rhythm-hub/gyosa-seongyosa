@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>출근부 · 교사 선교사</title>
+<title>관리자 · 교사 선교사</title>
 <meta name="theme-color" content="#1E3932">
 <link rel="manifest" href="manifest.json">
 <!-- iOS 홈 화면 앱 아이콘 -->
@@ -276,6 +276,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="subtb" id="att-subtb">
       <button class="subtbtn active" id="st-cal" onclick="showSubTab('cal')">📅 달력</button>
       <button class="subtbtn" id="st-stat" onclick="showSubTab('stat')">📊 통계</button>
+      <button class="subtbtn" id="st-dir" onclick="showSubTab('dir')">📇 교직원 명부</button>
     </div>
     <!-- 하위 탭 콘텐츠 -->
     <div id="c-cal" class="tc"></div>
@@ -1126,12 +1127,18 @@ async function showMain(){
   updateNoticeDot();
   // 공통 상단 메뉴 렌더 (컨테이너에)
   window.ORGS = ORGS;
-  renderShell('att', CU);
+  renderShell('adm', CU);
   // 해시로 들어온 경우 해당 탭 열기
-  // 예전 링크(#adm) 호환: 관리자 페이지로 이동
-  if((location.hash||'')==='#adm'){ location.replace('admin.html'); return; }
-  if(window.guardPage && !guardPage(CU, 'att')) return;
-  showTab('att');
+  if(isAdmin){ showTab('adm'); }
+  else {
+    $I('ms').innerHTML = `<div style="min-height:70vh;display:flex;align-items:center;justify-content:center;padding:20px">
+      <div style="background:#fff;border:1px solid var(--ivd);border-radius:18px;padding:36px 40px;text-align:center;max-width:380px">
+        <div style="font-size:40px;margin-bottom:12px">🔒</div>
+        <div style="font-size:17px;font-weight:800;color:var(--gd);margin-bottom:8px">관리자 전용 페이지입니다</div>
+        <button onclick="location.href='index.html'" style="background:var(--gm);color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">홈으로 가기</button>
+      </div></div>`;
+    return;
+  }
   window.hideLoading && window.hideLoading();
   loadNotifications();  // 결재·쪽지 알림 (비동기)
 }
@@ -1241,13 +1248,24 @@ function showTab(t){
   ['c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   if(t==='att'){
     $I('c-att').style.display='flex';
-    showSubTab('cal');
+    // 협력교사 또는 개인 차단: 달력·통계 탭 숨기고 명부만
+    if(CU && (CU.role==='partner' || (CU.pageDeny||[]).includes('att'))){
+      const c=$I('st-cal'), s=$I('st-stat');
+      if(c) c.style.display='none';
+      if(s) s.style.display='none';
+      showSubTab('dir');
+    } else {
+      showSubTab('cal');
+    }
   }
   if(t==='notice'){
     $I('c-notice').style.display='flex';
     renderNotice();
   }
-  if(t==='adm'){ location.href='admin.html'; return; }
+  if(t==='adm'){
+    $I('c-adm').style.display='flex';
+    showAdmTab('sys');
+  }
 
 }
 
@@ -1255,13 +1273,21 @@ function showTab(t){
 window.addEventListener('hashchange', ()=>{
   if(!CU) return;
   const isAdmin = ['super','org_admin','tab_admin'].includes(CU.role);
-  // 예전 링크(#adm) 호환: 관리자 페이지로 이동
-  if((location.hash||'')==='#adm'){ location.replace('admin.html'); return; }
-  if(window.guardPage && !guardPage(CU, 'att')) return;
-  showTab('att');
+  if(isAdmin){ showTab('adm'); }
+  else {
+    $I('ms').innerHTML = `<div style="min-height:70vh;display:flex;align-items:center;justify-content:center;padding:20px">
+      <div style="background:#fff;border:1px solid var(--ivd);border-radius:18px;padding:36px 40px;text-align:center;max-width:380px">
+        <div style="font-size:40px;margin-bottom:12px">🔒</div>
+        <div style="font-size:17px;font-weight:800;color:var(--gd);margin-bottom:8px">관리자 전용 페이지입니다</div>
+        <button onclick="location.href='index.html'" style="background:var(--gm);color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">홈으로 가기</button>
+      </div></div>`;
+    return;
+  }
 });
 
 function showSubTab(sub){
+  // 협력교사·개인 차단은 출근 달력·통계 대신 교직원 명부만 사용
+  if(CU && (CU.role==='partner' || (CU.pageDeny||[]).includes('att')) && sub!=='dir') sub = 'dir';
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('st-'+sub)?.classList.add('active');
   ['c-cal','c-stat','c-dir'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
@@ -2172,7 +2198,7 @@ const ACC_PAGES = [
   { k:'calendar', l:'학사일정' }, { k:'cert', l:'증명서' },
   { k:'att', l:'출근부' }, { k:'work', l:'근무시간' }, { k:'approval', l:'전자결재' }, { k:'timetable', l:'시간표' },
   { k:'payreq', l:'경비지급' }, { k:'expense', l:'수행성' },
-  { k:'message', l:'쪽지' }, { k:'board', l:'게시판' },
+  { k:'dir', l:'명부' }, { k:'message', l:'쪽지' }, { k:'board', l:'게시판' },
 ];
 
 async function renderAccessCtl(){

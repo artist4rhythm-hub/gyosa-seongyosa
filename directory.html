@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>출근부 · 교사 선교사</title>
+<title>교직원 명부 · 교사 선교사</title>
 <meta name="theme-color" content="#1E3932">
 <link rel="manifest" href="manifest.json">
 <!-- iOS 홈 화면 앱 아이콘 -->
@@ -276,6 +276,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="subtb" id="att-subtb">
       <button class="subtbtn active" id="st-cal" onclick="showSubTab('cal')">📅 달력</button>
       <button class="subtbtn" id="st-stat" onclick="showSubTab('stat')">📊 통계</button>
+      <button class="subtbtn" id="st-dir" onclick="showSubTab('dir')">📇 교직원 명부</button>
     </div>
     <!-- 하위 탭 콘텐츠 -->
     <div id="c-cal" class="tc"></div>
@@ -1126,12 +1127,13 @@ async function showMain(){
   updateNoticeDot();
   // 공통 상단 메뉴 렌더 (컨테이너에)
   window.ORGS = ORGS;
-  renderShell('att', CU);
+  if(window.guardPage && !guardPage(CU, 'dir')) return;
+  renderShell('dir', CU);
   // 해시로 들어온 경우 해당 탭 열기
-  // 예전 링크(#adm) 호환: 관리자 페이지로 이동
-  if((location.hash||'')==='#adm'){ location.replace('admin.html'); return; }
-  if(window.guardPage && !guardPage(CU, 'att')) return;
+  // 명부 전용: 달력·통계·관리자 숨김
+  ['st-cal','st-stat','t-adm'].forEach(id=>{ const e=$I(id); if(e) e.style.display='none'; });
   showTab('att');
+  showSubTab('dir');
   window.hideLoading && window.hideLoading();
   loadNotifications();  // 결재·쪽지 알림 (비동기)
 }
@@ -1241,13 +1243,16 @@ function showTab(t){
   ['c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   if(t==='att'){
     $I('c-att').style.display='flex';
-    showSubTab('cal');
+    showSubTab('dir');
   }
   if(t==='notice'){
     $I('c-notice').style.display='flex';
     renderNotice();
   }
-  if(t==='adm'){ location.href='admin.html'; return; }
+  if(t==='adm'){
+    $I('c-adm').style.display='flex';
+    showAdmTab('sys');
+  }
 
 }
 
@@ -1255,13 +1260,15 @@ function showTab(t){
 window.addEventListener('hashchange', ()=>{
   if(!CU) return;
   const isAdmin = ['super','org_admin','tab_admin'].includes(CU.role);
-  // 예전 링크(#adm) 호환: 관리자 페이지로 이동
-  if((location.hash||'')==='#adm'){ location.replace('admin.html'); return; }
-  if(window.guardPage && !guardPage(CU, 'att')) return;
+  // 명부 전용: 달력·통계·관리자 숨김
+  ['st-cal','st-stat','t-adm'].forEach(id=>{ const e=$I(id); if(e) e.style.display='none'; });
   showTab('att');
+  showSubTab('dir');
 });
 
 function showSubTab(sub){
+  // 협력교사·개인 차단은 출근 달력·통계 대신 교직원 명부만 사용
+  if(CU && (CU.role==='partner' || (CU.pageDeny||[]).includes('att')) && sub!=='dir') sub = 'dir';
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('st-'+sub)?.classList.add('active');
   ['c-cal','c-stat','c-dir'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
