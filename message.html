@@ -229,23 +229,87 @@ function showTab(t){
 }
 window.showTab = showTab;
 
+// ── 쪽지 분류 ──
+// category 필드가 있으면 그것, 없으면(기존 쪽지) 제목으로 자동 판별
+const MSG_CATS = {
+  payreq:  { label:'경비 지급', icon:'💳', color:'#00704A', bg:'#E8F3EF' },
+  expense: { label:'수행성 경비', icon:'💰', color:'#8A6410', bg:'#F7EFD8' },
+  approval:{ label:'전자결재', icon:'🗂️', color:'#2563EB', bg:'#DBEAFE' },
+  general: { label:'일반', icon:'✉️', color:'#5A6560', bg:'#F2F0EB' },
+};
+function msgCat(m){
+  if(m.category && MSG_CATS[m.category]) return m.category;
+  const s = m.subject || '';
+  if(/\[경비 결재|\[경비 지급|\[지급 완료|\[반려\]/.test(s)) return 'payreq';
+  if(/\[수행성|\[입금 완료\]/.test(s)) return 'expense';
+  if(/\[결재 완료|\[결재 진행|\[결재 요청/.test(s)) return 'approval';
+  return 'general';
+}
+let inboxFilter = 'all';
+function setInboxFilter(f){ inboxFilter = f; renderInbox(); }
+window.setInboxFilter = setInboxFilter;
+
+function catBadge(c){
+  const k = MSG_CATS[c] || MSG_CATS.general;
+  return `<span class="msg-cat" style="background:${k.bg};color:${k.color}">${k.icon} ${k.label}</span>`;
+}
+
 function renderInbox(){
-  const list = MSGS.filter(m=>(m.toUids||[]).includes(CU.uid));
+  const all = MSGS.filter(m=>(m.toUids||[]).includes(CU.uid));
+  // 분류별 개수
+  const counts = { all: all.length, payreq:0, expense:0, approval:0, general:0 };
+  const unreadCounts = { all:0, payreq:0, expense:0, approval:0, general:0 };
+  all.forEach(m=>{
+    const c = msgCat(m);
+    counts[c]++;
+    if(!(m.readBy||[]).includes(CU.uid)){ unreadCounts[c]++; unreadCounts.all++; }
+  });
+
+  const list = inboxFilter==='all' ? all : all.filter(m=>msgCat(m)===inboxFilter);
+
+  const chips = [['all','전체','📥'], ['payreq','경비 지급','💳'], ['expense','수행성 경비','💰'],
+                 ['approval','전자결재','🗂️'], ['general','일반','✉️']]
+    .map(([k,l,ic])=>{
+      const c = counts[k]||0;
+      const u = unreadCounts[k]||0;
+      if(k!=='all' && c===0) return '';   // 없는 분류는 숨김
+      return `<button class="mcx ${inboxFilter===k?'on':''}" onclick="setInboxFilter('${k}')">
+        ${ic} ${l} <span class="mcx-n">${c}</span>${u>0?`<span class="mcx-u">${u}</span>`:''}
+      </button>`;
+    }).join('');
+
   const rows = list.map(m=>{
     const unread = !(m.readBy||[]).includes(CU.uid);
+    const c = msgCat(m);
     return `<div class="msg-item ${unread?'unread':''}" onclick="openMsg('${m.id}')">
       <div class="msg-dot ${unread?'':'read'}"></div>
       <div class="msg-body">
-        <div class="msg-top"><span class="msg-from">${esc(m.fromName)}</span><span class="msg-date">${fmtTime(m.createdAt)}</span></div>
+        <div class="msg-top">
+          <span class="msg-from">${esc(m.fromName)}</span>
+          ${catBadge(c)}
+          <span class="msg-date">${fmtTime(m.createdAt)}</span>
+        </div>
         <div class="msg-sub">${esc(m.subject||'(제목 없음)')}</div>
       </div>
     </div>`;
   }).join('');
+
   $I('c-inbox').innerHTML = `
     <div class="acard">
       <h3 class="actitle">📥 받은 쪽지</h3>
-      <p class="adesc">선생님들이 보낸 개인 쪽지입니다. 클릭하면 내용을 볼 수 있습니다.</p>
-      ${rows || '<div class="empty">받은 쪽지가 없습니다.</div>'}
+      <p class="adesc">종류별로 나누어 볼 수 있습니다. 클릭하면 내용을 볼 수 있습니다.</p>
+      <div class="mcx-bar">${chips}</div>
+      <style>
+        .mcx-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+        .mcx{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1.5px solid var(--ivd);border-radius:100px;background:var(--wh);font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit;}
+        .mcx:hover{border-color:var(--gm);}
+        .mcx.on{background:var(--gm);border-color:var(--gm);color:#fff;}
+        .mcx-n{font-size:11px;opacity:.65;font-weight:600;}
+        .mcx-u{background:#C0392B;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:100px;min-width:16px;text-align:center;line-height:1.3;}
+        .msg-cat{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:100px;white-space:nowrap;}
+        .msg-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+      </style>
+      ${rows || `<div class="empty">${inboxFilter==='all'?'받은 쪽지가 없습니다.':'해당 분류의 쪽지가 없습니다.'}</div>`}
     </div>`;
 }
 window.renderInbox = renderInbox;
@@ -258,7 +322,11 @@ function renderSent(){
     const total = (m.toUids||[]).length;
     return `<div class="msg-item" onclick="openMsg('${m.id}')">
       <div class="msg-body">
-        <div class="msg-top"><span class="msg-from">받는사람: ${esc(names)}</span><span class="msg-date">${fmtTime(m.createdAt)}</span></div>
+        <div class="msg-top">
+          <span class="msg-from">받는사람: ${esc(names)}</span>
+          ${catBadge(msgCat(m))}
+          <span class="msg-date">${fmtTime(m.createdAt)}</span>
+        </div>
         <div class="msg-sub">${esc(m.subject||'(제목 없음)')} · 읽음 ${readCnt}/${total}</div>
       </div>
     </div>`;
@@ -408,6 +476,7 @@ async function sendMsg(){
   const toNames = toUids.map(u=>STAFF.find(s=>s.uid===u)?.name||'?');
   try {
     await addDoc(collection(db,'messages'), {
+      category:'general',
       fromUid:CU.uid, fromName:CU.name, fromOrg:CU.org||'',
       toUids, toNames, subject, body,
       readBy:[], createdAt:Timestamp.now()
