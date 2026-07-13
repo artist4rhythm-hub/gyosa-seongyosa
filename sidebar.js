@@ -132,6 +132,10 @@ function renderSidebar(){
     <div id="sb-res" class="sb-res"></div>
 
     <nav class="sb-nav" id="sb-nav">
+      <a class="sb-i sb-home${SB_ACTIVE==='home' ? ' on' : ''}" href="index.html">
+        <span class="material-symbols-rounded">home</span>
+        <span class="sb-l">홈</span>
+      </a>
       ${pinned.length ? `
         <div class="sb-g">
           <div class="sb-gt"><span class="material-symbols-rounded">keep</span>자주 쓰는</div>
@@ -244,7 +248,7 @@ function renderMobileTabs(){
       <span class="mt-l">${label}</span>
     </a>`;
   mt.innerHTML =
-    tab('home', '홈', 'index.html', 0, SB_ACTIVE === 'att') +
+    tab('home', '홈', 'index.html', 0, SB_ACTIVE === 'home') +
     tab('approval', '할 일', 'payreq.html', todo, SB_ACTIVE === 'payreq') +
     tab('mail', '쪽지', 'message.html', msg, SB_ACTIVE === 'message') +
     `<button class="mt-i" onclick="openDrawer()">
@@ -315,6 +319,7 @@ function injectSidebarCSS(){
 .sb-nav{flex:1;overflow-y:auto;padding:0 8px 8px;}
 .sb-nav::-webkit-scrollbar{width:4px;}
 .sb-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px;}
+.sb-home{margin-bottom:10px;}
 .sb-g{margin-bottom:12px;}
 .sb-gt{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:rgba(255,255,255,.4);padding:5px 9px;letter-spacing:0.4px;}
 .sb-gt .material-symbols-rounded{font-size:13px;color:var(--sb-mint);}

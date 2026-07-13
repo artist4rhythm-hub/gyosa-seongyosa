@@ -12,34 +12,43 @@
   // ---- CSS 주입 ----
   const css = `
   .mac-close{
-    position:absolute; top:14px; left:14px; z-index:20;
-    width:13px; height:13px; border-radius:50%;
-    border:none; padding:0; cursor:pointer;
+    position:absolute; top:15px; left:16px; z-index:20;
+    width:12px !important; height:12px !important;
+    min-width:12px; max-width:12px; min-height:12px; max-height:12px;
+    flex:none !important; box-sizing:border-box !important;
+    border-radius:50%;
+    border:none; padding:0 !important; margin:0 !important; cursor:pointer;
     background:#ff5f57;
     box-shadow:0 0 0 0.5px rgba(0,0,0,0.12);
     display:flex; align-items:center; justify-content:center;
+    overflow:hidden; font-size:0; line-height:0;
     transition:filter .15s ease, transform .1s ease;
   }
   .mac-close::before{
     content:'✕';
-    font-size:9px; font-weight:900; line-height:1;
+    font-size:8px; font-weight:900; line-height:1;
     color:rgba(0,0,0,0.55);
     opacity:0; transition:opacity .15s ease;
-    margin-top:-0.5px;
   }
   .mac-close:hover{ filter:brightness(0.95); }
   .mac-close:hover::before{ opacity:1; }
   .mac-close:active{ transform:scale(0.92); }
   /* 신호등 장식용 두 점 (노랑·초록, 비활성 느낌) */
   .mac-dots{
-    position:absolute; top:14px; left:34px; z-index:20;
-    display:flex; gap:8px; pointer-events:none;
+    position:absolute; top:15px; left:36px; z-index:20;
+    display:flex; gap:8px; pointer-events:none; align-items:center;
   }
-  .mac-dots i{ width:13px; height:13px; border-radius:50%; display:block; box-shadow:0 0 0 0.5px rgba(0,0,0,0.10); }
+  .mac-dots i{
+    width:12px !important; height:12px !important;
+    min-width:12px; max-width:12px; min-height:12px; max-height:12px;
+    flex:none !important; box-sizing:border-box !important;
+    border-radius:50%; display:block; padding:0; margin:0;
+    box-shadow:0 0 0 0.5px rgba(0,0,0,0.10);
+  }
   .mac-dots i.y{ background:#febc2e; }
   .mac-dots i.g{ background:#28c840; }
   /* 모달 박스에 좌측 상단 여백 확보 (버튼 자리) */
-  .mbox.mac-has-close{ padding-top:42px; }
+  .mbox.mac-has-close{ padding-top:44px; }
   .mbox.mac-has-close .mtitle{ padding-right:20px; }
   @media (prefers-reduced-motion:reduce){
     .mac-close{ transition:none; }

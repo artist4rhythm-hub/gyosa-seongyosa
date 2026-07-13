@@ -190,6 +190,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
+<script type="module" src="badges.js"></script>
 </head>
 <body>
 
@@ -376,35 +377,10 @@ onAuthStateChanged(auth, async (user) => {
     hasPending = myApproveCount>0 || PAY_REQUESTS.some(r=> (r.chain||[]).some(c=>c.uid===CU.uid));
   } catch(e){}
   if(isApprover || hasPending){ const t=$I('tb-approve'); if(t) t.style.display=''; }
-
-  // 사이드바 뱃지 (내가 결재할 건수 + 회계면 지급대기 건수)
-  let payBadge = myApproveCount;
-  if(anyMgr){ payBadge += PAY_REQUESTS.filter(r=>!r.paid && r.status==='submitted').length; }
-  setBadges({ payreq: payBadge });
-  loadSideBadges();   // 쪽지·전자결재 뱃지
+  // 사이드바 뱃지는 badges.js가 모든 페이지에서 동일하게 계산합니다.
 
   renderNew();
 });
-
-// 다른 시스템의 뱃지 (쪽지 안읽음 · 전자결재 대기)
-async function loadSideBadges(){
-  try {
-    const snap = await getDocs(collection(db,'messages'));
-    let unread = 0;
-    snap.forEach(d=>{ const m=d.data();
-      if((m.toUids||[]).includes(CU.uid) && !(m.readBy||[]).includes(CU.uid)) unread++;
-    });
-    setBadges({ message: unread });
-  } catch(e){}
-  try {
-    const snap = await getDocs(collection(db,'approvals'));
-    let waiting = 0;
-    snap.forEach(d=>{ const a=d.data();
-      if(a.status==='progress' && a.line && a.line[a.currentIdx]?.uid===CU.uid) waiting++;
-    });
-    setBadges({ approval: waiting });
-  } catch(e){}
-}
 
 async function loadData(){
   window.showLoading && window.showLoading('학생·반 정보를 불러오는 중…');

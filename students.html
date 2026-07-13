@@ -113,6 +113,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
+<script type="module" src="badges.js"></script>
 </head>
 <body>
 
@@ -221,7 +222,6 @@ onAuthStateChanged(auth, async (user) => {
     $I('ms').style.display = 'flex';
     window.ORGS = ORGS;
   renderShell('students', CU);
-  if(window.loadSideBadges) loadSideBadges();
     const org = ORGS[CU.org] || CU.org;
     
     
@@ -731,14 +731,63 @@ let exGroupBy = 'grade';   // grade | dept | gender | class | org | none
 
 function renderExtract(){
   const myo = myOrgs();
-  // 선택 가능한 학년 목록 (재학생 기준)
-  const allGrades = Array.from(new Set(STUDENTS.map(s=>studentGrade(s.id)).filter(Boolean)))
-    .sort((a,b)=>(parseInt(a)||99)-(parseInt(b)||99)||a.localeCompare(b,'ko'));
+  // 기관을 하나도 안 고르면 = 내 기관 전체 대상
+  const activeOrgs = exFilter.orgs.length ? exFilter.orgs : myo;
 
-  const orgChips2 = myo.map(o=>`<button class="ex-chip${exFilter.orgs.includes(o)?' on':''}" onclick="exToggle('orgs','${o}')">${ORGS[o]||o}</button>`).join('');
-  const deptChips = ['초등부','중등부','고등부'].map(d=>`<button class="ex-chip${exFilter.depts.includes(d)?' on':''}" onclick="exToggle('depts','${d}')">${d}</button>`).join('');
-  const gradeChips = allGrades.map(g=>`<button class="ex-chip${exFilter.grades.includes(g)?' on':''}" onclick="exToggle('grades','${g.replace(/'/g,"\\'")}')">${g}</button>`).join('') || '<span style="font-size:12px;color:var(--tl)">학년 정보 없음</span>';
-  const genderChips = ['남','여'].map(g=>`<button class="ex-chip${exFilter.genders.includes(g)?' on':''}" onclick="exToggle('genders','${g}')">${g}</button>`).join('');
+  // 기관별 학년(연령) 목록 — 실제 데이터에서 수집
+  const gradesOf = (org) => {
+    const set = new Set();
+    STUDENTS.filter(s=>s.org===org).forEach(s=>{ const g=studentGrade(s.id); if(g) set.add(g); });
+    return Array.from(set).sort(exGradeSort);
+  };
+
+  const chip = (on, onclick, label) =>
+    `<button class="ex-chip${on?' on':''}" onclick="${onclick}">${label}</button>`;
+
+  // ── 기관 선택 (다중) ──
+  const orgChips = myo.map(o=>{
+    const on = exFilter.orgs.includes(o);
+    const cnt = STUDENTS.filter(s=>s.org===o).length;
+    return `<button class="ex-org${on?' on':''}" onclick="exToggle('orgs','${o}')">
+      <span class="ex-oc">${on?'✓':'＋'}</span>
+      <span>${ORGS[o]||o}</span>
+      <span class="ex-on">${cnt}명</span>
+    </button>`;
+  }).join('');
+
+  // ── 기관별 패널 (열리듯이) ──
+  const panels = activeOrgs.map(o=>{
+    const gs = gradesOf(o);
+    const isDaniel = o === 'daniel';
+    const deptRow = isDaniel ? `
+      <div class="ex-sub">
+        <span class="ex-lbl2">부서</span>
+        <div class="ex-grid dept">
+          ${['초등부','중등부','고등부'].map(d=>chip(exFilter.depts.includes(d), `exToggle('depts','${d}')`, d)).join('')}
+        </div>
+      </div>` : '';
+    const gradeLabel = isDaniel ? '학년' : '연령';
+    const gradeRow = gs.length ? `
+      <div class="ex-sub">
+        <span class="ex-lbl2">${gradeLabel}</span>
+        <div class="ex-grid">
+          ${gs.map(g=>{
+            const cnt = STUDENTS.filter(s=>s.org===o && studentGrade(s.id)===g).length;
+            return `<button class="ex-chip${exFilter.grades.includes(g)?' on':''}" onclick="exToggle('grades','${g.replace(/'/g,"\\'")}')">${esc(g)}<span class="ex-cn">${cnt}</span></button>`;
+          }).join('')}
+        </div>
+      </div>` : `<div class="ex-sub"><span class="ex-lbl2">${gradeLabel}</span><span style="font-size:12px;color:var(--tl)">정보 없음</span></div>`;
+
+    return `<div class="ex-panel">
+      <div class="ex-ph">
+        <span class="ex-pd"></span>${ORGS[o]||o}
+        <button class="ex-mini" onclick="exSelectAllGrades('${o}')">전체 선택</button>
+        <button class="ex-mini" onclick="exClearGrades('${o}')">해제</button>
+      </div>
+      ${deptRow}
+      ${gradeRow}
+    </div>`;
+  }).join('');
 
   const groupOpts = [['grade','학년별'],['dept','부서별'],['gender','성별'],['class','반별'],['org','기관별'],['none','묶지 않음']]
     .map(([v,l])=>`<button class="ex-gbtn${exGroupBy===v?' on':''}" onclick="exSetGroup('${v}')">${l}</button>`).join('');
@@ -746,28 +795,52 @@ function renderExtract(){
   const ctrl = `
     <div class="acard">
       <h3 class="actitle">🔍 명단 추출</h3>
-      <p class="adesc">원하는 조건으로 재학생을 골라내고, 기준별로 묶어 인원을 집계합니다. 각 반의 담임 선생님도 함께 표시됩니다.</p>
+      <p class="adesc">기관을 고르면 아래에 그 기관의 학년·부서가 펼쳐집니다. 두 기관을 함께 골라 합산 인원도 볼 수 있습니다.</p>
       <style>
-        .ex-chip{padding:6px 13px;border:1.5px solid var(--ivd);border-radius:100px;background:#fff;font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;transition:all .15s;}
+        .ex-chip{position:relative;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px 6px;border:1.5px solid var(--ivd);border-radius:9px;background:#fff;font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;transition:all .13s;white-space:nowrap;font-family:inherit;}
         .ex-chip:hover{border-color:var(--gm);}
         .ex-chip.on{background:var(--gm);border-color:var(--gm);color:#fff;}
-        .ex-gbtn{padding:7px 15px;border:1.5px solid var(--ivd);border-radius:8px;background:#fff;font-size:13px;font-weight:700;color:var(--ts);cursor:pointer;}
+        .ex-cn{font-size:10.5px;opacity:.6;font-weight:700;}
+        .ex-chip.on .ex-cn{opacity:.85;}
+        .ex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px;flex:1;}
+        .ex-grid.dept{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));max-width:420px;}
+        .ex-org{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px solid var(--ivd);border-radius:11px;background:#fff;font-size:13.5px;font-weight:700;color:var(--ts);cursor:pointer;font-family:inherit;transition:all .13s;}
+        .ex-org:hover{border-color:var(--gm);}
+        .ex-org.on{background:var(--gp);border-color:var(--gm);color:var(--gd);}
+        .ex-oc{font-size:12px;color:var(--gm);font-weight:900;}
+        .ex-on{font-size:11px;color:var(--tl);font-weight:600;}
+        .ex-org.on .ex-on{color:var(--gm);}
+        .ex-panel{border:1px solid var(--ivd);border-left:3px solid var(--gm);border-radius:11px;padding:12px 14px;margin-bottom:10px;background:var(--iv);animation:exOpen .18s ease;}
+        @keyframes exOpen{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+        .ex-ph{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;color:var(--gd);margin-bottom:10px;}
+        .ex-pd{width:7px;height:7px;border-radius:50%;background:var(--gm);}
+        .ex-mini{margin-left:auto;padding:3px 9px;border:1px solid var(--ivd);border-radius:6px;background:#fff;font-size:11px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit;}
+        .ex-mini:last-child{margin-left:0;}
+        .ex-mini:hover{border-color:var(--gm);color:var(--gm);}
+        .ex-sub{display:flex;align-items:flex-start;gap:10px;margin-bottom:9px;}
+        .ex-sub:last-child{margin-bottom:0;}
+        .ex-lbl2{font-size:12px;font-weight:800;color:var(--gm);min-width:34px;padding-top:9px;flex:none;}
+        .ex-gbtn{padding:7px 15px;border:1.5px solid var(--ivd);border-radius:8px;background:#fff;font-size:13px;font-weight:700;color:var(--ts);cursor:pointer;font-family:inherit;}
         .ex-gbtn.on{background:var(--gd);border-color:var(--gd);color:#fff;}
         .ex-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 14px;}
-        .ex-lbl{font-size:12.5px;font-weight:800;color:var(--gd);min-width:52px;}
+        .ex-lbl{font-size:12.5px;font-weight:800;color:var(--gd);min-width:52px;flex:none;}
+        .ex-row .ex-chip{padding:7px 15px;border-radius:100px;}
       </style>
-      <div class="ex-row"><span class="ex-lbl">기관</span>${orgChips2}</div>
-      <div class="ex-row"><span class="ex-lbl">부서</span>${deptChips}</div>
-      <div class="ex-row"><span class="ex-lbl">학년</span>${gradeChips}</div>
-      <div class="ex-row"><span class="ex-lbl">성별</span>${genderChips}</div>
+
+      <div class="ex-row"><span class="ex-lbl">기관</span>${orgChips}</div>
+      ${panels}
+
+      <div class="ex-row" style="margin-top:14px"><span class="ex-lbl">성별</span>
+        ${['남','여'].map(g=>chip(exFilter.genders.includes(g), `exToggle('genders','${g}')`, g)).join('')}
+      </div>
       <div class="ex-row"><span class="ex-lbl">상태</span>
-        <button class="ex-chip${exFilter.status==='active'?' on':''}" onclick="exSetStatus('active')">재학</button>
-        <button class="ex-chip${exFilter.status==='leave'?' on':''}" onclick="exSetStatus('leave')">휴학</button>
-        <button class="ex-chip${exFilter.status==='all'?' on':''}" onclick="exSetStatus('all')">전체</button>
+        ${chip(exFilter.status==='active', "exSetStatus('active')", '재학')}
+        ${chip(exFilter.status==='leave', "exSetStatus('leave')", '휴학')}
+        ${chip(exFilter.status==='all', "exSetStatus('all')", '전체')}
       </div>
       <div style="border-top:1px solid var(--ivd);margin:10px 0;padding-top:12px">
-        <div class="ex-row"><span class="ex-lbl">묶기</span>${groupOpts}
-          <button class="ex-chip" style="margin-left:auto" onclick="exReset()">↺ 초기화</button>
+        <div class="ex-row" style="margin-bottom:0"><span class="ex-lbl">묶기</span>${groupOpts}
+          <button class="ex-chip" style="margin-left:auto;padding:7px 15px;border-radius:100px" onclick="exReset()">↺ 초기화</button>
         </div>
       </div>
     </div>
@@ -775,6 +848,32 @@ function renderExtract(){
   $I('main-body').innerHTML = ctrl;
   renderExtractResult();
 }
+window.renderExtract = renderExtract;
+
+// 학년 정렬: 숫자 학년(1~12) 먼저, 그다음 연령(4~7세), 나머지
+function exGradeSort(a, b){
+  const num = s => { const m = String(s).match(/(\d+)/); return m ? Number(m[1]) : 999; };
+  const isAge = s => /세/.test(String(s));
+  const ia = isAge(a), ib = isAge(b);
+  if(ia !== ib) return ia ? 1 : -1;    // 학년 먼저, 연령 뒤
+  return num(a) - num(b) || String(a).localeCompare(String(b), 'ko');
+}
+
+// 기관의 학년 전체 선택 / 해제
+function exSelectAllGrades(org){
+  const gs = Array.from(new Set(STUDENTS.filter(s=>s.org===org).map(s=>studentGrade(s.id)).filter(Boolean)));
+  const set = new Set(exFilter.grades);
+  gs.forEach(g=>set.add(g));
+  exFilter.grades = Array.from(set);
+  renderExtract();
+}
+window.exSelectAllGrades = exSelectAllGrades;
+function exClearGrades(org){
+  const gs = new Set(STUDENTS.filter(s=>s.org===org).map(s=>studentGrade(s.id)).filter(Boolean));
+  exFilter.grades = exFilter.grades.filter(g=>!gs.has(g));
+  renderExtract();
+}
+window.exClearGrades = exClearGrades;
 window.renderExtract = renderExtract;
 
 function exToggle(field, val){
@@ -798,7 +897,10 @@ function exGetFiltered(){
     if(exFilter.status!=='all' && st!==exFilter.status) return false;
     if(exFilter.orgs.length && !exFilter.orgs.includes(s.org)) return false;
     const g = studentGrade(s.id);
-    if(exFilter.depts.length){ const d=gradeToDept(g); if(!exFilter.depts.includes(d)) return false; }
+    if(exFilter.depts.length){
+      // 부서(초·중·고)는 다니엘 아마츠에만 해당. 지혜빛(유아)은 부서 필터의 영향을 받지 않음
+      if(s.org === 'daniel'){ const d=gradeToDept(g); if(!exFilter.depts.includes(d)) return false; }
+    }
     if(exFilter.grades.length && !exFilter.grades.includes(g)) return false;
     if(exFilter.genders.length && !exFilter.genders.includes(s.gender)) return false;
     return true;
