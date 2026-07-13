@@ -200,6 +200,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .r-super{background:#1E3932;color:white;}
 .r-org{background:#00704A;color:white;}
 .r-tab{background:var(--gp);color:var(--gd);}
+.r-partner{background:#EDE9FE;color:#6D28D9;}
 .r-teacher{background:var(--ivd);color:var(--ts);}
 
 /* 테이블 */
@@ -292,6 +293,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       <button class="subtbtn active" id="sa-sys" onclick="showAdmTab('sys')">🏢 통합관리</button>
       <button class="subtbtn" id="sa-att" onclick="showAdmTab('att')">📋 출근부 설정</button>
       <button class="subtbtn" id="sa-hr" onclick="showAdmTab('hr')" style="display:none">📇 인사정보</button>
+      <button class="subtbtn" id="sa-acc" onclick="showAdmTab('acc')" style="display:none">🔐 접근 권한</button>
       <button class="subtbtn" id="sa-sec" onclick="showAdmTab('sec')" style="display:none">🛡️ 접속·보안</button>
       <button class="subtbtn" id="sa-log" onclick="showAdmTab('log')" style="display:none">🔐 로그인 기록</button>
       <button class="subtbtn" id="sa-act" onclick="showAdmTab('act')" style="display:none">📜 활동 로그</button>
@@ -299,6 +301,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div id="ca-sys" class="tc"></div>
     <div id="ca-att" class="tc" style="display:none"></div>
     <div id="ca-hr" class="tc" style="display:none"></div>
+    <div id="ca-acc" class="tc" style="display:none"></div>
     <div id="ca-sec" class="tc" style="display:none"></div>
     <div id="ca-log" class="tc" style="display:none"></div>
     <div id="ca-act" class="tc" style="display:none"></div>
@@ -341,7 +344,7 @@ const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
 
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
-const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사'};
+const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사',partner:'협력교사'};
 const pad=n=>String(n).padStart(2,'0');
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -419,7 +422,10 @@ onAuthStateChanged(auth, async (user) => {
         return;
       }
       CU = { uid: user.uid, ...data };
-      try { localStorage.setItem('gyosa_role', CU.role||'teacher'); } catch(e){}
+      try {
+        localStorage.setItem('gyosa_role', CU.role||'teacher');
+        localStorage.setItem('gyosa_pagedeny', JSON.stringify(CU.pageDeny||[]));
+      } catch(e){}
       authResolved = true;
       $I('ls').style.display = 'none';
       $I('ms').style.display = 'flex';
@@ -697,7 +703,7 @@ async function loadStaff() {
         <span class="sname">${s.name}</span>
         <span class="sid" style="color:var(--tl);font-size:12px">${s.id}</span>
         <span style="font-size:12px;color:var(--ts)">${s.role==='org_admin' ? (s.orgs&&s.orgs.length?s.orgs.map(o=>ORGS[o]||o).join(', '):ORGS[s.org]||s.org) : (ORGS[s.org]||s.org)+(s.dept!=='전체'?' · '+s.dept:'')}</span>
-        <span class="rbadge ${s.role==='super'?'r-super':s.role==='org_admin'?'r-org':s.role==='tab_admin'?'r-tab':'r-teacher'}">${ROLES[s.role]||s.role}</span>
+        <span class="rbadge ${s.role==='super'?'r-super':s.role==='org_admin'?'r-org':s.role==='tab_admin'?'r-tab':s.role==='partner'?'r-partner':'r-teacher'}">${ROLES[s.role]||s.role}</span>
         ${acBadge}
         <span style="font-size:11px;color:var(--tl)">${llStr}</span>
       </div>
@@ -1112,6 +1118,7 @@ async function showMain(){
   $I('t-adm').style.display=isAdmin?'flex':'none';
   // 로그인 기록은 슈퍼관리자만
   const hrTab = $I('sa-hr'); if(hrTab) hrTab.style.display = ['super','org_admin'].includes(CU.role) ? '' : 'none';
+  const accTab = $I('sa-acc'); if(accTab) accTab.style.display = CU.role==='super' ? '' : 'none';
   const secTab = $I('sa-sec'); if(secTab) secTab.style.display = CU.role==='super' ? '' : 'none';
   const logTab = $I('sa-log'); if(logTab) logTab.style.display = CU.role==='super' ? '' : 'none';
   const actTab = $I('sa-act'); if(actTab) actTab.style.display = CU.role==='super' ? '' : 'none';
@@ -1234,7 +1241,15 @@ function showTab(t){
   ['c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   if(t==='att'){
     $I('c-att').style.display='flex';
-    showSubTab('cal');
+    // 협력교사 또는 개인 차단: 달력·통계 탭 숨기고 명부만
+    if(CU && (CU.role==='partner' || (CU.pageDeny||[]).includes('att'))){
+      const c=$I('st-cal'), s=$I('st-stat');
+      if(c) c.style.display='none';
+      if(s) s.style.display='none';
+      showSubTab('dir');
+    } else {
+      showSubTab('cal');
+    }
   }
   if(t==='notice'){
     $I('c-notice').style.display='flex';
@@ -1260,6 +1275,8 @@ window.addEventListener('hashchange', ()=>{
 });
 
 function showSubTab(sub){
+  // 협력교사·개인 차단은 출근 달력·통계 대신 교직원 명부만 사용
+  if(CU && (CU.role==='partner' || (CU.pageDeny||[]).includes('att')) && sub!=='dir') sub = 'dir';
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('st-'+sub)?.classList.add('active');
   ['c-cal','c-stat','c-dir'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
@@ -2024,11 +2041,12 @@ function renderStat(){
 function showAdmTab(sub){
   document.querySelectorAll('#c-adm .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att','ca-hr','ca-sec','ca-log','ca-act'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
   if(sub==='hr') renderHRStatus();
+  if(sub==='acc') renderAccessCtl();
   if(sub==='sec') renderSecurity();
   if(sub==='log') renderLoginLog();
   if(sub==='act') renderActivityLog();
@@ -2080,7 +2098,7 @@ async function renderHRStatus(){
       <td style="text-align:center;white-space:nowrap">
         <button class="bm" style="padding:5px 11px;font-size:11.5px" onclick="openEditStaff('${s.uid}','${esc(s.name||'')}','${s.org||''}','${esc(s.dept||'')}','${s.role||'teacher'}')">✏️ 입력</button>
         ${!ok && !s.noAuth?`<button class="bm" style="padding:5px 11px;font-size:11.5px;margin-left:4px" onclick="askHRInfo('${s.uid}','${esc(s.name||'')}')">✉️ 요청</button>`:''}
-        ${s.noAuth?`<button class="bm" style="padding:5px 11px;font-size:11.5px;margin-left:4px;background:#fee2e2;color:#dc2626" onclick="delStaffRecord('${s.uid}','${esc(s.name||'')}')">삭제</button>`:''}
+        ${s.noAuth?`<button class="bm" style="padding:5px 11px;font-size:11.5px;margin-left:4px;background:#EDE9FE;color:#6D28D9" onclick="openMakeAccount('${s.uid}','${esc(s.name||'')}')">🔑 계정</button><button class="bm" style="padding:5px 11px;font-size:11.5px;margin-left:4px;background:#fee2e2;color:#dc2626" onclick="delStaffRecord('${s.uid}','${esc(s.name||'')}')">삭제</button>`:''}
       </td>
     </tr>`;
   }).join('');
@@ -2162,6 +2180,197 @@ async function askHRInfoAll(){
 }
 window.askHRInfoAll = askHRInfoAll;
 
+// ══════════ 관리자 > 접근 권한 매트릭스 (슈퍼관리자) ══════════
+// staff.pageDeny = ['approval','cert' ...]  개인별 차단 페이지 키
+const ACC_PAGES = [
+  { k:'students', l:'학생관리' }, { k:'attend', l:'출석부' }, { k:'class', l:'반편성' },
+  { k:'calendar', l:'학사일정' }, { k:'cert', l:'증명서' },
+  { k:'att', l:'출근부' }, { k:'work', l:'근무시간' }, { k:'approval', l:'전자결재' }, { k:'timetable', l:'시간표' },
+  { k:'payreq', l:'경비지급' }, { k:'expense', l:'수행성' },
+  { k:'message', l:'쪽지' }, { k:'board', l:'게시판' },
+];
+
+async function renderAccessCtl(){
+  const box = $I('ca-acc');
+  if(CU.role !== 'super'){ box.innerHTML='<div class="asc"><p class="empty">권한이 없습니다.</p></div>'; return; }
+  await reloadStaffCache();
+
+  const roleDenyOf = (role, key) => {
+    const it = (window.menuAllItems ? menuAllItems() : []).find(i=>i.key===key);
+    return it && (it.deny||[]).includes(role);
+  };
+
+  const list = Object.values(STAFF_CACHE||{})
+    .filter(s => !s.noAuth && (s.acStatus||'active')!=='quit')
+    .sort((a,b)=>{
+      const RO = {super:0, org_admin:1, tab_admin:2, teacher:3, partner:4};
+      return (RO[a.role]??9)-(RO[b.role]??9) || (a.org||'').localeCompare(b.org||'') || (a.name||'').localeCompare(b.name||'','ko');
+    });
+
+  const rows = list.map(s=>{
+    const isSelf = s.uid === CU.uid;
+    const isSuperRow = s.role === 'super';
+    const deny = s.pageDeny || [];
+    const cells = ACC_PAGES.map(p=>{
+      if(isSuperRow) return `<td style="text-align:center"><span class="acc-lock" title="슈퍼관리자는 항상 전체 접근">—</span></td>`;
+      if(roleDenyOf(s.role, p.k)) return `<td style="text-align:center"><span class="acc-lock" title="협력교사 권한으로 차단됨 (권한을 바꾸면 열림)">🔒</span></td>`;
+      const off = deny.includes(p.k);
+      return `<td style="text-align:center">
+        <button class="acc-t ${off?'off':'on'}" onclick="togglePageDeny('${s.uid}','${p.k}')" title="${off?'차단됨 — 눌러서 허용':'허용됨 — 눌러서 차단'}">${off?'✕':'✓'}</button>
+      </td>`;
+    }).join('');
+    const denyCnt = deny.filter(k=>ACC_PAGES.some(p=>p.k===k)).length;
+    return `<tr>
+      <td style="white-space:nowrap;position:sticky;left:0;background:#fff;z-index:1">
+        <b style="color:var(--gd)">${esc(s.name||'')}</b>${isSelf?' <span style="font-size:10px;background:var(--goldp);color:var(--goldd);padding:1px 6px;border-radius:100px;font-weight:700">나</span>':''}
+        <div style="font-size:10.5px;color:var(--tl)">${ROLES[s.role]||s.role} · ${ORGS[s.org]||s.org||''}</div>
+      </td>
+      ${cells}
+      <td style="text-align:center;white-space:nowrap">
+        ${isSuperRow?'':denyCnt?`<button class="bm" style="padding:4px 10px;font-size:11px" onclick="clearPageDeny('${s.uid}')">전체 허용</button>`:'<span style="font-size:11px;color:var(--tl)">전체 허용됨</span>'}
+      </td>
+    </tr>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="asc">
+      <h3 class="actitle">🔐 페이지 접근 권한</h3>
+      <p class="adesc">선생님별로 페이지 접근을 열고 닫습니다. <b style="color:#16a34a">✓ 허용</b> / <b style="color:#dc2626">✕ 차단</b> — 누르면 바뀝니다.
+      🔒는 협력교사 권한 자체로 막힌 것이고, 개인 설정보다 우선합니다. 차단하면 메뉴에서 숨겨지고 주소로 들어가도 막힙니다.</p>
+      <style>
+        .acc-t{width:30px;height:30px;border-radius:8px;border:1.5px solid;cursor:pointer;font-size:13px;font-weight:900;font-family:inherit;transition:all .12s}
+        .acc-t.on{background:#F0FDF4;border-color:#BBF7D0;color:#16a34a}
+        .acc-t.on:hover{background:#DCFCE7;border-color:#16a34a}
+        .acc-t.off{background:#FEF2F2;border-color:#FECACA;color:#dc2626}
+        .acc-t.off:hover{background:#FEE2E2;border-color:#dc2626}
+        .acc-lock{font-size:13px;color:var(--tl)}
+        .acc-tbl th{position:sticky;top:0;background:var(--gm);z-index:2}
+        .acc-tbl th:first-child{left:0;z-index:3}
+      </style>
+      <div style="overflow:auto;max-height:70vh;border:1px solid var(--ivd);border-radius:10px">
+        <table class="gt acc-tbl" style="width:100%;min-width:${140 + ACC_PAGES.length*64 + 90}px;margin:0">
+          <thead><tr>
+            <th style="text-align:left">이름</th>
+            ${ACC_PAGES.map(p=>`<th style="font-size:11px;padding:8px 4px">${p.l}</th>`).join('')}
+            <th style="font-size:11px">일괄</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <p style="font-size:11.5px;color:var(--tl);margin-top:10px;line-height:1.7">
+        · 변경은 즉시 저장되며, 해당 선생님이 <b>다음에 페이지를 열 때</b>부터 적용됩니다. (이미 열어둔 화면은 새로고침 후)<br>
+        · 슈퍼관리자(—)는 항상 전체 접근이며 차단할 수 없습니다.
+      </p>
+    </div>`;
+}
+window.renderAccessCtl = renderAccessCtl;
+
+async function togglePageDeny(uid, key){
+  const s = STAFF_CACHE[uid]; if(!s) return;
+  const deny = new Set(s.pageDeny || []);
+  if(deny.has(key)) deny.delete(key); else deny.add(key);
+  const arr = Array.from(deny);
+  try {
+    await updateDoc(doc(db,'staff',uid), { pageDeny: arr });
+    s.pageDeny = arr;
+    logActivity('수정','접근권한',`${s.name} · ${key} ${deny.has(key)?'차단':'허용'}`);
+    renderAccessCtl();
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}
+window.togglePageDeny = togglePageDeny;
+
+async function clearPageDeny(uid){
+  const s = STAFF_CACHE[uid]; if(!s) return;
+  try {
+    await updateDoc(doc(db,'staff',uid), { pageDeny: [] });
+    s.pageDeny = [];
+    logActivity('수정','접근권한',`${s.name} · 전체 허용`);
+    renderAccessCtl();
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}
+window.clearPageDeny = clearPageDeny;
+
+// ══════════ 계정없음 → 계정 전환 (인사정보 승계) ══════════
+function openMakeAccount(uid, name){
+  const s = STAFF_CACHE[uid];
+  if(!s || !s.noAuth){ toast('명부 전용(계정없음) 교직원만 전환할 수 있습니다.','err'); return; }
+  const IN = 'height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none;font-family:inherit';
+  const el = document.createElement('div'); el.id='mkacc-mod';
+  el.innerHTML = `
+    <div class="mov" style="align-items:center;padding:20px">
+      <div class="mbk" onclick="document.getElementById('mkacc-mod').remove()"></div>
+      <div class="mbox" style="max-width:440px;border-radius:20px">
+        <div class="mtitle">🔑 계정 만들기 — ${esc(name)}</div>
+        <div class="msub">기존 인사정보(연락처·시간표 배정 등)가 새 계정에 그대로 이어집니다.</div>
+        <div style="display:flex;flex-direction:column;gap:11px;margin:14px 0">
+          <div class="fgrp"><label>아이디</label>
+            <input id="mk-id" type="text" placeholder="예: ${esc(name)}" style="${IN}"></div>
+          <div class="fgrp"><label>임시 비밀번호 (6자 이상)</label>
+            <input id="mk-pw" type="text" value="교사선교사1!" style="${IN}"></div>
+          <div class="fgrp"><label>권한</label>
+            <select id="mk-role" style="${IN}">
+              <option value="partner" selected>협력교사 (출근부·경비·결재·증명서 제외)</option>
+              <option value="teacher">교사 (전체 기능)</option>
+            </select></div>
+        </div>
+        <div class="mact">
+          <button class="bs" onclick="document.getElementById('mkacc-mod').remove()">취소</button>
+          <button class="bp" onclick="makeAccount('${uid}')">계정 발급</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+  const idInput = $I('mk-id'); if(idInput) idInput.value = name;
+}
+window.openMakeAccount = openMakeAccount;
+
+async function makeAccount(oldUid){
+  const s = STAFF_CACHE[oldUid];
+  if(!s) return;
+  const id = ($I('mk-id')?.value || '').trim();
+  const pw = ($I('mk-pw')?.value || '').trim();
+  const role = $I('mk-role')?.value || 'partner';
+  if(!id) return toast('아이디를 입력하세요.','err');
+  if(pw.length < 6) return toast('비밀번호는 6자 이상이어야 합니다.','err');
+
+  window.showLoading && window.showLoading('계정을 만드는 중…');
+  try {
+    // 1) Auth 계정 생성 (보조 앱 — 현재 로그인 유지)
+    const { initializeApp: iApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const { getAuth: gAuth, createUserWithEmailAndPassword: cUser } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    const sub = iApp(firebaseConfig, 'sub-' + Date.now());
+    const subAuth = gAuth(sub);
+    const cred = await cUser(subAuth, korEmail(id), pw);
+    await subAuth.signOut();
+    const newUid = cred.user.uid;
+
+    // 2) 기존 문서의 모든 정보를 새 uid 문서로 복사 (인사정보 승계)
+    const data = { ...s };
+    delete data.noAuth;
+    data.uid = newUid;
+    data.id = id;
+    data.role = role;
+    data.acStatus = 'active';
+    data.accountCreatedAt = Timestamp.now();
+    await setDoc(doc(db, 'staff', newUid), data);
+
+    // 3) 옛 명부 문서 삭제
+    await deleteDoc(doc(db, 'staff', oldUid));
+
+    await reloadStaffCache();
+    window.hideLoading && window.hideLoading();
+    document.getElementById('mkacc-mod')?.remove();
+    toast(`${s.name} 계정 발급 완료 (아이디: ${id})`,'ok');
+    logActivity('입력','계정',`${s.name} (${id}) 계정 전환 · 권한 ${role}`);
+    renderHRStatus();
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    if(e.code === 'auth/email-already-in-use') toast('이미 사용 중인 아이디입니다.','err');
+    else toast('발급 실패: '+(e.message||''),'err');
+  }
+}
+window.makeAccount = makeAccount;
+
 // ══════════ 관리자 > 인사정보 일괄 입력 ══════════
 let BULK_ROWS = [];   // 파싱 결과
 
@@ -2220,6 +2429,8 @@ function openBulkImport(){
           </select>
           <button class="bp" style="padding:10px 18px" onclick="document.getElementById('bulk-file').click()">📂 엑셀 파일 선택</button>
           <input type="file" id="bulk-file" accept=".xlsx,.xls" style="display:none" onchange="readBulkFile(this.files[0])">
+          <a class="bm" href="staff-template.xlsx" download="교직원_일괄입력_양식.xlsx"
+             style="padding:10px 16px;text-decoration:none;display:inline-flex;align-items:center;gap:5px">📄 빈 양식 받기</a>
           <span id="bulk-fname" style="font-size:12px;color:var(--tl)"></span>
           <button class="bs" style="margin-left:auto" onclick="document.getElementById('bulk-mod').remove()">닫기</button>
         </div>
@@ -2799,6 +3010,7 @@ function renderAdmSys(){
             ${isSU?'<option value="org_admin">기관관리자</option>':''}
             <option value="tab_admin">부서장</option>
             <option value="teacher" selected>교사</option>
+            <option value="partner">협력교사 (출근부·경비·결재 제외)</option>
           </select>
         </div>
         <div class="fgrp" id="org-single"><label>기관</label>
@@ -3166,6 +3378,7 @@ function openEditStaff(uid, name, org, dept, role){
           <div class="fgrp"><label>권한</label>
             <select id="es-role" onchange="updEditOrgMode()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
               <option value="teacher"${role==='teacher'?' selected':''}>교사</option>
+              <option value="partner"${role==='partner'?' selected':''}>협력교사</option>
               <option value="tab_admin"${role==='tab_admin'?' selected':''}>부서장</option>
               <option value="org_admin"${role==='org_admin'?' selected':''}>기관관리자</option>
               <option value="super"${role==='super'?' selected':''}>슈퍼관리자</option>
