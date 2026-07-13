@@ -38,8 +38,8 @@ const MENU = [
     icon: 'work',
     items: [
       { key:'att', label:'출근부', icon:'schedule', href:'checkin.html',
-        desc:'출퇴근 · 달력 · 통계',
-        tabs:['달력','통계'] },
+        desc:'출퇴근 · 명부 · 통계',
+        tabs:['달력','통계','교직원 명부'] },
       { key:'work', label:'근무시간', icon:'timer', href:'work.html',
         desc:'근무 통계 · 예외 입력',
         tabs:['근무 통계','예외 입력','근무시간 설정'] },
@@ -82,8 +82,8 @@ const MENU = [
     admin: true,
     items: [
       { key:'adm', label:'관리자', icon:'admin_panel_settings', href:'checkin.html#adm',
-        desc:'교직원 · 권한 · 로그',
-        tabs:['통합관리','출근부 설정','로그인 기록','활동 로그'], admin:true },
+        desc:'교직원 · 인사 · 보안 · 로그',
+        tabs:['통합관리','출근부 설정','인사정보','접속·보안','로그인 기록','활동 로그'], admin:true },
     ]
   },
 ];

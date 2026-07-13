@@ -264,9 +264,6 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
   </div>
   
   <!-- 대시보드 홈 -->
-  <div id="c-home" style="display:none;flex-direction:column;flex:1">
-    <div class="tc" id="home-body"></div>
-  </div>
   <div class="tb" style="display:none">
     <button class="tbtn" id="t-att" onclick="showTab('att')">📋 출근부</button>
     <button class="tbtn" id="t-notice" onclick="showTab('notice')">📢 공지<span id="notice-dot" style="display:none;width:8px;height:8px;background:#dc2626;border-radius:50%;margin-left:4px;vertical-align:middle"></span></button>
@@ -628,12 +625,14 @@ async function saveEditStaff(uid) {
   const address  = ($I('es-addr')?.value     || '').trim();
   const hireDate = $I('es-hire')?.value      || '';
   const leaveDate= $I('es-leave')?.value     || '';
-  const position = $I('es-position')?.value  || '';
-  const empType  = $I('es-emptype')?.value   || '';
-  const duty     = ($I('es-duty')?.value     || '').trim();
+  const position  = ($I('es-position')?.value || '').trim();
+  const staffType = $I('es-stafftype')?.value || '';
+  const workType  = $I('es-worktype')?.value  || '';
+  const duty      = ($I('es-duty')?.value     || '').trim();
+  const note      = ($I('es-note')?.value     || '').trim();
   await updateDoc(doc(db, 'staff', uid), {
     name, org, orgs, dept, role, acStatus, birth,
-    phone, address, hireDate, leaveDate, position, empType, duty
+    phone, address, hireDate, leaveDate, position, staffType, workType, duty, note
   });
   logActivity('수정', '계정', `${name} 정보 수정 (상태: ${acStatus==='active'?'재직':acStatus==='leave'?'휴직':'퇴직'})`);
   toast(`${name} 선생님 정보가 수정되었습니다.`, 'ok');
@@ -1131,353 +1130,10 @@ async function showMain(){
 }
 
 // ── 대시보드 홈 (시안 B: 밝고 모던) ──
-function renderHome(){
-  const body = $I('home-body'); if(!body) return;
-  const n = window.__notif || {approvalCnt:0, msgCnt:0, payCnt:0, payWaitCnt:0};
-  const now = new Date();
-  const days = ['일','월','화','수','목','금','토'];
-  const dateStr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${days[now.getDay()]}요일`;
-  const org = ORGS[CU.org]||CU.org;
-  const dept = CU.dept && CU.dept!=='전체' ? ' · '+CU.dept : '';
-  const pos = CU.position ? ' · '+CU.position : '';
-  const isAdmin = ['super','org_admin','tab_admin'].includes(CU.role);
-
-  // ── ① 지금 처리할 일 ──
-  const todos = [
-    { key:'payapv', label:'경비 결재',     v:n.payCnt||0,      icon:'💳', href:'payreq.html',   hint:'내 차례인 지급 요청' },
-    { key:'paypay', label:'지급 대기',     v:n.payWaitCnt||0,  icon:'💰', href:'payreq.html',   hint:'상신된 요청 지급 처리' },
-    { key:'apv',    label:'전자결재',      v:n.approvalCnt||0, icon:'🗂️', href:'approval.html', hint:'내 차례인 문서' },
-    { key:'msg',    label:'안 읽은 쪽지',  v:n.msgCnt||0,      icon:'✉️', href:'message.html',  hint:'확인하지 않은 쪽지' },
-    { key:'board',  label:'새 게시글',     v:(n.newPostCnt||0)+(n.boardCnt||0), icon:'📌', href:'board.html', hint:'새 글·댓글' },
-  ];
-  const active = todos.filter(t=>t.v>0);
-  const todoHtml = todos.map(t=>{
-    const on = t.v>0;
-    return `<div onclick="location.href='${t.href}'" class="hm-todo${on?' on':''}">
-      <div class="hm-ti">${t.icon}</div>
-      <div class="hm-tb">
-        <div class="hm-tv">${t.v}</div>
-        <div class="hm-tl">${t.label}</div>
-      </div>
-    </div>`;
-  }).join('');
-
-  // ── ② 영역별 구조 지도 (menu.js 정의를 그대로 사용) ──
-  const groups = (window.MENU||[]).filter(g=>!g.admin || isAdmin);
-  const mapHtml = groups.map(g=>{
-    const items = g.items.filter(it=>!it.admin || isAdmin);
-    if(!items.length) return '';
-    return `<div class="hm-grp">
-      <div class="hm-gt">${g.group}</div>
-      <div class="hm-gi">
-        ${items.map(it=>{
-          const b = it.badge==='payreq' ? (n.payCnt||0)+(n.payWaitCnt||0)
-                  : it.badge==='approval' ? (n.approvalCnt||0)
-                  : it.badge==='message' ? (n.msgCnt||0) : 0;
-          const isHome = it.href==='index.html';
-          const act = isHome ? `onclick="showTab('att')"` : `onclick="location.href='${it.href}'"`;
-          return `<div class="hm-card" ${act}>
-            <div class="hm-ch">
-              <span class="hm-cl">${esc(it.label)}</span>
-              ${b>0?`<span class="hm-cb">${b}</span>`:''}
-            </div>
-            ${it.tabs&&it.tabs.length ? `<div class="hm-ct">${it.tabs.slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div>`
-              : it.desc ? `<div class="hm-cd">${esc(it.desc)}</div>` : ''}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
-  }).join('');
-
-  body.innerHTML = `
-    <style>
-      .hm-wrap{max-width:960px;margin:0 auto;width:100%}
-      .hm-hero{background:var(--wh);border:1px solid var(--ivd);border-radius:16px;padding:22px 24px;margin-bottom:16px}
-      .hm-date{font-size:12.5px;color:var(--tl)}
-      .hm-hi{font-size:22px;font-weight:800;color:var(--gd);margin-top:5px}
-      .hm-sub{font-size:13px;color:var(--ts);margin-top:3px}
-      .hm-sec{font-size:14px;font-weight:800;color:var(--gd);margin:18px 2px 10px;display:flex;align-items:center;gap:7px}
-      .hm-todos{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-      .hm-todo{background:var(--wh);border:1px solid var(--ivd);border-radius:14px;padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:11px;transition:all .14s}
-      .hm-todo:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(30,57,50,.10)}
-      .hm-todo.on{border-color:var(--gm);background:var(--gp)}
-      .hm-ti{font-size:20px;flex:none}
-      .hm-tv{font-size:22px;font-weight:900;color:var(--tl);line-height:1.1}
-      .hm-todo.on .hm-tv{color:var(--gm)}
-      .hm-tl{font-size:12px;color:var(--ts);margin-top:1px;font-weight:600}
-      .hm-grp{margin-bottom:16px}
-      .hm-gt{font-size:12px;font-weight:800;color:var(--gm);letter-spacing:.4px;margin-bottom:8px;padding-left:2px}
-      .hm-gi{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:9px}
-      .hm-card{background:var(--wh);border:1px solid var(--ivd);border-radius:12px;padding:12px 14px;cursor:pointer;transition:all .14s}
-      .hm-card:hover{border-color:var(--gm);box-shadow:0 4px 14px rgba(30,57,50,.08);transform:translateY(-1px)}
-      .hm-ch{display:flex;align-items:center;gap:6px}
-      .hm-cl{font-size:14px;font-weight:700;color:var(--gd);flex:1}
-      .hm-cb{background:#C0392B;color:#fff;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:100px}
-      .hm-ct{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
-      .hm-ct span{font-size:10.5px;color:var(--gm);background:var(--gp);padding:2px 7px;border-radius:6px}
-      .hm-cd{font-size:11.5px;color:var(--tl);margin-top:5px}
-      .hm-panel{background:var(--wh);border:1px solid var(--ivd);border-radius:14px;padding:18px;margin-bottom:12px}
-      .hm-pt{font-size:14px;font-weight:800;color:var(--gd);margin-bottom:11px;display:flex;align-items:center;gap:7px}
-    </style>
-    <div class="hm-wrap">
-      <div class="hm-hero">
-        <div class="hm-date">${dateStr}</div>
-        <div class="hm-hi">안녕하세요, ${esc(CU.name)} 선생님 👋</div>
-        <div class="hm-sub">${esc(org)}${esc(dept)}${esc(pos)}</div>
-      </div>
-
-      <div class="hm-sec">📌 지금 처리할 일 ${active.length?`<span style="font-size:11.5px;font-weight:600;color:var(--gm);background:var(--gp);padding:2px 9px;border-radius:100px">${active.length}건</span>`:'<span style="font-size:11.5px;font-weight:400;color:var(--tl)">— 모두 처리했어요 👍</span>'}</div>
-      <div class="hm-todos">${todoHtml}</div>
-
-      <div class="hm-sec">🗂️ 전체 기능</div>
-      ${mapHtml}
-
-      <div id="home-birthday" class="hm-panel">
-        <div class="hm-pt">🎂 이번 달 생일</div>
-        <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
-      </div>
-
-      <div id="home-schedule" class="hm-panel">
-        <div class="hm-pt">📅 학사일정</div>
-        <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
-      </div>
-
-      <div id="home-notice" class="hm-panel">
-        <div class="hm-pt">📢 최근 공지</div>
-        <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
-      </div>
-    </div>`;
-
-  loadHomeBirthdays();
-  loadHomeSchedule();
-  loadHomeNotices();
-}
-window.renderHome = renderHome;
+// (홈 화면은 index.html에 있습니다)
 
 // 이번 달 생일 (학생 + 선생님, 기관별, 시점별 구분)
-async function loadHomeBirthdays(){
-  const box = $I('home-birthday');
-  if(!box) return;
-  const now = new Date();
-  const thisMonth = now.getMonth()+1; // 1~12
-  const today = now.getDate();
-  const orgNames = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
-  const myOrgList = CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
-
-  try {
-    const studSnap = await getDocs(collection(db,'students'));
-    const students = [];
-    studSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if(myOrgList.includes(s.org)) students.push(s); });
-    const staffSnap = await getDocs(collection(db,'staff'));
-    const teachers = [];
-    staffSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if((s.acStatus||'active')==='active'){
-      const sOrgs = s.role==='super'?['jihyebit','daniel']:(s.orgs&&s.orgs.length?s.orgs:[s.org]);
-      if(sOrgs.some(o=>myOrgList.includes(o))) teachers.push(s);
-    }});
-
-    // 사람 → {name, day, month, gender, isTeacher, org, orgsList}
-    const toPerson = (p, isTeacher) => {
-      const b = p.birth||'';
-      if(b.length<7) return null;
-      const mm = Number(b.slice(5,7)), dd = Number(b.slice(8,10))||0;
-      const orgsList = isTeacher
-        ? (p.role==='super'?['jihyebit','daniel']:(p.orgs&&p.orgs.length?p.orgs:[p.org]))
-        : [p.org];
-      return {name:p.name, month:mm, day:dd, gender:p.gender||'', isTeacher, orgsList};
-    };
-    // 다가올 생일 계산용: 오늘부터 며칠 뒤인지 (같은 해 기준, 월/일만)
-    const daysUntil = (mm, dd) => {
-      const y = now.getFullYear();
-      let target = new Date(y, mm-1, dd);
-      target.setHours(0,0,0,0);
-      const t0 = new Date(y, now.getMonth(), today); t0.setHours(0,0,0,0);
-      let diff = Math.round((target - t0)/(1000*60*60*24));
-      if(diff < -180) diff += 365; // 연말→연초 넘어가는 경우 보정
-      return diff;
-    };
-
-    const allPeople = [
-      ...students.map(s=>toPerson(s,false)),
-      ...teachers.map(t=>toPerson(t,true))
-    ].filter(Boolean);
-
-    const icon = p => p.isTeacher ? '👩‍🏫' : (p.gender==='남' ? '👦' : p.gender==='여' ? '👧' : '🧒');
-    const orgTag = p => {
-      if(myOrgList.length<=1) return '';
-      const names = p.orgsList.filter(o=>myOrgList.includes(o)).map(o=>orgNames[o]||o);
-      return names.length ? `<span style="font-size:11px;color:var(--tl)">${names.join('·')}</span>` : '';
-    };
-    const chip = (p, bg, border, extra) => `<span style="display:inline-flex;align-items:center;gap:5px;background:${bg};border:1px solid ${border};border-radius:100px;padding:5px 12px;margin:0 6px 6px 0;font-size:13px">
-      ${icon(p)} <b>${esc(p.name)}</b> <span style="color:var(--tl);font-size:12px">${p.month}/${p.day}</span> ${orgTag(p)}${extra||''}</span>`;
-
-    // 분류
-    const todayList = allPeople.filter(p=>p.month===thisMonth && p.day===today).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
-    const upcoming = allPeople.filter(p=>{ const d=daysUntil(p.month,p.day); return d>=1 && d<=7; }).sort((a,b)=>daysUntil(a.month,a.day)-daysUntil(b.month,b.day));
-    const restMonth = allPeople.filter(p=>p.month===thisMonth && p.day>today && daysUntil(p.month,p.day)>7).sort((a,b)=>a.day-b.day);
-    const pastMonth = allPeople.filter(p=>p.month===thisMonth && p.day<today).sort((a,b)=>a.day-b.day);
-
-    let html = '';
-    if(todayList.length){
-      html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#d97706;margin-bottom:8px">🎉 오늘 생일</div>${todayList.map(p=>chip(p,'#fef3c7','#fcd34d')).join('')}</div>`;
-    }
-    if(upcoming.length){
-      html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#0891b2;margin-bottom:8px">⏰ 다가올 생일 (7일 이내)</div>${upcoming.map(p=>{ const d=daysUntil(p.month,p.day); return chip(p,'#e0f2fe','#bae6fd',`<span style="font-size:11px;color:#0891b2;font-weight:700">D-${d}</span>`); }).join('')}</div>`;
-    }
-    if(restMonth.length){
-      html += `<div style="margin-bottom:14px"><div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:8px">📅 이번 달 남은 생일</div>${restMonth.map(p=>chip(p,'#f9fafb','#eef0f4')).join('')}</div>`;
-    }
-    if(pastMonth.length){
-      html += `<div style="margin-bottom:4px"><div style="font-size:13px;font-weight:700;color:#b0b4bd;margin-bottom:8px">✓ 이번 달 지난 생일</div><div style="opacity:0.6">${pastMonth.map(p=>chip(p,'#f9fafb','#eef0f4')).join('')}</div></div>`;
-    }
-
-    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>🎂</span> 생일 <span style="font-size:12px;color:var(--tl);font-weight:400">(${thisMonth}월 기준)</span></div>`
-      + (html || '<div style="font-size:13px;color:var(--tl)">이번 달 생일인 사람이 없습니다.</div>');
-  } catch(e){
-    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:8px">🎂 생일</div><div style="font-size:13px;color:var(--tl)">불러올 수 없습니다.</div>`;
-  }
-}
-window.loadHomeBirthdays = loadHomeBirthdays;
-
-// ── 학사일정 (구글 캘린더 API로 읽기) ──
-const GCAL_API_KEY = 'AIzaSyD0PFJeynpexhNLmZhHm1l8M7kfEQW57cg';
-async function loadHomeSchedule(){
-  const box = $I('home-schedule');
-  if(!box) return;
-  try {
-    const snap = await getDocs(collection(db,'calendars'));
-    const cals = [];
-    snap.forEach(d=>{ const c=d.data(); if(c.calId) cals.push({name:c.name||'(이름없음)', calId:c.calId, order:c.order??999}); });
-    cals.sort((a,b)=>(a.order)-(b.order));
-    if(!cals.length){
-      box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:8px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정</div><div style="font-size:13px;color:var(--tl)">등록된 캘린더가 없습니다. 학사일정에서 캘린더를 먼저 등록하세요.</div>`;
-      return;
-    }
-    // 기간: 오늘 0시 ~ 다음 주 일요일까지 (넉넉히 21일)
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const end = new Date(start); end.setDate(end.getDate()+21);
-    const timeMin = start.toISOString();
-    const timeMax = end.toISOString();
-
-    // 캘린더별로 일정 저장
-    const calData = []; // {name, calId, events:[]}
-    for(const cal of cals){
-      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.calId)}/events`
-        + `?key=${GCAL_API_KEY}&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`
-        + `&singleEvents=true&orderBy=startTime&maxResults=100`;
-      const evs = [];
-      try {
-        const res = await fetch(url);
-        if(res.ok){
-          const data = await res.json();
-          (data.items||[]).forEach(ev=>{
-            const s = ev.start?.dateTime || ev.start?.date;
-            if(!s) return;
-            evs.push({ title: ev.summary||'(제목 없음)', start:s, isAllDay:!ev.start?.dateTime, date:s.slice(0,10) });
-          });
-        }
-      } catch(e){}
-      evs.sort((a,b)=>a.start.localeCompare(b.start));
-      calData.push({...cal, events:evs});
-    }
-
-    // 날짜 경계 계산
-    const todayStr = ymd(start);
-    const tmr = new Date(start); tmr.setDate(tmr.getDate()+1);
-    const tmrStr = ymd(tmr);
-    // 이번 주 일요일(주말 끝) 계산: 월요일 시작 기준 이번주 끝(일)
-    const dow = start.getDay(); // 0=일
-    const daysToSun = dow===0 ? 0 : 7-dow;
-    const thisWeekEnd = new Date(start); thisWeekEnd.setDate(thisWeekEnd.getDate()+daysToSun);
-    const thisWeekEndStr = ymd(thisWeekEnd);
-    const nextWeekEnd = new Date(thisWeekEnd); nextWeekEnd.setDate(nextWeekEnd.getDate()+7);
-    const nextWeekEndStr = ymd(nextWeekEnd);
-
-    const dnames=['일','월','화','수','목','금','토'];
-    const fmtTime = ev => { if(ev.isAllDay) return '종일'; const d=new Date(ev.start); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-    const evRow = ev => {
-      const d = new Date(ev.date+'T00:00:00');
-      return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f4f4f7">
-        <span style="min-width:60px;font-size:11px;color:var(--tl)">${d.getMonth()+1}/${d.getDate()}(${dnames[d.getDay()]})</span>
-        <span style="min-width:44px;font-size:12px;color:#6b7280;font-weight:600">${fmtTime(ev)}</span>
-        <span style="flex:1;font-size:13.5px;color:#1f2937">${esc(ev.title)}</span>
-      </div>`;
-    };
-    // 그룹 분류 함수
-    const groupEvents = evs => {
-      const today = evs.filter(e=>e.date===todayStr);
-      const tomorrow = evs.filter(e=>e.date===tmrStr);
-      const thisWeek = evs.filter(e=>e.date>tmrStr && e.date<=thisWeekEndStr);
-      const nextWeek = evs.filter(e=>e.date>thisWeekEndStr && e.date<=nextWeekEndStr);
-      return {today, tomorrow, thisWeek, nextWeek};
-    };
-    const groupBlock = (label, arr, color) => {
-      if(!arr.length) return '';
-      return `<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:${color};margin-bottom:2px">${label}</div>${arr.map(evRow).join('')}</div>`;
-    };
-
-    // 캘린더별 아코디언 카드
-    let html = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>📅</span> 학사일정 <span style="font-size:12px;color:var(--tl);font-weight:400">(캘린더를 눌러 펼치기)</span></div>`;
-    const palette = ['#0891b2','#7c3aed','#db2777','#d97706','#059669','#2563eb','#dc2626','#4f46e5'];
-    calData.forEach((cal,ci)=>{
-      const g = groupEvents(cal.events);
-      const total = g.today.length+g.tomorrow.length+g.thisWeek.length+g.nextWeek.length;
-      const accent = palette[ci % palette.length];
-      const inner = (groupBlock('오늘', g.today, '#0891b2')
-        + groupBlock('내일', g.tomorrow, '#6b7280')
-        + groupBlock('이번 주', g.thisWeek, '#6b7280')
-        + groupBlock('다음 주', g.nextWeek, '#b0b4bd')) || '<div style="font-size:13px;color:var(--tl);padding:6px 0">예정된 일정이 없습니다.</div>';
-      html += `<div style="border:1px solid #eef0f4;border-radius:12px;margin-bottom:8px;overflow:hidden">
-        <div onclick="toggleCalAcc(${ci})" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;background:#fafbfc">
-          <span style="width:10px;height:10px;border-radius:50%;background:${accent};flex-shrink:0"></span>
-          <span style="flex:1;font-size:14px;font-weight:700;color:#374151">${esc(cal.name)}</span>
-          <span style="font-size:12px;color:var(--tl)">${total>0?total+'건':'없음'}</span>
-          <span id="cal-arrow-${ci}" style="font-size:12px;color:var(--tl);transition:transform .15s">▼</span>
-        </div>
-        <div id="cal-body-${ci}" style="display:none;padding:10px 14px 14px">${inner}</div>
-      </div>`;
-    });
-    box.innerHTML = html;
-  } catch(e){
-    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:8px">📅 학사일정</div><div style="font-size:13px;color:var(--tl)">일정을 불러올 수 없습니다. (${esc(e.message||'')})</div>`;
-  }
-}
-window.loadHomeSchedule = loadHomeSchedule;
-function toggleCalAcc(ci){
-  const body = $I('cal-body-'+ci), arrow = $I('cal-arrow-'+ci);
-  if(!body) return;
-  const open = body.style.display!=='none';
-  body.style.display = open ? 'none' : 'block';
-  if(arrow) arrow.style.transform = open ? '' : 'rotate(180deg)';
-}
-window.toggleCalAcc = toggleCalAcc;
-function ymd(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
-
-// 홈 공지 요약 (최근 5건)
-async function loadHomeNotices(){
-  const box = $I('home-notice'); if(!box) return;
-  try {
-    const snap = await getDocs(collection(db,'notices'));
-    let list = [];
-    snap.forEach(d=>{ const x={id:d.id, ...d.data()}; if(noticeMatches(x,CU)||canWriteNotice()) list.push(x); });
-    list.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
-    list = list.slice(0,5);
-    const rows = list.map((x,i)=>{
-      const dt = x.createdAt?.seconds ? new Date(x.createdAt.seconds*1000) : null;
-      const dstr = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : '';
-      const title = (x.title||'(제목 없음)').replace(/</g,'&lt;');
-      return `<div onclick="showTab('notice')" style="font-size:13.5px;color:#374151;padding:9px 0;${i<list.length-1?'border-bottom:1px solid #f3f4f6':''};cursor:pointer;display:flex;justify-content:space-between;gap:10px">
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.important?'<span style="color:#dc2626;font-weight:700">[중요] </span>':''}${title}</span>
-        <span style="color:var(--tl);font-size:11.5px;white-space:nowrap">${dstr}</span>
-      </div>`;
-    }).join('');
-    box.innerHTML = `
-      <div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:8px;display:flex;align-items:center;gap:7px"><span>📢</span> 최근 공지</div>
-      ${rows || '<div style="font-size:13px;color:var(--tl);padding:8px 0">공지가 없습니다.</div>'}`;
-  } catch(e){
-    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:8px">📢 최근 공지</div><div style="font-size:13px;color:var(--tl)">불러올 수 없습니다.</div>`;
-  }
-}
+// (홈 위젯 로직은 index.html에 있습니다)
 
 // ── 메인 알림: 결재할 문서 + 안 읽은 쪽지 ──
 async function loadNotifications(){
@@ -1536,8 +1192,7 @@ async function loadNotifications(){
   renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt);
   window.__notif = {approvalCnt, msgCnt, boardCnt, newPostCnt, payCnt, payWaitCnt};
   // 사이드바 뱃지는 badges.js가 담당 (모든 페이지 동일 기준)
-  // 홈이 열려 있으면 숫자 갱신
-  if($I('c-home') && $I('c-home').style.display!=='none') renderHome();
+  // (홈 화면은 index.html에서 갱신)
 }
 
 function renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt){
@@ -1576,11 +1231,7 @@ function showTab(t){
   document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('active'));
   $I('t-'+t)?.classList.add('active');
   // 상위 탭 콘텐츠 전환
-  ['c-home','c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
-  if(t==='home'){
-    $I('c-home').style.display='flex';
-    renderHome();
-  }
+  ['c-att','c-notice','c-adm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   if(t==='att'){
     $I('c-att').style.display='flex';
     showSubTab('cal');
@@ -1593,7 +1244,20 @@ function showTab(t){
     $I('c-adm').style.display='flex';
     showAdmTab('sys');
   }
+  // 사이드바 활성 항목도 함께 갱신 (출근부 ↔ 관리자)
+  if(window.renderShell && CU){
+    window.renderShell(t==='adm' ? 'adm' : 'att', CU);
+  }
 }
+
+// 사이드바에서 관리자/출근부를 눌렀을 때 (해시만 바뀌는 경우) 탭 전환
+window.addEventListener('hashchange', ()=>{
+  if(!CU) return;
+  const isAdmin = ['super','org_admin','tab_admin'].includes(CU.role);
+  const hash = (location.hash||'').replace('#','');
+  if(hash==='adm' && isAdmin) showTab('adm');
+  else showTab('att');
+});
 
 function showSubTab(sub){
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
@@ -2377,6 +2041,7 @@ const HR_FIELDS = [
   { k:'address',  l:'집 주소',  self:true },
   { k:'hireDate', l:'입사일',   self:false },
   { k:'position', l:'직책',     self:false },
+  { k:'staffType',l:'구분',     self:false },
 ];
 
 async function renderHRStatus(){
@@ -2398,8 +2063,10 @@ async function renderHRStatus(){
     const miss = missingOf(s);
     const ok = miss.length===0;
     return `<tr style="${ok?'':'background:#FEF2F2'}">
-      <td style="font-weight:700;color:var(--gd)">${esc(s.name||'')}</td>
-      <td style="font-size:12px;color:var(--tl)">${ORGS[s.org]||s.org||''}${s.dept?' · '+esc(s.dept):''}</td>
+      <td style="font-weight:700;color:var(--gd);white-space:nowrap">${esc(s.name||'')}
+        ${s.noAuth?'<span style="font-size:10px;background:var(--iv);color:var(--tl);padding:1px 6px;border-radius:100px;font-weight:600;margin-left:4px">계정없음</span>':''}
+      </td>
+      <td style="font-size:12px;color:var(--tl);white-space:nowrap">${ORGS[s.org]||s.org||''}${s.dept?' · '+esc(s.dept):''}</td>
       ${HR_FIELDS.map(f=>`
         <td style="text-align:center">
           ${s[f.k]
@@ -2410,17 +2077,22 @@ async function renderHRStatus(){
         ${ok ? '<span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:3px 9px;border-radius:100px;font-weight:700">완료</span>'
              : `<span style="font-size:11px;background:#fee2e2;color:#dc2626;padding:3px 9px;border-radius:100px;font-weight:700">${miss.length}개 미입력</span>`}
       </td>
-      <td style="text-align:center">
-        <button class="bm" style="padding:5px 11px;font-size:11.5px" onclick="openEditStaff('${s.uid}','${esc(s.name||'')}','${s.org||''}','${esc(s.dept||'')}','${s.role||'teacher'}')">입력</button>
-        ${!ok?`<button class="bm" style="padding:5px 11px;font-size:11.5px;margin-left:4px" onclick="askHRInfo('${s.uid}','${esc(s.name||'')}')">쪽지 요청</button>`:''}
+      <td style="text-align:center;white-space:nowrap">
+        <button class="bm" style="padding:5px 11px;font-size:11.5px" onclick="openEditStaff('${s.uid}','${esc(s.name||'')}','${s.org||''}','${esc(s.dept||'')}','${s.role||'teacher'}')">✏️ 입력</button>
+        ${!ok && !s.noAuth?`<button class="bm" style="padding:5px 11px;font-size:11.5px;margin-left:4px" onclick="askHRInfo('${s.uid}','${esc(s.name||'')}')">✉️ 요청</button>`:''}
+        ${s.noAuth?`<button class="bm" style="padding:5px 11px;font-size:11.5px;margin-left:4px;background:#fee2e2;color:#dc2626" onclick="delStaffRecord('${s.uid}','${esc(s.name||'')}')">삭제</button>`:''}
       </td>
     </tr>`;
   }).join('');
 
   box.innerHTML = `
     <div class="asc">
-      <h3 class="actitle">📇 인사정보 현황</h3>
-      <p class="adesc">재직증명서 발급에 필요한 정보입니다. 빠진 항목이 있으면 증명서를 발급할 수 없습니다.</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <h3 class="actitle" style="margin:0">📇 인사정보 현황</h3>
+        <button class="bp" style="margin-left:auto;padding:9px 16px" onclick="openBulkImport()">📥 일괄 입력</button>
+      </div>
+      <p class="adesc">재직증명서 발급에 필요한 정보입니다. 빠진 항목이 있으면 증명서를 발급할 수 없습니다.
+        엑셀 명단이 있으면 <b>「일괄 입력」</b>으로 한 번에 넣을 수 있습니다.</p>
 
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
         <div style="flex:1;min-width:130px;background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:12px 14px">
@@ -2448,9 +2120,11 @@ async function renderHRStatus(){
           <tbody>${rows || '<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--tl)">교직원이 없습니다.</td></tr>'}</tbody>
         </table>
       </div>
-      <p style="font-size:11.5px;color:var(--tl);margin-top:10px">
-        생년월일·휴대폰·집 주소는 <b>본인이 「내 정보 → 인사정보」</b>에서 직접 입력할 수 있습니다.
-        입사일·직책은 관리자가 입력합니다.
+      <p style="font-size:11.5px;color:var(--tl);margin-top:10px;line-height:1.7">
+        • 생년월일·휴대폰·집 주소는 <b>본인이 「내 정보 → 인사정보」</b>에서 직접 입력할 수 있습니다.<br>
+        • 입사일·직책·구분은 관리자가 입력합니다.<br>
+        • <b>계정없음</b>은 로그인 계정 없이 명부·증명서용으로만 등록된 교직원입니다.<br>
+        • 🔒 주민등록번호는 저장하지 않습니다. 증명서에는 생년월일만 사용합니다.
       </p>
     </div>`;
 }
@@ -2487,6 +2161,216 @@ async function askHRInfoAll(){
   await sendHRMsg(targets);
 }
 window.askHRInfoAll = askHRInfoAll;
+
+// ══════════ 관리자 > 인사정보 일괄 입력 ══════════
+let BULK_ROWS = [];   // 파싱 결과
+
+// 엑셀에서 붙여넣은 표(TSV)를 해석
+// 인식 열: 이름 · 담당 · 구분 · 근무형태 · 입사일 · 생년월일 · 휴대폰 · 주소 · 비고
+const BULK_COLS = [
+  { k:'name',      names:['이름','성명'] },
+  { k:'duty',      names:['담당','담당업무','과목'] },
+  { k:'staffType', names:['구분','대상자분류','대상자 분류','분류'] },
+  { k:'workType',  names:['근무형태','근무'] },
+  { k:'hireDate',  names:['입사일','입사일자'] },
+  { k:'birth',     names:['생년월일','생일'] },
+  { k:'phone',     names:['휴대폰','휴대전화','본인 휴대전화번호','휴대전화번호','연락처','전화'] },
+  { k:'address',   names:['주소','집주소'] },
+  { k:'position',  names:['직책','직위'] },
+  { k:'note',      names:['비고','메모'] },
+];
+
+function normDate(v){
+  const s = String(v||'').trim();
+  if(!s) return '';
+  // 20090302 · 2009-03-02 · 2009.3.2 · 2009/3/2
+  let m = s.match(/^(\d{4})[-./]?(\d{1,2})[-./]?(\d{1,2})$/);
+  if(m) return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
+  return '';
+}
+function normPhone(v){
+  const d = String(v||'').replace(/[^0-9]/g,'');
+  if(d.length===11) return `${d.slice(0,3)}-${d.slice(3,7)}-${d.slice(7)}`;
+  if(d.length===10) return `${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`;
+  return String(v||'').trim();
+}
+
+function openBulkImport(){
+  const el = document.createElement('div'); el.id='bulk-mod';
+  el.innerHTML = `
+    <div class="mov">
+      <div class="mbk" onclick="document.getElementById('bulk-mod').remove()"></div>
+      <div class="mbox" style="max-width:900px">
+        <div class="mtitle">📥 교직원 정보 일괄 입력</div>
+        <div class="msub">엑셀에서 <b>표 전체를 복사</b>해 아래에 붙여넣으세요. 첫 줄은 반드시 <b>제목 줄(이름·생년월일·주소…)</b>이어야 합니다.</div>
+
+        <div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:9px;padding:11px 13px;margin-bottom:12px;font-size:12px;color:#991B1B;line-height:1.6">
+          🔒 <b>주민등록번호 열은 붙여넣어도 저장되지 않습니다.</b> 재직증명서에는 생년월일만 사용합니다.
+        </div>
+
+        <textarea id="bulk-ta" placeholder="이름	담당	구분	입사일자	생년월일	본인 휴대전화번호	주소&#10;박수경	　	정교사	2009-03-02	1967-11-06	010-2777-4329	경기도 용인시 ..."
+          style="width:100%;height:150px;border:1.5px solid var(--ivd);border-radius:10px;padding:11px 13px;font-size:12.5px;
+                 font-family:ui-monospace,SFMono-Regular,Menlo,monospace;outline:none;background:var(--iv);resize:vertical"></textarea>
+
+        <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap">
+          <label style="font-size:12.5px;font-weight:700;color:var(--gd)">기관</label>
+          <select id="bulk-org" style="height:36px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv);font-family:inherit">
+            ${myOrgs().map(o=>`<option value="${o}">${ORGS[o]||o}</option>`).join('')}
+          </select>
+          <button class="bm" onclick="parseBulk()">🔍 미리보기</button>
+          <button class="bs" style="margin-left:auto" onclick="document.getElementById('bulk-mod').remove()">닫기</button>
+        </div>
+
+        <div id="bulk-preview"></div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+window.openBulkImport = openBulkImport;
+
+function parseBulk(){
+  const raw = ($I('bulk-ta')?.value || '').trim();
+  const box = $I('bulk-preview');
+  if(!raw){ box.innerHTML = '<p class="empty">붙여넣은 내용이 없습니다.</p>'; return; }
+
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length < 2){ box.innerHTML = '<p class="empty">제목 줄과 데이터가 최소 1줄씩 필요합니다.</p>'; return; }
+
+  const split = (l)=> l.includes('\t') ? l.split('\t') : l.split(',');
+  const header = split(lines[0]).map(x=>x.trim().replace(/\s+/g,''));
+
+  // 열 위치 찾기
+  const idx = {};
+  BULK_COLS.forEach(c=>{
+    const i = header.findIndex(hh => c.names.some(n => hh === n.replace(/\s+/g,'') || hh.includes(n.replace(/\s+/g,''))));
+    if(i >= 0) idx[c.k] = i;
+  });
+
+  if(idx.name === undefined){
+    box.innerHTML = '<p class="empty" style="color:#dc2626">「이름」 열을 찾을 수 없습니다. 제목 줄을 확인하세요.</p>';
+    return;
+  }
+
+  const org = $I('bulk-org').value;
+  BULK_ROWS = [];
+  for(let i=1;i<lines.length;i++){
+    const c = split(lines[i]);
+    const name = (c[idx.name]||'').trim();
+    if(!name) continue;
+    const r = { name, org };
+    if(idx.duty      !== undefined) r.duty      = (c[idx.duty]||'').trim();
+    if(idx.staffType !== undefined) r.staffType = (c[idx.staffType]||'').trim();
+    if(idx.workType  !== undefined) r.workType  = (c[idx.workType]||'').trim();
+    if(idx.position  !== undefined) r.position  = (c[idx.position]||'').trim();
+    if(idx.hireDate  !== undefined) r.hireDate  = normDate(c[idx.hireDate]);
+    if(idx.birth     !== undefined) r.birth     = normDate(c[idx.birth]);
+    if(idx.phone     !== undefined) r.phone     = normPhone(c[idx.phone]);
+    if(idx.address   !== undefined) r.address   = (c[idx.address]||'').trim();
+    if(idx.note      !== undefined) r.note      = (c[idx.note]||'').trim();
+
+    // 기존 교직원 찾기 (이름 일치)
+    const hit = Object.values(STAFF_CACHE||{}).find(s => s.name === name);
+    r._uid = hit ? hit.uid : null;
+    r._new = !hit;
+    BULK_ROWS.push(r);
+  }
+
+  const matched = BULK_ROWS.filter(r=>!r._new).length;
+  const news    = BULK_ROWS.filter(r=>r._new).length;
+
+  const F = ['duty','staffType','workType','position','hireDate','birth','phone','address','note'];
+  const FL = {duty:'담당',staffType:'구분',workType:'근무',position:'직책',hireDate:'입사일',birth:'생년월일',phone:'휴대폰',address:'주소',note:'비고'};
+  const used = F.filter(k => idx[k] !== undefined);
+
+  box.innerHTML = `
+    <div style="display:flex;gap:9px;margin-bottom:11px;flex-wrap:wrap">
+      <span style="font-size:12.5px;background:var(--gp);color:var(--gd);padding:6px 12px;border-radius:100px;font-weight:700">총 ${BULK_ROWS.length}명</span>
+      <span style="font-size:12.5px;background:#dcfce7;color:#16a34a;padding:6px 12px;border-radius:100px;font-weight:700">기존 ${matched}명 (정보 갱신)</span>
+      ${news?`<span style="font-size:12.5px;background:#FEF3C7;color:#B45309;padding:6px 12px;border-radius:100px;font-weight:700">신규 ${news}명 (명부만 등록)</span>`:''}
+      <span style="font-size:11.5px;color:var(--tl);align-self:center">인식된 열: ${used.map(k=>FL[k]).join(' · ')||'없음'}</span>
+    </div>
+    <div style="max-height:280px;overflow:auto;border:1px solid var(--ivd);border-radius:10px">
+      <table class="gt" style="width:100%;min-width:700px;margin:0">
+        <thead><tr><th style="text-align:left">이름</th><th>상태</th>${used.map(k=>`<th style="text-align:left">${FL[k]}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${BULK_ROWS.map(r=>`<tr style="${r._new?'background:#FFFBEB':''}">
+            <td style="font-weight:700;color:var(--gd)">${esc(r.name)}</td>
+            <td style="text-align:center">${r._new
+              ? '<span style="font-size:11px;background:#FEF3C7;color:#B45309;padding:2px 8px;border-radius:100px;font-weight:700">신규</span>'
+              : '<span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:100px;font-weight:700">갱신</span>'}</td>
+            ${used.map(k=>`<td style="font-size:12px;color:var(--ts)">${esc(r[k]||'')||'<span style="color:var(--tl)">-</span>'}</td>`).join('')}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="background:var(--iv);border-radius:9px;padding:11px 13px;margin-top:11px;font-size:11.5px;color:var(--ts);line-height:1.6">
+      • <b>갱신</b>: 이름이 일치하는 기존 교직원의 정보를 덮어씁니다. (빈 칸은 건드리지 않습니다)<br>
+      • <b>신규</b>: 계정 없이 <b>명부·증명서용 정보만</b> 등록됩니다. 로그인 계정은 「통합관리」에서 따로 만드세요.
+    </div>
+    <div class="mact" style="margin-top:14px">
+      <button class="bs" onclick="document.getElementById('bulk-mod').remove()">취소</button>
+      <button class="bp" onclick="applyBulk()">✅ ${BULK_ROWS.length}명 적용하기</button>
+    </div>`;
+}
+window.parseBulk = parseBulk;
+
+async function applyBulk(){
+  if(!BULK_ROWS.length) return;
+  if(!confirm(`${BULK_ROWS.length}명의 정보를 적용할까요?\n기존 교직원은 정보가 갱신되고, 신규는 명부에 추가됩니다.`)) return;
+
+  window.showLoading && window.showLoading('교직원 정보를 저장하는 중…');
+  let upd=0, add=0, fail=0;
+  try {
+    for(let i=0;i<BULK_ROWS.length;i++){
+      const r = BULK_ROWS[i];
+      window.setLoadStep && window.setLoadStep(`${r.name} (${i+1}/${BULK_ROWS.length})`, Math.round((i+1)/BULK_ROWS.length*100));
+      // 빈 값은 덮어쓰지 않음
+      const data = {};
+      ['duty','staffType','workType','position','hireDate','birth','phone','address','note'].forEach(k=>{
+        if(r[k]) data[k] = r[k];
+      });
+      try {
+        if(r._uid){
+          await updateDoc(doc(db,'staff',r._uid), data);
+          upd++;
+        } else {
+          await addDoc(collection(db,'staff'), {
+            ...data,
+            name: r.name, org: r.org, orgs: [r.org],
+            dept: '', role: 'teacher', acStatus: 'active',
+            noAuth: true,                       // 로그인 계정 없음 (명부·증명서용)
+            createdAt: Timestamp.now()
+          });
+          add++;
+        }
+      } catch(e){ fail++; }
+    }
+    await reloadStaffCache();
+    window.hideLoading && window.hideLoading();
+    document.getElementById('bulk-mod')?.remove();
+    toast(`갱신 ${upd}명 · 신규 ${add}명${fail?` · 실패 ${fail}명`:''}`, fail?'err':'ok');
+    renderHRStatus();
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('적용 실패: '+(e.message||''),'err');
+  }
+}
+window.applyBulk = applyBulk;
+
+// 명부 전용 교직원 삭제 (계정 없는 사람만)
+async function delStaffRecord(uid, name){
+  const s = STAFF_CACHE[uid];
+  if(!s) return;
+  if(!s.noAuth){ toast('로그인 계정이 있는 교직원은 「통합관리」에서 삭제하세요.','err'); return; }
+  if(!confirm(`"${name}" 님을 명부에서 삭제할까요?\n(로그인 계정이 없는 명부 전용 기록입니다)`)) return;
+  try {
+    await deleteDoc(doc(db,'staff',uid));
+    await reloadStaffCache();
+    toast('삭제했습니다.','ok');
+    renderHRStatus();
+  } catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
+}
+window.delStaffRecord = delStaffRecord;
 
 // ══════════ 📇 교직원 명부 (모든 선생님 열람) ══════════
 let dirQuery = '';
@@ -3236,18 +3120,27 @@ function openEditStaff(uid, name, org, dept, role){
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
               <div class="fgrp"><label>직책 (직위)</label>
-                <select id="es-position" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+                <input id="es-position" type="text" list="pos-list" value="${esc(cur.position||'')}" placeholder="예: 행정실장" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+                <datalist id="pos-list">
+                  ${['교사','초등부장','중고등부장','행정실장','교감','교장','원장','총괄생활장'].map(p=>`<option value="${p}">`).join('')}
+                </datalist></div>
+              <div class="fgrp"><label>구분</label>
+                <select id="es-stafftype" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
                   <option value="">— 선택 —</option>
-                  ${['교사','초등부장','중고등부장','행정실장','교감','교장','원장'].map(p=>`<option value="${p}" ${cur.position===p?'selected':''}>${p}</option>`).join('')}
-                </select></div>
-              <div class="fgrp"><label>고용형태</label>
-                <select id="es-emptype" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-                  <option value="">— 선택 —</option>
-                  ${['정규직','계약직','파트타임','자원봉사'].map(t=>`<option value="${t}" ${cur.empType===t?'selected':''}>${t}</option>`).join('')}
+                  ${['정교사','행정직원','협력교사','선교원','돌봄'].map(t=>`<option value="${t}" ${cur.staffType===t?'selected':''}>${t}</option>`).join('')}
                 </select></div>
             </div>
-            <div class="fgrp"><label>담당 업무 (선택)</label>
-              <input id="es-duty" type="text" value="${esc(cur.duty||'')}" placeholder="예: 초등 3학년 담임 · 음악" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="fgrp"><label>근무형태</label>
+                <select id="es-worktype" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+                  <option value="">— 선택 —</option>
+                  ${['풀타임','하프교사','자원교사','협력교사','시간제'].map(t=>`<option value="${t}" ${cur.workType===t?'selected':''}>${t}</option>`).join('')}
+                </select></div>
+              <div class="fgrp"><label>담당 (학년·과목)</label>
+                <input id="es-duty" type="text" value="${esc(cur.duty||'')}" placeholder="예: 3학년 · 영어" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+            </div>
+            <div class="fgrp"><label>비고</label>
+              <input id="es-note" type="text" value="${esc(cur.note||'')}" placeholder="예: 입사일 확인 필요" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
           </div>
         </div>
         <div class="mact">
