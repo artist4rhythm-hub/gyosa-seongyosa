@@ -2324,7 +2324,8 @@ async function applyBulk(){
   if(!confirm(`${BULK_ROWS.length}명의 정보를 적용할까요?\n기존 교직원은 정보가 갱신되고, 신규는 명부에 추가됩니다.`)) return;
 
   window.showLoading && window.showLoading('교직원 정보를 저장하는 중…');
-  let upd=0, add=0, fail=0;
+  let upd=0, add=0;
+  const fails = [];
   try {
     for(let i=0;i<BULK_ROWS.length;i++){
       const r = BULK_ROWS[i];
@@ -2348,12 +2349,37 @@ async function applyBulk(){
           });
           add++;
         }
-      } catch(e){ fail++; }
+      } catch(e){ fails.push({ name:r.name, msg: e.message || String(e) }); }
     }
     await reloadStaffCache();
     window.hideLoading && window.hideLoading();
-    document.getElementById('bulk-mod')?.remove();
-    toast(`갱신 ${upd}명 · 신규 ${add}명${fail?` · 실패 ${fail}명`:''}`, fail?'err':'ok');
+
+    if(fails.length){
+      // 실패가 있으면 모달을 닫지 않고 이유를 보여줌
+      const box = $I('bulk-preview');
+      const isPerm = fails.some(f=>/permission|insufficient/i.test(f.msg));
+      if(box) box.innerHTML = `
+        <div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:10px;padding:14px 16px">
+          <div style="font-size:14px;font-weight:800;color:#dc2626;margin-bottom:8px">
+            ⚠️ ${fails.length}명 저장 실패 (성공: 갱신 ${upd} · 신규 ${add})
+          </div>
+          ${isPerm ? `
+            <div style="font-size:12.5px;color:#991B1B;line-height:1.7;margin-bottom:10px">
+              <b>원인: Firestore 보안 규칙에서 거부되었습니다.</b><br>
+              Firebase 콘솔 → Firestore Database → 규칙에서 staff 부분이 아래와 같은지 확인하고 <b>게시</b>해 주세요:<br>
+              <code style="display:block;background:#fff;border-radius:6px;padding:8px 10px;margin-top:6px;font-size:11px;line-height:1.6">match /staff/{uid} {<br>&nbsp;&nbsp;allow read: if isLoggedIn();<br>&nbsp;&nbsp;allow create: if isLoggedIn();<br>&nbsp;&nbsp;allow update: if isLoggedIn() && (request.auth.uid == uid || isAdmin());<br>&nbsp;&nbsp;allow delete: if isSuper();<br>}</code>
+            </div>` : ''}
+          <div style="font-size:11.5px;color:#7F1D1D;max-height:120px;overflow:auto">
+            ${fails.slice(0,10).map(f=>`· ${esc(f.name)}: ${esc(f.msg.slice(0,80))}`).join('<br>')}
+            ${fails.length>10?`<br>… 외 ${fails.length-10}건`:''}
+          </div>
+          <button class="bm" style="margin-top:10px" onclick="parseBulk()">← 미리보기로 돌아가기</button>
+        </div>`;
+      toast(`실패 ${fails.length}명 — 아래에서 원인을 확인하세요.`,'err');
+    } else {
+      document.getElementById('bulk-mod')?.remove();
+      toast(`완료! 갱신 ${upd}명 · 신규 ${add}명`,'ok');
+    }
     renderHRStatus();
   } catch(e){
     window.hideLoading && window.hideLoading();
