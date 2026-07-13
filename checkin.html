@@ -254,11 +254,13 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div class="subtb">
       <button class="subtbtn active" id="sa-sys" onclick="showAdmTab('sys')">🏢 통합관리</button>
       <button class="subtbtn" id="sa-att" onclick="showAdmTab('att')">📋 출근부 설정</button>
+      <button class="subtbtn" id="sa-sec" onclick="showAdmTab('sec')" style="display:none">🛡️ 접속·보안</button>
       <button class="subtbtn" id="sa-log" onclick="showAdmTab('log')" style="display:none">🔐 로그인 기록</button>
       <button class="subtbtn" id="sa-act" onclick="showAdmTab('act')" style="display:none">📜 활동 로그</button>
     </div>
     <div id="ca-sys" class="tc"></div>
     <div id="ca-att" class="tc" style="display:none"></div>
+    <div id="ca-sec" class="tc" style="display:none"></div>
     <div id="ca-log" class="tc" style="display:none"></div>
     <div id="ca-act" class="tc" style="display:none"></div>
   </div>
@@ -471,6 +473,8 @@ async function doLogin() {
 }
 
 async function doLogout() {
+  // 접속 기록 정리 + 로그아웃 기록 (presence.js)
+  try { if(window.endSession) await window.endSession('직접 로그아웃'); } catch(e){}
   await signOut(auth);
   $I('lid').value = ''; $I('lpw').value = '';
 }
@@ -1055,6 +1059,7 @@ async function showMain(){
   $I('st-stat').style.display=isAdmin?'':'none';
   $I('t-adm').style.display=isAdmin?'flex':'none';
   // 로그인 기록은 슈퍼관리자만
+  const secTab = $I('sa-sec'); if(secTab) secTab.style.display = CU.role==='super' ? '' : 'none';
   const logTab = $I('sa-log'); if(logTab) logTab.style.display = CU.role==='super' ? '' : 'none';
   const actTab = $I('sa-act'); if(actTab) actTab.style.display = CU.role==='super' ? '' : 'none';
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
@@ -2300,13 +2305,188 @@ function renderStat(){
 function showAdmTab(sub){
   document.querySelectorAll('#c-adm .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att','ca-log','ca-act'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-sec','ca-log','ca-act'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
+  if(sub==='sec') renderSecurity();
   if(sub==='log') renderLoginLog();
   if(sub==='act') renderActivityLog();
 }
+
+// ══════════ 관리자 > 접속·보안 (슈퍼관리자) ══════════
+let SEC_TIMER = null;
+
+function secAgo(ts){
+  try {
+    const t = ts?.toDate ? ts.toDate() : new Date(ts?.seconds*1000);
+    const s = Math.floor((Date.now() - t.getTime())/1000);
+    if(s < 60) return '방금';
+    if(s < 3600) return Math.floor(s/60)+'분 전';
+    if(s < 86400) return Math.floor(s/3600)+'시간 전';
+    return Math.floor(s/86400)+'일 전';
+  } catch(e){ return ''; }
+}
+function isOnline(ts){
+  try {
+    const t = ts?.toDate ? ts.toDate() : new Date(ts?.seconds*1000);
+    return (Date.now() - t.getTime()) < 3*60*1000;   // 3분 이내 = 접속중
+  } catch(e){ return false; }
+}
+
+async function renderSecurity(){
+  const box = $I('ca-sec');
+  if(CU.role !== 'super'){ box.innerHTML = '<div class="asc"><p class="empty">권한이 없습니다.</p></div>'; return; }
+
+  // 설정 + 세션 동시 로드
+  let cfg = { idleMinutes:0, countryMode:'off', allowedCountries:['KR'] };
+  let sessions = [];
+  try {
+    const c = await getDoc(doc(db,'securityConfig','main'));
+    if(c.exists()) cfg = { ...cfg, ...c.data() };
+  } catch(e){}
+  try {
+    const snap = await getDocs(collection(db,'sessions'));
+    snap.forEach(d=> sessions.push({ id:d.id, ...d.data() }));
+  } catch(e){}
+
+  sessions.sort((a,b)=>(b.lastSeen?.seconds||0)-(a.lastSeen?.seconds||0));
+  const online = sessions.filter(s=>isOnline(s.lastSeen));
+  const offline = sessions.filter(s=>!isOnline(s.lastSeen));
+
+  const row = (s)=>{
+    const on = isOnline(s.lastSeen);
+    return `<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--ivd);border-radius:10px;margin-bottom:7px;background:${on?'var(--gp)':'#fff'};flex-wrap:wrap">
+      <span style="width:9px;height:9px;border-radius:50%;background:${on?'#16a34a':'#cbd5e1'};flex:none;${on?'box-shadow:0 0 0 3px rgba(22,163,74,.18)':''}"></span>
+      <div style="min-width:120px">
+        <div style="font-size:14px;font-weight:700;color:var(--gd)">${esc(s.name||'?')}
+          <span style="font-size:11px;color:var(--tl);font-weight:500">${esc(ORGS[s.org]||s.org||'')}</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--tl);margin-top:2px">${on?`📄 ${esc(s.page||'')} 보는 중`:`마지막 접속 ${secAgo(s.lastSeen)}`}</div>
+      </div>
+      <div style="font-size:11.5px;color:var(--ts);min-width:150px">
+        <div>🌐 <b style="font-family:ui-monospace,monospace">${esc(s.ip||'-')}</b></div>
+        <div style="color:var(--tl);margin-top:2px">${s.country?`${esc(s.countryName||s.country)} ${esc(s.city||'')}`:''} ${s.isp?`· ${esc(String(s.isp).slice(0,22))}`:''}</div>
+      </div>
+      <div style="font-size:11.5px;color:var(--tl);min-width:100px">💻 ${esc(s.device||'')}</div>
+      <div style="margin-left:auto;display:flex;gap:6px">
+        ${on?`<span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:3px 9px;border-radius:100px;font-weight:700">접속중</span>`
+            :`<span style="font-size:11px;background:#f1f5f9;color:#64748b;padding:3px 9px;border-radius:100px;font-weight:700">오프라인</span>`}
+        <button class="bm" style="padding:5px 11px;font-size:11.5px" onclick="clearSession('${s.id}')">기록 삭제</button>
+      </div>
+    </div>`;
+  };
+
+  box.innerHTML = `
+    <div class="asc">
+      <h3 class="actitle">🛡️ 접속 현황</h3>
+      <p class="adesc">1분마다 갱신됩니다. 3분 이상 활동이 없으면 오프라인으로 표시됩니다. 브라우저를 그냥 닫아도 자동으로 오프라인이 됩니다.</p>
+
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <div style="flex:1;min-width:120px;background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:12px 14px">
+          <div style="font-size:22px;font-weight:900;color:var(--gm)">${online.length}</div>
+          <div style="font-size:12px;color:var(--ts);font-weight:600">현재 접속중</div>
+        </div>
+        <div style="flex:1;min-width:120px;background:#fff;border:1px solid var(--ivd);border-radius:10px;padding:12px 14px">
+          <div style="font-size:22px;font-weight:900;color:var(--tl)">${offline.length}</div>
+          <div style="font-size:12px;color:var(--ts);font-weight:600">최근 접속 기록</div>
+        </div>
+        <button class="bm" style="align-self:center" onclick="renderSecurity()">↻ 새로고침</button>
+      </div>
+
+      ${online.length ? `<div style="font-size:12.5px;font-weight:800;color:var(--gm);margin:12px 0 7px">🟢 접속중</div>${online.map(row).join('')}` : '<p class="empty" style="padding:14px">현재 접속 중인 사람이 없습니다.</p>'}
+      ${offline.length ? `<div style="font-size:12.5px;font-weight:800;color:var(--tl);margin:16px 0 7px">⚪ 오프라인</div>${offline.map(row).join('')}` : ''}
+    </div>
+
+    <div class="asc">
+      <h3 class="actitle">⏱️ 자동 로그아웃</h3>
+      <p class="adesc">정해진 시간 동안 아무 조작이 없으면 자동으로 로그아웃됩니다. 로그아웃 1분 전에 안내가 뜹니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${[0,15,30,60,120].map(m=>`
+          <button class="subtbtn ${Number(cfg.idleMinutes||0)===m?'on':''}" style="padding:8px 16px" onclick="setIdleMinutes(${m})">
+            ${m===0?'사용 안 함':m+'분'}
+          </button>`).join('')}
+      </div>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">현재 설정: <b style="color:var(--gd)">${Number(cfg.idleMinutes||0)===0?'자동 로그아웃 없음':cfg.idleMinutes+'분 무활동 시 로그아웃'}</b></p>
+    </div>
+
+    <div class="asc">
+      <h3 class="actitle">🌍 접속 국가 제한</h3>
+      <p class="adesc">허용한 국가 밖에서 로그인하면 차단하고 기록을 남깁니다.</p>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="subtbtn ${cfg.countryMode!=='on'?'on':''}" style="padding:8px 16px" onclick="setCountryMode('off')">제한 없음</button>
+        <button class="subtbtn ${cfg.countryMode==='on'?'on':''}" style="padding:8px 16px" onclick="setCountryMode('on')">허용 국가만</button>
+      </div>
+      ${cfg.countryMode==='on' ? `
+        <div style="background:var(--iv);border:1px solid var(--ivd);border-radius:10px;padding:12px 14px">
+          <div style="font-size:12.5px;font-weight:800;color:var(--gd);margin-bottom:8px">허용 국가</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+            ${(cfg.allowedCountries||[]).map(c=>`
+              <span style="display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--gm);color:var(--gd);padding:5px 11px;border-radius:100px;font-size:12.5px;font-weight:700">
+                ${esc(c)} <button style="border:none;background:none;color:#dc2626;cursor:pointer;font-weight:900;padding:0" onclick="removeCountry('${esc(c)}')">×</button>
+              </span>`).join('') || '<span style="font-size:12px;color:var(--tl)">허용 국가가 없습니다. 최소 1개는 등록하세요.</span>'}
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <input id="sec-cc" placeholder="국가 코드 (예: KR, US, JP)" style="padding:8px 12px;border:1.5px solid var(--ivd);border-radius:8px;font-size:13px;width:200px;font-family:inherit">
+            <button class="bm" onclick="addCountry()">＋ 추가</button>
+          </div>
+          <p style="font-size:11.5px;color:var(--tl);margin-top:9px">
+            ⚠️ 브라우저에서 확인하는 방식이라 완벽한 차단은 아닙니다. 계정 유출 시 해외 접속을 막고, 모든 시도를 기록하는 용도입니다.
+          </p>
+        </div>` : ''}
+    </div>`;
+
+  // 30초마다 자동 갱신
+  clearInterval(SEC_TIMER);
+  SEC_TIMER = setInterval(()=>{
+    if($I('ca-sec') && $I('ca-sec').style.display!=='none') renderSecurity();
+    else clearInterval(SEC_TIMER);
+  }, 30000);
+}
+window.renderSecurity = renderSecurity;
+
+async function saveSecCfg(patch){
+  try {
+    await setDoc(doc(db,'securityConfig','main'), patch, { merge:true });
+    toast('저장했습니다.','ok');
+    renderSecurity();
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}
+async function setIdleMinutes(m){ await saveSecCfg({ idleMinutes:Number(m) }); }
+window.setIdleMinutes = setIdleMinutes;
+async function setCountryMode(mode){ await saveSecCfg({ countryMode:mode }); }
+window.setCountryMode = setCountryMode;
+
+async function addCountry(){
+  const v = ($I('sec-cc')?.value || '').trim().toUpperCase();
+  if(!/^[A-Z]{2}$/.test(v)){ toast('국가 코드는 두 글자입니다. (예: KR)','err'); return; }
+  try {
+    const c = await getDoc(doc(db,'securityConfig','main'));
+    const list = (c.exists() ? (c.data().allowedCountries||[]) : []);
+    if(list.includes(v)){ toast('이미 등록된 국가입니다.','err'); return; }
+    await saveSecCfg({ allowedCountries:[...list, v] });
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+}
+window.addCountry = addCountry;
+
+async function removeCountry(cc){
+  try {
+    const c = await getDoc(doc(db,'securityConfig','main'));
+    const list = (c.exists() ? (c.data().allowedCountries||[]) : []).filter(x=>x!==cc);
+    await saveSecCfg({ allowedCountries:list });
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+}
+window.removeCountry = removeCountry;
+
+async function clearSession(uid){
+  if(!confirm('이 접속 기록을 삭제할까요?')) return;
+  try {
+    await deleteDoc(doc(db,'sessions',uid));
+    toast('삭제했습니다.','ok');
+    renderSecurity();
+  } catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
+}
+window.clearSession = clearSession;
 
 // ── 관리자 > 통합관리 ────────────────────────
 function renderAdmSys(){
