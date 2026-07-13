@@ -9,15 +9,16 @@
   const CSS = `
   #loadOverlay{
     position:fixed; inset:0; z-index:9999;
-    display:none; align-items:center; justify-content:center;
+    display:flex; align-items:center; justify-content:center;
     overflow:hidden;
+    visibility:hidden; pointer-events:none;
     background:
       radial-gradient(120% 90% at 78% 8%,  rgba(0,112,74,0.20) 0%, rgba(0,0,0,0) 55%),
       radial-gradient(110% 80% at 12% 92%, rgba(176,141,60,0.13) 0%, rgba(0,0,0,0) 55%),
       linear-gradient(170deg, #08130F 0%, #10241D 42%, #1E3932 100%);
-    opacity:0; transition:opacity .35s ease;
+    opacity:0; transition:opacity .16s ease, visibility 0s linear .16s;
   }
-  #loadOverlay.on{ display:flex; opacity:1; }
+  #loadOverlay.on{ visibility:visible; pointer-events:auto; opacity:1; transition:opacity .16s ease, visibility 0s; }
 
   /* ── 은하수 띠 ── */
   #loadOverlay .sky-way{
@@ -63,24 +64,30 @@
 
   /* ── 별똥별 ── */
   #loadOverlay .shoot{
-    position:absolute; width:2px; height:2px; border-radius:50%;
-    background:#fff; box-shadow:0 0 6px 1px rgba(255,255,255,.85);
+    position:absolute; width:3px; height:3px; border-radius:50%;
+    background:#fff; box-shadow:0 0 10px 2px rgba(255,255,255,.9);
     opacity:0;
-    animation:shootFly var(--sd,3.4s) cubic-bezier(.25,.5,.35,1) infinite;
+    transform:rotate(22deg);
+    animation:shootFly var(--sd,1.9s) linear infinite;
     animation-delay:var(--sdl,0s);
   }
   #loadOverlay .shoot::after{
     content:''; position:absolute; right:2px; top:50%;
-    width:130px; height:1.5px; transform:translateY(-50%);
-    background:linear-gradient(270deg, rgba(255,255,255,.9) 0%, rgba(212,233,226,.35) 45%, rgba(255,255,255,0) 100%);
+    width:var(--tail,170px); height:2px; transform:translateY(-50%);
+    background:linear-gradient(270deg,
+      rgba(255,255,255,1) 0%,
+      rgba(232,217,168,.55) 30%,
+      rgba(212,233,226,.25) 60%,
+      rgba(255,255,255,0) 100%);
     border-radius:100px;
+    filter:blur(.3px);
   }
+  /* 뜨자마자 곧바로 날아가고, 끊김 없이 이어짐 */
   @keyframes shootFly{
-    0%   { opacity:0; transform:translate(0,0) rotate(18deg); }
-    6%   { opacity:1; }
-    45%  { opacity:1; }
-    60%  { opacity:0; transform:translate(340px,110px) rotate(18deg); }
-    100% { opacity:0; transform:translate(340px,110px) rotate(18deg); }
+    0%   { opacity:0;  transform:translate(-60px,-25px) rotate(22deg) scale(.6); }
+    8%   { opacity:1;  }
+    75%  { opacity:1;  }
+    100% { opacity:0;  transform:translate(var(--dx,520px), var(--dy,215px)) rotate(22deg) scale(1); }
   }
 
   /* ── 가운데 내용 ── */
@@ -88,7 +95,7 @@
     position:relative; z-index:2;
     display:flex; flex-direction:column; align-items:center; gap:18px;
     padding:30px 40px;
-    transform:translateY(8px); transition:transform .4s cubic-bezier(.2,.8,.2,1);
+    transform:translateY(8px); transition:transform .3s cubic-bezier(.2,.8,.2,1);
   }
   #loadOverlay.on .lo-card{ transform:none; }
 
@@ -171,16 +178,23 @@
     return s;
   }
 
-  /* 별똥별 (서로 다른 시점에 떨어지도록) */
+  /* 별똥별 — 뜨자마자 곧바로, 끊임없이 날아가도록 */
   function shootHTML(){
+    // dl(지연)을 0부터 촘촘히 깔아 로딩이 짧아도 바로 보이게 함
     const conf = [
-      { x:8,  y:12, d:3.6, dl:0.4 },
-      { x:52, y:4,  d:4.4, dl:2.3 },
-      { x:26, y:34, d:5.2, dl:4.6 },
-      { x:66, y:22, d:4.0, dl:6.8 },
+      { x:-6, y:-4, d:1.5, dl:0.00, tail:200, dx:640, dy:265 },
+      { x:22, y:-8, d:1.9, dl:0.12, tail:160, dx:560, dy:230 },
+      { x:48, y:-6, d:1.7, dl:0.30, tail:185, dx:600, dy:248 },
+      { x:-2, y:16, d:2.1, dl:0.45, tail:150, dx:520, dy:215 },
+      { x:66, y:-9, d:1.6, dl:0.62, tail:210, dx:660, dy:272 },
+      { x:30, y:14, d:2.0, dl:0.80, tail:145, dx:500, dy:206 },
+      { x:8,  y:34, d:1.8, dl:0.98, tail:175, dx:580, dy:240 },
+      { x:54, y:20, d:2.2, dl:1.18, tail:130, dx:470, dy:194 },
+      { x:76, y:10, d:1.7, dl:1.35, tail:195, dx:620, dy:256 },
+      { x:38, y:38, d:1.9, dl:1.55, tail:165, dx:545, dy:225 },
     ];
     return conf.map(c =>
-      `<span class="shoot" style="left:${c.x}%;top:${c.y}%;--sd:${c.d}s;--sdl:${c.dl}s"></span>`
+      `<span class="shoot" style="left:${c.x}%;top:${c.y}%;--sd:${c.d}s;--sdl:${c.dl}s;--tail:${c.tail}px;--dx:${c.dx}px;--dy:${c.dy}px"></span>`
     ).join('');
   }
 

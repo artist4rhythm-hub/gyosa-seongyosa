@@ -202,7 +202,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 
 
 <!-- 로그인 -->
-<div id="ls">
+<div id="ls" style="display:none">
   <div class="lbox">
     <div class="llogo">
       <div style="margin-bottom:12px">
@@ -359,6 +359,10 @@ function orgOptionsHTML(includeAll) {
 }
 
 // ── 인증 ─────────────────────────────────────
+// 로그인 상태를 복원하는 동안 로그인 화면이 잠깐 보이지 않게 함
+window.showLoading && window.showLoading('로그인 확인 중…');
+let authResolved = false;
+
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     const snap = await getDoc(doc(db, 'staff', user.uid));
@@ -368,11 +372,14 @@ onAuthStateChanged(auth, async (user) => {
       const acStatus = data.acStatus || 'active';
       if (acStatus === 'leave' || acStatus === 'quit') {
         await signOut(auth);
+        window.hideLoading && window.hideLoading();
+        $I('ls').style.display = 'flex';
         showLoginErr(acStatus==='quit' ? '퇴직 처리된 계정입니다. 관리자에게 문의하세요.' : '휴직 중인 계정입니다. 관리자에게 문의하세요.');
         return;
       }
       CU = { uid: user.uid, ...data };
       try { localStorage.setItem('gyosa_role', CU.role||'teacher'); } catch(e){}
+      authResolved = true;
       $I('ls').style.display = 'none';
       $I('ms').style.display = 'flex';
       await loadAttConfig();
@@ -381,10 +388,14 @@ onAuthStateChanged(auth, async (user) => {
       showMain();
     } else {
       await signOut(auth);
+      window.hideLoading && window.hideLoading();
+      $I('ls').style.display = 'flex';
       showLoginErr('계정 정보를 찾을 수 없습니다.');
     }
   } else {
     CU = null;
+    authResolved = true;
+    window.hideLoading && window.hideLoading();
     $I('ls').style.display = 'flex';
     $I('ms').style.display = 'none';
   }
@@ -1056,6 +1067,7 @@ async function showMain(){
   const hash = (location.hash||'').replace('#','');
   if(hash==='adm' && isAdmin) showTab('adm');
   else showTab('att');
+  window.hideLoading && window.hideLoading();
   loadNotifications();  // 결재·쪽지 알림 (비동기)
 }
 
