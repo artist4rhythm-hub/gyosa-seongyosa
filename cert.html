@@ -169,10 +169,12 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
   
   <div class="tc">
     <div class="subtabs">
-      <button class="subtbtn on" id="tb-issue" onclick="showTab('issue')">➕ 증명서 발급</button>
+      <button class="subtbtn on" id="tb-issue" onclick="showTab('issue')">🎓 학생 증명서</button>
+      <button class="subtbtn" id="tb-staff" onclick="showTab('staff')">👔 교직원 증명서</button>
       <button class="subtbtn" id="tb-list" onclick="showTab('list')">📋 발급 목록</button>
     </div>
     <div id="tab-issue"></div>
+    <div id="tab-staff" style="display:none"></div>
     <div id="tab-list" style="display:none"></div>
   </div>
 </div>
@@ -205,6 +207,7 @@ const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
 const pad = n => String(n).padStart(2,'0');
 let CU = null;
 let STUDENTS = [];
+let STAFF_ALL = [];
 let CLASSES = [];
 let curTab = 'issue';
 
@@ -347,6 +350,7 @@ onAuthStateChanged(auth, async (user) => {
   
   
   window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'cert')) return;
   renderShell('cert', CU);
 
   await loadData();
@@ -359,10 +363,13 @@ async function loadData(){
     window.setLoadStep('학생 명단 불러오는 중…', 25);
     const ss = await getDocs(collection(db,'students'));
     STUDENTS = []; ss.forEach(d=>STUDENTS.push({id:d.id, ...d.data()}));
-    window.setLoadStep('반 편성 정보 불러오는 중…', 65);
+    window.setLoadStep('반 편성 정보 불러오는 중…', 55);
     const cs = await getDocs(collection(db,'classes'));
     CLASSES = []; cs.forEach(d=>CLASSES.push({id:d.id, ...d.data()}));
-    window.setLoadStep('거의 다 됐어요…', 92);
+    window.setLoadStep('교직원 정보 불러오는 중…', 80);
+    const st = await getDocs(collection(db,'staff'));
+    STAFF_ALL = []; st.forEach(d=>STAFF_ALL.push({uid:d.id, ...d.data()}));
+    window.setLoadStep('거의 다 됐어요…', 94);
   } catch(e){ toast('데이터 로드 실패: '+e.message,'err'); }
   finally { window.hideLoading(); }
 }
@@ -370,10 +377,13 @@ async function loadData(){
 function showTab(t){
   curTab = t;
   $I('tb-issue').classList.toggle('on', t==='issue');
+  $I('tb-staff').classList.toggle('on', t==='staff');
   $I('tb-list').classList.toggle('on', t==='list');
   $I('tab-issue').style.display = t==='issue'?'':'none';
+  $I('tab-staff').style.display = t==='staff'?'':'none';
   $I('tab-list').style.display = t==='list'?'':'none';
   if(t==='issue') renderIssue();
+  if(t==='staff') renderStaffIssue();
   if(t==='list') renderList();
 }
 window.showTab = showTab;
@@ -598,6 +608,269 @@ function buildCert(rec){
     </div>
   </div>`;
 }
+
+// ══════════ 👔 재직증명서 ══════════
+
+// 재직기간: 입사일 ~ 기준일 → "N년 N개월"
+function tenureText(hireDate, refDate){
+  if(!hireDate) return '';
+  const a = new Date(hireDate+'T00:00:00');
+  const b = new Date((refDate||todayYMD())+'T00:00:00');
+  if(isNaN(a) || b < a) return '';
+  let months = (b.getFullYear()-a.getFullYear())*12 + (b.getMonth()-a.getMonth());
+  if(b.getDate() < a.getDate()) months--;
+  const y = Math.floor(months/12), m = months%12;
+  if(y<=0 && m<=0) return '1개월 미만';
+  return `${y>0?y+'년 ':''}${m>0?m+'개월':''}`.trim();
+}
+
+// 재직증명서 시트 HTML
+function buildEmployCert(rec){
+  const cfg = ORG_CONFIG[rec.org] || ORG_CONFIG.daniel;
+  const t = cfg.theme;
+  const styleVars = `--acc:${t.accent};--line:${t.line};--line2:${t.line2};--bg:${t.bg};`;
+  const stampHTML = rec.hideStamp ? '' : `<img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">`;
+  const tenure = tenureText(rec.hireDate, rec.issueDate);
+  return `
+  <div class="cert-sheet" style="${styleVars}">
+    <img class="cert-bg" src="${cfg.logo}" alt="" onerror="this.style.display='none'">
+    <div class="cert-inner">
+      <div class="cert-docno">문서번호 : ${esc(rec.docNo)}</div>
+      <div class="cert-title">재직 증명서</div>
+      <div class="cert-title-line"></div>
+      <div class="cert-fields">
+        <div class="cert-row">${labelHTML("성명")}<span class="cert-colon">:</span><span class="cert-value">${esc(rec.name||'')}</span></div>
+        <div class="cert-row">${labelHTML("생년월일")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(rec.birth))}</span></div>
+        <div class="cert-row">${labelHTML("주소")}<span class="cert-colon">:</span><span class="cert-value addr-val">${esc(rec.address||'-')}</span></div>
+        <div class="cert-row">${labelHTML("입사일")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(rec.hireDate))}</span></div>
+        <div class="cert-row">${labelHTML("직위")}<span class="cert-colon">:</span><span class="cert-value">${esc(rec.position||'-')}</span></div>
+        ${tenure?`<div class="cert-row">${labelHTML("재직기간")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(rec.hireDate))} ~ 현재 (${esc(tenure)})</span></div>`:''}
+        <div class="cert-row">${labelHTML("용도")}<span class="cert-colon">:</span><span class="cert-value">${esc(rec.purpose||'제출용')}</span></div>
+      </div>
+      <div class="cert-statement">
+        위 사람은 <b>${esc(korDate(rec.issueDate))}</b> 현재,<br>
+        '${esc(cfg.orgName)}'에 재직하고 있음을 증명합니다.
+      </div>
+      <div class="cert-org">
+        <div class="cert-orgname">${esc(cfg.orgName)}</div>
+        <div class="cert-orgen">${esc(cfg.orgEn)}</div>
+        <div class="cert-rep">
+          ${esc(cfg.repTitle||'대표자')} &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
+          ${stampHTML}
+        </div>
+      </div>
+    </div>
+    <div class="cert-footer">
+      <div class="fline"></div>
+      <div class="addr">${esc(cfg.address)}　|　TEL. ${esc(cfg.phone)}</div>
+      <div class="note">· 본 증명서는 위 사람의 재직 사실을 확인하기 위한 목적으로 발급됩니다.</div>
+    </div>
+  </div>`;
+}
+
+// ── 교직원 발급 화면 ──
+let staffSearch = '';
+let staffOrg = '';
+function renderStaffIssue(){
+  const box = $I('tab-staff');
+  const orgs = myOrgs();
+  if(!staffOrg || !orgs.includes(staffOrg)) staffOrg = orgs[0];
+  const orgTabs = orgs.length>1 ? `
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      ${orgs.map(o=>`<button class="subtbtn ${o===staffOrg?'on':''}" onclick="setStaffOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
+    </div>` : '';
+  box.innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">👔 재직증명서 발급 (${ORGS[staffOrg]||staffOrg})</h3>
+      <p class="adesc">교직원을 선택하면 재직증명서를 미리 확인하고 발급할 수 있습니다. 생년월일·주소·입사일·직위가 모두 있어야 발급됩니다.</p>
+      ${orgTabs}
+      <input type="text" id="staff-search" placeholder="이름 검색" value="${esc(staffSearch)}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);width:100%;margin-bottom:14px;font-family:inherit">
+      <div class="slist" id="staff-slist"></div>
+    </div>`;
+  renderStaffList();
+  const si = $I('staff-search');
+  if(si) si.addEventListener('input', e => { staffSearch = e.target.value; renderStaffList(); });
+}
+window.renderStaffIssue = renderStaffIssue;
+function setStaffOrg(o){ staffOrg = o; renderStaffIssue(); }
+window.setStaffOrg = setStaffOrg;
+
+function renderStaffList(){
+  const box = $I('staff-slist'); if(!box) return;
+  let list = STAFF_ALL
+    .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(staffOrg))
+    .filter(s => (s.acStatus||'active') !== 'quit');
+  if(staffSearch){
+    const q = staffSearch.toLowerCase();
+    list = list.filter(s => (s.name||'').toLowerCase().includes(q));
+  }
+  list.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+
+  const NEED = ['birth','address','hireDate','position'];
+  box.innerHTML = list.length ? list.map(s=>{
+    const miss = NEED.filter(k=>!s[k]);
+    const leave = (s.acStatus||'active')==='leave';
+    return `<div class="sitem">
+      <div style="flex:1;min-width:170px">
+        <div class="sname">${esc(s.name||'')}
+          ${s.position?`<span style="font-size:11px;background:var(--gp);color:var(--gd);padding:2px 8px;border-radius:100px;font-weight:700;margin-left:5px">${esc(s.position)}</span>`:''}
+          ${leave?'<span style="font-size:11px;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:100px;font-weight:700;margin-left:4px">휴직</span>':''}
+          ${s.noAuth?'<span style="font-size:10px;background:var(--iv);color:var(--tl);padding:2px 7px;border-radius:100px;font-weight:600;margin-left:4px">계정없음</span>':''}
+        </div>
+        <div class="smeta">${ORGS[s.org]||s.org}${s.dept?' · '+esc(s.dept):''}${s.duty?' · '+esc(s.duty):''}
+          ${miss.length?`<span style="color:#dc2626;font-weight:600"> · ${miss.length}개 항목 미입력</span>`:''}
+        </div>
+      </div>
+      <button class="bm" onclick="openStaffPreview('${s.uid}')">증명서 확인 ›</button>
+    </div>`;
+  }).join('') : '<p class="empty">교직원이 없습니다.</p>';
+}
+window.renderStaffList = renderStaffList;
+
+// ── 확인 모달 → 발급 ──
+let previewStaff = null;
+function openStaffPreview(uid){
+  const s = STAFF_ALL.find(x=>x.uid===uid);
+  if(!s){ toast('교직원을 찾을 수 없습니다.','err'); return; }
+  previewStaff = s;
+  const org = (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(staffOrg) ? staffOrg : (s.org||'daniel');
+  const cfg = ORG_CONFIG[org];
+  const issueDate = todayYMD();
+  const tempDocNo = (cfg?.code||'DA') + '-E-' + issueDate.slice(2).replace(/-/g,'') + '-XX';
+
+  const fieldDefs = [
+    {key:'birth',    label:'생년월일', type:'date'},
+    {key:'address',  label:'집 주소',  type:'text', placeholder:'주소를 입력하세요'},
+    {key:'hireDate', label:'입사일',   type:'date'},
+    {key:'position', label:'직위(직책)', type:'text', placeholder:'예: 교사, 행정실장'},
+  ];
+
+  const readVals = () => {
+    const v = {};
+    fieldDefs.forEach(f=>{ v[f.key] = $I('sv-'+f.key)?.value?.trim() || ''; });
+    v.purpose = $I('sv-purpose')?.value?.trim() || '제출용';
+    return v;
+  };
+  const buildPreview = () => {
+    const v = readVals();
+    return buildEmployCert({ org, docNo:tempDocNo, issueDate, name:s.name||'',
+      birth:v.birth, address:v.address, hireDate:v.hireDate, position:v.position, purpose:v.purpose });
+  };
+
+  const fieldsHTML = fieldDefs.map(f=>{
+    const empty = !(s[f.key]||'').trim();
+    return `<div class="fgrp" data-fkey="${f.key}" style="${empty?'background:#fef3c7;padding:10px 12px;border-radius:8px;border:1px solid #fcd34d':''}">
+      <label>${f.label} <span class="fgrp-hint" style="color:${empty?'#dc2626':'#9ca3af'};font-weight:400">${empty?'· 입력 필요':'· 확인 / 수정'}</span></label>
+      <input type="${f.type}" id="sv-${f.key}" value="${esc(s[f.key]||'')}" placeholder="${esc(f.placeholder||'')}">
+    </div>`;
+  }).join('') + `
+    <div class="fgrp">
+      <label>용도 <span class="fgrp-hint" style="color:#9ca3af;font-weight:400">· 증명서에 표시됩니다</span></label>
+      <input type="text" id="sv-purpose" value="제출용" placeholder="예: 관공서 제출용, 은행 제출용">
+    </div>`;
+
+  const leaveWarn = (s.acStatus||'active')==='leave'
+    ? '<div style="background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px">⚠️ 휴직 중인 교직원입니다. 재직증명서 발급이 적절한지 확인하세요.</div>' : '';
+
+  const mv = document.createElement('div'); mv.className='mov'; mv.id='preview-mod';
+  mv.innerHTML = `<div class="mbk" onclick="closeStaffPreview()"></div>
+    <div class="mbox" style="max-width:720px">
+      <div class="mtitle">재직증명서 확인 후 발급</div>
+      <div class="msub">아래 항목이 <b>모두 정확한지 확인</b>하세요. 빈 항목이나 바뀐 정보를 수정하면 교직원 인사정보에도 반영됩니다.</div>
+      ${leaveWarn}
+      ${fieldsHTML}
+      <div id="sv-warn" style="display:none;background:#fef2f2;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:13px;margin:4px 0 12px;border:1px solid #fecaca"></div>
+      <div class="zoom-bar">
+        <button class="zoom-btn" onclick="zoomCert(-1)">−</button>
+        <span class="zoom-label" id="zoom-label">62%</span>
+        <button class="zoom-btn" onclick="zoomCert(1)">＋</button>
+        <button class="zoom-btn" style="width:auto;padding:0 10px;font-size:13px" onclick="zoomCert(0)">맞춤</button>
+      </div>
+      <div class="cert-scroll"><div class="cert-zoom" id="cert-zoom">${buildPreview()}</div></div>
+      <label style="display:flex;align-items:center;gap:9px;background:var(--gp);border-radius:10px;padding:13px 15px;margin:14px 0;cursor:pointer">
+        <input type="checkbox" id="sv-confirm" style="width:18px;height:18px;accent-color:var(--gm)">
+        <span style="font-size:13.5px;font-weight:600;color:var(--gd)">위 모든 항목이 정확함을 확인했습니다. (이상 없음)</span>
+      </label>
+      <div class="mact">
+        <button class="bs" onclick="closeStaffPreview()">취소</button>
+        <button class="bp" onclick="doIssueStaff('${s.uid}','${org}')">✅ 발급하기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(mv);
+  applyZoom();
+  // 입력 변경 시 미리보기 갱신
+  fieldDefs.forEach(f=>{
+    const el = $I('sv-'+f.key);
+    if(el) el.addEventListener('input', ()=>{ const z=$I('cert-zoom'); if(z) z.innerHTML = buildPreview(); applyZoom(); });
+  });
+  const pu = $I('sv-purpose');
+  if(pu) pu.addEventListener('input', ()=>{ const z=$I('cert-zoom'); if(z) z.innerHTML = buildPreview(); applyZoom(); });
+}
+window.openStaffPreview = openStaffPreview;
+function closeStaffPreview(){ $I('preview-mod')?.remove(); previewStaff=null; }
+window.closeStaffPreview = closeStaffPreview;
+
+async function doIssueStaff(uid, org){
+  const s = STAFF_ALL.find(x=>x.uid===uid); if(!s) return;
+  const cfg = ORG_CONFIG[org]; if(!cfg){ toast('이 기관은 발급을 지원하지 않습니다.','err'); return; }
+  const issueDate = todayYMD();
+
+  const birth = $I('sv-birth')?.value?.trim() || '';
+  const address = $I('sv-address')?.value?.trim() || '';
+  const hireDate = $I('sv-hireDate')?.value?.trim() || '';
+  const position = $I('sv-position')?.value?.trim() || '';
+  const purpose = $I('sv-purpose')?.value?.trim() || '제출용';
+
+  const missing = [];
+  if(!birth) missing.push('생년월일');
+  if(!address) missing.push('집 주소');
+  if(!hireDate) missing.push('입사일');
+  if(!position) missing.push('직위');
+  if(missing.length){
+    toast(`${missing.join(', ')}을(를) 입력해주세요.`,'err');
+    return;
+  }
+  if(!$I('sv-confirm')?.checked){
+    toast('내용 확인 후 "이상 없음"에 체크해주세요.','err');
+    return;
+  }
+
+  try {
+    // 인사정보에 반영
+    const updates = {};
+    if(birth !== (s.birth||'')) updates.birth = birth;
+    if(address !== (s.address||'')) updates.address = address;
+    if(hireDate !== (s.hireDate||'')) updates.hireDate = hireDate;
+    if(position !== (s.position||'')) updates.position = position;
+    if(Object.keys(updates).length){
+      await updateDoc(doc(db,'staff',uid), updates);
+      Object.assign(s, updates);
+    }
+
+    // 문서번호: [코드]-E-YYMMDD-NN
+    const datePart = issueDate.slice(2).replace(/-/g,'');
+    const prefix = `${cfg.code}-E-${datePart}-`;
+    const snap = await getDocs(query(collection(db,'certificates'), where('docNoDate','==',datePart), where('org','==',org), where('kind','==','employ')));
+    const seq = snap.size + 1;
+    const docNo = prefix + pad(seq);
+
+    const record = {
+      docNo, docNoDate: datePart, seq,
+      kind: 'employ', type: '재직', org,
+      staffUid: uid, studentName: s.name||'',   // 목록 표시 재사용
+      grade: position,                           // 목록에서 직위로 표시
+      birth, address, hireDate, position, purpose,
+      issueDate,
+      issuedByUid: CU.uid, issuedByName: CU.name||'',
+      createdAt: Timestamp.now()
+    };
+    await addDoc(collection(db,'certificates'), record);
+    closeStaffPreview();
+    toast(`발급 완료 (${docNo})`,'ok');
+    showTab('list');
+  } catch(e){ toast('발급 실패: '+e.message,'err'); }
+}
+window.doIssueStaff = doIssueStaff;
 
 // 학생+옵션 → rec 변환 후 렌더 (미리보기용)
 function buildCertHTML(s, opts){
@@ -834,6 +1107,14 @@ window.renderList = renderList;
 
 // 발급 기록으로부터 증명서 HTML 재생성 (발급 당시 값 사용)
 function buildCertFromRecord(c, opts){
+  if(c.kind === 'employ'){
+    return buildEmployCert({
+      org: c.org, docNo: c.docNo, issueDate: c.issueDate,
+      name: c.studentName, birth: c.birth, address: c.address,
+      hireDate: c.hireDate, position: c.position, purpose: c.purpose,
+      hideStamp: opts && opts.hideStamp
+    });
+  }
   return buildCert({
     org: c.org, docNo: c.docNo, issueDate: c.issueDate,
     grade: c.grade, name: c.studentName, birth: c.birth,
