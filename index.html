@@ -306,7 +306,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── Firebase 초기화 ──────────────────────────
 const firebaseConfig = {
@@ -338,7 +338,7 @@ const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
 
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
-const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사'};
+const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사',partner:'협력교사'};
 const pad=n=>String(n).padStart(2,'0');
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -416,7 +416,10 @@ onAuthStateChanged(auth, async (user) => {
         return;
       }
       CU = { uid: user.uid, ...data };
-      try { localStorage.setItem('gyosa_role', CU.role||'teacher'); } catch(e){}
+      try {
+        localStorage.setItem('gyosa_role', CU.role||'teacher');
+        localStorage.setItem('gyosa_pagedeny', JSON.stringify(CU.pageDeny||[]));
+      } catch(e){}
       authResolved = true;
       $I('ls').style.display = 'none';
       $I('ms').style.display = 'flex';
@@ -511,8 +514,11 @@ async function doLogin() {
 async function doLogout() {
   // 접속 기록 정리 + 로그아웃 기록 (presence.js)
   try { if(window.endSession) await window.endSession('직접 로그아웃'); } catch(e){}
-  await signOut(auth);
-  $I('lid').value = ''; $I('lpw').value = '';
+  try { await signOut(auth); } catch(e){}
+  // 저장된 로그인 흔적 정리
+  try { ['gyosa_role','gyosa_name','gyosa_uid','gyosa_pagedeny'].forEach(k=>localStorage.removeItem(k)); } catch(e){}
+  // 어느 화면에서든 → 최초 로그인 화면으로
+  location.href = 'index.html';
 }
 
 window.doLogin = doLogin;
@@ -1241,6 +1247,24 @@ function renderHome(){
       /* ④ 전체 기능 */
       .hm-mapbtn{width:100%;background:var(--wh);border:1px solid var(--ivd);border-radius:12px;padding:12px 16px;
         display:flex;align-items:center;gap:8px;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:700;color:var(--gd);margin-top:6px}
+      .hm-fold{width:100%;background:none;border:none;padding:15px 18px;display:flex;align-items:center;gap:8px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:800;color:var(--gd);text-align:left}
+      .hm-fold .ar{margin-left:auto;color:var(--gm);font-size:14px;transition:transform .2s}
+      .hb-sec{font-size:12.5px;font-weight:800;color:var(--gm);margin:0 2px 8px;display:flex;align-items:center;gap:6px}
+      .hb-sec a{margin-left:auto;font-size:11.5px;color:var(--tl);text-decoration:none;font-weight:600}
+      .hb-sec a:hover{color:var(--gm)}
+      .hb-deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:9px;margin-bottom:14px}
+      .hb-card{background:var(--wh);border:1px solid var(--ivd);border-radius:12px;overflow:hidden;cursor:pointer;transition:all .13s;display:flex;flex-direction:column}
+      .hb-card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(30,57,50,.1);border-color:var(--gm)}
+      .hb-card.pin{border:1.5px solid var(--gold);background:#FFFDF5}
+      .hb-thumb{width:100%;aspect-ratio:16/9;background:var(--iv);overflow:hidden}
+      .hb-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+      .hb-b{padding:9px 12px 10px;display:flex;flex-direction:column;gap:4px;flex:1}
+      .hb-h{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-height:14px}
+      .hb-pin{font-size:9.5px;background:var(--goldp);color:var(--goldd);padding:1px 6px;border-radius:100px;font-weight:800}
+      .hb-cat{font-size:9.5px;background:var(--gp);color:var(--gd);padding:1px 6px;border-radius:100px;font-weight:700}
+      .hb-new{width:7px;height:7px;border-radius:50%;background:#16a34a;margin-left:auto;flex:none;box-shadow:0 0 0 2.5px rgba(22,163,74,.15)}
+      .hb-t{font-size:13px;font-weight:800;color:var(--gd);line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+      .hb-m{font-size:10.5px;color:var(--tl);margin-top:auto;padding-top:3px}
       .hm-mapbtn:hover{border-color:var(--gm)}
       .hm-mapbtn span.ar{margin-left:auto;color:var(--gm);font-size:15px;transition:transform .2s}
       .hm-grp{margin-bottom:14px}
@@ -1283,26 +1307,40 @@ function renderHome(){
         : `<div class="hm-clear">🎉 <b>모두 처리했어요!</b><div style="font-size:12.5px;color:var(--ts);margin-top:5px">새로 온 결재·쪽지·게시글이 없습니다.</div>
            ${idle.length?`<div class="hm-idles" style="justify-content:center;margin-top:12px">${smallChips}</div>`:''}</div>`}
 
+      <!-- 게시판 보드: 전체 + 내 기관 -->
+      <div id="home-boards" style="margin-top:18px"></div>
+
+      <!-- 공지사항 -->
+      <div id="home-notice" class="hm-panel" style="margin-top:16px">
+        <div class="hm-pt">📢 공지사항</div>
+        <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
+      </div>
+
+      <!-- 생일 (접기) -->
+      <div class="hm-panel" style="padding:0;overflow:hidden">
+        <button class="hm-fold" onclick="toggleHomeFold('bday')">
+          🎂 이번 달 생일 <span class="ar" id="fold-ar-bday">▾</span>
+        </button>
+        <div id="home-birthday" style="display:none;padding:0 18px 18px">
+          <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
+        </div>
+      </div>
+
+      <!-- 학사일정 (접기) -->
+      <div class="hm-panel" style="padding:0;overflow:hidden">
+        <button class="hm-fold" onclick="toggleHomeFold('sched')">
+          📅 학사일정 <span class="ar" id="fold-ar-sched">▾</span>
+        </button>
+        <div id="home-schedule" style="display:none;padding:0 18px 18px">
+          <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
+        </div>
+      </div>
+
       <button class="hm-mapbtn" onclick="toggleHomeMap()">
         🗂️ 전체 기능 ${homeMapOpen?'접기':'보기'}
         <span class="ar" style="transform:rotate(${homeMapOpen?'180':'0'}deg)">▾</span>
       </button>
       ${homeMapOpen ? `<div style="margin-top:12px">${mapHtml}</div>` : ''}
-
-      <div id="home-birthday" class="hm-panel" style="margin-top:16px">
-        <div class="hm-pt">🎂 이번 달 생일</div>
-        <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
-      </div>
-
-      <div id="home-schedule" class="hm-panel">
-        <div class="hm-pt">📅 학사일정</div>
-        <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
-      </div>
-
-      <div id="home-notice" class="hm-panel">
-        <div class="hm-pt">📢 최근 공지</div>
-        <div style="font-size:13px;color:var(--tl)">불러오는 중...</div>
-      </div>
     </div>`;
 
   // 히어로 별
@@ -1319,11 +1357,87 @@ function renderHome(){
   }
 
   loadTodayStrip();
+  loadHomeBoards();
   loadHomeBirthdays();
   loadHomeSchedule();
   loadHomeNotices();
+  restoreHomeFolds();
 }
 window.renderHome = renderHome;
+
+// 홈 접기 패널 (생일·학사일정) — 상태 기억
+function toggleHomeFold(key){
+  const map = { bday:'home-birthday', sched:'home-schedule' };
+  const el = $I(map[key]); const ar = $I('fold-ar-'+key);
+  if(!el) return;
+  const open = el.style.display === 'none';
+  el.style.display = open ? 'block' : 'none';
+  if(ar) ar.style.transform = open ? 'rotate(180deg)' : '';
+  try { localStorage.setItem('gyosa_fold_'+key, open?'1':'0'); } catch(e){}
+}
+window.toggleHomeFold = toggleHomeFold;
+function restoreHomeFolds(){
+  ['bday','sched'].forEach(key=>{
+    let v = '0';
+    try { v = localStorage.getItem('gyosa_fold_'+key) || '0'; } catch(e){}
+    if(v==='1') toggleHomeFold(key);
+  });
+}
+
+// 홈 게시판 보드: 전체 게시판 + 내 기관 게시판 최근 글
+async function loadHomeBoards(){
+  const box = $I('home-boards'); if(!box) return;
+  try {
+    const snap = await getDocs(query(collection(db,'boardPosts'), orderBy('createdAt','desc'), limit(40)));
+    const posts = [];
+    snap.forEach(d=>posts.push({id:d.id, ...d.data()}));
+    const now = Date.now();
+    const isPin = p => p.pinned && (!p.pinUntil || (p.pinUntil?.toMillis?.()||0) > now);
+    const unread = p => !(p.readBy||[]).includes(CU.uid);
+
+    const card = p => `
+      <div class="hb-card${isPin(p)?' pin':''}" onclick="location.href='board.html?post=${p.id}'">
+        ${p.firstThumb?`<div class="hb-thumb"><img src="${p.firstThumb}" alt="" loading="lazy"></div>`:''}
+        <div class="hb-b">
+          <div class="hb-h">
+            ${isPin(p)?'<span class="hb-pin">📌 고정</span>':''}
+            ${p.category?`<span class="hb-cat">${esc(p.category)}</span>`:''}
+            ${unread(p)?'<span class="hb-new"></span>':''}
+          </div>
+          <div class="hb-t">${esc(p.title||'')}</div>
+          <div class="hb-m">${esc(p.authorName||'')} · ${(p.commentCount||0)>0?`💬 ${p.commentCount} · `:''}${p.imageCount?`📷 ${p.imageCount} · `:''}${fmtHm(p.createdAt)}</div>
+        </div>
+      </div>`;
+
+    const pick = (boardKey, n) => {
+      const arr = posts.filter(p=>p.board===boardKey);
+      const pins = arr.filter(isPin);
+      const rest = arr.filter(p=>!isPin(p));
+      return pins.concat(rest).slice(0,n);
+    };
+    const allPosts = pick('all', 4);
+    const orgPosts = pick(CU.org, 4);
+    const orgName = ORGS[CU.org]||CU.org;
+
+    let html = '';
+    if(allPosts.length){
+      html += `<div class="hb-sec">📋 전체 게시판 <a href="board.html">더보기 ›</a></div>
+        <div class="hb-deck">${allPosts.map(card).join('')}</div>`;
+    }
+    if(orgPosts.length){
+      html += `<div class="hb-sec">🏫 ${esc(orgName)} 게시판 <a href="board.html">더보기 ›</a></div>
+        <div class="hb-deck">${orgPosts.map(card).join('')}</div>`;
+    }
+    box.innerHTML = html;
+  } catch(e){ box.innerHTML=''; }
+}
+function fmtHm(ts){
+  if(!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts.seconds*1000);
+  const now = new Date();
+  const same = d.getFullYear()===now.getFullYear() && d.getMonth()===now.getMonth() && d.getDate()===now.getDate();
+  return same ? `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` : `${d.getMonth()+1}/${d.getDate()}`;
+}
 
 // ③ 오늘 한눈에 (내 출근 · 오늘 일정 · 오늘 생일)
 async function loadTodayStrip(){
@@ -2753,118 +2867,130 @@ window.updEditOrgMode = updEditOrgMode;
 
 function openMyInfo(){
   const el=document.createElement('div'); el.id='my-info-mod';
+  const c = STAFF_CACHE[CU.uid] || CU || {};
+  const IN = 'height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none;font-family:inherit';
+  const need = (v)=> v ? '' : '<span style="font-size:11px;color:#dc2626;font-weight:700;margin-left:5px">미입력</span>';
+  const show = (v)=> v ? esc(v) : '<span style="color:#dc2626;font-weight:600">미입력</span>';
+
   el.innerHTML=`
-    <div class="mov">
+    <div class="mov" style="align-items:center;padding:20px">
       <div class="mbk" onclick="document.getElementById('my-info-mod').remove()"></div>
-      <div class="mbox">
+      <div class="mbox" style="max-width:520px;border-radius:20px;max-height:90vh">
         <div class="mtitle">내 정보</div>
-        <div style="background:var(--iv);border-radius:10px;padding:16px;margin-bottom:20px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
-            <div><span style="color:var(--tl)">이름</span><div style="font-weight:700;margin-top:2px">${CU.name}</div></div>
-            <div><span style="color:var(--tl)">아이디</span><div style="font-weight:700;margin-top:2px">${CU.id}</div></div>
-            <div><span style="color:var(--tl)">기관</span><div style="font-weight:700;margin-top:2px">${ORGS[CU.org]||CU.org}</div></div>
-            <div><span style="color:var(--tl)">부서</span><div style="font-weight:700;margin-top:2px">${CU.dept||'-'}</div></div>
-            <div><span style="color:var(--tl)">권한</span><div style="font-weight:700;margin-top:2px">${ROLES[CU.role]||CU.role}</div></div>
+
+        <div style="display:flex;gap:6px;margin-bottom:16px">
+          <button class="subtbtn on" id="mi-t1" onclick="switchMyTab('basic')" style="padding:8px 16px">👤 기본</button>
+          <button class="subtbtn" id="mi-t2" onclick="switchMyTab('hr')" style="padding:8px 16px">📇 인사정보</button>
+          <button class="subtbtn" id="mi-t3" onclick="switchMyTab('pw')" style="padding:8px 16px">🔑 비밀번호</button>
+        </div>
+
+        <!-- 기본: 명부에 표시되는 내 정보 전체 -->
+        <div id="mi-basic">
+          <div style="background:var(--iv);border-radius:10px;padding:16px;margin-bottom:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 10px;font-size:13px">
+              <div><span style="color:var(--tl)">이름</span><div style="font-weight:700;margin-top:2px">${esc(CU.name||'')}</div></div>
+              <div><span style="color:var(--tl)">아이디</span><div style="font-weight:700;margin-top:2px">${esc(CU.id||'')}</div></div>
+              <div><span style="color:var(--tl)">기관</span><div style="font-weight:700;margin-top:2px">${ORGS[CU.org]||CU.org||''}</div></div>
+              <div><span style="color:var(--tl)">부서</span><div style="font-weight:700;margin-top:2px">${esc(CU.dept||'-')}</div></div>
+              <div><span style="color:var(--tl)">권한</span><div style="font-weight:700;margin-top:2px">${ROLES[CU.role]||CU.role||''}</div></div>
+              <div><span style="color:var(--tl)">직책</span><div style="font-weight:700;margin-top:2px">${esc(c.position||'-')}</div></div>
+              <div><span style="color:var(--tl)">담당</span><div style="font-weight:700;margin-top:2px">${esc(c.duty||'-')}</div></div>
+              <div><span style="color:var(--tl)">입사일</span><div style="font-weight:700;margin-top:2px">${esc(c.hireDate||'-')}</div></div>
+              <div><span style="color:var(--tl)">휴대폰</span><div style="font-weight:700;margin-top:2px">${show(c.phone)}</div></div>
+              <div><span style="color:var(--tl)">이메일</span><div style="font-weight:700;margin-top:2px;word-break:break-all">${show(c.email)}</div></div>
+              <div><span style="color:var(--tl)">생년월일</span><div style="font-weight:700;margin-top:2px">${show(c.birth)}</div></div>
+              <div style="grid-column:1/-1"><span style="color:var(--tl)">집 주소</span><div style="font-weight:700;margin-top:2px">${show(c.address)}</div></div>
+            </div>
+          </div>
+          <p style="font-size:11.5px;color:var(--tl);margin-bottom:12px">기관·부서·권한·직책·입사일은 관리자만 바꿀 수 있습니다.
+            연락처·생년월일·주소·이메일은 <b>「📇 인사정보」 탭</b>에서 직접 수정하세요.</p>
+          <div class="mact">
+            <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+            <button class="bp" onclick="switchMyTab('hr')">✏️ 수정하기</button>
           </div>
         </div>
-        <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:12px">🔑 비밀번호 변경</div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
-          <div class="fgrp"><label>현재 비밀번호</label>
-            <input id="cp-cur" type="password" placeholder="현재 비밀번호" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-          <div class="fgrp"><label>새 비밀번호</label>
-            <input id="cp-new" type="password" placeholder="새 비밀번호 (6자 이상)" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-          <div class="fgrp"><label>새 비밀번호 확인</label>
-            <input id="cp-con" type="password" placeholder="새 비밀번호 재입력" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+
+        <!-- 인사정보: 본인 수정 -->
+        <div id="mi-hr" style="display:none">
+          <div style="background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--gd);line-height:1.6">
+            🔒 주소·생년월일은 <b>본인과 관리자만</b> 볼 수 있습니다. 휴대폰·이메일은 명부에서 선생님들에게 공개됩니다.
+          </div>
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div class="fgrp"><label>생년월일 ${need(c.birth)}</label>
+              <input id="mi-birth" type="date" value="${c.birth||''}" style="${IN}"></div>
+            <div class="fgrp"><label>휴대폰 번호 ${need(c.phone)}</label>
+              <input id="mi-phone" type="tel" value="${esc(c.phone||'')}" placeholder="010-1234-5678" style="${IN}"></div>
+            <div class="fgrp"><label>주로 사용하는 이메일 ${need(c.email)}</label>
+              <input id="mi-email" type="email" value="${esc(c.email||'')}" placeholder="example@gmail.com" style="${IN}"></div>
+            <div class="fgrp"><label>집 주소 ${need(c.address)}</label>
+              <input id="mi-addr" type="text" value="${esc(c.address||'')}" placeholder="경기도 용인시 ..." style="${IN}"></div>
+            <div class="fgrp"><label>담당 업무 (선택)</label>
+              <input id="mi-duty" type="text" value="${esc(c.duty||'')}" placeholder="예: 초등 3학년 담임 · 음악" style="${IN}"></div>
+          </div>
+          <div class="mact" style="margin-top:16px">
+            <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+            <button class="bp" onclick="saveMyHR()">인사정보 저장</button>
+          </div>
         </div>
-        <div class="mact">
-          <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
-          <button class="bp" onclick="changeMyPw()">비밀번호 변경</button>
+
+        <!-- 비밀번호 -->
+        <div id="mi-pw" style="display:none">
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+            <div class="fgrp"><label>현재 비밀번호</label>
+              <input id="cp-cur" type="password" placeholder="현재 비밀번호" style="${IN}"></div>
+            <div class="fgrp"><label>새 비밀번호</label>
+              <input id="cp-new" type="password" placeholder="새 비밀번호 (6자 이상)" style="${IN}"></div>
+            <div class="fgrp"><label>새 비밀번호 확인</label>
+              <input id="cp-con" type="password" placeholder="새 비밀번호 재입력" style="${IN}"></div>
+          </div>
+          <div class="mact">
+            <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+            <button class="bp" onclick="changeMyPw()">비밀번호 변경</button>
+          </div>
         </div>
       </div>
     </div>`;
   document.body.appendChild(el);
 }
-
-function openEditStaff(uid, name, org, dept, role){
-  const el=document.createElement('div'); el.id='edit-staff-mod';
-  const cur = STAFF_CACHE[uid] || {};
-  const acStatus = cur.acStatus || 'active';
-  const deptOpts = (o, sel) => o==='jihyebit'
-    ? `<option value="전체"${sel==='전체'?' selected':''}>전체</option>`
-    : `<option value="초등부"${sel==='초등부'?' selected':''}>초등부</option><option value="중고등부"${sel==='중고등부'?' selected':''}>중고등부</option><option value="행정실"${sel==='행정실'?' selected':''}>행정실</option>`;
-  el.innerHTML=`
-    <div class="mov">
-      <div class="mbk" onclick="document.getElementById('edit-staff-mod').remove()"></div>
-      <div class="mbox">
-        <div class="mtitle">교직원 정보 수정</div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
-          <div class="fgrp"><label>이름</label>
-            <input id="es-name" type="text" value="${name}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-          <div class="fgrp"><label>생일 (선택)</label>
-            <input id="es-birth" type="date" value="${cur.birth||''}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-          <div class="fgrp"><label>권한</label>
-            <select id="es-role" onchange="updEditOrgMode()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-              <option value="teacher"${role==='teacher'?' selected':''}>교사</option>
-              <option value="tab_admin"${role==='tab_admin'?' selected':''}>부서장</option>
-              <option value="org_admin"${role==='org_admin'?' selected':''}>기관관리자</option>
-              <option value="super"${role==='super'?' selected':''}>슈퍼관리자</option>
-            </select></div>
-          <div class="fgrp"><label>기관</label>
-            <div id="es-org-single" style="${role==='org_admin'?'display:none':''}">
-              <select id="es-org" onchange="updEditDept()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-                <option value="jihyebit"${org==='jihyebit'?' selected':''}>지혜빛</option>
-                <option value="daniel"${org==='daniel'?' selected':''}>다니엘 아마츠</option>
-              </select>
-            </div>
-            <div id="es-org-multi" style="${role==='org_admin'?'':'display:none'};padding:8px 0">
-              <label style="display:flex;align-items:center;gap:8px;font-weight:400;margin-bottom:6px;cursor:pointer">
-                <input type="checkbox" id="es-org-jihyebit" ${(cur.orgs||[org]).includes('jihyebit')?'checked':''} style="width:16px;height:16px"> 지혜빛</label>
-              <label style="display:flex;align-items:center;gap:8px;font-weight:400;cursor:pointer">
-                <input type="checkbox" id="es-org-daniel" ${(cur.orgs||[org]).includes('daniel')?'checked':''} style="width:16px;height:16px"> 다니엘 아마츠</label>
-              <span style="font-size:11px;color:var(--tl);display:block;margin-top:6px">기관관리자는 여러 기관을 함께 관리할 수 있습니다.</span>
-            </div></div>
-          <div class="fgrp" id="es-dept-wrap" style="${role==='org_admin'?'display:none':''}"><label>부서</label>
-            <select id="es-dept" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">${deptOpts(org, dept)}</select></div>
-          <div class="fgrp"><label>계정 상태</label>
-            <select id="es-acstatus" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-              <option value="active"${acStatus==='active'?' selected':''}>재직 (로그인 가능)</option>
-              <option value="leave"${acStatus==='leave'?' selected':''}>휴직 (로그인 차단)</option>
-              <option value="quit"${acStatus==='quit'?' selected':''}>퇴직 (로그인 차단)</option>
-            </select></div>
-        </div>
-        <div class="mact">
-          <button class="bs" onclick="document.getElementById('edit-staff-mod').remove()">취소</button>
-          <button class="bp" onclick="saveEditStaff('${uid}')">저장</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
-}
-
-function openResetPw(uid){
-  const el=document.createElement('div'); el.id='reset-pw-mod';
-  el.innerHTML=`
-    <div class="mov">
-      <div class="mbk" onclick="document.getElementById('reset-pw-mod').remove()"></div>
-      <div class="mbox">
-        <div class="mtitle">비밀번호 재설정</div>
-        <div class="msub">Firebase 보안 정책상 클라이언트에서는 직접 재설정이 제한됩니다.</div>
-        <div style="background:var(--iv);border-radius:10px;padding:16px 20px;margin-bottom:20px;font-size:13px;color:var(--ts);line-height:1.7">
-          비밀번호 재설정은 Firebase 콘솔에서 직접 변경하거나, 추후 Cloud Function으로 구현됩니다.
-        </div>
-        <div class="mact">
-          <button class="bp" onclick="document.getElementById('reset-pw-mod').remove()">확인</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.appendChild(el);
-}
-
-// ── 전역 노출 (onclick 호환) ──────────────
-window.showTab = showTab;
-window.showSubTab = showSubTab;
-window.showAdmTab = showAdmTab;
 window.openMyInfo = openMyInfo;
+
+function switchMyTab(t){
+  ['basic','hr','pw'].forEach(k=>{ const e=$I('mi-'+k); if(e) e.style.display='none'; });
+  ['mi-t1','mi-t2','mi-t3'].forEach(id=>{ const e=$I(id); if(e) e.classList.remove('on'); });
+  const map = {basic:'mi-t1', hr:'mi-t2', pw:'mi-t3'};
+  const e = $I('mi-'+t); if(e) e.style.display='block';
+  const b = $I(map[t]); if(b) b.classList.add('on');
+}
+window.switchMyTab = switchMyTab;
+
+// 본인 인사정보 저장 (변경 내역은 활동 로그에 기록 — 수퍼관리자 열람)
+async function saveMyHR(){
+  const birth   = $I('mi-birth')?.value || '';
+  const phone   = ($I('mi-phone')?.value || '').trim();
+  const email   = ($I('mi-email')?.value || '').trim();
+  const address = ($I('mi-addr')?.value  || '').trim();
+  const duty    = ($I('mi-duty')?.value  || '').trim();
+  if(phone && !/^01[016789][-\s]?\d{3,4}[-\s]?\d{4}$/.test(phone.replace(/\s/g,''))){
+    return toast('휴대폰 번호 형식을 확인하세요. (예: 010-1234-5678)','err');
+  }
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    return toast('이메일 형식을 확인하세요.','err');
+  }
+  try {
+    const before = STAFF_CACHE[CU.uid] || CU || {};
+    // 변경된 항목만 골라 로그 문구 생성
+    const FIELDS = [['birth','생년월일',birth],['phone','휴대폰',phone],['email','이메일',email],['address','주소',address],['duty','담당',duty]];
+    const changes = FIELDS.filter(([k,_,v]) => (before[k]||'') !== v)
+                          .map(([k,l,v]) => `${l}: "${before[k]||'(없음)'}" → "${v||'(삭제)'}"`);
+    await updateDoc(doc(db,'staff',CU.uid), { birth, phone, email, address, duty });
+    CU.birth=birth; CU.phone=phone; CU.email=email; CU.address=address; CU.duty=duty;
+    if(STAFF_CACHE[CU.uid]) Object.assign(STAFF_CACHE[CU.uid], {birth, phone, email, address, duty});
+    if(changes.length && window.logActivity) logActivity('수정','내 정보', CU.name||'', changes.join(' / '));
+    toast('인사정보를 저장했습니다.','ok');
+    document.getElementById('my-info-mod')?.remove();
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}
+window.saveMyHR = saveMyHR;
 window.openMod = openMod;
 window.closeMod = closeMod;
 window.pickP = pickP;

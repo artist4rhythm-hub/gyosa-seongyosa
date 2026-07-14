@@ -519,8 +519,11 @@ async function doLogin() {
 async function doLogout() {
   // 접속 기록 정리 + 로그아웃 기록 (presence.js)
   try { if(window.endSession) await window.endSession('직접 로그아웃'); } catch(e){}
-  await signOut(auth);
-  $I('lid').value = ''; $I('lpw').value = '';
+  try { await signOut(auth); } catch(e){}
+  // 저장된 로그인 흔적 정리
+  try { ['gyosa_role','gyosa_name','gyosa_uid','gyosa_pagedeny'].forEach(k=>localStorage.removeItem(k)); } catch(e){}
+  // 어느 화면에서든 → 최초 로그인 화면으로
+  location.href = 'index.html';
 }
 
 window.doLogin = doLogin;
@@ -3240,11 +3243,12 @@ function openMyInfo(){
   const c = STAFF_CACHE[CU.uid] || CU || {};
   const IN = 'height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none;font-family:inherit';
   const need = (v)=> v ? '' : '<span style="font-size:11px;color:#dc2626;font-weight:700;margin-left:5px">미입력</span>';
+  const show = (v)=> v ? esc(v) : '<span style="color:#dc2626;font-weight:600">미입력</span>';
 
   el.innerHTML=`
-    <div class="mov">
+    <div class="mov" style="align-items:center;padding:20px">
       <div class="mbk" onclick="document.getElementById('my-info-mod').remove()"></div>
-      <div class="mbox">
+      <div class="mbox" style="max-width:520px;border-radius:20px;max-height:90vh">
         <div class="mtitle">내 정보</div>
 
         <div style="display:flex;gap:6px;margin-bottom:16px">
@@ -3253,40 +3257,48 @@ function openMyInfo(){
           <button class="subtbtn" id="mi-t3" onclick="switchMyTab('pw')" style="padding:8px 16px">🔑 비밀번호</button>
         </div>
 
-        <!-- 기본 -->
+        <!-- 기본: 명부에 표시되는 내 정보 전체 -->
         <div id="mi-basic">
-          <div style="background:var(--iv);border-radius:10px;padding:16px;margin-bottom:8px">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+          <div style="background:var(--iv);border-radius:10px;padding:16px;margin-bottom:10px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 10px;font-size:13px">
               <div><span style="color:var(--tl)">이름</span><div style="font-weight:700;margin-top:2px">${esc(CU.name||'')}</div></div>
               <div><span style="color:var(--tl)">아이디</span><div style="font-weight:700;margin-top:2px">${esc(CU.id||'')}</div></div>
               <div><span style="color:var(--tl)">기관</span><div style="font-weight:700;margin-top:2px">${ORGS[CU.org]||CU.org||''}</div></div>
               <div><span style="color:var(--tl)">부서</span><div style="font-weight:700;margin-top:2px">${esc(CU.dept||'-')}</div></div>
               <div><span style="color:var(--tl)">권한</span><div style="font-weight:700;margin-top:2px">${ROLES[CU.role]||CU.role||''}</div></div>
               <div><span style="color:var(--tl)">직책</span><div style="font-weight:700;margin-top:2px">${esc(c.position||'-')}</div></div>
+              <div><span style="color:var(--tl)">담당</span><div style="font-weight:700;margin-top:2px">${esc(c.duty||'-')}</div></div>
+              <div><span style="color:var(--tl)">입사일</span><div style="font-weight:700;margin-top:2px">${esc(c.hireDate||'-')}</div></div>
+              <div><span style="color:var(--tl)">휴대폰</span><div style="font-weight:700;margin-top:2px">${show(c.phone)}</div></div>
+              <div><span style="color:var(--tl)">이메일</span><div style="font-weight:700;margin-top:2px;word-break:break-all">${show(c.email)}</div></div>
+              <div><span style="color:var(--tl)">생년월일</span><div style="font-weight:700;margin-top:2px">${show(c.birth)}</div></div>
+              <div style="grid-column:1/-1"><span style="color:var(--tl)">집 주소</span><div style="font-weight:700;margin-top:2px">${show(c.address)}</div></div>
             </div>
           </div>
-          <p style="font-size:11.5px;color:var(--tl)">기관·부서·권한·직책은 관리자만 바꿀 수 있습니다.</p>
+          <p style="font-size:11.5px;color:var(--tl);margin-bottom:12px">기관·부서·권한·직책·입사일은 관리자만 바꿀 수 있습니다.
+            연락처·생년월일·주소·이메일은 <b>「📇 인사정보」 탭</b>에서 직접 수정하세요.</p>
+          <div class="mact">
+            <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+            <button class="bp" onclick="switchMyTab('hr')">✏️ 수정하기</button>
+          </div>
         </div>
 
-        <!-- 인사정보 -->
+        <!-- 인사정보: 본인 수정 -->
         <div id="mi-hr" style="display:none">
           <div style="background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--gd);line-height:1.6">
-            🔒 <b>재직증명서 발급에 필요한 정보</b>입니다. 주소·생년월일·연락처는 <b>본인과 관리자만</b> 볼 수 있습니다.
-            (다른 선생님에게는 휴대폰 번호만 명부에 공개됩니다.)
+            🔒 주소·생년월일은 <b>본인과 관리자만</b> 볼 수 있습니다. 휴대폰·이메일은 명부에서 선생님들에게 공개됩니다.
           </div>
           <div style="display:flex;flex-direction:column;gap:11px">
             <div class="fgrp"><label>생년월일 ${need(c.birth)}</label>
               <input id="mi-birth" type="date" value="${c.birth||''}" style="${IN}"></div>
             <div class="fgrp"><label>휴대폰 번호 ${need(c.phone)}</label>
               <input id="mi-phone" type="tel" value="${esc(c.phone||'')}" placeholder="010-1234-5678" style="${IN}"></div>
+            <div class="fgrp"><label>주로 사용하는 이메일 ${need(c.email)}</label>
+              <input id="mi-email" type="email" value="${esc(c.email||'')}" placeholder="example@gmail.com" style="${IN}"></div>
             <div class="fgrp"><label>집 주소 ${need(c.address)}</label>
               <input id="mi-addr" type="text" value="${esc(c.address||'')}" placeholder="경기도 용인시 ..." style="${IN}"></div>
             <div class="fgrp"><label>담당 업무 (선택)</label>
               <input id="mi-duty" type="text" value="${esc(c.duty||'')}" placeholder="예: 초등 3학년 담임 · 음악" style="${IN}"></div>
-          </div>
-          <div style="background:var(--iv);border-radius:9px;padding:11px 13px;margin-top:14px;font-size:12px;color:var(--ts)">
-            <b style="color:var(--gd)">입사일</b> ${c.hireDate ? esc(c.hireDate) : '<span style="color:#dc2626;font-weight:700">미입력 — 관리자에게 요청하세요</span>'}
-            <div style="font-size:11px;color:var(--tl);margin-top:3px">입사일·직책·고용형태는 관리자가 입력합니다.</div>
           </div>
           <div class="mact" style="margin-top:16px">
             <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
@@ -3324,19 +3336,29 @@ function switchMyTab(t){
 }
 window.switchMyTab = switchMyTab;
 
-// 본인 인사정보 저장
+// 본인 인사정보 저장 (변경 내역은 활동 로그에 기록 — 수퍼관리자 열람)
 async function saveMyHR(){
   const birth   = $I('mi-birth')?.value || '';
   const phone   = ($I('mi-phone')?.value || '').trim();
+  const email   = ($I('mi-email')?.value || '').trim();
   const address = ($I('mi-addr')?.value  || '').trim();
   const duty    = ($I('mi-duty')?.value  || '').trim();
   if(phone && !/^01[016789][-\s]?\d{3,4}[-\s]?\d{4}$/.test(phone.replace(/\s/g,''))){
     return toast('휴대폰 번호 형식을 확인하세요. (예: 010-1234-5678)','err');
   }
+  if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    return toast('이메일 형식을 확인하세요.','err');
+  }
   try {
-    await updateDoc(doc(db,'staff',CU.uid), { birth, phone, address, duty });
-    CU.birth=birth; CU.phone=phone; CU.address=address; CU.duty=duty;
-    if(STAFF_CACHE[CU.uid]) Object.assign(STAFF_CACHE[CU.uid], {birth, phone, address, duty});
+    const before = STAFF_CACHE[CU.uid] || CU || {};
+    // 변경된 항목만 골라 로그 문구 생성
+    const FIELDS = [['birth','생년월일',birth],['phone','휴대폰',phone],['email','이메일',email],['address','주소',address],['duty','담당',duty]];
+    const changes = FIELDS.filter(([k,_,v]) => (before[k]||'') !== v)
+                          .map(([k,l,v]) => `${l}: "${before[k]||'(없음)'}" → "${v||'(삭제)'}"`);
+    await updateDoc(doc(db,'staff',CU.uid), { birth, phone, email, address, duty });
+    CU.birth=birth; CU.phone=phone; CU.email=email; CU.address=address; CU.duty=duty;
+    if(STAFF_CACHE[CU.uid]) Object.assign(STAFF_CACHE[CU.uid], {birth, phone, email, address, duty});
+    if(changes.length && window.logActivity) logActivity('수정','내 정보', CU.name||'', changes.join(' / '));
     toast('인사정보를 저장했습니다.','ok');
     document.getElementById('my-info-mod')?.remove();
   } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }

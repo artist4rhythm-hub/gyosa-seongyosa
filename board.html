@@ -196,6 +196,16 @@ onAuthStateChanged(auth, async (user)=>{
     await loadPosts();
     window.hideLoading && window.hideLoading();
     showBoard('all');
+    // 홈 카드에서 넘어온 경우 (?post=ID) 해당 글 바로 열기
+    try {
+      const pid = new URLSearchParams(location.search).get('post');
+      if(pid && POSTS.some(p=>p.id===pid)){
+        const tp = POSTS.find(p=>p.id===pid);
+        if(tp.board && tp.board!=='all') showBoard(tp.board);
+        openPost(pid);
+        history.replaceState(null, '', 'board.html');   // 새로고침 시 반복 방지
+      }
+    } catch(e){}
     // 마지막 게시판 방문 시각 갱신 (홈 '새 게시글' 알림 리셋용)
     updateDoc(doc(db,'staff',CU.uid), {lastBoardSeen:Timestamp.now()}).catch(()=>{});
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
