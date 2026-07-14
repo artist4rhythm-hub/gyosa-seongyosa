@@ -185,6 +185,7 @@ onAuthStateChanged(auth, async (user)=>{
     if(ac==='leave'||ac==='quit'){ $I('gate-msg').textContent= ac==='quit'?'퇴직 처리된 계정입니다.':'휴직 중인 계정입니다.'; $I('gate-btn').style.display='inline-block'; return; }
     $I('gate').style.display='none'; $I('ms').style.display='flex';
     window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'board')) return;
   renderShell('board', CU);
     window.showLoading && window.showLoading('불러오는 중…');
     
@@ -315,6 +316,71 @@ function renderBoard(){
   const pinnedHtml = pinned.length ? pinned.map(p=>postRow(p,true)).join('') : '';
   const normalHtml = normal.map(p=>postRow(p,false)).join('');
 
+  // ══ 보드판: 카드형 미리보기 (검색 중이 아닐 때만) ══
+  const unread = p => !(p.readBy||[]).includes(CU.uid);
+  const thumbOf = p => {
+    const vid = youtubeId(p.link);
+    if(vid) return { src:`https://img.youtube.com/vi/${vid}/mqdefault.jpg`, video:true };
+    if(isImageUrl(p.link)) return { src:p.link, video:false };
+    return null;
+  };
+  const deckCard = (p, pin) => {
+    const th = thumbOf(p);
+    const cc = p.commentCount||0;
+    const lk = (p.likes||[]).length;
+    return `<div class="bd-card${pin?' pin':''}" onclick="openPost('${p.id}')">
+      ${th ? `<div class="bd-thumb"><img src="${esc(th.src)}" alt="" loading="lazy" onerror="this.parentElement.style.display='none'">${th.video?'<span class="bd-play">▶</span>':''}</div>` : ''}
+      <div class="bd-body">
+        <div class="bd-head">
+          ${pin?'<span class="bd-pin">📌 고정</span>':''}
+          ${p.category?`<span class="bd-cat">${esc(p.category)}</span>`:''}
+          ${p.boardDept?`<span class="bd-dept">${esc(p.boardDept)}</span>`:''}
+          ${unread(p)?'<span class="bd-new" title="아직 읽지 않은 글"></span>':''}
+        </div>
+        <div class="bd-title">${esc(p.title||'(제목 없음)')}</div>
+        ${p.content?`<div class="bd-ex">${esc(p.content)}</div>`:''}
+        <div class="bd-meta">
+          <span>${esc(p.authorName||'')}</span>
+          <span class="bd-dot">·</span><span>${fmtShort(p.createdAt)}</span>
+          ${cc>0?`<span class="bd-cc">💬 ${cc}</span>`:''}
+          ${lk>0?`<span class="bd-lk">♥ ${lk}</span>`:''}
+        </div>
+      </div>
+    </div>`;
+  };
+  const deckPosts = normal.slice(0, 8);
+  const boardDeck = (!kw && (pinned.length || deckPosts.length)) ? `
+    <div class="bd-deck-wrap">
+      <style>
+        .bd-deck-wrap{margin-bottom:18px}
+        .bd-sec{font-size:12.5px;font-weight:800;color:var(--gm);margin:2px 2px 8px;display:flex;align-items:center;gap:6px}
+        .bd-deck{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-bottom:12px}
+        .bd-card{background:var(--wh);border:1px solid var(--ivd);border-radius:13px;overflow:hidden;cursor:pointer;transition:all .14s;display:flex;flex-direction:column}
+        .bd-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(30,57,50,.12);border-color:var(--gm)}
+        .bd-card.pin{border:1.5px solid var(--gold);background:#FFFDF5}
+        .bd-thumb{position:relative;width:100%;aspect-ratio:16/9;background:var(--iv);overflow:hidden}
+        .bd-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+        .bd-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;padding-left:3px}
+        .bd-body{padding:11px 13px 12px;display:flex;flex-direction:column;gap:5px;flex:1}
+        .bd-head{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-height:16px}
+        .bd-pin{font-size:10px;background:var(--goldp);color:var(--goldd);padding:2px 7px;border-radius:100px;font-weight:800}
+        .bd-cat{font-size:10px;background:var(--gp);color:var(--gd);padding:2px 7px;border-radius:100px;font-weight:700}
+        .bd-dept{font-size:10px;background:#e0f2fe;color:#0369a1;padding:2px 7px;border-radius:100px;font-weight:700}
+        .bd-new{width:8px;height:8px;border-radius:50%;background:#16a34a;margin-left:auto;flex:none;box-shadow:0 0 0 3px rgba(22,163,74,.15)}
+        .bd-title{font-size:14px;font-weight:800;color:var(--gd);line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+        .bd-ex{font-size:12px;color:var(--ts);line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+        .bd-meta{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--tl);margin-top:auto;padding-top:4px;flex-wrap:wrap}
+        .bd-dot{opacity:.6}
+        .bd-cc{color:var(--gm);font-weight:700}
+        .bd-lk{color:#dc2626;font-weight:700}
+        .bd-more{border-top:1px solid var(--ivd);margin:4px 0 14px}
+      </style>
+      ${pinned.length?`<div class="bd-sec">📌 고정글</div><div class="bd-deck">${pinned.map(p=>deckCard(p,true)).join('')}</div>`:''}
+      ${deckPosts.length?`<div class="bd-sec">🗂️ 최근 글</div><div class="bd-deck">${deckPosts.map(p=>deckCard(p,false)).join('')}</div>`:''}
+      <div class="bd-more"></div>
+      <div class="bd-sec" style="color:var(--tl)">📃 전체 목록</div>
+    </div>` : '';
+
   // 분류 필터 칩 (검색 아닐 때)
   const catFilter = (!kw && CATEGORIES.length) ? `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
@@ -344,6 +410,7 @@ function renderBoard(){
       <p class="adesc">${desc}</p>
       ${isAdmin()?`<button class="bs" style="margin-bottom:12px" onclick="openCatManage()">⚙️ 분류 관리</button>`:''}
       ${catFilter}`}
+      ${!catFilterVal ? boardDeck : ''}
       ${pinnedHtml}
       ${(kw?normalHtml:shownNormal) || '<div class="empty">아직 게시글이 없습니다. 첫 글을 작성해보세요.</div>'}
     </div>`;
