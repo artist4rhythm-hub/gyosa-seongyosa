@@ -303,7 +303,8 @@ function renderBoard(){
   const postRow = (p, pin) => {
     const vid = youtubeId(p.link);
     const img = !vid && isImageUrl(p.link);
-    const badge = vid ? '<span class="vid-badge">▶ 영상</span>' : img ? '<span class="link-badge">🖼️ 이미지</span>' : (p.link?'<span class="link-badge">🔗 링크</span>':'');
+    const photoBadge = (p.imageCount||0)>0 ? `<span class="link-badge">📷 ${p.imageCount}장</span>` : '';
+    const badge = photoBadge + (vid ? '<span class="vid-badge">▶ 영상</span>' : img ? '<span class="link-badge">🖼️ 이미지</span>' : (p.link?'<span class="link-badge">🔗 링크</span>':''));
     const cc = (p.commentCount||0);
     const likeCnt = (p.likes||[]).length;
     const boardTag = kw ? `<span style="font-size:11px;color:var(--tl)">[${p.board==='all'?'전체':ORGS[p.board]}]</span> ` : '';
@@ -319,6 +320,7 @@ function renderBoard(){
   // ══ 보드판: 카드형 미리보기 (검색 중이 아닐 때만) ══
   const unread = p => !(p.readBy||[]).includes(CU.uid);
   const thumbOf = p => {
+    if(p.firstThumb) return { src:p.firstThumb, video:false };          // 첨부 사진 1번
     const vid = youtubeId(p.link);
     if(vid) return { src:`https://img.youtube.com/vi/${vid}/mqdefault.jpg`, video:true };
     if(isImageUrl(p.link)) return { src:p.link, video:false };
@@ -479,6 +481,11 @@ function openCompose(editId){
       <div class="fgrp"><label>제목</label><input type="text" id="cp-title" value="${editing?esc(editing.title).replace(/"/g,'&quot;'):''}" placeholder="제목"></div>
       <div class="fgrp"><label>내용 <span style="font-weight:400;color:var(--tl)">· @이름 으로 선생님을 언급하면 알림이 갑니다</span></label><textarea id="cp-content" rows="6" placeholder="내용을 입력하세요... (예: @홍길동 확인 부탁드려요)">${editing?esc(editing.content):''}</textarea></div>
       <div class="fgrp"><label>링크 (선택 · 유튜브는 영상 재생, 이미지 주소는 사진 표시)</label><input type="text" id="cp-link" value="${editing?esc(editing.link||'').replace(/"/g,'&quot;'):''}" placeholder="유튜브 / 이미지 주소(.jpg 등) / 기타 링크"></div>
+      <div class="fgrp">
+        <label>📷 사진 첨부 <span style="font-weight:400;color:var(--tl)">· 최대 ${CP_IMG_MAX}장, Full HD로 자동 압축</span> <span id="cp-img-cnt" style="font-weight:700;color:var(--gm)"></span></label>
+        <input type="file" id="cp-file" accept="image/*" multiple style="display:none" onchange="addComposeImages(this.files); this.value='';">
+        <div id="cp-imgs" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px"></div>
+      </div>
       <div class="fgrp" style="background:var(--iv);border-radius:8px;padding:12px">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="cp-pin" ${editing&&editing.pinned?'checked':''} onchange="document.getElementById('cp-pin-days').style.display=this.checked?'block':'none'" style="width:16px;height:16px"> 📌 상단 고정</label>
         <div id="cp-pin-days" style="display:${editing&&editing.pinned?'block':'none'};margin-top:8px">
@@ -497,6 +504,10 @@ function openCompose(editId){
         <button class="bp" onclick="${editing?`saveEdit('${editId}')`:'submitPost()'}">${editing?'수정 저장':'등록'}</button>
       </div>
     </div></div>`;
+  // 사진 상태 초기화
+  cpImgs = [];
+  renderComposeImgs();
+  if(editing) loadComposeImgs(editId);
   // 부서 드롭다운 초기화 (현재 부서 반영)
   updateCompDept(editing ? editing.boardDept : curDept);
   // 새 글이고 임시저장분이 있으면 복원 제안
@@ -550,6 +561,122 @@ function clearDraft(){ try{ localStorage.removeItem('board_draft'); }catch(e){} 
 function closeMod(){ $I('mwrap').innerHTML=''; }
 window.closeMod = closeMod;
 
+// ══════════ 📷 게시글 사진 첨부 (2단 저장: 썸네일 + FHD) ══════════
+let cpImgs = [];         // 새로 추가: {thumb, full} / 기존: {id, thumb, existing:true}
+const CP_IMG_MAX = 4;
+
+// 파일 → {thumb(480px), full(1920px, ≤700KB)}
+function compressBoardImage(file){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => {
+        const make = (MAX, q0, cap) => {
+          let w = img.width, h = img.height;
+          if(Math.max(w,h) > MAX){ const r = MAX/Math.max(w,h); w = Math.round(w*r); h = Math.round(h*r); }
+          const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+          cv.getContext('2d').drawImage(img, 0, 0, w, h);
+          let q = q0, data = cv.toDataURL('image/jpeg', q);
+          while(cap && data.length > cap && q > 0.4){ q -= 0.08; data = cv.toDataURL('image/jpeg', q); }
+          return data;
+        };
+        resolve({
+          thumb: make(480, 0.7, 80*1024),          // 목록·보드판용 (~40KB)
+          full:  make(1920, 0.8, 700*1024)          // Full HD 열람용 (≤700KB)
+        });
+      };
+      img.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => reject(new Error('파일을 읽을 수 없습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addComposeImages(files){
+  if(!files || !files.length) return;
+  const room = CP_IMG_MAX - cpImgs.length;
+  if(room <= 0) return toast(`사진은 최대 ${CP_IMG_MAX}장까지입니다.`,'err');
+  const picked = Array.from(files).slice(0, room);
+  if(files.length > room) toast(`최대 ${CP_IMG_MAX}장 — ${picked.length}장만 추가합니다.`,'err');
+  window.showLoading && window.showLoading('사진 압축 중…');
+  try {
+    for(let i=0;i<picked.length;i++){
+      window.setLoadStep && window.setLoadStep(`사진 ${i+1}/${picked.length} 압축 중…`, Math.round((i+1)/picked.length*100));
+      const r = await compressBoardImage(picked[i]);
+      cpImgs.push(r);
+    }
+  } catch(e){ toast('사진 처리 실패: '+(e.message||''),'err'); }
+  window.hideLoading && window.hideLoading();
+  renderComposeImgs();
+}
+window.addComposeImages = addComposeImages;
+
+function removeComposeImg(i){
+  cpImgs.splice(i,1);
+  renderComposeImgs();
+}
+window.removeComposeImg = removeComposeImg;
+
+function renderComposeImgs(){
+  const box = $I('cp-imgs'); if(!box) return;
+  box.innerHTML = cpImgs.map((im,i)=>`
+    <div style="position:relative;width:74px;height:74px;border-radius:10px;overflow:hidden;border:1px solid var(--ivd);flex:none">
+      <img src="${im.thumb}" style="width:100%;height:100%;object-fit:cover;display:block">
+      <button onclick="removeComposeImg(${i})" title="삭제"
+        style="position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.65);color:#fff;font-size:11px;cursor:pointer;line-height:1">✕</button>
+    </div>`).join('')
+    + (cpImgs.length < CP_IMG_MAX ? `
+    <button onclick="document.getElementById('cp-file').click()"
+      style="width:74px;height:74px;border-radius:10px;border:1.5px dashed var(--ivd);background:var(--iv);color:var(--tl);font-size:22px;cursor:pointer;flex:none">＋</button>` : '');
+  const cnt = $I('cp-img-cnt');
+  if(cnt) cnt.textContent = cpImgs.length ? `${cpImgs.length}/${CP_IMG_MAX}장` : '';
+}
+window.renderComposeImgs = renderComposeImgs;
+
+// 수정 모드: 기존 사진 불러오기
+async function loadComposeImgs(postId){
+  try {
+    const snap = await getDocs(query(collection(db,'boardImages'), where('postId','==',postId)));
+    const arr = [];
+    snap.forEach(d=>{ const x=d.data(); arr.push({ id:d.id, thumb:x.thumb, order:x.order||0, existing:true }); });
+    arr.sort((a,b)=>(a.order||0)-(b.order||0));
+    cpImgs = arr;
+    renderComposeImgs();
+  } catch(e){}
+}
+
+// 저장 후 이미지 반영 (신규 업로드 + 삭제 처리) → {imageCount, firstThumb}
+async function persistPostImages(postId){
+  // 1) 기존 중 삭제된 것 정리: 현재 cpImgs의 existing id 집합과 DB 비교
+  const keepIds = new Set(cpImgs.filter(x=>x.existing).map(x=>x.id));
+  try {
+    const snap = await getDocs(query(collection(db,'boardImages'), where('postId','==',postId)));
+    const dels = [];
+    snap.forEach(d=>{ if(!keepIds.has(d.id)) dels.push(d.id); });
+    for(const id of dels){ await deleteDoc(doc(db,'boardImages',id)); }
+  } catch(e){}
+  // 2) 새 이미지 업로드 + order 재부여
+  for(let i=0;i<cpImgs.length;i++){
+    const im = cpImgs[i];
+    if(im.existing){
+      try { await updateDoc(doc(db,'boardImages',im.id), { order:i }); } catch(e){}
+    } else {
+      try {
+        const ref = await addDoc(collection(db,'boardImages'), {
+          postId, order:i, thumb:im.thumb, data:im.full, createdAt:Timestamp.now()
+        });
+        im.id = ref.id; im.existing = true; delete im.full;
+      } catch(e){ toast('사진 업로드 실패: '+(e.message||''),'err'); }
+    }
+  }
+  return {
+    imageCount: cpImgs.length,
+    firstThumb: cpImgs.length ? cpImgs[0].thumb : ''
+  };
+}
+
 async function submitPost(){
   const board = $I('cp-board').value;
   const title = $I('cp-title').value.trim();
@@ -559,7 +686,7 @@ async function submitPost(){
   const boardDept = $I('cp-dept')?.value || '';
   const pinned = $I('cp-pin')?.checked || false;
   if(!title) return toast('제목을 입력하세요.','err');
-  if(!content && !link) return toast('내용이나 링크를 입력하세요.','err');
+  if(!content && !link && !cpImgs.length) return toast('내용·링크·사진 중 하나는 입력하세요.','err');
   const data = {
     board, boardDept, title, content, link, category,
     authorUid:CU.uid, authorName:CU.name, authorOrg:CU.org||'',
@@ -569,6 +696,12 @@ async function submitPost(){
   if(pinned){ data.pinUntil = calcPinUntil(); }
   try {
     const ref = await addDoc(collection(db,'boardPosts'), data);
+    if(cpImgs.length){
+      window.showLoading && window.showLoading('사진 업로드 중…');
+      const imeta = await persistPostImages(ref.id);
+      await updateDoc(doc(db,'boardPosts',ref.id), imeta);
+      window.hideLoading && window.hideLoading();
+    }
     notifyMentions(`${title} ${content}`, ref.id, title, board);
     clearDraft();
     toast('게시글을 등록했습니다.','ok');
@@ -621,12 +754,15 @@ async function saveEdit(id){
   if(pinned){ if(!p.pinned || $I('cp-pin-period')) data.pinUntil = calcPinUntil(); }
   else { data.pinUntil = null; }
   try {
-    await updateDoc(doc(db,'boardPosts',id), data);
+    window.showLoading && window.showLoading('저장 중…');
+    const imeta = await persistPostImages(id);
+    await updateDoc(doc(db,'boardPosts',id), { ...data, ...imeta });
+    window.hideLoading && window.hideLoading();
     toast('수정했습니다.','ok');
     closeMod();
     await loadPosts();
     showBoard(board);
-  } catch(e){ toast('수정 실패: '+e.message,'err'); }
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('수정 실패: '+e.message,'err'); }
 }
 window.saveEdit = saveEdit;
 
@@ -649,6 +785,7 @@ async function openPost(id){
       <div class="mtitle">${pinnedNow?'📌 ':''}${esc(p.title)}</div>
       <div class="msub">${catBadge}${esc(p.authorName)} · ${fmtFull(p.createdAt)}${p.updatedAt?' (수정됨)':''} · ${p.board==='all'?'전체':ORGS[p.board]}</div>
       ${media}
+      ${(p.imageCount||0)>0?`<div id="post-imgs" style="display:flex;flex-direction:column;gap:10px;margin:12px 0"><div style="font-size:12.5px;color:var(--tl);text-align:center;padding:16px;background:var(--iv);border-radius:10px">📷 사진 ${p.imageCount}장 불러오는 중…</div></div>`:''}
       ${p.content?`<div class="readbody">${esc(p.content)}</div>`:''}
       <div style="display:flex;align-items:center;gap:12px;margin:14px 0 4px">
         <button onclick="toggleLike('${p.id}')" style="display:inline-flex;align-items:center;gap:6px;background:${liked?'#fee2e2':'var(--iv)'};border:1.5px solid ${liked?'#fca5a5':'var(--ivd)'};border-radius:100px;padding:8px 16px;font-size:14px;font-weight:700;color:${liked?'#dc2626':'var(--ts)'};cursor:pointer">
@@ -673,9 +810,52 @@ async function openPost(id){
     </div></div>`;
   loadComments(id);
   markBoardNotifRead(id);
-  markRead(id);
+  markRead(id);  if((p.imageCount||0)>0) loadPostImages(id);
 }
 window.openPost = openPost;
+
+// 글 상세: FHD 사진 지연 로드
+async function loadPostImages(postId){
+  const box = $I('post-imgs'); if(!box) return;
+  try {
+    const snap = await getDocs(query(collection(db,'boardImages'), where('postId','==',postId)));
+    const arr = [];
+    snap.forEach(d=>{ const x=d.data(); arr.push({ order:x.order||0, data:x.data }); });
+    arr.sort((a,b)=>a.order-b.order);
+    if(!arr.length){ box.innerHTML=''; return; }
+    box.innerHTML = arr.map((im,i)=>`
+      <img src="${im.data}" loading="lazy" onclick="openLightbox(${i})"
+        style="width:100%;border-radius:12px;display:block;cursor:zoom-in;border:1px solid var(--ivd)">`).join('');
+    window.__lbImgs = arr.map(x=>x.data);
+  } catch(e){
+    box.innerHTML = '<div style="font-size:12px;color:#dc2626;padding:10px;text-align:center">사진을 불러오지 못했습니다.</div>';
+  }
+}
+
+// 라이트박스 (원본 크게 보기)
+function openLightbox(i){
+  const imgs = window.__lbImgs || [];
+  if(!imgs[i]) return;
+  let cur = i;
+  const lb = document.createElement('div'); lb.id='lightbox';
+  lb.style.cssText = 'position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out';
+  lb.innerHTML = `
+    <img id="lb-img" src="${imgs[cur]}" style="max-width:96%;max-height:92%;border-radius:8px;object-fit:contain;cursor:default" onclick="event.stopPropagation()">
+    ${imgs.length>1?`
+      <button id="lb-prev" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:20px;cursor:pointer">‹</button>
+      <button id="lb-next" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:20px;cursor:pointer">›</button>
+      <div id="lb-cnt" style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);color:#fff;font-size:13px;background:rgba(0,0,0,.5);padding:5px 14px;border-radius:100px">${cur+1} / ${imgs.length}</div>`:''}
+    <button style="position:absolute;top:14px;right:16px;width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:17px;cursor:pointer">✕</button>`;
+  const show = () => {
+    const im = lb.querySelector('#lb-img'); if(im) im.src = imgs[cur];
+    const c = lb.querySelector('#lb-cnt'); if(c) c.textContent = `${cur+1} / ${imgs.length}`;
+  };
+  lb.addEventListener('click', ()=>lb.remove());
+  lb.querySelector('#lb-prev')?.addEventListener('click', e=>{ e.stopPropagation(); cur=(cur-1+imgs.length)%imgs.length; show(); });
+  lb.querySelector('#lb-next')?.addEventListener('click', e=>{ e.stopPropagation(); cur=(cur+1)%imgs.length; show(); });
+  document.body.appendChild(lb);
+}
+window.openLightbox = openLightbox;
 
 // 좋아요 토글
 async function toggleLike(id){
@@ -834,6 +1014,11 @@ async function delPost(id){
   const p = POSTS.find(x=>x.id===id); if(!p) return;
   if(!confirm('이 게시글을 삭제할까요?')) return;
   try {
+    // 첨부 사진 먼저 삭제
+    try {
+      const isnap = await getDocs(query(collection(db,'boardImages'), where('postId','==',id)));
+      for(const d of isnap.docs){ await deleteDoc(doc(db,'boardImages',d.id)); }
+    } catch(e2){}
     await deleteDoc(doc(db,'boardPosts',id));
     toast('삭제했습니다.');
     closeMod();
