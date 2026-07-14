@@ -135,6 +135,12 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .cert-rep .repname{font-weight:700;letter-spacing:4px;}
 .cert-rep .stamp{position:absolute;left:calc(100% - 4mm);top:50%;transform:translateY(-50%);width:23mm;height:23mm;object-fit:contain;opacity:0.88;}
 .cert-footer{position:absolute;bottom:16mm;left:20mm;right:20mm;font-size:8.5pt;color:#555;z-index:1;padding:0 8mm;}
+/* 재직증명서: 항목이 많아 간격을 줄여 도장·하단과 겹치지 않게 */
+.cert-sheet.emp .cert-row{margin-bottom:4.2mm;}
+.cert-sheet.emp .cert-fields{margin-bottom:6mm;min-height:auto;}
+.cert-sheet.emp .cert-statement{margin:7mm 0 10mm;}
+.cert-sheet.emp .cert-org{margin-top:3mm;}
+.cert-sheet.emp .cert-rep{margin-top:7mm;}
 .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,#b8935a 20%,#b8935a 80%,transparent);margin-bottom:3mm;}
 .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
 .cert-footer .note{color:#777;font-size:7.8pt;line-height:1.65;}
@@ -632,7 +638,7 @@ function buildEmployCert(rec){
   const stampHTML = rec.hideStamp ? '' : `<img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">`;
   const tenure = tenureText(rec.hireDate, rec.issueDate);
   return `
-  <div class="cert-sheet" style="${styleVars}">
+  <div class="cert-sheet emp" style="${styleVars}">
     <img class="cert-bg" src="${cfg.logo}" alt="" onerror="this.style.display='none'">
     <div class="cert-inner">
       <div class="cert-docno">문서번호 : ${esc(rec.docNo)}</div>
@@ -747,8 +753,12 @@ function openStaffPreview(uid){
 
   const readVals = () => {
     const v = {};
-    fieldDefs.forEach(f=>{ v[f.key] = $I('sv-'+f.key)?.value?.trim() || ''; });
-    v.purpose = $I('sv-purpose')?.value?.trim() || '제출용';
+    fieldDefs.forEach(f=>{
+      const el = $I('sv-'+f.key);
+      v[f.key] = el ? el.value.trim() : (s[f.key]||'');   // 입력창이 아직 없으면 저장된 값
+    });
+    const pu = $I('sv-purpose');
+    v.purpose = pu ? (pu.value.trim() || '제출용') : '제출용';
     return v;
   };
   const buildPreview = () => {
@@ -1201,6 +1211,11 @@ function certPrintCSS(){
     .cert-rep .repname{font-weight:700;letter-spacing:4px;}
     .cert-rep .stamp{position:absolute;left:calc(100% - 4mm);top:50%;transform:translateY(-50%);width:23mm;height:23mm;object-fit:contain;opacity:0.88;}
     .cert-footer{position:absolute;bottom:16mm;left:20mm;right:20mm;font-size:8.5pt;color:#555;padding:0 8mm;}
+    .cert-sheet.emp .cert-row{margin-bottom:4.2mm;}
+    .cert-sheet.emp .cert-fields{margin-bottom:6mm;min-height:auto;}
+    .cert-sheet.emp .cert-statement{margin:7mm 0 10mm;}
+    .cert-sheet.emp .cert-org{margin-top:3mm;}
+    .cert-sheet.emp .cert-rep{margin-top:7mm;}
     .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,var(--c-line,#b8935a) 20%,var(--c-line,#b8935a) 80%,transparent);margin-bottom:3mm;}
     .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
     .cert-footer .note{color:#777;font-size:7.8pt;line-height:1.65;}
