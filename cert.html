@@ -141,6 +141,36 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .cert-sheet.emp .cert-statement{margin:7mm 0 10mm;}
 .cert-sheet.emp .cert-org{margin-top:3mm;}
 .cert-sheet.emp .cert-rep{margin-top:7mm;}
+/* ═══ 재직·경력증명서: 지오메트릭 그린 (시안 I) ═══ */
+.cert-sheet.geo{padding:0;background:#FCFBF5;}
+.geo-tri{position:absolute;pointer-events:none;}
+.geo-tri.gt{top:0;right:0;width:100mm;height:46mm;
+  background:linear-gradient(to top right, rgba(0,0,0,0) 49.7%, var(--g1) 50%, var(--g2) 100%);}
+.geo-tri.gt-gold{top:0;right:0;width:100mm;height:46mm;transform:translate(-2mm,2mm);
+  background:linear-gradient(to top right, rgba(0,0,0,0) 49.7%, #B08D3C 50%, #E8D9A8 100%);}
+.geo-tri.gb{bottom:0;left:0;width:100mm;height:46mm;
+  background:linear-gradient(to bottom left, rgba(0,0,0,0) 49.7%, var(--g1) 50%, var(--g2) 100%);}
+.geo-tri.gb-gold{bottom:0;left:0;width:100mm;height:46mm;transform:translate(2mm,-2mm);
+  background:linear-gradient(to bottom left, rgba(0,0,0,0) 49.7%, #B08D3C 50%, #E8D9A8 100%);}
+.geo-star{position:absolute;top:11mm;right:15mm;color:#E8D9A8;font-size:12pt;}
+.geo-btext{position:absolute;bottom:8mm;left:12mm;color:rgba(232,217,168,.92);font-size:7.5pt;letter-spacing:4px;}
+.geo-in{position:absolute;top:29mm;left:22mm;right:22mm;}
+.geo-docno{font-size:9pt;color:#8b968e;letter-spacing:1.5px;}
+.geo-title{font-family:'Noto Serif KR','Nanum Myeongjo',serif;font-weight:900;font-size:28pt;color:var(--ink);letter-spacing:12px;margin-top:8mm;}
+.geo-en{font-size:8pt;color:#B08D3C;letter-spacing:6px;margin-top:3mm;font-weight:600;}
+.geo-line{width:64mm;height:0.8px;background:linear-gradient(90deg,var(--ink),#B08D3C,rgba(0,0,0,0));margin-top:5.5mm;}
+.cert-sheet.geo .cert-fields{margin-top:10mm;max-width:154mm;min-height:auto;margin-bottom:0;}
+.cert-sheet.geo .cert-row{font-size:12.2pt;margin-bottom:5.2mm;}
+.cert-sheet.geo .cert-label{width:33mm;color:var(--ink);font-weight:700;}
+.cert-sheet.geo .cert-colon{color:#B08D3C;}
+.cert-sheet.geo .cert-value{border-bottom:0.5px solid #d6ddd6;padding-bottom:1.4mm;color:#20302a;}
+.cert-sheet.geo .cert-statement{text-align:left;margin:10mm 0 0;font-size:12.6pt;line-height:2;color:var(--ink);}
+.geo-org{margin-top:9mm;text-align:right;padding-right:6mm;}
+.geo-orgname{font-family:'Noto Serif KR','Nanum Myeongjo',serif;font-size:19pt;font-weight:900;color:var(--ink);letter-spacing:5px;}
+.geo-orgen{font-size:7pt;color:#8b968e;letter-spacing:4px;margin-top:1mm;}
+.geo-rep{margin-top:5mm;font-size:12.5pt;color:var(--ink);letter-spacing:2px;position:relative;display:inline-block;padding-right:2mm;}
+.geo-rep .stamp{position:absolute;right:-8mm;top:-7mm;width:19mm;height:19mm;opacity:.92;}
+.geo-foot{position:absolute;bottom:12mm;right:20mm;text-align:right;font-size:7.6pt;color:#8b968e;line-height:1.85;}
 .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,#b8935a 20%,#b8935a 80%,transparent);margin-bottom:3mm;}
 .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
 .cert-footer .note{color:#777;font-size:7.8pt;line-height:1.65;}
@@ -651,8 +681,13 @@ function canIssueCareer(){
 // 재직증명서 시트 HTML
 function buildEmployCert(rec){
   const cfg = ORG_CONFIG[rec.org] || ORG_CONFIG.daniel;
-  const t = cfg.theme;
-  const styleVars = `--acc:${t.accent};--line:${t.line};--line2:${t.line2};--bg:${t.bg};`;
+  // 지오메트릭 그린 (시안 I) — 기관별 블록 색
+  const GEO = {
+    daniel:   { g1:'#12271F', g2:'#245046', ink:'#12271F' },
+    jihyebit: { g1:'#2A1A40', g2:'#4A3566', ink:'#2A1A40' },
+  };
+  const g = GEO[rec.org] || GEO.daniel;
+  const styleVars = `--g1:${g.g1};--g2:${g.g2};--ink:${g.ink};`;
   const stampHTML = rec.hideStamp ? '' : `<img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">`;
   const isCareer = rec.kind === 'career';            // 경력증명서 (퇴직자 또는 재직자 경력용)
   const hasLeave = isCareer && rec.leaveDate;        // 퇴직일이 있으면 과거형, 없으면(재직 중) 현재형
@@ -662,12 +697,16 @@ function buildEmployCert(rec){
     ? `${korDate(rec.hireDate)} ~ ${korDate(rec.leaveDate)}${tenure?` (${tenure})`:''}`
     : `${korDate(rec.hireDate)} ~ 현재${tenure?` (${tenure})`:''}`;
   return `
-  <div class="cert-sheet emp" style="${styleVars}">
-    <img class="cert-bg" src="${cfg.logo}" alt="" onerror="this.style.display='none'">
-    <div class="cert-inner">
-      <div class="cert-docno">문서번호 : ${esc(rec.docNo)}</div>
-      <div class="cert-title">${isCareer?'경력 증명서':'재직 증명서'}</div>
-      <div class="cert-title-line"></div>
+  <div class="cert-sheet geo" style="${styleVars}">
+    <div class="geo-tri gt-gold"></div><div class="geo-tri gt"></div>
+    <div class="geo-tri gb-gold"></div><div class="geo-tri gb"></div>
+    <div class="geo-star">✦</div>
+    <div class="geo-btext">${esc((cfg.orgEn||'').toUpperCase())}</div>
+    <div class="geo-in">
+      <div class="geo-docno">문서번호 : ${esc(rec.docNo)}</div>
+      <div class="geo-title">${isCareer?'경 력 증 명 서':'재 직 증 명 서'}</div>
+      <div class="geo-en">${isCareer?'CERTIFICATE OF CAREER':'CERTIFICATE OF EMPLOYMENT'}</div>
+      <div class="geo-line"></div>
       <div class="cert-fields">
         <div class="cert-row">${labelHTML("성명")}<span class="cert-colon">:</span><span class="cert-value">${esc(rec.name||'')}</span></div>
         <div class="cert-row">${labelHTML("생년월일")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(rec.birth))}</span></div>
@@ -685,19 +724,17 @@ function buildEmployCert(rec){
               : `위 사람은 위 기간 동안 '${esc(cfg.orgName)}'에<br>재직하고 있음을 증명합니다.`)
           : `위 사람은 <b>${esc(korDate(rec.issueDate))}</b> 현재,<br>'${esc(cfg.orgName)}'에 재직하고 있음을 증명합니다.`}
       </div>
-      <div class="cert-org">
-        <div class="cert-orgname">${esc(cfg.orgName)}</div>
-        <div class="cert-orgen">${esc(cfg.orgEn)}</div>
-        <div class="cert-rep">
-          ${esc(cfg.repTitle||'대표자')} &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
+      <div class="geo-org">
+        <div class="geo-orgname">${esc(cfg.orgName)}</div>
+        <div class="geo-orgen">${esc((cfg.orgEn||'').toUpperCase())}</div>
+        <div class="geo-rep">
+          ${esc(cfg.repTitle||'대표자')} &nbsp; <b>${esc(cfg.rep)}</b> <span style="font-size:9.5pt">(인)</span>
           ${stampHTML}
         </div>
       </div>
     </div>
-    <div class="cert-footer">
-      <div class="fline"></div>
-      <div class="addr">${esc(cfg.address)}　|　TEL. ${esc(cfg.phone)}</div>
-      <div class="note">· 본 증명서는 위 사람의 재직 사실을 확인하기 위한 목적으로 발급됩니다.</div>
+    <div class="geo-foot">
+      ${esc(cfg.address)}<br>TEL. ${esc(cfg.phone)}
     </div>
   </div>`;
 }
@@ -1310,6 +1347,36 @@ function certPrintCSS(){
     .cert-sheet.emp .cert-statement{margin:7mm 0 10mm;}
     .cert-sheet.emp .cert-org{margin-top:3mm;}
     .cert-sheet.emp .cert-rep{margin-top:7mm;}
+    /* ═══ 재직·경력증명서: 지오메트릭 그린 (시안 I) ═══ */
+    .cert-sheet.geo{padding:0;background:#FCFBF5;}
+    .geo-tri{position:absolute;pointer-events:none;}
+    .geo-tri.gt{top:0;right:0;width:100mm;height:46mm;
+      background:linear-gradient(to top right, rgba(0,0,0,0) 49.7%, var(--g1) 50%, var(--g2) 100%);}
+    .geo-tri.gt-gold{top:0;right:0;width:100mm;height:46mm;transform:translate(-2mm,2mm);
+      background:linear-gradient(to top right, rgba(0,0,0,0) 49.7%, #B08D3C 50%, #E8D9A8 100%);}
+    .geo-tri.gb{bottom:0;left:0;width:100mm;height:46mm;
+      background:linear-gradient(to bottom left, rgba(0,0,0,0) 49.7%, var(--g1) 50%, var(--g2) 100%);}
+    .geo-tri.gb-gold{bottom:0;left:0;width:100mm;height:46mm;transform:translate(2mm,-2mm);
+      background:linear-gradient(to bottom left, rgba(0,0,0,0) 49.7%, #B08D3C 50%, #E8D9A8 100%);}
+    .geo-star{position:absolute;top:11mm;right:15mm;color:#E8D9A8;font-size:12pt;}
+    .geo-btext{position:absolute;bottom:8mm;left:12mm;color:rgba(232,217,168,.92);font-size:7.5pt;letter-spacing:4px;}
+    .geo-in{position:absolute;top:29mm;left:22mm;right:22mm;}
+    .geo-docno{font-size:9pt;color:#8b968e;letter-spacing:1.5px;}
+    .geo-title{font-family:'Noto Serif KR','Nanum Myeongjo',serif;font-weight:900;font-size:28pt;color:var(--ink);letter-spacing:12px;margin-top:8mm;}
+    .geo-en{font-size:8pt;color:#B08D3C;letter-spacing:6px;margin-top:3mm;font-weight:600;}
+    .geo-line{width:64mm;height:0.8px;background:linear-gradient(90deg,var(--ink),#B08D3C,rgba(0,0,0,0));margin-top:5.5mm;}
+    .cert-sheet.geo .cert-fields{margin-top:10mm;max-width:154mm;min-height:auto;margin-bottom:0;}
+    .cert-sheet.geo .cert-row{font-size:12.2pt;margin-bottom:5.2mm;}
+    .cert-sheet.geo .cert-label{width:33mm;color:var(--ink);font-weight:700;}
+    .cert-sheet.geo .cert-colon{color:#B08D3C;}
+    .cert-sheet.geo .cert-value{border-bottom:0.5px solid #d6ddd6;padding-bottom:1.4mm;color:#20302a;}
+    .cert-sheet.geo .cert-statement{text-align:left;margin:10mm 0 0;font-size:12.6pt;line-height:2;color:var(--ink);}
+    .geo-org{margin-top:9mm;text-align:right;padding-right:6mm;}
+    .geo-orgname{font-family:'Noto Serif KR','Nanum Myeongjo',serif;font-size:19pt;font-weight:900;color:var(--ink);letter-spacing:5px;}
+    .geo-orgen{font-size:7pt;color:#8b968e;letter-spacing:4px;margin-top:1mm;}
+    .geo-rep{margin-top:5mm;font-size:12.5pt;color:var(--ink);letter-spacing:2px;position:relative;display:inline-block;padding-right:2mm;}
+    .geo-rep .stamp{position:absolute;right:-8mm;top:-7mm;width:19mm;height:19mm;opacity:.92;}
+    .geo-foot{position:absolute;bottom:12mm;right:20mm;text-align:right;font-size:7.6pt;color:#8b968e;line-height:1.85;}
     .cert-footer .fline{width:100%;height:1px;background:linear-gradient(90deg,transparent,var(--c-line,#b8935a) 20%,var(--c-line,#b8935a) 80%,transparent);margin-bottom:3mm;}
     .cert-footer .addr{margin-bottom:2.5mm;line-height:1.7;color:#444;text-align:center;}
     .cert-footer .note{color:#777;font-size:7.8pt;line-height:1.65;}
