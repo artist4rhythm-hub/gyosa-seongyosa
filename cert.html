@@ -630,32 +630,60 @@ function tenureText(hireDate, refDate){
   return `${y>0?y+'년 ':''}${m>0?m+'개월':''}`.trim();
 }
 
+// 활동 로그 (수퍼관리자 열람)
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){}
+}
+window.logActivity = logActivity;
+
+// 경력증명서 발급 권한: 부서장(행정실장) 이상
+function canIssueCareer(){
+  return ['super','org_admin','tab_admin'].includes(CU?.role);
+}
+
 // 재직증명서 시트 HTML
 function buildEmployCert(rec){
   const cfg = ORG_CONFIG[rec.org] || ORG_CONFIG.daniel;
   const t = cfg.theme;
   const styleVars = `--acc:${t.accent};--line:${t.line};--line2:${t.line2};--bg:${t.bg};`;
   const stampHTML = rec.hideStamp ? '' : `<img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">`;
-  const tenure = tenureText(rec.hireDate, rec.issueDate);
+  const isCareer = rec.kind === 'career';            // 경력증명서 (퇴직자 또는 재직자 경력용)
+  const hasLeave = isCareer && rec.leaveDate;        // 퇴직일이 있으면 과거형, 없으면(재직 중) 현재형
+  const endDate = hasLeave ? rec.leaveDate : rec.issueDate;
+  const tenure = tenureText(rec.hireDate, endDate);
+  const period = hasLeave
+    ? `${korDate(rec.hireDate)} ~ ${korDate(rec.leaveDate)}${tenure?` (${tenure})`:''}`
+    : `${korDate(rec.hireDate)} ~ 현재${tenure?` (${tenure})`:''}`;
   return `
   <div class="cert-sheet emp" style="${styleVars}">
     <img class="cert-bg" src="${cfg.logo}" alt="" onerror="this.style.display='none'">
     <div class="cert-inner">
       <div class="cert-docno">문서번호 : ${esc(rec.docNo)}</div>
-      <div class="cert-title">재직 증명서</div>
+      <div class="cert-title">${isCareer?'경력 증명서':'재직 증명서'}</div>
       <div class="cert-title-line"></div>
       <div class="cert-fields">
         <div class="cert-row">${labelHTML("성명")}<span class="cert-colon">:</span><span class="cert-value">${esc(rec.name||'')}</span></div>
         <div class="cert-row">${labelHTML("생년월일")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(rec.birth))}</span></div>
         <div class="cert-row">${labelHTML("주소")}<span class="cert-colon">:</span><span class="cert-value addr-val">${esc(rec.address||'-')}</span></div>
-        <div class="cert-row">${labelHTML("입사일")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(rec.hireDate))}</span></div>
+        ${isCareer?'':`<div class="cert-row">${labelHTML("입사일")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(rec.hireDate))}</span></div>`}
         <div class="cert-row">${labelHTML("직위")}<span class="cert-colon">:</span><span class="cert-value">${esc(rec.position||'-')}</span></div>
-        ${tenure?`<div class="cert-row">${labelHTML("재직기간")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(rec.hireDate))} ~ 현재 (${esc(tenure)})</span></div>`:''}
+        <div class="cert-row">${labelHTML("재직기간")}<span class="cert-colon">:</span><span class="cert-value">${esc(period)}</span></div>
+        ${rec.dutyShown && rec.duty ? `<div class="cert-row">${labelHTML("담당업무")}<span class="cert-colon">:</span><span class="cert-value">${esc(rec.duty)}</span></div>`:''}
         <div class="cert-row">${labelHTML("용도")}<span class="cert-colon">:</span><span class="cert-value">${esc(rec.purpose||'제출용')}</span></div>
       </div>
       <div class="cert-statement">
-        위 사람은 <b>${esc(korDate(rec.issueDate))}</b> 현재,<br>
-        '${esc(cfg.orgName)}'에 재직하고 있음을 증명합니다.
+        ${isCareer
+          ? (hasLeave
+              ? `위 사람은 위 기간 동안 '${esc(cfg.orgName)}'에<br>재직하였음을 증명합니다.`
+              : `위 사람은 위 기간 동안 '${esc(cfg.orgName)}'에<br>재직하고 있음을 증명합니다.`)
+          : `위 사람은 <b>${esc(korDate(rec.issueDate))}</b> 현재,<br>'${esc(cfg.orgName)}'에 재직하고 있음을 증명합니다.`}
       </div>
       <div class="cert-org">
         <div class="cert-orgname">${esc(cfg.orgName)}</div>
@@ -704,8 +732,7 @@ window.setStaffOrg = setStaffOrg;
 function renderStaffList(){
   const box = $I('staff-slist'); if(!box) return;
   let list = STAFF_ALL
-    .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(staffOrg))
-    .filter(s => (s.acStatus||'active') !== 'quit');
+    .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(staffOrg));   // 퇴직자 포함 (경력증명서)
   if(staffSearch){
     const q = staffSearch.toLowerCase();
     list = list.filter(s => (s.name||'').toLowerCase().includes(q));
@@ -713,21 +740,37 @@ function renderStaffList(){
   list.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
 
   const NEED = ['birth','address','hireDate','position'];
+  // 재직·휴직 먼저, 퇴직자는 아래로
+  list.sort((a,b)=>{
+    const qa = (a.acStatus||'active')==='quit' ? 1 : 0;
+    const qb = (b.acStatus||'active')==='quit' ? 1 : 0;
+    return qa - qb || (a.name||'').localeCompare(b.name||'','ko');
+  });
   box.innerHTML = list.length ? list.map(s=>{
-    const miss = NEED.filter(k=>!s[k]);
+    const quit = (s.acStatus||'active')==='quit';
+    const need2 = quit ? NEED.concat(['leaveDate']) : NEED;
+    const miss = need2.filter(k=>!s[k]);
     const leave = (s.acStatus||'active')==='leave';
-    return `<div class="sitem">
+    return `<div class="sitem" style="${quit?'background:var(--iv)':''}">
       <div style="flex:1;min-width:170px">
         <div class="sname">${esc(s.name||'')}
           ${s.position?`<span style="font-size:11px;background:var(--gp);color:var(--gd);padding:2px 8px;border-radius:100px;font-weight:700;margin-left:5px">${esc(s.position)}</span>`:''}
           ${leave?'<span style="font-size:11px;background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:100px;font-weight:700;margin-left:4px">휴직</span>':''}
+          ${quit?'<span style="font-size:11px;background:#e5e7eb;color:#4b5563;padding:2px 8px;border-radius:100px;font-weight:700;margin-left:4px">퇴직</span>':''}
           ${s.noAuth?'<span style="font-size:10px;background:var(--iv);color:var(--tl);padding:2px 7px;border-radius:100px;font-weight:600;margin-left:4px">계정없음</span>':''}
         </div>
         <div class="smeta">${ORGS[s.org]||s.org}${s.dept?' · '+esc(s.dept):''}${s.duty?' · '+esc(s.duty):''}
           ${miss.length?`<span style="color:#dc2626;font-weight:600"> · ${miss.length}개 항목 미입력</span>`:''}
         </div>
       </div>
-      <button class="bm" onclick="openStaffPreview('${s.uid}')">증명서 확인 ›</button>
+      <div style="display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end">
+        ${quit
+          ? (canIssueCareer()
+              ? `<button class="bm" onclick="openStaffPreview('${s.uid}','career')">경력증명서 ›</button>`
+              : '<span style="font-size:11.5px;color:var(--tl);align-self:center">부서장 이상 발급</span>')
+          : `<button class="bm" onclick="openStaffPreview('${s.uid}','employ')">재직증명서 ›</button>
+             ${canIssueCareer()?`<button class="bm" style="background:var(--goldp);color:var(--goldd);border-color:var(--gold)" onclick="openStaffPreview('${s.uid}','career')">경력</button>`:''}`}
+      </div>
     </div>`;
   }).join('') : '<p class="empty">교직원이 없습니다.</p>';
 }
@@ -735,20 +778,29 @@ window.renderStaffList = renderStaffList;
 
 // ── 확인 모달 → 발급 ──
 let previewStaff = null;
-function openStaffPreview(uid){
+function openStaffPreview(uid, mode){
   const s = STAFF_ALL.find(x=>x.uid===uid);
   if(!s){ toast('교직원을 찾을 수 없습니다.','err'); return; }
+  const quit = (s.acStatus||'active') === 'quit';
+  const isCareer = mode === 'career' || quit;                // 퇴직자는 항상 경력증명서
+  if(isCareer && !canIssueCareer()){
+    toast('경력증명서는 부서장(행정실장) 이상만 발급할 수 있습니다.','err');
+    return;
+  }
   previewStaff = s;
   const org = (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(staffOrg) ? staffOrg : (s.org||'daniel');
   const cfg = ORG_CONFIG[org];
   const issueDate = todayYMD();
-  const tempDocNo = (cfg?.code||'DA') + '-E-' + issueDate.slice(2).replace(/-/g,'') + '-XX';
+  const codeLetter = isCareer ? 'R' : 'E';
+  const tempDocNo = (cfg?.code||'DA') + '-' + codeLetter + '-' + issueDate.slice(2).replace(/-/g,'') + '-XX';
 
   const fieldDefs = [
     {key:'birth',    label:'생년월일', type:'date'},
     {key:'address',  label:'집 주소',  type:'text', placeholder:'주소를 입력하세요'},
     {key:'hireDate', label:'입사일',   type:'date'},
+    ...(isCareer ? [{key:'leaveDate', label: quit ? '퇴직일' : '퇴직일 (재직 중이면 비워두세요)', type:'date'}] : []),
     {key:'position', label:'직위(직책)', type:'text', placeholder:'예: 교사, 행정실장'},
+    ...(isCareer ? [{key:'duty', label:'담당 업무 (표기 선택 시)', type:'text', placeholder:'예: 초등 3학년 담임 · 음악'}] : []),
   ];
 
   const readVals = () => {
@@ -759,11 +811,15 @@ function openStaffPreview(uid){
     });
     const pu = $I('sv-purpose');
     v.purpose = pu ? (pu.value.trim() || '제출용') : '제출용';
+    const dc = $I('sv-dutyshow');
+    v.dutyShown = dc ? dc.checked : false;
     return v;
   };
   const buildPreview = () => {
     const v = readVals();
     return buildEmployCert({ org, docNo:tempDocNo, issueDate, name:s.name||'',
+      kind: isCareer ? 'career' : 'employ', leaveDate:v.leaveDate,
+      duty:v.duty, dutyShown:v.dutyShown,
       birth:v.birth, address:v.address, hireDate:v.hireDate, position:v.position, purpose:v.purpose });
   };
 
@@ -781,13 +837,22 @@ function openStaffPreview(uid){
 
   const leaveWarn = (s.acStatus||'active')==='leave'
     ? '<div style="background:#fef3c7;color:#92400e;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px">⚠️ 휴직 중인 교직원입니다. 재직증명서 발급이 적절한지 확인하세요.</div>' : '';
+  const careerInfo = isCareer
+    ? `<div style="background:var(--gp);border:1px solid var(--gm);border-radius:8px;padding:10px 14px;font-size:12.5px;color:var(--gd);margin-bottom:12px;line-height:1.6">
+        📄 퇴직한 교직원에게는 <b>경력증명서</b>가 발급됩니다.<br>
+        <label style="display:flex;align-items:center;gap:7px;margin-top:8px;cursor:pointer">
+          <input type="checkbox" id="sv-dutyshow" style="width:16px;height:16px;accent-color:var(--gm)">
+          <span>담당 업무를 증명서에 표기 <span style="color:var(--tl)">(근로기준법상 본인이 요청한 항목만 기재)</span></span>
+        </label>
+      </div>` : '';
 
   const mv = document.createElement('div'); mv.className='mov'; mv.id='preview-mod';
   mv.innerHTML = `<div class="mbk" onclick="closeStaffPreview()"></div>
     <div class="mbox" style="max-width:720px">
-      <div class="mtitle">재직증명서 확인 후 발급</div>
+      <div class="mtitle">${isCareer?'경력증명서':'재직증명서'} 확인 후 발급</div>
       <div class="msub">아래 항목이 <b>모두 정확한지 확인</b>하세요. 빈 항목이나 바뀐 정보를 수정하면 교직원 인사정보에도 반영됩니다.</div>
       ${leaveWarn}
+      ${careerInfo}
       ${fieldsHTML}
       <div id="sv-warn" style="display:none;background:#fef2f2;color:#b91c1c;padding:10px 14px;border-radius:8px;font-size:13px;margin:4px 0 12px;border:1px solid #fecaca"></div>
       <div class="zoom-bar">
@@ -805,7 +870,7 @@ function openStaffPreview(uid){
       </label>
       <div class="mact">
         <button class="bs" onclick="closeStaffPreview()">취소</button>
-        <button class="bp" onclick="doIssueStaff('${s.uid}','${org}')">✅ 발급하기</button>
+        <button class="bp" onclick="doIssueStaff('${s.uid}','${org}','${isCareer?'career':'employ'}')">✅ 발급하기</button>
       </div>
     </div>`;
   document.body.appendChild(mv);
@@ -818,29 +883,46 @@ function openStaffPreview(uid){
   });
   const pu = $I('sv-purpose');
   if(pu) pu.addEventListener('input', refreshStaffPreview);
+  const dc = $I('sv-dutyshow');
+  if(dc) dc.addEventListener('change', refreshStaffPreview);
 }
 window.openStaffPreview = openStaffPreview;
 function closeStaffPreview(){ $I('preview-mod')?.remove(); previewStaff=null; }
 window.closeStaffPreview = closeStaffPreview;
 
-async function doIssueStaff(uid, org){
+async function doIssueStaff(uid, org, mode){
   const s = STAFF_ALL.find(x=>x.uid===uid); if(!s) return;
   const cfg = ORG_CONFIG[org]; if(!cfg){ toast('이 기관은 발급을 지원하지 않습니다.','err'); return; }
   const issueDate = todayYMD();
+  const isCareer = mode === 'career';
+  const isQuit = (s.acStatus||'active') === 'quit';
+  if(isCareer && !canIssueCareer()){
+    toast('경력증명서는 부서장(행정실장) 이상만 발급할 수 있습니다.','err');
+    return;
+  }
 
   const birth = $I('sv-birth')?.value?.trim() || '';
   const address = $I('sv-address')?.value?.trim() || '';
   const hireDate = $I('sv-hireDate')?.value?.trim() || '';
+  const leaveDate = $I('sv-leaveDate')?.value?.trim() || '';
   const position = $I('sv-position')?.value?.trim() || '';
+  const duty = $I('sv-duty')?.value?.trim() || '';
+  const dutyShown = $I('sv-dutyshow')?.checked || false;
   const purpose = $I('sv-purpose')?.value?.trim() || '제출용';
 
   const missing = [];
   if(!birth) missing.push('생년월일');
   if(!address) missing.push('집 주소');
   if(!hireDate) missing.push('입사일');
+  if(isCareer && isQuit && !leaveDate) missing.push('퇴직일');
   if(!position) missing.push('직위');
+  if(isCareer && dutyShown && !duty) missing.push('담당 업무');
   if(missing.length){
     toast(`${missing.join(', ')}을(를) 입력해주세요.`,'err');
+    return;
+  }
+  if(isCareer && leaveDate && hireDate && leaveDate < hireDate){
+    toast('퇴직일이 입사일보다 빠를 수 없습니다.','err');
     return;
   }
   if(!$I('sv-confirm')?.checked){
@@ -854,30 +936,38 @@ async function doIssueStaff(uid, org){
     if(birth !== (s.birth||'')) updates.birth = birth;
     if(address !== (s.address||'')) updates.address = address;
     if(hireDate !== (s.hireDate||'')) updates.hireDate = hireDate;
+    if(isCareer && leaveDate !== (s.leaveDate||'')) updates.leaveDate = leaveDate;
     if(position !== (s.position||'')) updates.position = position;
+    if(isCareer && duty !== (s.duty||'')) updates.duty = duty;
     if(Object.keys(updates).length){
       await updateDoc(doc(db,'staff',uid), updates);
       Object.assign(s, updates);
     }
 
-    // 문서번호: [코드]-E-YYMMDD-NN
+    // 문서번호: [코드]-E/R-YYMMDD-NN (E=재직, R=경력)
+    const kind = isCareer ? 'career' : 'employ';
+    const codeLetter = isCareer ? 'R' : 'E';
     const datePart = issueDate.slice(2).replace(/-/g,'');
-    const prefix = `${cfg.code}-E-${datePart}-`;
-    const snap = await getDocs(query(collection(db,'certificates'), where('docNoDate','==',datePart), where('org','==',org), where('kind','==','employ')));
+    const prefix = `${cfg.code}-${codeLetter}-${datePart}-`;
+    const snap = await getDocs(query(collection(db,'certificates'), where('docNoDate','==',datePart), where('org','==',org), where('kind','==',kind)));
     const seq = snap.size + 1;
     const docNo = prefix + pad(seq);
 
     const record = {
       docNo, docNoDate: datePart, seq,
-      kind: 'employ', type: '재직', org,
+      kind, type: isCareer ? '경력' : '재직', org,
       staffUid: uid, studentName: s.name||'',   // 목록 표시 재사용
       grade: position,                           // 목록에서 직위로 표시
       birth, address, hireDate, position, purpose,
+      leaveDate: isCareer ? leaveDate : '',
+      duty: isCareer ? duty : '',
+      dutyShown: isCareer ? dutyShown : false,
       issueDate,
       issuedByUid: CU.uid, issuedByName: CU.name||'',
       createdAt: Timestamp.now()
     };
     await addDoc(collection(db,'certificates'), record);
+    if(window.logActivity) logActivity('발급', isCareer?'경력증명서':'재직증명서', s.name||'', docNo);
     closeStaffPreview();
     toast(`발급 완료 (${docNo})`,'ok');
     showTab('list');
@@ -1120,11 +1210,12 @@ window.renderList = renderList;
 
 // 발급 기록으로부터 증명서 HTML 재생성 (발급 당시 값 사용)
 function buildCertFromRecord(c, opts){
-  if(c.kind === 'employ'){
+  if(c.kind === 'employ' || c.kind === 'career'){
     return buildEmployCert({
-      org: c.org, docNo: c.docNo, issueDate: c.issueDate,
+      org: c.org, docNo: c.docNo, issueDate: c.issueDate, kind: c.kind,
       name: c.studentName, birth: c.birth, address: c.address,
-      hireDate: c.hireDate, position: c.position, purpose: c.purpose,
+      hireDate: c.hireDate, leaveDate: c.leaveDate, position: c.position,
+      duty: c.duty, dutyShown: c.dutyShown, purpose: c.purpose,
       hideStamp: opts && opts.hideStamp
     });
   }
