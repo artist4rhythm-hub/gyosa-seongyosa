@@ -289,13 +289,25 @@ function isAnyExpManager(){
 }
 const myOrgs = () => CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
 function todayYMD(){ const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; }
+// 반편성(class.html)과 동일하게 '올해 반'만 사용 — 연도 불일치로 자퇴생이 사라지던 문제 해결
+function thisYearClasses(org){
+  const y = new Date().getFullYear();
+  return CLASSES.filter(c => c.org===org && (c.year || y) === y);
+}
+
 function studentGrade(sid){
-  for(const c of CLASSES){
+  const y = new Date().getFullYear();
+  const sorted = [...CLASSES].sort((a,b)=>((b.year||y)===y?1:0)-((a.year||y)===y?1:0));  // 올해 반 우선
+  for(const c of sorted){
     if((c.students||[]).includes(sid) && c.grades && c.grades[sid]) return c.grades[sid];
   }
   return '';
 }
-function studentClass(sid){ return CLASSES.find(c=>(c.students||[]).includes(sid)); }
+function studentClass(sid){
+  const y = new Date().getFullYear();
+  return CLASSES.find(c=>(c.year||y)===y && (c.students||[]).includes(sid))
+      || CLASSES.find(c=>(c.students||[]).includes(sid));
+}
 // 1인당 금액: 총액÷인원 → 10원 단위 올림
 function perAmount(total, n){
   if(!total || !n) return 0;
@@ -956,7 +968,7 @@ function renderClassChecks(){
     const arr = [...gs].sort((a,b)=>(parseInt(a,10)||99)-(parseInt(b,10)||99));
     return { label: arr.length ? arr.map(g=>String(g).replace('학년','')).join('·')+'학년' : '', min: arr.length ? (parseInt(arr[0],10)||99) : 999 };
   };
-  const classes = CLASSES.filter(c=>c.org===expOrg)
+  const classes = thisYearClasses(expOrg)
     .map(c=>({...c, __gi: gradeInfo(c)}))
     .sort((a,b)=> a.__gi.min - b.__gi.min || (a.name||'').localeCompare(b.name||'','ko'));
   // 반 없는 학생
@@ -1071,7 +1083,7 @@ function clsAll(key, on){
   // 그 반의 활성 학생 전체 선택/해제
   let ids = [];
   if(key==='__noclass'){
-    const inClassIds = new Set(); CLASSES.filter(c=>c.org===expOrg).forEach(c=>(c.students||[]).forEach(id=>inClassIds.add(id)));
+    const inClassIds = new Set(); thisYearClasses(expOrg).forEach(c=>(c.students||[]).forEach(id=>inClassIds.add(id)));
     ids = STUDENTS.filter(s=>s.org===expOrg && (s.status||'active')==='active' && !inClassIds.has(s.id)).map(s=>s.id);
   } else {
     const c = CLASSES.find(x=>x.id===key);
@@ -1369,7 +1381,7 @@ function viewExpense(id){
     const arr = [...gs].sort((a,b)=>(parseInt(a,10)||99)-(parseInt(b,10)||99));
     return { label: arr.length ? arr.map(g=>String(g).replace('학년','')).join('·')+'학년' : '', min: arr.length ? (parseInt(arr[0],10)||99) : 999 };
   };
-  const orgClasses = CLASSES.filter(c=>c.org===e.org)
+  const orgClasses = thisYearClasses(e.org)
     .map(c=>({...c, __gi: giFn(c)}))
     .sort((a,b)=> a.__gi.min - b.__gi.min || (a.name||'').localeCompare(b.name||'','ko'));
   const seen = new Set();
