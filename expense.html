@@ -74,6 +74,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .stu-row:hover{border-color:var(--gm);background:var(--gp);}
 .stu-row.checked{border-color:var(--gm);background:var(--gp);}
 .stu-row.leave{opacity:.55;cursor:not-allowed;background:#f6f6f8;}
+.stu-row.quit{background:#F5F4F1;border-style:dashed;}
+.stu-row.quit .stu-name{color:#6b7280;}
+.stu-quit-divider{display:flex;align-items:center;gap:8px;margin:10px 0 7px;font-size:11.5px;font-weight:700;color:#9ca3af;}
+.stu-quit-divider::before,.stu-quit-divider::after{content:'';flex:1;height:1px;background:#e2e0da;}
 .stu-row input[type=checkbox]{width:17px;height:17px;accent-color:var(--gm);flex-shrink:0;cursor:pointer;}
 .stu-row.leave input[type=checkbox]{cursor:not-allowed;}
 .stu-name{font-size:14px;font-weight:700;color:var(--gd);}
@@ -238,6 +242,24 @@ const pad = n => String(n).padStart(2,'0');
 const won = n => (n==null||isNaN(n))?'-':Number(n).toLocaleString('ko-KR');
 let CU = null;
 let STUDENTS = [];
+
+// 학년도(3월~익년 2월) 계산 — 자퇴생은 자퇴한 학년도까지만 청구 목록에 표시
+function schoolYearOf(d){
+  const t = (d instanceof Date) ? d : new Date(d);
+  if(isNaN(t)) return 0;
+  return t.getMonth() >= 2 ? t.getFullYear() : t.getFullYear() - 1;
+}
+// 자퇴/퇴원(quit) 학생을 목록에 보여줄지: 자퇴일이 이번 학년도이거나, 자퇴일 미입력이면 표시(청구 누락 방지)
+function showQuitStu(s){
+  if((s.status||'active') !== 'quit') return false;
+  if(!s.quitDate) return true;
+  return schoolYearOf(s.quitDate) >= schoolYearOf(new Date());
+}
+function quitBadge(s){
+  if(!s.quitDate) return '자퇴';
+  const t = new Date(s.quitDate);
+  return isNaN(t) ? '자퇴' : `자퇴 ${t.getMonth()+1}/${t.getDate()}`;
+}
 let CLASSES = [];
 let TERMS = [];              // 학기 일정 (attend와 동일 구조)
 let EXP_WINDOW = { afterDays: 8, beforeDays: 14 };  // 입력 가능 기간 여유(슈퍼 조정)
@@ -299,6 +321,7 @@ onAuthStateChanged(auth, async (user) => {
   
   
   window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'expense')) return;
   renderShell('expense', CU);
   if(CU.role==='super'){ const tb=$I('tb-backup'); if(tb) tb.style.display=''; }
 
@@ -938,7 +961,7 @@ function renderClassChecks(){
     .sort((a,b)=> a.__gi.min - b.__gi.min || (a.name||'').localeCompare(b.name||'','ko'));
   // 반 없는 학생
   const inClassIds = new Set(); classes.forEach(c=>(c.students||[]).forEach(id=>inClassIds.add(id)));
-  const noClass = STUDENTS.filter(s=>s.org===expOrg && (s.status||'active')!=='quit' && !inClassIds.has(s.id));
+  const noClass = STUDENTS.filter(s=>s.org===expOrg && ((s.status||'active')!=='quit' || showQuitStu(s)) && !inClassIds.has(s.id));
 
   const palette = ['#0891b2','#7c3aed','#db2777','#d97706','#059669','#2563eb','#dc2626','#4f46e5','#0d9488','#c026d3'];
   let html = '';
@@ -946,12 +969,15 @@ function renderClassChecks(){
   if(noClass.length) groups.push({key:'__noclass', name:'반 미지정', gradeLabel:'', ids:noClass.map(s=>s.id)});
 
   groups.forEach((grp,gi)=>{
-    // 이 반 학생들 (퇴원 제외)
-    const studs = grp.ids.map(id=>STUDENTS.find(s=>s.id===id)).filter(s=>s && (s.status||'active')!=='quit');
+    // 이 반 학생들 (자퇴생은 이번 학년도까지 별도 분류로 포함)
+    const studs = grp.ids.map(id=>STUDENTS.find(s=>s.id===id))
+      .filter(s=>s && ((s.status||'active')!=='quit' || showQuitStu(s)));
     if(!studs.length) return;
     studs.sort((a,b)=>{
+      const qa = (a.status||'active')==='quit' ? 1 : 0;     // 자퇴생은 맨 아래로
+      const qb = (b.status||'active')==='quit' ? 1 : 0;
       const ga = parseInt(studentGrade(a.id),10)||99, gb = parseInt(studentGrade(b.id),10)||99;
-      return ga-gb || (a.name||'').localeCompare(b.name||'','ko');
+      return qa-qb || ga-gb || (a.name||'').localeCompare(b.name||'','ko');
     });
     const accent = palette[gi % palette.length];
     const open = !!openCls[grp.key];
@@ -961,7 +987,7 @@ function renderClassChecks(){
         <span style="width:10px;height:10px;border-radius:50%;background:${accent};flex-shrink:0"></span>
         <span style="flex:1;font-size:15px;font-weight:700;color:var(--gd)">${esc(grp.name)}${grp.gradeLabel?` <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(grp.gradeLabel)}</span>`:''}</span>
         <span style="font-size:12px;color:${selCount?'var(--gm)':'var(--tl)'};font-weight:${selCount?'700':'400'}" id="cls-sel-${esc(grp.key)}">${selCount?selCount+'명 선택':''}</span>
-        <span style="font-size:12px;color:var(--tl)">${studs.length}명</span>
+        <span style="font-size:12px;color:var(--tl)">${studs.filter(s=>(s.status||'active')!=='quit').length}명${(()=>{const q=studs.filter(s=>(s.status||'active')==='quit').length; return q?` +자퇴 ${q}`:'';})()}</span>
         <span class="gr-arrow">▼</span>
       </div>
       <div class="gr-body">
@@ -970,16 +996,19 @@ function renderClassChecks(){
             <button class="bm" onclick="clsAll('${esc(grp.key)}',true)">전체 선택</button>
             <button class="bm" onclick="clsAll('${esc(grp.key)}',false)">전체 해제</button>
           </div>
-          ${studs.map(s=>{
+          ${studs.map((s,si)=>{
             const g = studentGrade(s.id);
             const isLeave = (s.status||'active')==='leave';
+            const isQuit = (s.status||'active')==='quit';
             const checked = checkedIds.has(s.id);
             const showAmt = expMode!=='equal' && checked && !isLeave;
-            return `<div class="stu-row ${isLeave?'leave':''} ${checked?'checked':''}" data-sid="${s.id}" onclick="${isLeave?'':`toggleStu('${s.id}')`}">
+            const firstQuit = isQuit && (si===0 || (studs[si-1].status||'active')!=='quit');
+            return `${firstQuit?'<div class="stu-quit-divider">재학중 아님 · 자퇴·전출 (이번 학년도)</div>':''}<div class="stu-row ${isLeave?'leave':''} ${isQuit?'quit':''} ${checked?'checked':''}" data-sid="${s.id}" onclick="${isLeave?'':`toggleStu('${s.id}')`}">
               <input type="checkbox" ${checked?'checked':''} ${isLeave?'disabled':''} onclick="event.stopPropagation();${isLeave?'':`toggleStu('${s.id}')`}">
               <div style="flex:1">
                 <span class="stu-name">${esc(s.name)}</span>
                 ${isLeave?'<span style="font-size:12px;color:#b45309;font-weight:700"> (휴학)</span>':''}
+                ${isQuit?`<span style="font-size:11.5px;color:#6b7280;font-weight:700;background:#e5e7eb;padding:1px 7px;border-radius:100px;margin-left:4px">${quitBadge(s)}</span>`:''}
                 <span class="stu-meta"> ${s.gender||''}${g?' · '+g:''}</span>
               </div>
               <input type="number" class="amt-in" data-amt="${s.id}" value="${indivAmts[s.id]!=null?indivAmts[s.id]:''}" placeholder="금액" inputmode="numeric"
@@ -1345,7 +1374,7 @@ function viewExpense(id){
     .sort((a,b)=> a.__gi.min - b.__gi.min || (a.name||'').localeCompare(b.name||'','ko'));
   const seen = new Set();
   let rosterHTML = orgClasses.map(c=>{
-    const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(s=>s && (s.status||'active')!=='quit');
+    const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(s=>s && ((s.status||'active')!=='quit' || showQuitStu(s)));
     if(!studs.length) return '';
     studs.sort((a,b)=>{
       const ga = parseInt(studentGrade(a.id),10)||99, gb = parseInt(studentGrade(b.id),10)||99;
@@ -1360,7 +1389,8 @@ function viewExpense(id){
           const st = charged.get(s.id);
           const isLeave = (s.status||'active')==='leave';
           if(st) return `<span style="background:var(--gp);color:var(--gm);border:1px solid var(--gl);border-radius:7px;padding:3px 9px;font-size:12.5px;font-weight:700">✓ ${esc(s.name)}${indivMode&&st.amt!=null?` <b style="color:${e.mode==='refund'?'#0d9488':'var(--gm)'}">₩${won(st.amt)}</b>`:''}</span>`;
-          return `<span style="background:#f4f4f6;color:#b6bac4;border:1px solid #e8e9ee;border-radius:7px;padding:3px 9px;font-size:12.5px">${esc(s.name)}${isLeave?' (휴학)':''}</span>`;
+          const isQuit2 = (s.status||'active')==='quit';
+          return `<span style="background:#f4f4f6;color:#b6bac4;border:1px solid #e8e9ee;border-radius:7px;padding:3px 9px;font-size:12.5px">${esc(s.name)}${isLeave?' (휴학)':''}${isQuit2?' (자퇴)':''}</span>`;
         }).join('')}
       </div>
     </div>`;
