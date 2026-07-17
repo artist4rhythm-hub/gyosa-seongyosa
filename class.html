@@ -167,6 +167,23 @@ let STAFF = [];        // 교직원 캐시 (담임 지정용)
 let CLASSES = [];      // 현재 연도 반 목록
 let curYear = new Date().getFullYear();
 
+// 자퇴/퇴원(quit) 학생: 이번 학년도(3월~익년 2월) 자퇴자는 반편성에 포함 가능 (수행성 경비 정산용)
+function schoolYearOf(d){
+  const t = (d instanceof Date) ? d : new Date(d);
+  if(isNaN(t)) return 0;
+  return t.getMonth() >= 2 ? t.getFullYear() : t.getFullYear() - 1;
+}
+function showQuitStu(s){
+  if((s.status||'active') !== 'quit') return false;
+  if(!s.quitDate) return true;
+  return schoolYearOf(s.quitDate) >= schoolYearOf(new Date());
+}
+function quitBadgeCls(s){
+  if(!s.quitDate) return '자퇴';
+  const t = new Date(s.quitDate);
+  return isNaN(t) ? '자퇴' : `자퇴 ${t.getMonth()+1}/${t.getDate()}`;
+}
+
 function toast(msg, type=''){
   const t = $I('toast'); t.textContent = msg;
   t.className = 'toast show ' + type;
@@ -210,6 +227,7 @@ onAuthStateChanged(auth, async (user) => {
     CU = { uid:user.uid, ...snap.data() };
     $I('gate').style.display='none'; $I('ms').style.display='flex';
     window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'class')) return;
   renderShell('class', CU);
     window.showLoading && window.showLoading('불러오는 중…');
     
@@ -289,7 +307,8 @@ function renderClasses(){
       ? studs.map(s=>{
           const g = grades[s.id];
           const gradeTag = g ? `<span style="background:var(--gp);color:var(--gm);font-size:10px;font-weight:700;padding:1px 6px;border-radius:100px">${g}</span>` : `<span style="color:#dc2626;font-size:10px">학년?</span>`;
-          return `<span class="stud-chip">${s.name}${s.birth?`<span style="color:var(--tl);font-size:11px">${s.birth.slice(0,4)}</span>`:''}${gradeTag}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`;
+          const isQuit = (s.status||'active')==='quit';
+          return `<span class="stud-chip" style="${isQuit?'background:#F5F4F1;border:1px dashed #d1d5db;color:#6b7280':''}">${s.name}${isQuit?`<span style="font-size:10px;color:#6b7280;font-weight:700;background:#e5e7eb;padding:1px 6px;border-radius:100px">${quitBadgeCls(s)}</span>`:''}${s.birth?`<span style="color:var(--tl);font-size:11px">${s.birth.slice(0,4)}</span>`:''}${gradeTag}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`;
         }).join('')
       : '<span style="font-size:13px;color:var(--tl)">배정된 학생이 없습니다.</span>';
     return `<div class="clscard">
@@ -444,9 +463,9 @@ function openAddStudent(classId){
   const assignedElsewhere = new Set();
   CLASSES.forEach(cl=>{ if(cl.id!==classId) (cl.students||[]).forEach(sid=>assignedElsewhere.add(sid)); });
   const already = new Set(c.students||[]);
-  // 후보: 같은 기관, 재학중, 아직 이 반에 없음
+  // 후보: 같은 기관, 재학중 + 이번 학년도 자퇴생(수행성 경비 정산용), 아직 이 반에 없음
   const candidates = STUDENTS.filter(s=>
-    s.org===c.org && (s.status||'active')==='active' && !already.has(s.id)
+    s.org===c.org && ((s.status||'active')==='active' || showQuitStu(s)) && !already.has(s.id)
   );
   _addCtx = { classId, candidates, assignedElsewhere };
 
@@ -484,6 +503,9 @@ function renderAddList(){
   const sort = $I('add-sort')?.value || 'name-asc';
   const arr = [...candidates];
   arr.sort((a,b)=>{
+    const qa = (a.status||'active')==='quit' ? 1 : 0;   // 자퇴생은 항상 뒤로
+    const qb = (b.status||'active')==='quit' ? 1 : 0;
+    if(qa !== qb) return qa - qb;
     if(sort==='name-asc') return a.name.localeCompare(b.name,'ko');
     if(sort==='name-desc') return b.name.localeCompare(a.name,'ko');
     // 생년월일 기준 (빈 값은 뒤로)
@@ -495,9 +517,10 @@ function renderAddList(){
   const el = $I('add-list');
   el.innerHTML = arr.length ? arr.map(s=>{
     const elsewhere = assignedElsewhere.has(s.id);
+    const isQuit = (s.status||'active')==='quit';
     const bi = birthInfo(s.birth);
-    return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer">
-      <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name} <span style="color:var(--gm);font-size:12px;font-weight:600">${bi}</span> <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:#dc2626;font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
+    return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer${isQuit?';background:#F5F4F1;border-style:dashed':''}">
+      <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name}${isQuit?` <span style="font-size:11px;color:#6b7280;font-weight:700;background:#e5e7eb;padding:1px 7px;border-radius:100px">${quitBadgeCls(s)}</span>`:''} <span style="color:var(--gm);font-size:12px;font-weight:600">${bi}</span> <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:#dc2626;font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
     </label>`;
   }).join('') : '<p class="empty">추가할 수 있는 학생이 없습니다.</p>';
   // 검색어 유지 적용
