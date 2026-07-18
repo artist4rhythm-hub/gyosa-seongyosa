@@ -1582,6 +1582,7 @@ async function renderReport(){
   try {
     const snap = await getDocs(collection(db,'expenses'));
     EXPENSES = []; snap.forEach(d=>EXPENSES.push({id:d.id, ...d.data()}));
+    EXPENSES.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
     const dsnap = await getDocs(collection(db,'expenseDeposits'));
     DEPOSITS = []; dsnap.forEach(d=>DEPOSITS.push({id:d.id, ...d.data()}));
   } catch(e){
@@ -1602,7 +1603,8 @@ async function renderReport(){
       ${orgs.map(o=>`<button class="subtbtn ${o===reportOrg?'on':''}" onclick="setReportOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
     </div>` : '';
 
-  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem)
+    .sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
   const canManage = isExpManager(reportOrg);
 
   // 요약

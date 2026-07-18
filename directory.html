@@ -344,7 +344,7 @@ const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
 
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
-const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사',partner:'협력교사'};
+const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'풀타임 교사',partner:'협력교사'};
 const pad=n=>String(n).padStart(2,'0');
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -2708,9 +2708,14 @@ function renderDirectory(){
     (a.name||'').localeCompare(b.name||'','ko')
   );
 
-  // 부서별 묶기
+  // 풀타임선생님 / 협력선생님 분리
+  const partners = list.filter(s => (s.role||'') === 'partner')
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  const fulltime = list.filter(s => (s.role||'') !== 'partner');
+
+  // 부서별 묶기 (풀타임만)
   const groups = {};
-  list.forEach(s=>{ const d = s.dept || '기타'; (groups[d] = groups[d] || []).push(s); });
+  fulltime.forEach(s=>{ const d = s.dept || '기타'; (groups[d] = groups[d] || []).push(s); });
 
   const card = (s)=>{
     const isSelf = s.uid === CU.uid;
@@ -2723,6 +2728,7 @@ function renderDirectory(){
         <div class="dir-n">
           ${esc(s.name||'')}
           ${s.position?`<span class="dir-p">${esc(s.position)}</span>`:''}
+          ${(s.role||'')==='partner'?'<span class="dir-pt">협력</span>':''}
           ${leave?'<span class="dir-l">휴직</span>':''}
           ${isSelf?'<span class="dir-me">나</span>':''}
         </div>
@@ -2771,16 +2777,24 @@ function renderDirectory(){
         .dir-b{padding:5px 11px;border:1px solid var(--ivd);border-radius:7px;background:#fff;font-size:11.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit}
         .dir-b:hover{border-color:var(--gm);color:var(--gm)}
         .dir-gt{font-size:12.5px;font-weight:800;color:var(--gm);margin:14px 2px 8px}
+        .dir-sec{font-size:14px;font-weight:800;color:var(--gd);margin:20px 2px 6px;padding-bottom:7px;border-bottom:2px solid var(--gp);display:flex;align-items:center;gap:7px}
+        .dir-sec:first-of-type{margin-top:6px}
+        .dir-pt{font-size:10.5px;background:#EDE9FE;color:#6D28D9;padding:2px 8px;border-radius:100px;font-weight:700}
         .dir-s{width:100%;max-width:320px;height:40px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 14px;font-size:14px;outline:none;background:var(--iv);font-family:inherit;margin-bottom:14px}
         .dir-s:focus{border-color:var(--gm);background:#fff}
       </style>
       ${orgTabs}
       <input class="dir-s" id="dir-q" placeholder="🔍 이름 · 부서 · 직책으로 검색" value="${esc(dirQuery)}" oninput="setDirQuery(this.value)">
-      ${Object.keys(groups).length
-        ? Object.entries(groups).map(([d, arr])=>`
+      ${(Object.keys(groups).length || partners.length) ? `
+        ${Object.keys(groups).length ? `
+          <div class="dir-sec">👩‍🏫 풀타임선생님 <span style="color:var(--tl);font-weight:600;font-size:12px">${fulltime.length}명</span></div>
+          ${Object.entries(groups).map(([d, arr])=>`
             <div class="dir-gt">${esc(d)} <span style="color:var(--tl);font-weight:600">${arr.length}명</span></div>
-            ${arr.map(card).join('')}`).join('')
-        : '<p class="empty">검색 결과가 없습니다.</p>'}
+            ${arr.map(card).join('')}`).join('')}` : ''}
+        ${partners.length ? `
+          <div class="dir-sec">🤝 협력선생님 <span style="color:var(--tl);font-weight:600;font-size:12px">${partners.length}명</span></div>
+          ${partners.map(card).join('')}` : ''}
+      ` : '<p class="empty">검색 결과가 없습니다.</p>'}
     </div>`;
 
   // 커서 유지

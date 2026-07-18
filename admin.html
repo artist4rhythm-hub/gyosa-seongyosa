@@ -344,7 +344,7 @@ const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
 
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
-const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사',partner:'협력교사'};
+const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'풀타임 교사',partner:'협력교사'};
 const pad=n=>String(n).padStart(2,'0');
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -2091,10 +2091,16 @@ async function renderHRStatus(){
   await reloadStaffCache();
 
   const myo = myOrgs();
+  const hrOrg = window._hrOrg || '';                 // 소속 필터 ('' = 전체)
+  const hrSort = window._hrSort || 'asc';            // 이름 ㄱㄴㄷ 정순/역순
   const list = Object.values(STAFF_CACHE||{})
     .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).some(o=>myo.includes(o)))
+    .filter(s => !hrOrg || (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(hrOrg))
     .filter(s => (s.acStatus||'active') !== 'quit')
-    .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(a.dept||'').localeCompare(b.dept||'','ko')||(a.name||'').localeCompare(b.name||'','ko'));
+    .sort((a,b)=>{
+      const n = (a.name||'').localeCompare(b.name||'','ko');
+      return hrSort === 'desc' ? -n : n;
+    });
 
   const missingOf = (s)=> HR_FIELDS.filter(f=>!s[f.k]);
   const incomplete = list.filter(s=>missingOf(s).length>0);
@@ -2130,6 +2136,13 @@ async function renderHRStatus(){
     <div class="asc">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
         <h3 class="actitle" style="margin:0">📇 인사정보 현황</h3>
+        <select onchange="window._hrOrg=this.value; renderHRStatus();" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:12.5px;background:var(--iv);font-family:inherit;font-weight:600">
+          <option value="">전체 소속</option>
+          ${myOrgs().map(o=>`<option value="${o}"${(window._hrOrg||'')===o?' selected':''}>${ORGS[o]||o}</option>`).join('')}
+        </select>
+        <button class="bm" style="padding:8px 13px;font-size:12.5px" onclick="window._hrSort = (window._hrSort==='desc'?'asc':'desc'); renderHRStatus();">
+          이름 ${(window._hrSort||'asc')==='desc'?'ㅎ→ㄱ ↓':'ㄱ→ㅎ ↑'}
+        </button>
         <button class="bp" style="margin-left:auto;padding:9px 16px" onclick="openBulkImport()">📥 일괄 입력</button>
       </div>
       <p class="adesc">재직증명서 발급에 필요한 정보입니다. 빠진 항목이 있으면 증명서를 발급할 수 없습니다.
@@ -2223,11 +2236,13 @@ async function renderAccessCtl(){
     return it && (it.deny||[]).includes(role);
   };
 
+  const sortMode = window._accSort || 'org';   // 'org' 기관순 | 'name' 이름 ㄱㄴㄷ순
   const list = Object.values(STAFF_CACHE||{})
     .filter(s => !s.noAuth && (s.acStatus||'active')!=='quit')
     .sort((a,b)=>{
+      if(sortMode === 'name') return (a.name||'').localeCompare(b.name||'','ko');
       const RO = {super:0, org_admin:1, tab_admin:2, teacher:3, partner:4};
-      return (RO[a.role]??9)-(RO[b.role]??9) || (a.org||'').localeCompare(b.org||'') || (a.name||'').localeCompare(b.name||'','ko');
+      return (a.org||'').localeCompare(b.org||'') || (RO[a.role]??9)-(RO[b.role]??9) || (a.name||'').localeCompare(b.name||'','ko');
     });
 
   const rows = list.map(s=>{
@@ -2257,7 +2272,12 @@ async function renderAccessCtl(){
 
   box.innerHTML = `
     <div class="asc">
-      <h3 class="actitle">🔐 페이지 접근 권한</h3>
+      <h3 class="actitle" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">🔐 페이지 접근 권한
+        <select onchange="window._accSort=this.value; renderAccessCtl();" style="height:32px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:12.5px;background:var(--iv);font-family:inherit;font-weight:600">
+          <option value="org"${(window._accSort||'org')==='org'?' selected':''}>기관순</option>
+          <option value="name"${window._accSort==='name'?' selected':''}>이름 ㄱㄴㄷ순</option>
+        </select>
+      </h3>
       <p class="adesc">선생님별로 페이지 접근을 열고 닫습니다. <b style="color:#16a34a">✓ 허용</b> / <b style="color:#dc2626">✕ 차단</b> — 누르면 바뀝니다.
       🔒는 협력교사 권한 자체로 막힌 것이고, 개인 설정보다 우선합니다. 차단하면 메뉴에서 숨겨지고 주소로 들어가도 막힙니다.</p>
       <style>
@@ -2333,7 +2353,7 @@ function openMakeAccount(uid, name){
           <div class="fgrp"><label>권한</label>
             <select id="mk-role" style="${IN}">
               <option value="partner" selected>협력교사 (출근부·경비·결재·증명서 제외)</option>
-              <option value="teacher">교사 (전체 기능)</option>
+              <option value="teacher">풀타임 교사 (전체 기능)</option>
             </select></div>
         </div>
         <div class="mact">
@@ -3032,7 +3052,7 @@ function renderAdmSys(){
           <select id="nr" onchange="onRoleChange()">
             ${isSU?'<option value="org_admin">기관관리자</option>':''}
             <option value="tab_admin">부서장</option>
-            <option value="teacher" selected>교사</option>
+            <option value="teacher" selected>풀타임 교사</option>
             <option value="partner">협력교사 (출근부·경비·결재 제외)</option>
           </select>
         </div>
@@ -3419,7 +3439,7 @@ function openEditStaff(uid, name, org, dept, role){
             <input id="es-birth" type="date" value="${cur.birth||''}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
           <div class="fgrp"><label>권한</label>
             <select id="es-role" onchange="updEditOrgMode()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
-              <option value="teacher"${role==='teacher'?' selected':''}>교사</option>
+              <option value="teacher"${role==='teacher'?' selected':''}>풀타임 교사</option>
               <option value="partner"${role==='partner'?' selected':''}>협력교사</option>
               <option value="tab_admin"${role==='tab_admin'?' selected':''}>부서장</option>
               <option value="org_admin"${role==='org_admin'?' selected':''}>기관관리자</option>

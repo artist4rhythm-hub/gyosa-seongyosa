@@ -343,7 +343,7 @@ const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
 
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
-const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사',partner:'협력교사'};
+const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'풀타임 교사',partner:'협력교사'};
 const pad=n=>String(n).padStart(2,'0');
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -1041,7 +1041,7 @@ async function loadStat() {
   const staffSnap=await getDocs(collection(db,'staff'));
   const byUid={};
   const allowed=myOrgs();
-  staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};const sOrgs=s.orgs&&s.orgs.length?s.orgs:[s.org];if(!sOrgs.some(o=>allowed.includes(o)))return;if(org&&!sOrgs.includes(org))return;byUid[s.uid]={name:s.name,org:s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{byUid[s.uid].counts[p.k]=0;p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
+  staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};if((s.role||'')==='partner'||s.noAuth)return;/* 협력선생님·계정없음은 출근 통계 제외 */const sOrgs=s.orgs&&s.orgs.length?s.orgs:[s.org];if(!sOrgs.some(o=>allowed.includes(o)))return;if(org&&!sOrgs.includes(org))return;byUid[s.uid]={name:s.name,org:s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{byUid[s.uid].counts[p.k]=0;p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
   rows.forEach(r=>{if(!byUid[r.uid])return;if(byUid[r.uid].counts[r.sub]!==undefined)byUid[r.uid].counts[r.sub]++;});
   const people=Object.values(byUid);
   if(!people.length){el.innerHTML='<p class="empty">데이터가 없습니다.</p>';return;}

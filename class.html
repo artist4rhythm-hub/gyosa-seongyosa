@@ -295,8 +295,19 @@ function renderClasses(){
   const el = $I('class-list'); if(!el) return;
   const fOrg = $I('flt-org')?.value || '';
   let list = CLASSES.filter(c => !fOrg || c.org===fOrg);
-  // 정렬: 기관 → 부서 → 학년
-  list.sort((a,b)=> (a.org+a.dept+(a.gradeOrder||0)).localeCompare(b.org+b.dept+(b.gradeOrder||0)));
+  // 정렬: 기관 → 학년 낮은 순(지혜빛 4세→7세, 다니엘 1학년→12학년) → 반 이름
+  const minGrade = c => {
+    const gs = new Set();
+    Object.values(c.grades||{}).forEach(g=>{ if(g) gs.add(g); });
+    if(c.grade) gs.add(c.grade);
+    let min = 999;
+    gs.forEach(g=>{ const n = parseInt(String(g),10); if(!isNaN(n) && n<min) min = n; });
+    return min;
+  };
+  list.sort((a,b)=>
+    (a.org||'').localeCompare(b.org||'') ||
+    minGrade(a) - minGrade(b) ||
+    (a.name||'').localeCompare(b.name||'','ko'));
   if(!list.length){ el.innerHTML = '<div class="acard"><p class="empty">등록된 반이 없습니다. "반 만들기"로 시작하세요.</p></div>'; return; }
   el.innerHTML = '<div class="acard">' + list.map(c=>{
     const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(Boolean)
