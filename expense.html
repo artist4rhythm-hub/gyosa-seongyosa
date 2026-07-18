@@ -430,7 +430,20 @@ window.showTab = showTab;
 
 // ══════════ 경비 신청 ══════════
 let expOrg = '';
-let expMode = 'equal';   // equal(1/N) | indiv(개별 청구) | refund(개별 반환)
+let expMode = 'equal';   // equal(1/N) | indiv(개별 청구) | refund(개별 반환) | group(그룹 균등)
+// 그룹 균등 청구: 그룹별 총액 ÷ 그룹 인원
+let expGroups = [ {total:0, ids:[]}, {total:0, ids:[]} ];
+let activeGroup = 0;
+const GRP_STYLE = [
+  {l:'A', bg:'#DCFCE7', fg:'#166534'},
+  {l:'B', bg:'#DBEAFE', fg:'#1D4ED8'},
+  {l:'C', bg:'#FEF3C7', fg:'#B45309'},
+  {l:'D', bg:'#EDE9FE', fg:'#6D28D9'},
+];
+function groupOf(sid){
+  for(let i=0;i<expGroups.length;i++) if(expGroups[i].ids.includes(sid)) return i;
+  return null;
+}
 let indivAmts = {};      // 개별 모드: sid → 금액
 let receipts = [];       // 영수증 dataURL 배열 (새로 추가한 것)
 // 크롭 편집기 상태
@@ -480,6 +493,7 @@ function renderNew(){
         <button class="subtbtn ${expMode==='equal'?'on':''}" onclick="setExpMode('equal')" style="padding:8px 16px">➗ 균등 청구 (1/N)</button>
         <button class="subtbtn ${expMode==='indiv'?'on':''}" onclick="setExpMode('indiv')" style="padding:8px 16px">✏️ 개별 청구</button>
         <button class="subtbtn ${expMode==='refund'?'on':''}" onclick="setExpMode('refund')" style="padding:8px 16px">↩️ 개별 반환</button>
+        <button class="subtbtn ${expMode==='group'?'on':''}" onclick="setExpMode('group')" style="padding:8px 16px">👥 그룹 균등</button>
       </div>
       <p class="adesc" id="mode-desc" style="margin-bottom:14px"></p>
       <div class="frow">
@@ -521,6 +535,12 @@ function renderNew(){
           <button class="bm" onclick="applyBase()">체크된 학생 전체 적용</button>
           <span style="font-size:12px;color:var(--tl)">적용 후 학생별 금액을 개별 수정할 수 있어요</span>
         </div>
+      </div>
+      <div id="group-bar" style="display:none;background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:12px 14px;margin-bottom:10px">
+        <div style="font-size:12.5px;color:var(--gd);margin-bottom:10px">
+          👥 <b>그룹을 고른 뒤 학생을 체크</b>하면 그 그룹에 들어갑니다. 그룹마다 <b>청구 금액(총액)</b>을 넣으면 그룹 인원수로 나눠 1인당 금액이 계산돼요.
+        </div>
+        <div id="group-tabs" style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch"></div>
       </div>
       <div id="ex-classes"></div>
 
@@ -577,18 +597,78 @@ function applyModeUI(){
   const descs = {
     equal: '일반적인 방식입니다. 청구 금액을 입력하고 참여 학생을 체크하면, 금액 ÷ (학생 수 + 학교 청구분 수량)으로 1인당 금액이 10원 단위 올림으로 자동 계산됩니다.',
     indiv: '학생마다 금액이 다를 때 사용합니다. 학생을 체크하고 각자 금액을 입력하면 합계가 자동 계산됩니다. (합계를 먼저 넣지 않아요)',
-    refund: '외부 활동 후 남은 활동비를 돌려줄 때 사용합니다. 학생별 반환 금액을 입력하세요. 내역·안내장에 반환(−)으로 표시됩니다.'
+    refund: '외부 활동 후 남은 활동비를 돌려줄 때 사용합니다. 학생별 반환 금액을 입력하세요. 내역·안내장에 반환(−)으로 표시됩니다.',
+    group: '그룹마다 금액이 다를 때 사용합니다. A그룹 학생들은 A금액을, B그룹 학생들은 B금액을 인원수로 나눠 청구합니다.'
   };
   const md=$I('mode-desc'); if(md) md.textContent = descs[expMode]||'';
   const wt=$I('wrap-total'); if(wt) wt.style.display = expMode==='equal'?'':'none';
   const wq=$I('wrap-schoolqty'); if(wq) wq.style.display = expMode==='equal'?'':'none';
-  const ib=$I('indiv-bar'); if(ib) ib.style.display = expMode==='equal'?'none':'';
+  const ib=$I('indiv-bar'); if(ib) ib.style.display = (expMode==='indiv'||expMode==='refund')?'':'none';
+  const gb=$I('group-bar'); if(gb) gb.style.display = expMode==='group'?'':'none';
+  if(expMode==='group') renderGroupBar();
   const idsc=$I('indiv-desc');
   if(idsc) idsc.textContent = expMode==='refund'
     ? '↩️ 반환 금액 입력 — 대부분 금액이 비슷하면 기본 금액을 전체 적용한 뒤, 다른 학생만 수정하세요.'
     : '✏️ 청구 금액 입력 — 대부분 금액이 비슷하면 기본 금액을 전체 적용한 뒤, 다른 학생만 수정하세요.';
   const stl=$I('sum-total-label'); if(stl) stl.textContent = expMode==='refund'?'반환 합계':'학생 청구 합계';
 }
+
+// ── 그룹 균등: 그룹 바 렌더·조작 ──
+function renderGroupBar(){
+  const box = $I('group-tabs'); if(!box) return;
+  box.innerHTML = expGroups.map((g,i)=>{
+    const st = GRP_STYLE[i];
+    const on = i === activeGroup;
+    const per = (g.total>0 && g.ids.length) ? perAmount(g.total, g.ids.length) : 0;
+    return `<div onclick="setActiveGroup(${i})" style="flex:1;min-width:170px;border:2px solid ${on?st.fg:'var(--ivd)'};border-radius:10px;padding:9px 11px;background:${on?st.bg:'#fff'};cursor:pointer;position:relative">
+      ${expGroups.length>2?`<button onclick="event.stopPropagation();removeGroup(${i})" title="그룹 삭제" style="position:absolute;top:5px;right:6px;width:18px;height:18px;border-radius:50%;border:none;background:rgba(0,0,0,.12);color:#555;font-size:10px;cursor:pointer;line-height:1">✕</button>`:''}
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+        <span style="width:22px;height:22px;border-radius:50%;background:${st.fg};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:800">${st.l}</span>
+        <b style="font-size:13px;color:${st.fg}">${st.l}그룹</b>
+        <span style="font-size:11.5px;color:var(--tl)">${g.ids.length}명</span>
+        ${on?'<span style="font-size:10px;background:'+st.fg+';color:#fff;padding:1px 7px;border-radius:100px;font-weight:700;margin-left:auto">체크 대상</span>':''}
+      </div>
+      <input type="number" inputmode="numeric" placeholder="청구 금액 (총액)" value="${g.total||''}"
+        onclick="event.stopPropagation()" oninput="setGroupTotal(${i}, this.value)"
+        style="width:100%;height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-family:inherit;background:#fff;box-sizing:border-box">
+      <div style="font-size:11px;color:var(--tl);margin-top:4px">${per?`1인당 ₩${won(per)} (10원 올림)`:'금액·인원을 넣으면 1인당 계산'}</div>
+    </div>`;
+  }).join('') + (expGroups.length < GRP_STYLE.length
+    ? `<button onclick="addGroup()" style="min-width:52px;border:1.5px dashed var(--ivd);border-radius:10px;background:var(--iv);color:var(--tl);font-size:20px;cursor:pointer">＋</button>` : '');
+}
+function setActiveGroup(i){ activeGroup = i; renderGroupBar(); }
+window.setActiveGroup = setActiveGroup;
+function setGroupTotal(i, v){
+  const n = parseInt(v,10);
+  expGroups[i].total = (isNaN(n)||n<0) ? 0 : n;
+  // 입력 중 리렌더 없이 1인당 문구만 갱신
+  renderGroupBarPer(i);
+  refreshSum();
+}
+window.setGroupTotal = setGroupTotal;
+function renderGroupBarPer(i){
+  const tabs = $I('group-tabs'); if(!tabs) return;
+  const tab = tabs.children[i]; if(!tab) return;
+  const info = tab.querySelector('div:last-child');
+  const g = expGroups[i];
+  const per = (g.total>0 && g.ids.length) ? perAmount(g.total, g.ids.length) : 0;
+  if(info) info.textContent = per ? `1인당 ₩${won(per)} (10원 올림)` : '금액·인원을 넣으면 1인당 계산';
+}
+function addGroup(){
+  if(expGroups.length >= GRP_STYLE.length) return;
+  expGroups.push({total:0, ids:[]});
+  activeGroup = expGroups.length-1;
+  renderGroupBar();
+}
+window.addGroup = addGroup;
+function removeGroup(i){
+  if(expGroups.length <= 2) return;
+  expGroups[i].ids.forEach(id=>checkedIds.delete(id));
+  expGroups.splice(i,1);
+  if(activeGroup >= expGroups.length) activeGroup = expGroups.length-1;
+  renderGroupBar(); renderClassChecks(); refreshSum();
+}
+window.removeGroup = removeGroup;
 
 // 개별 금액 설정
 function setAmt(sid, v){
@@ -1036,7 +1116,9 @@ function renderClassChecks(){
             const isLeave = (s.status||'active')==='leave';
             const isQuit = (s.status||'active')==='quit';
             const checked = checkedIds.has(s.id);
-            const showAmt = expMode!=='equal' && checked && !isLeave;
+            const showAmt = (expMode==='indiv'||expMode==='refund') && checked && !isLeave;
+            const gi = expMode==='group' ? groupOf(s.id) : null;
+            const gBadge = (gi!==null) ? `<span style="width:20px;height:20px;border-radius:50%;background:${GRP_STYLE[gi].fg};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;margin-left:5px;vertical-align:middle">${GRP_STYLE[gi].l}</span>`:'';
             const firstQuit = isQuit && (si===0 || (studs[si-1].status||'active')!=='quit');
             return `${firstQuit?'<div class="stu-quit-divider">재학중 아님 · 자퇴·전출 (이번 학년도)</div>':''}<div class="stu-row ${isLeave?'leave':''} ${isQuit?'quit':''} ${checked?'checked':''}" data-sid="${s.id}" onclick="${isLeave?'':`toggleStu('${s.id}')`}">
               <input type="checkbox" ${checked?'checked':''} ${isLeave?'disabled':''} onclick="event.stopPropagation();${isLeave?'':`toggleStu('${s.id}')`}">
@@ -1044,6 +1126,7 @@ function renderClassChecks(){
                 <span class="stu-name">${esc(s.name)}</span>
                 ${isLeave?'<span style="font-size:12px;color:#b45309;font-weight:700"> (휴학)</span>':''}
                 ${isQuit?`<span style="font-size:11.5px;color:#6b7280;font-weight:700;background:#e5e7eb;padding:1px 7px;border-radius:100px;margin-left:4px">${quitBadge(s)}</span>`:''}
+                ${gBadge}
                 <span class="stu-meta"> ${s.gender||''}${g?' · '+g:''}</span>
               </div>
               <input type="number" class="amt-in" data-amt="${s.id}" value="${indivAmts[s.id]!=null?indivAmts[s.id]:''}" placeholder="금액" inputmode="numeric"
@@ -1085,6 +1168,22 @@ function toggleCls(key){
 window.toggleCls = toggleCls;
 
 function toggleStu(sid){
+  if(expMode === 'group'){
+    // 그룹 균등: 활성 그룹으로 배정 / 같은 그룹이면 해제 / 다른 그룹이면 이동
+    const cur = groupOf(sid);
+    if(cur === activeGroup){
+      expGroups[cur].ids = expGroups[cur].ids.filter(x=>x!==sid);
+      checkedIds.delete(sid);
+    } else {
+      if(cur !== null) expGroups[cur].ids = expGroups[cur].ids.filter(x=>x!==sid);
+      expGroups[activeGroup].ids.push(sid);
+      checkedIds.add(sid);
+    }
+    renderGroupBar();
+    renderClassChecks();
+    refreshSum();
+    return;
+  }
   if(checkedIds.has(sid)) checkedIds.delete(sid);
   else checkedIds.add(sid);
   // 행 UI 갱신
@@ -1095,7 +1194,7 @@ function toggleStu(sid){
     if(cb) cb.checked = on;
     row.classList.toggle('checked', on);
     const ai = row.querySelector('.amt-in');
-    if(ai) ai.style.display = (expMode!=='equal' && on) ? '' : 'none';
+    if(ai) ai.style.display = ((expMode==='indiv'||expMode==='refund') && on) ? '' : 'none';
   }
   refreshClsCounts();
   refreshSum();
@@ -1115,7 +1214,22 @@ function clsAll(key, on){
       return s && (s.status||'active')==='active';
     });
   }
-  ids.forEach(id=>{ if(on) checkedIds.add(id); else checkedIds.delete(id); });
+  if(expMode === 'group'){
+    ids.forEach(id=>{
+      const cur = groupOf(id);
+      if(on){
+        if(cur !== null && cur !== activeGroup) expGroups[cur].ids = expGroups[cur].ids.filter(x=>x!==id);
+        if(cur !== activeGroup) expGroups[activeGroup].ids.push(id);
+        checkedIds.add(id);
+      } else {
+        if(cur !== null) expGroups[cur].ids = expGroups[cur].ids.filter(x=>x!==id);
+        checkedIds.delete(id);
+      }
+    });
+    renderGroupBar();
+  } else {
+    ids.forEach(id=>{ if(on) checkedIds.add(id); else checkedIds.delete(id); });
+  }
   renderClassChecks();
   refreshSum();
 }
@@ -1135,6 +1249,21 @@ function refreshClsCounts(){
 
 function refreshSum(){
   const n = checkedIds.size;
+  // 그룹 균등: 그룹별 합산
+  if(expMode==='group'){
+    let sum = 0; const parts = [];
+    expGroups.forEach((g,i)=>{
+      if(!g.ids.length) return;
+      const per = g.total>0 ? perAmount(g.total, g.ids.length) : 0;
+      sum += per * g.ids.length;
+      parts.push(`${GRP_STYLE[i].l} ${g.ids.length}명${per?`×₩${won(per)}`:''}`);
+    });
+    $I('sum-count').textContent = n ? `${n}명 (${parts.join(' · ')})` : '-';
+    $I('sum-per').textContent = '그룹별';
+    $I('sum-total').textContent = sum ? '₩'+won(sum) : '-';
+    const sg = $I('sum-school'); if(sg) sg.textContent = '-';
+    return;
+  }
   // 개별 모드: 개별 금액 합산
   if(expMode!=='equal'){
     let sum = 0;
@@ -1155,6 +1284,203 @@ function refreshSum(){
   const se = $I('sum-school');
   if(se) se.textContent = (sq&&total&&divisor) ? '₩'+won(per*sq) : '-';
 }
+
+// 활동 로그 (수퍼관리자 열람)
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){}
+}
+window.logActivity = logActivity;
+
+// ══════════ 📦 학년도 영수증 아카이브 (수퍼 전용) ══════════
+// 취합 문서(HTML 1개: 내역표+영수증) 다운로드 → NAS 보관 → 영수증 정리(삭제)로 저장 공간 확보
+function openArchive(){
+  if(CU.role!=='super') return;
+  // 학년도 목록 추출
+  const years = new Set();
+  EXPENSES.filter(e=>!e.deleted).forEach(e=>{ const y = schoolYearOf(e.date); if(y) years.add(y); });
+  const yArr = [...years].sort((a,b)=>b-a);
+  if(!yArr.length){ toast('아카이브할 내역이 없습니다.','err'); return; }
+  const curSY = schoolYearOf(new Date());
+  const el = document.createElement('div'); el.className='mov'; el.id='archive-mod';
+  el.innerHTML = `<div class="mbk" onclick="document.getElementById('archive-mod').remove()"></div>
+    <div class="mbox" style="max-width:520px;border-radius:16px">
+      <div class="mtitle">📦 학년도 영수증 아카이브</div>
+      <div class="msub">학년도(3월~익년 2월)의 <b>수행성 내역표 + 영수증 전체가 담긴 문서 1개</b>를 내려받아 NAS 등에 보관한 뒤,
+        영수증 이미지를 정리하면 저장 공간이 확보됩니다. <b>내역·금액 기록은 지워지지 않아요.</b></div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin:14px 0">
+        <div class="fgrp"><label>기관</label>
+          <select id="ar-org" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;background:var(--iv);font-family:inherit;width:100%">
+            ${myOrgs().map(o=>`<option value="${o}">${ORGS[o]||o}</option>`).join('')}
+          </select></div>
+        <div class="fgrp"><label>학년도</label>
+          <select id="ar-year" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;background:var(--iv);font-family:inherit;width:100%">
+            ${yArr.map(y=>`<option value="${y}">${y}학년도 (${y}.3 ~ ${y+1}.2)${y===curSY?' — 진행 중':''}</option>`).join('')}
+          </select></div>
+      </div>
+      <div style="background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:10px 13px;font-size:12px;color:var(--gd);line-height:1.6;margin-bottom:14px">
+        순서: ① 취합 문서 다운로드 → ② 파일이 잘 열리는지 확인 → ③ 「영수증 정리」<br>
+        진행 중인 학년도는 정리하지 않는 것을 권장합니다.
+      </div>
+      <div class="mact" style="flex-wrap:wrap;gap:8px">
+        <button class="bs" onclick="document.getElementById('archive-mod').remove()">닫기</button>
+        <button class="bm" style="border-color:#dc2626;color:#dc2626" onclick="cleanArchive()">🧹 영수증 정리</button>
+        <button class="bp" onclick="downloadArchive()">📄 취합 문서 다운로드</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+window.openArchive = openArchive;
+
+function archiveTargets(){
+  const org = $I('ar-org')?.value || myOrgs()[0];
+  const year = parseInt($I('ar-year')?.value,10);
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===org && schoolYearOf(e.date)===year)
+    .sort((a,b)=> (a.date||'').localeCompare(b.date||''));   // 문서는 오래된 순
+  return { org, year, list };
+}
+
+async function downloadArchive(){
+  const { org, year, list } = archiveTargets();
+  if(!list.length){ toast('해당 학년도 내역이 없습니다.','err'); return; }
+  window.showLoading && window.showLoading('아카이브 문서 생성 중…');
+  try {
+    // 건별 영수증 로드
+    const receiptsMap = {};
+    for(let i=0;i<list.length;i++){
+      window.setLoadStep && window.setLoadStep(`영수증 불러오는 중… (${i+1}/${list.length})`, Math.round((i+1)/list.length*80));
+      try {
+        const snap = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',list[i].id)));
+        const arr = []; snap.forEach(d=>{ const x=d.data(); arr.push({order:x.order||0, data:x.data}); });
+        arr.sort((a,b)=>a.order-b.order);
+        receiptsMap[list[i].id] = arr.map(x=>x.data);
+      } catch(e){ receiptsMap[list[i].id] = []; }
+    }
+    window.setLoadStep && window.setLoadStep('문서 조립 중…', 90);
+
+    const modeKor = e => e.mode==='refund'?'개별 반환':e.mode==='indiv'?'개별 청구':e.mode==='group'?'그룹 균등':'균등 청구';
+    let totCharge=0, totRefund=0, rcptCnt=0;
+    list.forEach(e=>{
+      const sum=(e.students||[]).reduce((t,s)=>t+(s.amt||0),0);
+      if(e.mode==='refund') totRefund+=sum; else totCharge+=sum;
+      rcptCnt += (receiptsMap[e.id]||[]).length;
+    });
+
+    const tableRows = list.map((e,i)=>{
+      const sum=(e.students||[]).reduce((t,s)=>t+(s.amt||0),0);
+      return `<tr>
+        <td>${i+1}</td><td>${esc(e.date||'')}</td><td>${esc(semKor(e.semester||''))}</td>
+        <td>${esc(e.teacher||'')}</td><td>${esc(e.subject||'')}</td><td class="lft">${esc(e.items||'')}</td>
+        <td>${modeKor(e)}</td><td>${(e.students||[]).length}명</td>
+        <td class="num">${e.mode==='refund'?'−':''}₩${won(sum)}</td>
+        <td>${e.paid?'입금완료':'대기'}</td>
+      </tr>`;
+    }).join('');
+
+    const sections = list.map((e,i)=>{
+      const sum=(e.students||[]).reduce((t,s)=>t+(s.amt||0),0);
+      const imgs = receiptsMap[e.id]||[];
+      return `<div class="sec">
+        <div class="sec-h"><b>${i+1}. ${esc(e.date||'')} · ${esc(e.subject||'')}</b>
+          <span>${esc(e.teacher||'')} · ${modeKor(e)} · ${(e.students||[]).length}명 · ${e.mode==='refund'?'−':''}₩${won(sum)}</span></div>
+        <div class="sec-i">구매: ${esc(e.items||'')}${e.detail?` · ${esc(e.detail)}`:''}</div>
+        <div class="sec-s">${(e.students||[]).map(s=>`${esc(s.name)}${s.amt!=null?` ₩${won(s.amt)}`:''}`).join(' · ')}</div>
+        ${imgs.length
+          ? `<div class="sec-r">${imgs.map(d=>`<img src="${d}">`).join('')}</div>`
+          : '<div class="sec-r none">영수증 없음 (또는 이미 정리됨)</div>'}
+      </div>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<title>${year}학년도 수행성 경비 아카이브 — ${ORGS[org]||org}</title>
+<style>
+  body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;margin:0;background:#f4f2ec;color:#222}
+  .wrap{max-width:900px;margin:0 auto;padding:34px 20px}
+  h1{font-size:22px;color:#1E3932;margin:0 0 4px}
+  .sub{font-size:12.5px;color:#777;margin-bottom:20px}
+  .sumbox{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px}
+  .sumbox div{background:#fff;border:1px solid #ddd6c4;border-radius:10px;padding:12px 18px;font-size:13px}
+  .sumbox b{display:block;font-size:17px;color:#1E3932;margin-top:2px}
+  table{width:100%;border-collapse:collapse;background:#fff;font-size:12px;margin-bottom:30px}
+  th,td{border:1px solid #ddd6c4;padding:6px 8px;text-align:center}
+  th{background:#1E3932;color:#fff;font-weight:700}
+  td.lft{text-align:left} td.num{text-align:right;font-weight:700}
+  .sec{background:#fff;border:1px solid #ddd6c4;border-radius:12px;padding:16px 18px;margin-bottom:18px;page-break-inside:avoid}
+  .sec-h{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;font-size:14px;color:#1E3932;border-bottom:1.5px solid #1E3932;padding-bottom:7px;margin-bottom:8px}
+  .sec-h span{font-size:12px;color:#777;font-weight:400}
+  .sec-i{font-size:12px;color:#555;margin-bottom:5px}
+  .sec-s{font-size:11.5px;color:#888;margin-bottom:10px}
+  .sec-r{display:flex;flex-wrap:wrap;gap:10px}
+  .sec-r img{max-width:47%;border:1px solid #e2ddd0;border-radius:8px}
+  .sec-r.none{font-size:12px;color:#bbb}
+  @media print{ body{background:#fff} .sec{border:none;border-top:1px solid #ccc;border-radius:0} .sec-r img{max-width:45%} }
+</style></head><body><div class="wrap">
+  <h1>📦 ${year}학년도 수행성 경비 아카이브 — ${ORGS[org]||org}</h1>
+  <div class="sub">기간: ${year}.3 ~ ${year+1}.2 · 생성: ${todayYMD()} · 생성자: ${esc(CU.name||'')} · 교사 선교사 시스템</div>
+  <div class="sumbox">
+    <div>총 건수<b>${list.length}건</b></div>
+    <div>청구 합계<b>₩${won(totCharge)}</b></div>
+    <div>반환 합계<b>−₩${won(totRefund)}</b></div>
+    <div>영수증<b>${rcptCnt}장</b></div>
+  </div>
+  <h2 style="font-size:15px;color:#1E3932">수행성 경비 내역표</h2>
+  <table><thead><tr><th>번호</th><th>날짜</th><th>학기</th><th>담당</th><th>과목</th><th>구매 목록</th><th>방식</th><th>인원</th><th>금액</th><th>입금</th></tr></thead>
+  <tbody>${tableRows}</tbody></table>
+  <h2 style="font-size:15px;color:#1E3932">건별 상세 · 영수증</h2>
+  ${sections}
+</div></body></html>`;
+
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `수행성경비_아카이브_${ORGS[org]||org}_${year}학년도.html`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    window.hideLoading && window.hideLoading();
+    toast(`아카이브 문서 다운로드 (${list.length}건 · 영수증 ${rcptCnt}장)`,'ok');
+    if(window.logActivity) logActivity('다운로드','영수증 아카이브', `${ORGS[org]||org} ${year}학년도`, `${list.length}건 · 영수증 ${rcptCnt}장`);
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('아카이브 생성 실패: '+(e.message||''),'err');
+  }
+}
+window.downloadArchive = downloadArchive;
+
+async function cleanArchive(){
+  const { org, year, list } = archiveTargets();
+  if(!list.length){ toast('해당 학년도 내역이 없습니다.','err'); return; }
+  const curSY = schoolYearOf(new Date());
+  if(year === curSY && !confirm(`⚠️ ${year}학년도는 아직 진행 중입니다.\n정말 이번 학년도 영수증을 정리할까요?`)) return;
+  if(!confirm(`🧹 ${ORGS[org]||org} ${year}학년도 영수증 정리\n\n· 대상: ${list.length}건의 영수증 이미지\n· 내역·금액 기록은 그대로 남습니다\n· 삭제된 영수증은 되돌릴 수 없습니다\n\n취합 문서를 먼저 다운로드하셨나요?`)) return;
+  if(!confirm('마지막 확인입니다.\n영수증 이미지를 삭제할까요?')) return;
+  window.showLoading && window.showLoading('영수증 정리 중…');
+  let delCnt = 0;
+  try {
+    for(let i=0;i<list.length;i++){
+      window.setLoadStep && window.setLoadStep(`정리 중… (${i+1}/${list.length})`, Math.round((i+1)/list.length*100));
+      const e = list[i];
+      try {
+        const snap = await getDocs(query(collection(db,'expenseReceipts'), where('expenseId','==',e.id)));
+        for(const d of snap.docs){ await deleteDoc(doc(db,'expenseReceipts',d.id)); delCnt++; }
+        await updateDoc(doc(db,'expenses',e.id), { receiptsCleared: true, receiptsClearedAt: Timestamp.now() });
+      } catch(e2){}
+    }
+    window.hideLoading && window.hideLoading();
+    toast(`정리 완료 — 영수증 ${delCnt}장 삭제 (내역은 보존)`,'ok');
+    if(window.logActivity) logActivity('삭제','영수증 아카이브 정리', `${ORGS[org]||org} ${year}학년도`, `영수증 ${delCnt}장`);
+    document.getElementById('archive-mod')?.remove();
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('정리 실패: '+(e.message||''),'err');
+  }
+}
+window.cleanArchive = cleanArchive;
 
 // ── 쪽지 발송 헬퍼 ──
 // 기관의 경비 관리자 uid 목록 (없으면 슈퍼관리자들)
@@ -1217,6 +1543,33 @@ async function submitExpense(){
       org: expOrg, mode:'equal', date, semester, teacher, subject, items, detail,
       total, per, count: ids.length,
       schoolQty: sq, schoolTotal: per*sq,
+      students, bank, holder, account, schoolNote,
+      createdByUid: CU.uid, createdByName: CU.name||'',
+      createdAt: Timestamp.now()
+    };
+  } else if(expMode==='group'){
+    // ── 그룹 균등 청구 ──
+    const used = expGroups.map((g,i)=>({...g, i})).filter(g=>g.ids.length>0);
+    if(!used.length){ toast('그룹에 학생을 배정하세요.','err'); return; }
+    const noAmt = used.filter(g=>!(g.total>0));
+    if(noAmt.length){ toast(`${noAmt.map(g=>GRP_STYLE[g.i].l+'그룹').join(', ')}의 청구 금액을 입력하세요.`,'err'); return; }
+    const students = [];
+    let grandTotal = 0;
+    const gsum = [];
+    used.forEach(g=>{
+      const per = perAmount(g.total, g.ids.length);
+      grandTotal += per * g.ids.length;
+      gsum.push(`· ${GRP_STYLE[g.i].l}그룹: ₩${won(g.total)} ÷ ${g.ids.length}명 = 1인당 ₩${won(per)}`);
+      g.ids.forEach(id=>{
+        const s = STUDENTS.find(x=>x.id===id);
+        students.push({id, name:s?.name||'', grade:studentGrade(id)||'', classId:studentClass(id)?.id||'', className:studentClass(id)?.name||'', amt:per, grp:GRP_STYLE[g.i].l});
+      });
+    });
+    if(!confirm(`👥 그룹 균등 청구\n\n${gsum.join('\n')}\n\n학생 청구 합계: ₩${won(grandTotal)}\n\n신청할까요?`)) return;
+    record = {
+      org: expOrg, mode:'group', date, semester, teacher, subject, items, detail,
+      total: grandTotal, count: students.length,
+      groups: used.map(g=>({label:GRP_STYLE[g.i].l, total:g.total, count:g.ids.length, per:perAmount(g.total,g.ids.length)})),
       students, bank, holder, account, schoolNote,
       createdByUid: CU.uid, createdByName: CU.name||'',
       createdAt: Timestamp.now()
@@ -1367,6 +1720,7 @@ async function renderList(){
                 ${esc(e.date)} · ${e.semester?`<b style="color:var(--goldd)">${esc(semKor(e.semester))}</b> · `:''}${ORGS[e.org]||e.org} · ${esc(e.teacher||e.createdByName||'')} ·
                 ${e.mode==='indiv' ? `<b style="color:var(--gm)">✏️ 개별 청구</b> · ${e.count}명 · 합계 <b style="color:var(--gm)">₩${won(e.total)}</b>`
                 : e.mode==='refund' ? `<b style="color:#0d9488">↩️ 개별 반환</b> · ${e.count}명 · 합계 <b style="color:#0d9488">₩${won(e.total)}</b>`
+                : e.mode==='group' ? `<b style="color:var(--gm)">👥 그룹 균등</b> · ${(e.groups||[]).map(g=>`${g.label} ${g.count}명×₩${won(g.per)}`).join(' · ')} · 합계 <b style="color:var(--gm)">₩${won(e.total)}</b>`
                 : `<b style="color:var(--gm)">₩${won(e.total)}</b> ÷ ${e.count}${e.schoolQty?`+${e.schoolQty}`:''} = <b style="color:var(--gm)">₩${won(e.per)}/인</b>`}
               </div>
               ${e.paid&&e.paidAt?`<div style="font-size:11.5px;color:#16a34a;margin-top:3px">💰 ${esc(e.paidByName||'')} · ${esc(fmtDateTime(e.paidAt))} 입금 확인</div>`:''}
@@ -1397,7 +1751,7 @@ function viewExpense(id){
   // 전체 학생 명단에 체크 표시 (누가 빠졌는지 한눈에)
   const charged = new Map();
   (e.students||[]).forEach(st=>charged.set(st.id, st));
-  const indivMode = (e.mode==='indiv'||e.mode==='refund');
+  const indivMode = (e.mode==='indiv'||e.mode==='refund'||e.mode==='group');
   const giFn = c => {
     const gs = new Set();
     (c.students||[]).forEach(sid=>{ const g=(c.grades||{})[sid]; if(g) gs.add(g); });
@@ -1643,7 +1997,9 @@ async function renderReport(){
 
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">📊 수행성 경비 취합</h3>
+      <h3 class="actitle" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">📊 수행성 경비 취합
+        ${CU.role==='super'?`<button class="bm" style="margin-left:auto;padding:8px 14px;font-size:12.5px" onclick="openArchive()">📦 학년도 아카이브</button>`:''}
+      </h3>
       <p class="adesc">기관·학기별로 학생별 청구 금액을 합산합니다. 반환은 자동으로 차감됩니다. (모든 선생님이 열람할 수 있습니다.)</p>
       ${orgTabs}
       <div class="fgrp" style="max-width:280px"><label>학기</label>

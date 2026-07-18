@@ -124,6 +124,9 @@ const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
 let CU = null;
 let CALS = [];        // 등록된 캘린더 목록
 let activeCalId = ''; // 현재 보고 있는 캘린더 (''=전체 합쳐보기)
+// 다중 선택: 비어 있으면 전체, 담겨 있으면 선택된 캘린더만
+let selCals = new Set();
+try { (JSON.parse(localStorage.getItem('gyosa_cal_sel')||'[]')||[]).forEach(id=>selCals.add(id)); } catch(e){}
 
 function toast(msg, type=''){
   const t = $I('toast'); t.textContent = msg;
@@ -155,6 +158,7 @@ onAuthStateChanged(auth, async (user) => {
     if(ac==='leave'||ac==='quit'){ $I('gate-msg').textContent = ac==='quit'?'퇴직 처리된 계정입니다.':'휴직 중인 계정입니다.'; $I('gate-btn').style.display='inline-block'; return; }
     $I('gate').style.display='none'; $I('ms').style.display='flex';
     window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'calendar')) return;
   renderShell('calendar', CU);
     window.showLoading && window.showLoading('불러오는 중…');
     
@@ -205,17 +209,24 @@ function renderMain(){
   }
 
   // 보기 칩: 전체 + 개별
-  const chips = `<div class="calchip ${activeCalId===''?'on':''}" onclick="setActiveCal('')">전체 보기</div>` +
-    CALS.map(c=>`<div class="calchip ${activeCalId===c.id?'on':''}" onclick="setActiveCal('${c.id}')">${c.name}</div>`).join('');
+  // 존재하지 않는 캘린더 id 정리
+  selCals = new Set([...selCals].filter(id=>CALS.some(c=>c.id===id)));
+  const allOn = selCals.size === 0;
+  const chips = `<div class="calchip ${allOn?'on':''}" onclick="setActiveCal('')">전체 보기</div>` +
+    CALS.map(c=>{
+      const on = selCals.has(c.id);
+      return `<div class="calchip ${on?'on':''}" onclick="toggleCal('${c.id}')">${on?'✓ ':''}${c.name}</div>`;
+    }).join('');
 
-  // 임베드할 캘린더 ID 목록
-  const ids = activeCalId==='' ? CALS.map(c=>c.calId) : [CALS.find(c=>c.id===activeCalId)?.calId].filter(Boolean);
+  // 임베드할 캘린더 ID 목록 (선택된 것만, 없으면 전체)
+  const ids = allOn ? CALS.map(c=>c.calId)
+    : CALS.filter(c=>selCals.has(c.id)).map(c=>c.calId);
   const embedUrl = buildEmbedUrl(ids);
 
   $I('main-body').innerHTML = `
     <div class="acard">
       <h3 class="actitle">📅 학사일정</h3>
-      <p class="adesc">연결된 구글 캘린더의 일정을 표시합니다. 캘린더를 선택해 따로 보거나 전체를 함께 볼 수 있습니다.</p>
+      <p class="adesc">연결된 구글 캘린더의 일정을 표시합니다. 캘린더를 <b>여러 개 골라</b> 함께 보거나 「전체 보기」로 모두 볼 수 있습니다.</p>
       <div class="calbar">${chips}</div>
     </div>
     <div class="calwrap"><iframe src="${embedUrl}" loading="lazy"></iframe></div>
@@ -223,8 +234,25 @@ function renderMain(){
 }
 window.renderMain = renderMain;
 
-function setActiveCal(id){ activeCalId = id; renderMain(); }
+function setActiveCal(id){
+  // '전체 보기' — 다중 선택 해제
+  selCals.clear();
+  saveCalSel();
+  renderMain();
+}
 window.setActiveCal = setActiveCal;
+
+// 캘린더 다중 선택 토글 (여러 개를 골라 함께 보기)
+function toggleCal(id){
+  if(selCals.has(id)) selCals.delete(id);
+  else selCals.add(id);
+  saveCalSel();
+  renderMain();
+}
+window.toggleCal = toggleCal;
+function saveCalSel(){
+  try { localStorage.setItem('gyosa_cal_sel', JSON.stringify([...selCals])); } catch(e){}
+}
 
 function manageCardHTML(){
   return `
@@ -305,6 +333,7 @@ async function delCal(id){
     logActivity('삭제','학사일정',c?.name||'');
     toast('삭제되었습니다.');
     if(activeCalId===id) activeCalId='';
+    selCals.delete(id); saveCalSel();
     await loadCals();
     renderMain();
   } catch(e){ toast('삭제 실패: '+e.message,'err'); }
