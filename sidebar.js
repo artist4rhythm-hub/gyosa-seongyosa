@@ -1,3 +1,39 @@
+/* ═══ 화면 모드 (라이트 / 다크 / 자동) ═══
+   저장: localStorage gyosa_theme = 'light' | 'dark' | 'auto' (기본 auto = 기기 설정 따름) */
+(function(){
+  function applyTheme(){
+    var pref = 'auto';
+    try { pref = localStorage.getItem('gyosa_theme') || 'auto'; } catch(e){}
+    var dark = pref === 'dark' ||
+      (pref === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  }
+  applyTheme();
+  // 자동 모드: 기기 설정이 바뀌면 즉시 따라감
+  try {
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+      var pref = localStorage.getItem('gyosa_theme') || 'auto';
+      if(pref === 'auto') applyTheme();
+    });
+  } catch(e){}
+  window.applyTheme = applyTheme;
+  window.themeLabel = function(){
+    var pref = 'auto';
+    try { pref = localStorage.getItem('gyosa_theme') || 'auto'; } catch(e){}
+    return pref === 'light' ? '☀️ 라이트' : pref === 'dark' ? '🌙 다크' : '🖥️ 자동';
+  };
+  window.cycleTheme = function(){
+    var order = ['auto','light','dark'];
+    var cur = 'auto';
+    try { cur = localStorage.getItem('gyosa_theme') || 'auto'; } catch(e){}
+    var next = order[(order.indexOf(cur) + 1) % order.length];
+    try { localStorage.setItem('gyosa_theme', next); } catch(e){}
+    applyTheme();
+    var el = document.getElementById('theme-btn-label');
+    if(el) el.textContent = window.themeLabel();
+  };
+})();
+
 /* ═══════════════════════════════════════════════
    사이드바 + 모바일 하단탭
    사용법: 각 페이지에서
@@ -54,7 +90,7 @@ function sbVisibleGroups(){
   const admin = sbIsAdmin();
   return MENU
     .filter(g => !g.admin || admin)
-    .map(g => ({ ...g, items: g.items.filter(it => !it.admin || admin) }))
+    .map(g => ({ ...g, items: g.items.filter(it => (!it.admin || admin) && !(it.deny||[]).includes(SB_USER?.role) && !((SB_USER?.pageDeny)||[]).includes(it.key)) }))
     .filter(g => g.items.length);
 }
 
@@ -149,6 +185,9 @@ function renderSidebar(){
     </nav>
 
     <div class="sb-foot">
+      <button class="theme-toggle" onclick="cycleTheme()" title="화면 모드: 자동 → 라이트 → 다크 순환">
+        화면 모드 <b id="theme-btn-label">${themeLabel()}</b>
+      </button>
       <div class="sb-me">
         <div class="sb-av">${(SB_USER?.name || '?').slice(0, 1)}</div>
         <div class="sb-mi">
@@ -389,3 +428,30 @@ function injectSidebarCSS(){
 `;
   document.head.appendChild(st);
 }
+
+/* ── 역할 차단 가드 ──
+   차단된 역할이 페이지에 직접 접근하면 안내 후 홈으로 보냄.
+   사용: guardPage(CU, 'att')  → true면 통과, false면 차단됨 */
+function guardPage(user, key){
+  if(!user) return true;
+  const it = (window.menuAllItems ? menuAllItems() : []).find(i => i.key === key);
+  if(!it) return true;
+  const roleDeny = (it.deny || []).includes(user.role);
+  const persDeny = (user.pageDeny || []).includes(key);
+  if(roleDeny || persDeny){
+    document.body.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F2F0EB;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;padding:20px">
+        <div style="background:#fff;border:1px solid #E3E1DA;border-radius:18px;padding:36px 40px;text-align:center;max-width:380px">
+          <div style="font-size:40px;margin-bottom:12px">🔒</div>
+          <div style="font-size:17px;font-weight:800;color:#1E3932;margin-bottom:8px">접근 권한이 없습니다</div>
+          <div style="font-size:13px;color:#5A6560;line-height:1.7;margin-bottom:20px">
+            이 메뉴에 대한 접근 권한이 없습니다.<br>필요하시면 관리자에게 문의해 주세요.
+          </div>
+          <button onclick="location.href='index.html'" style="background:#00704A;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">홈으로 가기</button>
+        </div>
+      </div>`;
+    return false;
+  }
+  return true;
+}
+window.guardPage = guardPage;
