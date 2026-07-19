@@ -88,13 +88,13 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .mtab .nm{position:sticky;left:0;background:var(--wh);z-index:2;text-align:left;padding:4px 8px;font-weight:600;min-width:80px;}
 .mtab th.nm{z-index:3;background:var(--iv);}
 .mtab .dcell{width:30px;height:30px;cursor:pointer;font-size:11px;font-weight:700;}
-.mtab .dcell.blocked{background:#f0f0f0;color:#bbb;cursor:default;}
+.mtab .dcell.blocked{background:var(--iv);color:#bbb;cursor:default;}
 .mtab .dcell.blocked.allow{cursor:pointer;}
 .mtab .dcell.drag-sel{outline:2px solid var(--gm);outline-offset:-2px;filter:brightness(0.92);}
 .mtab .dcell.auto-present{font-weight:400;opacity:0.85;}
 .mtab{user-select:none;}
-.mtab .wkhd{background:#fafafa;color:#999;}
-.mmenu{position:fixed;z-index:200;background:#fff;border:1px solid var(--ivd);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.2);padding:6px;min-width:130px;max-height:300px;overflow-y:auto;}
+.mtab .wkhd{background:var(--iv);color:#999;}
+.mmenu{position:fixed;z-index:200;background:var(--wh);border:1px solid var(--ivd);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.2);padding:6px;min-width:130px;max-height:300px;overflow-y:auto;}
 .mmenu button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:none;background:none;border-radius:6px;font-size:13px;cursor:pointer;text-align:left;}
 .mmenu button:hover{background:var(--iv);}
 .mmenu .sep{border-top:1px solid var(--ivd);margin:4px 0;font-size:11px;color:var(--tl);padding:4px 10px 2px;}
@@ -232,6 +232,7 @@ onAuthStateChanged(auth, async (user) => {
     if(ac==='leave'||ac==='quit'){ $I('gate-msg').textContent = ac==='quit'?'퇴직 처리된 계정입니다.':'휴직 중인 계정입니다.'; $I('gate-btn').style.display='inline-block'; return; }
     $I('gate').style.display='none'; $I('ms').style.display='flex';
     window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'attend')) return;
   renderShell('attend', CU);
     window.showLoading && window.showLoading('불러오는 중…');
     
@@ -563,7 +564,7 @@ async function loadMonthBody(){
       </p>
     </div>`;
   } catch(e){
-    body.innerHTML = `<div class="acard"><div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:14px;font-size:13px">월별 표를 그리는 중 오류가 발생했습니다.<br>${esc(e.message)}</div></div>`;
+    body.innerHTML = `<div class="acard"><div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:14px;font-size:13px">월별 표를 그리는 중 오류가 발생했습니다.<br>${esc(e.message)}</div></div>`;
     console.error('loadMonthBody 오류', e);
   }
 }
@@ -624,7 +625,7 @@ function openBulkMenu(ev){
   const cnt = dragCells.length;
   let html = `<div class="sep" style="color:var(--gm);font-weight:700">${cnt}칸 일괄 입력</div>`;
   html += sorted.map(t=>`<button onclick="applyBulk('${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}</button>`).join('');
-  html += `<div class="sep"></div><button onclick="applyBulkClear()" style="color:#dc2626">✕ 삭제(미입력)</button>`;
+  html += `<div class="sep"></div><button onclick="applyBulkClear()" style="color:var(--danger)">✕ 삭제(미입력)</button>`;
   html += `<button onclick="cancelBulk()" style="color:var(--tl)">취소</button>`;
   menu.innerHTML = html;
   document.body.appendChild(menu);
@@ -671,7 +672,7 @@ function openMonthMenu(ev, sid, day){
   if(sorted.length>5){
     html += `<div class="sep">기타</div>` + sorted.slice(5).map(t=>`<button onclick="setMonthCell('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}${cur&&cur.typeId===t.id?' ✓':''}</button>`).join('');
   }
-  if(cur){ html += `<div class="sep"></div><button onclick="clearMonthCell('${sid}',${day})" style="color:#dc2626">✕ 삭제(미입력)</button>`; }
+  if(cur){ html += `<div class="sep"></div><button onclick="clearMonthCell('${sid}',${day})" style="color:var(--danger)">✕ 삭제(미입력)</button>`; }
   menu.innerHTML = html;
   document.body.appendChild(menu);
   const x=Math.min(ev.clientX, window.innerWidth-160), yy=Math.min(ev.clientY, window.innerHeight-260);
@@ -795,17 +796,17 @@ async function loadCheckBody(){
   // 학기 기간 체크: 학기 밖이면 입력 차단
   const term = termOfDate(checkDate, c.org);
   if(term === 'none'){
-    body.innerHTML = `<div class="acard"><div style="background:#fef3c7;color:#b45309;border-radius:8px;padding:14px;font-size:13px;line-height:1.6">📅 ${checkDate.slice(0,4)}년 ${ORGS[c.org]} 학기 일정이 등록되지 않았습니다.<br>설정 탭에서 학기(개학일~종업일)를 먼저 등록해야 출석을 기록할 수 있습니다.</div></div>`;
+    body.innerHTML = `<div class="acard"><div style="background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:14px;font-size:13px;line-height:1.6">📅 ${checkDate.slice(0,4)}년 ${ORGS[c.org]} 학기 일정이 등록되지 않았습니다.<br>설정 탭에서 학기(개학일~종업일)를 먼저 등록해야 출석을 기록할 수 있습니다.</div></div>`;
     return;
   }
   if(term === null){
-    body.innerHTML = `<div class="acard"><div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:14px;font-size:13px;line-height:1.6">🚫 이 날짜(${checkDate})는 <b>학기 기간이 아닙니다.</b><br>출석은 등록된 학기(개학일~종업일) 안에서만 기록할 수 있습니다.<br><span style="color:var(--ts)">방학·학기 외 기간에는 출결을 입력하지 않습니다.</span></div></div>`;
+    body.innerHTML = `<div class="acard"><div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:14px;font-size:13px;line-height:1.6">🚫 이 날짜(${checkDate})는 <b>학기 기간이 아닙니다.</b><br>출석은 등록된 학기(개학일~종업일) 안에서만 기록할 수 있습니다.<br><span style="color:var(--ts)">방학·학기 외 기간에는 출결을 입력하지 않습니다.</span></div></div>`;
     return;
   }
 
   let banner = '';
-  if(holReason) banner = `<div style="background:#fee2e2;color:#dc2626;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 <b>${holReason}</b> 입니다. (휴일/방학)</div>`;
-  else if(isWeekend) banner = `<div style="background:#fef3c7;color:#b45309;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 주말입니다.</div>`;
+  if(holReason) banner = `<div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 <b>${holReason}</b> 입니다. (휴일/방학)</div>`;
+  else if(isWeekend) banner = `<div style="background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 주말입니다.</div>`;
 
   if(!studs.length){
     body.innerHTML = `<div class="acard">${banner}<div class="empty">이 반에 배정된 재학생이 없습니다.</div></div>`;
@@ -840,7 +841,7 @@ async function loadCheckBody(){
       <div style="font-size:13px;font-weight:700;color:var(--tl);margin-bottom:8px">휴학 중 (${leaveStuds.length}명) · 출결 제외</div>
       ${leaveStuds.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;opacity:.6">
         <span style="font-weight:600">${s.name}</span>
-        <span class="typebadge" style="background:#fef3c7;color:#b45309">휴학 중</span>
+        <span class="typebadge" style="background:var(--warn-bg);color:var(--warn)">휴학 중</span>
       </div>`).join('')}
     </div>` : '';
 
@@ -1212,7 +1213,7 @@ function renderStatStudent(byStud, totalDays, minDate, maxDate){
   const rows = list.map(b=>{
     const denom = b.myTotal!=null ? b.myTotal : totalDays;
     const rate = denom? Math.round(b.present/denom*100) : 0;
-    const leaveNote = b.leaveDays>0 ? ` <span style="font-size:10px;color:#b45309">(휴학 ${b.leaveDays}일 제외)</span>` : '';
+    const leaveNote = b.leaveDays>0 ? ` <span style="font-size:10px;color:var(--warn)">(휴학 ${b.leaveDays}일 제외)</span>` : '';
     return `<tr>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${b.name}${leaveNote}</td>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd)">${b.className}</td>
@@ -1500,7 +1501,7 @@ async function loadMonthlyBody(){
     const rec = recMap[s.id] || {};
     let present=0;
     const cells = days.map(x=>{
-      if(!x.inTerm) return `<td style="background:#e5e7eb;border:1px solid #eee"></td>`;
+      if(!x.inTerm) return `<td style="background:var(--gray-bg);border:1px solid #eee"></td>`;
       if(x.isWeekend || x.hol) return `<td style="background:${x.hol?'#fee2e2':'#f3f4f6'};border:1px solid #eee"></td>`;
       // 기록 없으면 기본 출석
       const tid = rec[x.ds] || defType?.id;
@@ -1514,7 +1515,7 @@ async function loadMonthlyBody(){
     // 월간 합계 막대
     const bar = `<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;background:#eee;border-radius:3px;height:10px;min-width:40px;overflow:hidden"><div style="width:${rate}%;height:100%;background:${rate>=90?'#16a34a':rate>=70?'#f59e0b':'#dc2626'}"></div></div><span style="font-size:11px;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'};white-space:nowrap">${present}/${totalSchool}</span></div>`;
     return `<tr>
-      <td style="position:sticky;left:0;background:#fff;padding:4px 8px;font-size:13px;font-weight:600;white-space:nowrap;border-right:2px solid var(--ivd)">${s.name}${(c.grades&&c.grades[s.id])?`<span style="color:var(--gm);font-size:10px;font-weight:700;margin-left:4px">${c.grades[s.id]}</span>`:''}</td>
+      <td style="position:sticky;left:0;background:var(--wh);padding:4px 8px;font-size:13px;font-weight:600;white-space:nowrap;border-right:2px solid var(--ivd)">${s.name}${(c.grades&&c.grades[s.id])?`<span style="color:var(--gm);font-size:10px;font-weight:700;margin-left:4px">${c.grades[s.id]}</span>`:''}</td>
       ${cells}
       <td style="padding:4px 8px;min-width:90px">${bar}</td>
     </tr>`;
@@ -1551,9 +1552,9 @@ function renderSet(){
     <div class="typeitem">
       <span class="typedot" style="background:${t.color}"></span>
       <span class="typename">${t.name}</span>
-      ${t.isPresent?'<span class="typebadge" style="background:#dcfce7;color:#16a34a">출석 인정</span>':'<span class="typebadge" style="background:#fee2e2;color:#dc2626">결석 처리</span>'}
+      ${t.isPresent?'<span class="typebadge" style="background:var(--ok-bg);color:var(--ok)">출석 인정</span>':'<span class="typebadge" style="background:var(--danger-bg);color:var(--danger)">결석 처리</span>'}
       <button class="bm" onclick="openTypeForm('${t.id}')">수정</button>
-      <button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delType('${t.id}')">삭제</button>
+      <button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="delType('${t.id}')">삭제</button>
     </div>`).join('');
   $I('c-set').innerHTML = `
     <div class="acard">
@@ -1581,7 +1582,7 @@ function termListHTML(){
       <span class="typebadge" style="background:var(--gp);color:var(--gm)">수업일 ${days}일</span>
       <span style="flex:1"></span>
       <button class="bm" onclick="openTermForm('${t.id}')">수정</button>
-      <button class="bm" style="background:#fee2e2;color:#dc2626" onclick="delTerm('${t.id}')">삭제</button>
+      <button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="delTerm('${t.id}')">삭제</button>
     </div>`;
   }).join('');
 }
