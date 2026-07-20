@@ -94,6 +94,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .msub{font-size:13px;color:var(--ts);margin-bottom:16px;}
 .mact{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
 .seclb{font-size:13px;font-weight:800;color:var(--gold);margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--ivd);}
+.jc-box{background:var(--iv);border:1px solid var(--ivd);border-radius:10px;padding:12px 14px;}
 
 /* 형제/이력 */
 .sibrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
@@ -1457,6 +1458,105 @@ async function deleteStudent(id){
 window.deleteStudent = deleteStudent;
 
 // ── 학생 상세 보기 ──
+/* ═══════════════════════════════════════════════
+   학부모 가입코드 — 평소 고정 + 필요시 재발급
+   joinCodes/{code} : { code, studentId, org, studentName, active, createdAt, createdBy }
+   students/{id}.joinCode : 현재 유효 코드 (조회 편의용 캐시)
+   ═══════════════════════════════════════════════ */
+// 헷갈리는 글자(0,O,1,I,L) 제외한 안전한 코드 생성
+function genJoinCode(org){
+  const prefix = org === 'daniel' ? 'DA' : org === 'jihyebit' ? 'JH' : 'ST';
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // 0,O,1,I,L 제외
+  const pick = n => Array.from({length:n}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+  return `${prefix}-${pick(2)}-${pick(4)}`;
+}
+
+// 코드 중복 방지 (아주 드물지만 안전하게)
+async function genUniqueJoinCode(org){
+  for(let i=0;i<8;i++){
+    const code = genJoinCode(org);
+    try {
+      const ex = await getDoc(doc(db,'joinCodes',code));
+      if(!ex.exists()) return code;
+    } catch(e){ return code; }
+  }
+  return genJoinCode(org) + Math.floor(Math.random()*9);
+}
+
+// 상세 모달 안의 가입코드 박스 HTML
+function joinCodeBoxHTML(s){
+  const code = s.joinCode || '';
+  if(!code){
+    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--tl)">아직 발급된 코드가 없습니다.</span>
+      <button class="bm" onclick="issueJoinCode('${s.id}')">＋ 코드 발급</button>
+    </div>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <code style="font-size:16px;font-weight:800;letter-spacing:1px;background:var(--gp);color:var(--gm);padding:7px 14px;border-radius:8px;border:1px solid var(--gm)">${code}</code>
+    <button class="bm" onclick="copyJoinCode('${code}')">📋 복사</button>
+    <button class="bm" onclick="reissueJoinCode('${s.id}')">🔄 재발급</button>
+  </div>
+  <div style="font-size:12px;color:var(--tl);margin-top:6px">학부모에게 이 코드를 전달하세요. 재발급하면 이전 코드는 즉시 무효화됩니다.</div>`;
+}
+
+// 코드 발급 (최초)
+async function issueJoinCode(studentId){
+  const s = STUDENTS.find(x=>x.id===studentId); if(!s) return;
+  try {
+    const code = await genUniqueJoinCode(s.org);
+    await setDoc(doc(db,'joinCodes',code), {
+      code, studentId, org: s.org, studentName: s.name,
+      active: true, createdAt: Timestamp.now(), createdBy: CU.name
+    });
+    await updateDoc(doc(db,'students',studentId), { joinCode: code });
+    s.joinCode = code;
+    logActivity('입력','학생',`${s.name} 가입코드 발급 (${code})`);
+    const box = $I('jc-box-'+studentId); if(box) box.innerHTML = joinCodeBoxHTML(s);
+    toast('가입코드를 발급했습니다.','ok');
+  } catch(e){ toast('발급 실패: '+e.message,'err'); }
+}
+
+// 재발급 (이전 코드 무효화 + 새 코드)
+async function reissueJoinCode(studentId){
+  const s = STUDENTS.find(x=>x.id===studentId); if(!s) return;
+  if(!confirm('현재 코드를 무효화하고 새 코드를 발급합니다.\n이미 연결된 학부모는 계속 열람할 수 있고, 새로 연결하려는 사람은 새 코드가 필요합니다.\n\n계속할까요?')) return;
+  try {
+    const old = s.joinCode;
+    if(old){
+      try { await updateDoc(doc(db,'joinCodes',old), { active:false, revokedAt:Timestamp.now(), revokedBy:CU.name }); } catch(e){}
+    }
+    const code = await genUniqueJoinCode(s.org);
+    await setDoc(doc(db,'joinCodes',code), {
+      code, studentId, org: s.org, studentName: s.name,
+      active: true, createdAt: Timestamp.now(), createdBy: CU.name
+    });
+    await updateDoc(doc(db,'students',studentId), { joinCode: code });
+    s.joinCode = code;
+    logActivity('수정','학생',`${s.name} 가입코드 재발급 (${old||'-'} → ${code})`);
+    const box = $I('jc-box-'+studentId); if(box) box.innerHTML = joinCodeBoxHTML(s);
+    toast('새 코드를 발급했습니다.','ok');
+  } catch(e){ toast('재발급 실패: '+e.message,'err'); }
+}
+
+// 코드 복사
+function copyJoinCode(code){
+  const done = () => toast('코드를 복사했습니다.','ok');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(done).catch(()=>fallbackCopy(code,done));
+  } else fallbackCopy(code, done);
+}
+function fallbackCopy(text, cb){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); cb&&cb(); } catch(e){}
+  document.body.removeChild(ta);
+}
+window.issueJoinCode = issueJoinCode;
+window.reissueJoinCode = reissueJoinCode;
+window.copyJoinCode = copyJoinCode;
+
 function openStudentDetail(id){
   const s = STUDENTS.find(x=>x.id===id); if(!s) return;
   const st = s.status || 'active';
@@ -1498,6 +1598,9 @@ function openStudentDetail(id){
 
       <div class="seclb">형제 / 자매 ${isAdmin()?`<button class="bm" style="margin-left:8px" onclick="openSiblingPicker('${s.id}')">＋ 연결</button>`:''}</div>
       <div class="sibrow">${sibHTML}</div>
+
+      ${isAdmin()?`<div class="seclb">학부모 가입코드</div>
+      <div id="jc-box-${s.id}" class="jc-box">${joinCodeBoxHTML(s)}</div>`:''}
 
       <div class="seclb">변경 이력</div>
       <div>${histHTML}</div>
