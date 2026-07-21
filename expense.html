@@ -327,6 +327,15 @@ function studentClass(sid){
   return CLASSES.find(c=>(c.year||y)===y && (c.students||[]).includes(sid))
       || CLASSES.find(c=>(c.students||[]).includes(sid));
 }
+// 취합·엑셀·상세표 공통: 저장된 신청기록(s)의 학년/반을 현재 학생관리 기준으로 갱신
+// (자퇴생 등도 학생관리에 반 배정이 있으면 그 학년으로 잡히도록)
+function resolveGrade(s){
+  return studentGrade(s.id) || s.grade || '';
+}
+function resolveClassName(s){
+  const c = studentClass(s.id);
+  return (c && c.name) || s.className || '';
+}
 // 1인당 금액: 총액÷인원 → 10원 단위 올림
 function perAmount(total, n){
   if(!total || !n) return 0;
@@ -457,7 +466,11 @@ function showTab(t){
     reloadStudentsClasses().then(ok=>{ if(ok && curTab==='new') renderClassChecks(); });
   }
   if(t==='list') renderList();
-  if(t==='report') renderReport();
+  if(t==='report'){
+    renderReport();
+    // 취합 탭도 최신 반편성 반영 (자퇴생 학년 등)
+    reloadStudentsClasses().then(ok=>{ if(ok && curTab==='report') renderReport(); });
+  }
   if(t==='backup') renderBackup();
 }
 window.showTab = showTab;
@@ -2185,7 +2198,16 @@ async function renderReport(){
   list.forEach(e=>{
     (e.students||[]).forEach(s=>{
       let r = stuMap.get(s.id);
-      if(!r){ r = {id:s.id, name:s.name, grade:s.grade, className:s.className, charge:0, refund:0, cnt:0}; stuMap.set(s.id, r); }
+      if(!r){
+        // 학년: 현재 학생관리의 반 배정 우선, 없으면 신청 당시 저장값
+        r = {
+          id:s.id, name:s.name,
+          grade: resolveGrade(s),
+          className: resolveClassName(s),
+          charge:0, refund:0, cnt:0
+        };
+        stuMap.set(s.id, r);
+      }
       if(e.mode==='refund') r.refund += (s.amt||0);
       else r.charge += (s.amt||0);
       r.cnt++;
@@ -2395,7 +2417,7 @@ function viewClassSheet(gradeKey){
     const members = (e.students||[]).filter(s=>gradeLabel(s.grade)===gradeKey);
     if(!members.length) return;
     items.push(e);
-    members.forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id, {id:s.id, name:s.name, grade:s.grade, className:s.className}); });
+    members.forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id, {id:s.id, name:s.name, grade:resolveGrade(s), className:resolveClassName(s)}); });
   });
   const students = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.name||'').localeCompare(b.name||'','ko'));
   // 학생별·항목별 금액 매트릭스
@@ -2706,7 +2728,7 @@ async function excelReport(){
 
     // 전체 학생 (학년→반→이름)
     const stuMap = new Map();
-    list.forEach(e=>(e.students||[]).forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id,{id:s.id,name:s.name,grade:s.grade,className:s.className}); }));
+    list.forEach(e=>(e.students||[]).forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id,{id:s.id,name:s.name,grade:resolveGrade(s),className:resolveClassName(s)}); }));
     const students = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.className||'').localeCompare(b.className||'','ko')||(a.name||'').localeCompare(b.name||'','ko'));
 
     const wb = window.XLSX.utils.book_new();
@@ -3017,7 +3039,7 @@ function buildAllSheetData(){
   else list=[...list].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const amtOf = (e, sid) => { const s=(e.students||[]).find(x=>x.id===sid); return s? (e.mode==='refund'? -(s.amt||0) : (s.amt||0)) : null; };
   const stuMap = new Map();
-  list.forEach(e=>(e.students||[]).forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id,{id:s.id,name:s.name,grade:s.grade,className:s.className}); }));
+  list.forEach(e=>(e.students||[]).forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id,{id:s.id,name:s.name,grade:resolveGrade(s),className:resolveClassName(s)}); }));
   const students = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.className||'').localeCompare(b.className||'','ko')||(a.name||'').localeCompare(b.name||'','ko'));
   return { items:list, students, amtOf, gradeLabel };
 }
@@ -3156,7 +3178,7 @@ function renderAllSheet(){
 
   // 전체 학생 (학년→반→이름)
   const stuMap = new Map();
-  items.forEach(e=>(e.students||[]).forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id,{id:s.id,name:s.name,grade:s.grade,className:s.className}); }));
+  items.forEach(e=>(e.students||[]).forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id,{id:s.id,name:s.name,grade:resolveGrade(s),className:resolveClassName(s)}); }));
   const allStudents = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.className||'').localeCompare(b.className||'','ko')||(a.name||'').localeCompare(b.name||'','ko'));
 
   // 학년별 그룹
