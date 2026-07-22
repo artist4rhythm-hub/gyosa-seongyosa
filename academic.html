@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>학사일정 · 교사 선교사</title>
+<!-- 다크 모드: 화면 그리기 전에 먼저 적용 (흰 화면 깜빡임 방지) -->
+<script>
+  (function(){
+    var pref='auto';
+    try{ pref=localStorage.getItem('gyosa_theme')||'auto'; }catch(e){}
+    var dark = pref==='dark' || (pref==='auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark?'dark':'light');
+  })();
+</script>
 <link rel="stylesheet" href="theme.css">
 <link rel="stylesheet" href="ui.css">
 <style>
@@ -33,31 +42,31 @@
   .cal-dowhead{ display:contents; }
   .cal-dow{ padding:12px 8px; text-align:center; font-size:14px; font-weight:800; background:var(--gd); color:#fff; border-bottom:2px solid var(--gm); }
   .cal-dow.wk{ font-size:12px; background:var(--gd); }
-  .cal-dow.sun{ color:#FF8A7A; }
-  .cal-dow.sat{ color:#8FB8FF; }
+  .cal-dow.sun{ color:#FFB4A8; }
+  .cal-dow.sat{ color:#A8C8FF; }
 
   /* 주차 라벨 (좌측) */
   .cal-wk{ padding:8px 4px; text-align:center; font-size:10px; font-weight:700; color:var(--ts); background:var(--gp); border-right:1px solid var(--ivd); border-bottom:1px solid var(--ivd); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; line-height:1.2; }
   .cal-wk .wknum{ font-size:15px; font-weight:800; color:var(--gd); }
-  .cal-wk.break{ background:#DCE7F5; color:#3B5A8A; }
-  .cal-wk.break .wknum{ color:#2B4A7A; font-size:10px; }
+  .cal-wk.break{ background:var(--m-bg); color:var(--m-tx); }
+  .cal-wk.break .wknum{ color:var(--m-tx); font-size:10px; }
 
   /* 날짜 셀 */
-  .cal-cell{ border-right:1px solid var(--ivd); border-bottom:1px solid var(--ivd); min-height:120px; display:flex; flex-direction:column; position:relative; }
+  .cal-cell{ border-right:1px solid var(--ivd); border-bottom:1px solid var(--ivd); min-height:120px; display:flex; flex-direction:column; position:relative; background:var(--wh); }
   .cal-cell.empty{ background:var(--iv); }
-  .cal-cell.sunday{ background:#FEF5F3; }
-  .cal-cell.saturday{ background:#F5F8FE; }
-  .cal-cell.holiday{ background:#FEF0EE; }
+  .cal-cell.sunday{ background:var(--f-bg); }
+  .cal-cell.saturday{ background:var(--m-bg); }
+  .cal-cell.holiday{ background:var(--danger-bg); }
 
   /* 날짜 숫자 */
-  .cal-daynum{ padding:5px 8px; font-size:15px; font-weight:800; color:var(--gd); }
-  .cal-cell.sunday .cal-daynum, .cal-cell.holiday .cal-daynum{ color:#E5484D; }
-  .cal-cell.saturday .cal-daynum{ color:#4A7AC7; }
-  .cal-holname{ font-size:10px; font-weight:700; color:#E5484D; padding:0 8px 3px; line-height:1.2; }
+  .cal-daynum{ padding:5px 8px; font-size:15px; font-weight:800; color:var(--gd); display:flex; align-items:baseline; gap:6px; }
+  .cal-cell.sunday .cal-daynum, .cal-cell.holiday .cal-daynum{ color:var(--danger); }
+  .cal-cell.saturday .cal-daynum{ color:var(--m-tx); }
+  .cal-holname{ font-size:10px; font-weight:700; color:var(--danger); line-height:1.2; }
 
-  /* 오전/오후 영역 */
+  /* 오전/오후 영역 — 항상 같은 높이 (공휴일·빈 날도 정렬 유지) */
   .cal-slots{ flex:1; display:flex; flex-direction:column; }
-  .cal-slot{ flex:1; border-top:1px dashed var(--ivd); padding:2px 4px; min-height:26px; position:relative; }
+  .cal-slot{ flex:1 1 0; border-top:1px dashed var(--ivd); padding:2px 4px 2px 4px; min-height:38px; position:relative; }
   .cal-slot-lab{ font-size:8px; font-weight:700; color:var(--tl); position:absolute; left:3px; top:2px; opacity:.5; pointer-events:none; }
 
   /* 행사 칩 */
@@ -266,7 +275,7 @@ function render(){
 
     // 7일
     week.forEach((d,di)=>{
-      if(!d){ html += '<div class="cal-cell empty"></div>'; return; }
+      if(!d){ html += '<div class="cal-cell empty"><div class="cal-daynum">&nbsp;</div><div class="cal-slots"><div class="cal-slot"></div><div class="cal-slot"></div></div></div>'; return; }
       const ds = dateStr(y,m,d);
       const dow = di;  // 0=일
       const holName = holidays[ds];
@@ -281,8 +290,7 @@ function render(){
       const pm = evs.filter(e=>e.timeOfDay==='pm');
 
       html += `<div class="${cls}">`;
-      html += `<div class="cal-daynum">${d}</div>`;
-      if(holName) html += `<div class="cal-holname">${holName}</div>`;
+      html += `<div class="cal-daynum">${d}${holName?`<span class="cal-holname">${holName}</span>`:''}</div>`;
 
       // 종일 행사 (배너)
       allday.forEach(e=>{
