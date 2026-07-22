@@ -388,6 +388,7 @@ async function loadData(){
     TERMS = []; ts.forEach(d=>TERMS.push({id:d.id, ...d.data()}));
     const st = await getDocs(collection(db,'staff'));
     STAFF = []; st.forEach(d=>STAFF.push({uid:d.id, ...d.data()}));
+    try { const lsnap = await getDocs(collection(db,'expenseLocks')); LOCKS={}; lsnap.forEach(d=>{ const v=d.data(); if(v&&v.locked) LOCKS[d.id]={lockedBy:v.lockedByName||'', lockedAt:v.lockedAt||null}; }); } catch(_){}
     try {
       const w = await getDoc(doc(db,'expenseConfig','window'));
       if(w.exists()){ const d=w.data()||{}; EXP_WINDOW = {afterDays: d.afterDays??8, beforeDays: d.beforeDays??14}; }
@@ -1092,6 +1093,7 @@ window.openImageOverlay = openImageOverlay;
 async function editExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
   if(!isExpManager(e.org)){ toast('경비 관리자와 슈퍼관리자만 수정할 수 있습니다.','err'); return; }
+  if(isLocked(e.org, e.semester)){ toast(`🔒 잠긴 학기입니다 (${semKor(e.semester)}). 취합에서 잠금을 해제한 뒤 수정하세요.`,'err'); return; }
   editingId = id;
   editingSemester = e.semester || '';
   expOrg = e.org;
@@ -1749,6 +1751,7 @@ function confirmCard(info){
 async function submitExpense(){
   const date = $I('ex-date')?.value || '';
   const semester = $I('ex-semester')?.value || '';
+  if(isLocked(expOrg, semester)){ toast(`🔒 잠긴 학기입니다 (${semKor(semester)}). 이 학기에는 신청·수정할 수 없습니다. 수퍼관리자가 취합에서 잠금을 해제해야 합니다.`,'err'); return; }
   const teacher = $I('ex-teacher')?.value.trim() || '';
   const subject = $I('ex-subject')?.value.trim() || '';
   const items = $I('ex-items')?.value.trim() || '';
@@ -2007,6 +2010,7 @@ async function renderList(){
     const orgs = myOrgs();
     EXPENSES = EXPENSES.filter(e=>orgs.includes(e.org));
     EXPENSES.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    try { const lsnap = await getDocs(collection(db,'expenseLocks')); LOCKS={}; lsnap.forEach(d=>{ const v=d.data(); if(v&&v.locked) LOCKS[d.id]={lockedBy:v.lockedByName||'', lockedAt:v.lockedAt||null}; }); } catch(_){}
   } catch(e){
     window.hideLoading && window.hideLoading();
     box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
@@ -2054,12 +2058,14 @@ async function renderList(){
             ${e.deleted ? `
               <button class="bp" style="padding:7px 14px" onclick="restoreExpense('${e.id}')">↩︎ 되돌리기</button>
               ${(CU.role==='super'||isExpManager(e.org))?`<button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="purgeExpense('${e.id}')">영구 삭제</button>`:''}
+            ` : (isLocked(e.org, e.semester) ? `
+              <span style="display:inline-flex;align-items:center;gap:5px;background:var(--gray-bg);color:var(--gray-tx);padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700">🔒 잠긴 학기 · 수정 불가</span>
             ` : `
               ${isExpManager(e.org) ? (e.paid
                 ? `<button class="bm" style="background:var(--danger-bg);color:var(--warn)" onclick="togglePaid('${e.id}',false)">입금확인 취소</button>`
                 : `<button class="bm" style="background:var(--ok-bg);color:var(--ok);font-weight:700" onclick="togglePaid('${e.id}',true)">💰 입금 확인</button>`) : ''}
               ${isExpManager(e.org) ? `<button class="bm" onclick="editExpense('${e.id}')">✏️ 수정</button><button class="bm" style="background:var(--danger-bg);color:var(--warn)" onclick="delExpense('${e.id}')">🗑️ 삭제</button>` : ''}
-            `}
+            `)}
           </div>`).join('') : `<p class="empty">${expTrash?'휴지통이 비어 있습니다.':'아직 신청 내역이 없습니다.'}</p>`}
       </div>
     </div>`;
@@ -2169,6 +2175,7 @@ async function loadReceipts(expenseId){
 async function delExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
   if(!isExpManager(e.org)){ toast('경비 관리자와 슈퍼관리자만 삭제할 수 있습니다.','err'); return; }
+  if(isLocked(e.org, e.semester)){ toast(`🔒 잠긴 학기입니다 (${semKor(e.semester)}). 잠금을 해제한 뒤 삭제하세요.`,'err'); return; }
   if(!confirm(`"${e.subject}" (${e.date}) 신청을 휴지통으로 옮길까요?\n휴지통에서 언제든 되돌릴 수 있습니다.`)) return;
   try {
     await updateDoc(doc(db,'expenses',id), {
@@ -2194,6 +2201,7 @@ window.restoreExpense = restoreExpense;
 async function purgeExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
   if(!(CU.role==='super' || isExpManager(e.org))){ toast('권한이 없습니다.','err'); return; }
+  if(isLocked(e.org, e.semester)){ toast(`🔒 잠긴 학기입니다 (${semKor(e.semester)}). 잠금을 해제한 뒤 삭제하세요.`,'err'); return; }
   if(!confirm('영구 삭제하면 되돌릴 수 없습니다.\n영수증까지 모두 지웁니다. 진행할까요?')) return;
   window.showLoading && window.showLoading('삭제하는 중…');
   try {
@@ -2224,6 +2232,7 @@ function fmtDateTime(ts){
 async function togglePaid(id, paid){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
   if(!isExpManager(e.org)){ toast('경비 관리자만 입금 확인을 할 수 있습니다.','err'); return; }
+  if(isLocked(e.org, e.semester)){ toast(`🔒 잠긴 학기입니다 (${semKor(e.semester)}). 입금 상태를 바꾸려면 잠금을 해제하세요.`,'err'); return; }
   if(paid && !confirm(`"${e.subject}" (${e.teacher||e.createdByName}) 건을 입금 완료로 표시할까요?\n신청한 선생님께 입금 안내 쪽지가 발송됩니다.`)) return;
   if(!paid && !confirm('입금 확인을 취소할까요?')) return;
   try {
@@ -2252,6 +2261,9 @@ window.togglePaid = togglePaid;
 let reportOrg = '';
 let reportSem = '';
 let DEPOSITS = [];  // 예치금 입금 기록
+let LOCKS = {};     // 학기 잠금 { 'org|semester': {lockedBy, lockedAt} }
+function lockKey(org, sem){ return `${org}|${sem}`; }
+function isLocked(org, sem){ return !!LOCKS[lockKey(org, sem)]; }
 
 async function renderReport(){
   const box = $I('tab-report');
@@ -2265,6 +2277,8 @@ async function renderReport(){
     EXPENSES.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
     const dsnap = await getDocs(collection(db,'expenseDeposits'));
     DEPOSITS = []; dsnap.forEach(d=>DEPOSITS.push({id:d.id, ...d.data()}));
+    const lsnap = await getDocs(collection(db,'expenseLocks'));
+    LOCKS = {}; lsnap.forEach(d=>{ const v=d.data(); if(v&&v.locked) LOCKS[d.id]={lockedBy:v.lockedByName||'', lockedAt:v.lockedAt||null}; });
   } catch(e){
     window.hideLoading && window.hideLoading();
     box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
@@ -2286,6 +2300,8 @@ async function renderReport(){
   const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem)
     .sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
   const canManage = isExpManager(reportOrg);
+  const semLocked = isLocked(reportOrg, reportSem);
+  const lockInfo = LOCKS[lockKey(reportOrg, reportSem)] || null;
 
   // 요약
   let totalCharge=0, totalRefund=0, totalSchool=0, totalTeacherRefund=0;
@@ -2336,7 +2352,11 @@ async function renderReport(){
   box.innerHTML = `
     <div class="acard">
       <h3 class="actitle" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">📊 수행성 경비 취합
-        ${CU.role==='super'?`<button class="bm" style="margin-left:auto;padding:8px 14px;font-size:12.5px" onclick="openArchive()">📦 학년도 아카이브</button>`:''}
+        ${semLocked?`<span style="display:inline-flex;align-items:center;gap:5px;background:var(--gray-bg);color:var(--gray-tx);padding:5px 12px;border-radius:20px;font-size:12.5px;font-weight:700">🔒 잠김${lockInfo&&lockInfo.lockedBy?` · ${esc(lockInfo.lockedBy)}`:''}</span>`:''}
+        <span style="margin-left:auto;display:inline-flex;gap:8px">
+        ${CU.role==='super'&&reportSem?`<button class="bm" style="padding:8px 14px;font-size:12.5px;${semLocked?'background:var(--ok-bg);color:var(--ok);border-color:var(--ok)':'background:var(--gray-bg);color:var(--gray-tx)'}" onclick="toggleSemLock()">${semLocked?'🔓 잠금 해제':'🔒 학기 잠금'}</button>`:''}
+        ${CU.role==='super'?`<button class="bm" style="padding:8px 14px;font-size:12.5px" onclick="openArchive()">📦 학년도 아카이브</button>`:''}
+        </span>
       </h3>
       <p class="adesc">기관·학기별로 학생별 청구 금액을 합산합니다. 반환은 자동으로 차감됩니다. (모든 선생님이 열람할 수 있습니다.)</p>
       ${orgTabs}
@@ -2463,6 +2483,42 @@ async function renderReport(){
     </div>`;
 }
 window.renderReport = renderReport;
+
+// ══════════ 🔒 학기 잠금 (수퍼 전용) ══════════
+async function toggleSemLock(){
+  if(CU.role!=='super'){ toast('수퍼관리자만 잠금을 설정할 수 있습니다.','err'); return; }
+  const org = reportOrg, sem = reportSem;
+  if(!sem){ toast('학기를 선택하세요.','err'); return; }
+  const key = lockKey(org, sem);
+  const currentlyLocked = isLocked(org, sem);
+  const orgName = ORGS[org]||org, semName = semKor(sem);
+  if(currentlyLocked){
+    if(!confirm(`🔓 잠금 해제\n\n${orgName} · ${semName}\n\n잠금을 해제하면 이 학기의 경비를 다시 수정·삭제할 수 있습니다.\n계속할까요?`)) return;
+  } else {
+    if(!confirm(`🔒 학기 잠금\n\n${orgName} · ${semName}\n\n이 학기의 모든 수행성 경비가 잠깁니다.\n· 수정·삭제·입금 취소가 막힙니다\n· 오류 방지를 위해 지난 학기 마감 시 사용하세요\n· 언제든 수퍼관리자가 해제할 수 있습니다\n\n잠글까요?`)) return;
+  }
+  window.showLoading && window.showLoading(currentlyLocked?'잠금 해제 중…':'잠그는 중…');
+  try {
+    if(currentlyLocked){
+      await deleteDoc(doc(db,'expenseLocks',key));
+      delete LOCKS[key];
+      toast(`🔓 ${semName} 잠금이 해제되었습니다.`,'ok');
+      if(window.logActivity) logActivity('잠금해제','수행성 경비', `${orgName} ${semName}`, '');
+    } else {
+      await setDoc(doc(db,'expenseLocks',key), {
+        org, semester:sem, locked:true,
+        lockedByUid:CU.uid, lockedByName:CU.name||'', lockedAt:Timestamp.now()
+      });
+      LOCKS[key] = {lockedBy:CU.name||'', lockedAt:Timestamp.now()};
+      toast(`🔒 ${semName} 경비가 잠겼습니다.`,'ok');
+      if(window.logActivity) logActivity('잠금','수행성 경비', `${orgName} ${semName}`, '');
+    }
+    renderReport();
+  } catch(e){
+    toast('처리 실패: '+(e.message||''),'err');
+  } finally { window.hideLoading && window.hideLoading(); }
+}
+window.toggleSemLock = toggleSemLock;
 function setReportOrg(o){ reportOrg = o; reportSem = ''; renderReport(); }
 window.setReportOrg = setReportOrg;
 function setReportSem(s){ reportSem = s; renderReport(); }
@@ -2798,7 +2854,7 @@ async function printSheet(mode){
     holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation: landscape?'landscape':'portrait', unit:'mm', format:'a4'});
@@ -2843,7 +2899,7 @@ async function imageSheet(){
     holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');
@@ -3084,7 +3140,7 @@ async function printReceiptCollection(){
     document.body.appendChild(holder);
     const node=holder.querySelector('.rc-doc');
     await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
 
     const { jsPDF }=window.jspdf;
     const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -3147,7 +3203,7 @@ async function imageReceiptCollection(){
     document.body.appendChild(holder);
     const node=holder.querySelector('.rc-doc');
     await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(holder);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`영수증취합_${semKor(reportSem)}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
@@ -3256,7 +3312,7 @@ async function printAllSheet(){
     holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
@@ -3287,7 +3343,7 @@ async function imageAllSheet(){
     holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
     const node=holder.querySelector('.sheet-doc');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(holder);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`수행성경비_전체취합_${semKor(reportSem)}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
