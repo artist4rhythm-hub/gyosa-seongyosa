@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>학사일정 · 교사 선교사</title>
+<link rel="stylesheet" href="theme.css">
+<link rel="stylesheet" href="ui.css">
+<style>
+  /* ── 페이지 레이아웃 ── */
+  .ac-wrap{ max-width:1400px; margin:0 auto; padding:20px; }
+  .ac-head{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:18px; }
+  .ac-title{ font-size:22px; font-weight:800; color:var(--gd); margin:0; display:flex; align-items:center; gap:10px; }
+  .ac-toolbar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+
+  /* 연/월 이동 */
+  .ac-nav{ display:flex; align-items:center; gap:4px; background:var(--wh); border:1px solid var(--ivd); border-radius:12px; padding:4px; }
+  .ac-nav button{ width:36px; height:36px; border:none; background:none; border-radius:8px; font-size:18px; cursor:pointer; color:var(--gd); display:flex; align-items:center; justify-content:center; transition:background .12s; }
+  .ac-nav button:hover{ background:var(--gp); }
+  .ac-ym{ min-width:120px; text-align:center; font-size:16px; font-weight:800; color:var(--gd); }
+  .ac-ym small{ display:block; font-size:11px; font-weight:600; color:var(--tl); }
+
+  /* 뷰 토글 */
+  .ac-viewtoggle{ display:flex; background:var(--wh); border:1px solid var(--ivd); border-radius:10px; overflow:hidden; }
+  .ac-viewtoggle button{ padding:8px 16px; border:none; background:none; font-size:13px; font-weight:700; color:var(--ts); cursor:pointer; font-family:inherit; transition:all .12s; }
+  .ac-viewtoggle button.on{ background:var(--gm); color:#fff; }
+
+  /* ── 월 달력 ── */
+  .cal{ background:var(--wh); border-radius:14px; overflow:hidden; box-shadow:var(--shadow); border:1px solid var(--ivd); }
+  .cal-grid{ display:grid; grid-template-columns:64px repeat(7, 1fr); }
+
+  /* 요일 헤더 */
+  .cal-dowhead{ display:contents; }
+  .cal-dow{ padding:12px 8px; text-align:center; font-size:14px; font-weight:800; background:var(--gd); color:#fff; border-bottom:2px solid var(--gm); }
+  .cal-dow.wk{ font-size:12px; background:var(--gd); }
+  .cal-dow.sun{ color:#FF8A7A; }
+  .cal-dow.sat{ color:#8FB8FF; }
+
+  /* 주차 라벨 (좌측) */
+  .cal-wk{ padding:8px 4px; text-align:center; font-size:10px; font-weight:700; color:var(--ts); background:var(--gp); border-right:1px solid var(--ivd); border-bottom:1px solid var(--ivd); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; line-height:1.2; }
+  .cal-wk .wknum{ font-size:15px; font-weight:800; color:var(--gd); }
+  .cal-wk.break{ background:#DCE7F5; color:#3B5A8A; }
+  .cal-wk.break .wknum{ color:#2B4A7A; font-size:10px; }
+
+  /* 날짜 셀 */
+  .cal-cell{ border-right:1px solid var(--ivd); border-bottom:1px solid var(--ivd); min-height:120px; display:flex; flex-direction:column; position:relative; }
+  .cal-cell.empty{ background:var(--iv); }
+  .cal-cell.sunday{ background:#FEF5F3; }
+  .cal-cell.saturday{ background:#F5F8FE; }
+  .cal-cell.holiday{ background:#FEF0EE; }
+
+  /* 날짜 숫자 */
+  .cal-daynum{ padding:5px 8px; font-size:15px; font-weight:800; color:var(--gd); }
+  .cal-cell.sunday .cal-daynum, .cal-cell.holiday .cal-daynum{ color:#E5484D; }
+  .cal-cell.saturday .cal-daynum{ color:#4A7AC7; }
+  .cal-holname{ font-size:10px; font-weight:700; color:#E5484D; padding:0 8px 3px; line-height:1.2; }
+
+  /* 오전/오후 영역 */
+  .cal-slots{ flex:1; display:flex; flex-direction:column; }
+  .cal-slot{ flex:1; border-top:1px dashed var(--ivd); padding:2px 4px; min-height:26px; position:relative; }
+  .cal-slot-lab{ font-size:8px; font-weight:700; color:var(--tl); position:absolute; left:3px; top:2px; opacity:.5; pointer-events:none; }
+
+  /* 행사 칩 */
+  .ev-chip{ font-size:10.5px; font-weight:700; line-height:1.25; padding:3px 6px; border-radius:5px; margin:2px 0 2px 14px; color:#fff; word-break:keep-all; cursor:pointer; transition:filter .1s; }
+  .ev-chip:hover{ filter:brightness(1.06); }
+  .ev-chip .ev-sub{ display:block; font-size:8.5px; font-weight:600; opacity:.9; }
+  .ev-chip .ev-tgt{ display:block; font-size:8.5px; font-weight:600; opacity:.85; }
+  .ev-chip.compact{ margin-left:14px; padding:2px 6px; }
+
+  /* 종일 행사 배너 (셀 상단 가로 표시) */
+  .ev-allday{ font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; margin:2px 4px; color:#fff; text-align:center; word-break:keep-all; cursor:pointer; }
+
+  /* 범례 */
+  .ac-legend{ display:flex; flex-wrap:wrap; gap:12px; margin-top:16px; padding:12px 16px; background:var(--wh); border-radius:12px; border:1px solid var(--ivd); font-size:12px; }
+  .ac-legend span{ display:inline-flex; align-items:center; gap:6px; color:var(--ts); font-weight:600; }
+  .ac-legend i{ width:14px; height:14px; border-radius:4px; display:inline-block; }
+
+  .ac-empty{ padding:60px 20px; text-align:center; color:var(--tl); font-size:14px; }
+
+  @media(max-width:768px){
+    .cal-grid{ grid-template-columns:44px repeat(7,1fr); }
+    .cal-cell{ min-height:80px; }
+    .ev-chip{ font-size:9px; margin-left:2px; }
+    .cal-slot-lab{ display:none; }
+    .ev-chip, .ev-allday{ margin-left:2px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="ac-wrap">
+  <div class="ac-head">
+    <h1 class="ac-title">📅 학사일정</h1>
+    <div class="ac-toolbar">
+      <div class="ac-viewtoggle">
+        <button id="v-teacher" class="on" onclick="setView('teacher')">교사용</button>
+        <button id="v-parent" onclick="setView('parent')">학부모용</button>
+      </div>
+      <div class="ac-nav">
+        <button onclick="moveMonth(-1)">‹</button>
+        <div class="ac-ym"><span id="ym-main">2026년 1월</span><small id="ym-sub"></small></div>
+        <button onclick="moveMonth(1)">›</button>
+      </div>
+      <button class="bm" onclick="goToday()">오늘</button>
+    </div>
+  </div>
+
+  <div id="cal-mount"></div>
+
+  <div class="ac-legend" id="legend"></div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════
+   공휴일 데이터 (holidays-kr.js 내장)
+   ═══════════════════════════════════════════════ */
+const FIXED_HOLIDAYS = [
+  { m:1,d:1,name:'새해 첫날' },{ m:3,d:1,name:'삼일절' },{ m:5,d:5,name:'어린이날' },
+  { m:6,d:6,name:'현충일' },{ m:8,d:15,name:'광복절' },{ m:10,d:3,name:'개천절' },
+  { m:10,d:9,name:'한글날' },{ m:12,d:25,name:'성탄절' },
+];
+const LUNAR_HOLIDAYS = {
+  2026:[{date:'2026-02-16',name:'설날 연휴'},{date:'2026-02-17',name:'설날'},{date:'2026-02-18',name:'설날 연휴'},
+        {date:'2026-05-24',name:'부처님오신날'},{date:'2026-09-24',name:'추석 연휴'},{date:'2026-09-25',name:'추석'},{date:'2026-09-26',name:'추석 연휴'}],
+  2027:[{date:'2027-02-06',name:'설날 연휴'},{date:'2027-02-07',name:'설날'},{date:'2027-02-08',name:'설날 연휴'},
+        {date:'2027-05-13',name:'부처님오신날'},{date:'2027-09-14',name:'추석 연휴'},{date:'2027-09-15',name:'추석'},{date:'2027-09-16',name:'추석 연휴'}],
+};
+const SUBSTITUTE_HOLIDAYS = {
+  2026:[{date:'2026-03-02',name:'삼일절 대체휴일'},{date:'2026-05-25',name:'대체공휴일'},{date:'2026-08-17',name:'광복절 대체휴일'}],
+};
+function ymd(y,m,d){ return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+function getHolidaysKR(year){
+  const map={};
+  FIXED_HOLIDAYS.forEach(h=>{ map[ymd(year,h.m,h.d)]=h.name; });
+  (LUNAR_HOLIDAYS[year]||[]).forEach(h=>{ map[h.date]=h.name; });
+  (SUBSTITUTE_HOLIDAYS[year]||[]).forEach(h=>{ map[h.date]=h.name; });
+  return map;
+}
+
+/* ═══════════════════════════════════════════════
+   행사 데이터 (지금은 샘플 내장 · 다음 단계에서 Firebase 연동)
+   ═══════════════════════════════════════════════ */
+const CATEGORIES = {
+  event:{label:'행사',color:'#8B5CF6'}, program:{label:'프로그램',color:'#3B82F6'},
+  break:{label:'방학',color:'#F97316'}, exam:{label:'시험',color:'#16A34A'},
+  holiday:{label:'공휴일',color:'#DC2626'}, worship:{label:'예배·기도회',color:'#0D9488'},
+  admin:{label:'행정',color:'#6B7280'},
+};
+const TIME_SLOTS = { am:'오전', pm:'오후', allday:'종일' };
+
+let EVENTS = [
+  { title:'신년기도회 2주차', startDate:'2026-01-05', endDate:'2026-01-09', timeOfDay:'allday', weekdays:[1,2,3,4,5], scope:'all', category:'worship', audience:'both', color:'#6BA3A0' },
+  { title:'신년기도회 3주차', startDate:'2026-01-12', endDate:'2026-01-16', timeOfDay:'allday', weekdays:[1,2,3,4,5], scope:'all', category:'worship', audience:'both', color:'#6BA3A0' },
+  { title:'정기 휴가', startDate:'2026-01-19', endDate:'2026-01-23', timeOfDay:'allday', weekdays:[1,2,3,4,5], scope:'all', category:'break', audience:'teacher', color:'#C5E063' },
+  { title:'교재 및 준비물 취합', startDate:'2026-01-28', endDate:'2026-01-28', timeOfDay:'pm', scope:'all', category:'admin', audience:'teacher', color:'#8B7355' },
+  { title:'프로그램 플랜 마감', startDate:'2026-01-30', endDate:'2026-01-30', timeOfDay:'pm', scope:'all', category:'admin', audience:'teacher', color:'#8B7355' },
+
+  { title:'이레단 어머니 OT', subtitle:'14:00', startDate:'2026-02-03', endDate:'2026-02-03', timeOfDay:'pm', scope:'grade', targets:['이레'], category:'event', audience:'parent', color:'#E8D44C' },
+  { title:'SEASON1 OPEN', startDate:'2026-02-09', endDate:'2026-02-09', timeOfDay:'am', scope:'all', category:'event', audience:'both', color:'#5A8F5A' },
+  { title:'환영식', startDate:'2026-02-09', endDate:'2026-02-09', timeOfDay:'am', scope:'all', category:'event', audience:'both', color:'#E89B4C' },
+  { title:'신년 수양회', subtitle:'*새문안교회수양관', startDate:'2026-02-10', endDate:'2026-02-12', timeOfDay:'allday', scope:'all', category:'event', audience:'both', color:'#B5A642' },
+  { title:'센터 휴관일', startDate:'2026-02-13', endDate:'2026-02-13', timeOfDay:'allday', scope:'all', category:'break', audience:'both', color:'#F5C0C0' },
+  { title:'성경탐험 없음', subtitle:'주니어·유쓰·리더센터', startDate:'2026-02-19', endDate:'2026-02-19', timeOfDay:'am', scope:'dept', targets:['주니어센터','유쓰센터','리더센터'], category:'program', audience:'teacher', color:'#F5C99B' },
+  { title:'프로그램 정상운영 시작', startDate:'2026-02-19', endDate:'2026-02-19', timeOfDay:'pm', scope:'all', category:'program', audience:'both', color:'#E0A0D0' },
+
+  { title:'말씀암송검사', startDate:'2026-02-26', endDate:'2026-12-17', timeOfDay:'allday', weekdays:[4], scope:'all', category:'admin', audience:'teacher', color:'#8B4A6B' },
+];
+
+/* ═══════════════════════════════════════════════
+   상태
+   ═══════════════════════════════════════════════ */
+let curYear = 2026, curMonth = 1;   // 1~12
+let curView = 'teacher';            // 'teacher' | 'parent'
+
+/* 학기·방학 골격 (다음 단계에서 academicYears에서 로드) */
+const YEAR_INFO = {
+  breaks:[
+    { name:'Winter-Break', start:'2026-01-01', end:'2026-02-08' },
+    { name:'Spring Break', start:'2026-05-04', end:'2026-05-09' },
+    { name:'Summer-Break', start:'2026-07-19', end:'2026-08-23' },
+    { name:'가을 방학', start:'2026-11-02', end:'2026-11-03' },
+    { name:'가정학습의 달', start:'2026-12-27', end:'2026-12-31' },
+  ],
+};
+
+/* ═══════════════════════════════════════════════
+   유틸
+   ═══════════════════════════════════════════════ */
+function pad(n){ return String(n).padStart(2,'0'); }
+function dateStr(y,m,d){ return `${y}-${pad(m)}-${pad(d)}`; }
+function daysInMonth(y,m){ return new Date(y,m,0).getDate(); }
+function dowOf(y,m,d){ return new Date(y,m-1,d).getDay(); }  // 0=일
+
+// 해당 날짜가 방학 기간이면 방학명 반환
+function breakOf(ds){
+  const b = YEAR_INFO.breaks.find(b=> ds>=b.start && ds<=b.end);
+  return b ? b.name : null;
+}
+
+// 그 날짜의 행사 (뷰·요일·기간 필터)
+function eventsOn(ds){
+  const dow = new Date(ds+'T00:00:00').getDay();
+  return EVENTS.filter(e=>{
+    if(ds < e.startDate || ds > e.endDate) return false;
+    if(e.weekdays && !e.weekdays.includes(dow)) return false;
+    if(curView==='parent' && !(e.audience==='parent'||e.audience==='both')) return false;
+    return true;
+  });
+}
+
+// 대상 라벨
+function targetLabel(e){
+  if(e.scope==='all') return '';
+  return '〈'+(e.targets||[]).join('·')+'〉';
+}
+
+/* ═══════════════════════════════════════════════
+   렌더
+   ═══════════════════════════════════════════════ */
+function render(){
+  const y=curYear, m=curMonth;
+  document.getElementById('ym-main').textContent = `${y}년 ${m}월`;
+  document.getElementById('ym-sub').textContent = curView==='teacher'?'교사용 · 상세':'학부모용 · 안내';
+
+  const holidays = getHolidaysKR(y);
+  const nDays = daysInMonth(y,m);
+  const firstDow = dowOf(y,m,1);   // 1일의 요일
+
+  // 주(week) 단위로 날짜 배열 구성 (일요일 시작)
+  const cells = [];
+  for(let i=0;i<firstDow;i++) cells.push(null);       // 앞 빈칸
+  for(let d=1; d<=nDays; d++) cells.push(d);
+  while(cells.length % 7 !== 0) cells.push(null);     // 뒤 빈칸
+  const weeks = [];
+  for(let i=0;i<cells.length;i+=7) weeks.push(cells.slice(i,i+7));
+
+  // 연중 주차 계산 (그 달 첫 주가 연중 몇 주차인지)
+  function weekNumOf(d){
+    if(!d) return '';
+    const jan1 = new Date(y,0,1);
+    const cur = new Date(y,m-1,d);
+    const days = Math.floor((cur - jan1)/(24*3600*1000));
+    return Math.floor((days + jan1.getDay())/7) + 1;
+  }
+
+  let html = '<div class="cal"><div class="cal-grid">';
+  // 헤더
+  html += '<div class="cal-dow wk">주차</div>';
+  ['일','월','화','수','목','금','토'].forEach((w,i)=>{
+    const cls = i===0?'sun':i===6?'sat':'';
+    html += `<div class="cal-dow ${cls}">${w}</div>`;
+  });
+
+  // 각 주
+  weeks.forEach(week=>{
+    // 주차 라벨: 그 주의 첫 유효 날짜 기준
+    const firstValid = week.find(d=>d);
+    const ds0 = firstValid ? dateStr(y,m,firstValid) : null;
+    const brk = ds0 ? breakOf(ds0) : null;
+    const wknum = firstValid ? weekNumOf(firstValid) : '';
+    if(brk){
+      html += `<div class="cal-wk break"><span class="wknum">${brk}</span></div>`;
+    } else {
+      html += `<div class="cal-wk"><span class="wknum">${wknum}</span><span>주</span></div>`;
+    }
+
+    // 7일
+    week.forEach((d,di)=>{
+      if(!d){ html += '<div class="cal-cell empty"></div>'; return; }
+      const ds = dateStr(y,m,d);
+      const dow = di;  // 0=일
+      const holName = holidays[ds];
+      let cls='cal-cell';
+      if(dow===0) cls+=' sunday';
+      else if(dow===6) cls+=' saturday';
+      if(holName) cls+=' holiday';
+
+      const evs = eventsOn(ds);
+      const allday = evs.filter(e=>e.timeOfDay==='allday');
+      const am = evs.filter(e=>e.timeOfDay==='am');
+      const pm = evs.filter(e=>e.timeOfDay==='pm');
+
+      html += `<div class="${cls}">`;
+      html += `<div class="cal-daynum">${d}</div>`;
+      if(holName) html += `<div class="cal-holname">${holName}</div>`;
+
+      // 종일 행사 (배너)
+      allday.forEach(e=>{
+        html += `<div class="ev-allday" style="background:${e.color||CATEGORIES[e.category].color}" title="${e.title}">${e.title}${targetLabel(e)?`<span class="ev-tgt">${targetLabel(e)}</span>`:''}</div>`;
+      });
+
+      // 오전/오후
+      html += '<div class="cal-slots">';
+      html += '<div class="cal-slot"><span class="cal-slot-lab">오전</span>';
+      am.forEach(e=> html += evChip(e));
+      html += '</div>';
+      html += '<div class="cal-slot"><span class="cal-slot-lab">오후</span>';
+      pm.forEach(e=> html += evChip(e));
+      html += '</div>';
+      html += '</div>';  // slots
+
+      html += '</div>';  // cell
+    });
+  });
+
+  html += '</div></div>';
+  document.getElementById('cal-mount').innerHTML = html;
+  renderLegend();
+}
+
+function evChip(e){
+  const color = e.color || CATEGORIES[e.category].color;
+  const tgt = targetLabel(e);
+  return `<div class="ev-chip" style="background:${color}" title="${e.title}">${e.title}`
+    + (e.subtitle?`<span class="ev-sub">${e.subtitle}</span>`:'')
+    + (tgt?`<span class="ev-tgt">${tgt}</span>`:'')
+    + '</div>';
+}
+
+function renderLegend(){
+  // 이번 달에 등장한 분류만 표시
+  const y=curYear,m=curMonth, nDays=daysInMonth(y,m);
+  const used = new Set();
+  for(let d=1;d<=nDays;d++){ eventsOn(dateStr(y,m,d)).forEach(e=>used.add(e.category)); }
+  let html='';
+  used.forEach(cat=>{
+    const c=CATEGORIES[cat];
+    html += `<span><i style="background:${c.color}"></i>${c.label}</span>`;
+  });
+  html += `<span><i style="background:#E5484D"></i>공휴일</span>`;
+  document.getElementById('legend').innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════
+   조작
+   ═══════════════════════════════════════════════ */
+function moveMonth(delta){
+  curMonth += delta;
+  if(curMonth>12){ curMonth=1; curYear++; }
+  if(curMonth<1){ curMonth=12; curYear--; }
+  render();
+}
+function goToday(){
+  const now=new Date();
+  curYear=now.getFullYear(); curMonth=now.getMonth()+1;
+  render();
+}
+function setView(v){
+  curView=v;
+  document.getElementById('v-teacher').classList.toggle('on', v==='teacher');
+  document.getElementById('v-parent').classList.toggle('on', v==='parent');
+  render();
+}
+
+// 시작: 2026년 1월 (샘플 데이터가 있는 달)
+render();
+</script>
+</body>
+</html>
