@@ -48,6 +48,14 @@
 
   .wrap{max-width:1280px;margin:0 auto;padding:22px 26px 80px}
   .layout{display:grid;grid-template-columns:360px 1fr;gap:22px;align-items:start}
+  /* 넓은 화면(1600px+): 설정 | 배열 | 완성표 3단 — 한 화면에 다 보기 */
+  @media(min-width:1600px){
+    .layout{grid-template-columns:330px minmax(340px,0.9fr) minmax(430px,1.15fr)}
+  }
+  /* 완성표 컬럼: 넓은 화면에서 상단 고정(배열하며 계속 보임) */
+  @media(min-width:1600px){
+    .out-col{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+  }
   @media(max-width:980px){.layout{grid-template-columns:1fr}}
 
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
@@ -126,6 +134,18 @@
 
   /* output table */
   .out-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+  .out-filter{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;padding:10px 12px;background:var(--iv);border-radius:10px;border:1px solid var(--line)}
+  .of-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .of-lab{font-size:11px;font-weight:700;color:var(--ink-faint);min-width:44px}
+  .of-chip{font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:20px;border:1.5px solid var(--line);background:var(--wh);color:var(--ink-soft);cursor:pointer;transition:all .12s;user-select:none}
+  .of-chip:hover{border-color:var(--accent);color:var(--accent)}
+  .of-chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .of-chip.small{padding:4px 9px;font-size:11px}
+  /* 요일 그룹 표 여러 개 세로 배치 */
+  .out-group{margin-bottom:26px}
+  .out-group:last-child{margin-bottom:0}
+  .og-title{font-size:13px;font-weight:800;color:var(--accent-deep);margin:0 0 8px;padding-left:2px;display:flex;align-items:center;gap:7px}
+  .og-title .og-days{font-size:11px;font-weight:600;color:var(--ink-faint)}
   .legend{display:flex;flex-wrap:wrap;gap:9px;font-size:11.5px;color:var(--ink-soft)}
   .legend span{display:inline-flex;align-items:center;gap:5px}
   .legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
@@ -394,7 +414,7 @@
       </div>
     </div>
 
-    <!-- RIGHT: arrange + output -->
+    <!-- MIDDLE: arrange -->
     <div>
       <!-- 4. arrange -->
       <div class="panel">
@@ -409,8 +429,10 @@
           <div class="board" id="board"></div>
         </div>
       </div>
+    </div>
 
-      <!-- output -->
+    <!-- RIGHT: output (완성 시간표) -->
+    <div class="out-col">
       <div class="panel">
         <div class="panel-head">
           <div class="step"><span class="num">★</span><h2>완성 시간표</h2></div>
@@ -426,6 +448,7 @@
             <div class="out-head">
               <div class="legend" id="legend"></div>
             </div>
+            <div id="outFilter" class="out-filter"></div>
             <div id="output"></div>
             <div class="summary" id="summary"></div>
           </div>
@@ -1148,7 +1171,233 @@ function clearAllArrangements(){
   state.departments.forEach(d=> curArr()[d.id]=[]);
   renderBoard(); renderOutput();
 }
+/* ---------- 완성 시간표 필터 (부서·요일 그룹) ---------- */
+// 화면 표시 전용 상태 (저장 데이터 불변)
+let outFilter = { deptIds:null, dayGroups:null };
+// deptIds: null이면 전체 부서. 배열이면 선택된 부서만.
+// dayGroups: null이면 자동(현재 요일 하나). 배열이면 [{label, days:[...]}]
+
+function outSelectedDepts(){
+  const all = state.departments;
+  if(!outFilter.deptIds) return all;
+  const sel = all.filter(d=>outFilter.deptIds.includes(d.id));
+  return sel.length ? sel : all;
+}
+function outDayGroups(){
+  const wd = state.weekDays||['월'];
+  if(outFilter.dayGroups && outFilter.dayGroups.length) return outFilter.dayGroups;
+  // 기본: 현재 활성 요일 하나만
+  const dy = state.activeDay || wd[0];
+  return [{ label:`${dy}요일`, days:[dy] }];
+}
+
+function toggleOutDept(id){
+  const all = state.departments.map(d=>d.id);
+  if(!outFilter.deptIds) outFilter.deptIds = all.slice();   // 전체에서 시작
+  const i = outFilter.deptIds.indexOf(id);
+  if(i>=0) outFilter.deptIds.splice(i,1); else outFilter.deptIds.push(id);
+  if(!outFilter.deptIds.length) outFilter.deptIds=null;      // 모두 끄면 전체로
+  if(outFilter.deptIds && outFilter.deptIds.length===all.length) outFilter.deptIds=null;
+  renderOutput();
+}
+function setOutAllDepts(){ outFilter.deptIds=null; renderOutput(); }
+
+// 요일 그룹 프리셋 토글: 'each'(요일별 따로), 'all'(전체 한 표), 'active'(현재 요일)
+function setOutDayMode(mode){
+  const wd = state.weekDays||['월'];
+  if(mode==='active'){ outFilter.dayGroups=null; }
+  else if(mode==='all'){ outFilter.dayGroups=[{label:'전체 요일', days:wd.slice()}]; }
+  else if(mode==='each'){ outFilter.dayGroups=wd.map(dy=>({label:`${dy}요일`, days:[dy]})); }
+  renderOutput();
+}
+// 사용자 지정 요일 그룹 (예: 월~목 / 금)
+function customOutDayGroups(){
+  const wd = state.weekDays||[];
+  const ex = (outFilter.dayGroups||[]).map(g=>g.days.join('')).join(' / ');
+  const msg = `요일 그룹을 "/"로 구분해 입력하세요.\n예: 월화수목 / 금\n(현재 요일: ${wd.join(', ')})`;
+  const inp = prompt(msg, ex || wd.join(''));
+  if(inp===null) return;
+  const groups = inp.split('/').map(part=>{
+    const days = part.split(/[\s,]*/).join('').split('').filter(ch=>wd.includes(ch));
+    return days.length ? { label: days.join('·'), days } : null;
+  }).filter(Boolean);
+  if(!groups.length){ flash('유효한 요일이 없습니다'); return; }
+  outFilter.dayGroups = groups;
+  renderOutput();
+}
+window.toggleOutDept = toggleOutDept;
+window.setOutAllDepts = setOutAllDepts;
+window.setOutDayMode = setOutDayMode;
+window.customOutDayGroups = customOutDayGroups;
+
+function renderOutFilter(){
+  const box = document.getElementById('outFilter');
+  if(!box) return;
+  const depts = state.departments;
+  const wd = state.weekDays||[];
+  if(!depts.length){ box.innerHTML=''; return; }
+  const selDepts = outFilter.deptIds;
+  const isAllDept = !selDepts;
+  const groups = outFilter.dayGroups;
+  // 현재 요일 모드 판별
+  let dayMode = 'active';
+  if(groups){
+    if(groups.length===1 && groups[0].days.length===wd.length) dayMode='all';
+    else if(groups.length===wd.length && groups.every(g=>g.days.length===1)) dayMode='each';
+    else dayMode='custom';
+  }
+  const deptChips = `<button class="of-chip small ${isAllDept?'on':''}" onclick="setOutAllDepts()">전체 부서</button>` +
+    depts.map(d=>`<button class="of-chip small ${(!isAllDept&&selDepts.includes(d.id))?'on':''}" style="${(!isAllDept&&selDepts.includes(d.id))?`background:${d.color};border-color:${d.color}`:''}" onclick="toggleOutDept('${d.id}')">${escapeHtml(d.name)}</button>`).join('');
+  const dayChips = `
+    <button class="of-chip small ${dayMode==='active'?'on':''}" onclick="setOutDayMode('active')">현재 요일</button>
+    <button class="of-chip small ${dayMode==='each'?'on':''}" onclick="setOutDayMode('each')">요일별 따로</button>
+    <button class="of-chip small ${dayMode==='all'?'on':''}" onclick="setOutDayMode('all')">전체 한 표</button>
+    <button class="of-chip small ${dayMode==='custom'?'on':''}" onclick="customOutDayGroups()">그룹 지정…${dayMode==='custom'?` (${groups.map(g=>g.days.join('')).join(' / ')})`:''}</button>`;
+  box.innerHTML = `
+    <div class="of-row"><span class="of-lab">부서</span>${deptChips}</div>
+    <div class="of-row"><span class="of-lab">요일</span>${dayChips}</div>`;
+}
+
 function renderOutput(){
+  renderOutFilter();
+  const groups = outDayGroups();
+  const depts = outSelectedDepts();
+  // 요일 그룹이 여러 개면 그룹별로 표를 나눠 그림
+  if(groups.length > 1 || (outFilter.dayGroups && outFilter.dayGroups.length)){
+    let html='';
+    let anyContent=false;
+    groups.forEach(g=>{
+      const inner = buildTimetableHTML(depts, g.days);
+      if(inner.body){ anyContent=true;
+        html += `<div class="out-group"><div class="og-title">📋 ${escapeHtml(g.label)} <span class="og-days">${g.days.join('·')}요일</span></div>${inner.body}</div>`;
+      }
+    });
+    const outEl=$('#output');
+    if(!anyContent){ outEl.innerHTML='<div class="empty">타임라인을 배열하면 여기에 시간표가 표시됩니다.</div>'; $('#summary').innerHTML=''; renderLegend(depts); return; }
+    outEl.innerHTML = html;
+    renderLegend(depts);
+    renderOutSummary(depts, groups);
+    return;
+  }
+  // 단일 요일 그룹 (기존 방식과 동일 동작)
+  const g = groups[0];
+  const built = buildTimetableHTML(depts, g.days);
+  const outEl=$('#output');
+  if(!built.body){ outEl.innerHTML='<div class="empty">타임라인을 배열하면 여기에 시간표가 표시됩니다.</div>'; $('#summary').innerHTML=''; renderLegend(depts); return; }
+  outEl.innerHTML = built.body;
+  renderLegend(depts);
+  renderOutSummary(depts, groups);
+}
+
+// 부서 목록 + 요일 배열을 받아 완성표 HTML(body)만 생성
+function buildTimetableHTML(depts, days){
+  // 여러 요일이면 각 요일 표를 이어붙임(요일 라벨 포함), 단일 요일이면 표 하나
+  if(days.length > 1){
+    let combined='';
+    days.forEach(dy=>{
+      const one=buildOneDayTable(depts, dy);
+      if(one) combined += `<div style="margin-bottom:16px"><div style="font-size:11.5px;font-weight:700;color:var(--ink-faint);margin-bottom:5px">${dy}요일</div>${one}</div>`;
+    });
+    return { body: combined };
+  }
+  return { body: buildOneDayTable(depts, days[0]) };
+}
+
+// 한 요일 + 지정 부서들의 완성표 <table> 생성 (없으면 빈 문자열)
+function buildOneDayTable(depts, day){
+  const timelines=compute(state, day);
+  let minT=Infinity, maxT=-Infinity;
+  depts.forEach(d=>(timelines[d.id]||[]).forEach(b=>{minT=Math.min(minT,b.start);maxT=Math.max(maxT,b.end);}));
+  if(!isFinite(minT)) return '';
+
+  function gcd(a,b){return b?gcd(b,a%b):a;}
+  let unit=0;
+  depts.forEach(d=>(timelines[d.id]||[]).forEach(b=>{unit=gcd(unit,b.dur);}));
+  if(!unit||unit<1) unit=5;
+  if(unit>5) unit=5;
+
+  const ROW_H=13;
+  const nRows=Math.round((maxT-minT)/unit);
+  function blockStartingAt(deptId, t){ return (timelines[deptId]||[]).find(b=>b.start===t); }
+  function blockCovering(deptId, t){ return (timelines[deptId]||[]).find(b=>b.start<=t && b.end>t); }
+
+  let html=`<table class="tt"><colgroup><col style="width:0"><col style="width:118px">`;
+  depts.forEach(()=>html+='<col>');
+  html+='</colgroup><thead><tr><th style="width:0;padding:0;border:none"></th><th class="tm">시각</th>';
+  depts.forEach(d=> html+=`<th style="color:${d.color}">${escapeHtml(d.name)}</th>`);
+  html+='</tr></thead><tbody>';
+
+  const skip={}; depts.forEach(d=>skip[d.id]=0);
+  let timeSkip=0;
+  for(let r=0;r<nRows;r++){
+    const t=minT+r*unit;
+    const cov0=depts.length?blockCovering(depts[0].id,t):null;
+    const allSameCommon = cov0 && cov0.kind==='common' &&
+      depts.every(d=>{const b=blockCovering(d.id,t);return b&&b.kind==='common'&&b.name===cov0.name&&b.start===cov0.start&&b.end===cov0.end;});
+    html+=`<tr><td class="spacer" style="width:0;height:${ROW_H}px;padding:0;border:none;font-size:0;line-height:0">&nbsp;</td>`;
+    if(timeSkip>0){ timeSkip--; }
+    else {
+      const bounds=new Set();
+      depts.forEach(d=>(timelines[d.id]||[]).forEach(b=>{bounds.add(b.start);bounds.add(b.end);}));
+      const sorted=[...bounds].sort((a,b)=>a-b);
+      const nextB=sorted.find(x=>x>t) ?? maxT;
+      const segLen=nextB-t;
+      const span=Math.max(1,Math.round(segLen/unit));
+      timeSkip=span-1;
+      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap">${toStr(t)}–${toStr(nextB)}</div></td>`;
+    }
+    if(allSameCommon){
+      if(cov0.start===t){
+        const span=Math.round(cov0.dur/unit);
+        html+=`<td colspan="${depts.length}" rowspan="${span}" style="background:${tint(cov0.color)};color:${deepen(cov0.color)}"><div class="cellwrap"><span class="lab">${cov0.name}</span><div class="sub">${toStr(cov0.start)}–${toStr(cov0.end)} · ${cov0.dur}분</div></div></td>`;
+      }
+      html+='</tr>'; continue;
+    }
+    depts.forEach(d=>{
+      if(skip[d.id]>0){ skip[d.id]--; return; }
+      const b=blockStartingAt(d.id,t);
+      if(!b){ html+=`<td style="background:var(--iv)"></td>`; return; }
+      const span=Math.round(b.dur/unit);
+      skip[d.id]=span-1;
+      const bg = b.kind==='wait'?'#F6E7DA':(b.kind==='rest'?'#EDEBE4':tint(b.color));
+      const fg = b.kind==='wait'?'#8A4B1E':(b.kind==='rest'?'#6A716D':deepen(b.color));
+      if(b.dur>=15){
+        html+=`<td rowspan="${span}" style="background:${bg};color:${fg}">`+
+          `<div class="cellwrap"><span class="lab">${b.name}</span>`+
+          `<div class="sub">${toStr(b.start)}–${toStr(b.end)} · ${b.dur}분</div></div></td>`;
+      } else {
+        html+=`<td rowspan="${span}" style="background:${bg};color:${fg};padding:0 6px">`+
+          `<div class="cellwrap"><span class="lab">${b.name} · ${b.dur}분</span></div></td>`;
+      }
+    });
+    html+='</tr>';
+  }
+  html+='</tbody></table>';
+  return html;
+}
+
+function renderLegend(depts){
+  const types=state.blockTypes||[];
+  const used=new Set();
+  const wd=(outDayGroups().flatMap(g=>g.days));
+  wd.forEach(dy=>{ const tl=compute(state,dy); depts.forEach(d=>(tl[d.id]||[]).forEach(b=>{ if(b.typeId) used.add(b.typeId); })); });
+  const items=types.filter(t=>used.has(t.id));
+  const leg=$('#legend'); if(!leg) return;
+  leg.innerHTML = items.map(t=>`<span><i style="background:${t.color}"></i>${escapeHtml(t.name)}</span>`).join('');
+}
+
+function renderOutSummary(depts, groups){
+  // 요약: 선택 부서·요일 그룹 기준 총 수업 분
+  const sm=$('#summary'); if(!sm) return;
+  const wd=groups.flatMap(g=>g.days);
+  let totalMin=0;
+  wd.forEach(dy=>{ const tl=compute(state,dy); depts.forEach(d=>(tl[d.id]||[]).forEach(b=>{ if(b.countsAsClass!==false && b.kind!=='wait' && b.kind!=='rest') totalMin+=b.dur; })); });
+  const deptLabel = outFilter.deptIds ? `${depts.length}개 부서` : '전체 부서';
+  const dayLabel = groups.length>1 ? `${groups.length}개 그룹` : groups[0].label;
+  sm.innerHTML = `<span>${deptLabel} · ${dayLabel}</span>`;
+}
+
+function renderOutputOLD(){
   const timelines=compute();
   const depts=state.departments;
   // 전체 시작·끝 범위
@@ -1717,11 +1966,15 @@ function exportImage(){
   if(!area || !$('#output').firstChild){ flash('시간표가 비어 있습니다'); return; }
   if(!window.html2canvas){ flash('이미지 모듈 로드 실패(인터넷 확인)'); return; }
   flash('이미지 생성 중…');
+  const filterEl=document.getElementById('outFilter');
+  const prevDisp = filterEl?filterEl.style.display:'';
+  if(filterEl) filterEl.style.display='none';   // 필터 버튼은 이미지에서 제외
   // 캡처 시 흰 배경 + 여백 확보를 위해 임시 래퍼
-  const opts={backgroundColor:'var(--wh)',scale:2,useCORS:true,logging:false,
+  const opts={backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false,
     windowWidth:area.scrollWidth, windowHeight:area.scrollHeight,
     scrollX:0, scrollY:0};
   html2canvas(area,opts).then(canvas=>{
+    if(filterEl) filterEl.style.display=prevDisp;
     canvas.toBlob(blob=>{
       const a=document.createElement('a');
       a.href=URL.createObjectURL(blob);
@@ -1729,7 +1982,7 @@ function exportImage(){
       URL.revokeObjectURL(a.href);
       flash('이미지(PNG) 저장 완료');
     },'image/png');
-  }).catch(err=>{ console.warn(err); flash('이미지 생성 실패'); });
+  }).catch(err=>{ if(filterEl) filterEl.style.display=prevDisp; console.warn(err); flash('이미지 생성 실패'); });
 }
 
 /* ---------- 인쇄 ---------- */
