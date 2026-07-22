@@ -2277,8 +2277,7 @@ async function renderReport(){
     EXPENSES.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
     const dsnap = await getDocs(collection(db,'expenseDeposits'));
     DEPOSITS = []; dsnap.forEach(d=>DEPOSITS.push({id:d.id, ...d.data()}));
-    const lsnap = await getDocs(collection(db,'expenseLocks'));
-    LOCKS = {}; lsnap.forEach(d=>{ const v=d.data(); if(v&&v.locked) LOCKS[d.id]={lockedBy:v.lockedByName||'', lockedAt:v.lockedAt||null}; });
+    try { const lsnap = await getDocs(collection(db,'expenseLocks')); LOCKS={}; lsnap.forEach(d=>{ const v=d.data(); if(v&&v.locked) LOCKS[d.id]={lockedBy:v.lockedByName||'', lockedAt:v.lockedAt||null}; }); } catch(_){ LOCKS={}; }
   } catch(e){
     window.hideLoading && window.hideLoading();
     box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
@@ -2736,9 +2735,13 @@ function ensureH2C(){
 }
 
 // 안내장 HTML 생성 (인쇄용, 세로/가로 레이아웃)
-function buildSheetHTML(landscape){
+function buildSheetHTML(landscape, opts){
+  opts = opts || {};
   const s = lastSheet; if(!s) return '';
-  const { gradeKey, classNames, semKor:sem, orgName, items, students, amtOf } = s;
+  const { gradeKey, classNames, semKor:sem, orgName, students, amtOf } = s;
+  const allItems = s.items;
+  const items = opts.itemsSubset || allItems;
+  const showTotal = opts.showTotal !== false;
   // 제목 부제: 학년 + 반 이름 (반 하나면 "2학년 로이반", 여러 개면 "2학년 (로이반·이레반)")
   const cls = classNames||[];
   const gradeTitle = cls.length===1 ? `${gradeKey} ${cls[0]}` : cls.length>1 ? `${gradeKey} (${cls.join('·')})` : gradeKey;
@@ -2748,7 +2751,7 @@ function buildSheetHTML(landscape){
 
   // 칸 폭 계산: 이름칸 + 항목N칸 + 합계칸
   const nameW = landscape ? 60 : 52;
-  const totW = landscape ? 80 : 64;
+  const totW = showTotal ? (landscape ? 80 : 64) : 0;
   const pad = landscape ? 30 : 26;
   // 문서 최대 내부폭 (A5세로 559-2*26=507, A4가로 1123-2*30=1063)
   const maxInner = landscape ? 1063 : 507;
@@ -2759,51 +2762,54 @@ function buildSheetHTML(landscape){
   itemColW = Math.max(minItemW, itemColW);
   // 실제 표 폭
   const tableW = nameW + itemColW*items.length + totW;
-  // 문서 내부폭 = 표폭(최대 maxInner). 이보다 표가 작으면 문서를 표폭에 맞춤 → 좌우 여백 동일
-  const innerW = Math.min(tableW, maxInner);
+  // 문서 내부폭: fullWidth(이미지)면 표 실폭 그대로 → 잘림 없음
+  const innerW = opts.fullWidth ? tableW : Math.min(tableW, maxInner);
   const docW = innerW + pad*2;
 
   const colgroup = `<colgroup>
     <col style="width:${nameW}px">
     ${items.map(()=>`<col style="width:${itemColW}px">`).join('')}
-    <col style="width:${totW}px">
+    ${showTotal?`<col style="width:${totW}px">`:''}
   </colgroup>`;
 
   // 헤더: 항목 정보를 행별로 분리 (라벨 행 + 항목 값)
   const headRows2 = `
-    <tr class="h-subj"><th class="nm hd">이름</th>${items.map(e=>`<th class="ic subj"><span style="font-size:8.5px;opacity:.85;font-weight:600">${expenseSeqNo(e.id)}</span><br>${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}<th class="tot hd">개인<br>합계</th></tr>
-    <tr class="h-sub"><td class="rl">담당</td>${items.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr class="h-sub"><td class="rl">신청일</td>${items.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr class="h-sub"><td class="rl">세부내용</td>${items.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr class="h-per"><td class="rl">1인당</td>${items.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}<td class="rl2"></td></tr>`;
+    <tr class="h-subj"><th class="nm hd">이름</th>${items.map(e=>`<th class="ic subj"><span style="font-size:8.5px;opacity:.85;font-weight:600">${expenseSeqNo(e.id)}</span><br>${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}${showTotal?`<th class="tot hd">개인<br>합계</th>`:''}</tr>
+    <tr class="h-sub"><td class="rl">담당</td>${items.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}${showTotal?`<td class="rl2"></td>`:''}</tr>
+    <tr class="h-sub"><td class="rl">신청일</td>${items.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}${showTotal?`<td class="rl2"></td>`:''}</tr>
+    <tr class="h-sub"><td class="rl">세부내용</td>${items.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}${showTotal?`<td class="rl2"></td>`:''}</tr>
+    <tr class="h-per"><td class="rl">1인당</td>${items.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}${showTotal?`<td class="rl2"></td>`:''}</tr>`;
 
   const bodyRows = students.map(st=>{
+    // 개인 합계는 항상 전체 항목 기준 (페이지 분할과 무관하게 동일)
     let sum=0;
-    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; return cell(e,st.id); }).join('');
-    return `<tr><th class="nm">${esc(st.name)}<span class="cls">${esc(st.className||'')}</span></th>${tds}<td class="tot">₩${won2(sum)}</td></tr>`;
+    allItems.forEach(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; });
+    const tds = items.map(e=> cell(e,st.id)).join('');
+    return `<tr><th class="nm">${esc(st.name)}<span class="cls">${esc(st.className||'')}</span></th>${tds}${showTotal?`<td class="tot">₩${won2(sum)}</td>`:''}</tr>`;
   }).join('');
   const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
-  const grand = students.reduce((tt,st)=>tt+items.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
+  const grand = students.reduce((tt,st)=>tt+allItems.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
 
   const table = `<table class="sheet-tbl">
     ${colgroup}
     <thead>${headRows2}</thead>
     <tbody>${bodyRows}</tbody>
-    <tfoot><tr><th class="nm">항목합계</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr></tfoot>
+    <tfoot><tr><th class="nm">항목합계</th>${footTds}${showTotal?`<td class="tot">₩${won2(grand)}</td>`:''}</tr></tfoot>
   </table>`;
 
+  const pageTag = (opts.pageCnt&&opts.pageCnt>1)?` · ${opts.pageNo}/${opts.pageCnt}쪽 (항목 나눔)`:'';
   return `<div class="sheet-doc ${landscape?'land':'port'}" style="width:${docW}px;padding:${pad}px">
     <div class="sheet-head">
       <div class="sh-title">${esc(orgName)} 수행성 경비 안내</div>
-      <div class="sh-sub">${esc(sem)} · ${esc(gradeTitle)}</div>
+      <div class="sh-sub">${esc(sem)} · ${esc(gradeTitle)}${pageTag}</div>
     </div>
     ${table}
-    <div class="sheet-foot">※ 금액이 적힌 칸이 청구 항목이며, 반환은 (−)로 표시됩니다. 문의는 담당 선생님께 해주세요.</div>
+    <div class="sheet-foot">※ 금액이 적힌 칸이 청구 항목이며, 반환은 (−)로 표시됩니다.${showTotal?' 개인 합계는 전체 항목 기준입니다.':''} 문의는 담당 선생님께 해주세요.</div>
   </div>`;
 }
 
 const SHEET_CSS = `
-.sheet-doc{background:var(--wh);color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;box-sizing:border-box;}
+.sheet-doc{background:#ffffff;color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;box-sizing:border-box;}
 .sheet-doc.port{}
 .sheet-doc.land{}
 .sheet-head{text-align:center;margin-bottom:18px;}
@@ -2813,13 +2819,13 @@ const SHEET_CSS = `
 .sheet-tbl th,.sheet-tbl td{border:1px solid #e2e8e5;padding:5px 4px;text-align:center;vertical-align:middle;word-break:break-word;overflow-wrap:break-word;}
 /* 헤더바: 그린 배경 + 흰 글씨 (흑백에선 진회색+흰글씨) */
 .sheet-tbl .subj{background:#2d6a4f;color:#fff;font-weight:800;font-size:11px;text-align:center;line-height:1.3;border-color:#2d6a4f;}
-.sheet-tbl .rl{background:var(--gp);color:#5a7267;font-weight:600;font-size:9.5px;text-align:center;}
-.sheet-tbl .rl2{background:var(--gp);border-color:#e2e8e5;}
-.sheet-tbl .ic2{background:var(--gp);font-size:9.5px;color:#5a7267;text-align:center;line-height:1.35;font-weight:400;}
+.sheet-tbl .rl{background:#E8F3EF;color:#5a7267;font-weight:600;font-size:9.5px;text-align:center;}
+.sheet-tbl .rl2{background:#E8F3EF;border-color:#e2e8e5;}
+.sheet-tbl .ic2{background:#E8F3EF;font-size:9.5px;color:#5a7267;text-align:center;line-height:1.35;font-weight:400;}
 .sheet-tbl .ic2.det{font-size:9px;color:#7d968a;}
-.sheet-tbl .ic2.per{font-weight:700;color:#3a5a48;font-size:10px;background:var(--gp);}
+.sheet-tbl .ic2.per{font-weight:700;color:#3a5a48;font-size:10px;background:#E8F3EF;}
 /* 이름 열 */
-.sheet-tbl .nm{background:var(--gp);font-weight:700;text-align:center;line-height:1.25;color:#1b4332;}
+.sheet-tbl .nm{background:#E8F3EF;font-weight:700;text-align:center;line-height:1.25;color:#1b4332;}
 .sheet-tbl .nm .cls{display:block;font-size:8.5px;color:#a8b5ac;font-weight:400;}
 .sheet-tbl .nm.hd{background:#2d6a4f;color:#fff;font-size:11px;border-color:#2d6a4f;}
 /* 개인합계 헤더 (더 진한 그린) */
@@ -2827,63 +2833,83 @@ const SHEET_CSS = `
 /* 개별 청구/반환 (차분하게) */
 .sheet-tbl td.chg{color:#6b8579;font-weight:500;font-size:9.5px;line-height:1.35;}
 .sheet-tbl td.chg .ck{color:#7a9488;font-weight:700;}
-.sheet-tbl td.ref{background:var(--gp);color:#4a7a68;font-weight:500;font-size:9.5px;line-height:1.35;}
+.sheet-tbl td.ref{background:#E8F3EF;color:#4a7a68;font-weight:500;font-size:9.5px;line-height:1.35;}
 .sheet-tbl td.x{color:#d0d8d3;}
 /* 합계 (진한 골드 + 음영 + 볼드, 흑백에서도 강조) */
-.sheet-tbl .tot{background:var(--gold-bg);font-weight:900;color:#8a6410;text-align:center;font-size:11px;}
-.sheet-tbl .ft{background:var(--gp);font-weight:700;color:#2f5c48;}
-.sheet-tbl tfoot .nm{background:var(--gp);color:#1b4332;}
-.sheet-tbl tfoot .tot{background:var(--gold-bg-2);color:#8a6410;border-top:2px solid #b08d3c;}
+.sheet-tbl .tot{background:#F7EFD8;font-weight:900;color:#8a6410;text-align:center;font-size:11px;}
+.sheet-tbl .ft{background:#E8F3EF;font-weight:700;color:#2f5c48;}
+.sheet-tbl tfoot .nm{background:#E8F3EF;color:#1b4332;}
+.sheet-tbl tfoot .tot{background:#F0E4C4;color:#8a6410;border-top:2px solid #b08d3c;}
 .sheet-foot{font-size:10px;color:#a8b5ac;margin-top:12px;text-align:center;}
 `;
 
 async function printSheet(mode){
   if(!lastSheet){ toast('출력할 표가 없습니다.','err'); return; }
+  const allItems = lastSheet.items;
+  // 항목이 많으면 강제 가로 + 항목 나눔 (페이지당 11개)
+  const PER_PAGE = 11;
+  const needChunk = allItems.length > PER_PAGE;
   // auto: 항목 수 기준 (5개 이하 세로 A5, 초과 가로 A4)
   let landscape;
-  if(mode==='a5') landscape=false;
+  if(needChunk) landscape = true;
+  else if(mode==='a5') landscape=false;
   else if(mode==='a4') landscape=true;
-  else landscape = lastSheet.items.length > 5;
+  else landscape = allItems.length > 5;
   window.showLoading && window.showLoading('안내장을 만드는 중…');
   try {
     await ensureH2C();
     await ensureJsPDF();
-    // 임시 렌더 컨테이너
-    const holder = document.createElement('div');
-    holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
-    holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
-    document.body.appendChild(holder);
-    const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
-    document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation: landscape?'landscape':'portrait', unit:'mm', format:'a4'});
     const pw = pdf.internal.pageSize.getWidth();
     const ph = pdf.internal.pageSize.getHeight();
     const margin = 8;
     const iw = pw - margin*2;
-    const ih = canvas.height * iw / canvas.width;
-    const img = canvas.toDataURL('image/jpeg', 0.92);
-    if(ih <= ph - margin*2){
-      pdf.addImage(img, 'JPEG', margin, margin, iw, ih);
-    } else {
-      // 길면 여러 페이지 분할
-      let remaining = canvas.height, pos = 0;
-      const pageCanvasH = Math.floor(canvas.width * (ph - margin*2) / iw);
-      while(remaining > 0){
-        const slice = document.createElement('canvas');
-        slice.width = canvas.width; slice.height = Math.min(pageCanvasH, remaining);
-        slice.getContext('2d').drawImage(canvas, 0, pos, canvas.width, slice.height, 0, 0, canvas.width, slice.height);
-        const sliceImg = slice.toDataURL('image/jpeg', 0.92);
-        const sliceH = slice.height * iw / canvas.width;
-        if(pos>0) pdf.addPage();
-        pdf.addImage(sliceImg, 'JPEG', margin, margin, iw, sliceH);
-        remaining -= slice.height; pos += slice.height;
+
+    const chunks = [];
+    for(let i=0;i<allItems.length;i+=PER_PAGE) chunks.push(allItems.slice(i,i+PER_PAGE));
+    let firstPage = true;
+
+    for(let c=0;c<chunks.length;c++){
+      if(chunks.length>1) window.setLoadStep && window.setLoadStep(`안내장 만드는 중… (${c+1}/${chunks.length})`, Math.round((c+1)/chunks.length*90));
+      // 임시 렌더 컨테이너
+      const holder = document.createElement('div');
+      holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
+      holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape, {
+        itemsSubset: chunks[c],
+        pageNo: c+1, pageCnt: chunks.length,
+        showTotal: c === chunks.length-1
+      });
+      document.body.appendChild(holder);
+      const node = holder.querySelector('.sheet-doc');
+      const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+      document.body.removeChild(holder);
+      const ih = canvas.height * iw / canvas.width;
+      const img = canvas.toDataURL('image/jpeg', 0.92);
+      if(ih <= ph - margin*2){
+        if(!firstPage) pdf.addPage();
+        pdf.addImage(img, 'JPEG', margin, margin, iw, ih);
+        firstPage = false;
+      } else {
+        // 길면 여러 페이지 분할
+        let remaining = canvas.height, pos = 0;
+        const pageCanvasH = Math.floor(canvas.width * (ph - margin*2) / iw);
+        while(remaining > 0){
+          const slice = document.createElement('canvas');
+          slice.width = canvas.width; slice.height = Math.min(pageCanvasH, remaining);
+          slice.getContext('2d').drawImage(canvas, 0, pos, canvas.width, slice.height, 0, 0, canvas.width, slice.height);
+          const sliceImg = slice.toDataURL('image/jpeg', 0.92);
+          const sliceH = slice.height * iw / canvas.width;
+          if(!firstPage) pdf.addPage();
+          pdf.addImage(sliceImg, 'JPEG', margin, margin, iw, sliceH);
+          firstPage = false;
+          remaining -= slice.height; pos += slice.height;
+        }
       }
     }
     pdf.save(`수행성경비_${lastSheet.gradeKey}_${lastSheet.semKor}.pdf`);
     window.hideLoading && window.hideLoading();
-    toast('PDF를 저장했습니다.','ok');
+    toast(chunks.length>1?`PDF를 저장했습니다. (항목이 많아 ${chunks.length}묶음으로 나눴어요)`:'PDF를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
 }
 window.printSheet = printSheet;
@@ -2896,7 +2922,7 @@ async function imageSheet(){
     await ensureH2C();
     const holder = document.createElement('div');
     holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
-    holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
+    holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape, { fullWidth:true });
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
     const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
@@ -3257,24 +3283,30 @@ function buildAllSheetData(){
 }
 
 // 전체 상세표 → 인쇄용 HTML (안내장 스타일, 학년 구분선)
-function buildAllSheetHTML(){
-  const { items, students, amtOf, gradeLabel } = buildAllSheetData();
+// opts: { itemsSubset: 항목 부분(PDF 페이지용), pageNo, pageCnt, showTotal: 개인합계 표시 여부, fullWidth: 실제 표 폭 사용(이미지용) }
+function buildAllSheetHTML(opts){
+  opts = opts || {};
+  const data = buildAllSheetData();
+  const allItems = data.items, students = data.students, amtOf = data.amtOf, gradeLabel = data.gradeLabel;
+  const items = opts.itemsSubset || allItems;
+  const showTotal = opts.showTotal !== false;   // 기본: 표시
   if(!items.length || !students.length) return '';
   const won2 = n => (n||0).toLocaleString('ko-KR');
   const perLine = (e)=> e.mode==='refund'?`↩️ ₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per||0)}${e.mode==='equal'?'/인':''}`;
-  const gradeW=56, nameW=64, totW=80, pad=30, maxInner=1063;
+  const gradeW=56, nameW=64, totW=showTotal?80:0, pad=30, maxInner=1063;
   const availForItems = maxInner - gradeW - nameW - totW;
   let itemColW = Math.max(64, Math.floor(availForItems / items.length));
   const tableW = gradeW + nameW + itemColW*items.length + totW;
-  const innerW = Math.min(tableW, maxInner);
+  // fullWidth(이미지): 표 실폭 그대로 → 잘림 없음 / PDF 페이지: maxInner 이하로만 사용
+  const innerW = opts.fullWidth ? tableW : Math.min(tableW, maxInner);
   const docW = innerW + pad*2;
-  const colgroup = `<colgroup><col style="width:${gradeW}px"><col style="width:${nameW}px">${items.map(()=>`<col style="width:${itemColW}px">`).join('')}<col style="width:${totW}px"></colgroup>`;
+  const colgroup = `<colgroup><col style="width:${gradeW}px"><col style="width:${nameW}px">${items.map(()=>`<col style="width:${itemColW}px">`).join('')}${showTotal?`<col style="width:${totW}px">`:''}</colgroup>`;
   const headRows = `
-    <tr><th class="nm hd">학년·반</th><th class="nm hd">이름</th>${items.map(e=>`<th class="ic subj"><span style="font-size:8.5px;opacity:.85;font-weight:600">${expenseSeqNo(e.id)}</span><br>${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}<th class="tot hd">개인<br>합계</th></tr>
-    <tr><td class="rl" colspan="2">담당</td>${items.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl" colspan="2">신청일</td>${items.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl" colspan="2">세부내용</td>${items.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl" colspan="2">1인당</td>${items.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}<td class="rl2"></td></tr>`;
+    <tr><th class="nm hd">학년·반</th><th class="nm hd">이름</th>${items.map(e=>`<th class="ic subj"><span style="font-size:8.5px;opacity:.85;font-weight:600">${expenseSeqNo(e.id)}</span><br>${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}${showTotal?`<th class="tot hd">개인<br>합계</th>`:''}</tr>
+    <tr><td class="rl" colspan="2">담당</td>${items.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}${showTotal?`<td class="rl2"></td>`:''}</tr>
+    <tr><td class="rl" colspan="2">신청일</td>${items.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}${showTotal?`<td class="rl2"></td>`:''}</tr>
+    <tr><td class="rl" colspan="2">세부내용</td>${items.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}${showTotal?`<td class="rl2"></td>`:''}</tr>
+    <tr><td class="rl" colspan="2">1인당</td>${items.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}${showTotal?`<td class="rl2"></td>`:''}</tr>`;
 
   // 학년·반 그룹핑: 같은 (학년+반)은 rowspan으로 병합
   const grpKey = st => `${gradeLabel(st.grade)}||${st.className||'-'}`;
@@ -3284,20 +3316,23 @@ function buildAllSheetHTML(){
   students.forEach(st=>{ const k=grpKey(st); groupCount[k]=(groupCount[k]||0)+1; });
   let prevKey = null;
   const bodyRows = students.map(st=>{
+    // 개인 합계는 항상 "전체 항목" 기준 (페이지가 나뉘어도 합계는 동일)
     let sum=0;
-    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; }).join('');
+    allItems.forEach(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; });
+    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; }).join('');
     const k = grpKey(st);
     let grpCell = '';
     if(k !== prevKey){ prevKey = k; grpCell = `<td class="grpcell" rowspan="${groupCount[k]}">${grpLabel(st)}</td>`; }
-    return `<tr>${grpCell}<td class="nm">${esc(st.name)}</td>${tds}<td class="tot">₩${won2(sum)}</td></tr>`;
+    return `<tr>${grpCell}<td class="nm">${esc(st.name)}</td>${tds}${showTotal?`<td class="tot">₩${won2(sum)}</td>`:''}</tr>`;
   }).join('');
   const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
-  const grand = students.reduce((tt,st)=>tt+items.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
+  const grand = students.reduce((tt,st)=>tt+allItems.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
+  const pageTag = (opts.pageCnt&&opts.pageCnt>1)?` · ${opts.pageNo}/${opts.pageCnt}쪽 (항목 나눔)`:'';
   return `<div class="sheet-doc land" style="width:${docW}px;padding:${pad}px">
-    <div class="sheet-head"><div class="sh-title">${esc(ORGS[reportOrg]||reportOrg)} 수행성 경비 전체 취합</div><div class="sh-sub">${esc(semKor(reportSem))} · 전체 학년 · 학생 ${students.length}명 · 항목 ${items.length}개</div></div>
+    <div class="sheet-head"><div class="sh-title">${esc(ORGS[reportOrg]||reportOrg)} 수행성 경비 전체 취합</div><div class="sh-sub">${esc(semKor(reportSem))} · 전체 학년 · 학생 ${students.length}명 · 항목 ${allItems.length}개${pageTag}</div></div>
     <table class="sheet-tbl">${colgroup}<thead>${headRows}</thead><tbody>${bodyRows}</tbody>
-    <tfoot><tr><th class="nm" colspan="2">항목합계</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr></tfoot></table>
-    <div class="sheet-foot">※ 금액이 적힌 칸이 청구, 반환은 (−)로 표시됩니다.</div>
+    <tfoot><tr><th class="nm" colspan="2">항목합계</th>${footTds}${showTotal?`<td class="tot">₩${won2(grand)}</td>`:''}</tr></tfoot></table>
+    <div class="sheet-foot">※ 금액이 적힌 칸이 청구, 반환은 (−)로 표시됩니다.${showTotal?' 개인 합계는 전체 항목 기준입니다.':''}</div>
   </div>`;
 }
 
@@ -3307,28 +3342,51 @@ async function printAllSheet(){
   window.showLoading && window.showLoading('전체 상세표 PDF를 만드는 중…');
   try {
     await ensureH2C(); await ensureJsPDF();
-    const holder = document.createElement('div');
-    holder.style.cssText='position:fixed;left:-99999px;top:0;';
-    holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
-    document.body.appendChild(holder);
-    const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
-    document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
     const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), margin=8;
-    const iw=pw-margin*2, ih=canvas.height*iw/canvas.width;
-    const img=canvas.toDataURL('image/jpeg',0.92);
-    if(ih<=ph-margin*2){ pdf.addImage(img,'JPEG',margin,margin,iw,ih); }
-    else {
-      let remaining=canvas.height, pos=0; const pageH=Math.floor(canvas.width*(ph-margin*2)/iw);
-      while(remaining>0){ const sl=document.createElement('canvas'); sl.width=canvas.width; sl.height=Math.min(pageH,remaining);
-        sl.getContext('2d').drawImage(canvas,0,pos,canvas.width,sl.height,0,0,canvas.width,sl.height);
-        const sh=sl.height*iw/canvas.width; if(pos>0)pdf.addPage(); pdf.addImage(sl.toDataURL('image/jpeg',0.92),'JPEG',margin,margin,iw,sh);
-        remaining-=sl.height; pos+=sl.height; }
+    const iw=pw-margin*2;
+
+    // 항목이 많으면 열 나눔: 페이지당 최대 11개 (A4 가로에서 읽을 수 있는 한계)
+    const PER_PAGE = 11;
+    const chunks = [];
+    for(let i=0;i<items.length;i+=PER_PAGE) chunks.push(items.slice(i,i+PER_PAGE));
+    let firstPage = true;
+
+    for(let c=0;c<chunks.length;c++){
+      window.setLoadStep && window.setLoadStep(`표 만드는 중… (${c+1}/${chunks.length})`, Math.round((c+1)/chunks.length*90));
+      const holder = document.createElement('div');
+      holder.style.cssText='position:fixed;left:-99999px;top:0;';
+      holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML({
+        itemsSubset: chunks[c],
+        pageNo: c+1, pageCnt: chunks.length,
+        showTotal: c === chunks.length-1   // 개인 합계는 마지막 묶음에만
+      });
+      document.body.appendChild(holder);
+      const node = holder.querySelector('.sheet-doc');
+      const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+      document.body.removeChild(holder);
+      const ih=canvas.height*iw/canvas.width;
+      const img=canvas.toDataURL('image/jpeg',0.92);
+      if(ih<=ph-margin*2){
+        if(!firstPage) pdf.addPage();
+        pdf.addImage(img,'JPEG',margin,margin,iw,ih);
+        firstPage=false;
+      } else {
+        // 세로로도 길면 페이지 내 세로 분할
+        let remaining=canvas.height, pos=0; const pageH=Math.floor(canvas.width*(ph-margin*2)/iw);
+        while(remaining>0){ const sl=document.createElement('canvas'); sl.width=canvas.width; sl.height=Math.min(pageH,remaining);
+          sl.getContext('2d').drawImage(canvas,0,pos,canvas.width,sl.height,0,0,canvas.width,sl.height);
+          const sh=sl.height*iw/canvas.width;
+          if(!firstPage) pdf.addPage();
+          pdf.addImage(sl.toDataURL('image/jpeg',0.92),'JPEG',margin,margin,iw,sh);
+          firstPage=false;
+          remaining-=sl.height; pos+=sl.height; }
+      }
     }
     pdf.save(`수행성경비_전체취합_${semKor(reportSem)}.pdf`);
-    window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
+    window.hideLoading && window.hideLoading();
+    toast(chunks.length>1?`PDF를 저장했습니다. (항목이 많아 ${chunks.length}묶음으로 나눴어요)`:'PDF를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
 }
 window.printAllSheet = printAllSheet;
@@ -3340,7 +3398,7 @@ async function imageAllSheet(){
   try {
     await ensureH2C();
     const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;';
-    holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
+    holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML({ fullWidth:true });
     document.body.appendChild(holder);
     const node=holder.querySelector('.sheet-doc');
     const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
@@ -3352,7 +3410,7 @@ async function imageAllSheet(){
 window.imageAllSheet = imageAllSheet;
 
 const ALLSHEET_CSS = `
-.sheet-tbl .grpcell{background:var(--gp);color:#1b4332;font-weight:800;font-size:10px;line-height:1.3;vertical-align:middle;border-color:#cdddd4;}
+.sheet-tbl .grpcell{background:#E8F3EF;color:#1b4332;font-weight:800;font-size:10px;line-height:1.3;vertical-align:middle;border-color:#cdddd4;}
 `;
 
 function setAllGroup(g){
