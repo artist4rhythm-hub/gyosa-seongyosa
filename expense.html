@@ -341,6 +341,11 @@ function perAmount(total, n){
   if(!total || !n) return 0;
   return Math.ceil(total / n / 10) * 10;
 }
+// 반환용: 1인당 10원 단위 내림 (덜 반환 · 차액은 학교로)
+function perRefund(total, n){
+  if(!total || !n) return 0;
+  return Math.floor(total / n / 10) * 10;
+}
 
 // ── 로그인 ──
 onAuthStateChanged(auth, async (user) => {
@@ -543,6 +548,7 @@ function renderNew(){
         <button class="subtbtn ${expMode==='equal'?'on':''}" onclick="setExpMode('equal')" style="padding:8px 16px">➗ 균등 청구 (1/N)</button>
         <button class="subtbtn ${expMode==='indiv'?'on':''}" onclick="setExpMode('indiv')" style="padding:8px 16px">✏️ 개별 청구</button>
         <button class="subtbtn ${expMode==='refund'?'on':''}" onclick="setExpMode('refund')" style="padding:8px 16px">↩️ 개별 반환</button>
+        <button class="subtbtn ${expMode==='refundeq'?'on':''}" onclick="setExpMode('refundeq')" style="padding:8px 16px">⚖️ 균등 반환</button>
         <button class="subtbtn ${expMode==='group'?'on':''}" onclick="setExpMode('group')" style="padding:8px 16px">👥 그룹 균등</button>
       </div>
       <p class="adesc" id="mode-desc" style="margin-bottom:14px"></p>
@@ -558,7 +564,7 @@ function renderNew(){
         <div class="fgrp"><label>선생님 (담당) *</label><input type="text" id="ex-teacher" value="${esc(CU.name||'')}" placeholder="담당 선생님 이름" list="teacher-list"><datalist id="teacher-list"></datalist></div>
         <div class="fgrp"><label>수업 과목 *</label><input type="text" id="ex-subject" placeholder="예: 창작탐구" list="subject-list"><datalist id="subject-list"></datalist></div>
       </div>
-        <div class="fgrp" id="wrap-total"><label style="color:var(--gm);font-weight:800">💰 청구 금액 (원) *</label><input type="number" id="ex-total" placeholder="예: 46650" min="0" inputmode="numeric" style="font-size:24px;font-weight:800;color:var(--gm);height:56px;text-align:right;letter-spacing:.5px"></div>
+        <div class="fgrp" id="wrap-total"><label id="ex-total-label" style="color:var(--gm);font-weight:800">💰 청구 금액 (원) *</label><input type="number" id="ex-total" placeholder="예: 46650" min="0" inputmode="numeric" style="font-size:24px;font-weight:800;color:var(--gm);height:56px;text-align:right;letter-spacing:.5px"></div>
       </div>
       <div class="fgrp"><label>구매 목록 *</label><input type="text" id="ex-items" placeholder="예: 전통모빌 만들기 키트"></div>
       <div class="fgrp"><label>세부 내용 (선택)</label><input type="text" id="ex-detail" placeholder="예: 크라프트 A4노트 외"></div>
@@ -568,7 +574,7 @@ function renderNew(){
       </div>
       <div class="fgrp"><label>계좌번호 <span style="color:var(--tl);font-weight:400">(한 번 입력하면 다음부터 자동으로 채워집니다)</span></label><input type="text" id="ex-account" value="${esc(CU.bankAccount||'')}" placeholder="숫자만 입력"></div>
       <div class="frow">
-        <div class="fgrp" id="wrap-schoolqty"><label>학교 청구분 수량 (교사 사용분·학교 보관분)</label><input type="number" id="ex-schoolqty" value="0" min="0" inputmode="numeric"></div>
+        <div class="fgrp" id="wrap-schoolqty"><label id="ex-schoolqty-label">학교 청구분 수량 (교사 사용분·학교 보관분)</label><input type="number" id="ex-schoolqty" value="0" min="0" inputmode="numeric"></div>
         <div class="fgrp"><label>학교 청구분 메모 (선택)</label><input type="text" id="ex-school" placeholder="예: 교사 시연용 1개, 잔여 2개 학교 보관"></div>
       </div>
       <div class="fgrp" id="wrap-teacherRefund" style="display:none;background:var(--info-bg);border-radius:10px;padding:12px 14px;margin-top:4px">
@@ -606,9 +612,9 @@ function renderNew(){
 
       <div class="sumbar">
         <span><span class="si">선택 인원</span> <span class="sv" id="sum-count">0명</span></span>
-        <span><span class="si">1인당 청구</span> <span class="sv" id="sum-per">-</span></span>
+        <span><span class="si" id="sum-per-label">1인당 청구</span> <span class="sv" id="sum-per">-</span></span>
         <span><span class="si" id="sum-total-label">학생 청구 합계</span> <span class="sv" id="sum-total">-</span></span>
-        <span><span class="si">학교 청구</span> <span class="sv" id="sum-school">-</span></span>
+        <span><span class="si" id="sum-school-label">학교 청구</span> <span class="sv" id="sum-school">-</span></span>
         ${editingId?`<button class="bs" style="margin-left:auto;background:rgba(255,255,255,.2);color:#fff;border-color:rgba(255,255,255,.4)" onclick="cancelEdit()">취소</button><button class="bp" style="background:var(--wh);color:var(--gd)" onclick="submitExpense()">💾 수정 저장</button>`:`<button class="bp" style="margin-left:auto;background:var(--wh);color:var(--gd)" onclick="submitExpense()">✅ 신청하기</button>`}
       </div>
     </div>`}`;
@@ -658,20 +664,29 @@ function applyModeUI(){
     equal: '일반적인 방식입니다. 청구 금액을 입력하고 참여 학생을 체크하면, 금액 ÷ (학생 수 + 학교 청구분 수량)으로 1인당 금액이 10원 단위 올림으로 자동 계산됩니다.',
     indiv: '학생마다 금액이 다를 때 사용합니다. 학생을 체크하고 각자 금액을 입력하면 합계가 자동 계산됩니다. (합계를 먼저 넣지 않아요)',
     refund: '외부 활동 후 남은 활동비를 돌려줄 때 사용합니다. 학생별 반환 금액을 입력하세요. 내역·안내장에 반환(−)으로 표시됩니다.',
+    refundeq: '남은 활동비를 균등하게 돌려줄 때 사용합니다. 총 반환 금액 ÷ (학생 수 + 선생님 수)로 1인당 금액이 10원 단위 내림으로 계산되고(덜 반환), 남는 단수 차액은 선생님 반환금(학교로)에 더해져 총액이 정확히 맞아떨어집니다.',
     group: '그룹마다 금액이 다를 때 사용합니다. A그룹 학생들은 A금액을, B그룹 학생들은 B금액을 인원수로 나눠 청구합니다.'
   };
   const md=$I('mode-desc'); if(md) md.textContent = descs[expMode]||'';
-  const wt=$I('wrap-total'); if(wt) wt.style.display = expMode==='equal'?'':'none';
-  const wq=$I('wrap-schoolqty'); if(wq) wq.style.display = expMode==='equal'?'':'none';
+  const isRefundEq = expMode==='refundeq';
+  const wt=$I('wrap-total'); if(wt) wt.style.display = (expMode==='equal'||isRefundEq)?'':'none';
+  const wq=$I('wrap-schoolqty'); if(wq) wq.style.display = (expMode==='equal'||isRefundEq)?'':'none';
   const wtr=$I('wrap-teacherRefund'); if(wtr) wtr.style.display = expMode==='refund'?'':'none';
   const ib=$I('indiv-bar'); if(ib) ib.style.display = (expMode==='indiv'||expMode==='refund')?'':'none';
   const gb=$I('group-bar'); if(gb) gb.style.display = expMode==='group'?'':'none';
   if(expMode==='group') renderGroupBar();
+  // 균등 반환: 총액 라벨/학교분 라벨을 반환 문맥으로
+  const totLbl=$I('ex-total-label');
+  if(totLbl) totLbl.textContent = isRefundEq ? '총 반환 금액 (원)' : '총 청구 금액 (원)';
+  const sqLbl=$I('ex-schoolqty-label');
+  if(sqLbl) sqLbl.textContent = isRefundEq ? '선생님 수 (학교로 반환되는 몫)' : '학교 청구분 수량 (교사 사용분·학교 보관분)';
   const idsc=$I('indiv-desc');
   if(idsc) idsc.textContent = expMode==='refund'
     ? '↩️ 반환 금액 입력 — 대부분 금액이 비슷하면 기본 금액을 전체 적용한 뒤, 다른 학생만 수정하세요.'
     : '✏️ 청구 금액 입력 — 대부분 금액이 비슷하면 기본 금액을 전체 적용한 뒤, 다른 학생만 수정하세요.';
-  const stl=$I('sum-total-label'); if(stl) stl.textContent = expMode==='refund'?'반환 합계':'학생 청구 합계';
+  const stl=$I('sum-total-label'); if(stl) stl.textContent = (expMode==='refund')?'반환 합계':(isRefundEq?'학생 반환 합계':'학생 청구 합계');
+  const spl=$I('sum-per-label'); if(spl) spl.textContent = isRefundEq?'1인당 반환':'1인당 청구';
+  const ssl=$I('sum-school-label'); if(ssl) ssl.textContent = isRefundEq?'선생님 반환':'학교 청구';
 }
 
 // ── 그룹 균등: 그룹 바 렌더·조작 ──
@@ -1385,6 +1400,21 @@ function refreshSum(){
     const sg = $I('sum-school'); if(sg) sg.textContent = '-';
     return;
   }
+  // 균등 반환: 총액 ÷ (학생수+선생님수), 1인당 내림, 차액은 학교로
+  if(expMode==='refundeq'){
+    const sq = parseInt($I('ex-schoolqty')?.value||'0',10) || 0;
+    const total = parseInt($I('ex-total')?.value||'0',10) || 0;
+    const divisor = n + sq;
+    const per = perRefund(total, divisor);
+    const stuSum = per * n;
+    const teacherSum = total - stuSum;   // 선생님(학교) 반환 = 나머지 전부
+    $I('sum-count').textContent = n+'명' + (sq?` + 선생님 ${sq}`:'');
+    $I('sum-per').textContent = (divisor&&total) ? '₩'+won(per)+' (내림)' : '-';
+    $I('sum-total').textContent = (n&&total&&divisor) ? '↩️ ₩'+won(stuSum) : '-';
+    const se = $I('sum-school');
+    if(se) se.textContent = (total&&divisor) ? '₩'+won(teacherSum) : '-';
+    return;
+  }
   // 개별 모드: 개별 금액 합산
   if(expMode!=='equal'){
     let sum = 0;
@@ -1778,8 +1808,45 @@ async function submitExpense(){
       createdByUid: CU.uid, createdByName: CU.name||'',
       createdAt: Timestamp.now()
     };
+  } else if(expMode==='refundeq'){
+    // ── 균등 반환 (총액 ÷ [학생+선생님], 1인당 내림, 차액은 학교로) ──
+    if(!total || total<=0){ toast('총 반환 금액을 입력하세요.','err'); $I('ex-total')?.focus(); return; }
+    const sq = parseInt($I('ex-schoolqty')?.value||'0',10) || 0;
+    const divisor = ids.length + sq;
+    if(!divisor){ toast('반환 대상(학생 또는 선생님)을 선택하세요.','err'); return; }
+    const per = perRefund(total, divisor);
+    const stuSum = per * ids.length;
+    const teacherSum = total - stuSum;   // 학생에게 안 간 나머지 = 학교로
+    const students = ids.map(id=>{
+      const s = STUDENTS.find(x=>x.id===id);
+      return {id, name:s?.name||'', grade:studentGrade(id)||'', classId:studentClass(id)?.id||'', className:studentClass(id)?.name||'', amt:per};
+    });
+    if(!await confirmCard({
+      title:'균등 반환 ⚖️',
+      amountLabel:'총 반환 금액', amount:won(total),
+      amountSub:`${divisor}명 ÷ = 1인당 ₩${won(per)} (내림)`,
+      date, subject, teacher,
+      rows:[
+        {k:'반환 학생', v:`${ids.length}명`},
+        ...(sq?[{k:'선생님(학교 반환분)', v:`${sq}명`}]:[]),
+        {k:'1인당 반환', v:`₩${won(per)} <span style="color:var(--tl);font-size:11px">(10원 내림)</span>`},
+        {k:'학생 반환 합계', v:`₩${won(stuSum)}`},
+        {k:'선생님 반환금 (차액 포함)', v:`<b style="color:var(--info)">₩${won(teacherSum)}</b>`},
+        {k:'총 반환 확인', v:`₩${won(stuSum)} + ₩${won(teacherSum)} = <b>₩${won(total)}</b>`}
+      ],
+      note: (receiptExempt && (existingReceipts.length+receipts.length)<1) ? `🧾 영수증 없음 · 사유: ${esc(receiptExemptReason)}` : ''
+    })) return;
+    record = {
+      org: expOrg, mode:'refund', date, semester, teacher, subject, items, detail,
+      total: stuSum, per, count: ids.length,
+      schoolQty: 0, schoolTotal: 0,
+      refundEqual: true, refundTotal: total, refundTeacherQty: sq,
+      teacherRefund: teacherSum, teacherRefundNote: sq?`균등 반환 ${sq}명분 + 단수 차액`:'단수 차액',
+      students, bank, holder, account, schoolNote,
+      createdByUid: CU.uid, createdByName: CU.name||'',
+      createdAt: Timestamp.now()
+    };
   } else if(expMode==='group'){
-    // ── 그룹 균등 청구 ──
     const used = expGroups.map((g,i)=>({...g, i})).filter(g=>g.ids.length>0);
     if(!used.length){ toast('그룹에 학생을 배정하세요.','err'); return; }
     const noAmt = used.filter(g=>!(g.total>0));
