@@ -2746,8 +2746,8 @@ function buildSheetHTML(landscape, opts){
   const cls = classNames||[];
   const gradeTitle = cls.length===1 ? `${gradeKey} ${cls[0]}` : cls.length>1 ? `${gradeKey} (${cls.join('·')})` : gradeKey;
   const won2 = n => (n||0).toLocaleString('ko-KR');
-  const perLine = (e)=> e.mode==='refund'?`↩️ ₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0)}${e.mode==='equal'?'/인':''}`;
-  const cell = (e,sid)=>{ const a=amtOf(e,sid); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; };
+  const perLine = (e)=> e.mode==='refund'?`↩️ ${accMoney(Math.abs(e.per||0), false)}`:`${accMoney(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
+  const cell = (e,sid)=>{ const a=amtOf(e,sid); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${accMoney(Math.abs(a), isRef)}</td>`; };
 
   // 칸 폭 계산: 이름칸 + 항목N칸 + 합계칸
   const nameW = landscape ? 60 : 52;
@@ -2785,16 +2785,16 @@ function buildSheetHTML(landscape, opts){
     let sum=0;
     allItems.forEach(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; });
     const tds = items.map(e=> cell(e,st.id)).join('');
-    return `<tr><th class="nm">${esc(st.name)}<span class="cls">${esc(st.className||'')}</span></th>${tds}${showTotal?`<td class="tot">₩${won2(sum)}</td>`:''}</tr>`;
+    return `<tr><th class="nm">${esc(st.name)}<span class="cls">${esc(st.className||'')}</span></th>${tds}${showTotal?`<td class="tot">${accMoney(sum, sum<0)}</td>`:''}</tr>`;
   }).join('');
-  const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
+  const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">${accMoney(Math.abs(t), false)}</td>`; }).join('');
   const grand = students.reduce((tt,st)=>tt+allItems.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
 
   const table = `<table class="sheet-tbl">
     ${colgroup}
     <thead>${headRows2}</thead>
     <tbody>${bodyRows}</tbody>
-    <tfoot><tr><th class="nm">항목합계</th>${footTds}${showTotal?`<td class="tot">₩${won2(grand)}</td>`:''}</tr></tfoot>
+    <tfoot><tr><th class="nm">항목합계</th>${footTds}${showTotal?`<td class="tot">${accMoney(grand, grand<0)}</td>`:''}</tr></tfoot>
   </table>`;
 
   const pageTag = (opts.pageCnt&&opts.pageCnt>1)?` · ${opts.pageNo}/${opts.pageCnt}쪽 (항목 나눔)`:'';
@@ -2815,33 +2815,49 @@ const SHEET_CSS = `
 .sheet-head{text-align:center;margin-bottom:18px;}
 .sh-title{font-size:20px;font-weight:800;color:#1b4332;text-align:center;letter-spacing:-0.5px;}
 .sh-sub{font-size:12px;color:#8ba396;margin-top:6px;text-align:center;letter-spacing:0.5px;}
-.sheet-tbl{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10.5px;}
+.sheet-tbl{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10.5px;font-variant-numeric:tabular-nums;}
 .sheet-tbl th,.sheet-tbl td{border:1px solid #e2e8e5;padding:5px 4px;text-align:center;vertical-align:middle;word-break:break-word;overflow-wrap:break-word;}
-/* 헤더바: 그린 배경 + 흰 글씨 (흑백에선 진회색+흰글씨) */
+/* 헤더바: 그린 배경 + 흰 글씨 */
 .sheet-tbl .subj{background:#2d6a4f;color:#fff;font-weight:800;font-size:11px;text-align:center;line-height:1.3;border-color:#2d6a4f;}
 .sheet-tbl .rl{background:#E8F3EF;color:#5a7267;font-weight:600;font-size:9.5px;text-align:center;}
 .sheet-tbl .rl2{background:#E8F3EF;border-color:#e2e8e5;}
 .sheet-tbl .ic2{background:#E8F3EF;font-size:9.5px;color:#5a7267;text-align:center;line-height:1.35;font-weight:400;}
 .sheet-tbl .ic2.det{font-size:9px;color:#7d968a;}
 .sheet-tbl .ic2.per{font-weight:700;color:#3a5a48;font-size:10px;background:#E8F3EF;}
+/* 1인당 행도 회계식 정렬 */
+.sheet-tbl .ic2.per .acc{padding:0 6px;}
 /* 이름 열 */
 .sheet-tbl .nm{background:#E8F3EF;font-weight:700;text-align:center;line-height:1.25;color:#1b4332;}
 .sheet-tbl .nm .cls{display:block;font-size:8.5px;color:#a8b5ac;font-weight:400;}
 .sheet-tbl .nm.hd{background:#2d6a4f;color:#fff;font-size:11px;border-color:#2d6a4f;}
 /* 개인합계 헤더 (더 진한 그린) */
 .sheet-tbl .tot.hd{background:#1d4d3d;color:#fff;font-size:11px;border-color:#1d4d3d;}
-/* 개별 청구/반환 (차분하게) */
-.sheet-tbl td.chg{color:#6b8579;font-weight:500;font-size:9.5px;line-height:1.35;}
-.sheet-tbl td.chg .ck{color:#7a9488;font-weight:700;}
-.sheet-tbl td.ref{background:#E8F3EF;color:#4a7a68;font-weight:500;font-size:9.5px;line-height:1.35;}
+/* ── 회계식 금액 셀: ₩ 왼쪽 고정 · 숫자 오른쪽 정렬 · 좌우 여백 ── */
+.sheet-tbl td.chg,.sheet-tbl td.ref,.sheet-tbl td.tot,.sheet-tbl td.ft{padding:5px 0;}
+.acc{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 9px;line-height:1.3;white-space:nowrap;}
+.acc .sym{flex:none;opacity:.72;font-weight:600;}
+.acc .num{flex:1;text-align:right;font-variant-numeric:tabular-nums;letter-spacing:.2px;}
+.acc.neg .sym,.acc.neg .num{color:#4a7a68;}
+/* 개별 청구/반환 */
+.sheet-tbl td.chg{color:#5a7568;font-weight:500;font-size:10px;}
+.sheet-tbl td.ref{background:#EBF4EF;color:#4a7a68;font-weight:500;font-size:10px;}
 .sheet-tbl td.x{color:#d0d8d3;}
-/* 합계 (진한 골드 + 음영 + 볼드, 흑백에서도 강조) */
-.sheet-tbl .tot{background:#F7EFD8;font-weight:900;color:#8a6410;text-align:center;font-size:11px;}
-.sheet-tbl .ft{background:#E8F3EF;font-weight:700;color:#2f5c48;}
-.sheet-tbl tfoot .nm{background:#E8F3EF;color:#1b4332;}
-.sheet-tbl tfoot .tot{background:#F0E4C4;color:#8a6410;border-top:2px solid #b08d3c;}
+/* ── 합계 라인 통일: 개인합계 열(우측) + 항목합계 행(하단) 같은 골드 아웃라인 ── */
+.sheet-tbl .tot{background:#F7EFD8;font-weight:800;color:#8a6410;font-size:11px;border-left:2px solid #b08d3c;border-right:2px solid #b08d3c;}
+.sheet-tbl .tot.hd{border-left:2px solid #b08d3c;border-right:2px solid #b08d3c;border-top:2px solid #b08d3c;background:#1d4d3d;color:#fff;}
+/* 개인합계 열 맨 아래(꼭짓점)와 항목합계 행을 두꺼운 골드로 감싸 하나의 합계 영역으로 */
+.sheet-tbl tbody tr:last-child .tot{border-bottom:2px solid #b08d3c;}
+.sheet-tbl .ft{background:#F5EFDD;font-weight:700;color:#8a6410;border-top:2px solid #b08d3c;border-bottom:2px solid #b08d3c;}
+.sheet-tbl tfoot .nm{background:#F0E4C4;color:#8a6410;font-weight:800;border-top:2px solid #b08d3c;border-bottom:2px solid #b08d3c;border-left:2px solid #b08d3c;}
+.sheet-tbl tfoot .tot{background:#EAD9A8;color:#7a5808;border:2px solid #b08d3c;font-weight:900;}
 .sheet-foot{font-size:10px;color:#a8b5ac;margin-top:12px;text-align:center;}
 `;
+
+// 회계식 금액 HTML: ₩ 왼쪽 · 숫자 오른쪽. neg면 − 기호를 숫자 앞에.
+function accMoney(n, neg){
+  const won2 = v => (Math.abs(v)||0).toLocaleString('ko-KR');
+  return `<span class="acc${neg?' neg':''}"><span class="sym">₩</span><span class="num">${neg?'−':''}${won2(n)}</span></span>`;
+}
 
 async function printSheet(mode){
   if(!lastSheet){ toast('출력할 표가 없습니다.','err'); return; }
@@ -3292,7 +3308,7 @@ function buildAllSheetHTML(opts){
   const showTotal = opts.showTotal !== false;   // 기본: 표시
   if(!items.length || !students.length) return '';
   const won2 = n => (n||0).toLocaleString('ko-KR');
-  const perLine = (e)=> e.mode==='refund'?`↩️ ₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per||0)}${e.mode==='equal'?'/인':''}`;
+  const perLine = (e)=> e.mode==='refund'?`↩️ ${accMoney(Math.abs(e.per||0), false)}`:`${accMoney(e.per||0, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
   const gradeW=56, nameW=64, totW=showTotal?80:0, pad=30, maxInner=1063;
   const availForItems = maxInner - gradeW - nameW - totW;
   let itemColW = Math.max(64, Math.floor(availForItems / items.length));
@@ -3319,19 +3335,19 @@ function buildAllSheetHTML(opts){
     // 개인 합계는 항상 "전체 항목" 기준 (페이지가 나뉘어도 합계는 동일)
     let sum=0;
     allItems.forEach(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; });
-    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; }).join('');
+    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${accMoney(Math.abs(a), isRef)}</td>`; }).join('');
     const k = grpKey(st);
     let grpCell = '';
     if(k !== prevKey){ prevKey = k; grpCell = `<td class="grpcell" rowspan="${groupCount[k]}">${grpLabel(st)}</td>`; }
-    return `<tr>${grpCell}<td class="nm">${esc(st.name)}</td>${tds}${showTotal?`<td class="tot">₩${won2(sum)}</td>`:''}</tr>`;
+    return `<tr>${grpCell}<td class="nm">${esc(st.name)}</td>${tds}${showTotal?`<td class="tot">${accMoney(sum, sum<0)}</td>`:''}</tr>`;
   }).join('');
-  const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
+  const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">${accMoney(Math.abs(t), false)}</td>`; }).join('');
   const grand = students.reduce((tt,st)=>tt+allItems.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
   const pageTag = (opts.pageCnt&&opts.pageCnt>1)?` · ${opts.pageNo}/${opts.pageCnt}쪽 (항목 나눔)`:'';
   return `<div class="sheet-doc land" style="width:${docW}px;padding:${pad}px">
     <div class="sheet-head"><div class="sh-title">${esc(ORGS[reportOrg]||reportOrg)} 수행성 경비 전체 취합</div><div class="sh-sub">${esc(semKor(reportSem))} · 전체 학년 · 학생 ${students.length}명 · 항목 ${allItems.length}개${pageTag}</div></div>
     <table class="sheet-tbl">${colgroup}<thead>${headRows}</thead><tbody>${bodyRows}</tbody>
-    <tfoot><tr><th class="nm" colspan="2">항목합계</th>${footTds}${showTotal?`<td class="tot">₩${won2(grand)}</td>`:''}</tr></tfoot></table>
+    <tfoot><tr><th class="nm" colspan="2">항목합계</th>${footTds}${showTotal?`<td class="tot">${accMoney(grand, grand<0)}</td>`:''}</tr></tfoot></table>
     <div class="sheet-foot">※ 금액이 적힌 칸이 청구, 반환은 (−)로 표시됩니다.${showTotal?' 개인 합계는 전체 항목 기준입니다.':''}</div>
   </div>`;
 }
