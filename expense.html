@@ -1256,6 +1256,28 @@ async function refreshRoster(){
 }
 window.refreshRoster = refreshRoster;
 
+// 관리자 통장 검산: 실제 잔액 vs 있어야 할 금액
+function checkBankBalance(expected){
+  const el = $I('bank-diff'); if(!el) return;
+  const raw = $I('bank-actual')?.value;
+  if(raw===''||raw==null){ el.innerHTML=''; return; }
+  const actual = parseInt(raw,10)||0;
+  const diff = actual - expected;
+  const won = n => (n||0).toLocaleString('ko-KR');
+  if(diff===0){
+    el.innerHTML = `<div style="padding:13px 15px;background:var(--ok-bg);color:var(--ok);border-radius:10px;font-size:14px;font-weight:700;text-align:center">✅ 회계가 정확히 일치합니다</div>`;
+  } else if(diff>0){
+    el.innerHTML = `<div style="padding:13px 15px;background:var(--warn-bg);color:var(--warn);border-radius:10px;font-size:13.5px;line-height:1.6">
+      ⚠️ 실제 잔액이 <b>₩${won(diff)}</b> 더 많습니다.<br>
+      <span style="font-size:12px;color:var(--ts)">누락된 지출 기록이 있거나, 예상보다 반환금이 더 들어왔을 수 있어요.</span></div>`;
+  } else {
+    el.innerHTML = `<div style="padding:13px 15px;background:var(--danger-bg);color:var(--danger);border-radius:10px;font-size:13.5px;line-height:1.6">
+      ⚠️ 실제 잔액이 <b>₩${won(-diff)}</b> 부족합니다.<br>
+      <span style="font-size:12px;color:var(--ts)">기록되지 않은 지출이 있거나, 예치금·반환금 입력이 누락됐을 수 있어요.</span></div>`;
+  }
+}
+window.checkBankBalance = checkBankBalance;
+
 function toggleStu(sid){
   if(expMode === 'group'){
     // 그룹 균등: 활성 그룹으로 배정 / 같은 그룹이면 해제 / 다른 그룹이면 이동
@@ -2277,6 +2299,39 @@ async function renderReport(){
         <span>총 반환 <b style="color:var(--info)">₩${won(totalRefund)}</b></span>
         <span>순 청구 <b style="color:var(--goldd)">₩${won(net)}</b></span>
       </div>` : '<p class="empty">이 학기에 취합할 신청 내역이 없습니다.</p>'}
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle">💰 관리자 통장 검산 <span style="font-size:12px;color:var(--tl);font-weight:400">(지금 통장에 있어야 할 금액 · 실제 잔액과 대조)</span></h3>
+      <p class="adesc">예치금에서 지출한 경비(학생 청구분＋학교 부담분)를 빼고, 아직 안 나눈 반환금을 더한 금액입니다. 실제 통장 잔액과 같으면 회계가 맞는 것입니다.</p>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:0;max-width:520px;margin-top:6px;font-size:14px">
+        <div style="padding:11px 4px;border-bottom:1px solid var(--iv);color:var(--ts)">＋ 예치금 (받은 돈)</div>
+        <div style="padding:11px 4px;border-bottom:1px solid var(--iv);text-align:right;font-weight:700;color:var(--gm)">₩${won(depTotal)}</div>
+
+        <div style="padding:11px 4px;border-bottom:1px solid var(--iv);color:var(--ts)">− 지출: 학생 청구분</div>
+        <div style="padding:11px 4px;border-bottom:1px solid var(--iv);text-align:right;font-weight:700;color:var(--danger)">−₩${won(totalCharge)}</div>
+
+        <div style="padding:11px 4px;border-bottom:1px solid var(--iv);color:var(--ts)">− 지출: 학교 부담분</div>
+        <div style="padding:11px 4px;border-bottom:1px solid var(--iv);text-align:right;font-weight:700;color:var(--danger)">−₩${won(totalSchool)}</div>
+
+        <div style="padding:11px 4px;border-bottom:2px solid var(--ivd);color:var(--ts)">＋ 반환금 (아직 안 나눈 돈)</div>
+        <div style="padding:11px 4px;border-bottom:2px solid var(--ivd);text-align:right;font-weight:700;color:var(--info)">＋₩${won(totalRefund)}</div>
+
+        <div style="padding:14px 4px;font-weight:800;color:var(--gd);font-size:15px">= 통장에 있어야 할 금액</div>
+        <div style="padding:14px 4px;text-align:right;font-weight:800;color:var(--gd);font-size:20px">₩${won(depTotal - totalCharge - totalSchool + totalRefund)}</div>
+      </div>
+
+      ${canManage ? `
+      <div style="margin-top:16px;padding:16px;background:var(--gp);border-radius:12px;max-width:520px">
+        <label style="display:block;font-size:13px;font-weight:700;color:var(--gd);margin-bottom:8px">🏦 실제 통장 잔액을 입력해 대조해 보세요</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="number" id="bank-actual" placeholder="실제 통장 잔액 (원)" inputmode="numeric"
+            oninput="checkBankBalance(${depTotal - totalCharge - totalSchool + totalRefund})"
+            style="flex:1;min-width:180px;height:44px;border:1.5px solid var(--gm);border-radius:10px;padding:0 14px;font-size:16px;font-weight:700;color:var(--gm);text-align:right;background:var(--wh);font-family:inherit">
+          <button class="bm" onclick="$I('bank-actual').value='';$I('bank-diff').innerHTML='';">지우기</button>
+        </div>
+        <div id="bank-diff" style="margin-top:12px"></div>
+      </div>` : ''}
     </div>
 
     <div class="acard">
