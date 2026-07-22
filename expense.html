@@ -111,7 +111,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .rp-tbl .sub-cell{color:var(--ts);font-size:11.5px;}
 .rp-tbl tfoot td,.rp-tbl tfoot th{background:var(--iv);font-weight:800;}
 /* 상세 매트릭스 표 (학년별·전체) */
-.mx-tbl{border-collapse:collapse;font-size:12px;table-layout:fixed;}
+.mx-tbl{border-collapse:collapse;font-size:12px;table-layout:fixed;font-variant-numeric:tabular-nums;}
 .mx-tbl th,.mx-tbl td{border:1px solid #e2e8e5;padding:7px 6px;text-align:center;vertical-align:middle;word-break:break-word;overflow-wrap:break-word;}
 .mx-tbl .mx-name{position:sticky;left:0;z-index:2;background:#2d6a4f;color:#fff;min-width:96px;width:96px;}
 .mx-tbl .mx-item{min-width:118px;width:118px;}
@@ -119,18 +119,27 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .mx-tbl thead .mx-h{background:#2d6a4f;color:#fff;font-weight:800;border-color:#2d6a4f;}
 .mx-tbl thead .mx-h2{background:var(--gp);color:#5a7267;font-weight:400;font-size:11px;}
 .mx-tbl thead .mx-h3{background:var(--gp);color:#3a5a48;font-weight:700;}
-.mx-tbl thead .mx-h.mx-tot{background:#1d4d3d;border-color:#1d4d3d;}
-.mx-tbl td.mx-chg{color:#6b8579;font-weight:500;}
-.mx-tbl td.mx-ref{background:var(--gp);color:#4a7a68;font-weight:500;}
+.mx-tbl thead .mx-h.mx-tot{background:#1d4d3d;border-color:#1d4d3d;border-left:2px solid #b08d3c;border-right:2px solid #b08d3c;border-top:2px solid #b08d3c;}
+/* 회계식 금액 셀: ₩ 왼쪽 · 숫자 우측 · 좌우 여백 */
+.mx-tbl td.mx-chg,.mx-tbl td.mx-ref,.mx-tbl td.mx-totcell,.mx-tbl tfoot td{padding:6px 0;}
+.mx-tbl .mxacc{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 9px;white-space:nowrap;line-height:1.3;}
+.mx-tbl .mxacc .s{flex:none;opacity:.7;font-weight:600;}
+.mx-tbl .mxacc .n{flex:1;text-align:right;}
+.mx-tbl td.mx-chg{color:#5a7568;font-weight:500;}
+.mx-tbl td.mx-ref{background:#EBF4EF;color:#4a7a68;font-weight:500;}
 .mx-tbl td.mx-empty{color:#d0d8d3;}
 .mx-tbl .mx-namecell{font-weight:700;color:#1b4332;position:sticky;left:0;z-index:1;background:var(--wh);}
 .mx-tbl tbody tr:nth-child(even) .mx-namecell{background:var(--iv);}
 .mx-tbl tbody tr:nth-child(even) td{background:var(--iv);}
-.mx-tbl tbody tr:nth-child(even) td.mx-ref{background:var(--gp);}
-.mx-tbl .mx-totcell{font-weight:900;color:#8a6410;background:var(--gold-bg);position:sticky;right:0;z-index:1;}
+.mx-tbl tbody tr:nth-child(even) td.mx-ref{background:#EBF4EF;}
+/* 개인합계 열 — 골드 세로 아웃라인 */
+.mx-tbl .mx-totcell{font-weight:800;color:#8a6410;background:var(--gold-bg);position:sticky;right:0;z-index:1;border-left:2px solid #b08d3c;border-right:2px solid #b08d3c;}
 .mx-tbl tbody tr:nth-child(even) td.mx-totcell{background:var(--gold-bg);}
-.mx-tbl tfoot td,.mx-tbl tfoot .mx-namecell{background:var(--gp);font-weight:800;color:#2f5c48;}
-.mx-tbl tfoot .mx-totcell{background:var(--gold-bg-2);color:#8a6410;}
+.mx-tbl tbody tr:last-child .mx-totcell{border-bottom:2px solid #b08d3c;}
+/* 항목합계 행 — 골드 가로 아웃라인 (개인합계 열과 같은 라인) */
+.mx-tbl tfoot td,.mx-tbl tfoot .mx-namecell{background:#F5EFDD;font-weight:700;color:#8a6410;border-top:2px solid #b08d3c;border-bottom:2px solid #b08d3c;}
+.mx-tbl tfoot .mx-namecell{background:#F0E4C4;font-weight:800;border-left:2px solid #b08d3c;}
+.mx-tbl tfoot .mx-totcell{background:#EAD9A8;color:#7a5808;font-weight:900;border:2px solid #b08d3c;}
 
 /* 영수증 크롭 편집기 */
 #cropOverlay{position:fixed;inset:0;z-index:4000;display:none;flex-direction:column;background:rgba(15,18,40,0.92);padding:14px;}
@@ -2669,7 +2678,7 @@ function viewClassSheet(gradeKey){
             </tr>
             <tr>
               <th class="mx-name mx-h3">이름 \\ 1인당</th>
-              ${items.map(e=>`<th class="mx-item mx-h3">${e.mode==='refund'?'↩️ ':''}₩${won(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0))}${e.mode==='equal'?'/인':''}</th>`).join('')}
+              ${items.map(e=>`<th class="mx-item mx-h3" style="padding:5px 0">${e.mode==='refund'?'<span style="padding-left:8px">↩️</span>':''}${mxAcc(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0), false)}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -2681,12 +2690,12 @@ function viewClassSheet(gradeKey){
                 if(a===null) return `<td class="mx-empty">·</td>`;
                 sum += a;
                 const isRef = a<0;
-                return `<td class="${isRef?'mx-ref':'mx-chg'}"><span style="font-size:11px">${isRef?'−':''}₩${won(Math.abs(a))}</span></td>`;
+                return `<td class="${isRef?'mx-ref':'mx-chg'}">${mxAcc(Math.abs(a), isRef)}</td>`;
               }).join('');
               return `<tr>
                 <td class="mx-namecell">${esc(s.name)}<br><span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
                 ${cells}
-                <td class="mx-totcell">₩${won(sum)}</td>
+                <td class="mx-totcell">${mxAcc(Math.abs(sum), sum<0)}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -2695,9 +2704,9 @@ function viewClassSheet(gradeKey){
               <td class="mx-namecell">항목 합계</td>
               ${items.map(e=>{
                 const t = students.reduce((tt,s)=>{ const a=amtOf(e,s.id); return tt+(a||0); },0);
-                return `<td>₩${won(Math.abs(t))}</td>`;
+                return `<td>${mxAcc(Math.abs(t), false)}</td>`;
               }).join('')}
-              <td class="mx-totcell">₩${won(students.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
+              <td class="mx-totcell">${mxAcc(Math.abs(students.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0)), false)}</td>
             </tr>
           </tfoot>
         </table>
@@ -2857,6 +2866,22 @@ const SHEET_CSS = `
 function accMoney(n, neg){
   const won2 = v => (Math.abs(v)||0).toLocaleString('ko-KR');
   return `<span class="acc${neg?' neg':''}"><span class="sym">₩</span><span class="num">${neg?'−':''}${won2(n)}</span></span>`;
+}
+// mx-tbl(학년별 화면 상세표)용 회계식 셀 내용
+function mxAcc(n, neg){
+  const won2 = v => (Math.abs(v)||0).toLocaleString('ko-KR');
+  return `<span class="mxacc"><span class="s">₩</span><span class="n">${neg?'−':''}${won2(n)}</span></span>`;
+}
+// 화면 표(인라인 스타일)용 회계식: color만 상황별로 지정, ₩ 왼쪽·숫자 우측
+function accInline(n, opts){
+  opts = opts||{};
+  const won2 = v => (Math.abs(v)||0).toLocaleString('ko-KR');
+  const c = opts.color || 'inherit';
+  const fw = opts.weight || '500';
+  const fs = opts.size || '11px';
+  return `<span style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:0 8px;white-space:nowrap;font-variant-numeric:tabular-nums;color:${c};font-weight:${fw};font-size:${fs}">`
+       + `<span style="opacity:.7;flex:none">₩</span>`
+       + `<span style="flex:1;text-align:right">${opts.neg?'−':''}${won2(n)}</span></span>`;
 }
 
 async function printSheet(mode){
@@ -3522,7 +3547,7 @@ function renderAllSheet(){
     </tr>
     <tr style="background:var(--gp);color:#3a5a48">
       <th style="padding:5px 10px;text-align:center;position:sticky;left:0;background:var(--gp);z-index:3;font-size:11px;font-weight:700">이름 \\ 1인당</th>
-      ${items.map(e=>`<th style="padding:5px 10px;text-align:center;border-left:1px solid #e2e8e5;font-weight:700;font-size:11.5px">${e.mode==='refund'?'↩️ ':''}₩${won(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0))}${e.mode==='equal'?'/인':''}</th>`).join('')}
+      ${items.map(e=>`<th style="padding:5px 0;border-left:1px solid #e2e8e5;font-weight:700;font-size:11.5px">${e.mode==='refund'?'<span style="padding-left:8px">↩️</span>':''}${accInline(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0), {color:'#3a5a48',weight:'700',size:'11.5px'})}</th>`).join('')}
       <th style="position:sticky;right:0;background:var(--gp)"></th>
     </tr>`;
 
@@ -3537,8 +3562,8 @@ function renderAllSheet(){
       <td style="padding:7px 10px;font-weight:800;color:#1b4332;position:sticky;left:0;background:var(--gp);z-index:2;text-align:left">
         <span style="display:inline-block;transition:transform .2s;transform:rotate(${open?90:0}deg)">▶</span> ${esc(gk)} <span style="font-size:11px;color:var(--tl);font-weight:400">(${studs.length}명)</span>
       </td>
-      ${gradeItemTotals.map(t=>`<td style="padding:7px 10px;text-align:center;border-left:1px solid #e2e8e5;font-size:11px;color:#5a7267">${t?'₩'+won(Math.abs(t)):''}</td>`).join('')}
-      <td style="padding:7px 10px;text-align:center;font-weight:900;color:#8a6410;background:var(--gold-bg);border-left:2px solid #e2e8e5;position:sticky;right:0">₩${won(gradeGrand)}</td>
+      ${gradeItemTotals.map(t=>`<td style="padding:7px 0;border-left:1px solid #e2e8e5">${t?accInline(Math.abs(t),{color:'#5a7267',weight:'600',size:'11px'}):'<span style="display:block;text-align:center;color:#c8d3cd">·</span>'}</td>`).join('')}
+      <td style="padding:7px 0;font-weight:900;color:#8a6410;background:var(--gold-bg);border-left:2px solid #b08d3c;border-right:2px solid #b08d3c;position:sticky;right:0">${accInline(Math.abs(gradeGrand),{color:'#8a6410',weight:'800',size:'11.5px',neg:gradeGrand<0})}</td>
     </tr>`;
     if(!open) return headerTr;
     const studentTrs = studs.map((s,ri)=>{
@@ -3546,25 +3571,24 @@ function renderAllSheet(){
       const rowbg = ri%2?'#fafbfc':'#fff';
       const cells = items.map(e=>{
         const a = amtOf(e,s.id);
-        if(a===null) return `<td style="padding:6px 10px;text-align:center;color:#d0d8d3;border-left:1px solid #e2e8e5;background:${rowbg}">·</td>`;
+        if(a===null) return `<td style="padding:6px 0;text-align:center;color:#d0d8d3;border-left:1px solid #e2e8e5;background:${rowbg}">·</td>`;
         sum+=a; const isRef=a<0;
-        return `<td style="padding:6px 10px;text-align:center;border-left:1px solid #e2e8e5;background:${isRef?'var(--gp)':rowbg}">
-          <span style="font-size:11px;color:${isRef?'#4a7a68':'#6b8579'};font-weight:500">${isRef?'−':''}₩${won(Math.abs(a))}</span></td>`;
+        return `<td style="padding:6px 0;border-left:1px solid #e2e8e5;background:${isRef?'#EBF4EF':rowbg}">${accInline(Math.abs(a),{color:isRef?'#4a7a68':'#5a7568',weight:'500',size:'11px',neg:isRef})}</td>`;
       }).join('');
       return `<tr>
         <td style="padding:6px 10px 6px 26px;font-weight:600;color:#1b4332;position:sticky;left:0;background:${rowbg};z-index:1;text-align:left">${esc(s.name)} <span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
         ${cells}
-        <td style="padding:6px 10px;text-align:center;font-weight:900;color:#8a6410;background:var(--gold-bg);border-left:2px solid #e2e8e5;position:sticky;right:0">₩${won(sum)}</td>
+        <td style="padding:6px 0;font-weight:900;color:#8a6410;background:var(--gold-bg);border-left:2px solid #b08d3c;border-right:2px solid #b08d3c;position:sticky;right:0">${accInline(Math.abs(sum),{color:'#8a6410',weight:'800',size:'11.5px',neg:sum<0})}</td>
       </tr>`;
     }).join('');
     return headerTr + studentTrs;
   }).join('');
 
-  // 전체 항목 합계
-  const footTr = `<tr style="background:var(--gp);color:#1b4332;font-weight:800">
-    <td style="padding:8px 10px;position:sticky;left:0;background:var(--gp);z-index:2;text-align:left">전체 합계</td>
-    ${items.map(e=>{ const t=allStudents.reduce((tt,s)=>tt+(amtOf(e,s.id)||0),0); return `<td style="padding:8px 10px;text-align:center;border-left:1px solid #d5e2db;color:#2f5c48">₩${won(Math.abs(t))}</td>`; }).join('')}
-    <td style="padding:8px 10px;text-align:center;border-left:2px solid #d5e2db;position:sticky;right:0;background:var(--gold-bg-2);color:#8a6410;font-weight:900">₩${won(allStudents.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
+  // 전체 항목 합계 — 항목합계 행과 개인합계 열을 같은 골드 라인으로
+  const footTr = `<tr style="color:#8a6410;font-weight:800">
+    <td style="padding:8px 10px;position:sticky;left:0;background:#F0E4C4;z-index:2;text-align:left;border-top:2px solid #b08d3c;border-bottom:2px solid #b08d3c;border-left:2px solid #b08d3c">전체 합계</td>
+    ${items.map(e=>{ const t=allStudents.reduce((tt,s)=>tt+(amtOf(e,s.id)||0),0); return `<td style="padding:8px 0;border-left:1px solid #e6d9b4;background:#F5EFDD;border-top:2px solid #b08d3c;border-bottom:2px solid #b08d3c">${accInline(Math.abs(t),{color:'#8a6410',weight:'700',size:'11px'})}</td>`; }).join('')}
+    <td style="padding:8px 0;position:sticky;right:0;background:#EAD9A8;color:#7a5808;font-weight:900;border:2px solid #b08d3c">${accInline(Math.abs(allStudents.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0)),{color:'#7a5808',weight:'900',size:'12px'})}</td>
   </tr>`;
 
   box.innerHTML = `<table style="border-collapse:collapse;font-size:12px;min-width:100%">
