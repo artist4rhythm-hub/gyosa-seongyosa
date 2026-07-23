@@ -149,7 +149,7 @@
   .out-filter{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;padding:10px 12px;background:var(--iv);border-radius:10px;border:1px solid var(--line)}
   .of-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .of-lab{font-size:11px;font-weight:700;color:var(--ink-faint);min-width:44px}
-  .of-chip{font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:20px;border:1.5px solid var(--line);background:var(--wh);color:var(--ink-soft);cursor:pointer;transition:all .12s;user-select:none}
+  .of-chip{font-size:11.5px;font-weight:600;padding:5px 12px;border-radius:8px;border:1.5px solid var(--line);background:var(--wh);color:var(--ink-soft);cursor:pointer;transition:all .12s;user-select:none}
   .of-chip:hover{border-color:var(--accent);color:var(--accent)}
   .of-chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .of-chip.small{padding:4px 9px;font-size:11px}
@@ -157,11 +157,17 @@
   .out-group{margin-bottom:26px}
   /* 부서 주간 보기: 월~금 가로 나열 */
   .out-week-row{display:flex;gap:14px;align-items:flex-start;overflow-x:auto;padding-bottom:8px}
-  .out-week-row .out-group{margin-bottom:0;flex:1 1 0;min-width:210px}
+  .out-week-row .out-group{margin-bottom:0;flex:1 1 0;min-width:190px}
   .out-week-row .og-title{flex-wrap:wrap;gap:5px}
   .out-week-row .tt{font-size:10.5px}
-  .out-week-row .tt .tm{width:66px !important;font-size:9.5px}
-  .out-week-row colgroup col:nth-child(2){width:66px !important}
+  /* 시각을 세로 2줄로 (09:30 / ~10:00) — 좁은 폭에서도 안 잘림 */
+  .out-week-row .tt .tm{width:52px !important;font-size:9px;padding:2px 2px}
+  .out-week-row colgroup col:nth-child(2){width:52px !important}
+  .out-week-row .tt .tm .tm-a,.out-week-row .tt .tm .tm-b{display:block;line-height:1.25}
+  .out-week-row .tt .tm .tm-b{opacity:.75}
+  /* 주간 뷰에서는 블록 부제도 세로로 (시각 위 · 분 아래) */
+  .out-week-row .tt td .sub{flex-direction:column;gap:0;line-height:1.3}
+  .out-week-row .tt td .lab{font-size:11.5px}
   .out-group:last-child{margin-bottom:0}
   .og-title{font-size:13px;font-weight:800;color:var(--accent-deep);margin:0 0 8px;padding-left:2px;display:flex;align-items:center;gap:7px}
   .og-title .og-days{font-size:11px;font-weight:600;color:var(--ink-faint)}
@@ -172,8 +178,12 @@
   table.tt th{padding:8px 6px;font-weight:600;color:var(--ink-soft);border-bottom:1px solid var(--line);text-align:center}
   table.tt td{padding:5px 7px;border:1px solid var(--line-soft);text-align:center;vertical-align:middle;line-height:1.25;overflow:hidden}
   table.tt td.tm{color:var(--ink-faint);font-size:11px;background:var(--iv);width:118px;font-variant-numeric:tabular-nums;white-space:nowrap}
-  table.tt td .lab{font-weight:600;font-size:12px}
-  table.tt td .sub{font-size:10px;opacity:.72;white-space:nowrap}
+  table.tt td.tm .tm-a,table.tt td.tm .tm-b{display:inline}
+  /* 글자 위계: 수업 이름(가장 굵고 큼) > 시간(분, 또렷) > 시각(연함) */
+  table.tt td .lab{font-weight:800;font-size:13px;letter-spacing:-0.2px}
+  table.tt td .sub{font-size:10px;white-space:nowrap;display:flex;align-items:baseline;justify-content:center;gap:5px}
+  table.tt td .sub .sub-t{opacity:.55;font-size:9.5px;font-variant-numeric:tabular-nums}
+  table.tt td .sub .sub-d{font-weight:700;font-size:10px;opacity:.9}
 
   .summary{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;padding-top:13px;border-top:1px dashed var(--line);font-size:12.5px}
   .summary b{color:var(--accent-deep)}
@@ -444,6 +454,7 @@
           <div class="step"><span class="num">4</span><h2>타임라인 배열</h2></div>
           <div style="display:flex;align-items:center;gap:8px">
             <span class="faint" style="font-size:11.5px">색칩을 끌어다 놓고, 드래그로 순서 변경 · ＋/− 로 길이 조정</span>
+            <button class="btn btn-sm" id="addType2" title="새 수업 종류 만들기">+ 종류 만들기</button>
             <button class="btn btn-ghost btn-sm" id="btnClearAll">전체 비우기</button>
           </div>
         </div>
@@ -1413,7 +1424,7 @@ function buildOneDayTable(depts, day){
       const segLen=nextB-t;
       const span=Math.max(1,Math.round(segLen/unit));
       timeSkip=span-1;
-      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap">${toStr(t)}–${toStr(nextB)}</div></td>`;
+      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap"><span class="tm-a">${toStr(t)}</span><span class="tm-b">~${toStr(nextB)}</span></div></td>`;
     }
     if(allSameCommon){
       if(cov0.start===t){
@@ -1433,7 +1444,7 @@ function buildOneDayTable(depts, day){
       if(b.dur>=15){
         html+=`<td rowspan="${span}" style="background:${bg};color:${fg}">`+
           `<div class="cellwrap"><span class="lab">${b.name}</span>`+
-          `<div class="sub">${toStr(b.start)}–${toStr(b.end)} · ${b.dur}분</div></div></td>`;
+          `<div class="sub"><span class="sub-t">${toStr(b.start)}~${toStr(b.end)}</span><span class="sub-d">${b.dur}분</span></div></div></td>`;
       } else {
         html+=`<td rowspan="${span}" style="background:${bg};color:${fg};padding:0 6px">`+
           `<div class="cellwrap"><span class="lab">${b.name} · ${b.dur}분</span></div></td>`;
@@ -1527,7 +1538,7 @@ function renderOutputOLD(){
       const segLen=nextB-t;
       const span=Math.max(1,Math.round(segLen/unit));
       timeSkip=span-1;
-      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap">${toStr(t)}–${toStr(nextB)}</div></td>`;
+      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap"><span class="tm-a">${toStr(t)}</span><span class="tm-b">~${toStr(nextB)}</span></div></td>`;
     }
 
     if(allSameCommon){
@@ -1552,7 +1563,7 @@ function renderOutputOLD(){
       if(b.dur>=15){
         html+=`<td rowspan="${span}" style="background:${bg};color:${fg}">`+
           `<div class="cellwrap"><span class="lab">${b.name}</span>`+
-          `<div class="sub">${toStr(b.start)}–${toStr(b.end)} · ${b.dur}분</div></div></td>`;
+          `<div class="sub"><span class="sub-t">${toStr(b.start)}~${toStr(b.end)}</span><span class="sub-d">${b.dur}분</span></div></div></td>`;
       } else {
         // 짧은 블록: 이름 · 분 한 줄
         html+=`<td rowspan="${span}" style="background:${bg};color:${fg};padding:0 6px">`+
@@ -2019,6 +2030,7 @@ $('#addDept').onclick=()=>{
   renderAll();
 };
 $('#addType').onclick=()=>openTypeDlg(null);
+const _at2=$('#addType2'); if(_at2) _at2.onclick=()=>openTypeDlg(null);
 $('#btnExcel').onclick=exportExcel;
 $('#btnExcel2').onclick=exportExcel;
 $('#btnSaveAs').onclick=openSaveDlg;
@@ -2149,7 +2161,9 @@ function printTimetable(){
       table.tt td{border:1px solid #ccc;text-align:center;padding:0 5px;vertical-align:middle;overflow:hidden;line-height:1.15;position:relative}
       table.tt td.spacer{width:0!important;padding:0!important;border:none!important}
       table.tt th{border:1px solid #ccc;text-align:center;padding:6px 5px;font-size:12px}
-      table.tt td .lab{font-weight:600} table.tt td .sub{font-size:10px;opacity:.75}
+      table.tt td .lab{font-weight:800;font-size:12.5px} table.tt td .sub{font-size:9.5px;display:flex;align-items:baseline;justify-content:center;gap:5px}
+      table.tt td .sub .sub-t{opacity:.55;font-size:9px} table.tt td .sub .sub-d{font-weight:700;opacity:.9}
+      table.tt td.tm .tm-a,table.tt td.tm .tm-b{display:inline}
       table.tt td .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;position:absolute;inset:0;overflow:hidden;padding:1px 4px}
       /* 다른 표(주간통계 등)는 기본 */
       table:not(.tt){border-collapse:collapse;width:100%;font-size:12px}
