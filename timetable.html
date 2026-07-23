@@ -1268,10 +1268,31 @@ function renderOutFilter(){
     <button class="of-chip small ${dayMode==='each'?'on':''}" onclick="setOutDayMode('each')">요일별 따로</button>
     <button class="of-chip small ${dayMode==='all'?'on':''}" onclick="setOutDayMode('all')">전체 한 표</button>
     <button class="of-chip small ${dayMode==='custom'?'on':''}" onclick="customOutDayGroups()">그룹 지정…${dayMode==='custom'?` (${groups.map(g=>g.days.join('')).join(' / ')})`:''}</button>`;
+  // 부서 주간 보기: 부서 하나 + 요일별 따로 상태인지 판별
+  const isWeekView = !isAllDept && selDepts.length===1 && dayMode==='each';
+  const weekChips = depts.map(d=>{
+    const on = isWeekView && selDepts[0]===d.id;
+    return `<button class="of-chip small ${on?'on':''}" style="${on?`background:${d.color};border-color:${d.color}`:''}" onclick="setDeptWeekView('${d.id}')">📅 ${escapeHtml(d.name)} 주간</button>`;
+  }).join('');
   box.innerHTML = `
     <div class="of-row"><span class="of-lab">부서</span>${deptChips}</div>
-    <div class="of-row"><span class="of-lab">요일</span>${dayChips}</div>`;
+    <div class="of-row"><span class="of-lab">요일</span>${dayChips}</div>
+    <div class="of-row"><span class="of-lab">주간</span>${weekChips}<span style="font-size:10px;color:var(--ink-faint)">부서 하나의 월~금을 모아보고, 각 요일을 바로 수정</span></div>`;
 }
+
+// 부서 주간 보기: 그 부서만 + 요일별 따로 (한 번에 전환)
+function setDeptWeekView(deptId){
+  const isAlready = outFilter.deptIds && outFilter.deptIds.length===1 && outFilter.deptIds[0]===deptId
+    && outFilter.dayGroups && outFilter.dayGroups.length===(state.weekDays||[]).length;
+  if(isAlready){   // 다시 누르면 해제 → 전체 부서 + 현재 요일
+    outFilter.deptIds = null; outFilter.dayGroups = null;
+  } else {
+    outFilter.deptIds = [deptId];
+    outFilter.dayGroups = (state.weekDays||[]).map(dy=>({ label:`${dy}요일`, days:[dy] }));
+  }
+  renderOutput();
+}
+window.setDeptWeekView = setDeptWeekView;
 
 function renderOutput(){
   renderOutFilter();
@@ -1284,7 +1305,12 @@ function renderOutput(){
     groups.forEach(g=>{
       const inner = buildTimetableHTML(depts, g.days);
       if(inner.body){ anyContent=true;
-        html += `<div class="out-group"><div class="og-title">📋 ${escapeHtml(g.label)} <span class="og-days">${g.days.join('·')}요일</span></div>${inner.body}</div>`;
+        const editBtn = (g.days.length===1)
+          ? (state.activeDay===g.days[0]
+              ? `<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--gl);padding:2px 8px;border-radius:10px">✏️ 지금 배열 중</span>`
+              : `<button class="btn btn-sm btn-ghost" style="padding:2px 10px;font-size:10.5px" onclick="editDayFromView('${g.days[0]}')">✏️ 이 요일 수정</button>`)
+          : '';
+        html += `<div class="out-group"><div class="og-title">📋 ${escapeHtml(g.label)} <span class="og-days">${g.days.join('·')}요일</span>${editBtn}</div>${inner.body}</div>`;
       }
     });
     const outEl=$('#output');
@@ -1306,17 +1332,35 @@ function renderOutput(){
 
 // 부서 목록 + 요일 배열을 받아 완성표 HTML(body)만 생성
 function buildTimetableHTML(depts, days){
-  // 여러 요일이면 각 요일 표를 이어붙임(요일 라벨 포함), 단일 요일이면 표 하나
+  // 여러 요일이면 각 요일 표를 이어붙임(요일 라벨 + 수정 버튼 포함), 단일 요일이면 표 하나
   if(days.length > 1){
     let combined='';
     days.forEach(dy=>{
       const one=buildOneDayTable(depts, dy);
-      if(one) combined += `<div style="margin-bottom:16px"><div style="font-size:11.5px;font-weight:700;color:var(--ink-faint);margin-bottom:5px">${dy}요일</div>${one}</div>`;
+      if(one) combined += `<div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <span style="font-size:11.5px;font-weight:700;color:var(--ink-faint)">${dy}요일</span>
+          ${state.activeDay===dy
+            ? `<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--gl);padding:2px 8px;border-radius:10px">✏️ 지금 배열 중</span>`
+            : `<button class="btn btn-sm btn-ghost" style="padding:2px 10px;font-size:10.5px" onclick="editDayFromView('${dy}')">✏️ 이 요일 수정</button>`}
+        </div>${one}</div>`;
     });
     return { body: combined };
   }
   return { body: buildOneDayTable(depts, days[0]) };
 }
+
+// 완성표 주간 뷰에서 특정 요일을 배열 편집으로 전환
+function editDayFromView(dy){
+  if(!state.weekDays.includes(dy)) return;
+  state.activeDay = dy;
+  renderDayBar(); renderBoard(); renderOutput();
+  // 배열 보드로 시선 이동 (좁은 화면에서 유용)
+  const board = document.getElementById('board');
+  if(board && window.innerWidth < 1500) board.scrollIntoView({behavior:'smooth', block:'start'});
+  flash(dy + '요일 배열을 수정합니다');
+}
+window.editDayFromView = editDayFromView;
 
 // 한 요일 + 지정 부서들의 완성표 <table> 생성 (없으면 빈 문자열)
 function buildOneDayTable(depts, day){
