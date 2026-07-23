@@ -1787,7 +1787,7 @@ function canEditSaved(item){
   const myRole = localStorage.getItem('gyosa_role')||'teacher';
   if(myRole==='partner') return false;   // 협력교사는 열람만
   if(myRole==='super') return true;
-  if(!item.savedByUid) return true; // 예전 데이터(저장자 없음)는 누구나
+  if(!item.savedByUid) return false;     // 저장자 기록 없는 예전 틀은 슈퍼만 (안전)
   return item.savedByUid===myUid;
 }
 window.canEditSaved = canEditSaved;
@@ -1817,6 +1817,7 @@ function duplicateTimetable(id){
 function deleteTimetable(id){
   const item=savedTimetables.find(s=>s.id===id);
   if(!item) return;
+  if(!canEditSaved(item)){ flash('본인이 저장한 틀만 삭제할 수 있습니다'); return; }
   if(!confirm(`"${item.name}"을(를) 삭제할까요?`)) return;
   savedTimetables=savedTimetables.filter(s=>s.id!==id);
   renderSaved();
@@ -1825,6 +1826,7 @@ function deleteTimetable(id){
 function renameTimetable(id){
   const item=savedTimetables.find(s=>s.id===id);
   if(!item) return;
+  if(!canEditSaved(item)){ flash('본인이 저장한 틀만 이름을 바꿀 수 있습니다'); return; }
   const nn=prompt('새 이름', item.name);
   if(nn===null) return;
   const t=nn.trim(); if(!t) return;
@@ -1840,18 +1842,19 @@ function renderSaved(){
   list.innerHTML='';
   savedTimetables.forEach(s=>{
     const deptNames=(s.snapshot.departments||[]).map(d=>d.name).join(', ');
+    const canEdit = canEditSaved(s);
     const row=document.createElement('div'); row.className='saved-item';
     row.innerHTML=`
       <div class="si-main">
         <div class="si-name">${escapeHtml(s.name)}</div>
-        <div class="si-meta">저장: ${fmtDateTime(s.savedAt)} · ${escapeHtml(deptNames)}</div>
+        <div class="si-meta">저장: ${fmtDateTime(s.savedAt)} · ${escapeHtml(deptNames)}${s.savedByName?` · ${escapeHtml(s.savedByName)}`:''}</div>
       </div>
       <div class="si-actions">
         <button class="btn btn-sm" data-act="load" data-id="${s.id}">불러오기</button>
         <button class="btn btn-sm" data-act="dup" data-id="${s.id}">복제</button>
         <button class="btn btn-sm" data-act="excel" data-id="${s.id}">엑셀</button>
-        <button class="btn btn-ghost btn-sm" data-act="rename" data-id="${s.id}">이름변경</button>
-        <button class="btn btn-ghost btn-sm" data-act="del" data-id="${s.id}">삭제</button>
+        ${canEdit?`<button class="btn btn-ghost btn-sm" data-act="rename" data-id="${s.id}">이름변경</button>
+        <button class="btn btn-ghost btn-sm" data-act="del" data-id="${s.id}">삭제</button>`:''}
       </div>`;
     list.appendChild(row);
   });
@@ -1860,8 +1863,16 @@ function renderSaved(){
     b.onclick=()=>{
       if(act==='load') loadTimetable(id);
       else if(act==='dup') duplicateTimetable(id);
-      else if(act==='del') deleteTimetable(id);
-      else if(act==='rename') renameTimetable(id);
+      else if(act==='del'){
+        const item=savedTimetables.find(s=>s.id===id);
+        if(item && !canEditSaved(item)){ flash('본인이 저장한 틀만 삭제할 수 있습니다'); return; }
+        deleteTimetable(id);
+      }
+      else if(act==='rename'){
+        const item=savedTimetables.find(s=>s.id===id);
+        if(item && !canEditSaved(item)){ flash('본인이 저장한 틀만 이름을 바꿀 수 있습니다'); return; }
+        renameTimetable(id);
+      }
       else if(act==='excel') exportExcelFor(id);
     };
   });
@@ -3047,7 +3058,7 @@ window.openTtPermDlg = async function(ttId){
   // 권한 확인: 슈퍼 또는 (담당자 본인/미지정)
   const myRole = CU?.role || localStorage.getItem('gyosa_role') || 'teacher';
   const myUid = CU?.uid || localStorage.getItem('gyosa_uid') || '';
-  const canManage = myRole==='super' || !item.savedByUid || item.savedByUid===myUid;
+  const canManage = myRole==='super' || (item.savedByUid && item.savedByUid===myUid);
   if(!canManage){ alert('이 틀의 담당자 또는 슈퍼 관리자만 권한을 바꿀 수 있습니다.'); return; }
 
   const snap = await getDocs(collection(db,'staff'));
