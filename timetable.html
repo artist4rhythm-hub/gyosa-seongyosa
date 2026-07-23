@@ -2026,6 +2026,33 @@ window.toggleWideView = toggleWideView;
   try{ if(localStorage.getItem('tt_wideview')==='1') setTimeout(toggleWideView, 100); }catch(e){}
 })();
 
+// 캔버스 저장 (모바일: 공유 시트 / PC: 다운로드)
+async function saveCanvasImage(canvas, filename){
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  if(isMobile && navigator.canShare){
+    try {
+      const blob = await new Promise(r=>canvas.toBlob(r,'image/png'));
+      const file = new File([blob], filename, {type:'image/png'});
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({files:[file]});
+        return true;
+      }
+    } catch(e){
+      if(e.name==='AbortError') return false;
+    }
+  }
+  return new Promise(res=>{
+    canvas.toBlob(blob=>{
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download=filename; a.click();
+      URL.revokeObjectURL(a.href);
+      res(true);
+    },'image/png');
+  });
+}
+
 function exportImage(){
   const area=$('#captureArea');
   if(!area || !$('#output').firstChild){ flash('시간표가 비어 있습니다'); return; }
@@ -2038,15 +2065,10 @@ function exportImage(){
   const opts={backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false,
     windowWidth:area.scrollWidth, windowHeight:area.scrollHeight,
     scrollX:0, scrollY:0};
-  html2canvas(area,opts).then(canvas=>{
+  html2canvas(area,opts).then(async canvas=>{
     if(filterEl) filterEl.style.display=prevDisp;
-    canvas.toBlob(blob=>{
-      const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download='시간표.png'; a.click();
-      URL.revokeObjectURL(a.href);
-      flash('이미지(PNG) 저장 완료');
-    },'image/png');
+    const done = await saveCanvasImage(canvas, '시간표.png');
+    if(done) flash('이미지(PNG) 저장 완료');
   }).catch(err=>{ if(filterEl) filterEl.style.display=prevDisp; console.warn(err); flash('이미지 생성 실패'); });
 }
 

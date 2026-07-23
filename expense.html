@@ -2415,7 +2415,7 @@ async function renderReport(){
     <div class="acard">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
         <h3 class="actitle" style="margin:0">👦 학년별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순 · 학년을 눌러 펼치기)</span></h3>
-        ${students.length?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bm" onclick="excelReport()">📊 엑셀 다운로드</button><button class="bm" onclick="viewReceiptCollection()">🧾 영수증 취합</button><button class="bp" style="padding:8px 16px" onclick="viewAllSheet()">📋 전체 상세표 보기</button></div>`:''}
+        ${students.length?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bm" onclick="excelReport()">📊 엑셀 다운로드</button><button class="bm" onclick="viewReceiptCollection()">🧾 영수증 취합</button><button class="bm" onclick="downloadAllGradeSheets()">🖼️ 전 학년 이미지 일괄</button><button class="bp" style="padding:8px 16px" onclick="viewAllSheet()">📋 전체 상세표 보기</button></div>`:''}
       </div>
       ${students.length ? `<div id="rp-class-groups" style="margin-top:12px">${renderReportClassGroups(list, students)}</div>
       <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px;padding-top:12px;border-top:2px solid var(--ivd);font-size:14px;font-weight:800">
@@ -2960,6 +2960,29 @@ async function printSheet(mode){
 }
 window.printSheet = printSheet;
 
+// ── 캔버스 이미지 저장 (모바일: 공유 시트 / PC: 다운로드) ──
+async function saveCanvasImage(canvas, filename){
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+  if(isMobile && navigator.canShare){
+    try {
+      const blob = await new Promise(r=>canvas.toBlob(r,'image/png'));
+      const file = new File([blob], filename, {type:'image/png'});
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({files:[file]});
+        return true;
+      }
+    } catch(e){
+      if(e.name==='AbortError') return false;   // 공유 취소
+    }
+  }
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  return true;
+}
+
 async function imageSheet(){
   if(!lastSheet){ toast('출력할 표가 없습니다.','err'); return; }
   const landscape = lastSheet.items.length > 5;
@@ -2973,15 +2996,89 @@ async function imageSheet(){
     const node = holder.querySelector('.sheet-doc');
     const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/png');
-    a.download = `수행성경비_${lastSheet.gradeKey}_${lastSheet.semKor}.png`;
-    a.click();
     window.hideLoading && window.hideLoading();
-    toast('이미지를 저장했습니다.','ok');
+    const done = await saveCanvasImage(canvas, `수행성경비_${lastSheet.gradeKey}_${lastSheet.semKor}.png`);
+    if(done) toast('이미지를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
 }
 window.imageSheet = imageSheet;
+
+// ── 전 학년 청구 상세표 일괄 이미지 저장 ──
+// 각 학년별로 시트를 구성해 순차적으로 PNG 다운로드
+function buildClassSheetData(gradeKey){
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const stuMap = new Map();
+  const items = [];
+  list.forEach(e=>{
+    const members = (e.students||[]).filter(s=>gradeLabel(s.grade)===gradeKey);
+    if(!members.length) return;
+    items.push(e);
+    members.forEach(s=>{ if(!stuMap.has(s.id)) stuMap.set(s.id, {id:s.id, name:s.name, grade:resolveGrade(s), className:resolveClassName(s)}); });
+  });
+  const students = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.name||'').localeCompare(b.name||'','ko'));
+  const amtOf = (e, sid) => { const s=(e.students||[]).find(x=>x.id===sid); return s? (e.mode==='refund'? -(s.amt||0) : (s.amt||0)) : null; };
+  const classNames = [...new Set(students.map(s=>s.className).filter(Boolean))];
+  return { gradeKey, classNames, semKor: semKor(reportSem), orgName: ORGS[reportOrg]||reportOrg, items, students, amtOf };
+}
+
+// 현재 학기의 모든 학년 키 (학년순)
+function allGradeKeys(){
+  const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const set = new Set();
+  list.forEach(e=>(e.students||[]).forEach(s=>set.add(gradeLabel(resolveGrade(s)))));
+  return [...set].sort((a,b)=>{ const na=parseInt(a,10)||99, nb=parseInt(b,10)||99; return na-nb || a.localeCompare(b,'ko'); });
+}
+
+async function downloadAllGradeSheets(){
+  const grades = allGradeKeys();
+  if(!grades.length){ toast('내보낼 학년이 없습니다.','err'); return; }
+  if(!confirm(`🖼️ 전 학년 청구 상세표 일괄 저장\n\n${ORGS[reportOrg]||reportOrg} · ${semKor(reportSem)}\n대상: ${grades.length}개 학년 (${grades.join(', ')})\n\n학년마다 이미지 파일이 하나씩, 총 ${grades.length}장 다운로드됩니다.\n브라우저가 여러 파일 다운로드를 물어보면 '허용'해 주세요.\n\n진행할까요?`)) return;
+  window.showLoading && window.showLoading('전 학년 이미지를 만드는 중…');
+  const savedLast = lastSheet;   // 원래 상태 보존
+  let done = 0, failed = [];
+  try {
+    await ensureH2C();
+    for(let i=0;i<grades.length;i++){
+      const gk = grades[i];
+      window.setLoadStep && window.setLoadStep(`${gk} 이미지 만드는 중… (${i+1}/${grades.length})`, Math.round((i+1)/grades.length*100));
+      try {
+        const data = buildClassSheetData(gk);
+        if(!data.items.length || !data.students.length){ continue; }
+        lastSheet = data;   // buildSheetHTML이 lastSheet를 참조
+        const landscape = data.items.length > 5;
+        const holder = document.createElement('div');
+        holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
+        holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape, { fullWidth:true });
+        document.body.appendChild(holder);
+        const node = holder.querySelector('.sheet-doc');
+        const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+        document.body.removeChild(holder);
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = `수행성경비_${gk}_${semKor(reportSem)}.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+        done++;
+        await new Promise(r=>setTimeout(r, 350));   // 연속 다운로드 사이 텀
+      } catch(err){ failed.push(gk); }
+    }
+    if(window.logActivity) logActivity('다운로드','전 학년 상세표 일괄', `${ORGS[reportOrg]||reportOrg} ${semKor(reportSem)}`, `${done}개 학년`);
+  } catch(e){
+    toast('일괄 저장 실패: '+(e.message||''),'err');
+  } finally {
+    lastSheet = savedLast;   // 원래 상태 복원
+    window.hideLoading && window.hideLoading();
+  }
+  if(done){
+    toast(failed.length ? `${done}개 학년 저장 완료 · ${failed.length}개 실패(${failed.join(', ')})` : `전 학년 ${done}장 저장 완료!`, failed.length?'err':'ok');
+  } else {
+    toast('저장된 이미지가 없습니다.','err');
+  }
+}
+window.downloadAllGradeSheets = downloadAllGradeSheets;
 
 // SheetJS 동적 로드
 function ensureXLSX(){
@@ -3302,7 +3399,7 @@ async function imageReceiptCollection(){
     await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
     const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(holder);
-    const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`영수증취합_${semKor(reportSem)}.png`; a.click();
+    await saveCanvasImage(canvas, `영수증취합_${semKor(reportSem)}.png`);
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
 }
@@ -3473,7 +3570,7 @@ async function imageAllSheet(){
     const node=holder.querySelector('.sheet-doc');
     const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(holder);
-    const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`수행성경비_전체취합_${semKor(reportSem)}.png`; a.click();
+    await saveCanvasImage(canvas, `수행성경비_전체취합_${semKor(reportSem)}.png`);
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
 }
