@@ -63,9 +63,13 @@
   @media(min-width:1500px){
     .layout.wide{ grid-template-columns:minmax(340px,0.6fr) minmax(700px,1.7fr) !important; }
   }
+  /* 주간 뷰: '지금 배열 중' — 수정 버튼과 같은 크기·모양, 눌린 음영 */
+  .day-editing{background:var(--gl) !important;border-color:var(--accent) !important;color:var(--accent-deep) !important;box-shadow:inset 0 1px 3px rgba(0,0,0,.12);font-weight:700}
   .layout.wide #setup-col{ grid-column:1 / -1; display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
   .layout.wide #setup-col > *{ flex:1 1 300px; min-width:280px; }
   .layout.wide #setup-col > div:first-child{ flex:0 0 100%; min-width:0; margin-bottom:-4px; }
+  /* 부서+등교 세로 묶음: wide에서 한 열로 */
+  .layout.wide #setup-group-a{ display:flex; flex-direction:column; gap:0; }
   /* 완성표 컬럼: 넓은 화면에서 상단 고정(배열하며 계속 보임) */
   @media(min-width:1500px){
     .out-col{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
@@ -89,10 +93,13 @@
 
   .dept-row{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line-soft);border-radius:8px;margin-bottom:8px;flex-wrap:wrap}
   .dept-swatch{width:14px;height:14px;border-radius:4px;flex:none}
-  .dept-row input[type=text]{flex:1;min-width:90px}
-  .dept-row input[type=time]{width:104px;flex:none}
-  .dept-row input[type=number].dperiod{width:58px;flex:none}
+  .dept-row input[type=text]{flex:0 1 96px;min-width:72px;max-width:110px}
+  .dept-row input[type=time]{width:118px;flex:none;min-width:118px}
+  .dept-row input[type=number].dperiod{width:52px;flex:none}
   .dept-row .start-label{font-size:11px;color:var(--ink-faint);flex:none}
+  /* 배열 아이템의 −/＋ 길이 조절 버튼: 기호 정중앙 */
+  .dminus,.dplus{width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;padding:0;line-height:1;font-size:14px;border:1px solid var(--line);border-radius:6px;background:var(--wh);color:var(--ink-soft);cursor:pointer;flex:none}
+  .dminus:hover,.dplus:hover{border-color:var(--accent);color:var(--accent)}
 
   .field{margin-bottom:11px}
   .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:4px;font-weight:550}
@@ -321,9 +328,12 @@
   .dlg-head{padding:15px 18px;border-bottom:1px solid var(--line-soft);font-weight:650}
   .dlg-body{padding:16px 18px}
   .dlg-foot{padding:13px 18px;border-top:1px solid var(--line-soft);display:flex;justify-content:flex-end;gap:8px}
-  .swatches{display:flex;gap:7px;flex-wrap:wrap;margin-top:4px}
-  .swatches button{width:26px;height:26px;border-radius:7px;border:2px solid transparent}
-  .swatches button.sel{border-color:var(--ink)}
+  .swatches{display:flex;flex-direction:column;gap:6px;margin-top:4px;max-height:220px;overflow-y:auto;padding-right:4px}
+  .sw-group{display:flex;align-items:center;gap:8px}
+  .sw-glabel{font-size:10.5px;font-weight:700;color:var(--ink-faint);width:56px;flex:none}
+  .sw-colors{display:flex;gap:6px;flex-wrap:wrap}
+  .swatches button{width:24px;height:24px;border-radius:6px;border:2px solid transparent;cursor:pointer}
+  .swatches button.sel{border-color:var(--ink);box-shadow:0 0 0 2px var(--wh) inset}
   .chk{display:flex;align-items:center;gap:7px;font-size:13px;margin-top:9px;cursor:pointer}
   .chk input{width:16px;height:16px;accent-color:var(--accent)}
   .hint{font-size:11.5px;color:var(--ink-faint);margin-top:3px}
@@ -415,6 +425,8 @@
       <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
         <button class="btn btn-sm btn-ghost" id="btnWideView" onclick="toggleWideView()" title="설정을 접고 배열·완성표를 넓게">↔ 완성표 크게</button>
       </div>
+      <!-- 1+2: 부서 설정 + 등교 시각 (세로 묶음) -->
+      <div id="setup-group-a">
       <!-- 1. departments -->
       <div class="panel">
         <div class="panel-head">
@@ -437,6 +449,7 @@
           <div class="hint" id="startHint">위 부서 설정의 시작 시각 칸에서 조정합니다.</div>
         </div>
       </div>
+      </div>
 
       <!-- 3. block types -->
       <div class="panel">
@@ -454,10 +467,10 @@
       <div class="panel">
         <div class="panel-head">
           <div class="step"><span class="num">4</span><h2>타임라인 배열</h2></div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span class="faint" style="font-size:11.5px">색칩을 끌어다 놓고, 드래그로 순서 변경 · ＋/− 로 길이 조정</span>
-            <button class="btn btn-sm" id="addType2" title="새 수업 종류 만들기">+ 종류 만들기</button>
-            <button class="btn btn-ghost btn-sm" id="btnClearAll">전체 비우기</button>
+          <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;justify-content:flex-end">
+            <span class="faint" style="font-size:11.5px;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">색칩을 끌어다 놓고, 드래그로 순서 변경 · ＋/− 로 길이 조정</span>
+            <button class="btn btn-sm" id="addType2" title="새 수업 종류 만들기" style="flex:none">+ 종류 만들기</button>
+            <button class="btn btn-ghost btn-sm" id="btnClearAll" style="flex:none">전체 비우기</button>
           </div>
         </div>
         <div class="panel-body">
@@ -723,6 +736,16 @@
 ============================================================ */
 
 const PALETTE = ['#00704A','#3F7CB5','#7C6BC4','#C0871F','#B5612E','#4A8C6F','#5A6B8C','#9C5B86','#6A8E3C','#807A6B'];
+// 수업 종류용 확장 팔레트 (계열별)
+const PALETTE_GROUPS = [
+  { name:'그린',   colors:['#00704A','#2d6a4f','#4A8C6F','#6A8E3C','#8AA84B','#3E7C5B'] },
+  { name:'블루',   colors:['#3F7CB5','#2C5F8A','#4A90C2','#5A6B8C','#6E93B8','#41729F'] },
+  { name:'퍼플',   colors:['#7C6BC4','#5E4B9E','#9C5B86','#8E6FA8','#6B5B95','#A4779B'] },
+  { name:'레드·핑크', colors:['#B5484D','#C4626A','#A83E5C','#D08794','#994D57','#C25B7E'] },
+  { name:'오렌지·옐로', colors:['#C0871F','#B5612E','#D19A3D','#C97B4A','#B08D3C','#A8742A'] },
+  { name:'틸·민트', colors:['#0D8478','#3AA394','#4E8D85','#2B7A6F','#5FA8A0','#177E6E'] },
+  { name:'뉴트럴', colors:['#807A6B','#6B7280','#8B7355','#5A6462','#94836E','#767A85'] },
+];
 const REST_COLOR = '#C9C6BC';
 
 const uid = () => Math.random().toString(36).slice(2,9);
@@ -1327,7 +1350,7 @@ function renderOutput(){
       if(inner.body){ anyContent=true;
         const editBtn = (g.days.length===1)
           ? (state.activeDay===g.days[0]
-              ? `<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--gl);padding:2px 8px;border-radius:10px">✏️ 지금 배열 중</span>`
+              ? `<span class="btn btn-sm day-editing" style="padding:2px 10px;font-size:10.5px;cursor:default">✏️ 지금 배열 중</span>`
               : `<button class="btn btn-sm btn-ghost" style="padding:2px 10px;font-size:10.5px" onclick="editDayFromView('${g.days[0]}')">✏️ 이 요일 수정</button>`)
           : '';
         html += `<div class="out-group"><div class="og-title">📋 ${escapeHtml(g.label)} <span class="og-days">${g.days.join('·')}요일</span>${editBtn}</div>${inner.body}</div>`;
@@ -1364,7 +1387,7 @@ function buildTimetableHTML(depts, days){
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
           <span style="font-size:11.5px;font-weight:700;color:var(--ink-faint)">${dy}요일</span>
           ${state.activeDay===dy
-            ? `<span style="font-size:10px;font-weight:700;color:var(--accent);background:var(--gl);padding:2px 8px;border-radius:10px">✏️ 지금 배열 중</span>`
+            ? `<span class="btn btn-sm day-editing" style="padding:2px 10px;font-size:10.5px;cursor:default">✏️ 지금 배열 중</span>`
             : `<button class="btn btn-sm btn-ghost" style="padding:2px 10px;font-size:10.5px" onclick="editDayFromView('${dy}')">✏️ 이 요일 수정</button>`}
         </div>${one}</div>`;
     });
@@ -1706,10 +1729,16 @@ function openTypeDlg(id){
   editingTypeId=id||null;
   const dlg=$('#typeDlg');
   const sw=$('#tSwatches'); sw.innerHTML='';
-  PALETTE.forEach(c=>{
-    const b=document.createElement('button'); b.type='button'; b.style.background=c;
-    b.onclick=()=>{dlgColor=c;sw.querySelectorAll('button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');};
-    sw.appendChild(b);
+  PALETTE_GROUPS.forEach(g=>{
+    const row=document.createElement('div'); row.className='sw-group';
+    row.innerHTML=`<span class="sw-glabel">${g.name}</span>`;
+    const wrap=document.createElement('div'); wrap.className='sw-colors';
+    g.colors.forEach(c=>{
+      const b=document.createElement('button'); b.type='button'; b.style.background=c; b.title=c;
+      b.onclick=()=>{dlgColor=c;sw.querySelectorAll('button').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');};
+      wrap.appendChild(b);
+    });
+    row.appendChild(wrap); sw.appendChild(row);
   });
   if(id){
     const t=state.blockTypes.find(x=>x.id===id);
@@ -2916,10 +2945,11 @@ function openLessonDlg(id, classId){
   document.getElementById('leHours').value = l?l.hours:1;
   // 색
   const sw=document.getElementById('leSwatches'); sw.innerHTML='';
+  const swWrap=document.createElement('div'); swWrap.className='sw-colors'; sw.appendChild(swWrap);
   SUBJ_COLORS.forEach(col=>{ const b=document.createElement('button'); b.type='button'; b.style.background=col;
     if(col===lessonDlgColor) b.classList.add('sel');
     b.onclick=()=>{ lessonDlgColor=col; sw.querySelectorAll('button').forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); };
-    sw.appendChild(b); });
+    swWrap.appendChild(b); });
   // 담당 선생님(복수)
   const tw=document.getElementById('leTeachers'); tw.innerHTML='';
   if(!p.teachers.length) tw.innerHTML='<span class="faint" style="font-size:11px">먼저 선생님을 추가하세요</span>';
