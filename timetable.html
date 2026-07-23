@@ -58,12 +58,14 @@
   @media(min-width:1800px){
     .layout{grid-template-columns:320px minmax(340px,0.75fr) minmax(640px,1.5fr)}
   }
-  /* 완성표 크게 보기: 설정 접고 배열 | 완성표 2단 (완성표를 더 넓게) */
-  .layout.wide #setup-col{ display:none; }
+  /* 완성표 크게 보기: 설정을 상단 전체 폭으로 올리고, 아래는 배열 | 완성표 2단 */
   .layout.wide{ grid-template-columns:minmax(300px,0.7fr) minmax(520px,1.6fr) !important; }
   @media(min-width:1500px){
     .layout.wide{ grid-template-columns:minmax(340px,0.6fr) minmax(700px,1.7fr) !important; }
   }
+  .layout.wide #setup-col{ grid-column:1 / -1; display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
+  .layout.wide #setup-col > *{ flex:1 1 300px; min-width:280px; }
+  .layout.wide #setup-col > div:first-child{ flex:0 0 100%; min-width:0; margin-bottom:-4px; }
   /* 완성표 컬럼: 넓은 화면에서 상단 고정(배열하며 계속 보임) */
   @media(min-width:1500px){
     .out-col{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
@@ -82,8 +84,8 @@
   .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .btn-primary:hover{background:var(--accent-deep);color:#fff}
   .btn-sm{padding:4px 9px;font-size:12px}
-  .btn-ghost{border-color:transparent;color:var(--ink-faint)}
-  .btn-ghost:hover{color:var(--warn);border-color:transparent}
+  .btn-ghost{border-color:var(--line);color:var(--ink-faint);background:transparent}
+  .btn-ghost:hover{color:var(--warn);border-color:var(--warn)}
 
   .dept-row{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--line-soft);border-radius:8px;margin-bottom:8px;flex-wrap:wrap}
   .dept-swatch{width:14px;height:14px;border-radius:4px;flex:none}
@@ -1429,7 +1431,7 @@ function buildOneDayTable(depts, day){
     if(allSameCommon){
       if(cov0.start===t){
         const span=Math.round(cov0.dur/unit);
-        html+=`<td colspan="${depts.length}" rowspan="${span}" style="background:${tint(cov0.color)};color:${deepen(cov0.color)}"><div class="cellwrap"><span class="lab">${cov0.name}</span><div class="sub">${toStr(cov0.start)}–${toStr(cov0.end)} · ${cov0.dur}분</div></div></td>`;
+        html+=`<td colspan="${depts.length}" rowspan="${span}" style="background:${tint(cov0.color)};color:${deepen(cov0.color)}"><div class="cellwrap"><span class="lab">${cov0.name}</span><div class="sub"><span class="sub-t">${toStr(cov0.start)}~${toStr(cov0.end)}</span><span class="sub-d">${cov0.dur}분</span></div></div></td>`;
       }
       html+='</tr>'; continue;
     }
@@ -1447,7 +1449,7 @@ function buildOneDayTable(depts, day){
           `<div class="sub"><span class="sub-t">${toStr(b.start)}~${toStr(b.end)}</span><span class="sub-d">${b.dur}분</span></div></div></td>`;
       } else {
         html+=`<td rowspan="${span}" style="background:${bg};color:${fg};padding:0 6px">`+
-          `<div class="cellwrap"><span class="lab">${b.name} · ${b.dur}분</span></div></td>`;
+          `<div class="cellwrap"><span class="lab">${b.name} <span class="sub-d" style="font-size:9.5px">${b.dur}분</span></span></div></td>`;
       }
     });
     html+='</tr>';
@@ -1544,7 +1546,7 @@ function renderOutputOLD(){
     if(allSameCommon){
       if(cov0.start===t){
         const span=Math.round(cov0.dur/unit);
-        html+=`<td colspan="${depts.length}" rowspan="${span}" style="background:${tint(cov0.color)};color:${deepen(cov0.color)}"><div class="cellwrap"><span class="lab">${cov0.name}</span><div class="sub">${toStr(cov0.start)}–${toStr(cov0.end)} · ${cov0.dur}분</div></div></td>`;
+        html+=`<td colspan="${depts.length}" rowspan="${span}" style="background:${tint(cov0.color)};color:${deepen(cov0.color)}"><div class="cellwrap"><span class="lab">${cov0.name}</span><div class="sub"><span class="sub-t">${toStr(cov0.start)}~${toStr(cov0.end)}</span><span class="sub-d">${cov0.dur}분</span></div></div></td>`;
       }
       html+='</tr>'; continue;
     }
@@ -2073,28 +2075,15 @@ $('#btnReset').onclick=()=>{
 };
 
 /* ---------- 이미지 저장 ---------- */
-/* ---------- 완성표 크게 보기 (설정 접기) ---------- */
+/* ---------- 완성표 크게 보기 (설정을 상단 가로 배치로) ---------- */
 function toggleWideView(){
   const layout = document.getElementById('layout');
   const btn = document.getElementById('btnWideView');
   const on = layout.classList.toggle('wide');
-  // 배열 컬럼 헤더에 '설정 열기' 버튼 표시/숨김
-  let reopenBtn = document.getElementById('btnReopenSetup');
-  if(on){
-    if(!reopenBtn){
-      reopenBtn = document.createElement('button');
-      reopenBtn.id = 'btnReopenSetup';
-      reopenBtn.className = 'btn btn-sm btn-ghost';
-      reopenBtn.textContent = '⚙ 설정 열기';
-      reopenBtn.onclick = toggleWideView;
-      // 타임라인 배열 패널 헤더에 삽입
-      const clearBtn = document.getElementById('btnClearAll');
-      if(clearBtn && clearBtn.parentNode) clearBtn.parentNode.insertBefore(reopenBtn, clearBtn);
-    }
-    reopenBtn.style.display = '';
-  } else {
-    if(reopenBtn) reopenBtn.style.display = 'none';
-  }
+  if(btn) btn.textContent = on ? '↔ 기본 배치로' : '↔ 완성표 크게';
+  // 예전 방식의 '설정 열기' 버튼이 남아있으면 제거
+  const old = document.getElementById('btnReopenSetup');
+  if(old) old.remove();
   try{ localStorage.setItem('tt_wideview', on?'1':'0'); }catch(e){}
 }
 window.toggleWideView = toggleWideView;
