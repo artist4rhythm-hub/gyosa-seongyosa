@@ -47,19 +47,25 @@
   header.top p{margin:5px 0 0;color:var(--ink-soft);font-size:13px}
 
   .wrap{max-width:1280px;margin:0 auto;padding:22px 26px 80px}
+  /* 넓은 화면에서는 폭을 더 활용 (사이드바 제외 영역을 충분히 사용) */
+  @media(min-width:1500px){ .wrap{max-width:1560px} }
+  @media(min-width:1800px){ .wrap{max-width:1780px} }
   .layout{display:grid;grid-template-columns:360px 1fr;gap:22px;align-items:start}
-  /* 넓은 화면(1600px+): 설정 | 배열 | 완성표 3단 — 한 화면에 다 보기 */
-  @media(min-width:1600px){
-    .layout{grid-template-columns:330px minmax(340px,0.9fr) minmax(430px,1.15fr)}
+  /* 넓은 화면(1500px+): 설정 | 배열 | 완성표 3단 — 완성표를 넉넉히 */
+  @media(min-width:1500px){
+    .layout{grid-template-columns:310px minmax(320px,0.8fr) minmax(520px,1.4fr)}
+  }
+  @media(min-width:1800px){
+    .layout{grid-template-columns:320px minmax(340px,0.75fr) minmax(640px,1.5fr)}
   }
   /* 완성표 크게 보기: 설정 접고 배열 | 완성표 2단 (완성표를 더 넓게) */
   .layout.wide #setup-col{ display:none; }
-  .layout.wide{ grid-template-columns:minmax(320px,0.85fr) minmax(520px,1.35fr) !important; }
-  @media(min-width:1600px){
-    .layout.wide{ grid-template-columns:minmax(360px,0.8fr) minmax(640px,1.4fr) !important; }
+  .layout.wide{ grid-template-columns:minmax(300px,0.7fr) minmax(520px,1.6fr) !important; }
+  @media(min-width:1500px){
+    .layout.wide{ grid-template-columns:minmax(340px,0.6fr) minmax(700px,1.7fr) !important; }
   }
   /* 완성표 컬럼: 넓은 화면에서 상단 고정(배열하며 계속 보임) */
-  @media(min-width:1600px){
+  @media(min-width:1500px){
     .out-col{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
   }
   @media(max-width:980px){.layout, .layout.wide{grid-template-columns:1fr !important}}
@@ -335,7 +341,7 @@
     <button class="btn btn-primary btn-sm" id="btnSaveAs">이름 붙여 저장</button>
     <button class="btn btn-sm" id="btnUndo" title="Ctrl+Z">되돌리기</button>
     <button class="btn btn-sm" id="btnExcel">엑셀 내보내기</button>
-    <button class="btn btn-sm btn-ghost" id="btnReset">초기화</button>
+    <button class="btn btn-sm btn-ghost" id="btnReset" style="display:none">초기화</button>
     <span class="faint" style="align-self:center;font-size:12px" id="saveState"></span>
   </div>
 
@@ -1967,7 +1973,27 @@ document.addEventListener('keydown',e=>{
     e.preventDefault(); undo();
   }
 });
-$('#btnReset').onclick=()=>{ if(confirm('모두 초기화할까요?')){ state=defaultState(); renderAll(); }};
+$('#btnReset').onclick=()=>{
+  // 1차: 권한 재확인 (버튼이 숨겨져 있어도 콘솔 등으로 우회 방지)
+  const role = (window.CU && window.CU.role) || localStorage.getItem('gyosa_role') || 'teacher';
+  if(role!=='super'){ flash('수퍼관리자만 초기화할 수 있습니다'); return; }
+  // 2차: 무엇이 지워지는지 명확히 안내
+  const deptCnt = (state.departments||[]).length;
+  const typeCnt = (state.blockTypes||[]).length;
+  if(!confirm(
+    '⚠️ 작업 중인 시간표를 모두 초기화합니다.\n\n'
+    + `· 부서 ${deptCnt}개, 수업 종류 ${typeCnt}개\n`
+    + '· 모든 요일의 타임라인 배열\n\n'
+    + '저장된 시간표(보관함)는 지워지지 않습니다.\n'
+    + '계속할까요?'
+  )) return;
+  // 3차: 문구 직접 입력 (실수 방지)
+  const typed = prompt('되돌릴 수 없습니다.\n계속하려면 아래에 「초기화」라고 입력하세요.');
+  if(typed===null) return;
+  if(typed.trim()!=='초기화'){ flash('입력이 일치하지 않아 취소되었습니다'); return; }
+  state=defaultState(); renderAll();
+  flash('초기화되었습니다');
+};
 
 /* ---------- 이미지 저장 ---------- */
 /* ---------- 완성표 크게 보기 (설정 접기) ---------- */
@@ -2903,6 +2929,7 @@ onAuthStateChanged(auth, async (user)=>{
     const snap = await getDoc(doc(db,'staff',user.uid));
     if(snap.exists()){
       CU = { uid:user.uid, ...snap.data() };
+      window.CU = CU;   // 다른 스크립트 블록(초기화 권한 확인 등)에서 참조
       try {
         localStorage.setItem('gyosa_role', CU.role||'teacher');
         localStorage.setItem('gyosa_uid', CU.uid);
@@ -2920,10 +2947,12 @@ onAuthStateChanged(auth, async (user)=>{
     if(window.__setPlanAccess) window.__setPlanAccess(allowed, CU);
   } catch(e){ if(window.__setPlanAccess) window.__setPlanAccess([], CU); }
 
-  // 슈퍼 관리자면 '편성 담당자 지정' 버튼 노출
+  // 슈퍼 관리자면 '편성 담당자 지정' · '초기화' 버튼 노출
   if(CU && CU.role==='super'){
     const btn = document.getElementById('btnPlanAccess');
     if(btn){ btn.style.display='inline-block'; btn.onclick = openPlanAccessDlg; }
+    const rst = document.getElementById('btnReset');
+    if(rst) rst.style.display='inline-flex';
   }
   // 클라우드에서 저장된 시간표 불러오기
   try {
