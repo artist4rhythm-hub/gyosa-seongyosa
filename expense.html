@@ -2654,7 +2654,6 @@ function viewClassSheet(gradeKey){
       ${items.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
         <button class="bp" style="padding:8px 18px" onclick="imageSheet()">🖼️ 이미지 저장</button>
         <button class="bm" onclick="excelReport()">📊 엑셀 저장</button>
-        <button class="bm" onclick="viewReceiptCollection(lastSheet.gradeKey)">🧾 영수증 보기</button>
         <button class="bm" onclick="shareSheet('grade')">🔗 학부모 공유 링크</button>
       </div>`:''}
       ${items.length ? `
@@ -2665,7 +2664,7 @@ function viewClassSheet(gradeKey){
             <tr>
               <th class="mx-name mx-h">과목</th>
               ${items.map(e=>`<th class="mx-item mx-h"><span style="font-size:9px;opacity:.85;font-weight:600">${expenseSeqNo(e.id)}</span><br>${esc(e.subject)}${e.mode==='refund'?'<br><span style="font-size:10px;font-weight:400">(반환)</span>':''}</th>`).join('')}
-              <th class="mx-tot mx-h" rowspan="5">개인 합계<br><span style="font-size:9px;font-weight:600;opacity:.9">낼 금액 · (−)환급</span></th>
+              <th class="mx-tot mx-h" rowspan="6">개인 합계<br><span style="font-size:9px;font-weight:600;opacity:.9">낼 금액 · (−)환급</span></th>
             </tr>
             <tr>
               <th class="mx-name mx-h2">담당</th>
@@ -2678,6 +2677,10 @@ function viewClassSheet(gradeKey){
             <tr>
               <th class="mx-name mx-h2">세부내용</th>
               ${items.map(e=>`<th class="mx-item mx-h2">${esc(e.items||'')}${e.detail?`<br><span style="opacity:.75">${esc(e.detail)}</span>`:''}</th>`).join('')}
+            </tr>
+            <tr>
+              <th class="mx-name mx-h2">영수증</th>
+              ${items.map(e=>`<th class="mx-item mx-h2">${e.receiptCount?`<button class="bm" style="padding:3px 10px;font-size:11px" onclick="openReceiptsOf('${e.id}','${esc((e.subject||'').replace(/'/g,"\\'"))}')">🧾 ${e.receiptCount}장 보기</button>`:'<span style="font-size:10px;color:var(--tl)">없음</span>'}</th>`).join('')}
             </tr>
             <tr>
               <th class="mx-name mx-h3">이름 \\ 1인당</th>
@@ -2758,7 +2761,7 @@ function buildSheetHTML(landscape, opts){
   const cls = classNames||[];
   const gradeTitle = cls.length===1 ? `${gradeKey} ${cls[0]}` : cls.length>1 ? `${gradeKey} (${cls.join('·')})` : gradeKey;
   const won2 = n => (n||0).toLocaleString('ko-KR');
-  const perLine = (e)=> e.mode==='refund'?`↩️ ${accMoney(Math.abs(e.per||0), false)}`:`${accMoney(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
+  const perLine = (e)=> e.mode==='refund'?`↩️ ${accMoney(Math.abs(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0), false)}`:`${accMoney(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
   const cell = (e,sid)=>{ const a=amtOf(e,sid); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${accMoney(Math.abs(a), isRef)}</td>`; };
 
   // 칸 폭 계산: 이름칸 + 항목N칸 + 합계칸
@@ -3534,7 +3537,7 @@ function buildAllSheetHTML(opts){
   const showTotal = opts.showTotal !== false;   // 기본: 표시
   if(!items.length || !students.length) return '';
   const won2 = n => (n||0).toLocaleString('ko-KR');
-  const perLine = (e)=> e.mode==='refund'?`↩️ ${accMoney(Math.abs(e.per||0), false)}`:`${accMoney(e.per||0, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
+  const perLine = (e)=> e.mode==='refund'?`↩️ ${accMoney(Math.abs(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0), false)}`:`${accMoney(e.per||0, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
   const gradeW=56, nameW=64, totW=showTotal?104:0, pad=30, maxInner=1063;
   const availForItems = maxInner - gradeW - nameW - totW;
   let itemColW = Math.max(64, Math.floor(availForItems / items.length));
