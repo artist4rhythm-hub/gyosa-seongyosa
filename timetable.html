@@ -175,8 +175,14 @@
   .out-week-row .tt .tm .tm-a,.out-week-row .tt .tm .tm-b{display:block;line-height:1.25}
   .out-week-row .tt .tm .tm-b{opacity:.75}
   /* 주간 뷰에서는 블록 부제도 세로로 (시각 위 · 분 아래) */
-  .out-week-row .tt td .sub{flex-direction:column;gap:0;line-height:1.3}
-  .out-week-row .tt td .lab{font-size:11.5px}
+  .out-week-row .tt td .sub{flex-direction:column;gap:0;line-height:1.25}
+  .out-week-row .tt td .lab{font-size:11px}
+  /* 짧은 칸(5분)이 글자 때문에 늘어나지 않게: 내용을 오버레이로 (행 높이 = 순수 시간 비례) */
+  .out-week-row .tt td{padding:0;line-height:1.15;position:relative}
+  .out-week-row .tt td .cellwrap{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;overflow:hidden;padding:0 3px}
+  .out-week-row .tt td .lab .sub-d{font-size:8.5px}
+  .out-week-row .tt td .sub .sub-t{font-size:8.5px}
+  .out-week-row .tt td .sub .sub-d{font-size:9px}
   .out-group:last-child{margin-bottom:0}
   .og-title{font-size:13px;font-weight:800;color:var(--accent-deep);margin:0 0 8px;padding-left:2px;display:flex;align-items:center;gap:7px}
   .og-title .og-days{font-size:11px;font-weight:600;color:var(--ink-faint)}
@@ -1345,8 +1351,20 @@ function renderOutput(){
   if(groups.length > 1 || (outFilter.dayGroups && outFilter.dayGroups.length)){
     let html='';
     let anyContent=false;
+    // 부서 주간 보기(부서 1개 + 모든 그룹이 1일)면 공통 시간축으로 세로 비율 통일
+    const isWeekRow = depts.length===1 && groups.length>1 && groups.every(g=>g.days.length===1);
+    let axis = null;
+    if(isWeekRow){
+      let mn=Infinity, mx=-Infinity, u=0;
+      const gcd=(a,b)=>b?gcd(b,a%b):a;
+      groups.forEach(g=>{
+        const tl=compute(state, g.days[0]);
+        depts.forEach(d=>(tl[d.id]||[]).forEach(b=>{ mn=Math.min(mn,b.start); mx=Math.max(mx,b.end); u=gcd(u,b.dur); }));
+      });
+      if(isFinite(mn)){ if(!u||u<1) u=5; if(u>5) u=5; axis={min:mn, max:mx, unit:u}; }
+    }
     groups.forEach(g=>{
-      const inner = buildTimetableHTML(depts, g.days);
+      const inner = buildTimetableHTML(depts, g.days, axis);
       if(inner.body){ anyContent=true;
         const editBtn = (g.days.length===1)
           ? (state.activeDay===g.days[0]
@@ -1356,8 +1374,7 @@ function renderOutput(){
         html += `<div class="out-group"><div class="og-title">📋 ${escapeHtml(g.label)} <span class="og-days">${g.days.join('·')}요일</span>${editBtn}</div>${inner.body}</div>`;
       }
     });
-    // 부서 주간 보기(부서 1개 + 모든 그룹이 1일)면 월~금 가로 나열
-    const isWeekRow = depts.length===1 && groups.length>1 && groups.every(g=>g.days.length===1);
+    // (공통 시간축은 위에서 계산됨)
     if(isWeekRow) html = `<div class="out-week-row">${html}</div>`;
     const outEl=$('#output');
     if(!anyContent){ outEl.innerHTML='<div class="empty">타임라인을 배열하면 여기에 시간표가 표시됩니다.</div>'; $('#summary').innerHTML=''; renderLegend(depts); return; }
@@ -1377,12 +1394,12 @@ function renderOutput(){
 }
 
 // 부서 목록 + 요일 배열을 받아 완성표 HTML(body)만 생성
-function buildTimetableHTML(depts, days){
+function buildTimetableHTML(depts, days, axis){
   // 여러 요일이면 각 요일 표를 이어붙임(요일 라벨 + 수정 버튼 포함), 단일 요일이면 표 하나
   if(days.length > 1){
     let combined='';
     days.forEach(dy=>{
-      const one=buildOneDayTable(depts, dy);
+      const one=buildOneDayTable(depts, dy, axis);
       if(one) combined += `<div style="margin-bottom:16px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
           <span style="font-size:11.5px;font-weight:700;color:var(--ink-faint)">${dy}요일</span>
@@ -1393,7 +1410,7 @@ function buildTimetableHTML(depts, days){
     });
     return { body: combined };
   }
-  return { body: buildOneDayTable(depts, days[0]) };
+  return { body: buildOneDayTable(depts, days[0], axis) };
 }
 
 // 완성표 주간 뷰에서 특정 요일을 배열 편집으로 전환
@@ -1409,7 +1426,7 @@ function editDayFromView(dy){
 window.editDayFromView = editDayFromView;
 
 // 한 요일 + 지정 부서들의 완성표 <table> 생성 (없으면 빈 문자열)
-function buildOneDayTable(depts, day){
+function buildOneDayTable(depts, day, axis){
   const timelines=compute(state, day);
   let minT=Infinity, maxT=-Infinity;
   depts.forEach(d=>(timelines[d.id]||[]).forEach(b=>{minT=Math.min(minT,b.start);maxT=Math.max(maxT,b.end);}));
@@ -1420,6 +1437,9 @@ function buildOneDayTable(depts, day){
   depts.forEach(d=>(timelines[d.id]||[]).forEach(b=>{unit=gcd(unit,b.dur);}));
   if(!unit||unit<1) unit=5;
   if(unit>5) unit=5;
+
+  // 공통 시간축(주간 가로 뷰): 모든 요일이 같은 시작·끝·단위를 쓰면 세로 비율이 일치
+  if(axis){ minT=axis.min; maxT=axis.max; unit=axis.unit; }
 
   const ROW_H=13;
   const nRows=Math.round((maxT-minT)/unit);
