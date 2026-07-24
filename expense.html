@@ -191,11 +191,13 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       <button class="subtbtn on" id="tb-new" onclick="showTab('new')">➕ 경비 신청</button>
       <button class="subtbtn" id="tb-list" onclick="showTab('list')">📋 신청 내역</button>
       <button class="subtbtn" id="tb-report" onclick="showTab('report')">📊 취합</button>
+      <button class="subtbtn" id="tb-parent" onclick="showTab('parent')">👪 학부모 공지</button>
       <button class="subtbtn" id="tb-backup" onclick="showTab('backup')" style="display:none">💾 백업·정리</button>
     </div>
     <div id="tab-new"></div>
     <div id="tab-list" style="display:none"></div>
     <div id="tab-report" style="display:none"></div>
+    <div id="tab-parent" style="display:none"></div>
     <div id="tab-backup" style="display:none"></div>
   </div>
 </div>
@@ -479,7 +481,7 @@ function currentInputTerm(org){
 
 function showTab(t){
   curTab = t;
-  ['new','list','report','backup'].forEach(k=>{
+  ['new','list','report','parent','backup'].forEach(k=>{
     const b = $I('tb-'+k); if(b) b.classList.toggle('on', t===k);
     const p = $I('tab-'+k); if(p) p.style.display = t===k?'':'none';
   });
@@ -493,6 +495,10 @@ function showTab(t){
     renderReport();
     // 취합 탭도 최신 반편성 반영 (자퇴생 학년 등)
     reloadStudentsClasses().then(ok=>{ if(ok && curTab==='report') renderReport(); });
+  }
+  if(t==='parent'){
+    renderParentTab();
+    reloadStudentsClasses().then(ok=>{ if(ok && curTab==='parent') renderParentTab(); });
   }
   if(t==='backup') renderBackup();
 }
@@ -3110,6 +3116,142 @@ async function downloadAllGradeSheets(){
   }
 }
 window.downloadAllGradeSheets = downloadAllGradeSheets;
+
+// ══════════ 👪 학부모 공지 탭 ══════════
+let PARENT_ACCOUNTS = {};   // studentId → 계좌 정보
+let parentFilterMode = 'all';   // all | done | todo
+
+async function renderParentTab(){
+  const box = $I('tab-parent'); if(!box) return;
+  box.innerHTML = `<div class="card"><div class="cbody" style="padding:40px;text-align:center;color:var(--tl)">불러오는 중…</div></div>`;
+  // 계좌 정보 로드
+  try {
+    const snap = await getDocs(collection(db,'parentAccounts'));
+    PARENT_ACCOUNTS = {};
+    snap.forEach(d=>{ PARENT_ACCOUNTS[d.id] = {id:d.id, ...d.data()}; });
+  } catch(e){ PARENT_ACCOUNTS = {}; }
+
+  const parentUrl = `${location.origin}${location.pathname.replace(/[^/]*$/,'')}parent-expense.html`;
+
+  // 현재 기관의 재학생 → 학년·반별 그룹
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const roster = STUDENTS
+    .filter(s=>s.org===reportOrg && (s.status||'active')==='active')
+    .map(s=>({ id:s.id, name:s.name||'', grade:gradeLabel(studentGrade(s.id)),
+               className:studentClass(s.id)?.name||'', acc:PARENT_ACCOUNTS[s.id]||null }))
+    .sort((a,b)=>(parseInt(a.grade)||99)-(parseInt(b.grade)||99)
+              || (a.className||'').localeCompare(b.className||'','ko')
+              || a.name.localeCompare(b.name,'ko'));
+
+  const doneN = roster.filter(r=>r.acc).length;
+  const pct = roster.length ? Math.round(doneN/roster.length*100) : 0;
+  const shown = roster.filter(r=> parentFilterMode==='all' ? true : parentFilterMode==='done' ? !!r.acc : !r.acc);
+
+  // 학년별 그룹
+  const byGrade = {};
+  shown.forEach(r=>{ (byGrade[r.grade]=byGrade[r.grade]||[]).push(r); });
+  const gradeKeys = Object.keys(byGrade).sort((a,b)=>(parseInt(a)||99)-(parseInt(b)||99));
+
+  box.innerHTML = `
+    <div class="card">
+      <div class="chead"><span class="ctitle">🔗 학부모 안내 링크</span></div>
+      <div class="cbody">
+        <p class="adesc">아래 주소를 카카오톡 등으로 학부모님께 보내주세요. 로그인 없이 자녀 정보(이름·학년·생년월일 4자리)로 확인하고, 환급 계좌를 입력할 수 있습니다.</p>
+        <div style="background:var(--iv);border:1px solid var(--ivd);border-radius:10px;padding:12px 14px;margin:10px 0;word-break:break-all;font-size:13px;user-select:all" id="parent-url">${esc(parentUrl)}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="bp" onclick="copyParentUrl()">📋 링크 복사</button>
+          <button class="bm" onclick="window.open('${esc(parentUrl)}','_blank')">🔍 미리보기</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="chead">
+        <span class="ctitle">💳 환급 계좌 수집 현황</span>
+        <span style="font-size:13px;color:var(--ts);font-weight:700">${doneN} / ${roster.length}명 <span style="color:var(--gm)">(${pct}%)</span></span>
+      </div>
+      <div class="cbody">
+        <div style="height:8px;background:var(--iv);border-radius:99px;overflow:hidden;margin-bottom:14px">
+          <div style="height:100%;width:${pct}%;background:var(--gm);border-radius:99px;transition:width .3s"></div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="bm ${parentFilterMode==='all'?'on':''}" style="${parentFilterMode==='all'?'background:var(--gm);color:#fff;border-color:var(--gm)':''}" onclick="setParentFilter('all')">전체 ${roster.length}</button>
+          <button class="bm ${parentFilterMode==='done'?'on':''}" style="${parentFilterMode==='done'?'background:var(--gm);color:#fff;border-color:var(--gm)':''}" onclick="setParentFilter('done')">✅ 입력완료 ${doneN}</button>
+          <button class="bm ${parentFilterMode==='todo'?'on':''}" style="${parentFilterMode==='todo'?'background:var(--warn);color:#fff;border-color:var(--warn)':''}" onclick="setParentFilter('todo')">⏳ 미입력 ${roster.length-doneN}</button>
+          <button class="bm" onclick="excelParentAccounts()" style="margin-left:auto">📊 엑셀 저장</button>
+        </div>
+        ${!shown.length ? `<div style="padding:34px;text-align:center;color:var(--tl);font-size:13.5px">해당하는 학생이 없습니다.</div>` :
+        gradeKeys.map(gk=>`
+          <div style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:800;color:var(--gd);padding:7px 0;border-bottom:2px solid var(--gp);margin-bottom:6px">
+              ${esc(gk)} <span style="font-weight:500;color:var(--tl);font-size:11.5px">${byGrade[gk].length}명</span>
+            </div>
+            <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:520px">
+              <thead><tr style="background:var(--iv);color:var(--ts)">
+                <th style="padding:7px 8px;text-align:left;font-weight:700;width:42px">상태</th>
+                <th style="padding:7px 8px;text-align:left;font-weight:700">이름</th>
+                <th style="padding:7px 8px;text-align:left;font-weight:700">반</th>
+                <th style="padding:7px 8px;text-align:left;font-weight:700">은행</th>
+                <th style="padding:7px 8px;text-align:left;font-weight:700">예금주</th>
+                <th style="padding:7px 8px;text-align:left;font-weight:700">계좌번호</th>
+                <th style="padding:7px 8px;text-align:left;font-weight:700">입력일</th>
+              </tr></thead>
+              <tbody>
+                ${byGrade[gk].map(r=>{
+                  const a=r.acc;
+                  const dt=a?.updatedAt?.toDate ? a.updatedAt.toDate() : null;
+                  const dtS = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : '';
+                  return `<tr style="border-bottom:1px solid var(--iv)">
+                    <td style="padding:8px">${a?'<span style="color:var(--ok);font-size:14px">✅</span>':'<span style="color:var(--warn);font-size:14px">⏳</span>'}</td>
+                    <td style="padding:8px;font-weight:700;color:var(--gd)">${esc(r.name)}</td>
+                    <td style="padding:8px;color:var(--tl)">${esc(r.className)}</td>
+                    <td style="padding:8px">${a?esc(a.bank||''):'<span style="color:var(--ivd)">·</span>'}</td>
+                    <td style="padding:8px">${a?esc(a.holder||''):'<span style="color:var(--ivd)">·</span>'}</td>
+                    <td style="padding:8px;font-variant-numeric:tabular-nums;user-select:all">${a?esc(a.account||''):'<span style="color:var(--ivd)">·</span>'}</td>
+                    <td style="padding:8px;color:var(--tl);font-size:11.5px">${dtS}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+}
+window.renderParentTab = renderParentTab;
+
+function setParentFilter(m){ parentFilterMode=m; renderParentTab(); }
+window.setParentFilter = setParentFilter;
+
+function copyParentUrl(){
+  const el=$I('parent-url'); if(!el) return;
+  navigator.clipboard.writeText(el.textContent.trim()).then(
+    ()=>toast('링크를 복사했습니다. 카카오톡에 붙여넣으세요!','ok'),
+    ()=>toast('길게 눌러 복사해 주세요.','err'));
+}
+window.copyParentUrl = copyParentUrl;
+
+// 계좌 목록 엑셀 (환급 이체 작업용)
+function excelParentAccounts(){
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const rows=[['학년','반','이름','상태','은행','예금주','계좌번호','입력일시']];
+  STUDENTS.filter(s=>s.org===reportOrg && (s.status||'active')==='active')
+    .map(s=>({ name:s.name||'', grade:gradeLabel(studentGrade(s.id)), className:studentClass(s.id)?.name||'', acc:PARENT_ACCOUNTS[s.id]||null }))
+    .sort((a,b)=>(parseInt(a.grade)||99)-(parseInt(b.grade)||99)||(a.className||'').localeCompare(b.className||'','ko')||a.name.localeCompare(b.name,'ko'))
+    .forEach(r=>{
+      const a=r.acc; const dt=a?.updatedAt?.toDate?a.updatedAt.toDate():null;
+      rows.push([r.grade, r.className, r.name, a?'입력완료':'미입력',
+        a?.bank||'', a?.holder||'', a?.account||'',
+        dt?`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`:'']);
+    });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:10},{wch:10},{wch:10},{wch:10},{wch:12},{wch:12},{wch:20},{wch:12}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '환급계좌');
+  XLSX.writeFile(wb, `환급계좌_${ORGS[reportOrg]||reportOrg}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('엑셀을 저장했습니다.','ok');
+}
+window.excelParentAccounts = excelParentAccounts;
 
 // ══════════ 🔗 학부모 공유 링크 (로그인 없이 열람) ══════════
 // 공유 시점의 표를 스냅샷(HTML)으로 저장 → share.html?id=토큰 으로 열람
