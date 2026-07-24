@@ -202,8 +202,8 @@
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, getDocs, query, where, doc, setDoc, getDoc, Timestamp }
-  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFunctions, httpsCallable }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js';
 
 const app = initializeApp({
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -213,7 +213,7 @@ const app = initializeApp({
   messagingSenderId: "455744290312",
   appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
 });
-const db = getFirestore(app);
+const functions = getFunctions(app, 'asia-northeast3');
 const $ = id => document.getElementById(id);
 const esc = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const won = n => (Math.round(Number(n)||0)).toLocaleString('ko-KR');
@@ -230,96 +230,65 @@ const BANKS = [
   {n:'수협은행', min:11, max:14}, {n:'저축은행', min:10, max:14}, {n:'기타', min:8, max:20},
 ];
 
-let STUDENTS=[], CLASSES=[], ME=null, CUR_SEM='';
+let ME=null, TOKEN='', MY_ITEMS=[], MY_SEM='';
 
-/* ── 학년 판정: 학생관리 반편성 기준 (실시간) ── */
-function studentClass(sid){
-  const y=new Date().getFullYear();
-  return CLASSES.find(c=>(c.year||y)===y && (c.students||[]).includes(sid))
-      || CLASSES.find(c=>(c.students||[]).includes(sid)) || null;
-}
-function studentGrade(sid){
-  const primary=studentClass(sid);
-  if(primary && primary.grades && primary.grades[sid]) return primary.grades[sid];
-  for(const c of CLASSES){ if((c.students||[]).includes(sid) && c.grades && c.grades[sid]) return c.grades[sid]; }
-  return '';
-}
-const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||0;
-
-/* ── 초기 로드 ── */
-(async ()=>{
-  try{
-    const [ss, cs] = await Promise.all([ getDocs(collection(db,'students')), getDocs(collection(db,'classes')) ]);
-    STUDENTS = ss.docs.map(d=>({id:d.id, ...d.data()}));
-    CLASSES  = cs.docs.map(d=>({id:d.id, ...d.data()}));
-    // 학년 선택지 채우기 (실제 존재하는 학년만)
-    const grades = [...new Set(STUDENTS.map(s=>gradeNum(studentGrade(s.id))).filter(n=>n>0))].sort((a,b)=>a-b);
-    const sel = $('a-grade');
-    grades.forEach(g=> sel.insertAdjacentHTML('beforeend', `<option value="${g}">${g}학년</option>`));
-    // 은행 목록
-    const bs = $('b-bank');
-    BANKS.forEach(b=> bs.insertAdjacentHTML('beforeend', `<option value="${esc(b.n)}">${esc(b.n)}</option>`));
-  }catch(e){
-    $('a-err').textContent='정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
-    $('a-err').classList.add('on');
-  }
+/* ── 초기 로드: 선택지만 채움 (학생 정보는 서버에서만 조회) ── */
+(function(){
+  const sel = $('a-grade');
+  for(let g=1; g<=12; g++) sel.insertAdjacentHTML('beforeend', `<option value="${g}">${g}학년</option>`);
+  const bs = $('b-bank');
+  BANKS.forEach(b=> bs.insertAdjacentHTML('beforeend', `<option value="${esc(b.n)}">${esc(b.n)}</option>`));
 })();
 
-/* ── 인증: 이름 + 학년 + 생년월일(MMDD) ── */
-window.doAuth = function(){
+/* ── 인증: 서버(Cloud Functions)에서 대조 ── */
+window.doAuth = async function(){
   const name=($('a-name').value||'').trim();
   const grade=parseInt($('a-grade').value||'0',10);
   const mmdd=($('a-birth').value||'').replace(/[^0-9]/g,'');
   const err=$('a-err'); err.classList.remove('on');
+  const btn=$('a-go');
   if(!name){ err.textContent='학생 이름을 입력해 주세요.'; err.classList.add('on'); return; }
   if(!grade){ err.textContent='학년을 선택해 주세요.'; err.classList.add('on'); return; }
   if(mmdd.length!==4){ err.textContent='생년월일 4자리(월일)를 입력해 주세요. 예: 3월 15일 → 0315'; err.classList.add('on'); return; }
 
-  // 학생관리 데이터(실시간)와 대조
-  const hit = STUDENTS.filter(s=>{
-    if((s.name||'').trim()!==name) return false;
-    if(gradeNum(studentGrade(s.id))!==grade) return false;
-    const b=(s.birth||'').replace(/[^0-9]/g,'');   // YYYYMMDD
-    return b.length>=8 && b.slice(4,8)===mmdd;
-  });
-  if(!hit.length){
-    err.textContent='일치하는 학생 정보를 찾을 수 없습니다. 이름·학년·생년월일을 다시 확인해 주세요.';
-    err.classList.add('on'); return;
-  }
-  ME = hit[0];
-  const cls = studentClass(ME.id);
-  $('w-name').textContent = ME.name;
-  $('w-meta').textContent = `${grade}학년${cls?.name?` · ${cls.name}`:''}`;
-  $('auth-card').style.display='none';
-  $('main').style.display='block';
-  $('hd-sub').innerHTML='경비 내역을 확인하시고<br>환급 계좌를 입력해 주세요.';
-  window.scrollTo({top:0,behavior:'smooth'});
-  loadMyAccount();
-  loadMyExpenses();
+  btn.disabled=true; btn.textContent='확인 중…';
+  try{
+    const fn = httpsCallable(functions, 'parentLookup');
+    const res = await fn({ name, grade, mmdd });
+    const d = res.data;
+    ME = d.student; TOKEN = d.token || ''; MY_ITEMS = d.items || []; MY_SEM = d.semester || '';
+    $('w-name').textContent = ME.name;
+    $('w-meta').textContent = `${ME.grade}학년${ME.className?` · ${ME.className}`:''}`;
+    $('auth-card').style.display='none';
+    $('main').style.display='block';
+    $('hd-sub').innerHTML='경비 내역을 확인하시고<br>환급 계좌를 입력해 주세요.';
+    window.scrollTo({top:0,behavior:'smooth'});
+    if(d.account){
+      $('b-bank').value=d.account.bank||''; $('b-holder').value=d.account.holder||'';
+      $('b-acct').value=d.account.account||''; $('b-acct2').value=d.account.account||'';
+      $('acc-saved').textContent='✅ 이미 입력하신 계좌가 있습니다. 수정하시려면 내용을 바꾸고 저장해 주세요.';
+      $('acc-saved').classList.add('on');
+    }
+    renderMyExpenses();
+  }catch(e){
+    const msg = e?.message || '';
+    if(/not-found|찾을 수 없/.test(msg) || e?.code==='functions/not-found')
+      err.textContent='일치하는 학생 정보를 찾을 수 없습니다. 이름 · 학년 · 생년월일을 다시 확인해 주세요.';
+    else if(/unavailable|CORS|Failed to fetch|internal/i.test(msg))
+      err.textContent='서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+    else err.textContent = msg.replace(/^.*?:\s*/,'') || '확인에 실패했습니다.';
+    err.classList.add('on');
+  } finally { btn.disabled=false; btn.textContent='확인하기'; }
 };
 
 window.logoutParent = function(){
-  ME=null;
+  ME=null; TOKEN=''; MY_ITEMS=[]; MY_SEM='';
   $('auth-card').style.display='';
   $('main').style.display='none';
   $('a-name').value=''; $('a-birth').value=''; $('a-grade').value='';
   $('hd-sub').innerHTML='자녀 정보를 확인한 뒤<br>경비 내역과 환급 계좌를 입력하실 수 있습니다.';
   window.scrollTo({top:0,behavior:'smooth'});
 };
-
-/* ── 계좌: 기존 입력값 불러오기 ── */
-async function loadMyAccount(){
-  try{
-    const d = await getDoc(doc(db,'parentAccounts', ME.id));
-    if(d.exists()){
-      const a=d.data();
-      $('b-bank').value=a.bank||''; $('b-holder').value=a.holder||'';
-      $('b-acct').value=a.account||''; $('b-acct2').value=a.account||'';
-      $('acc-saved').textContent='✅ 이미 입력하신 계좌가 있습니다. 수정하시려면 내용을 바꾸고 저장해 주세요.';
-      $('acc-saved').classList.add('on');
-    }
-  }catch(e){ /* 읽기 권한이 없으면 조용히 넘어감 */ }
-}
 
 /* ── 계좌 형식 검증 ── */
 function checkAcct(){
@@ -342,7 +311,7 @@ function checkAcct(){
 $('b-acct').addEventListener('input', e=>{ e.target.value=e.target.value.replace(/[^0-9]/g,''); });
 $('b-acct2').addEventListener('input', e=>{ e.target.value=e.target.value.replace(/[^0-9]/g,''); });
 
-/* ── 계좌 저장 ── */
+/* ── 계좌 저장 (서버 경유) ── */
 window.saveAccount = async function(){
   const err=$('b-err'); err.classList.remove('on');
   const bank=$('b-bank').value, holder=($('b-holder').value||'').trim();
@@ -354,20 +323,21 @@ window.saveAccount = async function(){
   if(no!==no2){ err.textContent='두 계좌번호가 일치하지 않습니다. 다시 확인해 주세요.'; err.classList.add('on'); return; }
   if(!checkAcct()){ err.textContent='계좌번호 자릿수를 다시 확인해 주세요.'; err.classList.add('on'); return; }
 
+  const btn=event?.target; const orig=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='저장 중…'; }
   try{
-    await setDoc(doc(db,'parentAccounts', ME.id), {
-      studentId: ME.id, studentName: ME.name||'',
-      grade: gradeNum(studentGrade(ME.id)), className: studentClass(ME.id)?.name||'',
-      org: ME.org||'', bank, holder, account: no,
-      updatedAt: Timestamp.now(),
-    }, {merge:true});
+    const fn = httpsCallable(functions, 'parentSaveAccount');
+    await fn({ token: TOKEN, bank, holder, account: no });
     $('acc-saved').textContent='✅ 계좌 정보가 저장되었습니다. 감사합니다!';
     $('acc-saved').classList.add('on');
     window.scrollTo({top:$('acc-saved').getBoundingClientRect().top+window.scrollY-90, behavior:'smooth'});
   }catch(e){
-    err.textContent='저장에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+    const msg=e?.message||'';
+    if(/unauthenticated|본인 확인/.test(msg)) err.textContent='본인 확인이 만료되었습니다. 페이지를 새로고침한 뒤 다시 시도해 주세요.';
+    else if(/unavailable|CORS|Failed to fetch/i.test(msg)) err.textContent='서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.';
+    else err.textContent = msg.replace(/^.*?:\s*/,'') || '저장에 실패했습니다.';
     err.classList.add('on');
-  }
+  } finally { if(btn){ btn.disabled=false; btn.textContent=orig; } }
 };
 
 /* ── 계좌번호 복사 ── */
@@ -378,58 +348,43 @@ window.copyAcct = function(){
     ()=>{ alert('계좌번호: '+$('pay-no').textContent+'\n(길게 눌러 복사해 주세요)'); });
 };
 
-/* ── 우리 아이 경비 내역 ── */
-async function loadMyExpenses(){
+/* ── 우리 아이 경비 내역 (인증 시 서버에서 함께 받음) ── */
+function renderMyExpenses(){
   const box=$('ex-body');
-  try{
-    const snap = await getDocs(query(collection(db,'expenses'), where('org','==', ME.org||'daniel')));
-    const mine=[];
-    snap.forEach(d=>{
-      const e={id:d.id, ...d.data()};
-      const st=(e.students||[]).find(s=>s.id===ME.id);
-      if(st) mine.push({e, amt: Number(st.amt)||0});
-    });
-    if(!mine.length){
-      box.innerHTML='<div class="state"><div class="ico">📭</div><div class="t1">아직 등록된 내역이 없습니다</div><div class="t2">새로운 경비가 등록되면 이곳에서 확인하실 수 있습니다.</div></div>';
-      return;
-    }
-    // 최신 학기 기준
-    const sems=[...new Set(mine.map(m=>m.e.semester).filter(Boolean))].sort();
-    CUR_SEM = sems[sems.length-1] || '';
-    const list = mine.filter(m=>!CUR_SEM || m.e.semester===CUR_SEM)
-                     .sort((a,b)=>(a.e.date||'').localeCompare(b.e.date||''));
-    const net = list.reduce((t,m)=>t+m.amt,0);
-    const isRefund = net<0;
-
-    const semLabel = CUR_SEM ? CUR_SEM.replace(/^(\d{4})-(\d)$/,'$1년 $2학기') : '';
-    $('ex-desc').textContent = `${semLabel} · 총 ${list.length}건`;
-
-    box.innerHTML = `
-      <div class="sumbox">
-        <div class="top">
-          <div class="k">${isRefund?'돌려받으실 금액':'납부하실 금액'}</div>
-          <div class="v ${isRefund?'refund':''}">₩${won(Math.abs(net))}</div>
-        </div>
-        <div class="note">${isRefund
-          ? '입력해 주신 계좌로 환급해 드립니다.'
-          : '위 <b>입금 계좌 안내</b>의 계좌로 입금해 주세요.'}</div>
-      </div>
-      <div class="items">
-        ${list.map(m=>{
-          const e=m.e, ref=m.amt<0;
-          return `<div class="it">
-            <div class="l">
-              <div class="nm">${esc(e.subject||'')}${ref?' <span style="font-size:11px;color:var(--gm)">↩️ 반환</span>':''}</div>
-              <div class="mt">${esc(e.items||'')}${e.date?` · ${esc(e.date)}`:''}</div>
-            </div>
-            <div class="amt ${ref?'refund':''}">${ref?'−':''}₩${won(Math.abs(m.amt))}</div>
-          </div>`;
-        }).join('')}
-      </div>
-      <div class="hint" style="margin-top:10px">· 금액이 (−)로 표시된 항목은 돌려드리는 금액입니다.</div>`;
-  }catch(e){
-    box.innerHTML='<div class="state"><div class="ico">⚠️</div><div class="t1">내역을 불러오지 못했습니다</div><div class="t2">잠시 후 다시 시도해 주시거나<br>담당 선생님께 문의해 주세요.</div></div>';
+  const list = MY_ITEMS || [];
+  if(!list.length){
+    $('ex-desc').textContent='';
+    box.innerHTML='<div class="state"><div class="ico">📭</div><div class="t1">아직 등록된 내역이 없습니다</div><div class="t2">새로운 경비가 등록되면 이곳에서 확인하실 수 있습니다.</div></div>';
+    return;
   }
+  const net = list.reduce((t,m)=>t+(Number(m.amt)||0),0);
+  const isRefund = net<0;
+  const semLabel = MY_SEM ? MY_SEM.replace(/^(\d{4})-(\d)$/,'$1년 $2학기') : '';
+  $('ex-desc').textContent = `${semLabel}${semLabel?' · ':''}총 ${list.length}건`;
+
+  box.innerHTML = `
+    <div class="sumbox">
+      <div class="top">
+        <div class="k">${isRefund?'돌려받으실 금액':'납부하실 금액'}</div>
+        <div class="v ${isRefund?'refund':''}">₩${won(Math.abs(net))}</div>
+      </div>
+      <div class="note">${isRefund
+        ? '입력해 주신 계좌로 환급해 드립니다.'
+        : '위 <b>입금 계좌 안내</b>의 계좌로 입금해 주세요.'}</div>
+    </div>
+    <div class="items">
+      ${list.map(m=>{
+        const ref=(Number(m.amt)||0)<0;
+        return `<div class="it">
+          <div class="l">
+            <div class="nm">${esc(m.subject||'')}${ref?' <span style="font-size:11px;color:var(--gm)">↩️ 반환</span>':''}</div>
+            <div class="mt">${esc(m.itemsText||'')}${m.date?` · ${esc(m.date)}`:''}</div>
+          </div>
+          <div class="amt ${ref?'refund':''}">${ref?'−':''}₩${won(Math.abs(Number(m.amt)||0))}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="hint" style="margin-top:10px">· 금액이 (−)로 표시된 항목은 돌려드리는 금액입니다.</div>`;
 }
 </script>
 </body>
