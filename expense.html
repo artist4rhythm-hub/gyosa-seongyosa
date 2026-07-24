@@ -488,7 +488,7 @@ function showTab(t){
   curTab = t;
   if(!ORG_SCOPE){ try{ ORG_SCOPE = localStorage.getItem('exp_org_scope')||''; }catch(e){} }
   // 모든 탭이 같은 기관을 따르도록 동기화
-  if(ORG_SCOPE){ expOrg = ORG_SCOPE; reportOrg = ORG_SCOPE; }
+  if(ORG_SCOPE){ expOrg = ORG_SCOPE; reportOrg = ORG_SCOPE; listOrg = ORG_SCOPE; }
   renderOrgBar();
   ['new','list','report','parent','backup'].forEach(k=>{
     const b = $I('tb-'+k); if(b) b.classList.toggle('on', t===k);
@@ -531,7 +531,7 @@ function renderOrgBar(){
 function setOrgScope(o){
   if(ORG_SCOPE===o) return;
   ORG_SCOPE = o;
-  expOrg = o; reportOrg = o; reportSem = '';
+  expOrg = o; reportOrg = o; listOrg = o; reportSem = '';
   checkedIds = new Set(); indivAmts = {}; openCls = {};
   try{ localStorage.setItem('exp_org_scope', o); }catch(e){}
   renderOrgBar();
@@ -1152,7 +1152,7 @@ async function editExpense(id){
   editingId = id;
   editingSemester = e.semester || '';
   expOrg = e.org;
-  if(ORG_SCOPE !== e.org){ ORG_SCOPE = e.org; reportOrg = e.org; renderOrgBar(); }
+  if(ORG_SCOPE !== e.org){ ORG_SCOPE = e.org; reportOrg = e.org; listOrg = e.org; renderOrgBar(); }
   expMode = e.mode || 'equal';
   checkedIds = new Set((e.students||[]).map(s=>s.id));
   indivAmts = {};
@@ -2080,14 +2080,11 @@ async function renderList(){
   } finally { window.hideLoading && window.hideLoading(); }
 
   const orgs2 = myOrgs();
-  if(!listOrg || !orgs2.includes(listOrg)) listOrg = orgs2[0];
+  listOrg = ORG_SCOPE || listOrg || orgs2[0];   // 상단 기관 바를 따름
   const inOrg = EXPENSES.filter(e=>e.org===listOrg);
   const shown = inOrg.filter(e=> expTrash ? e.deleted : !e.deleted);
   const trashCnt = inOrg.filter(e=>e.deleted).length;
-  const orgTabs = orgs2.length>1 ? `
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      ${orgs2.map(o=>`<button class="subtbtn ${o===listOrg?'on':''}" onclick="setListOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
-    </div>` : '';
+  const orgTabs = '';   // 기관 선택은 상단 기관 바에서
 
   box.innerHTML = `
     <div class="acard">
