@@ -128,7 +128,7 @@
         </select>
       </div>
       <div class="fgrp">
-        <label>생년월일 4자리</label>
+        <label>생일 4자리 (월일)</label>
         <input type="tel" id="a-birth" placeholder="예: 0315 (3월 15일)" maxlength="4" inputmode="numeric" autocomplete="off">
       </div>
     </div>
@@ -249,7 +249,7 @@ window.doAuth = async function(){
   const btn=$('a-go');
   if(!name){ err.textContent='학생 이름을 입력해 주세요.'; err.classList.add('on'); return; }
   if(!grade){ err.textContent='학년을 선택해 주세요.'; err.classList.add('on'); return; }
-  if(mmdd.length!==4){ err.textContent='생년월일 4자리(월일)를 입력해 주세요. 예: 3월 15일 → 0315'; err.classList.add('on'); return; }
+  if(mmdd.length!==4){ err.textContent='생일 4자리(월일)를 입력해 주세요. 예: 3월 15일 → 0315'; err.classList.add('on'); return; }
 
   btn.disabled=true; btn.textContent='확인 중…';
   try{
@@ -273,7 +273,7 @@ window.doAuth = async function(){
   }catch(e){
     const msg = e?.message || '';
     if(/not-found|찾을 수 없/.test(msg) || e?.code==='functions/not-found')
-      err.textContent='일치하는 학생 정보를 찾을 수 없습니다. 이름 · 학년 · 생년월일을 다시 확인해 주세요.';
+      err.textContent='일치하는 학생 정보를 찾을 수 없습니다. 이름 · 학년 · 생일 4자리를 다시 확인해 주세요.';
     else if(/unavailable|CORS|Failed to fetch|internal/i.test(msg))
       err.textContent='서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.';
     else err.textContent = msg.replace(/^.*?:\s*/,'') || '확인에 실패했습니다.';
@@ -358,8 +358,11 @@ function renderMyExpenses(){
     return;
   }
   // 청구(+) / 반환(−) 분리 집계 — 교사용 '순 청구액'과 동일 계산
-  const charge = list.filter(m=>(Number(m.amt)||0)>0).reduce((t,m)=>t+(Number(m.amt)||0),0);
-  const refund = list.filter(m=>(Number(m.amt)||0)<0).reduce((t,m)=>t+Math.abs(Number(m.amt)||0),0);
+  // 반환 판정: mode==='refund' 이거나 금액이 음수 → 어느 쪽이든 반환으로 집계
+  // (서버가 부호를 넘기지 않는 경우에도 합계가 정확하도록 이중 방어)
+  const isRef = m => m.mode==='refund' || (Number(m.amt)||0) < 0;
+  const charge = list.filter(m=>!isRef(m)).reduce((t,m)=>t+Math.abs(Number(m.amt)||0),0);
+  const refund = list.filter(m=> isRef(m)).reduce((t,m)=>t+Math.abs(Number(m.amt)||0),0);
   const net = charge - refund;
   const isRefund = net<0;
   const semLabel = MY_SEM ? MY_SEM.replace(/^(\d{4})-(\d)$/,'$1년 $2학기') : '';
@@ -382,7 +385,7 @@ function renderMyExpenses(){
     <div class="items">
       ${list.map(m=>{
         const v = Number(m.amt)||0;
-        const ref = v<0 || m.mode==='refund';
+        const ref = isRef(m);
         return `<div class="it">
           <div class="l">
             <div class="nm">${esc(m.subject||'')}${ref?' <span style="font-size:11px;color:var(--gm)">↩️ 반환</span>':''}</div>
