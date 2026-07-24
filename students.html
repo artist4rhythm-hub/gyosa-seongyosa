@@ -114,6 +114,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
+<script src="org-bar.js"></script>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
 </head>
@@ -131,6 +132,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <!-- 메인 -->
 <div id="ms">
   <div class="pg-links"><a class="pg-link" href="class.html">반 편성 →</a><a class="pg-link" href="attend.html">출석부 →</a></div>
+  <div id="org-bar"></div>
   <div class="subtb" id="sub-tabs">
     <button class="subtbtn active" id="st-all" onclick="showStudentTab('all')">📋 전체 목록</button>
     <button class="subtbtn" id="st-roster" onclick="showStudentTab('roster')">📊 재학생 명단</button>
@@ -234,6 +236,15 @@ onAuthStateChanged(auth, async (user) => {
     window.setLoadStep && window.setLoadStep('반 편성 불러오는 중…', 75);
     await loadClasses();
     window.hideLoading && window.hideLoading();
+    // 기관 선택 바 (전체 포함) — 모든 탭이 이 선택을 따름
+    if(window.OrgBar){
+      OrgBar.init({
+        orgs: myOrgs(), labels: ORGS, storeKey: 'students_org',
+        allowAll: true, defaultAll: true,
+        onChange: ()=>{ applyOrgScope(); }
+      });
+      applyOrgScope(true);
+    }
     showStudentTab('all');
     // 증명서 발급 등에서 ?edit=학생ID로 들어오면 편집창 자동 열기
     const editId = new URLSearchParams(location.search).get('edit');
@@ -280,6 +291,22 @@ function studentGrade(sid){
 function studentClassName(sid){
   const c = CLASSES.find(c=>(c.students||[]).includes(sid));
   return c ? c.name : '';
+}
+
+// 상단 기관 바 → 각 탭의 기관 필터에 반영
+function applyOrgScope(silent){
+  const cur = (window.OrgBar && OrgBar.current) || '__all__';
+  const isAll = cur === '__all__';
+  rosterOrgView = isAll ? 'all' : 'split';
+  birthOrg   = isAll ? '' : cur;
+  contactOrg = isAll ? '' : cur;
+  if(!silent) showStudentTab(typeof studentTab !== 'undefined' ? (studentTab || 'all') : 'all');
+}
+// 기관 스코프에 맞는 학생만 (전체면 내 기관 전부)
+function inOrgScope(s){
+  const cur = (window.OrgBar && OrgBar.current) || '__all__';
+  if(cur === '__all__') return myOrgs().includes(s.org);
+  return s.org === cur;
 }
 
 function showStudentTab(t){

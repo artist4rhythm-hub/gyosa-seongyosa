@@ -104,6 +104,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
+<script src="org-bar.js"></script>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
 </head>
@@ -118,7 +119,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 </div>
 
 <div id="ms">
-  
+  <div id="org-bar"></div>
   <div class="subtb" id="subtb">
     <button class="subtbtn active" id="tb-check" onclick="showTab('check')">✅ 출석 체크</button>
     <button class="subtbtn" id="tb-stat" onclick="showTab('stat')">📊 통계</button>
@@ -245,6 +246,15 @@ onAuthStateChanged(auth, async (user) => {
     await loadClasses();
     await loadStudents();
     window.hideLoading && window.hideLoading();
+    // 기관 선택 바
+    if(window.OrgBar){
+      statOrg = OrgBar.init({
+        orgs: myOrgs(), labels: ORGS, storeKey: 'attend_org',
+        onChange: ()=>{ statOrg = OrgBar.current; statClassFilter=''; statGradeFilter='';
+                        if(typeof fillStatFilters==='function') fillStatFilters();
+                        showTab(curTab||'check'); }
+      });
+    }
     showTab('check');
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
 });
@@ -385,7 +395,9 @@ function canViewClass(c){
 }
 
 // ── 탭 전환 ──
+let curTab = 'check';
 function showTab(t){
+  curTab = t;
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('tb-'+t)?.classList.add('active');
   ['check','stat','set'].forEach(id=>{ const el=$I('c-'+id); if(el) el.style.display='none'; });
@@ -1033,7 +1045,7 @@ let statGradeFilter = '';
 
 function renderStat(){
   const orgs = myOrgs();
-  if(!statOrg) statOrg = orgs[0];
+  statOrg = (window.OrgBar && OrgBar.current) || statOrg || orgs[0];
   const ty = new Date().getFullYear();
   const years = [];
   for(let y=ty+1; y>=ty-3; y--) years.push(y);
@@ -1045,8 +1057,7 @@ function renderStat(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <div class="fgrp" style="margin-bottom:0"><label>연도</label>
           <select id="st-year" onchange="onStatChange()">${years.map(y=>`<option value="${y}"${y===statYear?' selected':''}>${y}년</option>`).join('')}</select></div>
-        <div class="fgrp" style="margin-bottom:0"><label>기관</label>
-          <select id="st-org" onchange="onStatChange()">${orgs.map(o=>`<option value="${o}"${o===statOrg?' selected':''}>${ORGS[o]}</option>`).join('')}</select></div>
+        
         <div class="fgrp" style="margin-bottom:0"><label>학기</label>
           <select id="st-term" onchange="onStatChange()">
             <option value="1"${statTermSel==='1'?' selected':''}>1학기</option>
@@ -1099,7 +1110,7 @@ window.fillStatFilters = fillStatFilters;
 function onStatChange(){
   const prevOrg = statOrg;
   statYear = Number($I('st-year').value);
-  statOrg = $I('st-org').value;
+  statOrg = (window.OrgBar && OrgBar.current) || statOrg;
   statTermSel = $I('st-term').value;
   statView = $I('st-view').value;
   statClassFilter = $I('st-class')?.value || '';
