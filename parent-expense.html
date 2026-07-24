@@ -117,12 +117,20 @@
     <h2>👦 자녀 확인</h2>
     <div class="desc">본인 자녀의 정보를 정확히 입력해 주세요.</div>
     <div class="fgrp">
+      <label>소속 기관</label>
+      <select id="a-org" onchange="onOrgChange()">
+        <option value="">선택하세요</option>
+        <option value="daniel">다니엘 아마츠 (1~12학년)</option>
+        <option value="jihyebit">지혜빛 선교원 (4~7세)</option>
+      </select>
+    </div>
+    <div class="fgrp">
       <label>학생 이름</label>
       <input type="text" id="a-name" placeholder="예: 홍길동" autocomplete="off">
     </div>
     <div class="row2">
       <div class="fgrp">
-        <label>학년</label>
+        <label id="a-grade-label">학년 · 나이</label>
         <select id="a-grade">
           <option value="">선택하세요</option>
         </select>
@@ -233,32 +241,46 @@ const BANKS = [
 let ME=null, TOKEN='', MY_ITEMS=[], MY_SEM='';
 
 /* ── 초기 로드: 선택지만 채움 (학생 정보는 서버에서만 조회) ── */
-(function(){
+const GRADE_OPTIONS = {
+  daniel:   ['1학년','2학년','3학년','4학년','5학년','6학년','7학년','8학년','9학년','10학년','11학년','12학년'],
+  jihyebit: ['4세','5세','6세','7세'],
+};
+window.onOrgChange = function(){
+  const org = $('a-org').value;
   const sel = $('a-grade');
-  for(let g=1; g<=12; g++) sel.insertAdjacentHTML('beforeend', `<option value="${g}">${g}학년</option>`);
+  sel.innerHTML = '<option value="">선택하세요</option>';
+  (GRADE_OPTIONS[org]||[]).forEach(g=> sel.insertAdjacentHTML('beforeend', `<option value="${esc(g)}">${esc(g)}</option>`));
+  const lbl = $('a-grade-label');
+  if(lbl) lbl.textContent = org==='jihyebit' ? '나이' : '학년';
+  sel.disabled = !org;
+};
+(function(){
+  $('a-grade').disabled = true;
   const bs = $('b-bank');
   BANKS.forEach(b=> bs.insertAdjacentHTML('beforeend', `<option value="${esc(b.n)}">${esc(b.n)}</option>`));
 })();
 
 /* ── 인증: 서버(Cloud Functions)에서 대조 ── */
 window.doAuth = async function(){
+  const org=$('a-org').value;
   const name=($('a-name').value||'').trim();
-  const grade=parseInt($('a-grade').value||'0',10);
+  const gradeLabel=$('a-grade').value||'';
   const mmdd=($('a-birth').value||'').replace(/[^0-9]/g,'');
   const err=$('a-err'); err.classList.remove('on');
   const btn=$('a-go');
+  if(!org){ err.textContent='소속 기관을 선택해 주세요.'; err.classList.add('on'); return; }
   if(!name){ err.textContent='학생 이름을 입력해 주세요.'; err.classList.add('on'); return; }
-  if(!grade){ err.textContent='학년을 선택해 주세요.'; err.classList.add('on'); return; }
+  if(!gradeLabel){ err.textContent=(org==='jihyebit'?'나이':'학년')+'를 선택해 주세요.'; err.classList.add('on'); return; }
   if(mmdd.length!==4){ err.textContent='생일 4자리(월일)를 입력해 주세요. 예: 3월 15일 → 0315'; err.classList.add('on'); return; }
 
   btn.disabled=true; btn.textContent='확인 중…';
   try{
     const fn = httpsCallable(functions, 'parentLookup');
-    const res = await fn({ name, grade, mmdd });
+    const res = await fn({ org, name, gradeLabel, mmdd });
     const d = res.data;
     ME = d.student; TOKEN = d.token || ''; MY_ITEMS = d.items || []; MY_SEM = d.semester || '';
     $('w-name').textContent = ME.name;
-    $('w-meta').textContent = `${ME.grade}학년${ME.className?` · ${ME.className}`:''}`;
+    $('w-meta').textContent = `${ME.gradeLabel||ME.grade+'학년'}${ME.className?` · ${ME.className}`:''}`;
     $('auth-card').style.display='none';
     $('main').style.display='block';
     $('hd-sub').innerHTML='경비 내역을 확인하시고<br>환급 계좌를 입력해 주세요.';
@@ -273,7 +295,7 @@ window.doAuth = async function(){
   }catch(e){
     const msg = e?.message || '';
     if(/not-found|찾을 수 없/.test(msg) || e?.code==='functions/not-found')
-      err.textContent='일치하는 학생 정보를 찾을 수 없습니다. 이름 · 학년 · 생일 4자리를 다시 확인해 주세요.';
+      err.textContent='일치하는 학생 정보를 찾을 수 없습니다. 기관 · 이름 · 학년 · 생일 4자리를 다시 확인해 주세요.';
     else if(/unavailable|CORS|Failed to fetch|internal/i.test(msg))
       err.textContent='서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.';
     else err.textContent = msg.replace(/^.*?:\s*/,'') || '확인에 실패했습니다.';
@@ -285,7 +307,7 @@ window.logoutParent = function(){
   ME=null; TOKEN=''; MY_ITEMS=[]; MY_SEM='';
   $('auth-card').style.display='';
   $('main').style.display='none';
-  $('a-name').value=''; $('a-birth').value=''; $('a-grade').value='';
+  $('a-name').value=''; $('a-birth').value=''; $('a-grade').value=''; $('a-org').value=''; onOrgChange();
   $('hd-sub').innerHTML='자녀 정보를 확인한 뒤<br>경비 내역과 환급 계좌를 입력하실 수 있습니다.';
   window.scrollTo({top:0,behavior:'smooth'});
 };

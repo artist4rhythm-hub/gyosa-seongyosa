@@ -187,6 +187,11 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <div id="ms">
   
   <div class="tc">
+    <div id="org-bar" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;margin-bottom:14px;background:var(--gp);border:1px solid var(--gl);border-radius:12px">
+      <span style="font-size:12.5px;font-weight:800;color:var(--gd)">🏫 기관</span>
+      <div id="org-chips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <span id="org-note" style="font-size:11.5px;color:var(--ts);margin-left:auto"></span>
+    </div>
     <div class="subtabs">
       <button class="subtbtn on" id="tb-new" onclick="showTab('new')">➕ 경비 신청</button>
       <button class="subtbtn" id="tb-list" onclick="showTab('list')">📋 신청 내역</button>
@@ -481,6 +486,10 @@ function currentInputTerm(org){
 
 function showTab(t){
   curTab = t;
+  if(!ORG_SCOPE){ try{ ORG_SCOPE = localStorage.getItem('exp_org_scope')||''; }catch(e){} }
+  // 모든 탭이 같은 기관을 따르도록 동기화
+  if(ORG_SCOPE){ expOrg = ORG_SCOPE; reportOrg = ORG_SCOPE; }
+  renderOrgBar();
   ['new','list','report','parent','backup'].forEach(k=>{
     const b = $I('tb-'+k); if(b) b.classList.toggle('on', t===k);
     const p = $I('tab-'+k); if(p) p.style.display = t===k?'':'none';
@@ -506,6 +515,30 @@ window.showTab = showTab;
 
 // ══════════ 경비 신청 ══════════
 let expOrg = '';
+let ORG_SCOPE = '';   // 화면 전체가 따르는 기관 (신청·내역·취합·학부모공지 공통)
+
+// 기관 칩 렌더 + 전환
+function renderOrgBar(){
+  const box = $I('org-chips'); if(!box) return;
+  const orgs = myOrgs();
+  if(!ORG_SCOPE || !orgs.includes(ORG_SCOPE)) ORG_SCOPE = orgs[0] || '';
+  box.innerHTML = orgs.map(o=>`
+    <button class="bm" style="${o===ORG_SCOPE?'background:var(--gm);color:#fff;border-color:var(--gm);font-weight:800':''}"
+      onclick="setOrgScope('${o}')">${esc(ORGS[o]||o)}</button>`).join('');
+  const note = $I('org-note');
+  if(note) note.textContent = ORG_SCOPE==='jihyebit' ? '지혜빛 선교원 · 4~7세' : '다니엘 아마츠 · 1~12학년';
+}
+function setOrgScope(o){
+  if(ORG_SCOPE===o) return;
+  ORG_SCOPE = o;
+  expOrg = o; reportOrg = o; reportSem = '';
+  checkedIds = new Set(); indivAmts = {}; openCls = {};
+  try{ localStorage.setItem('exp_org_scope', o); }catch(e){}
+  renderOrgBar();
+  showTab(curTab);   // 현재 탭을 새 기관으로 다시 그림
+}
+window.setOrgScope = setOrgScope;
+window.renderOrgBar = renderOrgBar;
 let expMode = 'equal';   // equal(1/N) | indiv(개별 청구) | refund(개별 반환) | group(그룹 균등)
 // 그룹 균등 청구: 그룹별 총액 ÷ 그룹 인원
 let expGroups = [ {total:0, ids:[]}, {total:0, ids:[]} ];
@@ -545,10 +578,7 @@ function renderNew(){
   const box = $I('tab-new');
   const orgs = myOrgs();
   if(!expOrg || !orgs.includes(expOrg)) expOrg = orgs[0];
-  const orgTabs = (!editingId && orgs.length>1) ? `
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      ${orgs.map(o=>`<button class="subtbtn ${o===expOrg?'on':''}" onclick="setExpOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
-    </div>` : '';
+  const orgTabs = '';   // 기관 선택은 상단 기관 바에서
 
   // 학기 판정 (수정 모드면 기존 학기 유지)
   const ct = currentInputTerm(expOrg);
@@ -1122,6 +1152,7 @@ async function editExpense(id){
   editingId = id;
   editingSemester = e.semester || '';
   expOrg = e.org;
+  if(ORG_SCOPE !== e.org){ ORG_SCOPE = e.org; reportOrg = e.org; renderOrgBar(); }
   expMode = e.mode || 'equal';
   checkedIds = new Set((e.students||[]).map(s=>s.id));
   indivAmts = {};
@@ -2322,10 +2353,7 @@ async function renderReport(){
   const sems = [...semSet].sort().reverse();
   if(!reportSem || !sems.includes(reportSem)) reportSem = sems[0] || '';
 
-  const orgTabs = orgs.length>1 ? `
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      ${orgs.map(o=>`<button class="subtbtn ${o===reportOrg?'on':''}" onclick="setReportOrg('${o}')" style="padding:8px 18px">${ORGS[o]||o}</button>`).join('')}
-    </div>` : '';
+  const orgTabs = '';   // 기관 선택은 상단 기관 바에서
 
   const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem)
     .sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
@@ -3134,12 +3162,14 @@ async function renderParentTab(){
   const parentUrl = `${location.origin}${location.pathname.replace(/[^/]*$/,'')}parent-expense.html`;
 
   // 현재 기관의 재학생 → 학년·반별 그룹
-  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  // 학년 표기는 원문 그대로 (다니엘='4학년', 지혜빛='4세')
+  const gLabel = g => String(g||'').trim() || '학년 미지정';
+  const gNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
   const roster = STUDENTS
-    .filter(s=>s.org===reportOrg && (s.status||'active')==='active')
-    .map(s=>({ id:s.id, name:s.name||'', grade:gradeLabel(studentGrade(s.id)),
+    .filter(s=>s.org===ORG_SCOPE && (s.status||'active')==='active')
+    .map(s=>({ id:s.id, name:s.name||'', grade:gLabel(studentGrade(s.id)),
                className:studentClass(s.id)?.name||'', acc:PARENT_ACCOUNTS[s.id]||null }))
-    .sort((a,b)=>(parseInt(a.grade)||99)-(parseInt(b.grade)||99)
+    .sort((a,b)=>gNum(a.grade)-gNum(b.grade)
               || (a.className||'').localeCompare(b.className||'','ko')
               || a.name.localeCompare(b.name,'ko'));
 
@@ -3150,7 +3180,7 @@ async function renderParentTab(){
   // 학년별 그룹
   const byGrade = {};
   shown.forEach(r=>{ (byGrade[r.grade]=byGrade[r.grade]||[]).push(r); });
-  const gradeKeys = Object.keys(byGrade).sort((a,b)=>(parseInt(a)||99)-(parseInt(b)||99));
+  const gradeKeys = Object.keys(byGrade).sort((a,b)=>gNum(a)-gNum(b));
 
   box.innerHTML = `
     <div class="card">
@@ -3234,11 +3264,12 @@ window.copyParentUrl = copyParentUrl;
 
 // 계좌 목록 엑셀 (환급 이체 작업용)
 function excelParentAccounts(){
-  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const gLabel = g => String(g||'').trim() || '학년 미지정';
+  const gNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
   const rows=[['학년','반','이름','상태','은행','예금주','계좌번호','입력일시']];
-  STUDENTS.filter(s=>s.org===reportOrg && (s.status||'active')==='active')
-    .map(s=>({ name:s.name||'', grade:gradeLabel(studentGrade(s.id)), className:studentClass(s.id)?.name||'', acc:PARENT_ACCOUNTS[s.id]||null }))
-    .sort((a,b)=>(parseInt(a.grade)||99)-(parseInt(b.grade)||99)||(a.className||'').localeCompare(b.className||'','ko')||a.name.localeCompare(b.name,'ko'))
+  STUDENTS.filter(s=>s.org===ORG_SCOPE && (s.status||'active')==='active')
+    .map(s=>({ name:s.name||'', grade:gLabel(studentGrade(s.id)), className:studentClass(s.id)?.name||'', acc:PARENT_ACCOUNTS[s.id]||null }))
+    .sort((a,b)=>gNum(a.grade)-gNum(b.grade)||(a.className||'').localeCompare(b.className||'','ko')||a.name.localeCompare(b.name,'ko'))
     .forEach(r=>{
       const a=r.acc; const dt=a?.updatedAt?.toDate?a.updatedAt.toDate():null;
       rows.push([r.grade, r.className, r.name, a?'입력완료':'미입력',
@@ -3248,7 +3279,7 @@ function excelParentAccounts(){
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:10},{wch:10},{wch:10},{wch:10},{wch:12},{wch:12},{wch:20},{wch:12}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '환급계좌');
-  XLSX.writeFile(wb, `환급계좌_${ORGS[reportOrg]||reportOrg}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `환급계좌_${ORGS[ORG_SCOPE]||ORG_SCOPE}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast('엑셀을 저장했습니다.','ok');
 }
 window.excelParentAccounts = excelParentAccounts;
