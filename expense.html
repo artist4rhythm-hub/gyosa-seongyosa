@@ -2697,7 +2697,7 @@ function viewClassSheet(gradeKey){
             </tr>
             <tr>
               <th class="mx-name mx-h3">이름 \\ 1인당</th>
-              ${items.map(e=>`<th class="mx-item mx-h3" style="padding:5px 0">${e.mode==='refund'?'<span style="padding-left:8px">↩️</span>':''}${mxAcc(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0), false)}</th>`).join('')}
+              ${items.map(e=>{const p=perSummary(e, students, amtOf);const pre=p.isRefund?'<span style="padding-left:8px">↩️</span>':'';const body=p.same?mxAcc(p.min,false):`<span style=\"display:inline-flex;align-items:baseline;gap:2px;padding:0 8px\"><span style=\"font-size:9px;opacity:.7\">₩</span><span style=\"font-variant-numeric:tabular-nums;font-size:11px\">${won(p.min)}~${won(p.max)}</span><span style=\"font-size:8px;opacity:.65\">개별</span></span>`;return `<th class="mx-item mx-h3" style="padding:5px 0">${pre}${body}</th>`;}).join('')}
             </tr>
           </thead>
           <tbody>
@@ -2774,7 +2774,12 @@ function buildSheetHTML(landscape, opts){
   const cls = classNames||[];
   const gradeTitle = cls.length===1 ? `${gradeKey} ${cls[0]}` : cls.length>1 ? `${gradeKey} (${cls.join('·')})` : gradeKey;
   const won2 = n => (n||0).toLocaleString('ko-KR');
-  const perLine = (e)=> e.mode==='refund'?`↩️ ${accMoney(Math.abs(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0), false)}`:`${accMoney(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
+  const perLine = (e)=>{
+    const p = perSummary(e, students, amtOf);
+    const pre = p.isRefund ? '↩️ ' : '';
+    if(p.same) return `${pre}${accMoney(p.min, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
+    return `${pre}<span class="acc"><span class="sym">₩</span><span class="num">${won(p.min)}~${won(p.max)}</span></span><span style="display:block;font-size:8px;opacity:.7;text-align:right;padding-right:9px">개별</span>`;
+  };
   const cell = (e,sid)=>{ const a=amtOf(e,sid); if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${accMoney(Math.abs(a), isRef)}</td>`; };
 
   // 칸 폭 계산: 이름칸 + 항목N칸 + 합계칸
@@ -2885,6 +2890,14 @@ const SHEET_CSS = `
 .sheet-foot{font-size:10px;color:#a8b5ac;margin-top:12px;text-align:center;}
 `;
 
+// 표에 표시된 학생들 기준 1인당 금액 요약 — 모두 같으면 단일, 다르면 범위(오해 방지)
+function perSummary(e, students, amtOf){
+  const vals=[];
+  (students||[]).forEach(st=>{ const a=amtOf(e, st.id); if(a!==null && a!==undefined) vals.push(Math.abs(a)); });
+  if(!vals.length){ const f=(e.students||[]).find(x=>true); vals.push(Math.abs(e.per || (f&&f.amt) || 0)); }
+  const mn=Math.min(...vals), mx=Math.max(...vals);
+  return { same: mn===mx, min: mn, max: mx, isRefund: e.mode==='refund' };
+}
 // 회계식 금액 HTML: ₩ 왼쪽 · 숫자 오른쪽. neg면 − 기호를 숫자 앞에.
 function accMoney(n, neg){
   const won2 = v => (Math.abs(v)||0).toLocaleString('ko-KR');
@@ -3550,7 +3563,12 @@ function buildAllSheetHTML(opts){
   const showTotal = opts.showTotal !== false;   // 기본: 표시
   if(!items.length || !students.length) return '';
   const won2 = n => (n||0).toLocaleString('ko-KR');
-  const perLine = (e)=> e.mode==='refund'?`↩️ ${accMoney(Math.abs(e.per|| ((e.students||[]).find(x=>true)?.amt) || 0), false)}`:`${accMoney(e.per||0, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
+  const perLine = (e)=>{
+    const p = perSummary(e, students, amtOf);
+    const pre = p.isRefund ? '↩️ ' : '';
+    if(p.same) return `${pre}${accMoney(p.min, false)}${e.mode==='equal'?'<span style="opacity:.6;font-size:8.5px">/인</span>':''}`;
+    return `${pre}<span class="acc"><span class="sym">₩</span><span class="num">${won(p.min)}~${won(p.max)}</span></span><span style="display:block;font-size:8px;opacity:.7;text-align:right;padding-right:9px">개별</span>`;
+  };
   const gradeW=56, nameW=64, totW=showTotal?104:0, pad=30, maxInner=1063;
   const availForItems = maxInner - gradeW - nameW - totW;
   let itemColW = Math.max(64, Math.floor(availForItems / items.length));
@@ -3764,7 +3782,7 @@ function renderAllSheet(){
     </tr>
     <tr style="background:var(--gp);color:#3a5a48">
       <th style="padding:5px 10px;text-align:center;position:sticky;left:0;background:var(--gp);z-index:3;font-size:11px;font-weight:700">이름 \\ 1인당</th>
-      ${items.map(e=>`<th style="padding:5px 0;border-left:1px solid #e2e8e5;font-weight:700;font-size:11.5px">${e.mode==='refund'?'<span style="padding-left:8px">↩️</span>':''}${accInline(Math.abs(e.per|| ((e.students||[]).find(s=>true)?.amt) || 0), {color:'#3a5a48',weight:'700',size:'11.5px'})}</th>`).join('')}
+      ${items.map(e=>`<th style="padding:5px 0;border-left:1px solid #e2e8e5;font-weight:700;font-size:11.5px">${(()=>{const p=perSummary(e, allStudents, amtOf);const pre=p.isRefund?'<span style=\"padding-left:8px\">↩️</span>':'';if(p.same) return pre+accInline(p.min, {color:'#3a5a48',weight:'700',size:'11.5px'});return pre+`<span style=\"display:inline-flex;align-items:baseline;gap:2px;padding:0 9px 0 8px\"><span style=\"font-size:9px;opacity:.7\">₩</span><span style=\"font-variant-numeric:tabular-nums\">${won(p.min)}~${won(p.max)}</span><span style=\"font-size:8.5px;opacity:.65\">개별</span></span>`;})()}</th>`).join('')}
       <th style="position:sticky;right:0;background:var(--gp)"></th>
     </tr>`;
 
