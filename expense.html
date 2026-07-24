@@ -688,7 +688,7 @@ function applyModeUI(){
   const md=$I('mode-desc'); if(md) md.textContent = descs[expMode]||'';
   const isRefundEq = expMode==='refundeq';
   const wt=$I('wrap-total'); if(wt) wt.style.display = (expMode==='equal'||isRefundEq)?'':'none';
-  const wq=$I('wrap-schoolqty'); if(wq) wq.style.display = (expMode==='equal'||isRefundEq)?'':'none';
+  const wq=$I('wrap-schoolqty'); if(wq) wq.style.display = (expMode==='equal'||expMode==='indiv'||isRefundEq)?'':'none';
   const wtr=$I('wrap-teacherRefund'); if(wtr) wtr.style.display = expMode==='refund'?'':'none';
   const ib=$I('indiv-bar'); if(ib) ib.style.display = (expMode==='indiv'||expMode==='refund')?'':'none';
   const gb=$I('group-bar'); if(gb) gb.style.display = expMode==='group'?'':'none';
@@ -697,7 +697,9 @@ function applyModeUI(){
   const totLbl=$I('ex-total-label');
   if(totLbl) totLbl.textContent = isRefundEq ? '총 반환 금액 (원)' : '총 청구 금액 (원)';
   const sqLbl=$I('ex-schoolqty-label');
-  if(sqLbl) sqLbl.textContent = isRefundEq ? '선생님 수 (학교로 반환되는 몫)' : '학교 청구분 수량 (교사 사용분·학교 보관분)';
+  if(sqLbl) sqLbl.textContent = isRefundEq ? '선생님 수 (학교로 반환되는 몫)'
+    : expMode==='indiv' ? '학교 청구분 금액 (원) — 학교 부담으로 함께 청구'
+    : '학교 청구분 수량 (교사 사용분·학교 보관분)';
   const idsc=$I('indiv-desc');
   if(idsc) idsc.textContent = expMode==='refund'
     ? '↩️ 반환 금액 입력 — 대부분 금액이 비슷하면 기본 금액을 전체 적용한 뒤, 다른 학생만 수정하세요.'
@@ -1129,7 +1131,7 @@ async function editExpense(id){
   if($I('ex-items')) $I('ex-items').value = e.items||'';
   if($I('ex-detail')) $I('ex-detail').value = e.detail||'';
   if($I('ex-total')) $I('ex-total').value = (e.mode==='equal'||!e.mode) ? (e.total||'') : '';
-  if($I('ex-schoolqty')) $I('ex-schoolqty').value = e.schoolQty||0;
+  if($I('ex-schoolqty')) $I('ex-schoolqty').value = (e.mode==='indiv') ? (e.schoolTotal||0) : (e.schoolQty||0);
   if($I('ex-school')) $I('ex-school').value = e.schoolNote||'';
   if($I('ex-teacher-refund')) $I('ex-teacher-refund').value = e.teacherRefund||0;
   if($I('ex-teacher-refund-note')) $I('ex-teacher-refund-note').value = e.teacherRefundNote||'';
@@ -1441,7 +1443,11 @@ function refreshSum(){
     $I('sum-count').textContent = n+'명';
     $I('sum-per').textContent = '개별';
     $I('sum-total').textContent = n ? (expMode==='refund'?'↩️ ':'')+'₩'+won(sum) : '-';
-    const se0 = $I('sum-school'); if(se0) se0.textContent = '-';
+    const se0 = $I('sum-school');
+    if(se0){
+      const schAmt = expMode==='indiv' ? (parseInt($I('ex-schoolqty')?.value||'0',10)||0) : 0;
+      se0.textContent = schAmt>0 ? '₩'+won(schAmt) : '-';
+    }
     return;
   }
   const sq = parseInt($I('ex-schoolqty')?.value||'0',10) || 0;
@@ -1922,16 +1928,18 @@ async function submitExpense(){
       date, subject, teacher,
       rows:[
         {k:'대상 인원', v:`${ids.length}명`},
-        {k:expMode==='refund'?'학생 반환 합계':'청구 합계', v:`₩${won(sum)}`},
+        {k:expMode==='refund'?'학생 반환 합계':'학생 청구 합계', v:`₩${won(sum)}`},
+        ...(expMode==='indiv'&&(parseInt($I('ex-schoolqty')?.value||'0',10)||0)>0?[{k:'학교 청구분', v:`₩${won(parseInt($I('ex-schoolqty').value,10)||0)}`}]:[]),
         ...(expMode==='refund'&&teacherRefund?[{k:'선생님 반환금', v:`₩${won(teacherRefund)}${teacherRefundNote?` (${esc(teacherRefundNote)})`:''}`}]:[]),
         {k:'', v:'<span style="color:var(--tl);font-size:11px">학생별 금액은 신청 내역 상세에서 확인</span>'}
       ],
       note: (receiptExempt && (existingReceipts.length+receipts.length)<1) ? `🧾 영수증 없음 · 사유: ${esc(receiptExemptReason)}` : ''
     })) return;
+    const schAmt = expMode==='indiv' ? (parseInt($I('ex-schoolqty')?.value||'0',10)||0) : 0;
     record = {
       org: expOrg, mode: expMode, date, semester, teacher, subject, items, detail,
-      total: sum, per: null, count: ids.length,
-      schoolQty: 0, schoolTotal: 0,
+      total: sum + schAmt, per: null, count: ids.length,
+      schoolQty: 0, schoolTotal: schAmt,
       teacherRefund, teacherRefundNote,
       students, bank, holder, account, schoolNote,
       createdByUid: CU.uid, createdByName: CU.name||'',
@@ -2154,7 +2162,7 @@ function viewExpense(id){
           ? `<div><b>방식</b> : ${e.mode==='refund'?'↩️ 개별 반환':'✏️ 개별 청구'}</div><div><b>합계</b> : <span style="color:${e.mode==='refund'?'#0d9488':'var(--gm)'};font-weight:700">₩${won(e.total)}</span> (${e.count}명, 학생별 금액은 아래 명단 참조)</div>`
           : `<div><b>청구 금액</b> : ₩${won(e.total)}</div><div><b>1인당 청구</b> : ₩${won(e.per)} × ${e.count}명 = ₩${won(e.per*e.count)}</div>`}
         ${e.bank||e.account?`<div><b>정산 계좌</b> : ${esc(e.bank||'')} ${esc(e.account||'')} (${esc(e.holder||'')})</div>`:''}
-        ${(e.schoolQty||e.schoolNote)?`<div><b>학교 청구분</b> : ${e.schoolQty?`${e.schoolQty}개분 ₩${won(e.schoolTotal!=null?e.schoolTotal:(e.per||0)*(e.schoolQty||0))}`:''}${e.schoolNote?` ${e.schoolQty?'— ':''}${esc(e.schoolNote)}`:''}</div>`:''}
+        ${(e.schoolQty||e.schoolTotal||e.schoolNote)?`<div><b>학교 청구분</b> : ${e.schoolQty?`${e.schoolQty}개분 ₩${won(e.schoolTotal!=null?e.schoolTotal:(e.per||0)*(e.schoolQty||0))}`:(e.schoolTotal?`₩${won(e.schoolTotal)}`:'')}${e.schoolNote?` ${(e.schoolQty||e.schoolTotal)?'— ':''}${esc(e.schoolNote)}`:''}</div>`:''}
         ${e.teacherRefund?`<div><b>선생님 반환금</b> : <span style="color:var(--info);font-weight:700">−₩${won(e.teacherRefund)}</span> (학교 청구분에서 감산)${e.teacherRefundNote?` — ${esc(e.teacherRefundNote)}`:''}</div>`:''}
       </div>
       <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">청구 체크 현황 (${e.count}명 체크) <span style="font-size:12px;color:var(--tl);font-weight:400">— ✓ 파란색이 청구 대상, 회색은 미청구</span></div>
