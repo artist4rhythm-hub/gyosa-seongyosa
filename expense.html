@@ -308,9 +308,14 @@ function thisYearClasses(org){
 }
 
 function studentGrade(sid){
+  // 반(studentClass)과 같은 우선순위로 학년을 읽는다 — 반과 학년이 서로 다른 반에서 오는 혼선 방지
+  const primary = studentClass(sid);
+  if(primary && primary.grades && primary.grades[sid]) return primary.grades[sid];
+  // 소속 반에 학년 기록이 없을 때만 다른 반 기록을 참조 (올해 반 우선)
   const y = new Date().getFullYear();
-  const sorted = [...CLASSES].sort((a,b)=>((b.year||y)===y?1:0)-((a.year||y)===y?1:0));  // 올해 반 우선
+  const sorted = [...CLASSES].sort((a,b)=>((b.year||y)===y?1:0)-((a.year||y)===y?1:0));
   for(const c of sorted){
+    if(c===primary) continue;
     if((c.students||[]).includes(sid) && c.grades && c.grades[sid]) return c.grades[sid];
   }
   return '';
