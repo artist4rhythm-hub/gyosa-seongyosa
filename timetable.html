@@ -63,6 +63,18 @@
   @media(min-width:1500px){
     .layout.wide{ grid-template-columns:minmax(340px,0.6fr) minmax(700px,1.7fr) !important; }
   }
+  /* 완성표 전체화면: 좌측 배열 목록만 좁게 남기고 완성표를 화면 가득 */
+  .layout.fullout{ grid-template-columns:250px 1fr !important; gap:12px; }
+  .layout.fullout #setup-col{ display:none !important; }
+  .layout.fullout .out-col{ position:static !important; max-height:none !important; }
+  .layout.fullout .palette{ padding:6px 8px; gap:4px }
+  .layout.fullout .palette .pchip{ font-size:10px; padding:3px 7px }
+  .layout.fullout #board .slot{ font-size:11px; padding:4px 6px }
+  .layout.fullout #board .dminus,.layout.fullout #board .dplus{ width:20px;height:20px;font-size:12px }
+  .layout.fullout #board input[type=text]{ font-size:11px }
+  body.fullout-on .wrap{ max-width:none !important; padding:10px 14px 40px }
+  body.fullout-on .page-head, body.fullout-on #weekStats, body.fullout-on .tabbar{ display:none }
+  .layout.fullout .out-week-row{ overflow-x:auto }
   /* 주간 뷰: '지금 배열 중' — 수정 버튼과 같은 크기·모양, 눌린 음영 */
   .day-editing{background:var(--gl) !important;border-color:var(--accent) !important;color:var(--accent-deep) !important;box-shadow:inset 0 1px 3px rgba(0,0,0,.12);font-weight:700}
   .layout.wide #setup-col{ grid-column:1 / -1; display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap; }
@@ -428,7 +440,8 @@
   <div class="layout" id="layout">
     <!-- LEFT: settings -->
     <div id="setup-col">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px;gap:6px">
+        <button class="btn btn-sm btn-ghost" id="btnFullOut" onclick="toggleFullOutput()" title="완성표만 화면 가득 보기">⛶ 완성표 전체화면</button>
         <button class="btn btn-sm btn-ghost" id="btnWideView" onclick="toggleWideView()" title="설정을 접고 배열·완성표를 넓게">↔ 완성표 크게</button>
       </div>
       <!-- 1+2: 부서 설정 + 등교 시각 (세로 묶음) -->
@@ -2124,6 +2137,25 @@ $('#btnReset').onclick=()=>{
 };
 
 /* ---------- 이미지 저장 ---------- */
+/* ---------- 완성표 전체화면 (좌측 배열 목록만 남기고 가득) ---------- */
+function toggleFullOutput(){
+  const layout = document.getElementById('layout');
+  const btn = document.getElementById('btnFullOut');
+  const on = layout.classList.toggle('fullout');
+  document.body.classList.toggle('fullout-on', on);
+  if(on) layout.classList.remove('wide');   // 두 모드 동시 적용 방지
+  if(btn) btn.textContent = on ? '⛶ 기본 화면으로' : '⛶ 완성표 전체화면';
+  const wv = document.getElementById('btnWideView');
+  if(wv) wv.style.display = on ? 'none' : '';
+  if(on) window.scrollTo({top:0, behavior:'smooth'});
+  try{ localStorage.setItem('tt_fullout', on?'1':'0'); }catch(e){}
+}
+window.toggleFullOutput = toggleFullOutput;
+// ESC로 해제
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape' && document.getElementById('layout')?.classList.contains('fullout')) toggleFullOutput();
+});
+
 /* ---------- 완성표 크게 보기 (설정을 상단 가로 배치로) ---------- */
 function toggleWideView(){
   const layout = document.getElementById('layout');
@@ -2176,21 +2208,38 @@ function exportImage(){
   const filterEl=document.getElementById('outFilter');
   const prevDisp = filterEl?filterEl.style.display:'';
   if(filterEl) filterEl.style.display='none';   // 필터 버튼은 이미지에서 제외
-  // 캡처 시 흰 배경 + 여백 확보를 위해 임시 래퍼
-  const opts={backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false,
-    windowWidth:area.scrollWidth, windowHeight:area.scrollHeight,
-    scrollX:0, scrollY:0};
-  html2canvas(area,opts).then(async canvas=>{
-    if(filterEl) filterEl.style.display=prevDisp;
-    const done = await saveCanvasImage(canvas, '시간표.png');
-    if(done) flash('이미지(PNG) 저장 완료');
-  }).catch(err=>{ if(filterEl) filterEl.style.display=prevDisp; console.warn(err); flash('이미지 생성 실패'); });
+  // 주간 가로 보기: 스크롤로 가려진 부분까지 전부 캡처되도록 잠시 펼침
+  const weekRow = area.querySelector('.out-week-row');
+  const outCol = area.closest('.out-col') || document.querySelector('.out-col');
+  const saved = [];
+  const relax = (el, props)=>{ if(!el) return; const s={el, prev:{}}; Object.keys(props).forEach(k=>{ s.prev[k]=el.style[k]; el.style[k]=props[k]; }); saved.push(s); };
+  if(weekRow){
+    relax(weekRow, {overflowX:'visible', width:'max-content'});
+    relax(outCol, {overflow:'visible', maxHeight:'none'});
+    relax(area, {overflow:'visible', width:'max-content'});
+  }
+  const restore = ()=>{ saved.forEach(s=>Object.keys(s.prev).forEach(k=>{ s.el.style[k]=s.prev[k]; })); if(filterEl) filterEl.style.display=prevDisp; };
+  // 레이아웃 반영 후 실제 크기로 캡처
+  requestAnimationFrame(()=>{
+    const W = Math.max(area.scrollWidth, area.getBoundingClientRect().width);
+    const H = Math.max(area.scrollHeight, area.getBoundingClientRect().height);
+    const opts={backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false,
+      width:W, height:H, windowWidth:W+40, windowHeight:H+40, scrollX:0, scrollY:0};
+    html2canvas(area,opts).then(async canvas=>{
+      restore();
+      const done = await saveCanvasImage(canvas, '시간표.png');
+      if(done) flash('이미지(PNG) 저장 완료');
+    }).catch(err=>{ restore(); console.warn(err); flash('이미지 생성 실패'); });
+  });
 }
 
 /* ---------- 인쇄 ---------- */
 function printTimetable(){
   if(!$('#output').firstChild){ flash('시간표가 비어 있습니다'); return; }
   const area=$('#captureArea').innerHTML;
+  // 주간 가로 보기(월~금 나열)이면 가로 방향 + 한 장에 맞춤
+  const isWeek = !!document.querySelector('#output .out-week-row');
+  const cols = isWeek ? document.querySelectorAll('#output .out-week-row .out-group').length : 1;
   const w=window.open('','_blank');
   w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>시간표 인쇄</title>
     <style>
@@ -2203,6 +2252,21 @@ function printTimetable(){
       table.tt td .sub .sub-t{opacity:.55;font-size:9px} table.tt td .sub .sub-d{font-weight:700;opacity:.9}
       table.tt td.tm .tm-a,table.tt td.tm .tm-b{display:inline}
       table.tt td .cellwrap{display:flex;flex-direction:column;justify-content:center;align-items:center;position:absolute;inset:0;overflow:hidden;padding:1px 4px}
+      /* 주간 가로 보기: 화면과 동일하게 월~금을 옆으로 나열 */
+      .out-week-row{display:flex;gap:8px;align-items:flex-start}
+      .out-week-row .out-group{flex:1 1 0;min-width:0;margin-bottom:0}
+      .out-week-row .tt{font-size:9.5px}
+      .out-week-row .tt .tm{width:46px!important;font-size:8px}
+      .out-week-row .tt colgroup col:nth-child(2){width:46px!important}
+      .out-week-row .tt .tm .tm-a,.out-week-row .tt .tm .tm-b{display:block;line-height:1.2}
+      .out-week-row .tt td .lab{font-size:10px}
+      .out-week-row .tt td .sub{flex-direction:column;gap:0;line-height:1.2}
+      .out-week-row .tt td .sub .sub-t{font-size:7.5px}
+      .out-week-row .tt td .sub .sub-d{font-size:8px}
+      .out-week-row .og-title{font-size:10px;margin-bottom:3px}
+      .out-week-row .og-title button,.out-week-row .og-title .day-editing{display:none} /* 편집 버튼은 인쇄 제외 */
+      .out-group{margin-bottom:14px}
+      .og-title{font-weight:700;margin-bottom:5px}
       /* 다른 표(주간통계 등)는 기본 */
       table:not(.tt){border-collapse:collapse;width:100%;font-size:12px}
       table:not(.tt) td{border:1px solid #ccc;text-align:center;padding:2px 5px}
@@ -2212,10 +2276,15 @@ function printTimetable(){
       .dept-stat{border:1px solid #ddd;border-radius:8px;padding:8px 11px}
       .ds-name{font-weight:700;margin-bottom:4px} .ds-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
       .ds-k{color:#888}
+      /* 필터 칩은 인쇄에서 숨김 */
+      #outFilter{display:none!important}
       /* 인쇄 시 셀 높이(인라인 style)를 그대로 유지 → 시간 비례 보존 */
       @media print{
-        @page{margin:12mm}
+        @page{margin:8mm; size:${isWeek?'A4 landscape':'auto'}}
         table.tt td{ height:auto; }
+        .out-week-row{break-inside:avoid;page-break-inside:avoid}
+        .out-week-row .out-group{break-inside:avoid;page-break-inside:avoid}
+        body{padding:0}
       }
     </style></head><body>${area}</body></html>`);
   w.document.close();
