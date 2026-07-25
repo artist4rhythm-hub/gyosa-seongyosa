@@ -6,6 +6,25 @@
 <title>시간표 틀 빌더</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+// html2canvas 로드 보강: 실패 시 대체 CDN 자동 시도 (이미지 저장 안정화)
+(function(){
+  function loadFallback(){
+    if(window.html2canvas) return;
+    var s=document.createElement('script');
+    s.src='https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js';
+    s.onerror=function(){
+      var s2=document.createElement('script');
+      s2.src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s);
+  }
+  // 첫 스크립트가 이미 실패했거나, 잠시 후에도 없으면 대체 로드
+  if(!window.html2canvas){ setTimeout(loadFallback, 500); }
+  window.addEventListener('load', function(){ if(!window.html2canvas) loadFallback(); });
+})();
+</script>
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
@@ -182,10 +201,10 @@
   .out-week-row .og-title{flex-wrap:wrap;gap:5px}
   .out-week-row .tt{font-size:10.5px}
   /* 시각을 세로 2줄로 (09:30 / ~10:00) — 좁은 폭에서도 안 잘림 */
-  .out-week-row .tt .tm{width:52px !important;font-size:9px;padding:2px 2px}
+  .out-week-row .tt .tm{width:52px !important;font-size:8.5px;padding:1px 2px}
   .out-week-row colgroup col:nth-child(2){width:52px !important}
-  .out-week-row .tt .tm .tm-a,.out-week-row .tt .tm .tm-b{display:block;line-height:1.25}
-  .out-week-row .tt .tm .tm-b{opacity:.75}
+  .out-week-row .tt .tm .tm-a,.out-week-row .tt .tm .tm-b{display:block;line-height:1.15}
+  .out-week-row .tt .tm .tm-b{opacity:.7}
   /* 주간 뷰에서는 블록 부제도 세로로 (시각 위 · 분 아래) */
   .out-week-row .tt td .sub{flex-direction:column;gap:0;line-height:1.25}
   .out-week-row .tt td .lab{font-size:11px}
@@ -1482,7 +1501,7 @@ function buildOneDayTable(depts, day, axis){
       const segLen=nextB-t;
       const span=Math.max(1,Math.round(segLen/unit));
       timeSkip=span-1;
-      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap"><span class="tm-a">${toStr(t)}</span>${span>1?`<span class="tm-b">~${toStr(nextB)}</span>`:''}</div></td>`;
+      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap"><span class="tm-a">${toStr(t)}</span><span class="tm-b">~${toStr(nextB)}</span></div></td>`;
     }
     if(allSameCommon){
       if(cov0.start===t){
@@ -1596,7 +1615,7 @@ function renderOutputOLD(){
       const segLen=nextB-t;
       const span=Math.max(1,Math.round(segLen/unit));
       timeSkip=span-1;
-      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap"><span class="tm-a">${toStr(t)}</span>${span>1?`<span class="tm-b">~${toStr(nextB)}</span>`:''}</div></td>`;
+      html+=`<td class="tm" rowspan="${span}"><div class="cellwrap"><span class="tm-a">${toStr(t)}</span><span class="tm-b">~${toStr(nextB)}</span></div></td>`;
     }
 
     if(allSameCommon){
@@ -2191,47 +2210,85 @@ async function saveCanvasImage(canvas, filename){
   }
   return new Promise(res=>{
     canvas.toBlob(blob=>{
+      if(!blob){ res(false); return; }
+      const url=URL.createObjectURL(blob);
       const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download=filename; a.click();
-      URL.revokeObjectURL(a.href);
+      a.href=url; a.download=filename; a.rel='noopener';
+      a.style.display='none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
       res(true);
     },'image/png');
   });
 }
 
-function exportImage(){
+async function exportImage(){
   const area=$('#captureArea');
   if(!area || !$('#output').firstChild){ flash('시간표가 비어 있습니다'); return; }
-  if(!window.html2canvas){ flash('이미지 모듈 로드 실패(인터넷 확인)'); return; }
-  flash('이미지 생성 중…');
-  const filterEl=document.getElementById('outFilter');
-  const prevDisp = filterEl?filterEl.style.display:'';
-  if(filterEl) filterEl.style.display='none';   // 필터 버튼은 이미지에서 제외
-  // 주간 가로 보기: 스크롤로 가려진 부분까지 전부 캡처되도록 잠시 펼침
-  const weekRow = area.querySelector('.out-week-row');
-  const outCol = area.closest('.out-col') || document.querySelector('.out-col');
-  const saved = [];
-  const relax = (el, props)=>{ if(!el) return; const s={el, prev:{}}; Object.keys(props).forEach(k=>{ s.prev[k]=el.style[k]; el.style[k]=props[k]; }); saved.push(s); };
-  if(weekRow){
-    relax(weekRow, {overflowX:'visible', width:'max-content'});
-    relax(outCol, {overflow:'visible', maxHeight:'none'});
-    relax(area, {overflow:'visible', width:'max-content'});
+  // html2canvas 로드 대기 (혹시 늦게 로드되는 경우)
+  if(!window.html2canvas){
+    flash('이미지 모듈 준비 중…');
+    await new Promise((res,rej)=>{ let n=0; const t=setInterval(()=>{ if(window.html2canvas){clearInterval(t);res();} else if(++n>40){clearInterval(t);rej();} },100); }).catch(()=>{});
+    if(!window.html2canvas){ flash('이미지 모듈 로드 실패 (인터넷 확인)'); return; }
   }
-  const restore = ()=>{ saved.forEach(s=>Object.keys(s.prev).forEach(k=>{ s.el.style[k]=s.prev[k]; })); if(filterEl) filterEl.style.display=prevDisp; };
-  // 레이아웃 반영 후 실제 크기로 캡처
-  requestAnimationFrame(()=>{
-    const W = Math.max(area.scrollWidth, area.getBoundingClientRect().width);
-    const H = Math.max(area.scrollHeight, area.getBoundingClientRect().height);
-    const opts={backgroundColor:'#ffffff',scale:2,useCORS:true,logging:false,
-      width:W, height:H, windowWidth:W+40, windowHeight:H+40, scrollX:0, scrollY:0};
-    html2canvas(area,opts).then(async canvas=>{
-      restore();
-      const done = await saveCanvasImage(canvas, '시간표.png');
-      if(done) flash('이미지(PNG) 저장 완료');
-    }).catch(err=>{ restore(); console.warn(err); flash('이미지 생성 실패'); });
-  });
+  flash('이미지 생성 중…');
+
+  const filterEl=document.getElementById('outFilter');
+  const outCol = area.closest('.out-col') || document.querySelector('.out-col');
+  const weekRow = area.querySelector('.out-week-row');
+
+  // 캡처 동안 스크롤·오버플로·높이 제한을 모두 해제 (원복용 저장)
+  const saved=[];
+  const relax=(el,props)=>{ if(!el) return; const s={el,prev:{}}; for(const k in props){ s.prev[k]=el.style[k]; el.style.setProperty(k, props[k], 'important'); } saved.push(s); };
+  const prevFilter = filterEl ? filterEl.style.display : '';
+  if(filterEl) filterEl.style.display='none';
+
+  // 주간 가로 뷰면 각 요일 표 폭의 합으로 정확한 폭 계산 (max-content 폭발 방지)
+  let targetW = 0;
+  if(weekRow){
+    const groups = [...weekRow.querySelectorAll('.out-group')];
+    const gap = 14 * Math.max(0, groups.length - 1);
+    targetW = groups.reduce((sum,g)=> sum + Math.ceil(g.getBoundingClientRect().width), 0) + gap + 8;
+  }
+
+  relax(outCol, {overflow:'visible','max-height':'none', position:'static'});
+  if(weekRow){
+    relax(weekRow, {overflow:'visible', width:targetW+'px','flex-wrap':'nowrap'});
+    relax(area,   {overflow:'visible', width:targetW+'px','max-width':'none'});
+  } else {
+    relax(area,   {overflow:'visible','max-width':'none'});
+  }
+
+  const restore=()=>{
+    saved.forEach(s=>{ for(const k in s.prev){ if(s.prev[k]) s.el.style.setProperty(k, s.prev[k]); else s.el.style.removeProperty(k); } });
+    if(filterEl) filterEl.style.display=prevFilter;
+  };
+
+  // 레이아웃이 실제로 펼쳐진 뒤 크기 측정
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  let W = Math.ceil(Math.max(area.scrollWidth, area.offsetWidth));
+  let H = Math.ceil(Math.max(area.scrollHeight, area.offsetHeight));
+  // 안전 상한 (비정상 폭 방지)
+  if(targetW && W > targetW + 100) W = targetW;
+  W = Math.min(W, 12000); H = Math.min(H, 12000);
+
+  try{
+    const canvas = await html2canvas(area, {
+      backgroundColor:'#ffffff', scale:2, useCORS:true, logging:false,
+      width:W, height:H, windowWidth:W, windowHeight:H, scrollX:0, scrollY:0,
+      x:0, y:0,
+    });
+    restore();
+    const done = await saveCanvasImage(canvas, '시간표.png');
+    if(done) flash('이미지(PNG) 저장 완료');
+  }catch(err){
+    restore();
+    console.warn('exportImage 실패:', err);
+    flash('이미지 생성 실패 — 다시 시도해 주세요');
+  }
 }
+window.exportImage = exportImage;
 
 /* ---------- 인쇄 ---------- */
 function printTimetable(){
