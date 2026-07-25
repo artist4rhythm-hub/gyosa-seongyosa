@@ -238,7 +238,7 @@ const BANKS = [
   {n:'수협은행', min:11, max:14}, {n:'저축은행', min:10, max:14}, {n:'기타', min:8, max:20},
 ];
 
-let ME=null, TOKEN='', MY_ITEMS=[], MY_SEM='';
+let ME=null, TOKEN='', MY_ITEMS=[], MY_SEM='', GRADE_SUMMARY=[], GRADE_LABEL='';
 
 /* ── 초기 로드: 선택지만 채움 (학생 정보는 서버에서만 조회) ── */
 const GRADE_OPTIONS = {
@@ -279,6 +279,7 @@ window.doAuth = async function(){
     const res = await fn({ org, name, gradeLabel, mmdd });
     const d = res.data;
     ME = d.student; TOKEN = d.token || ''; MY_ITEMS = d.items || []; MY_SEM = d.semester || '';
+    GRADE_SUMMARY = d.gradeSummary || []; GRADE_LABEL = d.gradeLabel || '';
     $('w-name').textContent = ME.name;
     $('w-meta').textContent = `${ME.gradeLabel||ME.grade+'학년'}${ME.className?` · ${ME.className}`:''}`;
     $('auth-card').style.display='none';
@@ -418,8 +419,45 @@ function renderMyExpenses(){
         </div>`;
       }).join('')}
     </div>
-    <div class="hint" style="margin-top:10px">· 금액이 (−)로 표시된 항목은 돌려드리는 금액입니다.</div>`;
+    <div class="hint" style="margin-top:10px">· 금액이 (−)로 표시된 항목은 돌려드리는 금액입니다.</div>
+    ${GRADE_SUMMARY.length?`<button class="btn btn-sub" style="margin-top:14px" onclick="toggleGradeSummary()">
+      📋 ${esc(GRADE_LABEL||'우리 학년')} 전체 내역 보기</button>
+    <div id="grade-summary" style="display:none;margin-top:14px"></div>`:''}`;
 }
+
+// ── 그 학년 전체 항목별 요약 (이름 없이) ──
+let gradeShown = false;
+window.toggleGradeSummary = function(){
+  const box = $('grade-summary');
+  const btn = event?.target;
+  gradeShown = !gradeShown;
+  if(!gradeShown){ box.style.display='none'; if(btn) btn.textContent = `📋 ${GRADE_LABEL||'우리 학년'} 전체 내역 보기`; return; }
+  if(btn) btn.textContent = '📋 전체 내역 접기';
+  const semLabel = MY_SEM ? MY_SEM.replace(/^(\d{4})-(\d)$/,'$1년 $2학기') : '';
+  box.innerHTML = `
+    <div style="background:var(--gp);border-radius:10px;padding:12px 14px;margin-bottom:10px;font-size:12px;color:var(--ts);line-height:1.6">
+      ${esc(semLabel)} ${esc(GRADE_LABEL||'')} 전체 항목입니다. 각 항목의 <b>1인당 금액</b>과 <b>대상 인원</b>을 보여드립니다.<br>
+      <span style="color:var(--tl)">· 학생 개인정보 보호를 위해 이름은 표시하지 않습니다.</span>
+    </div>
+    <div class="items">
+      ${GRADE_SUMMARY.map(s=>{
+        const ref = s.mode==='refund';
+        const per = s.same
+          ? `${ref?'− ':''}₩${won(s.perMin)}`
+          : `₩${won(s.perMin)}~${won(s.perMax)}`;
+        return `<div class="it">
+          <div class="l">
+            <div class="nm">${esc(s.subject||'')}${ref?' <span style="font-size:11px;color:var(--gm)">↩️ 반환</span>':''}</div>
+            <div class="mt">${esc(s.itemsText||'')}${s.teacher?` · 담당 ${esc(s.teacher)}`:''}${s.date?` · ${esc(s.date)}`:''} · 대상 ${s.count}명</div>
+          </div>
+          <div class="amt ${ref?'refund':''}" style="text-align:right">${per}<span style="display:block;font-size:9px;color:var(--tl);font-weight:500">1인당</span></div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="hint" style="margin-top:10px">· 개별 청구 항목은 학생마다 금액이 다를 수 있어 범위로 표시됩니다.</div>`;
+  box.style.display='block';
+  box.scrollIntoView({behavior:'smooth', block:'nearest'});
+};
 </script>
 </body>
 </html>
