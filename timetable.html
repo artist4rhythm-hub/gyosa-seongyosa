@@ -2898,9 +2898,14 @@ document.addEventListener('keydown',e=>{
 const SUBJ_COLORS=['#00704A','#3F7CB5','#7C6BC4','#C0871F','#B5612E','#4A8C6F','#9C5B86','#6A8E3C','#5A6B8C','#807A6B'];
 let planActiveClassId=null;
 
+// 계정(staff) 로드가 끝나면 편성 화면의 선생님 드롭다운을 채우기 위해 다시 그림
+window.__onStaffLoaded = function(){
+  const root=document.getElementById('planRoot');
+  if(root && root.style.display!=='none' && state.planning) renderPlanning();
+};
+
 function renderPlanning(){
-  const root=document.getElementById('planRoot'); if(!root) return;
-  ensurePlanning();
+  const root=document.getElementById('planRoot'); if(!root) return;  ensurePlanning();
   const p=state.planning;
   if(!planActiveClassId || !p.classes.some(c=>c.id===planActiveClassId)){
     planActiveClassId = p.classes[0] ? p.classes[0].id : null;
@@ -2929,12 +2934,43 @@ function renderPlanning(){
   // ----- 선생님 -----
   const tl=root.querySelector('#teacherList'); tl.innerHTML='';
   if(!p.teachers.length) tl.innerHTML='<div class="empty">선생님을 추가하세요</div>';
+  const staffList = window.ALL_STAFF || [];
   p.teachers.forEach(t=>{
     const row=document.createElement('div'); row.className='plan-row';
+    // 계정 목록 옵션 (이미 이 편성의 다른 선생님이 고른 uid는 제외)
+    const usedUids = new Set(p.teachers.filter(x=>x.id!==t.id && x.uid).map(x=>x.uid));
+    const inList = t.uid && staffList.some(s=>s.uid===t.uid);
+    const opts = `<option value="">— 선택 —</option>` +
+      staffList.map(s=>{
+        const dis = usedUids.has(s.uid) ? 'disabled' : '';
+        const sel = t.uid===s.uid ? 'selected' : '';
+        return `<option value="${s.uid}" ${sel} ${dis}>${escAttr(s.name)} · ${escAttr(s.orgLabel)}${dis?' (이미 추가됨)':''}</option>`;
+      }).join('') +
+      `<option value="__custom__" ${(t.uid==='' && t.name && !inList)?'selected':''}>✏️ 직접 입력…</option>`;
+    const showCustom = (t.custom || (t.name && !t.uid));
     row.innerHTML=`<span class="dept-swatch" style="background:${t.color}"></span>
-      <input type="text" value="${escAttr(t.name)}" class="t-name" placeholder="선생님 이름">
+      <select class="t-sel" style="flex:1;min-width:0;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit">${opts}</select>
+      <input type="text" value="${escAttr(t.name)}" class="t-name" placeholder="선생님 이름 직접 입력"
+        style="flex:1;min-width:0;${showCustom?'':'display:none'}">
       <button class="btn btn-ghost btn-sm t-del">✕</button>`;
-    row.querySelector('.t-name').oninput=e=>{t.name=e.target.value; renderPlanStats();};
+
+    const sel = row.querySelector('.t-sel');
+    const nameInput = row.querySelector('.t-name');
+    sel.onchange = e=>{
+      const v = e.target.value;
+      if(v==='__custom__'){
+        t.uid=''; t.custom=true; nameInput.style.display='';
+        nameInput.focus();
+      } else if(v===''){
+        t.uid=''; t.custom=false; t.name=''; nameInput.style.display='none';
+        renderPlanning();
+      } else {
+        const s = staffList.find(x=>x.uid===v);
+        t.uid=v; t.custom=false; t.name=s?s.name:''; nameInput.style.display='none';
+        renderPlanning();
+      }
+    };
+    nameInput.oninput=e=>{ t.name=e.target.value; t.custom=true; renderPlanStats(); };
     row.querySelector('.t-del').onclick=()=>{ p.teachers=p.teachers.filter(x=>x.id!==t.id);
       p.lessons.forEach(l=>l.teacherIds=l.teacherIds.filter(id=>id!==t.id)); renderPlanning(); };
     tl.appendChild(row);
@@ -3206,6 +3242,17 @@ onAuthStateChanged(auth, async (user)=>{
   } catch(e){}
   if(guard) guard.style.display='none';
   document.querySelector('.wrap')?.style.removeProperty('display');
+
+  // 전체 교직원 로드 (학년 편성에서 담당 선생님을 계정 목록에서 고르기 위함)
+  try {
+    const ssnap = await getDocs(collection(db,'staff'));
+    const orgName = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+    window.ALL_STAFF = ssnap.docs
+      .map(d=>{ const s=d.data(); return {uid:d.id, name:s.name||'', role:s.role||'', org:s.org||'', orgLabel:orgName[s.org]||s.org||'', status:s.acStatus||'active'}; })
+      .filter(s=> s.status==='active')
+      .sort((a,b)=> (a.org||'').localeCompare(b.org||'') || (a.name||'').localeCompare(b.name||'','ko'));
+    if(window.__onStaffLoaded) window.__onStaffLoaded();
+  } catch(e){ window.ALL_STAFF = []; }
   // 학년별 편성 접근 권한 로드 (슈퍼가 지정한 uid 목록)
   try {
     const pa = await getDoc(doc(db,'timetables','planAccess'));
