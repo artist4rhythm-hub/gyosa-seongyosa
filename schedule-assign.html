@@ -420,7 +420,6 @@ function computeBgBlocks(){
   const blockTypes = snap.blockTypes || [];
   const btMap = {}; blockTypes.forEach(b=> btMap[b.id]=b);
   const wk = snap.weekArrangements || {};
-  const startMode = snap.startMode || 'same';
 
   DAYS.forEach(dy=>{
     // 요일별 배열: weekArrangements[요일][deptId] 또는 arrangements[deptId]
@@ -429,16 +428,18 @@ function computeBgBlocks(){
     else if(snap.arrangements && snap.arrangements[did]) arr = snap.arrangements[did];
     if(!arr) return;
 
-    // 시작 시각: 부서의 start (HH:MM)
+    // 시작 시각: 부서의 start (HH:MM) — 완성 시간표와 동일
     let cur = parseHM(dept.start || '08:40');
     const blocks = [];
     arr.forEach(item=>{
       const bt = btMap[item.typeId];
       if(!bt){ return; }
-      const dur = Number(bt.dur)||0;
-      blocks.push({ startMin:cur, endMin:cur+dur, name:bt.name||'', color:bt.color||'#ccc',
-        isRest: !!bt.isRest || !bt.countsAsClass });
-      cur += dur;
+      // 완성 시간표와 동일: durOverride가 있으면 우선 적용
+      const dur = (item.durOverride!=null ? item.durOverride : bt.dur);
+      const d = Number(dur)||0;
+      blocks.push({ startMin:cur, endMin:cur+d, name:bt.name||'', color:bt.color||'#ccc',
+        isRest: !!bt.isRest });   // 완성 시간표와 동일: 순수 isRest만 (조회·예배는 수업 아님이지만 rest도 아님)
+      cur += d;
     });
     bgBlocks[dy] = blocks;
   });
