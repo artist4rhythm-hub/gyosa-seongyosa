@@ -71,10 +71,13 @@
   .av-tcell{background:var(--iv,#F2F0EB);color:var(--ts,#5a6560);font-weight:600;font-size:10px;
     font-variant-numeric:tabular-nums;padding:0 6px;justify-content:flex-end;white-space:nowrap}
   .av-slot{cursor:pointer;transition:background .06s}
-  .av-slot.ok{background:#E8F5EC}
-  .av-slot.ok:hover{background:#D4EDDD}
-  .av-slot.no{background:#E3E1DA;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(0,0,0,.05) 4px,rgba(0,0,0,.05) 8px)}
-  .av-slot.no:hover{background:#D3D0C8}
+  .av-slot.ok{background:#E3F5E9}
+  .av-slot.ok:hover{background:#CDEBD8}
+  .av-slot.no{background:#FBE0DE}
+  .av-slot.no:hover{background:#F5C9C6}
+  /* 전체 보기: 가능 인원 비율에 따른 음영 (녹색 진할수록 많이 가능) */
+  .av-slot.heat{cursor:default;font-size:10px;font-weight:700;color:#1E3932}
+  .av-slot.heat:hover{filter:brightness(.96)}
   .av-hourline{border-bottom:1.5px solid var(--ivd,#E3E1DA) !important}
 
   .legend{display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--ts,#5a6560);flex-wrap:wrap}
@@ -89,6 +92,13 @@
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--gd,#1E3932);color:#fff;
     padding:12px 22px;border-radius:100px;font-size:13.5px;font-weight:600;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.on{opacity:1}
+  /* 뷰 전환 버튼 */
+  .vbtn{font-family:inherit;font-size:12px;font-weight:700;padding:6px 14px;border:none;border-radius:100px;
+    background:transparent;color:var(--ts,#5a6560);cursor:pointer;transition:all .12s}
+  .vbtn.active{background:var(--wh,#fff);color:var(--gd,#1E3932);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+  /* 전체 현황 범례 */
+  .heat-legend{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--ts,#5a6560);flex-wrap:wrap;margin-top:12px}
+  .heat-legend .sw{display:inline-block;width:22px;height:14px;border-radius:3px;vertical-align:-2px}
 </style>
 </head>
 <body>
@@ -106,14 +116,21 @@
   <!-- 수업 가능 시간 -->
   <div id="tab-avail">
     <div class="panel">
-      <div class="ptitle">🕐 선생님별 수업 가능 시간</div>
-      <div class="pdesc">
+      <div class="ptitle">🕐 선생님별 수업 가능 시간
+        <span style="margin-left:auto;display:inline-flex;gap:4px;background:var(--iv,#F2F0EB);border-radius:100px;padding:3px">
+          <button class="vbtn active" id="vb-one" onclick="setView('one')">👤 개별 설정</button>
+          <button class="vbtn" id="vb-all" onclick="setView('all')">👥 전체 현황</button>
+        </span>
+      </div>
+      <div class="pdesc" id="avail-desc">
         각 선생님이 <b>수업에 들어갈 수 있는 시간</b>을 요일별로 설정합니다. 기본은 모두 <b style="color:#1E7A44">가능</b>이며,
-        배치가 안 되는 시간(다른 기관 일정·개인 사정 등)을 <b style="color:#8B7355">불가</b>로 칠하세요.
+        배치가 안 되는 시간(다른 기관 일정·개인 사정 등)을 <b style="color:#C0392B">불가</b>로 칠하세요.
         나중에 시간표를 자동 배치할 때, <b>불가 시간에는 그 선생님이 배정되지 않습니다.</b>
         <br><span style="color:var(--tl,#93A09A)">· 칸을 클릭하거나 드래그해서 가능/불가를 전환합니다. · 요일마다 다르게 설정할 수 있습니다.</span>
       </div>
-      <div class="av-layout">
+
+      <!-- 개별 설정 뷰 -->
+      <div class="av-layout" id="view-one">
         <div>
           <div style="font-size:12px;font-weight:800;color:var(--gm,#00704A);margin-bottom:8px;padding-left:2px">선생님</div>
           <div class="tt-list" id="tt-list"><div style="font-size:12px;color:var(--tl)">불러오는 중…</div></div>
@@ -126,6 +143,11 @@
           </div>
           <div id="grid-content" style="display:none"></div>
         </div>
+      </div>
+
+      <!-- 전체 현황 뷰 -->
+      <div id="view-all" style="display:none">
+        <div id="all-content"></div>
       </div>
     </div>
   </div>
@@ -257,6 +279,90 @@ window.selectTeacher = function(uid){
   renderTeacherList();
   renderGrid();
 };
+
+// ── 개별/전체 보기 전환 ──
+let curView = 'one';
+window.setView = function(v){
+  if(v===curView) return;
+  if(dirty && v==='all'){
+    if(!confirm('저장하지 않은 변경사항이 있습니다. 전체 현황으로 이동할까요?')) return;
+  }
+  curView = v;
+  $I('vb-one').classList.toggle('active', v==='one');
+  $I('vb-all').classList.toggle('active', v==='all');
+  $I('view-one').style.display = v==='one' ? '' : 'none';
+  $I('view-all').style.display = v==='all' ? '' : 'none';
+  const desc = $I('avail-desc');
+  if(v==='all'){
+    desc.innerHTML = '모든 선생님의 가능 시간을 <b>한눈에</b> 봅니다. 칸이 <b style="color:#1E7A44">진한 녹색</b>일수록 그 시간에 <b>가능한 선생님이 많고</b>, <b style="color:#C0392B">빨강</b>이면 아무도 없습니다. 요일·시간대별로 어디가 여유 있는지 파악할 때 유용합니다.';
+    renderAllView();
+  } else {
+    desc.innerHTML = '각 선생님이 <b>수업에 들어갈 수 있는 시간</b>을 요일별로 설정합니다. 기본은 모두 <b style="color:#1E7A44">가능</b>이며, 배치가 안 되는 시간을 <b style="color:#C0392B">불가</b>로 칠하세요. <b>불가 시간에는 그 선생님이 배정되지 않습니다.</b><br><span style="color:var(--tl,#93A09A)">· 칸을 클릭하거나 드래그해서 전환합니다. · 요일마다 다르게 설정할 수 있습니다.</span>';
+  }
+};
+
+// 가능 인원수 → 배경색 (0명=빨강, 많을수록 진한 녹색)
+function heatColor(avail, total){
+  if(total===0) return '#F2F0EB';
+  if(avail===0) return '#F5C0BC';        // 아무도 없음 = 빨강
+  const r = avail/total;                  // 0~1
+  // 연한 녹색 → 진한 녹색
+  if(r<=0.25) return '#E8F3EC';
+  if(r<=0.5)  return '#CFE9D8';
+  if(r<=0.75) return '#A9D8BC';
+  return '#7EC69B';
+}
+
+function renderAllView(){
+  const box = $I('all-content');
+  if(!TEACHERS.length){ box.innerHTML='<div class="empty"><div class="t1">선생님이 없습니다.</div></div>'; return; }
+  const total = TEACHERS.length;
+
+  // 각 요일×시각별 가능 인원 계산
+  const cell = (dy,m)=>{
+    let avail = 0;
+    TEACHERS.forEach(t=>{
+      const a = AVAIL[t.uid];
+      const blocked = a && a[dy] && a[dy].has(m);
+      if(!blocked) avail++;
+    });
+    return avail;
+  };
+
+  let cells = '';
+  cells += `<div class="av-cell av-hcell" style="background:var(--iv);color:var(--ts)">시각</div>`;
+  DAYS.forEach(dy=> cells += `<div class="av-cell av-hcell">${dy}</div>`);
+  SLOTS.forEach(m=>{
+    const isHour = (m%60===0);
+    const showLabel = (m%30===0);
+    cells += `<div class="av-cell av-tcell ${isHour?'av-hourline':''}">${showLabel?toHM(m):''}</div>`;
+    DAYS.forEach(dy=>{
+      const av = cell(dy,m);
+      const bg = heatColor(av, total);
+      const title = `${dy} ${toHM(m)} · 가능 ${av}/${total}명`;
+      cells += `<div class="av-cell av-slot heat ${isHour?'av-hourline':''}" style="background:${bg}"
+        title="${title}">${av>0?av:''}</div>`;
+    });
+  });
+
+  box.innerHTML = `
+    <div class="grid-head">
+      <div class="grid-who">👥 전체 선생님 가능 현황 <span style="font-size:12px;color:var(--tl);font-weight:600">${total}명 기준</span></div>
+    </div>
+    <div class="av-grid-wrap">
+      <div class="av-grid" style="grid-template-columns:64px repeat(${DAYS.length}, 1fr)">${cells}</div>
+    </div>
+    <div class="heat-legend">
+      <span>가능 인원:</span>
+      <span><i class="sw" style="background:#F5C0BC"></i>0명</span>
+      <span><i class="sw" style="background:#E8F3EC"></i>적음</span>
+      <span><i class="sw" style="background:#CFE9D8"></i></span>
+      <span><i class="sw" style="background:#A9D8BC"></i></span>
+      <span><i class="sw" style="background:#7EC69B"></i>많음</span>
+      <span style="color:var(--tl);margin-left:6px">· 숫자는 그 시간에 가능한 선생님 수입니다</span>
+    </div>`;
+}
+window.renderAllView = renderAllView;
 
 // ── 격자 렌더 ──
 function renderGrid(){
