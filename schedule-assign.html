@@ -65,11 +65,18 @@
   .av-grid-wrap{overflow-x:auto}
   .av-grid{display:grid;border:1px solid var(--ivd,#E3E1DA);border-radius:10px;overflow:hidden;user-select:none;min-width:520px}
   .av-cell{border-right:1px solid var(--iv,#F2F0EB);border-bottom:1px solid var(--iv,#F2F0EB);font-size:10.5px;
-    display:flex;align-items:center;justify-content:center;position:relative}
+    display:flex;align-items:center;justify-content:center;position:relative;min-height:9px}
   .av-cell:last-child{border-right:none}
   .av-hcell{background:var(--gd,#1E3932);color:#fff;font-weight:800;font-size:12.5px;padding:9px 4px;text-align:center}
-  .av-tcell{background:var(--iv,#F2F0EB);color:var(--ts,#5a6560);font-weight:600;font-size:10px;
-    font-variant-numeric:tabular-nums;padding:0 6px;justify-content:flex-end;white-space:nowrap}
+  .av-tcell{background:var(--iv,#F2F0EB);color:var(--ts,#5a6560);font-weight:600;font-size:9.5px;
+    font-variant-numeric:tabular-nums;padding:0 6px;justify-content:flex-end;white-space:nowrap;min-height:9px}
+  /* 배경 시간표 블록 (반투명) — 가능/불가 색 위에 은은하게 */
+  .av-slot.bg-class::before,.av-slot.bg-rest::before{content:'';position:absolute;inset:0;
+    background:var(--bg-color,#ccc);opacity:.16;pointer-events:none}
+  .av-slot.bg-rest::before{opacity:.09}
+  .av-slot .bg-name{position:absolute;top:1px;left:3px;font-size:8.5px;font-weight:700;
+    color:var(--bg-color,#555);opacity:.7;white-space:nowrap;pointer-events:none;z-index:1;
+    filter:brightness(.7)}
   .av-slot{cursor:pointer;transition:background .06s}
   .av-slot.ok{background:#E3F5E9}
   .av-slot.ok:hover{background:#CDEBD8}
@@ -129,6 +136,14 @@
         <br><span style="color:var(--tl,#93A09A)">· 칸을 클릭하거나 드래그해서 가능/불가를 전환합니다. · 요일마다 다르게 설정할 수 있습니다.</span>
       </div>
 
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;padding:10px 12px;background:var(--iv,#F2F0EB);border-radius:10px">
+        <span style="font-size:12.5px;font-weight:700;color:var(--gd,#1E3932)">🎨 배경 시간표</span>
+        <select id="bg-dept" onchange="onBgChange()" style="font-family:inherit;font-size:12.5px;padding:6px 10px;border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);min-width:200px">
+          <option value="">배경 없음</option>
+        </select>
+        <span style="font-size:11.5px;color:var(--tl,#93A09A)">· 부서 시간표를 희미하게 깔아, 어느 시간이 수업·쉬는시간인지 보며 설정할 수 있어요</span>
+      </div>
+
       <!-- 개별 설정 뷰 -->
       <div class="av-layout" id="view-one">
         <div>
@@ -182,7 +197,7 @@ function toast(msg){ const t=$I('toast'); t.textContent=msg; t.classList.add('on
 const DAYS = ['월','화','수','목','금'];
 const START_MIN = 8*60+30;    // 08:30
 const END_MIN   = 15*60+30;   // 15:30
-const STEP = 15;              // 15분 단위 칸
+const STEP = 5;               // 5분 단위 칸 (세밀하게)
 const SLOTS = [];
 for(let m=START_MIN; m<END_MIN; m+=STEP) SLOTS.push(m);
 const toHM = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
@@ -194,6 +209,11 @@ let curTeacher = null;   // 선택된 선생님 uid
 let AVAIL = {};
 let dirty = false;
 let painting = false, paintMode = null;   // 드래그 칠하기
+
+// 시간표 틀 (배경 반투명 표시용)
+let FRAMES = [];         // 저장된 시간표 틀 목록
+let bgDeptKey = '';      // 선택된 배경 부서 (frameId::deptId)
+// bgBlocks[요일] = [{startMin, endMin, name, color, isRest}]  — 배경 계산 결과
 
 let curTab = 'avail';
 window.showTab = function(t){
@@ -216,6 +236,7 @@ onAuthStateChanged(auth, async user => {
     $I('ms').style.display='block';
 
     await loadTeachers();
+    await loadFrames();
   } catch(e){
     $I('gate-msg').textContent='오류: '+(e.message||'');
     $I('gate-btn').style.display='inline-block';
@@ -223,8 +244,7 @@ onAuthStateChanged(auth, async user => {
 });
 
 // ── 선생님 목록 로드 ──
-async function loadTeachers(){
-  const snap = await getDocs(collection(db,'staff'));
+async function loadTeachers(){  const snap = await getDocs(collection(db,'staff'));
   const COLORS = ['#00704A','#3F7CB5','#7C6BC4','#C0871F','#B5612E','#4A8C6F','#9C5B86','#6A8E3C','#5A6B8C','#807A6B','#0D8478','#B5484D'];
   TEACHERS = snap.docs.map((d,i)=>{
     const s = d.data();
@@ -249,6 +269,88 @@ function ensureAvail(uid){
   if(!AVAIL[uid]){ const b={}; DAYS.forEach(dy=>b[dy]=new Set()); AVAIL[uid]=b; }
   return AVAIL[uid];
 }
+
+// ── 시간표 틀 로드 (배경 표시용) ──
+async function loadFrames(){
+  FRAMES = [];
+  try {
+    const snap = await getDoc(doc(db,'timetables','main'));
+    if(snap.exists() && Array.isArray(snap.data().list)) FRAMES = snap.data().list;
+  } catch(e){ FRAMES = []; }
+  // 배경 부서 선택기 채우기
+  renderBgSelect();
+}
+
+// 부서 선택 드롭다운 (틀 × 부서 조합)
+function renderBgSelect(){
+  const sel = $I('bg-dept'); if(!sel) return;
+  let opts = '<option value="">배경 없음</option>';
+  FRAMES.forEach(f=>{
+    const depts = (f.snapshot && f.snapshot.departments) || [];
+    depts.forEach(d=>{
+      opts += `<option value="${f.id}::${d.id}">${esc(f.name)} · ${esc(d.name)}</option>`;
+    });
+  });
+  sel.innerHTML = opts;
+  // 저장된 선택 복원
+  try { const saved = localStorage.getItem('sa_bg_dept'); if(saved){ sel.value = saved; bgDeptKey = saved; } } catch(e){}
+}
+
+window.onBgChange = function(){
+  const sel = $I('bg-dept');
+  bgDeptKey = sel.value;
+  try { localStorage.setItem('sa_bg_dept', bgDeptKey); } catch(e){}
+  computeBgBlocks();
+  // 현재 보이는 뷰 다시 그리기
+  if(curView==='one' && curTeacher) renderGrid();
+  else if(curView==='all') renderAllView();
+};
+
+// 선택된 부서의 요일별 블록을 시각으로 계산
+let bgBlocks = {};   // {요일: [{startMin,endMin,name,color,isRest}]}
+function computeBgBlocks(){
+  bgBlocks = {};
+  if(!bgDeptKey){ return; }
+  const [fid, did] = bgDeptKey.split('::');
+  const frame = FRAMES.find(f=>f.id===fid);
+  if(!frame || !frame.snapshot){ return; }
+  const snap = frame.snapshot;
+  const dept = (snap.departments||[]).find(d=>d.id===did);
+  if(!dept){ return; }
+  const blockTypes = snap.blockTypes || [];
+  const btMap = {}; blockTypes.forEach(b=> btMap[b.id]=b);
+  const wk = snap.weekArrangements || {};
+  const startMode = snap.startMode || 'same';
+
+  DAYS.forEach(dy=>{
+    // 요일별 배열: weekArrangements[요일][deptId] 또는 arrangements[deptId]
+    let arr = null;
+    if(wk[dy] && wk[dy][did]) arr = wk[dy][did];
+    else if(snap.arrangements && snap.arrangements[did]) arr = snap.arrangements[did];
+    if(!arr) return;
+
+    // 시작 시각: 부서의 start (HH:MM)
+    let cur = parseHM(dept.start || '08:40');
+    const blocks = [];
+    arr.forEach(item=>{
+      const bt = btMap[item.typeId];
+      if(!bt){ return; }
+      const dur = Number(bt.dur)||0;
+      blocks.push({ startMin:cur, endMin:cur+dur, name:bt.name||'', color:bt.color||'#ccc',
+        isRest: !!bt.isRest || !bt.countsAsClass });
+      cur += dur;
+    });
+    bgBlocks[dy] = blocks;
+  });
+}
+function parseHM(s){ const m=String(s||'').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1])*60+(+m[2]) : 8*60+40; }
+
+// 특정 요일·시각(슬롯)에 걸치는 배경 블록 찾기
+function bgAt(dy, m){
+  const list = bgBlocks[dy]; if(!list) return null;
+  return list.find(b=> m>=b.startMin && m<b.endMin) || null;
+}
+
 function hasAnyBlock(uid){
   const a = AVAIL[uid]; if(!a) return false;
   return DAYS.some(dy=> a[dy] && a[dy].size>0);
@@ -276,6 +378,7 @@ window.selectTeacher = function(uid){
     if(!confirm('저장하지 않은 변경사항이 있습니다. 이동할까요?')) return;
   }
   curTeacher = uid; dirty = false;
+  computeBgBlocks();
   renderTeacherList();
   renderGrid();
 };
@@ -381,12 +484,19 @@ function renderGrid(){
   // 행
   SLOTS.forEach((m)=>{
     const isHour = (m%60===0);
-    const showLabel = (m%30===0);   // 30분마다 시각 표기
+    const showLabel = (m%15===0);   // 5분 단위이므로 15분마다 시각 표기
     cells += `<div class="av-cell av-tcell ${isHour?'av-hourline':''}">${showLabel?toHM(m):''}</div>`;
     DAYS.forEach(dy=>{
       const blocked = AVAIL[curTeacher][dy].has(m);
-      cells += `<div class="av-cell av-slot ${blocked?'no':'ok'} ${isHour?'av-hourline':''}"
-        data-day="${dy}" data-m="${m}"></div>`;
+      const bg = bgAt(dy, m);
+      // 배경 블록: 반투명 색 + 블록 시작 칸에만 이름 표시
+      let bgStyle = '', bgLabel = '';
+      if(bg){
+        bgStyle = `--bg-color:${bg.color}`;
+        if(m===bg.startMin){ bgLabel = `<span class="bg-name">${esc(bg.name)}</span>`; }
+      }
+      cells += `<div class="av-cell av-slot ${blocked?'no':'ok'} ${isHour?'av-hourline':''} ${bg?(bg.isRest?'bg-rest':'bg-class'):''}"
+        style="${bgStyle}" data-day="${dy}" data-m="${m}">${bgLabel}</div>`;
     });
   });
 
