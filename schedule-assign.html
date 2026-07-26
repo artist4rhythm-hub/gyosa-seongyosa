@@ -64,12 +64,12 @@
   /* 시각 격자 */
   .av-grid-wrap{overflow-x:auto}
   .av-grid{display:grid;border:1px solid var(--ivd,#E3E1DA);border-radius:10px;overflow:hidden;user-select:none;min-width:520px}
-  .av-cell{border-right:1px solid var(--iv,#F2F0EB);border-bottom:1px solid var(--iv,#F2F0EB);font-size:10.5px;
-    display:flex;align-items:center;justify-content:center;position:relative;min-height:9px}
+  .av-cell{border-right:1px solid #E7E5DE;border-bottom:1px solid #EDEBE4;font-size:10.5px;
+    display:flex;align-items:center;justify-content:center;position:relative;height:15px;box-sizing:border-box;overflow:hidden}
   .av-cell:last-child{border-right:none}
-  .av-hcell{background:var(--gd,#1E3932);color:#fff;font-weight:800;font-size:12.5px;padding:9px 4px;text-align:center}
-  .av-tcell{background:var(--iv,#F2F0EB);color:var(--ts,#5a6560);font-weight:600;font-size:9.5px;
-    font-variant-numeric:tabular-nums;padding:0 6px;justify-content:flex-end;white-space:nowrap;min-height:9px}
+  .av-hcell{background:var(--gd,#1E3932);color:#fff;font-weight:800;font-size:12.5px;height:auto;padding:9px 4px;text-align:center}
+  .av-tcell{background:var(--iv,#F2F0EB);color:var(--ts,#5a6560);font-weight:600;font-size:9px;
+    font-variant-numeric:tabular-nums;padding:0 5px;justify-content:flex-end;white-space:nowrap}
   /* 배경 시간표 블록 (반투명) — 가능/불가 색 위에 은은하게 */
   .av-slot.bg-class::before,.av-slot.bg-rest::before{content:'';position:absolute;inset:0;
     background:var(--bg-color,#ccc);opacity:.16;pointer-events:none}
@@ -86,21 +86,21 @@
   .av-shcell{background:#2A4A42;color:#cfe0d8;font-size:9.5px;font-weight:700;padding:3px 2px;
     text-align:center;border-right:1px solid rgba(255,255,255,.12)}
   /* 틀(미리보기) 칸 */
-  .fr-cell{background:#fafafa;position:relative;border-right:2px solid var(--ivd,#E3E1DA)}
+  .fr-cell{background:#fafafa;position:relative;border-right:1px solid #C8C5BC}
   .fr-cell.fr-class::before{content:'';position:absolute;inset:0;background:var(--bg-color,#8aa);opacity:.28}
   .fr-cell.fr-rest::before{content:'';position:absolute;inset:0;background:var(--bg-color,#bbb);opacity:.13}
   .fr-name{position:absolute;top:1px;left:4px;font-size:9px;font-weight:800;color:var(--bg-color,#555);
     filter:brightness(.65);white-space:nowrap;pointer-events:none;z-index:1;line-height:1.1}
   /* 설정 칸: 요일 그룹 오른쪽 경계 */
   .av-grid.dual .av-slot{border-right:1px solid var(--iv,#F2F0EB)}
-  .av-grid.dual{min-width:max-content}
+  .av-grid.dual{min-width:760px;width:100%}
   /* 요일 사이 구분선 (진하게) */
   .day-sep{border-left:2px solid var(--gd,#1E3932) !important}
   /* 서브헤더: 틀=회녹, 가능=진녹 */
   .av-shcell.sh-frame{background:#3a5c52;color:#d8e8e0}
   .av-shcell.sh-avail{background:#1E3932;color:#a8d8c0;font-weight:800}
-  .av-halfline{border-bottom:1px solid var(--ivd,#E3E1DA) !important}
-  .av-tcell b{font-size:10px;color:var(--gd,#1E3932)}
+  .av-halfline{border-bottom:1px solid #D8D5CC !important}
+  .av-tcell b{font-size:8.5px;font-weight:700;color:var(--gd,#1E3932);line-height:1}
   /* ── 요약 패널 (글로 정리) ── */
   .summary-panel{width:200px;flex:none;background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);
     border-radius:12px;padding:14px;position:sticky;top:12px}
@@ -150,7 +150,7 @@
   /* 전체 보기: 가능 인원 비율에 따른 음영 (녹색 진할수록 많이 가능) */
   .av-slot.heat{cursor:default;font-size:10px;font-weight:700;color:#1E3932}
   .av-slot.heat:hover{filter:brightness(.96)}
-  .av-hourline{border-bottom:1.5px solid var(--ivd,#E3E1DA) !important}
+  .av-hourline{border-bottom:1.5px solid #B0ADA3 !important}
 
   .legend{display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--ts,#5a6560);flex-wrap:wrap}
   .legend i{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:5px;vertical-align:-2px}
@@ -302,6 +302,7 @@ let curTeacher = null;   // 선택된 선생님 uid
 let AVAIL = {};
 let dirty = false;
 let painting = false, paintMode = null;   // 드래그 칠하기
+let lastPt = null;                        // 드래그 좌표 (연속 칠하기 보간용)
 
 // 시간표 틀 (배경 반투명 표시용)
 let FRAMES = [];         // 저장된 시간표 틀 목록
@@ -591,7 +592,7 @@ function renderGrid(){
   SLOTS.forEach((m)=>{
     const isHour = (m%60===0);
     const isHalf = (m%30===0);
-    const showLabel = (m%10===0);   // 10분마다 시각 (5분 단위라 촘촘함 방지)
+    const showLabel = true;   // 5분 단위 시각 모두 표기
     rows += `<div class="av-cell av-tcell ${isHour?'av-hourline':isHalf?'av-halfline':''}">${showLabel?`<b>${toHM(m)}</b>`:''}</div>`;
     DAYS.forEach((dy,i)=>{
       const sep = i>0 ? 'day-sep' : '';
@@ -623,7 +624,7 @@ function renderGrid(){
     </div>
     <div class="grid-flex">
       <div class="av-grid-wrap">
-        <div class="av-grid dual" id="av-grid" style="grid-template-columns:52px repeat(${DAYS.length}, 78px 42px)">
+        <div class="av-grid dual" id="av-grid" style="grid-template-columns:54px repeat(${DAYS.length}, minmax(88px,1.4fr) minmax(52px,1fr))">
           ${head}${subhead}${rows}
         </div>
         <div class="legend">
@@ -908,42 +909,68 @@ function renderRoomList(){
 
 function bindGridEvents(){
   const grid = $I('av-grid'); if(!grid) return;
-  const slots = grid.querySelectorAll('.av-slot');
-  const applyPaint = (el)=>{
-    const dy = el.dataset.day, m = Number(el.dataset.m);
+
+  const applyToCell = (el)=>{
+    if(!el || !el.classList || !el.classList.contains('av-slot')) return;
+    const dy = el.dataset.day; const m = Number(el.dataset.m);
+    if(dy===undefined || Number.isNaN(m)) return;
     const set = AVAIL[curTeacher][dy];
     if(paintMode==='no'){ set.add(m); el.classList.remove('ok'); el.classList.add('no'); }
     else { set.delete(m); el.classList.remove('no'); el.classList.add('ok'); }
     markDirty();
   };
-  slots.forEach(el=>{
-    el.addEventListener('mousedown', e=>{
-      e.preventDefault();
-      painting = true;
-      // 시작 칸의 반대 상태로 칠하기 (토글 방향 결정)
-      const dy=el.dataset.day, m=Number(el.dataset.m);
-      paintMode = AVAIL[curTeacher][dy].has(m) ? 'ok' : 'no';
-      applyPaint(el);
-    });
-    el.addEventListener('mouseenter', ()=>{ if(painting) applyPaint(el); });
-    // 터치
-    el.addEventListener('touchstart', e=>{
-      e.preventDefault(); painting=true;
-      const dy=el.dataset.day, m=Number(el.dataset.m);
-      paintMode = AVAIL[curTeacher][dy].has(m) ? 'ok' : 'no';
-      applyPaint(el);
-    }, {passive:false});
-  });
-  grid.addEventListener('touchmove', e=>{
+  const slotAt = (x, y)=>{
+    const el = document.elementFromPoint(x, y);
+    if(!el) return null;
+    return el.classList.contains('av-slot') ? el : el.closest('.av-slot');
+  };
+
+  // 두 점 사이를 촘촘히 보간해서 중간 셀도 모두 칠함 (드래그 빠져도 연속 적용)
+  const paintLine = (x1,y1,x2,y2)=>{
+    const dist = Math.hypot(x2-x1, y2-y1);
+    const steps = Math.max(1, Math.ceil(dist/6));   // 6px 간격
+    for(let i=0;i<=steps;i++){
+      const x = x1 + (x2-x1)*i/steps;
+      const y = y1 + (y2-y1)*i/steps;
+      applyToCell(slotAt(x,y));
+    }
+  };
+
+  const startPaint = (x,y)=>{
+    const el = slotAt(x,y); if(!el) return false;
+    painting = true;
+    const dy=el.dataset.day, m=Number(el.dataset.m);
+    paintMode = AVAIL[curTeacher][dy].has(m) ? 'ok' : 'no';   // 시작 칸 반대로 토글
+    applyToCell(el);
+    lastPt = {x,y};
+    return true;
+  };
+  const movePaint = (x,y)=>{
     if(!painting) return;
-    const tch = e.touches[0];
-    const el = document.elementFromPoint(tch.clientX, tch.clientY);
-    if(el && el.classList.contains('av-slot')) applyPaint(el);
-    e.preventDefault();
+    if(lastPt) paintLine(lastPt.x, lastPt.y, x, y);
+    else applyToCell(slotAt(x,y));
+    lastPt = {x,y};
+  };
+
+  // 마우스
+  grid.addEventListener('mousedown', e=>{
+    if(startPaint(e.clientX, e.clientY)) e.preventDefault();
+  });
+  window.addEventListener('mousemove', e=>{
+    if(painting){ movePaint(e.clientX, e.clientY); e.preventDefault(); }
+  });
+  // 터치
+  grid.addEventListener('touchstart', e=>{
+    const t=e.touches[0]; if(startPaint(t.clientX, t.clientY)) e.preventDefault();
+  }, {passive:false});
+  window.addEventListener('touchmove', e=>{
+    if(painting){ const t=e.touches[0]; movePaint(t.clientX, t.clientY); e.preventDefault(); }
   }, {passive:false});
 }
-document.addEventListener('mouseup', ()=>{ if(painting){ painting=false; renderSummary(); } });
-document.addEventListener('touchend', ()=>{ if(painting){ painting=false; renderSummary(); } });
+function endPaint(){ if(painting){ painting=false; lastPt=null; renderSummary(); } }
+document.addEventListener('mouseup', endPaint);
+document.addEventListener('touchend', endPaint);
+document.addEventListener('touchcancel', endPaint);
 
 window.fillAll = function(mode){
   const a = AVAIL[curTeacher];
