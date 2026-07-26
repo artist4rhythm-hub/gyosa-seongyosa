@@ -77,6 +77,34 @@
   .av-slot .bg-name{position:absolute;top:1px;left:3px;font-size:8.5px;font-weight:700;
     color:var(--bg-color,#555);opacity:.7;white-space:nowrap;pointer-events:none;z-index:1;
     filter:brightness(.7)}
+  /* ── 2칸 구조 (틀 미리보기 | 가능 설정) ── */
+  .grid-flex{display:flex;gap:16px;align-items:flex-start}
+  @media(max-width:900px){ .grid-flex{flex-direction:column} }
+  .av-grid-wrap{overflow-x:auto;flex:1;min-width:0}
+  .av-hcell.hc-time{background:var(--iv,#F2F0EB);color:var(--ts,#5a6560)}
+  .av-hcell.hc-day{border-right:2px solid rgba(255,255,255,.25)}
+  .av-shcell{background:#2A4A42;color:#cfe0d8;font-size:9.5px;font-weight:700;padding:3px 2px;
+    text-align:center;border-right:1px solid rgba(255,255,255,.12)}
+  /* 틀(미리보기) 칸 */
+  .fr-cell{background:#fafafa;position:relative;border-right:2px solid var(--ivd,#E3E1DA)}
+  .fr-cell.fr-class::before{content:'';position:absolute;inset:0;background:var(--bg-color,#8aa);opacity:.28}
+  .fr-cell.fr-rest::before{content:'';position:absolute;inset:0;background:var(--bg-color,#bbb);opacity:.13}
+  .fr-name{position:absolute;top:1px;left:4px;font-size:9px;font-weight:800;color:var(--bg-color,#555);
+    filter:brightness(.65);white-space:nowrap;pointer-events:none;z-index:1;line-height:1.1}
+  /* 설정 칸: 요일 그룹 오른쪽 경계 */
+  .av-grid.dual .av-slot{border-right:2px solid var(--ivd,#E3E1DA)}
+  .av-halfline{border-bottom:1px solid var(--ivd,#E3E1DA) !important}
+  .av-tcell b{font-size:10px;color:var(--gd,#1E3932)}
+  /* ── 요약 패널 (글로 정리) ── */
+  .summary-panel{width:200px;flex:none;background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);
+    border-radius:12px;padding:14px;position:sticky;top:12px}
+  @media(max-width:900px){ .summary-panel{width:100%;position:static} }
+  .sp-title{font-size:13px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--iv,#F2F0EB)}
+  .sp-day{margin-bottom:11px}
+  .sp-dname{font-size:12px;font-weight:800;color:var(--ts,#5a6560);margin-bottom:3px}
+  .sp-line{font-size:11.5px;line-height:1.6;padding-left:2px}
+  .sp-ok{color:#1E7A44;font-weight:600}
+  .sp-no{color:#C0392B;font-weight:600}
   .av-slot{cursor:pointer;transition:background .06s}
   .av-slot.ok{background:#E3F5E9}
   .av-slot.ok:hover{background:#CDEBD8}
@@ -473,49 +501,67 @@ function renderGrid(){
   if(!t){ $I('grid-empty').style.display='block'; $I('grid-content').style.display='none'; return; }
   $I('grid-empty').style.display='none';
   const wrap = $I('grid-content'); wrap.style.display='block';
-  ensureAvail(uid_of(t));
+  ensureAvail(t.uid);
 
-  // 그리드: 1(시각) + 5(요일) 열
-  const colW = '1fr';
-  let cells = '';
-  // 헤더
-  cells += `<div class="av-cell av-hcell" style="background:var(--iv);color:var(--ts)">시각</div>`;
-  DAYS.forEach(dy=> cells += `<div class="av-cell av-hcell">${dy}</div>`);
-  // 행
+  const hasBg = !!bgDeptKey && Object.keys(bgBlocks).length>0;
+
+  // 헤더: 시각 + (요일마다 [틀|설정] 2칸)
+  let head = `<div class="av-cell av-hcell hc-time">시각</div>`;
+  DAYS.forEach(dy=>{
+    head += `<div class="av-cell av-hcell hc-day" style="grid-column:span 2">${dy}</div>`;
+  });
+  let subhead = `<div class="av-cell av-shcell"></div>`;
+  DAYS.forEach(dy=>{
+    subhead += `<div class="av-cell av-shcell">${hasBg?'수업':'　'}</div><div class="av-cell av-shcell">가능</div>`;
+  });
+
+  // 본문 행
+  let rows = '';
   SLOTS.forEach((m)=>{
     const isHour = (m%60===0);
-    const showLabel = (m%15===0);   // 5분 단위이므로 15분마다 시각 표기
-    cells += `<div class="av-cell av-tcell ${isHour?'av-hourline':''}">${showLabel?toHM(m):''}</div>`;
+    const isHalf = (m%30===0);
+    const showLabel = (m%10===0);   // 10분마다 시각 (5분 단위라 촘촘함 방지)
+    rows += `<div class="av-cell av-tcell ${isHour?'av-hourline':isHalf?'av-halfline':''}">${showLabel?`<b>${toHM(m)}</b>`:''}</div>`;
     DAYS.forEach(dy=>{
-      const blocked = AVAIL[curTeacher][dy].has(m);
+      // ① 틀(미리보기) 칸
       const bg = bgAt(dy, m);
-      // 배경 블록: 반투명 색 + 블록 시작 칸에만 이름 표시
-      let bgStyle = '', bgLabel = '';
+      let bgCls = '', bgLabel = '', bgStyle = '';
       if(bg){
         bgStyle = `--bg-color:${bg.color}`;
-        if(m===bg.startMin){ bgLabel = `<span class="bg-name">${esc(bg.name)}</span>`; }
+        bgCls = bg.isRest ? 'fr-rest' : 'fr-class';
+        if(m===bg.startMin){ bgLabel = `<span class="fr-name">${esc(bg.name)}</span>`; }
       }
-      cells += `<div class="av-cell av-slot ${blocked?'no':'ok'} ${isHour?'av-hourline':''} ${bg?(bg.isRest?'bg-rest':'bg-class'):''}"
-        style="${bgStyle}" data-day="${dy}" data-m="${m}">${bgLabel}</div>`;
+      rows += `<div class="av-cell fr-cell ${bgCls} ${isHour?'av-hourline':isHalf?'av-halfline':''}" style="${bgStyle}">${bgLabel}</div>`;
+      // ② 가능/불가 설정 칸
+      const blocked = AVAIL[curTeacher][dy].has(m);
+      rows += `<div class="av-cell av-slot ${blocked?'no':'ok'} ${isHour?'av-hourline':isHalf?'av-halfline':''}"
+        data-day="${dy}" data-m="${m}"></div>`;
     });
   });
 
+  const totalCols = 1 + DAYS.length*2;
   wrap.innerHTML = `
     <div class="grid-head">
       <div class="grid-who"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.color};vertical-align:0"></span> ${esc(t.name)} <span style="font-size:12px;color:var(--tl);font-weight:600">${esc(ORGS[t.org]||t.org||'')}</span></div>
       <div class="grid-tools">
         <button class="btn" onclick="fillAll('ok')">전체 가능</button>
         <button class="btn" onclick="fillAll('no')">전체 불가</button>
-        <button class="btn" onclick="copyMonToAll()">월요일을 전체 요일에 복사</button>
+        <button class="btn" onclick="copyMonToAll()">월요일→전체 복사</button>
       </div>
     </div>
-    <div class="av-grid-wrap">
-      <div class="av-grid" id="av-grid" style="grid-template-columns:64px repeat(${DAYS.length}, ${colW})">${cells}</div>
-    </div>
-    <div class="legend">
-      <span><i style="background:#E8F5EC;border:1px solid #cfe6d6"></i>수업 가능</span>
-      <span><i style="background:#E3E1DA;background-image:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(0,0,0,.06) 3px,rgba(0,0,0,.06) 6px)"></i>수업 불가</span>
-      <span style="color:var(--tl)">· 드래그로 여러 칸을 한 번에 칠할 수 있어요</span>
+    <div class="grid-flex">
+      <div class="av-grid-wrap">
+        <div class="av-grid dual" id="av-grid" style="grid-template-columns:52px repeat(${DAYS.length}, minmax(120px, 1fr))">
+          ${head}${subhead}${rows}
+        </div>
+        <div class="legend">
+          <span><i style="background:#E3F5E9;border:1px solid #cfe6d6"></i>수업 가능</span>
+          <span><i style="background:#FBE0DE;border:1px solid #f0c0bc"></i>수업 불가</span>
+          ${hasBg?'<span><i style="background:#dce8f5;border:1px solid #c5d5e5"></i>수업 시간(틀)</span>':''}
+          <span style="color:var(--tl)">· '가능' 칸을 드래그해서 칠하세요</span>
+        </div>
+      </div>
+      <div class="summary-panel" id="summary-panel"></div>
     </div>
     <div class="save-row">
       <button class="btn btn-p" onclick="saveAvail()">💾 저장하기</button>
@@ -523,9 +569,52 @@ function renderGrid(){
     </div>`;
 
   bindGridEvents();
+  renderSummary();
   updateSaveNote();
 }
-function uid_of(t){ return t.uid; }
+
+// 가능/불가를 글로 정리 (연속 구간 병합)
+function renderSummary(){
+  const box = $I('summary-panel'); if(!box) return;
+  const a = AVAIL[curTeacher];
+  let html = '<div class="sp-title">📋 요일별 정리</div>';
+  DAYS.forEach(dy=>{
+    const blockedSet = a[dy];
+    // 불가 구간을 연속 병합
+    const ranges = [];
+    let runStart = null, prev = null;
+    SLOTS.forEach(m=>{
+      if(blockedSet.has(m)){
+        if(runStart===null) runStart = m;
+        prev = m;
+      } else {
+        if(runStart!==null){ ranges.push([runStart, prev+STEP]); runStart=null; }
+      }
+    });
+    if(runStart!==null) ranges.push([runStart, prev+STEP]);
+
+    html += `<div class="sp-day">`;
+    html += `<div class="sp-dname">${dy}요일</div>`;
+    if(ranges.length===0){
+      html += `<div class="sp-line sp-ok">✓ 종일 가능</div>`;
+    } else {
+      // 전체가 불가인지 먼저 확인
+      const totalBlocked = ranges.reduce((sum,[s,e])=>sum+(e-s),0);
+      const span = END_MIN - START_MIN;
+      if(totalBlocked >= span){
+        html += `<div class="sp-line sp-no">✕ 종일 불가</div>`;
+      } else {
+        // 불가 구간 나열 + 남는 가능 구간도 표시
+        ranges.forEach(([s,e])=>{
+          html += `<div class="sp-line sp-no">✕ ${toHM(s)}~${toHM(e)}</div>`;
+        });
+      }
+    }
+    html += `</div>`;
+  });
+  box.innerHTML = html;
+}
+window.renderSummary = renderSummary;
 
 function bindGridEvents(){
   const grid = $I('av-grid'); if(!grid) return;
@@ -563,8 +652,8 @@ function bindGridEvents(){
     e.preventDefault();
   }, {passive:false});
 }
-document.addEventListener('mouseup', ()=>{ painting=false; });
-document.addEventListener('touchend', ()=>{ painting=false; });
+document.addEventListener('mouseup', ()=>{ if(painting){ painting=false; renderSummary(); } });
+document.addEventListener('touchend', ()=>{ if(painting){ painting=false; renderSummary(); } });
 
 window.fillAll = function(mode){
   const a = AVAIL[curTeacher];
