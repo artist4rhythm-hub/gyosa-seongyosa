@@ -37,7 +37,7 @@
   @media(max-width:820px){ .av-layout{grid-template-columns:1fr} }
 
   /* 선생님 목록 */
-  .tt-list{display:flex;flex-direction:column;gap:6px;max-height:640px;overflow-y:auto;padding-right:4px}
+  .tt-list{display:flex;flex-direction:column;gap:6px;padding-right:4px}
   .tt-item{display:flex;align-items:center;gap:9px;padding:10px 12px;border:1.5px solid var(--ivd,#E3E1DA);
     border-radius:10px;background:var(--wh,#fff);cursor:pointer;transition:all .12s;text-align:left;width:100%;font-family:inherit}
   .tt-item:hover{border-color:var(--gm,#00704A)}
@@ -288,11 +288,17 @@ function toast(msg){ const t=$I('toast'); t.textContent=msg; t.classList.add('on
 
 // ── 시각 격자 상수 ──
 const DAYS = ['월','화','수','목','금'];
-const START_MIN = 8*60+30;    // 08:30
-const END_MIN   = 15*60+30;   // 15:30
-const STEP = 5;               // 5분 단위 칸 (세밀하게)
-const SLOTS = [];
-for(let m=START_MIN; m<END_MIN; m+=STEP) SLOTS.push(m);
+const DAY_START = 8*60+30;     // 08:30 (하루 시작 고정)
+const DAY_END_DEFAULT = 17*60; // 배경 없을 때 기본 끝 (17:00, 넉넉하게)
+const STEP = 5;                // 5분 단위 칸 (세밀하게)
+let START_MIN = DAY_START;
+let END_MIN   = 15*60+30;       // 초기값, 배경/데이터에 따라 늘어남
+let SLOTS = [];
+function rebuildSlots(){
+  SLOTS = [];
+  for(let m=START_MIN; m<END_MIN; m+=STEP) SLOTS.push(m);
+}
+rebuildSlots();
 const toHM = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 
 let CU = null;
@@ -337,6 +343,8 @@ onAuthStateChanged(auth, async user => {
     await loadTeachers();
     await loadFrames();
     await loadRooms();
+    computeBgBlocks();   // 저장된 배경 부서 적용
+    recomputeRange();    // 시각 범위 계산
   } catch(e){
     $I('gate-msg').textContent='오류: '+(e.message||'');
     $I('gate-btn').style.display='inline-block';
@@ -401,6 +409,7 @@ window.onBgChange = function(){
   bgDeptKey = sel.value;
   try { localStorage.setItem('sa_bg_dept', bgDeptKey); } catch(e){}
   computeBgBlocks();
+  recomputeRange();
   // 현재 보이는 뷰 다시 그리기
   if(curView==='one' && curTeacher) renderGrid();
   else if(curView==='all') renderAllView();
@@ -446,6 +455,26 @@ function computeBgBlocks(){
 }
 function parseHM(s){ const m=String(s||'').match(/(\d{1,2}):(\d{2})/); return m ? (+m[1])*60+(+m[2]) : 8*60+40; }
 
+// 배경 시간표 끝 + 저장된 불가시간에 맞춰 격자 시각 범위 재계산 (15:30 이후도 다 보이게)
+function recomputeRange(){
+  let maxEnd = 15*60+30;   // 최소 15:30까지는 보장
+  DAYS.forEach(dy=>{
+    const list = bgBlocks[dy];
+    if(list && list.length){ maxEnd = Math.max(maxEnd, list[list.length-1].endMin); }
+  });
+  Object.values(AVAIL).forEach(byDay=>{
+    if(!byDay) return;
+    DAYS.forEach(dy=>{
+      if(byDay[dy] && byDay[dy].size){ maxEnd = Math.max(maxEnd, Math.max(...byDay[dy]) + STEP); }
+    });
+  });
+  maxEnd = Math.ceil((maxEnd + 10) / STEP) * STEP;   // 여유 10분 + 5분 단위 올림
+  if(!bgDeptKey && maxEnd < DAY_END_DEFAULT) maxEnd = DAY_END_DEFAULT;
+  START_MIN = DAY_START;
+  END_MIN = maxEnd;
+  rebuildSlots();
+}
+
 // 특정 요일·시각(슬롯)에 걸치는 배경 블록 찾기
 function bgAt(dy, m){
   const list = bgBlocks[dy]; if(!list) return null;
@@ -480,6 +509,7 @@ window.selectTeacher = function(uid){
   }
   curTeacher = uid; dirty = false;
   computeBgBlocks();
+  recomputeRange();
   renderTeacherList();
   renderGrid();
 };
@@ -499,6 +529,7 @@ window.setView = function(v){
   const desc = $I('avail-desc');
   if(v==='all'){
     desc.innerHTML = '모든 선생님의 가능 시간을 <b>한눈에</b> 봅니다. 칸이 <b style="color:#1E7A44">진한 녹색</b>일수록 그 시간에 <b>가능한 선생님이 많고</b>, <b style="color:#C0392B">빨강</b>이면 아무도 없습니다. 요일·시간대별로 어디가 여유 있는지 파악할 때 유용합니다.';
+    recomputeRange();
     renderAllView();
   } else {
     desc.innerHTML = '각 선생님이 <b>수업에 들어갈 수 있는 시간</b>을 요일별로 설정합니다. 기본은 모두 <b style="color:#1E7A44">가능</b>이며, 배치가 안 되는 시간을 <b style="color:#C0392B">불가</b>로 칠하세요. <b>불가 시간에는 그 선생님이 배정되지 않습니다.</b><br><span style="color:var(--tl,#93A09A)">· 칸을 클릭하거나 드래그해서 전환합니다. · 요일마다 다르게 설정할 수 있습니다.</span>';
