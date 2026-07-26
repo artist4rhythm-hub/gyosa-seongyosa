@@ -92,7 +92,13 @@
   .fr-name{position:absolute;top:1px;left:4px;font-size:9px;font-weight:800;color:var(--bg-color,#555);
     filter:brightness(.65);white-space:nowrap;pointer-events:none;z-index:1;line-height:1.1}
   /* 설정 칸: 요일 그룹 오른쪽 경계 */
-  .av-grid.dual .av-slot{border-right:2px solid var(--ivd,#E3E1DA)}
+  .av-grid.dual .av-slot{border-right:1px solid var(--iv,#F2F0EB)}
+  .av-grid.dual{min-width:max-content}
+  /* 요일 사이 구분선 (진하게) */
+  .day-sep{border-left:2px solid var(--gd,#1E3932) !important}
+  /* 서브헤더: 틀=회녹, 가능=진녹 */
+  .av-shcell.sh-frame{background:#3a5c52;color:#d8e8e0}
+  .av-shcell.sh-avail{background:#1E3932;color:#a8d8c0;font-weight:800}
   .av-halfline{border-bottom:1px solid var(--ivd,#E3E1DA) !important}
   .av-tcell b{font-size:10px;color:var(--gd,#1E3932)}
   /* ── 요약 패널 (글로 정리) ── */
@@ -570,14 +576,14 @@ function renderGrid(){
 
   const hasBg = !!bgDeptKey && Object.keys(bgBlocks).length>0;
 
-  // 헤더: 시각 + (요일마다 [틀|설정] 2칸)
+  // 헤더: 시각 + (요일마다 [틀|가능] 2칸)
   let head = `<div class="av-cell av-hcell hc-time">시각</div>`;
-  DAYS.forEach(dy=>{
-    head += `<div class="av-cell av-hcell hc-day" style="grid-column:span 2">${dy}</div>`;
+  DAYS.forEach((dy,i)=>{
+    head += `<div class="av-cell av-hcell hc-day ${i>0?'day-sep':''}" style="grid-column:span 2">${dy}</div>`;
   });
   let subhead = `<div class="av-cell av-shcell"></div>`;
-  DAYS.forEach(dy=>{
-    subhead += `<div class="av-cell av-shcell">${hasBg?'수업':'　'}</div><div class="av-cell av-shcell">가능</div>`;
+  DAYS.forEach((dy,i)=>{
+    subhead += `<div class="av-cell av-shcell sh-frame ${i>0?'day-sep':''}">수업틀</div><div class="av-cell av-shcell sh-avail">가능</div>`;
   });
 
   // 본문 행
@@ -587,8 +593,9 @@ function renderGrid(){
     const isHalf = (m%30===0);
     const showLabel = (m%10===0);   // 10분마다 시각 (5분 단위라 촘촘함 방지)
     rows += `<div class="av-cell av-tcell ${isHour?'av-hourline':isHalf?'av-halfline':''}">${showLabel?`<b>${toHM(m)}</b>`:''}</div>`;
-    DAYS.forEach(dy=>{
-      // ① 틀(미리보기) 칸
+    DAYS.forEach((dy,i)=>{
+      const sep = i>0 ? 'day-sep' : '';
+      // ① 수업틀 칸 (그 요일 시간표)
       const bg = bgAt(dy, m);
       let bgCls = '', bgLabel = '', bgStyle = '';
       if(bg){
@@ -596,8 +603,8 @@ function renderGrid(){
         bgCls = bg.isRest ? 'fr-rest' : 'fr-class';
         if(m===bg.startMin){ bgLabel = `<span class="fr-name">${esc(bg.name)}</span>`; }
       }
-      rows += `<div class="av-cell fr-cell ${bgCls} ${isHour?'av-hourline':isHalf?'av-halfline':''}" style="${bgStyle}">${bgLabel}</div>`;
-      // ② 가능/불가 설정 칸
+      rows += `<div class="av-cell fr-cell ${bgCls} ${sep} ${isHour?'av-hourline':isHalf?'av-halfline':''}" style="${bgStyle}">${bgLabel}</div>`;
+      // ② 가능/불가 칸
       const blocked = AVAIL[curTeacher][dy].has(m);
       rows += `<div class="av-cell av-slot ${blocked?'no':'ok'} ${isHour?'av-hourline':isHalf?'av-halfline':''}"
         data-day="${dy}" data-m="${m}"></div>`;
@@ -616,7 +623,7 @@ function renderGrid(){
     </div>
     <div class="grid-flex">
       <div class="av-grid-wrap">
-        <div class="av-grid dual" id="av-grid" style="grid-template-columns:52px repeat(${DAYS.length}, minmax(120px, 1fr))">
+        <div class="av-grid dual" id="av-grid" style="grid-template-columns:52px repeat(${DAYS.length}, 78px 42px)">
           ${head}${subhead}${rows}
         </div>
         <div class="legend">
