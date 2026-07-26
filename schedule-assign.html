@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>시간표 배정 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="교사선교사">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme.css">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg,#f4f2ec);color:var(--ink,#1a2420)}
+  #gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg,#f4f2ec);z-index:100}
+  #gate .box{text-align:center}
+  #gate-msg{font-size:14px;color:var(--ts,#5a6560);margin-bottom:14px}
+  #gate-btn{display:none;background:#2d6a4f;color:#fff;border:none;padding:10px 22px;border-radius:9px;font-family:inherit;font-weight:700;cursor:pointer}
+
+  .subtb{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .subtbtn{font-family:inherit;font-size:13.5px;font-weight:700;padding:9px 18px;border:1.5px solid var(--ivd,#E3E1DA);
+    border-radius:10px;background:var(--wh,#fff);color:var(--ts,#5a6560);cursor:pointer;transition:all .12s}
+  .subtbtn:hover{border-color:var(--gm,#00704A)}
+  .subtbtn.active{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff;font-weight:800}
+  .subtbtn.soon{opacity:.5;cursor:default}
+  .subtbtn.soon:hover{border-color:var(--ivd,#E3E1DA)}
+
+  .panel{background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);border-radius:14px;padding:18px;margin-bottom:14px}
+  .ptitle{font-size:15px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pdesc{font-size:12.5px;color:var(--ts,#5a6560);line-height:1.7;margin-bottom:14px}
+
+  /* 레이아웃: 선생님 목록 | 격자 */
+  .av-layout{display:grid;grid-template-columns:230px 1fr;gap:16px;align-items:start}
+  @media(max-width:820px){ .av-layout{grid-template-columns:1fr} }
+
+  /* 선생님 목록 */
+  .tt-list{display:flex;flex-direction:column;gap:6px;max-height:640px;overflow-y:auto;padding-right:4px}
+  .tt-item{display:flex;align-items:center;gap:9px;padding:10px 12px;border:1.5px solid var(--ivd,#E3E1DA);
+    border-radius:10px;background:var(--wh,#fff);cursor:pointer;transition:all .12s;text-align:left;width:100%;font-family:inherit}
+  .tt-item:hover{border-color:var(--gm,#00704A)}
+  .tt-item.on{border-color:var(--gm,#00704A);background:var(--gp,#E8F3EF)}
+  .tt-dot{width:11px;height:11px;border-radius:50%;flex:none}
+  .tt-nm{font-size:13.5px;font-weight:700;color:var(--gd,#1E3932)}
+  .tt-meta{font-size:11px;color:var(--tl,#93A09A)}
+  .tt-flag{margin-left:auto;font-size:10px;font-weight:700;padding:2px 7px;border-radius:100px}
+  .tt-flag.set{background:var(--gp,#E8F3EF);color:var(--gm,#00704A)}
+  .tt-flag.none{background:var(--iv,#F2F0EB);color:var(--tl,#93A09A)}
+
+  /* 격자 헤더 */
+  .grid-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+  .grid-who{font-size:16px;font-weight:800;color:var(--gd,#1E3932)}
+  .grid-tools{display:flex;gap:6px;flex-wrap:wrap}
+  .btn{font-family:inherit;font-size:12.5px;font-weight:700;padding:8px 14px;border:1.5px solid var(--ivd,#E3E1DA);
+    border-radius:9px;background:var(--wh,#fff);color:var(--ts,#5a6560);cursor:pointer;transition:all .12s}
+  .btn:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
+  .btn-p{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+  .btn-p:hover{background:var(--gd,#1E3932);color:#fff}
+  .btn-danger{color:var(--danger,#C0392B);border-color:var(--danger,#C0392B)}
+  .btn-danger:hover{background:var(--danger,#C0392B);color:#fff}
+
+  /* 시각 격자 */
+  .av-grid-wrap{overflow-x:auto}
+  .av-grid{display:grid;border:1px solid var(--ivd,#E3E1DA);border-radius:10px;overflow:hidden;user-select:none;min-width:520px}
+  .av-cell{border-right:1px solid var(--iv,#F2F0EB);border-bottom:1px solid var(--iv,#F2F0EB);font-size:10.5px;
+    display:flex;align-items:center;justify-content:center;position:relative}
+  .av-cell:last-child{border-right:none}
+  .av-hcell{background:var(--gd,#1E3932);color:#fff;font-weight:800;font-size:12.5px;padding:9px 4px;text-align:center}
+  .av-tcell{background:var(--iv,#F2F0EB);color:var(--ts,#5a6560);font-weight:600;font-size:10px;
+    font-variant-numeric:tabular-nums;padding:0 6px;justify-content:flex-end;white-space:nowrap}
+  .av-slot{cursor:pointer;transition:background .06s}
+  .av-slot.ok{background:#E8F5EC}
+  .av-slot.ok:hover{background:#D4EDDD}
+  .av-slot.no{background:#E3E1DA;background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(0,0,0,.05) 4px,rgba(0,0,0,.05) 8px)}
+  .av-slot.no:hover{background:#D3D0C8}
+  .av-hourline{border-bottom:1.5px solid var(--ivd,#E3E1DA) !important}
+
+  .legend{display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--ts,#5a6560);flex-wrap:wrap}
+  .legend i{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:5px;vertical-align:-2px}
+  .save-row{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+  .save-note{font-size:12px;color:var(--tl,#93A09A)}
+  .save-note.dirty{color:var(--warn,#B0791A);font-weight:700}
+
+  .empty{text-align:center;padding:60px 20px;color:var(--tl,#93A09A)}
+  .empty .ico{font-size:40px;margin-bottom:12px}
+  .empty .t1{font-size:15px;font-weight:700;color:var(--ts,#5a6560);margin-bottom:6px}
+  .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);background:var(--gd,#1E3932);color:#fff;
+    padding:12px 22px;border-radius:100px;font-size:13.5px;font-weight:600;z-index:200;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<div id="gate"><div class="box"><div id="gate-msg">불러오는 중…</div><button id="gate-btn" onclick="location.reload()">다시 시도</button></div></div>
+
+<div id="ms" style="display:none">
+
+  <div class="subtb">
+    <button class="subtbtn active" id="tb-avail" onclick="showTab('avail')">🕐 수업 가능 시간</button>
+    <button class="subtbtn soon" id="tb-lesson" title="다음 단계에서 추가됩니다">📚 수업 정의 <span style="font-size:10px">(준비 중)</span></button>
+    <button class="subtbtn soon" id="tb-place" title="다음 단계에서 추가됩니다">🧩 배치 <span style="font-size:10px">(준비 중)</span></button>
+  </div>
+
+  <!-- 수업 가능 시간 -->
+  <div id="tab-avail">
+    <div class="panel">
+      <div class="ptitle">🕐 선생님별 수업 가능 시간</div>
+      <div class="pdesc">
+        각 선생님이 <b>수업에 들어갈 수 있는 시간</b>을 요일별로 설정합니다. 기본은 모두 <b style="color:#1E7A44">가능</b>이며,
+        배치가 안 되는 시간(다른 기관 일정·개인 사정 등)을 <b style="color:#8B7355">불가</b>로 칠하세요.
+        나중에 시간표를 자동 배치할 때, <b>불가 시간에는 그 선생님이 배정되지 않습니다.</b>
+        <br><span style="color:var(--tl,#93A09A)">· 칸을 클릭하거나 드래그해서 가능/불가를 전환합니다. · 요일마다 다르게 설정할 수 있습니다.</span>
+      </div>
+      <div class="av-layout">
+        <div>
+          <div style="font-size:12px;font-weight:800;color:var(--gm,#00704A);margin-bottom:8px;padding-left:2px">선생님</div>
+          <div class="tt-list" id="tt-list"><div style="font-size:12px;color:var(--tl)">불러오는 중…</div></div>
+        </div>
+        <div class="panel" style="margin:0" id="grid-panel">
+          <div class="empty" id="grid-empty">
+            <div class="ico">👈</div>
+            <div class="t1">왼쪽에서 선생님을 선택하세요</div>
+            <div>선택한 선생님의 주간 가능 시간을 설정합니다.</div>
+          </div>
+          <div id="grid-content" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, Timestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $I = id => document.getElementById(id);
+const esc = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const ORGS = { jihyebit:'지혜빛', daniel:'다니엘 아마츠' };
+function toast(msg){ const t=$I('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
+
+// ── 시각 격자 상수 ──
+const DAYS = ['월','화','수','목','금'];
+const START_MIN = 8*60+30;    // 08:30
+const END_MIN   = 15*60+30;   // 15:30
+const STEP = 15;              // 15분 단위 칸
+const SLOTS = [];
+for(let m=START_MIN; m<END_MIN; m+=STEP) SLOTS.push(m);
+const toHM = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+
+let CU = null;
+let TEACHERS = [];       // 선생님 목록 (staff)
+let curTeacher = null;   // 선택된 선생님 uid
+// availability[uid] = { '월': Set(slotStart), ... }  (Set에 든 slot = 불가)
+let AVAIL = {};
+let dirty = false;
+let painting = false, paintMode = null;   // 드래그 칠하기
+
+let curTab = 'avail';
+window.showTab = function(t){
+  if(t!=='avail') return;   // 나머지는 준비 중
+  curTab = t;
+};
+
+// ── 로그인 ──
+onAuthStateChanged(auth, async user => {
+  if(!user){ $I('gate-msg').textContent='로그인이 필요합니다.'; $I('gate-btn').style.display='inline-block'; return; }
+  try {
+    const sdoc = await getDoc(doc(db,'staff',user.uid));
+    if(!sdoc.exists()){ $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    CU = { uid:user.uid, ...sdoc.data() };
+    window.ORGS = ORGS;
+    if(window.guardPage && !guardPage(CU, 'timetable')){ /* 권한 없으면 guardPage가 처리 */ }
+    if(window.renderShell) renderShell('timetable', CU);
+
+    $I('gate').style.display='none';
+    $I('ms').style.display='block';
+
+    await loadTeachers();
+  } catch(e){
+    $I('gate-msg').textContent='오류: '+(e.message||'');
+    $I('gate-btn').style.display='inline-block';
+  }
+});
+
+// ── 선생님 목록 로드 ──
+async function loadTeachers(){
+  const snap = await getDocs(collection(db,'staff'));
+  const COLORS = ['#00704A','#3F7CB5','#7C6BC4','#C0871F','#B5612E','#4A8C6F','#9C5B86','#6A8E3C','#5A6B8C','#807A6B','#0D8478','#B5484D'];
+  TEACHERS = snap.docs.map((d,i)=>{
+    const s = d.data();
+    return { uid:d.id, name:s.name||'(이름 없음)', org:s.org||'', dept:s.dept||'', role:s.role||'teacher', color:COLORS[i%COLORS.length] };
+  }).filter(t=> t.role!=='super' || true)   // 전원 표시 (super도 수업할 수 있음)
+    .sort((a,b)=> (a.org||'').localeCompare(b.org||'') || a.name.localeCompare(b.name,'ko'));
+
+  // 저장된 가능시간 불러오기
+  const avSnap = await getDocs(collection(db,'teacherAvailability'));
+  AVAIL = {};
+  avSnap.forEach(d=>{
+    const data = d.data();
+    const byDay = {};
+    DAYS.forEach(dy=>{ byDay[dy] = new Set((data.unavailable && data.unavailable[dy]) || []); });
+    AVAIL[d.id] = byDay;
+  });
+
+  renderTeacherList();
+}
+
+function ensureAvail(uid){
+  if(!AVAIL[uid]){ const b={}; DAYS.forEach(dy=>b[dy]=new Set()); AVAIL[uid]=b; }
+  return AVAIL[uid];
+}
+function hasAnyBlock(uid){
+  const a = AVAIL[uid]; if(!a) return false;
+  return DAYS.some(dy=> a[dy] && a[dy].size>0);
+}
+
+function renderTeacherList(){
+  const box = $I('tt-list');
+  if(!TEACHERS.length){ box.innerHTML='<div style="font-size:12px;color:var(--tl)">등록된 선생님이 없습니다.</div>'; return; }
+  box.innerHTML = TEACHERS.map(t=>{
+    const on = t.uid===curTeacher;
+    const blocked = hasAnyBlock(t.uid);
+    return `<button class="tt-item ${on?'on':''}" onclick="selectTeacher('${t.uid}')">
+      <span class="tt-dot" style="background:${t.color}"></span>
+      <span>
+        <span class="tt-nm">${esc(t.name)}</span>
+        <span class="tt-meta">${esc(ORGS[t.org]||t.org||'')}</span>
+      </span>
+      <span class="tt-flag ${blocked?'set':'none'}">${blocked?'설정됨':'전체 가능'}</span>
+    </button>`;
+  }).join('');
+}
+
+window.selectTeacher = function(uid){
+  if(dirty){
+    if(!confirm('저장하지 않은 변경사항이 있습니다. 이동할까요?')) return;
+  }
+  curTeacher = uid; dirty = false;
+  renderTeacherList();
+  renderGrid();
+};
+
+// ── 격자 렌더 ──
+function renderGrid(){
+  const t = TEACHERS.find(x=>x.uid===curTeacher);
+  if(!t){ $I('grid-empty').style.display='block'; $I('grid-content').style.display='none'; return; }
+  $I('grid-empty').style.display='none';
+  const wrap = $I('grid-content'); wrap.style.display='block';
+  ensureAvail(uid_of(t));
+
+  // 그리드: 1(시각) + 5(요일) 열
+  const colW = '1fr';
+  let cells = '';
+  // 헤더
+  cells += `<div class="av-cell av-hcell" style="background:var(--iv);color:var(--ts)">시각</div>`;
+  DAYS.forEach(dy=> cells += `<div class="av-cell av-hcell">${dy}</div>`);
+  // 행
+  SLOTS.forEach((m)=>{
+    const isHour = (m%60===0);
+    const showLabel = (m%30===0);   // 30분마다 시각 표기
+    cells += `<div class="av-cell av-tcell ${isHour?'av-hourline':''}">${showLabel?toHM(m):''}</div>`;
+    DAYS.forEach(dy=>{
+      const blocked = AVAIL[curTeacher][dy].has(m);
+      cells += `<div class="av-cell av-slot ${blocked?'no':'ok'} ${isHour?'av-hourline':''}"
+        data-day="${dy}" data-m="${m}"></div>`;
+    });
+  });
+
+  wrap.innerHTML = `
+    <div class="grid-head">
+      <div class="grid-who"><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${t.color};vertical-align:0"></span> ${esc(t.name)} <span style="font-size:12px;color:var(--tl);font-weight:600">${esc(ORGS[t.org]||t.org||'')}</span></div>
+      <div class="grid-tools">
+        <button class="btn" onclick="fillAll('ok')">전체 가능</button>
+        <button class="btn" onclick="fillAll('no')">전체 불가</button>
+        <button class="btn" onclick="copyMonToAll()">월요일을 전체 요일에 복사</button>
+      </div>
+    </div>
+    <div class="av-grid-wrap">
+      <div class="av-grid" id="av-grid" style="grid-template-columns:64px repeat(${DAYS.length}, ${colW})">${cells}</div>
+    </div>
+    <div class="legend">
+      <span><i style="background:#E8F5EC;border:1px solid #cfe6d6"></i>수업 가능</span>
+      <span><i style="background:#E3E1DA;background-image:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(0,0,0,.06) 3px,rgba(0,0,0,.06) 6px)"></i>수업 불가</span>
+      <span style="color:var(--tl)">· 드래그로 여러 칸을 한 번에 칠할 수 있어요</span>
+    </div>
+    <div class="save-row">
+      <button class="btn btn-p" onclick="saveAvail()">💾 저장하기</button>
+      <span class="save-note" id="save-note">변경 후 저장을 눌러 주세요.</span>
+    </div>`;
+
+  bindGridEvents();
+  updateSaveNote();
+}
+function uid_of(t){ return t.uid; }
+
+function bindGridEvents(){
+  const grid = $I('av-grid'); if(!grid) return;
+  const slots = grid.querySelectorAll('.av-slot');
+  const applyPaint = (el)=>{
+    const dy = el.dataset.day, m = Number(el.dataset.m);
+    const set = AVAIL[curTeacher][dy];
+    if(paintMode==='no'){ set.add(m); el.classList.remove('ok'); el.classList.add('no'); }
+    else { set.delete(m); el.classList.remove('no'); el.classList.add('ok'); }
+    markDirty();
+  };
+  slots.forEach(el=>{
+    el.addEventListener('mousedown', e=>{
+      e.preventDefault();
+      painting = true;
+      // 시작 칸의 반대 상태로 칠하기 (토글 방향 결정)
+      const dy=el.dataset.day, m=Number(el.dataset.m);
+      paintMode = AVAIL[curTeacher][dy].has(m) ? 'ok' : 'no';
+      applyPaint(el);
+    });
+    el.addEventListener('mouseenter', ()=>{ if(painting) applyPaint(el); });
+    // 터치
+    el.addEventListener('touchstart', e=>{
+      e.preventDefault(); painting=true;
+      const dy=el.dataset.day, m=Number(el.dataset.m);
+      paintMode = AVAIL[curTeacher][dy].has(m) ? 'ok' : 'no';
+      applyPaint(el);
+    }, {passive:false});
+  });
+  grid.addEventListener('touchmove', e=>{
+    if(!painting) return;
+    const tch = e.touches[0];
+    const el = document.elementFromPoint(tch.clientX, tch.clientY);
+    if(el && el.classList.contains('av-slot')) applyPaint(el);
+    e.preventDefault();
+  }, {passive:false});
+}
+document.addEventListener('mouseup', ()=>{ painting=false; });
+document.addEventListener('touchend', ()=>{ painting=false; });
+
+window.fillAll = function(mode){
+  const a = AVAIL[curTeacher];
+  DAYS.forEach(dy=>{
+    if(mode==='no') SLOTS.forEach(m=>a[dy].add(m));
+    else a[dy].clear();
+  });
+  markDirty(); renderGrid();
+};
+window.copyMonToAll = function(){
+  const a = AVAIL[curTeacher];
+  const mon = new Set(a['월']);
+  DAYS.forEach(dy=>{ if(dy!=='월'){ a[dy] = new Set(mon); } });
+  markDirty(); renderGrid();
+  toast('월요일 설정을 모든 요일에 복사했어요');
+};
+
+function markDirty(){ dirty=true; updateSaveNote(); }
+function updateSaveNote(){
+  const note=$I('save-note'); if(!note) return;
+  if(dirty){ note.textContent='● 저장하지 않은 변경사항이 있습니다'; note.classList.add('dirty'); }
+  else { note.textContent='모든 변경사항이 저장되었습니다.'; note.classList.remove('dirty'); }
+}
+
+window.saveAvail = async function(){
+  if(!curTeacher) return;
+  const a = AVAIL[curTeacher];
+  const unavailable = {};
+  DAYS.forEach(dy=>{ unavailable[dy] = [...a[dy]].sort((x,y)=>x-y); });
+  try{
+    const t = TEACHERS.find(x=>x.uid===curTeacher);
+    await setDoc(doc(db,'teacherAvailability',curTeacher), {
+      uid: curTeacher, name: t?.name||'', org: t?.org||'',
+      unavailable, step: STEP, startMin: START_MIN, endMin: END_MIN,
+      updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'',
+    }, {merge:true});
+    dirty=false; updateSaveNote(); renderTeacherList();
+    toast('저장했습니다 ✓');
+  }catch(e){
+    toast('저장 실패: '+(e.message||''));
+  }
+};
+
+// 페이지 이탈 경고
+window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.returnValue=''; } });
+</script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
+</body>
+</html>
