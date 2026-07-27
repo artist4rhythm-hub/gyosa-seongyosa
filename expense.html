@@ -2402,6 +2402,7 @@ window.setReportSem = setReportSem;
 // ═══════════════════════════════════════════
 // PAYMENTS[docId="org_semester"] = { [sid]: {deposit:{checked,amount,date}, refund:{checked,amount,date}} }
 let PAYMENTS = {};       // 현재 화면의 학생별 입금/환급 상태
+let PARENT_ACCOUNTS = {}; // 학부모가 입력한 환급 계좌 {학생ID: {bank,holder,account}}
 let payOrg = '', paySem = '';
 let payDirty = false;
 
@@ -2416,6 +2417,12 @@ async function renderPay(){
   try {
     const snap = await getDocs(collection(db,'expenses'));
     EXPENSES = []; snap.forEach(d=>EXPENSES.push({id:d.id, ...d.data()}));
+    // 학부모가 입력한 환급 계좌 (parentAccounts/{학생ID})
+    PARENT_ACCOUNTS = {};
+    try {
+      const asnap = await getDocs(collection(db,'parentAccounts'));
+      asnap.forEach(d=>{ PARENT_ACCOUNTS[d.id] = d.data(); });
+    } catch(e){ /* 계좌 못 읽어도 진행 */ }
   } catch(e){
     window.hideLoading && window.hideLoading();
     box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
@@ -2557,6 +2564,11 @@ async function renderPay(){
       .pay-tag{font-size:10px;font-weight:800;padding:1px 7px;border-radius:100px;margin-left:4px}
       .pay-tag-dep{background:var(--gp);color:var(--gm)}
       .pay-tag-ref{background:#DBEAFE;color:var(--info)}
+      .pay-acct{margin-top:6px;font-size:11.5px;color:var(--ts);background:var(--gp);border-radius:7px;padding:5px 9px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;line-height:1.4}
+      .pay-acct b{color:var(--gd);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+      .pay-acct-none{background:var(--warn-bg);color:var(--warn);font-weight:600}
+      .pay-acct-copy{font-size:10px;font-weight:700;padding:2px 8px;border:1px solid var(--gm);border-radius:5px;background:var(--wh);color:var(--gm);cursor:pointer;font-family:inherit;margin-left:auto}
+      .pay-acct-copy:hover{background:var(--gm);color:#fff}
     </style>`;
 }
 window.renderPay = renderPay;
@@ -2588,6 +2600,12 @@ function payRow(s){
   let refCell;
   if(netv < 0){
     const ref = p.refund || {};
+    // 학부모가 입력한 환급 계좌
+    const acc = PARENT_ACCOUNTS[s.id];
+    const accHtml = acc && (acc.account||acc.bank)
+      ? `<div class="pay-acct">🏦 ${esc(acc.bank||'')} <b>${esc(acc.account||'')}</b>${acc.holder?` · ${esc(acc.holder)}`:''}
+           <button class="pay-acct-copy" onclick="copyPayAcct('${esc(acc.account||'')}',event)" title="계좌번호 복사">복사</button></div>`
+      : `<div class="pay-acct pay-acct-none">계좌 미입력 (학부모 안내 링크에서 입력 요청)</div>`;
     netCell = `<span style="color:var(--info);font-weight:800">₩${won(absNet)}</span> <span class="pay-tag pay-tag-ref">환급</span>`;
     refCell = `
       <div class="pay-chk-wrap">
@@ -2596,7 +2614,8 @@ function payRow(s){
           oninput="setPayField('${s.id}','refund','amount',this.value)" title="환급액 (비우면 순 환급액과 같음)">
         <input type="date" class="pay-in-date" value="${ref.date||''}" oninput="setPayField('${s.id}','refund','date',this.value)">
         ${ref.checked?'<span class="pay-done">✅ 완료</span>':'<span class="pay-pending">⏳ 미환급</span>'}
-      </div>`;
+      </div>
+      ${accHtml}`;
   } else {
     refCell = `<div class="pay-cell-none">-</div>`;
   }
@@ -2652,6 +2671,14 @@ function setPayOrg(o){ payOrg = o; paySem = ''; renderPay(); }
 window.setPayOrg = setPayOrg;
 function setPaySem(s){ paySem = s; renderPay(); }
 window.setPaySem = setPaySem;
+window.copyPayAcct = function(acctNo, ev){
+  if(ev) ev.stopPropagation();
+  const t = String(acctNo||'').replace(/[^0-9]/g,'');
+  if(!t){ toast('복사할 계좌번호가 없습니다.','err'); return; }
+  const done = ()=>{ const btn=ev&&ev.target; if(btn){ const o=btn.textContent; btn.textContent='복사됨'; setTimeout(()=>{if(btn)btn.textContent=o;},1500); } toast('계좌번호를 복사했습니다.','ok'); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done).catch(()=>prompt('계좌번호:',t)); }
+  else prompt('계좌번호:',t);
+};
 window.copyParentLink = function(){
   const url = ($I('parent-link-url')?.value) || PARENT_LINK_URL;
   const done = ()=>{ const m=$I('parent-link-msg'); if(m){ m.style.display='block'; setTimeout(()=>{ if(m) m.style.display='none'; }, 3000); } };
