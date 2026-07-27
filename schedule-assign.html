@@ -120,7 +120,7 @@
   .pm-colorbtn i{width:12px;height:12px;border-radius:3px;background:var(--c);display:inline-block}
   .pm-colorbtn.on{background:var(--cbg);border-color:var(--c);color:var(--c)}
   .pm-grid-wrap{overflow-x:auto;margin-bottom:8px}
-  .pm-grid{display:grid;gap:5px;min-width:420px}
+  .pm-grid{display:grid;gap:4px;min-width:0}
   .pm-cell{height:34px;display:flex;align-items:center;justify-content:center;font-size:12px;border-radius:7px}
   .pm-hcell{background:var(--gd,#1E3932);color:#fff;font-weight:700;font-size:11.5px}
   .pm-daycell{background:var(--iv,#F2F0EB);color:var(--gd,#1E3932);font-weight:800}
@@ -135,8 +135,9 @@
   .memo-text{width:100%;min-height:80px;font-family:inherit;font-size:13px;line-height:1.6;padding:11px 13px;
     border:1.5px solid var(--ivd,#E3E1DA);border-radius:10px;resize:vertical;box-sizing:border-box;color:var(--ink,#1a2420)}
   .memo-text:focus{outline:none;border-color:var(--gm,#00704A)}
-  /* 메모 세트 (여러 조건) */
-  .memo-sets{display:flex;flex-direction:column;gap:14px}
+  /* 메모 세트 (여러 조건) — 넓은 화면에선 2열 */
+  .memo-sets{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;align-items:start}
+  @media(max-width:1100px){ .memo-sets{grid-template-columns:1fr} }
   .memo-set{border:1.5px solid var(--ivd,#E3E1DA);border-radius:12px;padding:14px;background:#FBFAF7}
   .ms-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
   .ms-title{flex:1;font-family:inherit;font-size:13.5px;font-weight:700;color:var(--gd,#1E3932);
@@ -756,20 +757,22 @@ window.setMark = function(m){ curMark = m; renderMemo(); };
 
 function memosOf(){ if(!MEMOS[curTeacher]) MEMOS[curTeacher]=[]; return MEMOS[curTeacher]; }
 
-// 한 세트의 교시표 HTML
+// 한 세트의 교시표 HTML (가로=요일, 세로=교시)
 function buildMemoSet(set, idx, mp){
   let table = '';
   if(mp > 0){
     if(!set.marks) set.marks = {};
-    let head = `<div class="pm-cell pm-hcell">요일 \\ 교시</div>`;
-    for(let i=1;i<=mp;i++) head += `<div class="pm-cell pm-hcell">${i}교시</div>`;
+    // 헤더: 빈칸 + 월~금
+    let head = `<div class="pm-cell pm-hcell">교시\\요일</div>`;
+    DAYS.forEach(dy=> head += `<div class="pm-cell pm-hcell">${dy}</div>`);
+    // 행: 교시마다 한 줄, 각 요일 칸
     let rows = '';
-    DAYS.forEach(dy=>{
-      const periods = getPeriods(dy);
-      rows += `<div class="pm-cell pm-daycell">${dy}</div>`;
-      for(let i=1;i<=mp;i++){
+    for(let i=1;i<=mp;i++){
+      rows += `<div class="pm-cell pm-daycell">${i}교시</div>`;
+      DAYS.forEach(dy=>{
+        const periods = getPeriods(dy);
         const p = periods[i-1];
-        if(!p){ rows += `<div class="pm-cell pm-empty"></div>`; continue; }
+        if(!p){ rows += `<div class="pm-cell pm-empty"></div>`; return; }
         const mark = set.marks[dy] && set.marks[dy][i];
         const info = mark ? MARK_INFO[mark] : null;
         const style = info ? `background:${info.bg};color:${info.color};border-color:${info.color}` : '';
@@ -777,11 +780,11 @@ function buildMemoSet(set, idx, mp){
         const tstr = `${toHM(p.startMin)}~${toHM(p.endMin)}`;
         rows += `<div class="pm-cell pm-slot ${mark?'marked':''}" style="${style}"
           onclick="togglePMark(${idx},'${dy}',${i})" title="${dy} ${i}교시 (${tstr})">${label}</div>`;
-      }
-    });
+      });
+    }
     table = `
       <div class="pm-grid-wrap">
-        <div class="pm-grid" style="grid-template-columns:70px repeat(${mp}, 1fr)">${head}${rows}</div>
+        <div class="pm-grid" style="grid-template-columns:56px repeat(${DAYS.length}, 1fr)">${head}${rows}</div>
       </div>`;
   } else {
     table = `<div class="pm-noframe" style="padding:16px">배경 시간표를 선택하면 교시 표가 나타나요.</div>`;
