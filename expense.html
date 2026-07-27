@@ -2464,8 +2464,9 @@ async function renderPay(){
   let needDeposit=0, doneDeposit=0, needRefund=0, doneRefund=0;
   studs.forEach(s=>{
     const p = PAYMENTS[s.id] || {};
-    if(s.charge>0){ needDeposit++; if(p.deposit && p.deposit.checked) doneDeposit++; }
-    if(s.refund>0){ needRefund++; if(p.refund && p.refund.checked) doneRefund++; }
+    const netv = s.charge - s.refund;   // 순액: +면 입금, −면 환급
+    if(netv > 0){ needDeposit++; if(p.deposit && p.deposit.checked) doneDeposit++; }
+    else if(netv < 0){ needRefund++; if(p.refund && p.refund.checked) doneRefund++; }
   });
 
   // 학년별 묶기
@@ -2508,10 +2509,8 @@ async function renderPay(){
             <table class="pay-table">
               <thead><tr>
                 <th style="text-align:left">이름</th>
-                <th style="text-align:right">청구액</th>
-                <th style="text-align:center">입금</th>
-                <th style="text-align:right">반환액</th>
-                <th style="text-align:center">환급</th>
+                <th style="text-align:right">순 청구액</th>
+                <th style="text-align:center">입금 · 환급 처리</th>
               </tr></thead>
               <tbody>
                 ${byGrade[g].map(s=>payRow(s)).join('')}
@@ -2539,37 +2538,55 @@ async function renderPay(){
       .pay-in-date{width:120px;font-size:11.5px;padding:4px 6px;border:1px solid var(--ivd);border-radius:6px;font-family:inherit}
       .pay-cell-none{text-align:center;color:var(--tl);font-size:12px}
       .pay-pending{color:var(--warn);font-size:11px;font-weight:700}
+      .pay-done{color:var(--ok);font-size:11px;font-weight:700}
+      .pay-tag{font-size:10px;font-weight:800;padding:1px 7px;border-radius:100px;margin-left:4px}
+      .pay-tag-dep{background:var(--gp);color:var(--gm)}
+      .pay-tag-ref{background:#DBEAFE;color:var(--info)}
     </style>`;
 }
 window.renderPay = renderPay;
 
-// 학생 한 줄
+// 학생 한 줄 (순액 기준: +면 입금, −면 환급)
 function payRow(s){
   const p = PAYMENTS[s.id] || {};
-  const dep = p.deposit || {};
-  const ref = p.refund || {};
-  const depCell = s.charge>0 ? `
-    <div class="pay-chk-wrap">
-      <span class="pay-chk ${dep.checked?'on':''}" onclick="togglePay('${s.id}','deposit')">${dep.checked?'✓':''}</span>
-      <input type="number" class="pay-in" placeholder="${won(s.charge)}" value="${dep.amount!=null?dep.amount:''}"
-        oninput="setPayField('${s.id}','deposit','amount',this.value)" title="입금액 (비우면 청구액과 같음)">
-      <input type="date" class="pay-in-date" value="${dep.date||''}" oninput="setPayField('${s.id}','deposit','date',this.value)">
-      ${!dep.checked?'<span class="pay-pending">⏳ 미입금</span>':''}
-    </div>` : `<div class="pay-cell-none">-</div>`;
-  const refCell = s.refund>0 ? `
-    <div class="pay-chk-wrap">
-      <span class="pay-chk refund ${ref.checked?'on':''}" onclick="togglePay('${s.id}','refund')">${ref.checked?'✓':''}</span>
-      <input type="number" class="pay-in" placeholder="${won(s.refund)}" value="${ref.amount!=null?ref.amount:''}"
-        oninput="setPayField('${s.id}','refund','amount',this.value)" title="환급액 (비우면 반환액과 같음)">
-      <input type="date" class="pay-in-date" value="${ref.date||''}" oninput="setPayField('${s.id}','refund','date',this.value)">
-      ${!ref.checked?'<span class="pay-pending">⏳ 미환급</span>':''}
-    </div>` : `<div class="pay-cell-none">-</div>`;
+  const netv = s.charge - s.refund;   // 순액
+  const absNet = Math.abs(netv);
+
+  let netCell, actionCell;
+  if(netv > 0){
+    // 낼 돈 있음 → 입금
+    const dep = p.deposit || {};
+    netCell = `<span style="color:var(--gm);font-weight:800">₩${won(absNet)}</span> <span class="pay-tag pay-tag-dep">입금</span>`;
+    actionCell = `
+      <div class="pay-chk-wrap">
+        <span class="pay-chk ${dep.checked?'on':''}" onclick="togglePay('${s.id}','deposit')">${dep.checked?'✓':''}</span>
+        <input type="number" class="pay-in" placeholder="${won(absNet)}" value="${dep.amount!=null?dep.amount:''}"
+          oninput="setPayField('${s.id}','deposit','amount',this.value)" title="입금액 (비우면 순 청구액과 같음)">
+        <input type="date" class="pay-in-date" value="${dep.date||''}" oninput="setPayField('${s.id}','deposit','date',this.value)">
+        ${dep.checked?'<span class="pay-done">✅ 입금완료</span>':'<span class="pay-pending">⏳ 미입금</span>'}
+      </div>`;
+  } else if(netv < 0){
+    // 돌려줄 돈 → 환급
+    const ref = p.refund || {};
+    netCell = `<span style="color:var(--info);font-weight:800">₩${won(absNet)}</span> <span class="pay-tag pay-tag-ref">환급</span>`;
+    actionCell = `
+      <div class="pay-chk-wrap">
+        <span class="pay-chk refund ${ref.checked?'on':''}" onclick="togglePay('${s.id}','refund')">${ref.checked?'✓':''}</span>
+        <input type="number" class="pay-in" placeholder="${won(absNet)}" value="${ref.amount!=null?ref.amount:''}"
+          oninput="setPayField('${s.id}','refund','amount',this.value)" title="환급액 (비우면 순 환급액과 같음)">
+        <input type="date" class="pay-in-date" value="${ref.date||''}" oninput="setPayField('${s.id}','refund','date',this.value)">
+        ${ref.checked?'<span class="pay-done">✅ 환급완료</span>':'<span class="pay-pending">⏳ 미환급</span>'}
+      </div>`;
+  } else {
+    // 순액 0 → 정산 불필요
+    netCell = `<span style="color:var(--tl)">₩0</span>`;
+    actionCell = `<div class="pay-cell-none">정산 불필요</div>`;
+  }
+
   return `<tr>
     <td class="pay-name">${esc(s.name)}</td>
-    <td class="pay-amt" style="color:var(--gm)">${s.charge?'₩'+won(s.charge):'-'}</td>
-    <td>${depCell}</td>
-    <td class="pay-amt" style="color:var(--info)">${s.refund?'₩'+won(s.refund):'-'}</td>
-    <td>${refCell}</td>
+    <td class="pay-amt">${netCell}</td>
+    <td>${actionCell}</td>
   </tr>`;
 }
 
