@@ -111,6 +111,30 @@
   .sp-line{font-size:11.5px;line-height:1.6;padding-left:2px}
   .sp-ok{color:#1E7A44;font-weight:600}
   .sp-no{color:#C0392B;font-weight:600}
+  /* ── 📝 특수 조건 메모 ── */
+  .memo-section{margin-top:22px;padding-top:20px;border-top:2px dashed var(--ivd,#E3E1DA)}
+  .memo-title{font-size:14px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:14px}
+  .pm-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .pm-colorbtn{font-family:inherit;font-size:12px;font-weight:700;padding:6px 13px;border:1.5px solid var(--ivd,#E3E1DA);
+    border-radius:100px;background:var(--wh,#fff);color:var(--ts,#5a6560);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .pm-colorbtn i{width:12px;height:12px;border-radius:3px;background:var(--c);display:inline-block}
+  .pm-colorbtn.on{background:var(--cbg);border-color:var(--c);color:var(--c)}
+  .pm-grid-wrap{overflow-x:auto;margin-bottom:8px}
+  .pm-grid{display:grid;gap:5px;min-width:420px}
+  .pm-cell{height:34px;display:flex;align-items:center;justify-content:center;font-size:12px;border-radius:7px}
+  .pm-hcell{background:var(--gd,#1E3932);color:#fff;font-weight:700;font-size:11.5px}
+  .pm-daycell{background:var(--iv,#F2F0EB);color:var(--gd,#1E3932);font-weight:800}
+  .pm-slot{background:var(--wh,#fff);border:1.5px solid var(--ivd,#E3E1DA);cursor:pointer;font-weight:700;transition:all .1s}
+  .pm-slot:hover{border-color:var(--gm,#00704A)}
+  .pm-slot.marked{font-size:11.5px}
+  .pm-empty{background:repeating-linear-gradient(45deg,#f7f6f2,#f7f6f2 4px,#efede8 4px,#efede8 8px)}
+  .pm-hint{font-size:11.5px;color:var(--ts,#5a6560);line-height:1.7;padding:8px 2px}
+  .pm-noframe{padding:26px 20px;text-align:center;background:var(--iv,#F2F0EB);border-radius:10px;color:var(--ts,#5a6560);font-size:13px}
+  .memo-text-wrap{margin-top:14px}
+  .memo-label{display:block;font-size:12.5px;font-weight:700;color:var(--gd,#1E3932);margin-bottom:6px}
+  .memo-text{width:100%;min-height:80px;font-family:inherit;font-size:13px;line-height:1.6;padding:11px 13px;
+    border:1.5px solid var(--ivd,#E3E1DA);border-radius:10px;resize:vertical;box-sizing:border-box;color:var(--ink,#1a2420)}
+  .memo-text:focus{outline:none;border-color:var(--gm,#00704A)}
   /* ── 🏫 교실 배치 ── */
   .btn-p2{font-family:inherit;font-size:12.5px;font-weight:700;padding:8px 16px;border:none;border-radius:9px;
     background:var(--gm,#00704A);color:#fff;cursor:pointer}
@@ -306,6 +330,8 @@ let TEACHERS = [];       // 선생님 목록 (staff)
 let curTeacher = null;   // 선택된 선생님 uid
 // availability[uid] = { '월': Set(slotStart), ... }  (Set에 든 slot = 불가)
 let AVAIL = {};
+let NOTES = {};      // {uid: 메모 텍스트}
+let PMARKS = {};     // {uid: {요일: {교시번호: 'assign'|'alt'|'link'}}}
 let dirty = false;
 let painting = false, paintMode = null;   // 드래그 칠하기
 let lastPt = null;                        // 드래그 좌표 (연속 칠하기 보간용)
@@ -362,12 +388,14 @@ async function loadTeachers(){  const snap = await getDocs(collection(db,'staff'
 
   // 저장된 가능시간 불러오기
   const avSnap = await getDocs(collection(db,'teacherAvailability'));
-  AVAIL = {};
+  AVAIL = {}; NOTES = {}; PMARKS = {};
   avSnap.forEach(d=>{
     const data = d.data();
     const byDay = {};
     DAYS.forEach(dy=>{ byDay[dy] = new Set((data.unavailable && data.unavailable[dy]) || []); });
     AVAIL[d.id] = byDay;
+    NOTES[d.id] = data.note || '';
+    PMARKS[d.id] = data.periodMarks || {};   // {요일: {교시번호: 'assign'|'alt'|'link'}}
   });
 
   renderTeacherList();
@@ -447,7 +475,7 @@ function computeBgBlocks(){
       const dur = (item.durOverride!=null ? item.durOverride : bt.dur);
       const d = Number(dur)||0;
       blocks.push({ startMin:cur, endMin:cur+d, name:bt.name||'', color:bt.color||'#ccc',
-        isRest: !!bt.isRest });   // 완성 시간표와 동일: 순수 isRest만 (조회·예배는 수업 아님이지만 rest도 아님)
+        isRest: !!bt.isRest, countsAsClass: !!bt.countsAsClass });   // countsAsClass = 시수에 들어가는 실제 수업(=교시)
       cur += d;
     });
     bgBlocks[dy] = blocks;
@@ -481,6 +509,23 @@ function bgAt(dy, m){
   return list.find(b=> m>=b.startMin && m<b.endMin) || null;
 }
 
+// 요일별 "교시" 목록 추출 (countsAsClass인 실제 수업만, 순서대로 1·2·3…교시)
+function getPeriods(dy){
+  const list = bgBlocks[dy]; if(!list) return [];
+  const periods = [];
+  list.forEach(b=>{
+    if(b.countsAsClass){
+      periods.push({ no: periods.length+1, startMin:b.startMin, endMin:b.endMin, name:b.name });
+    }
+  });
+  return periods;
+}
+// 모든 요일 통틀어 최대 교시 수 (표 열 개수용)
+function maxPeriods(){
+  let mx = 0;
+  DAYS.forEach(dy=>{ mx = Math.max(mx, getPeriods(dy).length); });
+  return mx;
+}
 function hasAnyBlock(uid){
   const a = AVAIL[uid]; if(!a) return false;
   return DAYS.some(dy=> a[dy] && a[dy].size>0);
@@ -668,6 +713,9 @@ function renderGrid(){
       </div>
       <div class="summary-panel" id="summary-panel"></div>
     </div>
+
+    <div class="memo-section" id="memo-section"></div>
+
     <div class="save-row">
       <button class="btn btn-p" onclick="saveAvail()">💾 저장하기</button>
       <span class="save-note" id="save-note">변경 후 저장을 눌러 주세요.</span>
@@ -675,8 +723,98 @@ function renderGrid(){
 
   bindGridEvents();
   renderSummary();
+  renderMemo();
   updateSaveNote();
 }
+
+// 특수 조건 메모 (교시 간단표 + 색 체크 + 글)
+let curMark = 'assign';   // 현재 칠하기 색
+const MARK_INFO = {
+  assign: { label:'배정', color:'#00704A', bg:'#D4EDDD' },
+  alt:    { label:'대안', color:'#2563EB', bg:'#DBEAFE' },
+  link:   { label:'연강', color:'#C2410C', bg:'#FED7AA' },
+};
+window.setMark = function(m){ curMark = m; renderMemo(); };
+
+function renderMemo(){
+  const box = $I('memo-section'); if(!box) return;
+  const mp = maxPeriods();
+  const hasPeriods = mp > 0;
+
+  // 교시 간단표
+  let table = '';
+  if(hasPeriods){
+    if(!PMARKS[curTeacher]) PMARKS[curTeacher] = {};
+    const pm = PMARKS[curTeacher];
+    // 헤더
+    let head = `<div class="pm-cell pm-hcell">요일 \\ 교시</div>`;
+    for(let i=1;i<=mp;i++) head += `<div class="pm-cell pm-hcell">${i}교시</div>`;
+    // 요일 행
+    let rows = '';
+    DAYS.forEach(dy=>{
+      const periods = getPeriods(dy);
+      rows += `<div class="pm-cell pm-daycell">${dy}</div>`;
+      for(let i=1;i<=mp;i++){
+        const p = periods[i-1];
+        if(!p){ rows += `<div class="pm-cell pm-empty"></div>`; continue; }
+        const mark = pm[dy] && pm[dy][i];
+        const info = mark ? MARK_INFO[mark] : null;
+        const style = info ? `background:${info.bg};color:${info.color};border-color:${info.color}` : '';
+        const label = info ? info.label : '';
+        const tstr = `${toHM(p.startMin)}~${toHM(p.endMin)}`;
+        rows += `<div class="pm-cell pm-slot ${mark?'marked':''}" style="${style}"
+          onclick="togglePMark('${dy}',${i})" title="${dy} ${i}교시 (${tstr})">${label}</div>`;
+      }
+    });
+    table = `
+      <div class="pm-toolbar">
+        <span style="font-size:12px;font-weight:700;color:var(--ts)">칠할 색:</span>
+        ${Object.keys(MARK_INFO).map(k=>`
+          <button class="pm-colorbtn ${curMark===k?'on':''}" onclick="setMark('${k}')"
+            style="--c:${MARK_INFO[k].color};--cbg:${MARK_INFO[k].bg}">
+            <i></i>${MARK_INFO[k].label}
+          </button>`).join('')}
+        <button class="btn" style="margin-left:auto;font-size:11.5px;padding:5px 11px" onclick="clearPMarks()">지우기</button>
+      </div>
+      <div class="pm-grid-wrap">
+        <div class="pm-grid" style="grid-template-columns:70px repeat(${mp}, 1fr)">${head}${rows}</div>
+      </div>
+      <div class="pm-hint">
+        <b style="color:#00704A">배정</b> 이 자리에 넣기 · <b style="color:#2563EB">대안</b> 여기도 가능 · <b style="color:#C2410C">연강</b> 이어서 배정
+        <br>예) "월 2교시 + 수 2교시" 또는 "목 1·2교시 연강" 같은 조건을 색으로 표시하세요.
+      </div>`;
+  } else {
+    table = `<div class="pm-noframe">위에서 <b>배경 시간표</b>를 선택하면, 그 부서의 교시가 표로 나타나 체크할 수 있어요.</div>`;
+  }
+
+  box.innerHTML = `
+    <div class="memo-title">📝 특수 조건 메모 <span style="font-size:11.5px;font-weight:500;color:var(--tl)">— 자동 배정이 잡기 어려운 조건을 여기 기록하세요 (협력 선생님 등)</span></div>
+    ${table}
+    <div class="memo-text-wrap">
+      <label class="memo-label">✏️ 글 메모</label>
+      <textarea class="memo-text" id="memo-text" placeholder="예) 월~목만 가능, 주 3일로 배정. 수학은 오전에만. 화요일은 다른 기관 일정으로 오후 불가…"
+        oninput="onNoteInput()">${esc(NOTES[curTeacher]||'')}</textarea>
+    </div>`;
+}
+window.renderMemo = renderMemo;
+
+window.togglePMark = function(dy, pno){
+  if(!PMARKS[curTeacher]) PMARKS[curTeacher] = {};
+  if(!PMARKS[curTeacher][dy]) PMARKS[curTeacher][dy] = {};
+  const cur = PMARKS[curTeacher][dy][pno];
+  if(cur===curMark){ delete PMARKS[curTeacher][dy][pno]; }   // 같은 색 다시 누르면 해제
+  else { PMARKS[curTeacher][dy][pno] = curMark; }
+  markDirty(); renderMemo();
+};
+window.clearPMarks = function(){
+  if(confirm('교시 체크를 모두 지울까요? (글 메모는 유지됩니다)')){
+    PMARKS[curTeacher] = {}; markDirty(); renderMemo();
+  }
+};
+window.onNoteInput = function(){
+  NOTES[curTeacher] = $I('memo-text').value;
+  markDirty();
+};
 
 // 가능/불가를 글로 정리 (연속 구간 병합)
 function renderSummary(){
@@ -1037,6 +1175,8 @@ window.saveAvail = async function(){
     await setDoc(doc(db,'teacherAvailability',curTeacher), {
       uid: curTeacher, name: t?.name||'', org: t?.org||'',
       unavailable, step: STEP, startMin: START_MIN, endMin: END_MIN,
+      note: NOTES[curTeacher] || '',
+      periodMarks: PMARKS[curTeacher] || {},
       updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'',
     }, {merge:true});
     dirty=false; updateSaveNote(); renderTeacherList();
