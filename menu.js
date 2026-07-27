@@ -51,6 +51,7 @@ const MENU = [
         badge:'approval' },
       { key:'timetable', label:'시간표', icon:'grid_view', href:'timetable.html',
         desc:'시간표 틀 · 시간표 배정',
+        tabs:['시간표 틀 만들기','시간표 틀 보관함','수업 가능 시간','교실 배치','수업 정의','배치'],
         alt:['schedule-assign.html'] },
     ]
   },

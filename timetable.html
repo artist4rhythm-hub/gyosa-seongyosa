@@ -429,7 +429,6 @@
   <div class="tabbar">
     <button class="tabbtn on" data-tab="frame">시간표 틀 만들기</button>
     <button class="tabbtn" data-tab="store">시간표 틀 보관함</button>
-    <button class="tabbtn" data-tab="plan">학년별 편성</button>
   </div>
 
   <div class="tabpane" id="tab-frame">
@@ -566,23 +565,13 @@
       <div class="panel-head">
         <h2>시간표 틀 보관함</h2>
         <span class="faint" id="storeCount" style="font-size:12px"></span>
-        <button class="btn btn-sm" id="btnPlanAccess" style="display:none;margin-left:auto">⚙️ 편성 담당자 지정</button>
       </div>
       <div class="panel-body">
-        <p class="muted" style="margin:0 0 14px;font-size:13px">저장한 시간표 틀 목록입니다. 원하는 틀을 골라 <b>"이 틀로 편성하기"</b>를 누르면, 그 틀을 바탕으로 학년별 편성 화면으로 이동합니다.</p>
+        <p class="muted" style="margin:0 0 14px;font-size:13px">저장한 시간표 틀 목록입니다. 원하는 틀을 골라 <b>"이 틀로 배정하기"</b>를 누르면, 그 틀을 배경으로 <b>시간표 배정</b> 화면이 열립니다.</p>
         <div id="storeList"></div>
       </div>
     </div>
   </div><!-- /tab-store -->
-
-  <div class="tabpane" id="tab-plan" style="display:none">
-    <div class="subtabbar">
-      <button class="subtabbtn on" data-sub="input">수업 입력</button>
-      <button class="subtabbtn" data-sub="place">시간표 배치</button>
-    </div>
-    <div id="planRoot"></div>
-    <div id="placeRoot" style="display:none"></div>
-  </div>
 
 </div>
 
@@ -2018,7 +2007,7 @@ function renderStore(){
       <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:3px"><b>부서</b> · ${escapeHtml(deptNames)}</div>
       <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:14px"><b>요일</b> · ${days}일 구성</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" data-act="apply" data-id="${s.id}">이 틀로 편성하기</button>
+        <button class="btn btn-primary btn-sm" data-act="apply" data-id="${s.id}">이 틀로 배정하기 →</button>
         <button class="btn btn-sm" data-act="dup" data-id="${s.id}">복제</button>
         ${canEdit?`<button class="btn btn-sm" data-act="load" data-id="${s.id}">틀 수정</button>`:''}
         ${canManage?`<button class="btn btn-sm" data-act="perm" data-id="${s.id}">🔑 권한</button>`:''}
@@ -2030,7 +2019,7 @@ function renderStore(){
   list.querySelectorAll('button[data-act]').forEach(b=>{
     const id=b.dataset.id, act=b.dataset.act;
     b.onclick=()=>{
-      if(act==='apply') applyFrameToPlan(id);
+      if(act==='apply') goToAssign(id);
       else if(act==='dup'){ duplicateTimetable(id); renderStore(); }
       else if(act==='load'){ loadTimetable(id); switchTab('frame'); }
       else if(act==='perm'){ if(window.openTtPermDlg) window.openTtPermDlg(id); }
@@ -2050,15 +2039,18 @@ function switchTab(tab){
   if(btn) btn.click();
 }
 
-// 선택한 틀을 현재 작업 state로 불러오고 학년별 편성으로 이동
-function applyFrameToPlan(id){
+// 선택한 틀을 배경으로 지정하고 '시간표 배정' 페이지로 이동
+function goToAssign(id){
   const item=savedTimetables.find(s=>s.id===id);
   if(!item) return;
-  state=JSON.parse(JSON.stringify(item.snapshot));
-  renderAll();
-  flash(`"${item.name}" 틀을 편성에 적용했습니다`);
-  switchTab('plan');
-  window.scrollTo({top:0,behavior:'smooth'});
+  // 시간표 배정의 배경 선택기(bg-dept)와 같은 형식: "틀ID::부서ID"
+  const depts=(item.snapshot && item.snapshot.departments) || [];
+  if(!depts.length){
+    flash('이 틀에는 부서가 없어 배경으로 쓸 수 없습니다');
+    return;
+  }
+  try { localStorage.setItem('sa_bg_dept', `${item.id}::${depts[0].id}`); } catch(e){}
+  location.href='schedule-assign.html';
 }
 
 
@@ -2479,29 +2471,12 @@ function setupTabs(){
   document.querySelectorAll('.tabbtn').forEach(b=>{
     b.onclick=()=>{
       const tab=b.dataset.tab;
-      // 학년별 편성은 지정된 선생님만 접근
-      if(tab==='plan' && !canAccessPlan()){
-        alert('학년별 편성은 슈퍼 관리자가 지정한 담당자만 접근할 수 있습니다.\n\n접근이 필요하면 관리자에게 요청해주세요.');
-        return;
-      }
       document.querySelectorAll('.tabbtn').forEach(x=>x.classList.toggle('on',x===b));
       document.getElementById('tab-frame').style.display = tab==='frame'?'':'none';
       document.getElementById('tab-store').style.display = tab==='store'?'':'none';
-      document.getElementById('tab-plan').style.display = tab==='plan'?'':'none';
       // 보관함은 좌우 여백을 꽉 채워 목록을 넓게 봄
       document.querySelector('.wrap')?.classList.toggle('wrap-wide', tab==='store');
-      if(tab==='plan') renderPlanning();
       if(tab==='store') renderStore();
-    };
-  });
-  document.querySelectorAll('.subtabbtn').forEach(b=>{
-    b.onclick=()=>{
-      document.querySelectorAll('.subtabbtn').forEach(x=>x.classList.toggle('on',x===b));
-      const sub=b.dataset.sub;
-      document.getElementById('planRoot').style.display = sub==='input'?'':'none';
-      document.getElementById('placeRoot').style.display = sub==='place'?'':'none';
-      if(sub==='input') renderPlanning();
-      if(sub==='place') renderPlace();
     };
   });
 }
