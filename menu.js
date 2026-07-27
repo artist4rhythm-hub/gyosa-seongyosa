@@ -49,8 +49,9 @@ const MENU = [
         desc:'기안 · 결재함 · 서명',
         tabs:['결재할 문서','내가 올린 문서','완료 문서','내 서명','직책 관리'],
         badge:'approval' },
-      { key:'timetable', label:'시간표틀', icon:'grid_view', href:'timetable.html',
-        desc:'틀 만들기 · 수업 배치' },
+      { key:'timetable', label:'시간표', icon:'grid_view', href:'timetable.html',
+        desc:'시간표 틀 · 시간표 배정',
+        alt:['schedule-assign.html'] },
     ]
   },
   {
@@ -85,8 +86,7 @@ const MENU = [
     items: [
       { key:'adm', label:'관리자', icon:'admin_panel_settings', href:'admin.html',
         desc:'교직원 · 인사 · 보안 · 로그',
-        tabs:['통합관리','출근부 설정','인사정보','접속·보안','로그인 기록','활동 로그'], admin:true,
-        deny:['org_admin','tab_admin','teacher','partner'] },   // 수퍼관리자 전용
+        tabs:['통합관리','출근부 설정','인사정보','접속·보안','로그인 기록','활동 로그'], admin:true },
     ]
   },
 ];
