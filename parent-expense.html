@@ -70,7 +70,10 @@
 
   /* ── 금액 요약 ── */
   .sumbox{border:2px solid var(--gold);border-radius:12px;overflow:hidden;margin-bottom:14px}
-  .sumbox .top{background:var(--goldp);padding:14px 16px;text-align:center}
+  .sem-tabs{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .sem-tab{padding:8px 16px;border:1.5px solid var(--iv,#eee);border-radius:100px;background:var(--wh,#fff);
+    font-size:13px;font-weight:700;color:var(--ts,#666);cursor:pointer;font-family:inherit}
+  .sem-tab.on{background:var(--gold,#c9a227);border-color:var(--gold,#c9a227);color:#fff}.sumbox .top{background:var(--goldp);padding:14px 16px;text-align:center}
   .sumbox .top .k{font-size:12px;font-weight:700;color:var(--gold);margin-bottom:5px}
   .sumbox .top .v{font-size:26px;font-weight:800;color:var(--gd);font-variant-numeric:tabular-nums}
   .sumbox .top .v.refund{color:var(--gm)}
@@ -239,6 +242,7 @@ const BANKS = [
 ];
 
 let ME=null, TOKEN='', MY_ITEMS=[], MY_SEM='', GRADE_SUMMARY=[], GRADE_LABEL='';
+let ALL_SEMS=[], ITEMS_BY_SEM={}, SUMMARY_BY_SEM={}, curSem='';   // 학기 탭용
 
 /* ── 초기 로드: 선택지만 채움 (학생 정보는 서버에서만 조회) ── */
 const GRADE_OPTIONS = {
@@ -280,6 +284,11 @@ window.doAuth = async function(){
     const d = res.data;
     ME = d.student; TOKEN = d.token || ''; MY_ITEMS = d.items || []; MY_SEM = d.semester || '';
     GRADE_SUMMARY = d.gradeSummary || []; GRADE_LABEL = d.gradeLabel || '';
+    // 학기별 데이터 (신형 서버). 없으면(구형) 최신 학기 하나로 구성
+    ALL_SEMS = d.semesters || (MY_SEM ? [MY_SEM] : []);
+    ITEMS_BY_SEM = d.itemsBySem || (MY_SEM ? {[MY_SEM]: MY_ITEMS} : {});
+    SUMMARY_BY_SEM = d.summaryBySem || (MY_SEM ? {[MY_SEM]: GRADE_SUMMARY} : {});
+    curSem = MY_SEM || (ALL_SEMS[0] || '');
     $('w-name').textContent = ME.name;
     $('w-meta').textContent = `${ME.gradeLabel||ME.grade+'학년'}${ME.className?` · ${ME.className}`:''}`;
     $('auth-card').style.display='none';
@@ -374,25 +383,36 @@ window.copyAcct = function(){
 /* ── 우리 아이 경비 내역 (인증 시 서버에서 함께 받음) ── */
 function renderMyExpenses(){
   const box=$('ex-body');
-  // 삭제(휴지통) 항목은 서버에서 이미 제외되지만, 구버전 대비 이중 방어
-  const list = (MY_ITEMS || []).filter(m=>!m.deleted && !m.hidden);
+
+  // 현재 선택 학기 기준 데이터
+  const semItems = (ITEMS_BY_SEM[curSem] || MY_ITEMS || []);
+  const list = semItems.filter(m=>!m.deleted && !m.hidden);
+
+  // 학기 탭 (2개 이상일 때만)
+  let semTabsHtml = '';
+  if(ALL_SEMS.length > 1){
+    semTabsHtml = `<div class="sem-tabs">` + ALL_SEMS.map(s=>{
+      const lbl = s.replace(/^(\d{4})-(\d)$/,'$1년 $2학기');
+      return `<button class="sem-tab ${s===curSem?'on':''}" onclick="switchSem('${s}')">${esc(lbl)}</button>`;
+    }).join('') + `</div>`;
+  }
+
   if(!list.length){
     $('ex-desc').textContent='';
-    box.innerHTML='<div class="state"><div class="ico">📭</div><div class="t1">아직 등록된 내역이 없습니다</div><div class="t2">새로운 경비가 등록되면 이곳에서 확인하실 수 있습니다.</div></div>';
+    box.innerHTML = semTabsHtml + '<div class="state"><div class="ico">📭</div><div class="t1">이 학기엔 등록된 내역이 없습니다</div><div class="t2">다른 학기를 선택하시거나, 새 경비가 등록되면 확인하실 수 있습니다.</div></div>';
     return;
   }
-  // 청구(+) / 반환(−) 분리 집계 — 교사용 '순 청구액'과 동일 계산
-  // 반환 판정: mode==='refund' 이거나 금액이 음수 → 어느 쪽이든 반환으로 집계
-  // (서버가 부호를 넘기지 않는 경우에도 합계가 정확하도록 이중 방어)
   const isRef = m => m.mode==='refund' || (Number(m.amt)||0) < 0;
   const charge = list.filter(m=>!isRef(m)).reduce((t,m)=>t+Math.abs(Number(m.amt)||0),0);
   const refund = list.filter(m=> isRef(m)).reduce((t,m)=>t+Math.abs(Number(m.amt)||0),0);
   const net = charge - refund;
   const isRefund = net<0;
-  const semLabel = MY_SEM ? MY_SEM.replace(/^(\d{4})-(\d)$/,'$1년 $2학기') : '';
+  const semLabel = curSem ? curSem.replace(/^(\d{4})-(\d)$/,'$1년 $2학기') : '';
   $('ex-desc').textContent = `${semLabel}${semLabel?' · ':''}총 ${list.length}건`;
 
-  box.innerHTML = `
+  const curSummary = SUMMARY_BY_SEM[curSem] || [];
+
+  box.innerHTML = semTabsHtml + `
     <div class="sumbox">
       <div class="top">
         <div class="k">${isRefund?'돌려받으실 금액':'납부하실 금액'}</div>
@@ -420,10 +440,16 @@ function renderMyExpenses(){
       }).join('')}
     </div>
     <div class="hint" style="margin-top:10px">· 금액이 (−)로 표시된 항목은 돌려드리는 금액입니다.</div>
-    ${GRADE_SUMMARY.length?`<button class="btn btn-sub" style="margin-top:14px" onclick="toggleGradeSummary()">
+    ${curSummary.length?`<button class="btn btn-sub" style="margin-top:14px" onclick="toggleGradeSummary()">
       📋 ${esc(GRADE_LABEL||'우리 학년')} 전체 내역 보기</button>
     <div id="grade-summary" style="display:none;margin-top:14px"></div>`:''}`;
 }
+
+// 학기 전환
+window.switchSem = function(s){
+  curSem = s; gradeShown = false;
+  renderMyExpenses();
+};
 
 // ── 그 학년 전체 항목별 요약 (이름 없이) ──
 let gradeShown = false;
@@ -433,14 +459,15 @@ window.toggleGradeSummary = function(){
   gradeShown = !gradeShown;
   if(!gradeShown){ box.style.display='none'; if(btn) btn.textContent = `📋 ${GRADE_LABEL||'우리 학년'} 전체 내역 보기`; return; }
   if(btn) btn.textContent = '📋 전체 내역 접기';
-  const semLabel = MY_SEM ? MY_SEM.replace(/^(\d{4})-(\d)$/,'$1년 $2학기') : '';
+  const semLabel = curSem ? curSem.replace(/^(\d{4})-(\d)$/,'$1년 $2학기') : '';
+  const curSummary = SUMMARY_BY_SEM[curSem] || GRADE_SUMMARY || [];
   box.innerHTML = `
     <div style="background:var(--gp);border-radius:10px;padding:12px 14px;margin-bottom:10px;font-size:12px;color:var(--ts);line-height:1.6">
       ${esc(semLabel)} ${esc(GRADE_LABEL||'')} 전체 항목입니다. 각 항목의 <b>1인당 금액</b>과 <b>대상 인원</b>을 보여드립니다.<br>
       <span style="color:var(--tl)">· 학생 개인정보 보호를 위해 이름은 표시하지 않습니다.</span>
     </div>
     <div class="items">
-      ${GRADE_SUMMARY.map(s=>{
+      ${curSummary.map(s=>{
         const ref = s.mode==='refund';
         const per = s.same
           ? `${ref?'− ':''}₩${won(s.perMin)}`
