@@ -135,6 +135,19 @@
   .memo-text{width:100%;min-height:80px;font-family:inherit;font-size:13px;line-height:1.6;padding:11px 13px;
     border:1.5px solid var(--ivd,#E3E1DA);border-radius:10px;resize:vertical;box-sizing:border-box;color:var(--ink,#1a2420)}
   .memo-text:focus{outline:none;border-color:var(--gm,#00704A)}
+  /* 메모 세트 (여러 조건) */
+  .memo-sets{display:flex;flex-direction:column;gap:14px}
+  .memo-set{border:1.5px solid var(--ivd,#E3E1DA);border-radius:12px;padding:14px;background:#FBFAF7}
+  .ms-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .ms-title{flex:1;font-family:inherit;font-size:13.5px;font-weight:700;color:var(--gd,#1E3932);
+    padding:7px 11px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff)}
+  .ms-title:focus{outline:none;border-color:var(--gm,#00704A)}
+  .ms-del{flex:none;width:30px;height:30px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:8px;
+    background:var(--wh,#fff);color:var(--danger,#C0392B);cursor:pointer;font-size:13px;font-weight:700}
+  .ms-del:hover{background:var(--danger,#C0392B);color:#fff;border-color:var(--danger,#C0392B)}
+  .memo-set .memo-text{margin-top:10px;min-height:52px}
+  .memo-empty{padding:24px 20px;text-align:center;background:var(--iv,#F2F0EB);border-radius:10px;
+    color:var(--ts,#5a6560);font-size:13px}
   /* ── 🏫 교실 배치 ── */
   .btn-p2{font-family:inherit;font-size:12.5px;font-weight:700;padding:8px 16px;border:none;border-radius:9px;
     background:var(--gm,#00704A);color:#fff;cursor:pointer}
@@ -330,8 +343,7 @@ let TEACHERS = [];       // 선생님 목록 (staff)
 let curTeacher = null;   // 선택된 선생님 uid
 // availability[uid] = { '월': Set(slotStart), ... }  (Set에 든 slot = 불가)
 let AVAIL = {};
-let NOTES = {};      // {uid: 메모 텍스트}
-let PMARKS = {};     // {uid: {요일: {교시번호: 'assign'|'alt'|'link'}}}
+let MEMOS = {};      // {uid: [{title, marks:{요일:{교시:색}}, note}]}  — 메모 세트 여러 개
 let dirty = false;
 let painting = false, paintMode = null;   // 드래그 칠하기
 let lastPt = null;                        // 드래그 좌표 (연속 칠하기 보간용)
@@ -388,14 +400,20 @@ async function loadTeachers(){  const snap = await getDocs(collection(db,'staff'
 
   // 저장된 가능시간 불러오기
   const avSnap = await getDocs(collection(db,'teacherAvailability'));
-  AVAIL = {}; NOTES = {}; PMARKS = {};
+  AVAIL = {}; MEMOS = {};
   avSnap.forEach(d=>{
     const data = d.data();
     const byDay = {};
     DAYS.forEach(dy=>{ byDay[dy] = new Set((data.unavailable && data.unavailable[dy]) || []); });
     AVAIL[d.id] = byDay;
-    NOTES[d.id] = data.note || '';
-    PMARKS[d.id] = data.periodMarks || {};   // {요일: {교시번호: 'assign'|'alt'|'link'}}
+    // 메모 세트 로드 (신형 memos 배열 우선, 없으면 구형 note/periodMarks를 1개 세트로 변환)
+    if(Array.isArray(data.memos) && data.memos.length){
+      MEMOS[d.id] = data.memos.map(m=>({ title:m.title||'', marks:m.marks||{}, note:m.note||'' }));
+    } else if(data.note || data.periodMarks){
+      MEMOS[d.id] = [{ title:'조건 1', marks:data.periodMarks||{}, note:data.note||'' }];
+    } else {
+      MEMOS[d.id] = [];
+    }
   });
 
   renderTeacherList();
@@ -727,7 +745,7 @@ function renderGrid(){
   updateSaveNote();
 }
 
-// 특수 조건 메모 (교시 간단표 + 색 체크 + 글)
+// 특수 조건 메모 (세트 여러 개 — 배정/대안 겹침 대응)
 let curMark = 'assign';   // 현재 칠하기 색
 const MARK_INFO = {
   assign: { label:'배정', color:'#00704A', bg:'#D4EDDD' },
@@ -736,20 +754,15 @@ const MARK_INFO = {
 };
 window.setMark = function(m){ curMark = m; renderMemo(); };
 
-function renderMemo(){
-  const box = $I('memo-section'); if(!box) return;
-  const mp = maxPeriods();
-  const hasPeriods = mp > 0;
+function memosOf(){ if(!MEMOS[curTeacher]) MEMOS[curTeacher]=[]; return MEMOS[curTeacher]; }
 
-  // 교시 간단표
+// 한 세트의 교시표 HTML
+function buildMemoSet(set, idx, mp){
   let table = '';
-  if(hasPeriods){
-    if(!PMARKS[curTeacher]) PMARKS[curTeacher] = {};
-    const pm = PMARKS[curTeacher];
-    // 헤더
+  if(mp > 0){
+    if(!set.marks) set.marks = {};
     let head = `<div class="pm-cell pm-hcell">요일 \\ 교시</div>`;
     for(let i=1;i<=mp;i++) head += `<div class="pm-cell pm-hcell">${i}교시</div>`;
-    // 요일 행
     let rows = '';
     DAYS.forEach(dy=>{
       const periods = getPeriods(dy);
@@ -757,64 +770,84 @@ function renderMemo(){
       for(let i=1;i<=mp;i++){
         const p = periods[i-1];
         if(!p){ rows += `<div class="pm-cell pm-empty"></div>`; continue; }
-        const mark = pm[dy] && pm[dy][i];
+        const mark = set.marks[dy] && set.marks[dy][i];
         const info = mark ? MARK_INFO[mark] : null;
         const style = info ? `background:${info.bg};color:${info.color};border-color:${info.color}` : '';
         const label = info ? info.label : '';
         const tstr = `${toHM(p.startMin)}~${toHM(p.endMin)}`;
         rows += `<div class="pm-cell pm-slot ${mark?'marked':''}" style="${style}"
-          onclick="togglePMark('${dy}',${i})" title="${dy} ${i}교시 (${tstr})">${label}</div>`;
+          onclick="togglePMark(${idx},'${dy}',${i})" title="${dy} ${i}교시 (${tstr})">${label}</div>`;
       }
     });
     table = `
-      <div class="pm-toolbar">
-        <span style="font-size:12px;font-weight:700;color:var(--ts)">칠할 색:</span>
-        ${Object.keys(MARK_INFO).map(k=>`
-          <button class="pm-colorbtn ${curMark===k?'on':''}" onclick="setMark('${k}')"
-            style="--c:${MARK_INFO[k].color};--cbg:${MARK_INFO[k].bg}">
-            <i></i>${MARK_INFO[k].label}
-          </button>`).join('')}
-        <button class="btn" style="margin-left:auto;font-size:11.5px;padding:5px 11px" onclick="clearPMarks()">지우기</button>
-      </div>
       <div class="pm-grid-wrap">
         <div class="pm-grid" style="grid-template-columns:70px repeat(${mp}, 1fr)">${head}${rows}</div>
-      </div>
-      <div class="pm-hint">
-        <b style="color:#00704A">배정</b> 이 자리에 넣기 · <b style="color:#2563EB">대안</b> 여기도 가능 · <b style="color:#C2410C">연강</b> 이어서 배정
-        <br>예) "월 2교시 + 수 2교시" 또는 "목 1·2교시 연강" 같은 조건을 색으로 표시하세요.
       </div>`;
   } else {
-    table = `<div class="pm-noframe">위에서 <b>배경 시간표</b>를 선택하면, 그 부서의 교시가 표로 나타나 체크할 수 있어요.</div>`;
+    table = `<div class="pm-noframe" style="padding:16px">배경 시간표를 선택하면 교시 표가 나타나요.</div>`;
   }
 
-  box.innerHTML = `
-    <div class="memo-title">📝 특수 조건 메모 <span style="font-size:11.5px;font-weight:500;color:var(--tl)">— 자동 배정이 잡기 어려운 조건을 여기 기록하세요 (협력 선생님 등)</span></div>
-    ${table}
-    <div class="memo-text-wrap">
-      <label class="memo-label">✏️ 글 메모</label>
-      <textarea class="memo-text" id="memo-text" placeholder="예) 월~목만 가능, 주 3일로 배정. 수학은 오전에만. 화요일은 다른 기관 일정으로 오후 불가…"
-        oninput="onNoteInput()">${esc(NOTES[curTeacher]||'')}</textarea>
+  return `
+    <div class="memo-set" data-idx="${idx}">
+      <div class="ms-head">
+        <input type="text" class="ms-title" value="${esc(set.title||'')}" placeholder="조건 이름 (예: 1안, 오전 선호)"
+          oninput="onSetTitle(${idx}, this.value)">
+        <button class="ms-del" onclick="delMemoSet(${idx})" title="이 조건 삭제">✕</button>
+      </div>
+      ${table}
+      <textarea class="memo-text" placeholder="이 조건에 대한 글 설명 (예: 월 2교시+수 2교시, 아니면 목 1·2 연강)"
+        oninput="onSetNote(${idx}, this.value)">${esc(set.note||'')}</textarea>
     </div>`;
+}
+
+function renderMemo(){
+  const box = $I('memo-section'); if(!box) return;
+  const mp = maxPeriods();
+  const sets = memosOf();
+
+  const setsHtml = sets.length
+    ? sets.map((s,i)=>buildMemoSet(s,i,mp)).join('')
+    : `<div class="memo-empty">아직 등록된 특수 조건이 없어요. <b>+ 조건 추가</b>를 눌러 첫 조건을 만들어보세요.</div>`;
+
+  box.innerHTML = `
+    <div class="memo-title">📝 특수 조건 메모
+      <span style="font-size:11.5px;font-weight:500;color:var(--tl)">— 자동 배정이 잡기 어려운 조건을 기록하세요. 배정·대안이 겹치면 조건을 여러 개 추가할 수 있어요.</span>
+    </div>
+    <div class="pm-toolbar">
+      <span style="font-size:12px;font-weight:700;color:var(--ts)">칠할 색:</span>
+      ${Object.keys(MARK_INFO).map(k=>`
+        <button class="pm-colorbtn ${curMark===k?'on':''}" onclick="setMark('${k}')"
+          style="--c:${MARK_INFO[k].color};--cbg:${MARK_INFO[k].bg}"><i></i>${MARK_INFO[k].label}</button>`).join('')}
+      <span style="font-size:11px;color:var(--tl);margin-left:4px">배정=넣기 · 대안=여기도 가능 · 연강=이어서</span>
+      <button class="btn btn-p" style="margin-left:auto;font-size:12px;padding:7px 14px" onclick="addMemoSet()">+ 조건 추가</button>
+    </div>
+    <div class="memo-sets">${setsHtml}</div>`;
 }
 window.renderMemo = renderMemo;
 
-window.togglePMark = function(dy, pno){
-  if(!PMARKS[curTeacher]) PMARKS[curTeacher] = {};
-  if(!PMARKS[curTeacher][dy]) PMARKS[curTeacher][dy] = {};
-  const cur = PMARKS[curTeacher][dy][pno];
-  if(cur===curMark){ delete PMARKS[curTeacher][dy][pno]; }   // 같은 색 다시 누르면 해제
-  else { PMARKS[curTeacher][dy][pno] = curMark; }
+window.addMemoSet = function(){
+  const sets = memosOf();
+  sets.push({ title:`조건 ${sets.length+1}`, marks:{}, note:'' });
   markDirty(); renderMemo();
 };
-window.clearPMarks = function(){
-  if(confirm('교시 체크를 모두 지울까요? (글 메모는 유지됩니다)')){
-    PMARKS[curTeacher] = {}; markDirty(); renderMemo();
+window.delMemoSet = function(idx){
+  const sets = memosOf();
+  if(!sets[idx]) return;
+  if(confirm(`"${sets[idx].title||'이 조건'}"을(를) 삭제할까요?`)){
+    sets.splice(idx,1); markDirty(); renderMemo();
   }
 };
-window.onNoteInput = function(){
-  NOTES[curTeacher] = $I('memo-text').value;
-  markDirty();
+window.togglePMark = function(idx, dy, pno){
+  const set = memosOf()[idx]; if(!set) return;
+  if(!set.marks) set.marks = {};
+  if(!set.marks[dy]) set.marks[dy] = {};
+  const cur = set.marks[dy][pno];
+  if(cur===curMark){ delete set.marks[dy][pno]; }
+  else { set.marks[dy][pno] = curMark; }
+  markDirty(); renderMemo();
 };
+window.onSetTitle = function(idx, v){ const s=memosOf()[idx]; if(s){ s.title=v; markDirty(); } };
+window.onSetNote  = function(idx, v){ const s=memosOf()[idx]; if(s){ s.note=v; markDirty(); } };
 
 // 가능/불가를 글로 정리 (연속 구간 병합)
 function renderSummary(){
@@ -1175,8 +1208,7 @@ window.saveAvail = async function(){
     await setDoc(doc(db,'teacherAvailability',curTeacher), {
       uid: curTeacher, name: t?.name||'', org: t?.org||'',
       unavailable, step: STEP, startMin: START_MIN, endMin: END_MIN,
-      note: NOTES[curTeacher] || '',
-      periodMarks: PMARKS[curTeacher] || {},
+      memos: (MEMOS[curTeacher] || []).map(m=>({ title:m.title||'', marks:m.marks||{}, note:m.note||'' })),
       updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'',
     }, {merge:true});
     dirty=false; updateSaveNote(); renderTeacherList();
