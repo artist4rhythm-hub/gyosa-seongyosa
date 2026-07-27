@@ -252,13 +252,42 @@
   .floorplan-wrap{margin-bottom:14px}
   .floorplan{position:relative;display:inline-block;max-width:100%;border:1px solid var(--ivd,#E3E1DA);border-radius:10px;overflow:hidden;line-height:0}
   .fp-img{max-width:100%;height:auto;display:block;user-select:none;-webkit-user-drag:none}
-  .fp-overlay{position:absolute;inset:0;cursor:crosshair}
-  .fp-room{position:absolute;border:2px solid var(--gm,#00704A);background:rgba(0,112,74,.16);
-    border-radius:5px;cursor:pointer;transition:background .12s;display:flex;align-items:center;justify-content:center;box-sizing:border-box}
-  .fp-room:hover{background:rgba(0,112,74,.28)}
-  .fp-room.drawing{border-style:dashed;background:rgba(0,112,74,.1);pointer-events:none}
-  .fp-rname{font-size:11px;font-weight:800;color:#0a3a2a;background:rgba(255,255,255,.85);
-    padding:1px 6px;border-radius:4px;line-height:1.3;white-space:nowrap;max-width:96%;overflow:hidden;text-overflow:ellipsis}
+  .fp-svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;overflow:visible}
+  .fp-svg.mode-rect,.fp-svg.mode-poly{cursor:crosshair}
+  .fp-svg.mode-sel{cursor:default}
+  /* 교실 도형 */
+  .rm-shape{fill:rgba(0,112,74,.16);stroke:var(--gm,#00704A);stroke-width:2;stroke-linejoin:round;
+    cursor:pointer;transition:fill .12s}
+  .rm-shape:hover{fill:rgba(0,112,74,.28)}
+  .rm-shape.sel{fill:rgba(0,112,74,.30);stroke-width:2.5;stroke-dasharray:none}
+  .rm-shape.ghost{fill:rgba(0,112,74,.10);stroke-dasharray:6 4;pointer-events:none}
+  .rm-label{font-size:11px;font-weight:800;fill:#0a3a2a;text-anchor:middle;dominant-baseline:middle;
+    pointer-events:none;paint-order:stroke;stroke:rgba(255,255,255,.9);stroke-width:3.5;stroke-linejoin:round}
+  /* 핸들 */
+  .h-vertex{fill:#fff;stroke:var(--gm,#00704A);stroke-width:2.2;cursor:grab;r:6}
+  .h-vertex:hover{fill:var(--gm,#00704A);r:7.5}
+  .h-vertex:active{cursor:grabbing}
+  .h-edge{fill:var(--wh,#fff);stroke:#B08D3C;stroke-width:2;cursor:grab;r:4.5;opacity:.9}
+  .h-edge:hover{fill:#B08D3C;r:6;opacity:1}
+  .h-edge.curved{fill:#B08D3C;stroke:#8A6410}
+  /* 도형 툴바 */
+  .rm-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 12px;
+    background:var(--gp,#E8F3EF);border:1px solid var(--gl,#D6E9E0);border-radius:10px;margin-bottom:10px}
+  .rm-modebtn{font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:8px;
+    border:1.5px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);color:var(--ts,#5A6560);cursor:pointer;transition:all .12s}
+  .rm-modebtn:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
+  .rm-modebtn.on{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+  .rm-hint{font-size:11.5px;color:var(--ts,#5A6560);margin-left:auto;text-align:right;line-height:1.5}
+  .rm-polybar{display:none;gap:6px;flex-wrap:wrap;align-items:center;padding:9px 12px;
+    background:var(--gold-bg,#F7EFD8);border:1px solid var(--gold-line,#B08D3C);border-radius:10px;margin-bottom:10px}
+  .rm-polybar.on{display:flex}
+  .rm-modebtn.rm-done{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+  .rm-modebtn.rm-done:disabled{background:var(--ivd,#E3E1DA);border-color:var(--ivd,#E3E1DA);
+    color:var(--tl,#93A09A);cursor:not-allowed}
+  .rm-selbar{display:none;gap:6px;flex-wrap:wrap;align-items:center;padding:9px 12px;
+    background:var(--gold-bg,#F7EFD8);border:1px solid var(--gold-line,#B08D3C);border-radius:10px;margin-bottom:10px}
+  .rm-selbar.on{display:flex}
+  .rm-selname{font-size:13px;font-weight:800;color:var(--gold,#8A6410)}
   .fp-noimg{text-align:center;padding:50px 20px;border:2px dashed var(--ivd,#E3E1DA);border-radius:10px;color:var(--ts,#5a6560)}
   .fp-noimg .ico{font-size:36px;margin-bottom:10px}
   .room-list{margin-top:6px}
@@ -370,9 +399,9 @@
         <button class="btn-p2" id="btn-add-floor" onclick="addFloor()" style="margin-left:auto">+ 층 추가</button>
       </div>
       <div class="pdesc">
-        층마다 <b>평면도 이미지를 올리고</b>, 그 위에 마우스로 <b>교실 영역을 그려서</b> 이름을 붙입니다.
+        층마다 <b>평면도 이미지를 올리고</b>, 그 위에 <b>교실 영역을 그려서</b> 이름을 붙입니다.
         나중에 수업을 배정하면, 교실을 클릭해 그 교실의 시간표를 볼 수 있어요.
-        <br><span style="color:var(--tl,#93A09A)">· 평면도 위에서 드래그하면 교실 영역이 그려집니다. · 영역을 클릭하면 이름 수정·삭제할 수 있어요.</span>
+        <br><span style="color:var(--tl,#93A09A)">· 교실이 네모가 아니어도 됩니다 — 다각형으로 그리거나, 꼭짓점을 옮기고 변을 휘게 만들 수 있어요.</span>
       </div>
 
       <!-- 층 탭 -->
@@ -1179,12 +1208,30 @@ function renderFloorContent(){
       </div>
     </div>
     ${f.image ? `
+      <div class="rm-tools">
+        <button class="rm-modebtn on" id="rmm-sel"  onclick="setRoomMode('sel')">✋ 선택·편집</button>
+        <button class="rm-modebtn"    id="rmm-rect" onclick="setRoomMode('rect')">⬛ 사각형 그리기</button>
+        <button class="rm-modebtn"    id="rmm-poly" onclick="setRoomMode('poly')">✏️ 다각형 그리기</button>
+        <div class="rm-hint" id="rm-hint"></div>
+      </div>
+      <div class="rm-polybar" id="rm-polybar">
+        <span class="rm-selname" id="rm-polycount">꼭짓점 0개</span>
+        <button class="rm-modebtn rm-done" id="rmm-done" onclick="finishPoly()" disabled>✓ 완성</button>
+        <button class="rm-modebtn" id="rmm-undo" onclick="undoPolyPoint()">↩ 한 점 취소</button>
+        <button class="rm-modebtn" id="rmm-cancel" onclick="cancelPoly()">✕ 취소</button>
+      </div>
+      <div class="rm-selbar" id="rm-selbar">
+        <span class="rm-selname" id="rm-selname"></span>
+        <button class="rm-modebtn" onclick="renameRoom()">✏️ 이름</button>
+        <button class="rm-modebtn" onclick="straightenRoom()">📐 직선으로</button>
+        <button class="rm-modebtn" onclick="deleteRoom()">🗑 삭제</button>
+        <button class="rm-modebtn" onclick="deselectRoom()" style="margin-left:auto">✕ 선택 해제</button>
+      </div>
       <div class="floorplan-wrap">
         <div class="floorplan" id="floorplan">
           <img src="${f.image}" class="fp-img" id="fp-img" draggable="false">
-          <div class="fp-overlay" id="fp-overlay"></div>
+          <svg class="fp-svg mode-sel" id="fp-svg" xmlns="http://www.w3.org/2000/svg"></svg>
         </div>
-        <div style="font-size:12px;color:var(--tl);margin-top:8px">· 평면도 위에서 <b>드래그</b>하면 교실 영역이 그려집니다. 영역을 클릭하면 이름 수정·삭제.</div>
       </div>` : `
       <div class="fp-noimg">
         <div class="ico">🖼</div>
@@ -1193,7 +1240,7 @@ function renderFloorContent(){
       </div>`}
     <div class="room-list" id="room-list"></div>`;
 
-  if(f.image){ setTimeout(()=>{ drawRooms(); bindFloorDraw(); }, 50); }
+  if(f.image){ setTimeout(()=>{ initFloorEditor(); }, 50); }
   renderRoomList();
 }
 
@@ -1237,81 +1284,469 @@ window.deleteFloor = function(){
   saveRooms(); renderFloors();
 };
 
-// ── 평면도 위에 영역 그리기 ──
-function bindFloorDraw(){
-  const overlay = $I('fp-overlay'); if(!overlay) return;
-  const getXY = (e)=>{
-    const r = overlay.getBoundingClientRect();
-    const cx = (e.touches?e.touches[0].clientX:e.clientX) - r.left;
-    const cy = (e.touches?e.touches[0].clientY:e.clientY) - r.top;
-    return { x: Math.max(0,Math.min(1, cx/r.width)), y: Math.max(0,Math.min(1, cy/r.height)) };
+// ═══════════════════════════════════════════
+//  🏫 교실 도형 편집기 (SVG · 다각형 · 곡선 변)
+//  room = { id, name, pts:[{x,y,cx,cy}], x,y,w,h }
+//    · pts  : 꼭짓점 (0~1 정규화). cx,cy 는 "이 점 → 다음 점" 변의 곡선 제어점(없으면 직선)
+//    · x,y,w,h : 바깥 사각(하위호환 · 목록/미리보기용). 도형이 바뀔 때마다 자동 갱신
+// ═══════════════════════════════════════════
+let roomMode   = 'sel';    // 'sel' | 'rect' | 'poly'
+let selRoomId  = null;     // 선택된 교실
+let polyDraft  = null;     // 다각형 작성 중 { pts:[] }
+let dragCtx    = null;     // 드래그 상태
+const SVG_NS   = 'http://www.w3.org/2000/svg';
+
+/* ── 좌표 유틸 ── */
+function svgSize(){
+  const s = $I('fp-svg');
+  if(!s) return { W:1, H:1 };
+  const r = s.getBoundingClientRect();
+  return { W: r.width||1, H: r.height||1 };
+}
+function evtPt(e){
+  const s = $I('fp-svg'); if(!s) return {x:0,y:0};
+  const r = s.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return {
+    x: Math.max(0, Math.min(1, (t.clientX - r.left) / (r.width||1))),
+    y: Math.max(0, Math.min(1, (t.clientY - r.top)  / (r.height||1)))
   };
-  let startPt = null;
-  const onDown = (e)=>{
-    if(e.target.closest('.fp-room')) return;   // 기존 영역 클릭은 제외
-    e.preventDefault();
-    startPt = getXY(e);
-    drawingRoom = document.createElement('div');
-    drawingRoom.className = 'fp-room drawing';
-    overlay.appendChild(drawingRoom);
-  };
-  const onMove = (e)=>{
-    if(!startPt||!drawingRoom) return;
-    const p = getXY(e);
-    const x = Math.min(startPt.x,p.x), y = Math.min(startPt.y,p.y);
-    const w = Math.abs(p.x-startPt.x), h = Math.abs(p.y-startPt.y);
-    drawingRoom.style.left=(x*100)+'%'; drawingRoom.style.top=(y*100)+'%';
-    drawingRoom.style.width=(w*100)+'%'; drawingRoom.style.height=(h*100)+'%';
-    drawingRoom._rect = {x,y,w,h};
-  };
-  const onUp = ()=>{
-    if(!drawingRoom){ startPt=null; return; }
-    const rect = drawingRoom._rect;
-    drawingRoom.remove(); drawingRoom=null; startPt=null;
-    if(!rect || rect.w<0.02 || rect.h<0.02) return;   // 너무 작으면 무시
-    const name = prompt('교실 이름을 입력하세요 (예: 3학년 교실, 음악실)');
-    if(!name){ return; }
-    const f = FLOORS.find(x=>x.id===curFloorId);
-    f.rooms = f.rooms||[];
-    f.rooms.push({ id:'rm_'+Math.random().toString(36).slice(2,8), name:name.trim(), ...rect });
-    saveRooms(); renderFloorContent();
-  };
-  overlay.onmousedown = onDown;
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
-  overlay.ontouchstart = onDown;
-  document.addEventListener('touchmove', onMove, {passive:false});
-  document.addEventListener('touchend', onUp);
 }
 
+/* ── 도형 데이터 ── */
+// 옛 사각형(x,y,w,h만 있는 교실)을 4점 다각형으로 자동 변환
+function roomPts(r){
+  if(Array.isArray(r.pts) && r.pts.length >= 3) return r.pts;
+  const x=r.x||0, y=r.y||0, w=r.w||0, h=r.h||0;
+  r.pts = [ {x:x,y:y}, {x:x+w,y:y}, {x:x+w,y:y+h}, {x:x,y:y+h} ];
+  return r.pts;
+}
+function syncBox(r){
+  const p = roomPts(r);
+  const xs = p.map(q=>q.x), ys = p.map(q=>q.y);
+  r.x = Math.min(...xs); r.y = Math.min(...ys);
+  r.w = Math.max(...xs) - r.x; r.h = Math.max(...ys) - r.y;
+}
+function centroid(pts){
+  let sx=0, sy=0;
+  pts.forEach(p=>{ sx+=p.x; sy+=p.y; });
+  return { x: sx/pts.length, y: sy/pts.length };
+}
+// 변의 중점 — 직선이면 두 점의 중간, 곡선이면 베지어 t=0.5 지점
+function edgeMid(a, b){
+  if(a.cx==null || a.cy==null) return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
+  return { x: 0.25*a.x + 0.5*a.cx + 0.25*b.x,
+           y: 0.25*a.y + 0.5*a.cy + 0.25*b.y };
+}
+// 중점 M을 지나도록 하는 2차 베지어 제어점
+function ctrlForMid(a, b, M){
+  return { cx: 2*M.x - (a.x+b.x)/2, cy: 2*M.y - (a.y+b.y)/2 };
+}
+function ptsToPath(pts, W, H){
+  if(!pts.length) return '';
+  let d = `M ${pts[0].x*W} ${pts[0].y*H}`;
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    if(a.cx!=null && a.cy!=null) d += ` Q ${a.cx*W} ${a.cy*H} ${b.x*W} ${b.y*H}`;
+    else                         d += ` L ${b.x*W} ${b.y*H}`;
+  }
+  return d + ' Z';
+}
+function mkEl(tag, attrs){
+  const el = document.createElementNS(SVG_NS, tag);
+  for(const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+function curFloor(){ return FLOORS.find(x=>x.id===curFloorId); }
+function findRoom(rid){
+  const f = curFloor(); if(!f) return null;
+  return (f.rooms||[]).find(x=>x.id===rid) || null;
+}
+
+/* ── 모드 전환 ── */
+window.setRoomMode = function(m){
+  roomMode = m;
+  polyDraft = null;
+  if(m!=='sel') selRoomId = null;
+  ['sel','rect','poly'].forEach(k=>{
+    const b = $I('rmm-'+k); if(b) b.classList.toggle('on', k===m);
+  });
+  const svg = $I('fp-svg');
+  if(svg) svg.setAttribute('class', 'fp-svg mode-'+m);
+  drawRooms();
+};
+
+const HINTS = {
+  sel : '도형을 클릭해 선택 · <b>파란 점</b>을 끌면 꼭짓점 이동 · <b>노란 점</b>을 끌면 변이 휘어요<br>노란 점 더블클릭 = 꼭짓점 추가 · 파란 점 더블클릭 = 꼭짓점 삭제 · 도형 안쪽 드래그 = 통째로 이동',
+  rect: '평면도 위를 <b>드래그</b>하면 사각형 교실이 만들어집니다.',
+  poly: '<b>클릭</b>으로 꼭짓점을 찍으세요 (3개 이상).<br>다 찍었으면 <b>✓ 완성</b> 버튼을 누르거나, <b>첫 점을 다시 클릭</b>하면 닫힙니다. (Esc = 취소)'
+};
+
+/* ── 렌더 ── */
 function drawRooms(){
-  const overlay = $I('fp-overlay'); if(!overlay) return;
-  const f = FLOORS.find(x=>x.id===curFloorId); if(!f) return;
-  overlay.querySelectorAll('.fp-room:not(.drawing)').forEach(el=>el.remove());
+  const svg = $I('fp-svg'); if(!svg) return;
+  const f = curFloor(); if(!f) return;
+  const { W, H } = svgSize();
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+
+  const hint = $I('rm-hint'); if(hint) hint.innerHTML = HINTS[roomMode] || '';
+  // 다각형 바는 모드로만 켜고 끈다 (점을 찍는 동안 평면도가 밀리지 않도록)
+  const nDraft = polyDraft ? polyDraft.pts.length : 0;
+  const pbar = $I('rm-polybar');
+  if(pbar) pbar.classList.toggle('on', roomMode==='poly');
+  const cnt = $I('rm-polycount');
+  if(cnt) cnt.textContent = `꼭짓점 ${nDraft}개` + (nDraft>=3 ? ' — 완성할 수 있어요' : ' (3개 이상 필요)');
+  const doneBtn = $I('rmm-done');
+  if(doneBtn) doneBtn.disabled = nDraft < 3;
+  const undoBtn = $I('rmm-undo');
+  if(undoBtn) undoBtn.disabled = nDraft < 1;
+
   (f.rooms||[]).forEach(r=>{
-    const el = document.createElement('div');
-    el.className = 'fp-room';
-    el.style.left=(r.x*100)+'%'; el.style.top=(r.y*100)+'%';
-    el.style.width=(r.w*100)+'%'; el.style.height=(r.h*100)+'%';
-    el.innerHTML = `<span class="fp-rname">${esc(r.name)}</span>`;
-    el.onclick = (e)=>{ e.stopPropagation(); openRoomMenu(r.id); };
-    overlay.appendChild(el);
+    const pts = roomPts(r);
+    const isSel = (r.id===selRoomId && roomMode==='sel');
+    const path = mkEl('path', { d: ptsToPath(pts,W,H), class: 'rm-shape'+(isSel?' sel':'') });
+    path.dataset.rid = r.id;
+    svg.appendChild(path);
+
+    const c = centroid(pts);
+    const label = mkEl('text', { x:c.x*W, y:c.y*H, class:'rm-label' });
+    label.textContent = r.name || '';
+    svg.appendChild(label);
+  });
+
+  // 선택된 도형의 핸들은 맨 위에
+  if(roomMode==='sel' && selRoomId){
+    const r = findRoom(selRoomId);
+    if(r) drawHandles(svg, r, W, H);
+  }
+
+  // 다각형 작성 중 미리보기
+  if(polyDraft && polyDraft.pts.length){
+    const dp = polyDraft.pts;
+    let d = `M ${dp[0].x*W} ${dp[0].y*H}`;
+    for(let i=1;i<dp.length;i++) d += ` L ${dp[i].x*W} ${dp[i].y*H}`;
+    if(polyDraft.cursor) d += ` L ${polyDraft.cursor.x*W} ${polyDraft.cursor.y*H}`;
+    svg.appendChild(mkEl('path', { d, class:'rm-shape ghost' }));
+    dp.forEach((p,i)=> svg.appendChild(mkEl('circle',
+      { cx:p.x*W, cy:p.y*H, class:'h-vertex', 'data-draft':i })));
+  }
+  updateSelBar();
+}
+
+function drawHandles(svg, r, W, H){
+  const pts = roomPts(r);
+  // 변 핸들 (곡선 조절)
+  for(let i=0;i<pts.length;i++){
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    const m = edgeMid(a,b);
+    const curved = (a.cx!=null && a.cy!=null);
+    const h = mkEl('circle', { cx:m.x*W, cy:m.y*H, class:'h-edge'+(curved?' curved':'') });
+    h.dataset.edge = i; h.dataset.rid = r.id;
+    svg.appendChild(h);
+  }
+  // 꼭짓점 핸들
+  pts.forEach((p,i)=>{
+    const h = mkEl('circle', { cx:p.x*W, cy:p.y*H, class:'h-vertex' });
+    h.dataset.vertex = i; h.dataset.rid = r.id;
+    svg.appendChild(h);
   });
 }
 
-window.openRoomMenu = function(rid){
-  const f = FLOORS.find(x=>x.id===curFloorId); if(!f) return;
-  const r = f.rooms.find(x=>x.id===rid); if(!r) return;
-  const action = prompt(`"${r.name}"\n\n1) 이름 수정 → 새 이름 입력\n2) 삭제 → "삭제" 입력\n\n(취소하려면 비우고 확인)`, r.name);
-  if(action===null) return;
-  if(action.trim()==='삭제'){
-    f.rooms = f.rooms.filter(x=>x.id!==rid);
-    saveRooms(); renderFloorContent();
-  } else if(action.trim() && action.trim()!==r.name){
-    r.name = action.trim();
-    saveRooms(); renderFloorContent();
+function updateSelBar(){
+  const bar = $I('rm-selbar'); if(!bar) return;
+  const r = selRoomId ? findRoom(selRoomId) : null;
+  bar.classList.toggle('on', !!r && roomMode==='sel');
+  if(r){
+    const n = $I('rm-selname');
+    const pts = roomPts(r);
+    const curves = pts.filter(p=>p.cx!=null).length;
+    if(n) n.textContent = `${r.name} — 꼭짓점 ${pts.length}개${curves?` · 곡선 ${curves}개`:''}`;
   }
+}
+
+/* ── 선택·편집 동작 ── */
+window.deselectRoom = function(){ selRoomId = null; drawRooms(); };
+
+window.renameRoom = function(){
+  const r = findRoom(selRoomId); if(!r) return;
+  const n = prompt('교실 이름', r.name);
+  if(n===null) return;
+  if(!n.trim()) return;
+  r.name = n.trim();
+  saveRooms(); drawRooms(); renderRoomList();
 };
+
+window.deleteRoom = function(){
+  const r = findRoom(selRoomId); if(!r) return;
+  if(!confirm(`"${r.name}" 교실을 삭제할까요?`)) return;
+  const f = curFloor();
+  f.rooms = f.rooms.filter(x=>x.id!==r.id);
+  selRoomId = null;
+  saveRooms(); drawRooms(); renderRoomList();
+};
+
+window.straightenRoom = function(){
+  const r = findRoom(selRoomId); if(!r) return;
+  roomPts(r).forEach(p=>{ delete p.cx; delete p.cy; });
+  saveRooms(); drawRooms();
+};
+
+/* ── 이벤트 바인딩 ── */
+function initFloorEditor(){
+  const svg = $I('fp-svg'); if(!svg) return;
+  const img = $I('fp-img');
+
+  const redraw = ()=>drawRooms();
+  if(img){
+    if(img.complete) redraw();
+    else img.onload = redraw;
+    if(window.ResizeObserver){
+      if(svg._ro) svg._ro.disconnect();
+      svg._ro = new ResizeObserver(redraw);
+      svg._ro.observe(img);
+    }
+  }
+  svg.setAttribute('class', 'fp-svg mode-'+roomMode);
+
+  svg.onmousedown  = onDown;
+  svg.ontouchstart = onDown;
+  svg.ondblclick   = onDblClick;
+  svg.oncontextmenu = e=>{ if(e.target.dataset && e.target.dataset.vertex!=null){ e.preventDefault(); removeVertex(e.target); } };
+  svg.onmousemove  = onHover;
+
+  document.removeEventListener('mousemove', onMove);
+  document.removeEventListener('mouseup', onUp);
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchmove', onMove, {passive:false});
+  document.addEventListener('touchend', onUp);
+  document.addEventListener('keydown', onKey);
+
+  drawRooms();
+}
+
+function onKey(e){
+  if(e.key==='Escape' && polyDraft){ polyDraft=null; drawRooms(); }
+}
+
+function onHover(e){
+  if(polyDraft){ polyDraft.cursor = evtPt(e); drawRooms(); }
+}
+
+function onDown(e){
+  const t = e.target, ds = t.dataset || {};
+
+  // ① 핸들 드래그
+  if(ds.vertex!=null){
+    e.preventDefault();
+    dragCtx = { type:'vertex', rid:ds.rid, idx:+ds.vertex };
+    return;
+  }
+  if(ds.edge!=null){
+    e.preventDefault();
+    dragCtx = { type:'edge', rid:ds.rid, idx:+ds.edge };
+    return;
+  }
+
+  // ② 다각형 작성 중 — 점 찍기
+  if(roomMode==='poly'){
+    // preventDefault 하지 않음 — 더블클릭(완성) 이벤트를 살리기 위해
+    const p = evtPt(e);
+    if(!polyDraft) polyDraft = { pts:[] };
+    // 첫 점 근처를 다시 누르면 닫기
+    if(polyDraft.pts.length>=3){
+      const f0 = polyDraft.pts[0];
+      const { W, H } = svgSize();
+      if(Math.hypot((p.x-f0.x)*W, (p.y-f0.y)*H) < 14){ finishPoly(); return; }
+    }
+    // 같은 자리를 연타해 점이 겹치는 것 방지
+    const lastP = polyDraft.pts[polyDraft.pts.length-1];
+    if(lastP){
+      const { W:sw, H:sh } = svgSize();
+      if(Math.hypot((p.x-lastP.x)*sw, (p.y-lastP.y)*sh) < 6) return;
+    }
+    polyDraft.pts.push(p);
+    drawRooms();
+    return;
+  }
+
+  // ③ 사각형 그리기
+  if(roomMode==='rect'){
+    e.preventDefault();
+    dragCtx = { type:'rect', start: evtPt(e), rect:null };
+    return;
+  }
+
+  // ④ 선택 모드 — 도형 클릭
+  if(roomMode==='sel'){
+    if(t.classList && t.classList.contains('rm-shape') && ds.rid){
+      e.preventDefault();
+      selRoomId = ds.rid;
+      dragCtx = { type:'move', rid:ds.rid, last: evtPt(e), moved:false };
+      drawRooms();
+    } else {
+      selRoomId = null;
+      drawRooms();
+    }
+  }
+}
+
+function onMove(e){
+  if(!dragCtx) return;
+  const p = evtPt(e);
+
+  if(dragCtx.type==='vertex'){
+    e.preventDefault();
+    const r = findRoom(dragCtx.rid); if(!r) return;
+    const pts = roomPts(r);
+    pts[dragCtx.idx].x = p.x; pts[dragCtx.idx].y = p.y;
+    syncBox(r); drawRooms();
+
+  } else if(dragCtx.type==='edge'){
+    e.preventDefault();
+    const r = findRoom(dragCtx.rid); if(!r) return;
+    const pts = roomPts(r);
+    const a = pts[dragCtx.idx], b = pts[(dragCtx.idx+1)%pts.length];
+    const straight = { x:(a.x+b.x)/2, y:(a.y+b.y)/2 };
+    const { W, H } = svgSize();
+    // 직선 중점 가까이로 되돌리면 곡선 해제
+    if(Math.hypot((p.x-straight.x)*W, (p.y-straight.y)*H) < 6){
+      delete a.cx; delete a.cy;
+    } else {
+      const c = ctrlForMid(a,b,p);
+      a.cx = c.cx; a.cy = c.cy;
+    }
+    syncBox(r); drawRooms();
+
+  } else if(dragCtx.type==='move'){
+    e.preventDefault();
+    const r = findRoom(dragCtx.rid); if(!r) return;
+    const dx = p.x - dragCtx.last.x, dy = p.y - dragCtx.last.y;
+    if(Math.abs(dx)>0.0005 || Math.abs(dy)>0.0005) dragCtx.moved = true;
+    roomPts(r).forEach(q=>{
+      q.x += dx; q.y += dy;
+      if(q.cx!=null){ q.cx += dx; q.cy += dy; }
+    });
+    dragCtx.last = p;
+    syncBox(r); drawRooms();
+
+  } else if(dragCtx.type==='rect'){
+    e.preventDefault();
+    const s = dragCtx.start;
+    const x = Math.min(s.x,p.x), y = Math.min(s.y,p.y);
+    const w = Math.abs(p.x-s.x), h = Math.abs(p.y-s.y);
+    dragCtx.rect = {x,y,w,h};
+    const svg = $I('fp-svg'); if(!svg) return;
+    const { W, H } = svgSize();
+    let g = svg.querySelector('.rm-shape.ghost');
+    if(!g){ g = mkEl('path',{class:'rm-shape ghost'}); svg.appendChild(g); }
+    g.setAttribute('d', ptsToPath(
+      [{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}], W, H));
+  }
+}
+
+function onUp(){
+  if(!dragCtx) return;
+  const ctx = dragCtx; dragCtx = null;
+
+  if(ctx.type==='rect'){
+    const rect = ctx.rect;
+    drawRooms();
+    if(!rect || rect.w<0.015 || rect.h<0.015) return;
+    const name = prompt('교실 이름을 입력하세요 (예: 3학년 교실, 음악실)');
+    if(!name || !name.trim()) return;
+    const f = curFloor(); f.rooms = f.rooms||[];
+    const room = {
+      id:'rm_'+Math.random().toString(36).slice(2,8), name:name.trim(),
+      pts:[ {x:rect.x,y:rect.y}, {x:rect.x+rect.w,y:rect.y},
+            {x:rect.x+rect.w,y:rect.y+rect.h}, {x:rect.x,y:rect.y+rect.h} ]
+    };
+    syncBox(room);
+    f.rooms.push(room);
+    saveRooms(); setRoomMode('sel'); selRoomId = room.id;
+    drawRooms(); renderRoomList();
+    return;
+  }
+
+  if(ctx.type==='vertex' || ctx.type==='edge' || (ctx.type==='move' && ctx.moved)){
+    saveRooms();
+  }
+}
+
+window.cancelPoly = function(){ polyDraft = null; drawRooms(); };
+window.undoPolyPoint = function(){
+  if(!polyDraft || !polyDraft.pts.length) return;
+  polyDraft.pts.pop();
+  if(!polyDraft.pts.length) polyDraft = null;
+  drawRooms();
+};
+window.finishPoly = finishPoly;
+function finishPoly(){
+  const pts = polyDraft ? polyDraft.pts : [];
+  polyDraft = null;
+  if(pts.length < 3){ drawRooms(); return; }
+  const name = prompt('교실 이름을 입력하세요 (예: 3학년 교실, 음악실)');
+  if(!name || !name.trim()){ drawRooms(); return; }
+  const f = curFloor(); f.rooms = f.rooms||[];
+  const room = { id:'rm_'+Math.random().toString(36).slice(2,8), name:name.trim(), pts };
+  syncBox(room);
+  f.rooms.push(room);
+  saveRooms(); setRoomMode('sel'); selRoomId = room.id;
+  drawRooms(); renderRoomList();
+}
+
+function onDblClick(e){
+  const ds = e.target.dataset || {};
+
+  // 다각형 작성 중에는 더블클릭을 쓰지 않는다.
+  // (점을 연달아 찍으면 브라우저가 더블클릭으로 인식해 도형이 제멋대로 완성되므로,
+  //  완성은 '✓ 완성' 버튼 또는 첫 점 재클릭으로만 한다)
+  if(roomMode==='poly'){ return; }
+
+  // 변 핸들 더블클릭 → 그 자리에 꼭짓점 추가
+  if(ds.edge!=null){
+    e.preventDefault();
+    const r = findRoom(ds.rid); if(!r) return;
+    const pts = roomPts(r);
+    const i = +ds.edge;
+    const a = pts[i], b = pts[(i+1)%pts.length];
+    const m = edgeMid(a,b);
+    delete a.cx; delete a.cy;              // 나뉜 변은 직선으로
+    pts.splice(i+1, 0, {x:m.x, y:m.y});
+    syncBox(r); saveRooms(); drawRooms();
+    return;
+  }
+
+  // 꼭짓점 더블클릭 → 삭제
+  if(ds.vertex!=null){ e.preventDefault(); removeVertex(e.target); return; }
+
+  // 도형 더블클릭 → 이름 수정
+  if(e.target.classList && e.target.classList.contains('rm-shape') && ds.rid){
+    e.preventDefault();
+    selRoomId = ds.rid;
+    renameRoom();
+  }
+}
+
+function removeVertex(el){
+  const ds = el.dataset;
+  const r = findRoom(ds.rid); if(!r) return;
+  const pts = roomPts(r);
+  if(pts.length <= 3){ toast('꼭짓점은 3개 이상이어야 해요','err'); return; }
+  pts.splice(+ds.vertex, 1);
+  syncBox(r); saveRooms(); drawRooms();
+}
+
+// 목록 칩에서 교실 선택
+window.openRoomMenu = function(rid){
+  setRoomMode('sel');
+  selRoomId = rid;
+  drawRooms();
+  const fp = $I('floorplan');
+  if(fp) fp.scrollIntoView({behavior:'smooth', block:'center'});
+};
+
 
 function renderRoomList(){
   const box = $I('room-list'); if(!box) return;
