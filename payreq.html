@@ -168,6 +168,21 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .pr-sub{font-weight:800;color:var(--goldd);min-width:90px;text-align:right;font-size:14px;}
 .pr-special{font-size:10.5px;background:var(--danger-bg);color:var(--danger);padding:2px 8px;border-radius:100px;font-weight:700;align-self:center;}
 .pr-rdel{width:26px;height:26px;flex:none;border:none;background:var(--danger-bg);color:var(--danger);border-radius:7px;cursor:pointer;font-weight:700;}
+.iv-box{position:relative;z-index:1;width:94vw;height:90vh;display:flex;flex-direction:column;gap:8px;}
+.iv-stage{flex:1;overflow:hidden;background:#0d1512;border-radius:12px;display:flex;
+  align-items:center;justify-content:center;cursor:grab;touch-action:none;}
+.iv-stage img{max-width:none;max-height:none;transform-origin:center center;
+  will-change:transform;user-select:none;-webkit-user-drag:none;}
+.iv-bar{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;
+  background:var(--wh);border-radius:10px;padding:8px 10px;}
+.iv-btn{min-width:34px;height:32px;padding:0 10px;border:1px solid var(--ivd);background:var(--wh);
+  color:var(--gd);border-radius:8px;font-family:inherit;font-size:14px;font-weight:800;cursor:pointer;}
+.iv-btn.wide{font-size:12.5px;font-weight:700;}
+.iv-btn:hover{border-color:var(--gm);color:var(--gm);}
+.iv-pct{min-width:56px;text-align:center;font-size:12.5px;font-weight:800;color:var(--gm);}
+.iv-tip{text-align:center;font-size:11.5px;color:rgba(255,255,255,.75);}
+.pr-rdup{width:26px;height:26px;flex:none;border:none;background:var(--gp);color:var(--gm);border-radius:7px;cursor:pointer;font-weight:700;font-size:13px;margin-right:4px;}
+.pr-rdup:hover{background:var(--gl);}
 .pr-rcline{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-top:6px;border-top:1px dashed var(--ivd);}
 .pr-rcadd{padding:6px 12px;border:1.5px dashed var(--gm);background:var(--gp);color:var(--gm);border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;}
 .pr-rcs{display:flex;gap:6px;flex-wrap:wrap;}
@@ -589,17 +604,47 @@ function renderNew(){
   `;
 }
 window.renderNew = renderNew;
-function setPrOrg(o){ prOrg=o; renderNew(); }
+function setPrOrg(o){ saveVisibleRows(); prOrg=o; renderNew(); }
 window.setPrOrg = setPrOrg;
-function setPrMode(m){ prMode=m; renderNew(); }
+function setPrMode(m){ saveVisibleRows(); prMode=m; renderNew(); }
 window.setPrMode = setPrMode;
 function newPrRow(){ return {cat_major:'', cat_item:'', name:'', qty:1, price:0, note:'', receipts:[]}; }
 function addPrRow(){ saveVisibleRows(); prRows.push(newPrRow()); renderNew(); }
 window.addPrRow = addPrRow;
 function delPrRow(i){ saveVisibleRows(); prRows.splice(i,1); if(!prRows.length) prRows=[newPrRow()]; renderNew(); }
 window.delPrRow = delPrRow;
+// 항목 복제 — 바로 아래에 같은 내용으로 한 줄 더.
+// 영수증은 일부러 복사하지 않는다 (같은 영수증이 두 번 올라가면 안 되므로)
+function dupPrRow(i){
+  saveVisibleRows();
+  const src = prRows[i]; if(!src) return;
+  prRows.splice(i+1, 0, {
+    cat_major: src.cat_major||'', cat_item: src.cat_item||'',
+    name: src.name||'', qty: src.qty, price: src.price,
+    note: src.note||'', receipts: []
+  });
+  renderNew();
+  toast('항목을 복제했습니다 (영수증은 새로 첨부해 주세요)','ok');
+}
+window.dupPrRow = dupPrRow;
+// 화면 상단 입력값(날짜·신청자·부서·용도)을 prPending에 보관
+// — 항목을 추가하면 폼을 다시 그리는데, 이걸 안 하면 위에 적은 내용이 날아간다
+function savePrHeader(){
+  const v = id => { const e = $I(id); return e ? e.value : undefined; };
+  const date = v('pr-date'), name = v('pr-name'), dept = v('pr-dept'), purpose = v('pr-purpose');
+  if(date===undefined && name===undefined && dept===undefined && purpose===undefined) return;
+  prPending = Object.assign({}, prPending || {}, {
+    date: date!==undefined ? date : (prPending&&prPending.date),
+    name: name!==undefined ? name : (prPending&&prPending.name),
+    dept: dept!==undefined ? dept : (prPending&&prPending.dept),
+    purpose: purpose!==undefined ? purpose : (prPending&&prPending.purpose)
+  });
+}
+window.savePrHeader = savePrHeader;
+
 // 화면 입력값을 prRows에 반영 (재렌더 전 호출)
 function saveVisibleRows(){
+  savePrHeader();
   prRows.forEach((r,i)=>{
     const g=id=>$I(`prc-${id}-${i}`);
     if(g('major')) r.cat_major=g('major').value;
@@ -656,6 +701,7 @@ function prRowHTML(r,i){
         <div class="pr-rcs">${rcThumbs}</div>
       </div>`:''}
     </div>
+    <button class="pr-rdup" onclick="dupPrRow(${i})" title="이 항목 복제">⧉</button>
     <button class="pr-rdel" onclick="delPrRow(${i})">✕</button>
   </div>`;
 }
@@ -942,7 +988,7 @@ async function loadApvReceipts(id){
     const arr=[]; snap.forEach(d=>arr.push(d.data()));
     arr.sort((a,b)=>(a.rowIdx-b.rowIdx)||(a.idx-b.idx));
     const box=$I('apv-rc-'+id); if(!box||!arr.length) return;
-    box.innerHTML = arr.map(rc=>`<div style="width:58px;height:58px;border:1px solid var(--ivd);border-radius:6px;overflow:hidden"><img src="${rc.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)"></div>`).join('');
+    box.innerHTML = arr.map(rc=>`<div style="width:58px;height:58px;border:1px solid var(--ivd);border-radius:6px;overflow:hidden"><img src="${rc.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openImageOverlay(this.src)"></div>`).join('');
   }catch(e){}
 }
 
@@ -1004,7 +1050,7 @@ async function rejectPayReq(id){
 window.rejectPayReq = rejectPayReq;
 window.renderApprove = renderApprove;
 window.renderNew = renderNew;
-function setExpOrg(o){ prOrg = o; renderNew(); }
+function setExpOrg(o){ saveVisibleRows(); prOrg = o; renderNew(); }
 window.setExpOrg = setExpOrg;
 
 // 이전 입력값으로 자동완성 (선생님·과목)
@@ -1073,7 +1119,7 @@ function applyBase(){
 }
 window.applyBase = applyBase;
 
-// ── 영수증: 자동 압축 (긴 변 1000px, 700KB 초과 시 추가 압축) ──
+// ── 영수증: 자동 압축 (긴 변 2560px 우선, 900KB 초과 시 품질→해상도 순으로 하향) ──
 function compressImage(file){
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
@@ -1081,9 +1127,9 @@ function compressImage(file){
       const img = new Image();
       img.onload = () => {
         // 영수증 글자 보존: QHD(2560px)·고품질 우선, 용량 초과 시
-        // 품질은 0.65까지만 낮추고(글자 보호) 그다음은 해상도를 한 단계씩 낮춤
+        // 품질은 0.72까지만 낮추고(글자 보호) 그다음은 해상도를 한 단계씩 낮춤
         const SIZES = [2560, 2048, 1920, 1600];
-        const CAP = 700*1024;
+        const CAP = 900*1024;   // Firestore 문서 1MB 한계 내 안전선
         let data = '';
         for(const MAX of SIZES){
           let w = img.width, h = img.height;
@@ -1092,7 +1138,7 @@ function compressImage(file){
           cv.getContext('2d').drawImage(img, 0, 0, w, h);
           let q = 0.85;
           data = cv.toDataURL('image/jpeg', q);
-          while(data.length > CAP && q > 0.65){ q -= 0.07; data = cv.toDataURL('image/jpeg', q); }
+          while(data.length > CAP && q > 0.72){ q -= 0.07; data = cv.toDataURL('image/jpeg', q); }
           if(data.length <= CAP) break;
         }
         // 극단적 초과 대비 최후 안전망
@@ -1250,18 +1296,45 @@ function cropAuto(){
 }
 window.cropAuto = cropAuto;
 
+// 회전을 반영해 '원본 해상도' 전체 캔버스를 만든다
+// (화면용 캔버스는 크게 줄여 그린 것이라, 여기서 자르면 글자가 뭉개진다)
+function rotatedFullCanvas(){
+  if(!cropImg) return null;
+  const iw = cropImg.naturalWidth, ih = cropImg.naturalHeight;
+  const rot = cropRotation % 360;
+  const swap = (rot===90 || rot===270);
+  const srcW = swap ? ih : iw, srcH = swap ? iw : ih;
+  const full = document.createElement('canvas');
+  full.width = srcW; full.height = srcH;
+  const fc = full.getContext('2d');
+  fc.imageSmoothingQuality = 'high';
+  fc.translate(srcW/2, srcH/2);
+  fc.rotate(rot*Math.PI/180);
+  fc.drawImage(cropImg, -iw/2, -ih/2, iw, ih);
+  return full;
+}
+
 // 크롭 적용 → 압축 후 receipts에 추가
 async function cropApply(){
-  const canvas = $I('cropCanvas'); if(!canvas){ cropSkip(); return; }
-  // 박스 영역을 잘라서 새 캔버스에
+  const canvas = $I('cropCanvas'); if(!canvas || !cropImg){ cropSkip(); return; }
+  // 박스 영역(화면 좌표)
   const sx = Math.max(0, Math.round(cropBox.x));
   const sy = Math.max(0, Math.round(cropBox.y));
   const sw = Math.min(canvas.width-sx, Math.round(cropBox.w));
   const sh = Math.min(canvas.height-sy, Math.round(cropBox.h));
   if(sw<=4 || sh<=4){ toast('선택 영역이 너무 작아요.','err'); return; }
-  const out = document.createElement('canvas'); out.width=sw; out.height=sh;
-  out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
-  // 압축 (최대 1000px, 700KB 이하)
+
+  // 화면 좌표 → 원본 좌표로 환산해서, 원본에서 직접 잘라낸다
+  const full = rotatedFullCanvas();
+  const k = full ? (full.width / canvas.width) : 1;
+  const rx = Math.max(0, Math.round(sx*k)), ry = Math.max(0, Math.round(sy*k));
+  const rw = Math.max(1, Math.min((full?full.width:sw)-rx, Math.round(sw*k)));
+  const rh = Math.max(1, Math.min((full?full.height:sh)-ry, Math.round(sh*k)));
+
+  const out = document.createElement('canvas'); out.width=rw; out.height=rh;
+  const oc = out.getContext('2d');
+  oc.imageSmoothingQuality = 'high';
+  oc.drawImage(full || canvas, rx, ry, rw, rh, 0, 0, rw, rh);
   const data = compressCanvas(out);
   pushCroppedReceipt(data);
   cropIndex++;
@@ -1283,12 +1356,9 @@ function pushCroppedReceipt(data){
 function cropSkip(){
   // 크롭 없이 원본 압축
   if(cropImg){
-    const c = document.createElement('canvas');
-    let iw=cropImg.naturalWidth, ih=cropImg.naturalHeight;
-    const MAX=2560; let scale=Math.min(MAX/Math.max(iw,ih),1);   // 크롭 원본을 고해상도로 유지 (글자 보존)
-    c.width=Math.round(iw*scale); c.height=Math.round(ih*scale);
-    c.getContext('2d').drawImage(cropImg,0,0,c.width,c.height);
-    pushCroppedReceipt(compressCanvas(c));
+    // 회전까지 반영한 원본 전체를 그대로 넘긴다 (해상도·품질은 compressCanvas가 맞춤)
+    const full = rotatedFullCanvas();
+    if(full) pushCroppedReceipt(compressCanvas(full));
   }
   cropIndex++;
   startCropForCurrent();
@@ -1296,11 +1366,11 @@ function cropSkip(){
 }
 window.cropSkip = cropSkip;
 
-// 캔버스 → JPEG dataURL (700KB 이하)
+// 캔버스 → JPEG dataURL (900KB 이하)
 function compressCanvas(cv){
-  // 크롭 결과도 글자 보존: 품질 0.65까지만 낮추고, 그다음 해상도 단계 하향
+  // 크롭 결과도 글자 보존: 품질 0.72까지만 낮추고, 그다음 해상도 단계 하향
   const SIZES = [2560, 2048, 1920, 1600];
-  const CAP = 700*1024;
+  const CAP = 900*1024;   // Firestore 문서 1MB 한계 내 안전선
   let data = '';
   for(const MAX of SIZES){
     let src = cv;
@@ -1313,7 +1383,7 @@ function compressCanvas(cv){
     }
     let q = 0.85;
     data = src.toDataURL('image/jpeg', q);
-    while(data.length > CAP && q > 0.65){ q -= 0.07; data = src.toDataURL('image/jpeg', q); }
+    while(data.length > CAP && q > 0.72){ q -= 0.07; data = src.toDataURL('image/jpeg', q); }
     if(data.length <= CAP) return data;
   }
   return data;
@@ -1365,12 +1435,12 @@ function renderReceipts(){
   box.innerHTML =
     existingReceipts.map(r=>`
     <div style="position:relative;width:76px;height:76px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
-      <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)">
+      <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openImageOverlay(this.src)">
       <button onclick="removeExReceipt('${r.id}')" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;cursor:pointer;line-height:1">×</button>
     </div>`).join('')
     + receipts.map((d,i)=>`
     <div style="position:relative;width:76px;height:76px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
-      <img src="${d}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="viewReceiptBig(${i})">
+      <img src="${d}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="viewReceiptBig(${i})">
       <button onclick="removeReceipt(${i})" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;cursor:pointer;line-height:1">×</button>
     </div>`).join('')
     + (totalCnt ? `<div style="align-self:center;font-size:12px;color:var(--tl)">${totalCnt}/10장</div>` : '');
@@ -1390,17 +1460,135 @@ function viewReceiptBig(i){
 }
 window.viewReceiptBig = viewReceiptBig;
 
+// 영수증 확대 보기 — 휠·핀치 확대, 드래그 이동, 원본 크기 보기
+let _ivState = null;
 function openImageOverlay(src){
+  const old = $I('img-overlay'); if(old) old.remove();
   const ov = document.createElement('div');
   ov.className = 'mov';
   ov.id = 'img-overlay';
-  ov.innerHTML = `<div class="mbk" onclick="document.getElementById('img-overlay').remove()"></div>
-    <div style="position:relative;max-width:92vw;max-height:88vh;z-index:1">
-      <img src="${src}" style="max-width:92vw;max-height:88vh;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
-      <button onclick="document.getElementById('img-overlay').remove()" style="position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:50%;border:none;background:var(--wh);font-size:16px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3)">×</button>
+  ov.innerHTML = `
+    <div class="mbk" onclick="closeImageOverlay()"></div>
+    <div class="iv-box">
+      <div class="iv-stage" id="iv-stage">
+        <img id="iv-img" src="${src}" draggable="false">
+      </div>
+      <div class="iv-bar">
+        <button class="iv-btn" onclick="ivZoom(-1)" title="축소">−</button>
+        <span class="iv-pct" id="iv-pct">맞춤</span>
+        <button class="iv-btn" onclick="ivZoom(1)" title="확대">＋</button>
+        <button class="iv-btn wide" onclick="ivFit()">화면 맞춤</button>
+        <button class="iv-btn wide" onclick="ivActual()">원본 크기</button>
+        <button class="iv-btn wide" onclick="ivOpenTab()">새 탭</button>
+        <button class="iv-btn wide" onclick="closeImageOverlay()">닫기</button>
+      </div>
+      <div class="iv-tip">휠(또는 두 손가락)로 확대 · 드래그로 이동 · 더블클릭으로 확대/맞춤</div>
     </div>`;
   $I('mwrap').appendChild(ov);
+  ivInit(src);
 }
+window.openImageOverlay = openImageOverlay;
+
+window.closeImageOverlay = function(){
+  const ov = $I('img-overlay'); if(ov) ov.remove();
+  _ivState = null;
+  document.removeEventListener('keydown', ivKey);
+};
+
+function ivInit(src){
+  const img = $I('iv-img'), stage = $I('iv-stage');
+  if(!img || !stage) return;
+  _ivState = { scale:1, fit:1, x:0, y:0, drag:null, src };
+  const start = ()=>{
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    const iw = img.naturalWidth || 1, ih = img.naturalHeight || 1;
+    _ivState.fit = Math.min(sw/iw, sh/ih, 1);
+    ivSet(_ivState.fit, 0, 0);
+  };
+  if(img.complete && img.naturalWidth) start(); else img.onload = start;
+
+  stage.onwheel = e=>{
+    e.preventDefault();
+    const s = _ivState; if(!s) return;
+    const r = stage.getBoundingClientRect();
+    const cx = e.clientX - r.left - r.width/2 - s.x;
+    const cy = e.clientY - r.top  - r.height/2 - s.y;
+    const k = e.deltaY < 0 ? 1.15 : 1/1.15;
+    const ns = Math.max(s.fit*0.5, Math.min(8, s.scale*k));
+    const f = ns/s.scale;
+    ivSet(ns, s.x - cx*(f-1), s.y - cy*(f-1));
+  };
+  stage.onmousedown = e=>{
+    e.preventDefault();
+    const s=_ivState; if(!s) return;
+    s.drag = { px:e.clientX, py:e.clientY, ox:s.x, oy:s.y };
+    stage.style.cursor='grabbing';
+  };
+  document.addEventListener('mousemove', ivMove);
+  document.addEventListener('mouseup', ivUp);
+  stage.ondblclick = ()=>{
+    const s=_ivState; if(!s) return;
+    if(s.scale > s.fit*1.05) ivFit(); else ivSet(Math.max(1, s.fit*3), 0, 0);
+  };
+  // 터치 핀치
+  let pinch = null;
+  stage.ontouchstart = e=>{
+    const s=_ivState; if(!s) return;
+    if(e.touches.length===2){
+      const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      pinch = { d, scale:s.scale };
+    } else if(e.touches.length===1){
+      s.drag = { px:e.touches[0].clientX, py:e.touches[0].clientY, ox:s.x, oy:s.y };
+    }
+  };
+  stage.ontouchmove = e=>{
+    const s=_ivState; if(!s) return;
+    if(e.touches.length===2 && pinch){
+      e.preventDefault();
+      const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      ivSet(Math.max(s.fit*0.5, Math.min(8, pinch.scale*(d/pinch.d))), s.x, s.y);
+    } else if(e.touches.length===1 && s.drag){
+      e.preventDefault();
+      ivSet(s.scale, s.drag.ox + (e.touches[0].clientX-s.drag.px), s.drag.oy + (e.touches[0].clientY-s.drag.py));
+    }
+  };
+  stage.ontouchend = ()=>{ pinch=null; if(_ivState) _ivState.drag=null; };
+  document.addEventListener('keydown', ivKey);
+}
+function ivMove(e){
+  const s=_ivState; if(!s || !s.drag) return;
+  ivSet(s.scale, s.drag.ox + (e.clientX-s.drag.px), s.drag.oy + (e.clientY-s.drag.py));
+}
+function ivUp(){
+  const s=_ivState; if(!s) return;
+  s.drag=null;
+  const st=$I('iv-stage'); if(st) st.style.cursor='grab';
+}
+function ivKey(e){
+  if(e.key==='Escape') closeImageOverlay();
+  else if(e.key==='+'||e.key==='=') ivZoom(1);
+  else if(e.key==='-') ivZoom(-1);
+  else if(e.key==='0') ivFit();
+}
+function ivSet(scale, x, y){
+  const s=_ivState; if(!s) return;
+  s.scale=scale; s.x=x; s.y=y;
+  const img=$I('iv-img'); if(img) img.style.transform=`translate(${x}px,${y}px) scale(${scale})`;
+  const pct=$I('iv-pct');
+  if(pct) pct.textContent = Math.abs(scale-s.fit)<0.01 ? '맞춤' : Math.round(scale*100)+'%';
+}
+window.ivZoom = function(dir){
+  const s=_ivState; if(!s) return;
+  ivSet(Math.max(s.fit*0.5, Math.min(8, s.scale*(dir>0?1.25:1/1.25))), s.x, s.y);
+};
+window.ivFit = function(){ const s=_ivState; if(s) ivSet(s.fit, 0, 0); };
+window.ivActual = function(){ const s=_ivState; if(s) ivSet(1, 0, 0); };
+window.ivOpenTab = function(){
+  const s=_ivState; if(!s) return;
+  const w = window.open(''); if(!w){ toast('팝업이 차단되었습니다','err'); return; }
+  w.document.write(`<title>영수증</title><body style="margin:0;background:#111"><img src="${s.src}" style="max-width:100%"></body>`);
+  w.document.close();
+};
 window.openImageOverlay = openImageOverlay;
 
 // ── 신청 수정 (작성자·슈퍼관리자) ──
@@ -1914,7 +2102,7 @@ async function loadReqReceipts(id){
     const arr=[]; snap.forEach(d=>arr.push(d.data()));
     arr.sort((a,b)=>(a.rowIdx-b.rowIdx)||(a.idx-b.idx));
     const box=$I('pr-view-receipts'); if(!box) return;
-    box.innerHTML = arr.length? arr.map(rc=>`<div style="width:64px;height:64px;border:1px solid var(--ivd);border-radius:6px;overflow:hidden"><img src="${rc.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)"></div>`).join('') : '';
+    box.innerHTML = arr.length? arr.map(rc=>`<div style="width:92px;height:92px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden"><img src="${rc.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openImageOverlay(this.src)"></div>`).join('') : '';
   } catch(e){}
 }
 
@@ -2099,7 +2287,7 @@ async function loadReceipts(expenseId){
     if(!arr.length){ box.innerHTML = '<span style="font-size:13px;color:var(--tl)">첨부된 영수증이 없습니다.</span>'; return; }
     box.innerHTML = arr.map(r=>`
       <div style="width:86px;height:86px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
-        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)" title="영수증 ${r.idx||''}">
+        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openImageOverlay(this.src)" title="영수증 ${r.idx||''}">
       </div>`).join('');
   } catch(err){
     box.innerHTML = `<span style="font-size:13px;color:var(--danger)">영수증을 불러올 수 없습니다: ${esc(err.message||'')}</span>`;
@@ -2452,11 +2640,11 @@ async function printMonthlySheet(){
   window.showLoading && window.showLoading('PDF를 만드는 중…');
   try {
     await ensureH2C(); await ensureJsPDF();
-    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;';
+    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;';
     h.innerHTML=`<style>${MS_CSS}</style>`+buildMonthlySheetHTML();
     document.body.appendChild(h);
     const node=h.querySelector('.ms-doc');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)'});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
     document.body.removeChild(h);
     const {jsPDF}=window.jspdf;
     const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -2478,11 +2666,11 @@ async function imageMonthlySheet(){
   window.showLoading && window.showLoading('이미지를 만드는 중…');
   try {
     await ensureH2C();
-    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;';
+    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;';
     h.innerHTML=`<style>${MS_CSS}</style>`+buildMonthlySheetHTML();
     document.body.appendChild(h);
     const node=h.querySelector('.ms-doc');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)'});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
     document.body.removeChild(h);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`월별취합표_${rpMonth}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
@@ -2530,7 +2718,7 @@ async function buildPayReceiptHTML(){
       const label=row?`${row.cat_major||''}${row.cat_item?' › '+row.cat_item:''} · ${row.name||''}`:'';
       cells+=`<div class="prc-cell ${type}">
         <div class="prc-no">${b.seq}-${rc.rowIdx+1}.${rc.idx}</div>
-        <img src="${rc.dataUrl}">
+        <img src="${rc.dataUrl}" style="cursor:zoom-in" onclick="openImageOverlay(this.src)" title="클릭하면 크게 볼 수 있어요">
         ${label?`<div class="prc-lbl">${esc(label)}</div>`:''}
       </div>`;
     }
@@ -2604,12 +2792,12 @@ async function printPayReceipts(){
   window.showLoading && window.showLoading('영수증 취합 PDF를 만드는 중…');
   try {
     await ensureH2C(); await ensureJsPDF();
-    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;';
+    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;';
     h.innerHTML=`<style>${PRC_CSS}</style>`+await buildPayReceiptHTML();
     document.body.appendChild(h);
     const node=h.querySelector('.prc-doc');
     await Promise.all([...node.querySelectorAll('img')].map(im=>im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
 
     const {jsPDF}=window.jspdf;
     const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -2649,12 +2837,12 @@ async function imagePayReceipts(){
   window.showLoading && window.showLoading('이미지를 만드는 중…');
   try {
     await ensureH2C();
-    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;';
+    const h=document.createElement('div'); h.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;';
     h.innerHTML=`<style>${PRC_CSS}</style>`+await buildPayReceiptHTML();
     document.body.appendChild(h);
     const node=h.querySelector('.prc-doc');
     await Promise.all([...node.querySelectorAll('img')].map(im=>im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(h);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`영수증취합_${rpMonth}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
@@ -2996,7 +3184,7 @@ async function printSheet(mode){
     holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation: landscape?'landscape':'portrait', unit:'mm', format:'a4'});
@@ -3041,7 +3229,7 @@ async function imageSheet(){
     holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');
@@ -3220,7 +3408,7 @@ async function buildReceiptCollectionHTML(withReceipts){
       const cls = type==='wide'?'rc-cell wide':type==='tall'?'rc-cell tall':'rc-cell short';
       cells += `<div class="${cls}">
         <div class="rc-no">${rno}</div>
-        <img src="${rc.dataUrl}">
+        <img src="${rc.dataUrl}" style="cursor:zoom-in" onclick="openImageOverlay(this.src)" title="클릭하면 크게 볼 수 있어요">
       </div>`;
     }
     cardsHTML += `<div class="rc-card">
@@ -3277,7 +3465,7 @@ async function printReceiptCollection(){
     document.body.appendChild(holder);
     const node=holder.querySelector('.rc-doc');
     await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
 
     const { jsPDF }=window.jspdf;
     const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -3340,7 +3528,7 @@ async function imageReceiptCollection(){
     document.body.appendChild(holder);
     const node=holder.querySelector('.rc-doc');
     await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(holder);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`영수증취합_${semKor(reportSem)}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
@@ -3449,7 +3637,7 @@ async function printAllSheet(){
     holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
@@ -3480,7 +3668,7 @@ async function imageAllSheet(){
     holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
     const node=holder.querySelector('.sheet-doc');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(holder);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`수행성경비_전체취합_${semKor(reportSem)}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
@@ -3655,7 +3843,7 @@ async function openReceiptsOf(expenseId, subject){
     const box=$I('rc-view-list'); if(!box) return;
     box.innerHTML = arr.length ? arr.map(r=>`
       <div style="width:90px;height:90px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
-        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)" title="영수증 ${r.idx||''}">
+        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openImageOverlay(this.src)" title="영수증 ${r.idx||''}">
       </div>`).join('') : '<span style="font-size:13px;color:var(--tl)">첨부된 영수증이 없습니다.</span>';
   } catch(e){ const box=$I('rc-view-list'); if(box) box.innerHTML=`<span style="font-size:13px;color:var(--danger)">불러올 수 없습니다: ${esc(e.message||'')}</span>`; }
 }
