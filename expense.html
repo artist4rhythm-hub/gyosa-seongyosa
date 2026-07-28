@@ -446,6 +446,8 @@ async function loadData(){
       const mgr = await getDoc(doc(db,'expenseConfig','managers'));
       EXP_MANAGERS = mgr.exists() ? (mgr.data()||{}) : {};
     } catch(e3){ EXP_MANAGERS = {}; }
+    // 마감된 학기 — 어느 탭으로 바로 들어와도 막히도록 처음에 함께 읽어둔다
+    try { await loadSemLocks(); } catch(e4){}
   } catch(e){ toast('데이터 로드 실패: '+e.message,'err'); }
   finally { window.hideLoading && window.hideLoading(); }
 }
@@ -572,6 +574,7 @@ let manualOpenIds = new Set();   // 휴학/자퇴지만 수동으로 입력 연 
 let openCls = {};
 
 function renderNew(){
+  ensureSemLocks();
   const box = $I('tab-new');
   const orgs = myOrgs();
   if(!expOrg || !orgs.includes(expOrg)) expOrg = orgs[0];
@@ -2104,8 +2107,10 @@ function confirmCard(info){
 async function submitExpense(){
   const date = $I('ex-date')?.value || '';
   const semester = $I('ex-semester')?.value || '';
-  if(isSemLocked(expOrg, semester)){
-    toast(`${semKor(semester)}는 마감되어 저장할 수 없습니다.`,'err'); return;
+  if(await checkSemLockedFresh(expOrg, semester)){
+    toast(`${semKor(semester)}는 마감되어 저장할 수 없습니다.`,'err');
+    renderNew();
+    return;
   }
   const teacher = $I('ex-teacher')?.value.trim() || '';
   const subject = $I('ex-subject')?.value.trim() || '';
@@ -2675,6 +2680,30 @@ async function loadSemLocks(){
     snap.forEach(d=>{ out[d.id] = d.data(); });
     EXP_LOCKS = out;
   } catch(e){ EXP_LOCKS = {}; }
+}
+
+// 안전망 — 어떤 이유로든 마감 목록을 못 읽었으면 한 번만 다시 읽고 화면을 새로 그린다
+let _semLocksTried = false;
+function ensureSemLocks(){
+  if(_semLocksTried || Object.keys(EXP_LOCKS).length) return;
+  _semLocksTried = true;
+  loadSemLocks().then(()=>{
+    if(Object.keys(EXP_LOCKS).length && typeof renderNew === 'function' && $I('tab-new')
+       && $I('tab-new').style.display !== 'none') renderNew();
+  }).catch(()=>{});
+}
+
+// 저장 직전 확인 — 화면을 열어둔 사이에 다른 분이 마감했을 수 있으므로 서버에서 다시 본다
+async function checkSemLockedFresh(org, sem){
+  if(!org || !sem) return false;
+  try {
+    const s = await getDoc(doc(db,'expenseLocks', semLockKey(org, sem)));
+    const locked = s.exists() && s.data().locked === true;
+    EXP_LOCKS[semLockKey(org, sem)] = s.exists() ? s.data() : { locked:false };
+    return locked;
+  } catch(e){
+    return isSemLocked(org, sem);   // 조회에 실패하면 지금 알고 있는 값으로 판단
+  }
 }
 
 // 이 학기가 마감되었나
