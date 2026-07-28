@@ -34,6 +34,29 @@
   };
 })();
 
+/* ═══ 큰 글자 보기 (보통 / 크게 / 아주 크게) ═══
+   저장: localStorage gyosa_fs = 'md' | 'lg' | 'xl' (기기마다 따로)
+   theme.css 의 --zoom 을 바꿔 본문·사이드바가 함께 커진다. */
+(function(){
+  function applyFS(){
+    var v = 'md';
+    try { v = localStorage.getItem('gyosa_fs') || 'md'; } catch(e){}
+    if(['md','lg','xl'].indexOf(v) < 0) v = 'md';
+    document.documentElement.setAttribute('data-fs', v);
+    ['md','lg','xl'].forEach(function(k){
+      var b = document.getElementById('fs-' + k);
+      if(b) b.classList.toggle('on', k === v);
+    });
+    return v;
+  }
+  applyFS();
+  window.applyFS = applyFS;
+  window.setFontSize = function(v){
+    try { localStorage.setItem('gyosa_fs', v); } catch(e){}
+    applyFS();
+  };
+})();
+
 /* ═══════════════════════════════════════════════
    사이드바 + 모바일 하단탭
    사용법: 각 페이지에서
@@ -185,6 +208,14 @@ function renderSidebar(){
     </nav>
 
     <div class="sb-foot">
+      <div class="fs-row">
+        <span class="fs-lab">글자 크기</span>
+        <div class="fs-pick">
+          <button id="fs-md" onclick="setFontSize('md')" title="보통">가</button>
+          <button id="fs-lg" onclick="setFontSize('lg')" title="크게">가</button>
+          <button id="fs-xl" onclick="setFontSize('xl')" title="아주 크게">가</button>
+        </div>
+      </div>
       <button class="theme-toggle" onclick="cycleTheme()" title="화면 모드: 자동 → 라이트 → 다크 순환">
         화면 모드 <b id="theme-btn-label">${themeLabel()}</b>
       </button>
@@ -196,6 +227,8 @@ function renderSidebar(){
         </div>
       </div>
     </div>`;
+  // 버튼이 방금 그려졌으니 지금 고른 글자 크기를 표시해 준다
+  if(window.applyFS) window.applyFS();
 }
 
 function sbOrgLabel(){
@@ -398,30 +431,57 @@ function injectSidebarCSS(){
 .tb-ic:hover{background:var(--sb-mint-2);}
 .tb-dot{position:absolute;top:1px;right:0;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:0 4px;border-radius:8px;min-width:15px;text-align:center;}
 
-#mn{flex:1;padding:20px;}
+#mn{flex:1;min-width:0;padding:var(--page-pad-y) var(--page-pad-x);zoom:var(--zoom);}
+
+/* ── 큰 글자 보기: 사이드바 ──
+   사이드바는 화면에 붙어 있어 zoom 을 쓰면 세로가 넘치므로 글자만 비례로 키운다.
+   폭은 theme.css 의 --sb-w 가 이미 --zoom 을 반영한다. */
+.sb-bn{font-size:calc(14px * var(--zoom));}
+.sb-gt{font-size:calc(10.5px * var(--zoom));}
+.sb-i{font-size:calc(13px * var(--zoom));}
+.sb-i .material-symbols-rounded{font-size:calc(20px * var(--zoom));}
+.sb-mn{font-size:calc(12.5px * var(--zoom));}
+.sb-mr{font-size:calc(11px * var(--zoom));}
+.theme-toggle{font-size:calc(12px * var(--zoom));}
+#tb .tb-p{font-size:calc(14.5px * var(--zoom));}
+
+/* ── 글자 크기 고르기 ── */
+.fs-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.fs-lab{font-size:calc(11px * var(--zoom));font-weight:700;color:rgba(255,255,255,.5);flex:none;}
+.fs-pick{display:flex;gap:4px;flex:1;}
+.fs-pick button{flex:1;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);
+  color:rgba(255,255,255,.72);border-radius:8px;padding:6px 0;cursor:pointer;
+  font-family:inherit;font-weight:800;line-height:1;transition:background .12s;}
+.fs-pick button:nth-child(1){font-size:12px;}
+.fs-pick button:nth-child(2){font-size:15px;}
+.fs-pick button:nth-child(3){font-size:18px;}
+.fs-pick button:hover{background:rgba(255,255,255,.14);}
+.fs-pick button.on{background:var(--sb-green);border-color:var(--sb-green);color:#fff;}
+html[data-theme="dark"] .fs-pick button.on{color:#06130E;}
 #mtab{display:none;}
 
 /* ── 태블릿: 사이드바 좁게 ── */
 @media(max-width:1100px){
-  :root{--sb-w:190px;}
+  :root{--sb-w:calc(190px * var(--zoom));}
 }
 
 /* ── 모바일/세로: 드로어 + 하단탭 ── */
 @media(max-width:768px){
-  #sb{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--shadow-md);width:264px;}
+  #sb{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--shadow-md);width:calc(264px * var(--zoom));max-width:86vw;}
   #app.drawer #sb{transform:translateX(0);}
   #app.drawer #sb-scrim{display:block;position:fixed;inset:0;background:rgba(30,57,50,.45);z-index:55;}
   .sb-close{display:block;}
   .tb-menu{display:block;}
   .sb-pin{display:block;}
-  #mn{padding:14px 12px calc(var(--tab-h) + 14px);}
+  #mn{padding:var(--page-pad-y) var(--page-pad-x) calc(var(--tab-h) + 14px);}
   #tb{padding:0 12px;}
 
-  #mtab{display:flex;position:fixed;bottom:0;left:0;right:0;height:var(--tab-h);background:var(--surface);border-top:1px solid var(--line);z-index:50;padding-bottom:env(safe-area-inset-bottom);}
+  #mtab{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(var(--tab-h) * var(--zoom));background:var(--surface);border-top:1px solid var(--line);z-index:50;padding-bottom:env(safe-area-inset-bottom);}
   .mt-i{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-decoration:none;border:none;background:none;cursor:pointer;color:var(--ink-3);font-family:inherit;padding:0;}
   .mt-i.on{color:var(--sb-green);}
   .mt-w{position:relative;display:flex;}
-  .mt-w .material-symbols-rounded{font-size:22px;}
+  .mt-w .material-symbols-rounded{font-size:calc(22px * var(--zoom));}
+  .mt-i{font-size:calc(10.5px * var(--zoom));}
   .mt-b{position:absolute;top:-3px;right:-7px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:0 4px;border-radius:8px;min-width:15px;text-align:center;line-height:14px;}
   .mt-l{font-size:10px;font-weight:600;}
 }
