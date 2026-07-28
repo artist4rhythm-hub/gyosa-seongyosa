@@ -491,14 +491,17 @@ function currentInputTerm(org){
   const today = todayYMD();
   const list = orgTerms(org);
   if(!list.length) return null;
+  // 마감된 학기는 건너뛴다 — 1학기를 마감했으면 2학기를 입력할 수 있어야 하므로
+  const open = t => !isSemLocked(org, termKey(t));
+
   // 진행 중 학기 (+afterDays 여유까지 입력 허용)
   for(const t of list){
-    if(today >= t.start && today <= addDays(t.end, EXP_WINDOW.afterDays)){
+    if(today >= t.start && today <= addDays(t.end, EXP_WINDOW.afterDays) && open(t)){
       return {term:t, editable:true};
     }
   }
   // 다음 학기 (시작 -beforeDays 부터 입력 허용)
-  const upcoming = list.filter(t=>t.start > today).sort((a,b)=>a.start.localeCompare(b.start));
+  const upcoming = list.filter(t=>t.start > today && open(t)).sort((a,b)=>a.start.localeCompare(b.start));
   if(upcoming.length){
     const nxt = upcoming[0];
     if(today >= addDays(nxt.start, -EXP_WINDOW.beforeDays)){
@@ -506,8 +509,11 @@ function currentInputTerm(org){
     }
     return {term:nxt, editable:false}; // 아직 입력 기간 아님
   }
-  // 지난 학기만 있음
-  const last = list[list.length-1];
+  // 열려 있는 학기가 하나도 없음 (전부 마감)
+  const openList = list.filter(open);
+  if(!openList.length) return {term:list[list.length-1], editable:false, allLocked:true};
+  // 지난 학기만 남음
+  const last = openList[openList.length-1];
   return {term:last, editable:false};
 }
 
@@ -593,7 +599,9 @@ function renderNew(){
   let blockMsg = '';
   if(semLocked){
     const info = semLockInfo(expOrg, formSem);
-    blockMsg = `<b>${esc(semKor(formSem))}</b>는 마감되었습니다. 새 신청이나 수정을 할 수 없어요.` +
+    blockMsg = (ct && ct.allLocked)
+      ? `이 기관의 <b>모든 학기가 마감</b>되었습니다. 새 학기가 등록되거나 마감이 풀려야 신청할 수 있어요.`
+      : `<b>${esc(semKor(formSem))}</b>는 마감되었습니다. 새 신청이나 수정을 할 수 없어요.` +
       (info && info.lockedByName ? `<br><span style="font-size:12px;opacity:.85">마감: ${esc(info.lockedByName)}` +
         `${info.lockedAt?' · '+esc(fmtDateTime(info.lockedAt)):''}${info.reason?' · '+esc(info.reason):''}</span>` : '') +
       `<br><span style="font-size:12px;opacity:.85">고쳐야 할 내용이 있으면 경비 관리자에게 마감 해제를 요청하세요.</span>`;
