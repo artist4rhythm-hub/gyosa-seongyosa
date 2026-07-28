@@ -2476,6 +2476,7 @@ async function renderReport(){
           <button class="bm" onclick="exportPayExcel()">📊 엑셀</button>
           <button class="bm" onclick="viewPayReceiptCollection()">🧾 영수증 취합</button>
           <button class="bp" style="padding:8px 16px" onclick="viewMonthlySheet()">📋 월별 취합표</button>
+          <button class="bp" style="padding:8px 16px" onclick="viewPayDetailSheet()">📄 세부 내역표</button>
         </div>
       </div>
 
@@ -2740,6 +2741,259 @@ async function imageMonthlySheet(){
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
 }
 window.imageMonthlySheet = imageMonthlySheet;
+
+// ══════════ 📄 세부 내역표 (요청서 하나하나를 표로) ══════════
+// 월별 취합표가 '계정과목별 요약'이라면, 이건 '요청서별 전체 기록'.
+// 엑셀에 담기던 내용을 그대로 종이 한 장으로 볼 수 있게 만든 것.
+const PS_CSS = `
+.ps-doc{width:1123px;background:var(--wh);padding:30px 28px;box-sizing:border-box;
+  font-family:'Noto Sans KR',sans-serif;color:#1a1a1a;}
+.ps-head{text-align:center;margin-bottom:16px;}
+.ps-title{font-size:20px;font-weight:800;color:#1b4332;}
+.ps-sub{font-size:11.5px;color:#8ba396;margin-top:5px;}
+.ps-tbl{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}
+.ps-tbl th,.ps-tbl td{border:1px solid #d9e2dd;padding:5px 6px;word-break:break-all;}
+.ps-tbl thead th{background:#2d6a4f;color:#fff;font-weight:700;text-align:center;font-size:10.5px;}
+.ps-req td{background:#eef5f1;font-weight:800;color:#1b4332;padding:6px 8px;font-size:11.5px;}
+.ps-req .ps-no{color:#2d6a4f;font-weight:900;}
+.ps-req .ps-meta{font-weight:600;color:#5a7267;font-size:10.5px;}
+.ps-bank{font-size:10px;color:#6b8579;font-weight:500;}
+.ps-c{text-align:center;}
+.ps-r{text-align:right;}
+.ps-amt{text-align:right;font-variant-numeric:tabular-nums;}
+.ps-sub2 td{background:#f7f9f8;font-weight:800;color:#2f5c48;text-align:right;font-size:11px;}
+.ps-st{display:inline-block;padding:1px 6px;border-radius:5px;font-size:9.5px;font-weight:800;}
+.ps-st.paid{background:#dcfce7;color:#166534;}
+.ps-st.wait{background:#fef3c7;color:#92400e;}
+.ps-st.apv{background:#dbeafe;color:#1e40af;}
+.ps-st.inc{background:#ede9fe;color:#5b21b6;}
+.ps-st.rej{background:#fee2e2;color:#991b1b;}
+.ps-tbl tfoot td{background:#f0e4c4;font-weight:900;color:#8a6410;text-align:right;
+  border-top:2px solid #b08d3c;font-size:12.5px;padding:8px;}
+.ps-empty{text-align:center;color:#bbb;padding:20px;}
+.ps-secttl{font-size:13px;font-weight:800;color:#1b4332;margin:18px 0 7px;
+  padding-left:8px;border-left:4px solid #2d6a4f;}
+.ps-sum{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px;}
+.ps-sum th,.ps-sum td{border:1px solid #d9e2dd;padding:6px 9px;}
+.ps-sum thead th{background:#eef5f1;color:#1b4332;font-weight:800;}
+.ps-sum td.ps-r{text-align:right;font-variant-numeric:tabular-nums;}
+.ps-sum tfoot td{background:#f0e4c4;font-weight:900;color:#8a6410;}
+.ps-foot{margin-top:14px;font-size:10px;color:#a8b5ac;text-align:right;}
+`;
+
+function payStatusChip(r){
+  if(r.mode==='income')       return '<span class="ps-st inc">수입</span>';
+  if(r.status==='rejected')   return '<span class="ps-st rej">반려</span>';
+  if(r.paid)                  return '<span class="ps-st paid">지급완료</span>';
+  if(r.status==='approving')  return '<span class="ps-st apv">결재중</span>';
+  return '<span class="ps-st wait">지급대기</span>';
+}
+
+function buildPayDetailSheetHTML(){
+  const all = PAY_REQUESTS
+    .filter(r=>r.org===rpOrg && (r.date||'').startsWith(rpMonth) && !r.deleted)
+    .sort((a,b)=> (a.date||'').localeCompare(b.date||'') || (a.applicantName||'').localeCompare(b.applicantName||'','ko'));
+
+  const COLS = 9;
+  let body = '';
+  let seq = 0;
+  let expTotal = 0, incTotal = 0;
+
+  all.forEach(r=>{
+    seq++;
+    const no = 'P' + String(seq).padStart(3,'0');
+    const rows = r.rows || [];
+    const sum  = rows.reduce((s,x)=>s+(Number(x.sub)||0), 0);
+    if(r.status!=='rejected'){ if(r.mode==='income') incTotal += sum; else expTotal += sum; }
+
+    // 결재선 (있으면)
+    const chain = (r.chain||[]).map(c=>`${c.name||''}${c.status==='approved'?'✓':''}`).filter(Boolean).join(' → ');
+    const bank = r.bank && (r.bank.bank||r.bank.account)
+      ? `${r.bank.bank||''} ${r.bank.account||''} ${r.bank.holder?'('+r.bank.holder+')':''}` : '';
+
+    body += `<tr class="ps-req">
+      <td colspan="${COLS}">
+        <span class="ps-no">${no}</span>
+        &nbsp;${esc(r.purpose||'(용도 미기재)')}
+        <span class="ps-meta">
+          &nbsp;·&nbsp;${esc(r.applicantName||r.createdByName||'')}
+          &nbsp;·&nbsp;${esc(r.dept||'-')}
+          &nbsp;·&nbsp;${esc(r.date||'')}
+          &nbsp;·&nbsp;${payStatusChip(r)}
+          ${r.paidAt?`&nbsp;·&nbsp;지급 ${esc(fmtDT(r.paidAt))}`:''}
+          ${chain?`&nbsp;·&nbsp;결재 ${esc(chain)}`:''}
+        </span>
+        ${bank?`<div class="ps-bank">💳 ${esc(bank)}</div>`:''}
+      </td></tr>`;
+
+    if(!rows.length){
+      body += `<tr><td colspan="${COLS}" class="ps-empty">입력된 항목이 없습니다</td></tr>`;
+    } else {
+      rows.forEach((row,i)=>{
+        const rc = (row.receiptCount!=null) ? row.receiptCount : (row.receipts ? row.receipts.length : '');
+        body += `<tr>
+          <td class="ps-c">${i+1}</td>
+          <td>${esc(row.cat_major||'')}</td>
+          <td>${esc(row.cat_item||'')}</td>
+          <td>${esc(row.name||'')}</td>
+          <td class="ps-c">${row.qty||''}</td>
+          <td class="ps-amt">${row.price?'₩'+won(row.price):''}</td>
+          <td class="ps-amt">${row.sub?'₩'+won(row.sub):''}</td>
+          <td>${esc(row.note||'')}</td>
+          <td class="ps-c">${rc?rc+'장':''}</td>
+        </tr>`;
+      });
+    }
+    const excluded = (r.status==='rejected');
+    body += `<tr class="ps-sub2"><td colspan="${COLS}">${no} 소계 &nbsp; ₩${won(sum)}${
+      excluded?' <span style="color:#991b1b;font-weight:700">(반려 — 합계에서 제외)</span>':''}</td></tr>`;
+  });
+
+  if(!all.length) body = `<tr><td colspan="${COLS}" class="ps-empty">이 달에 등록된 요청서가 없습니다</td></tr>`;
+
+  // 계정과목별 집계 (지출, 반려 제외)
+  const bymap = {};
+  all.filter(r=>r.mode!=='income' && r.status!=='rejected')
+     .forEach(r=>(r.rows||[]).forEach(row=>{
+       const k = row.cat_major||'미분류';
+       bymap[k] = (bymap[k]||0) + (Number(row.sub)||0);
+     }));
+  const catKeys = Object.keys(bymap).sort((a,b)=>bymap[b]-bymap[a]);
+  const catTotal = catKeys.reduce((s,k)=>s+bymap[k],0);
+
+  // 신청자별 집계
+  const bywho = {};
+  all.filter(r=>r.mode!=='income' && r.status!=='rejected').forEach(r=>{
+    const k = r.applicantName || r.createdByName || '(이름 없음)';
+    bywho[k] = (bywho[k]||0) + (r.rows||[]).reduce((s,x)=>s+(Number(x.sub)||0),0);
+  });
+  const whoKeys = Object.keys(bywho).sort((a,b)=>bywho[b]-bywho[a]);
+
+  const catTbl = catKeys.length ? `
+    <table class="ps-sum">
+      <thead><tr><th style="width:60%">계정과목 (대분류)</th><th>금액</th></tr></thead>
+      <tbody>${catKeys.map(k=>`<tr><td>${esc(k)}</td><td class="ps-r">₩${won(bymap[k])}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>합계</td><td class="ps-r">₩${won(catTotal)}</td></tr></tfoot>
+    </table>` : '';
+
+  const whoTbl = whoKeys.length ? `
+    <table class="ps-sum">
+      <thead><tr><th style="width:60%">신청자</th><th>금액</th></tr></thead>
+      <tbody>${whoKeys.map(k=>`<tr><td>${esc(k)}</td><td class="ps-r">₩${won(bywho[k])}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>합계</td><td class="ps-r">₩${won(whoKeys.reduce((s,k)=>s+bywho[k],0))}</td></tr></tfoot>
+    </table>` : '';
+
+  return `
+  <div class="ps-doc">
+    <div class="ps-head">
+      <div class="ps-title">${esc(ORGS[rpOrg]||rpOrg)} 경비 지급 세부 내역표</div>
+      <div class="ps-sub">${rpMonth.replace('-','년 ')}월 · 요청서 ${all.length}건 · 출력일 ${todayYMD()}</div>
+    </div>
+
+    <table class="ps-tbl">
+      <colgroup>
+        <col style="width:32px"><col style="width:104px"><col style="width:118px">
+        <col><col style="width:44px"><col style="width:88px">
+        <col style="width:96px"><col style="width:150px"><col style="width:52px">
+      </colgroup>
+      <thead><tr>
+        <th>#</th><th>대분류</th><th>세부</th><th>품목 · 내용</th>
+        <th>수량</th><th>단가</th><th>소계</th><th>비고</th><th>영수증</th>
+      </tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot>
+        <tr><td colspan="${COLS}">지출 합계 &nbsp; ₩${won(expTotal)}${
+          incTotal?` &nbsp;&nbsp;|&nbsp;&nbsp; 수입 합계 &nbsp; ₩${won(incTotal)}`:''}</td></tr>
+      </tfoot>
+    </table>
+
+    ${catTbl?`<div class="ps-secttl">계정과목별 집계</div>${catTbl}`:''}
+    ${whoTbl?`<div class="ps-secttl">신청자별 집계</div>${whoTbl}`:''}
+
+    <div class="ps-foot">반려된 요청서는 목록에 표시되지만 합계에서는 제외됩니다.</div>
+  </div>`;
+}
+
+function viewPayDetailSheet(){
+  const mv=document.createElement('div'); mv.className='mov'; mv.id='ps-mod';
+  mv.innerHTML=`<div class="mbk" onclick="document.getElementById('ps-mod').remove()"></div>
+    <div class="mbox" style="max-width:97vw;width:1240px;max-height:93vh;display:flex;flex-direction:column">
+      <div class="mtitle">📄 세부 내역표</div>
+      <div class="msub">${rpMonth.replace('-','년 ')}월 · ${ORGS[rpOrg]||rpOrg} · 요청서별 전체 기록</div>
+      <div style="display:flex;gap:8px;margin:10px 0;flex-wrap:wrap">
+        <button class="bm" onclick="printPayDetailSheet()">🖨️ PDF 저장</button>
+        <button class="bm" onclick="imagePayDetailSheet()">🖼️ 이미지 저장</button>
+        <button class="bm" onclick="exportPayExcel()">📊 엑셀로도 받기</button>
+      </div>
+      <div style="overflow:auto;flex:1;border:1px solid var(--ivd);border-radius:10px;background:var(--iv);padding:16px;display:flex;justify-content:center;align-items:flex-start">
+        <div style="box-shadow:0 4px 20px rgba(0,0,0,.15)"><style>${PS_CSS}</style>${buildPayDetailSheetHTML()}</div>
+      </div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('ps-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+}
+window.viewPayDetailSheet = viewPayDetailSheet;
+
+// 세부 내역표 → PDF (가로 A4, 길면 여러 장으로 나눔)
+async function printPayDetailSheet(){
+  window.showLoading && window.showLoading('PDF를 만드는 중…');
+  try {
+    await ensureH2C(); await ensureJsPDF();
+    const h=document.createElement('div');
+    h.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;';
+    h.innerHTML=`<style>${PS_CSS}</style>`+buildPayDetailSheetHTML();
+    document.body.appendChild(h);
+    const node=h.querySelector('.ps-doc');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+    document.body.removeChild(h);
+
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), mg=8;
+    const iw=pw-mg*2, ih=canvas.height*iw/canvas.width;
+    if(ih<=ph-mg*2){
+      pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',mg,mg,iw,ih);
+    } else {
+      // 세로로 길면 페이지 단위로 잘라 담는다
+      const pxPerMM = canvas.width/iw;
+      const pageH   = (ph-mg*2)*pxPerMM;
+      let y=0, first=true;
+      while(y < canvas.height){
+        const sliceH = Math.min(pageH, canvas.height-y);
+        const c2=document.createElement('canvas'); c2.width=canvas.width; c2.height=sliceH;
+        c2.getContext('2d').drawImage(canvas,0,y,canvas.width,sliceH,0,0,canvas.width,sliceH);
+        if(!first) pdf.addPage();
+        pdf.addImage(c2.toDataURL('image/jpeg',0.92),'JPEG',mg,mg,iw,sliceH/pxPerMM);
+        first=false; y+=sliceH;
+      }
+    }
+    pdf.save(`경비지급_세부내역_${rpMonth}_${ORGS[rpOrg]||rpOrg}.pdf`);
+    window.hideLoading && window.hideLoading();
+    toast('PDF를 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.printPayDetailSheet = printPayDetailSheet;
+
+async function imagePayDetailSheet(){
+  window.showLoading && window.showLoading('이미지를 만드는 중…');
+  try {
+    await ensureH2C();
+    const h=document.createElement('div');
+    h.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;';
+    h.innerHTML=`<style>${PS_CSS}</style>`+buildPayDetailSheetHTML();
+    document.body.appendChild(h);
+    const node=h.querySelector('.ps-doc');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+    document.body.removeChild(h);
+    const a=document.createElement('a');
+    a.href=canvas.toDataURL('image/png');
+    a.download=`경비지급_세부내역_${rpMonth}.png`;
+    a.click();
+    window.hideLoading && window.hideLoading();
+    toast('이미지를 저장했습니다.','ok');
+  } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.imagePayDetailSheet = imagePayDetailSheet;
 
 // ══════════ 🧾 영수증 취합 (월별, 잘림방지) ══════════
 let _payRcCache = null;
