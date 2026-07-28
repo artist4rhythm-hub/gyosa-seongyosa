@@ -77,6 +77,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .stu-row.quit{background:var(--iv);border-style:dashed;}
 .stu-row.quit .stu-name{color:var(--gray-tx);}
 .stu-quit-divider{display:flex;align-items:center;gap:8px;margin:10px 0 7px;font-size:11.5px;font-weight:700;color:#9ca3af;}
+.stu-quit-divider.leave{color:var(--warn,#B45309);}
+.stu-quit-divider.leave::before,.stu-quit-divider.leave::after{background:var(--warn-bg,#FEF3C7);}
 .stu-quit-divider::before,.stu-quit-divider::after{content:'';flex:1;height:1px;background:#e2e0da;}
 .stu-row input[type=checkbox]{width:17px;height:17px;accent-color:var(--gm);flex-shrink:0;cursor:pointer;}
 .stu-row.leave input[type=checkbox]{cursor:not-allowed;}
@@ -676,7 +678,7 @@ function renderNew(){
         <div id="group-tabs" style="display:flex;gap:8px;flex-wrap:wrap;align-items:stretch"></div>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <span style="font-size:13px;color:var(--tl)">신청 날짜 기준 재학생만 표시됩니다. 휴학·자퇴 학생은 <b>입력 열기</b>로 추가할 수 있어요.</span>
+        <span style="font-size:13px;color:var(--tl)">신청 날짜 기준 재학생만 선택됩니다. <b>휴학·자퇴 학생은 반 안에서 아래쪽에 따로</b> 모여 있고, 필요하면 <b>입력 열기</b>로 추가할 수 있어요.</span>
         <button class="bm" onclick="refreshRoster()" style="flex-shrink:0;font-size:12px">🔄 최신 반편성</button>
       </div>
       <div id="ex-classes"></div>
@@ -1548,11 +1550,14 @@ function renderClassChecks(){
     const studs = grp.ids.map(id=>STUDENTS.find(s=>s.id===id))
       .filter(s=>s && ((s.status||'active')!=='quit' || showQuitStu(s)));
     if(!studs.length) return;
+    // 재학생 → 휴학생 → 자퇴생 순서로, 재학 중이 아닌 학생은 반 안에서 아래로 모은다
+    const stuRank = s => {
+      const st = s.status||'active';
+      return st==='quit' ? 2 : (st==='leave' ? 1 : 0);
+    };
     studs.sort((a,b)=>{
-      const qa = (a.status||'active')==='quit' ? 1 : 0;     // 자퇴생은 맨 아래로
-      const qb = (b.status||'active')==='quit' ? 1 : 0;
       const ga = parseInt(studentGrade(a.id),10)||99, gb = parseInt(studentGrade(b.id),10)||99;
-      return qa-qb || ga-gb || (a.name||'').localeCompare(b.name||'','ko');
+      return stuRank(a)-stuRank(b) || ga-gb || (a.name||'').localeCompare(b.name||'','ko');
     });
     const accent = palette[gi % palette.length];
     const open = !!openCls[grp.key];
@@ -1562,7 +1567,12 @@ function renderClassChecks(){
         <span style="width:10px;height:10px;border-radius:50%;background:${accent};flex-shrink:0"></span>
         <span style="flex:1;font-size:15px;font-weight:700;color:var(--gd)">${esc(grp.name)}${grp.gradeLabel?` <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(grp.gradeLabel)}</span>`:''}</span>
         <span style="font-size:12px;color:${selCount?'var(--gm)':'var(--tl)'};font-weight:${selCount?'700':'400'}" id="cls-sel-${esc(grp.key)}">${selCount?selCount+'명 선택':''}</span>
-        <span style="font-size:12px;color:var(--tl)">${studs.filter(s=>(s.status||'active')!=='quit').length}명${(()=>{const q=studs.filter(s=>(s.status||'active')==='quit').length; return q?` +자퇴 ${q}`:'';})()}</span>
+        <span style="font-size:12px;color:var(--tl)">${(()=>{
+          const act = studs.filter(s=>(s.status||'active')==='active').length;
+          const lv  = studs.filter(s=>(s.status||'active')==='leave').length;
+          const qt  = studs.filter(s=>(s.status||'active')==='quit').length;
+          return `${act}명${lv?` +휴학 ${lv}`:''}${qt?` +자퇴 ${qt}`:''}`;
+        })()}</span>
         <span class="gr-arrow">▼</span>
       </div>
       <div class="gr-body">
@@ -1573,7 +1583,8 @@ function renderClassChecks(){
           </div>
           ${studs.map((s,si)=>{
             const g = studentGrade(s.id);
-            const onLeaveNow = isOnLeaveOn(s, reqDate);           // 신청 날짜에 휴학 중
+            // 휴학 판정 — 기간을 넣지 않고 상태만 '휴학'으로 바꾼 경우도 휴학 중으로 본다
+            const onLeaveNow = (s.status||'active')==='leave' || isOnLeaveOn(s, reqDate);
             const quitByNow  = isQuitBy(s, reqDate);              // 신청 날짜에 이미 자퇴
             const notEnrolled = onLeaveNow || quitByNow;          // 그날 청구 대상 아님
             const manualOpen = manualOpenIds.has(s.id);          // 수동으로 입력 연 학생
@@ -1585,9 +1596,15 @@ function renderClassChecks(){
             const showAmt = (expMode==='indiv'||expMode==='refund') && checked && !blanked;
             const gi = expMode==='group' ? groupOf(s.id) : null;
             const gBadge = (gi!==null) ? `<span style="width:20px;height:20px;border-radius:50%;background:${GRP_STYLE[gi].fg};color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;margin-left:5px;vertical-align:middle">${GRP_STYLE[gi].l}</span>`:'';
-            const firstQuit = isQuit && (si===0 || (studs[si-1].status||'active')!=='quit');
+            const prevRank = si===0 ? -1 : stuRank(studs[si-1]);
+            const myRank = stuRank(s);
+            const firstLeave = myRank===1 && prevRank!==1;
+            const firstQuit  = myRank===2 && prevRank!==2;
             const blankNote = blanked ? (quitByNow ? '자퇴' : '휴학 중') : '';
-            return `${firstQuit?'<div class="stu-quit-divider">재학중 아님 · 자퇴·전출 (이번 학년도)</div>':''}<div class="stu-row ${blanked?'leave':''} ${isQuit?'quit':''} ${checked&&!blanked?'checked':''}" data-sid="${s.id}" onclick="${blanked?'':`toggleStu('${s.id}')`}">
+            const divider = firstLeave ? '<div class="stu-quit-divider leave">휴학 중</div>'
+                          : firstQuit  ? '<div class="stu-quit-divider">재학중 아님 · 자퇴·전출 (이번 학년도)</div>'
+                          : '';
+            return `${divider}<div class="stu-row ${blanked?'leave':''} ${isQuit?'quit':''} ${checked&&!blanked?'checked':''}" data-sid="${s.id}" onclick="${blanked?'':`toggleStu('${s.id}')`}">
               <input type="checkbox" ${checked&&!blanked?'checked':''} ${blanked?'disabled':''} onclick="event.stopPropagation();${blanked?'':`toggleStu('${s.id}')`}">
               <div style="flex:1">
                 <span class="stu-name">${esc(s.name)}</span>
