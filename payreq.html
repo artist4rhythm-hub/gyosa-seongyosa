@@ -333,6 +333,7 @@ function toast(msg, type=''){
 }
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+const isSuper = () => !!CU && CU.role==='super';
 // 이 기관의 경비 관리자인가 (슈퍼 포함)
 function isExpManager(org){
   if(!CU) return false;
@@ -431,6 +432,8 @@ async function loadData(){
         if(Array.isArray(d.income)&&d.income.length) INCOME_CATS=d.income;
       }
     } catch(e4){}
+    // 결재 라인 규칙 (payConfig/approvalRules) — 없으면 기본 규칙 사용
+    await loadApprovalRules();
     // 본인 계좌 (staff 문서에 저장해둔 것)
     try {
       const me = STAFF.find(s=>s.uid===CU.uid);
@@ -739,9 +742,6 @@ const PR_ORG_DEPTS = {
   jihyebit: ['유아부'],
 };
 function PR_DEPTS(org){ return PR_ORG_DEPTS[org] || ['초등부','중등부','고등부','행정실']; }
-// 부서 → 부서장 직책 (전자결재와 동일)
-const PR_DEPT_TO_POS = {'초등부':'초등부장','중등부':'중고등부장','고등부':'중고등부장','중고등부':'중고등부장','행정실':'행정실장','유아부':'원장','지혜빛':'원장'};
-
 function staffName(uid){ const s=STAFF.find(x=>x.uid===uid); return s?s.name:''; }
 // 특정 직책을 가진 사람 찾기 (해당 기관 기준)
 function findByPosition(pos, org){
@@ -757,39 +757,102 @@ function findByPosition(pos, org){
 // 내 직책
 function myPosition(){ const me=STAFF.find(s=>s.uid===CU.uid); return (me&&me.position)||'교사'; }
 
+
+// ═══════════════════════════════════════════
+//  🧭 결재 라인 규칙 (payConfig/approvalRules)
+//  · 금액 구간마다, 신청자 직책마다 거쳐야 할 결재 단계를 정한다
+//  · '부서장'은 특수 표시 — 신청자 소속 부서의 부서장으로 자동 치환
+//  · 설정이 없으면 아래 기본 규칙이 그대로 쓰인다 (기존 동작과 동일)
+// ═══════════════════════════════════════════
+const HEAD_TOKEN = '부서장';      // 신청자 부서의 부서장을 뜻하는 표시
+const DEFAULT_POSITIONS = ['교사','초등부장','중고등부장','행정실장','원장','교감','교장'];
+
+const DEFAULT_APPROVAL_RULES = {
+  tiers: [
+    { min: 0,      steps: { _default: [] } },                       // 5만 미만: 결재 없음
+    { min: 50000,  steps: {                                          // 5만~20만
+        _default:  [HEAD_TOKEN],
+        '초등부장': ['교감'], '중고등부장': ['교감'], '행정실장': ['교감'], '원장': ['교감'],
+        '교감': [], '교장': []
+      } },
+    { min: 200000, steps: {                                          // 20만 이상
+        _default:  [HEAD_TOKEN, '교감', '교장'],
+        '초등부장': ['교감','교장'], '중고등부장': ['교감','교장'],
+        '행정실장': ['교감','교장'], '원장': ['교감','교장'],
+        '교감': ['교장'], '교장': []
+      } }
+  ],
+  deptHeads: { '초등부':'초등부장','중등부':'중고등부장','고등부':'중고등부장',
+               '중고등부':'중고등부장','행정실':'행정실장','유아부':'원장','지혜빛':'원장' }
+};
+
+let PAY_RULES = null;    // 불러온 규칙 (없으면 기본값 사용)
+
+function payRules(){ return PAY_RULES || DEFAULT_APPROVAL_RULES; }
+
+async function loadApprovalRules(){
+  try {
+    const s = await getDoc(doc(db,'payConfig','approvalRules'));
+    if(s.exists()){
+      const d = s.data();
+      if(Array.isArray(d.tiers) && d.tiers.length) PAY_RULES = { tiers:d.tiers, deptHeads:d.deptHeads||{} };
+    }
+  } catch(e){ PAY_RULES = null; }
+}
+
+async function saveApprovalRules(rules){
+  await setDoc(doc(db,'payConfig','approvalRules'), {
+    tiers: rules.tiers, deptHeads: rules.deptHeads,
+    updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'', updatedByName: CU?.name||''
+  });
+  PAY_RULES = { tiers: rules.tiers, deptHeads: rules.deptHeads };
+}
+
+// 시스템에 실제로 쓰이는 직책 모음 (기본 + 교직원에 등록된 것)
+function allPositions(){
+  const set = new Set(DEFAULT_POSITIONS);
+  STAFF.forEach(s=>{ if(s.position) set.add(s.position); });
+  return [...set];
+}
+
+// 금액이 속한 구간
+function tierOf(total){
+  const ts = (payRules().tiers||[]).slice().sort((a,b)=>(a.min||0)-(b.min||0));
+  let hit = ts[0] || { min:0, steps:{_default:[]} };
+  ts.forEach(t=>{ if(total >= (t.min||0)) hit = t; });
+  return hit;
+}
+
+// 구간 라벨 ("5만 이상 20만 미만" 같은 사람이 읽는 표기)
+function tierLabel(tiers, i){
+  const ts = tiers.slice().sort((a,b)=>(a.min||0)-(b.min||0));
+  const from = ts[i]?.min || 0;
+  const to   = ts[i+1] ? ts[i+1].min : null;
+  const w = n => (typeof won==='function' ? won(n) : String(n));
+  if(from === 0) return to ? `₩${w(to)} 미만` : '전체 금액';
+  return to ? `₩${w(from)} ~ ₩${w(to)} 미만` : `₩${w(from)} 이상`;
+}
+
 // 총액·신청자직책 → 결재 단계 생성
 function buildApprovalChain(total, applicantUid, dept, org){
+  const R = payRules();
   const me = STAFF.find(s=>s.uid===applicantUid);
-  const myPos = (me&&me.position) || '교사';
-  const chain=[];
-  const addStep=(label,pos)=>{
-    const p=findByPosition(pos, org);
-    if(p) chain.push({ role:label, position:pos, uid:p.uid, name:p.name, status:'pending', at:null });
-  };
+  const myPos = (me && me.position) || '교사';
+  const tier = tierOf(total);
+  const steps = (tier.steps && (tier.steps[myPos] || tier.steps._default)) || [];
 
-  if(total < 50000) return { chain:[], needApproval:false };   // 5만 미만: 결재 없음
-  const under20 = total < 200000;
-
-  // 교장: 승인 불필요
-  if(myPos==='교장') return { chain:[], needApproval:false };
-  // 교감: 5~20만 바로 상신 / 20만↑ 교장
-  if(myPos==='교감'){
-    if(under20) return { chain:[], needApproval:false };
-    addStep('교장','교장');
-    return { chain, needApproval:chain.length>0 };
-  }
-  // 부서장·원장: 교감 전결 (20만↑이면 교감→교장)
-  const isHead = ['초등부장','중고등부장','행정실장','원장'].includes(myPos);
-  if(isHead){
-    addStep('교감','교감');
-    if(!under20) addStep('교장','교장');
-    return { chain, needApproval:chain.length>0 };
-  }
-  // 일반 교사: 부서장 (20만↑이면 부서장→교감→교장)
-  const headPos = PR_DEPT_TO_POS[dept] || '';
-  if(headPos) addStep('부서장', headPos);
-  if(!under20){ addStep('교감','교감'); addStep('교장','교장'); }
-  return { chain, needApproval:chain.length>0 };
+  const chain = [];
+  steps.forEach(step=>{
+    // '부서장'은 신청자 소속 부서의 부서장으로 바꿔 찾는다
+    const pos = (step === HEAD_TOKEN) ? ((R.deptHeads||{})[dept] || '') : step;
+    if(!pos) return;
+    const p = findByPosition(pos, org);
+    if(!p) return;
+    if(p.uid === applicantUid) return;                 // 본인은 결재자에서 제외
+    if(chain.some(c=>c.uid===p.uid)) return;           // 같은 사람이 두 번 들어가지 않게
+    chain.push({ role:step, position:pos, uid:p.uid, name:p.name, status:'pending', at:null });
+  });
+  return { chain, needApproval: chain.length>0 };
 }
 
 
@@ -3955,6 +4018,7 @@ async function renderBackup(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="ex-chip2 ${bkTab==='mgr'?'on':''}" onclick="setBkTab('mgr')">👥 담당자 지정</button>
         <button class="ex-chip2 ${bkTab==='cats'?'on':''}" onclick="setBkTab('cats')">📑 계정과목 관리</button>
+        ${isSuper()?`<button class="ex-chip2 ${bkTab==='rules'?'on':''}" onclick="setBkTab('rules')">🧭 결재 라인</button>`:''}
         <button class="ex-chip2 ${bkTab==='logs'?'on':''}" onclick="setBkTab('logs')">📜 변경 로그</button>
       </div>
       <style>
@@ -3979,11 +4043,262 @@ async function renderBackup(){
     <div id="bk-body"></div>`;
   if(bkTab==='mgr') renderMgrSetup();
   else if(bkTab==='cats') renderCatSetup();
+  else if(bkTab==='rules') renderRuleSetup();
   else renderLogs();
 }
 window.renderBackup = renderBackup;
 function setBkTab(t){ bkTab=t; renderBackup(); }
 window.setBkTab = setBkTab;
+
+// ── 결재 라인 설정 (수퍼관리자 전용) ──
+let ruleDraft = null;     // 편집 중인 사본
+let ruleTierIdx = 0;      // 지금 보고 있는 금액 구간
+
+function cloneRules(){
+  const R = payRules();
+  return JSON.parse(JSON.stringify({ tiers:R.tiers||[], deptHeads:R.deptHeads||{} }));
+}
+function sortTiers(){
+  ruleDraft.tiers.sort((a,b)=>(a.min||0)-(b.min||0));
+  if(ruleDraft.tiers.length && (ruleDraft.tiers[0].min||0)!==0) ruleDraft.tiers[0].min = 0;
+}
+function allDepts(){
+  const set = new Set();
+  Object.values(PR_ORG_DEPTS||{}).forEach(list=> (list||[]).forEach(d=>set.add(d)));
+  Object.keys((ruleDraft&&ruleDraft.deptHeads)||{}).forEach(d=>set.add(d));
+  return [...set];
+}
+
+function renderRuleSetup(){
+  const box = $I('bk-body'); if(!box) return;
+  if(!isSuper()){
+    box.innerHTML = '<div class="acard"><p class="empty">결재 라인은 수퍼관리자만 수정할 수 있습니다.</p></div>';
+    return;
+  }
+  if(!ruleDraft) ruleDraft = cloneRules();
+  sortTiers();
+  if(ruleTierIdx >= ruleDraft.tiers.length) ruleTierIdx = 0;
+
+  const tiers = ruleDraft.tiers;
+  const tier  = tiers[ruleTierIdx] || { min:0, steps:{} };
+  if(!tier.steps) tier.steps = {};
+
+  const positions = allPositions();
+  // 표시할 행: _default(일반) + 규칙이 지정된 직책 + 주요 직책
+  const rowKeys = ['_default', ...positions.filter(p=>p!=='교사')];
+
+  const stepChip = (posKey, step, i)=>`
+    <span class="rl-step">${esc(step===HEAD_TOKEN?'부서장(소속별)':step)}
+      <button onclick="ruleDelStep('${esc(posKey)}',${i})" title="빼기">×</button></span>`;
+
+  const rowHTML = (key)=>{
+    const label = key==='_default' ? '일반 교사 (기본)' : key;
+    const steps = tier.steps[key];
+    const isSet = Array.isArray(steps);
+    const list  = isSet ? steps : (tier.steps._default||[]);
+    const chips = list.length
+      ? list.map((s,i)=>stepChip(key,s,i)).join('<span class="rl-arrow">→</span>')
+      : '<span class="rl-none">결재 없음 (바로 상신)</span>';
+    return `<div class="rl-row ${isSet?'':'inherit'}">
+      <div class="rl-who">${esc(label)}${isSet?'':'<b>기본과 동일</b>'}</div>
+      <div class="rl-steps">${chips}</div>
+      <div class="rl-act">
+        <select class="rl-add" onchange="ruleAddStep('${esc(key)}',this.value);this.value=''">
+          <option value="">＋ 단계 추가</option>
+          <option value="${HEAD_TOKEN}">부서장(소속별)</option>
+          ${positions.filter(p=>p!=='교사').map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('')}
+        </select>
+        ${key!=='_default' ? (isSet
+          ? `<button class="bm" onclick="ruleResetRow('${esc(key)}')">기본으로</button>`
+          : '') : ''}
+      </div>
+    </div>`;
+  };
+
+  const dirty = JSON.stringify(ruleDraft) !== JSON.stringify(cloneRules());
+
+  box.innerHTML = `
+    <div class="acard">
+      <div class="mg-t">🧭 결재 라인</div>
+      <div class="mg-d">금액 구간마다, 신청자의 직책마다 누구를 거쳐 결재할지 정합니다.
+        <b>부서장(소속별)</b>은 신청자가 고른 소속 부서의 부서장으로 자동으로 바뀝니다.</div>
+
+      <div class="rl-sec">금액 구간</div>
+      <div class="rl-tiers">
+        ${tiers.map((t,i)=>`
+          <button class="rl-tier ${i===ruleTierIdx?'on':''}" onclick="ruleSelTier(${i})">
+            ${esc(tierLabel(tiers,i))}
+          </button>`).join('')}
+        <button class="rl-tier add" onclick="ruleAddTier()">＋ 구간 추가</button>
+      </div>
+
+      ${ruleTierIdx>0 ? `
+      <div class="rl-minbar">
+        <span>이 구간의 시작 금액</span>
+        <input type="number" id="rl-min" value="${tier.min||0}" step="10000" min="1"
+          onchange="ruleSetMin(this.value)">
+        <span>원부터</span>
+        <button class="bm" onclick="ruleDelTier()" style="margin-left:auto">🗑 이 구간 삭제</button>
+      </div>` : `
+      <div class="rl-minbar"><span>가장 낮은 구간입니다 (0원부터 시작)</span></div>`}
+
+      <div class="rl-sec">이 구간의 결재 단계</div>
+      <div class="rl-rows">${rowKeys.map(rowHTML).join('')}</div>
+
+      <div class="rl-sec">부서 → 부서장</div>
+      <div class="mg-d" style="margin-top:-4px">‘부서장(소속별)’ 단계가 실제로 누구를 가리킬지 정합니다.</div>
+      <div class="rl-depts">
+        ${allDepts().map(d=>`
+          <div class="rl-dept">
+            <span>${esc(d)}</span>
+            <select onchange="ruleSetDeptHead('${esc(d)}',this.value)">
+              <option value="">— 없음 —</option>
+              ${positions.filter(p=>p!=='교사').map(p=>
+                `<option value="${esc(p)}" ${((ruleDraft.deptHeads||{})[d]===p)?'selected':''}>${esc(p)}</option>`).join('')}
+            </select>
+          </div>`).join('')}
+      </div>
+
+      <div class="rl-sec">미리보기</div>
+      <div class="rl-prev" id="rl-prev">${rulePreviewHTML()}</div>
+
+      <div class="rl-save">
+        <button class="bp" onclick="ruleSave()" ${dirty?'':'disabled'}>💾 저장</button>
+        <button class="bs" onclick="ruleRevert()" ${dirty?'':'disabled'}>되돌리기</button>
+        <button class="bm" onclick="ruleRestoreDefault()">기본값으로 초기화</button>
+        <span class="rl-dirty">${dirty?'저장하지 않은 변경이 있습니다':'모든 변경이 저장되었습니다'}</span>
+      </div>
+    </div>
+    <style>
+      .rl-sec{font-size:12.5px;font-weight:800;color:var(--gm);margin:16px 0 8px;}
+      .rl-tiers{display:flex;gap:6px;flex-wrap:wrap;}
+      .rl-tier{padding:8px 14px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--wh);
+        font-family:inherit;font-size:12.5px;font-weight:700;color:var(--ts);cursor:pointer;}
+      .rl-tier.on{background:var(--gm);border-color:var(--gm);color:#fff;}
+      .rl-tier.add{border-style:dashed;color:var(--gm);}
+      .rl-minbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;
+        padding:10px 12px;background:var(--iv);border-radius:9px;font-size:12.5px;color:var(--ts);}
+      .rl-minbar input{width:120px;padding:6px 9px;border:1px solid var(--ivd);border-radius:7px;
+        font-family:inherit;font-size:13px;font-weight:700;}
+      .rl-rows{display:flex;flex-direction:column;gap:7px;}
+      .rl-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;
+        border:1px solid var(--ivd);border-radius:10px;background:var(--wh);}
+      .rl-row.inherit{background:var(--iv);opacity:.9;}
+      .rl-who{min-width:140px;font-size:13px;font-weight:800;color:var(--gd);}
+      .rl-who b{display:block;font-size:10.5px;font-weight:600;color:var(--tl);}
+      .rl-steps{flex:1;display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:180px;}
+      .rl-step{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;background:var(--gp);
+        color:var(--gm);border-radius:8px;font-size:12.5px;font-weight:700;}
+      .rl-step button{border:none;background:none;color:var(--danger);cursor:pointer;font-weight:800;padding:0;}
+      .rl-arrow{color:var(--tl);font-size:12px;}
+      .rl-none{font-size:12px;color:var(--tl);}
+      .rl-act{display:flex;gap:6px;align-items:center;}
+      .rl-add{padding:6px 9px;border:1px solid var(--ivd);border-radius:7px;background:var(--wh);
+        font-family:inherit;font-size:12px;color:var(--ts);}
+      .rl-depts{display:flex;gap:8px;flex-wrap:wrap;}
+      .rl-dept{display:flex;align-items:center;gap:7px;padding:8px 11px;border:1px solid var(--ivd);
+        border-radius:9px;background:var(--wh);font-size:12.5px;font-weight:700;color:var(--gd);}
+      .rl-dept select{padding:5px 8px;border:1px solid var(--ivd);border-radius:7px;
+        font-family:inherit;font-size:12px;}
+      .rl-prev{border:1px solid var(--gold-line,#B08D3C);background:var(--gold-bg,#F7EFD8);
+        border-radius:10px;padding:12px 14px;font-size:12.5px;line-height:1.9;color:var(--goldd);}
+      .rl-prev b{color:var(--gd);}
+      .rl-save{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:16px;
+        padding-top:14px;border-top:1px solid var(--ivd);}
+      .rl-save button:disabled{opacity:.45;cursor:not-allowed;}
+      .rl-dirty{font-size:11.5px;color:var(--tl);margin-left:auto;}
+    </style>`;
+}
+window.renderRuleSetup = renderRuleSetup;
+
+// 미리보기: 실제 규칙을 그대로 돌려 결과를 보여준다
+function rulePreviewHTML(){
+  const saved = PAY_RULES;
+  PAY_RULES = ruleDraft;                    // 편집 중 규칙으로 잠깐 바꿔 계산
+  const samples = [];
+  const tiers = ruleDraft.tiers.slice().sort((a,b)=>(a.min||0)-(b.min||0));
+  const amounts = tiers.map((t,i)=> (t.min||0) + (i===0 ? 10000 : 10000));
+  const depts = allDepts().slice(0,2);
+  try {
+    amounts.forEach(amt=>{
+      depts.forEach(dept=>{
+        const head = (ruleDraft.deptHeads||{})[dept] || '';
+        const tier = tierOf(amt);
+        const steps = (tier.steps && (tier.steps['교사'] || tier.steps._default)) || [];
+        const names = steps.map(s=> s===HEAD_TOKEN ? (head||'(부서장 미지정)') : s);
+        samples.push(`<div><b>₩${won(amt)}</b> · 일반 교사 · ${esc(dept)} → ${
+          names.length ? names.map(esc).join(' → ') : '<b>결재 없이 바로 상신</b>'}</div>`);
+      });
+    });
+  } catch(e){}
+  PAY_RULES = saved;
+  return samples.join('') || '<div>표시할 예시가 없습니다.</div>';
+}
+
+/* 조작 */
+window.ruleSelTier = function(i){ ruleTierIdx = i; renderRuleSetup(); };
+window.ruleSetMin = function(v){
+  const n = Math.max(1, Number(v)||0);
+  ruleDraft.tiers[ruleTierIdx].min = n;
+  sortTiers();
+  ruleTierIdx = ruleDraft.tiers.findIndex(t=>t.min===n);
+  renderRuleSetup();
+};
+window.ruleAddTier = function(){
+  const last = ruleDraft.tiers[ruleDraft.tiers.length-1];
+  const base = (last?.min||0);
+  const next = base ? base*2 : 50000;
+  ruleDraft.tiers.push({ min: next, steps: JSON.parse(JSON.stringify(last?.steps||{_default:[]})) });
+  sortTiers();
+  ruleTierIdx = ruleDraft.tiers.findIndex(t=>t.min===next);
+  renderRuleSetup();
+};
+window.ruleDelTier = function(){
+  if(ruleTierIdx===0) return;
+  if(!confirm('이 금액 구간을 삭제할까요?')) return;
+  ruleDraft.tiers.splice(ruleTierIdx,1);
+  ruleTierIdx = Math.max(0, ruleTierIdx-1);
+  renderRuleSetup();
+};
+window.ruleAddStep = function(key, pos){
+  if(!pos) return;
+  const t = ruleDraft.tiers[ruleTierIdx];
+  if(!Array.isArray(t.steps[key])) t.steps[key] = (t.steps._default||[]).slice();
+  t.steps[key].push(pos);
+  renderRuleSetup();
+};
+window.ruleDelStep = function(key, i){
+  const t = ruleDraft.tiers[ruleTierIdx];
+  if(!Array.isArray(t.steps[key])) t.steps[key] = (t.steps._default||[]).slice();
+  t.steps[key].splice(i,1);
+  renderRuleSetup();
+};
+window.ruleResetRow = function(key){
+  const t = ruleDraft.tiers[ruleTierIdx];
+  delete t.steps[key];
+  renderRuleSetup();
+};
+window.ruleSetDeptHead = function(dept, pos){
+  ruleDraft.deptHeads = ruleDraft.deptHeads || {};
+  if(pos) ruleDraft.deptHeads[dept] = pos; else delete ruleDraft.deptHeads[dept];
+  renderRuleSetup();
+};
+window.ruleRevert = function(){ ruleDraft = cloneRules(); renderRuleSetup(); toast('되돌렸습니다'); };
+window.ruleRestoreDefault = function(){
+  if(!confirm('결재 라인을 처음 기본값으로 되돌릴까요?\n(저장을 눌러야 실제로 적용됩니다)')) return;
+  ruleDraft = JSON.parse(JSON.stringify(DEFAULT_APPROVAL_RULES));
+  renderRuleSetup();
+};
+window.ruleSave = async function(){
+  try {
+    sortTiers();
+    await saveApprovalRules(ruleDraft);
+    await addLog('결재 라인 변경', `구간 ${ruleDraft.tiers.length}개`);
+    ruleDraft = cloneRules();
+    toast('결재 라인을 저장했습니다','ok');
+    renderRuleSetup();
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+};
 
 // ── 담당자 지정 (3종) ──
 function renderMgrSetup(){
