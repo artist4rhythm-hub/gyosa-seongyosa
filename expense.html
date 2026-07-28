@@ -78,6 +78,9 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .stu-row.quit .stu-name{color:var(--gray-tx);}
 .stu-quit-divider{display:flex;align-items:center;gap:8px;margin:10px 0 7px;font-size:11.5px;font-weight:700;color:#9ca3af;}
 .stu-quit-divider.leave{color:var(--warn,#B45309);}
+.stu-tag{display:inline-block;margin-left:5px;font-size:10px;font-weight:800;border-radius:6px;padding:1px 6px;vertical-align:middle;}
+.stu-tag.leave{background:var(--warn-bg,#FEF3C7);color:var(--warn,#B45309);}
+.stu-tag.quit{background:var(--gray-bg,#E5E7EB);color:var(--gray-tx,#4B5563);}
 .stu-quit-divider.leave::before,.stu-quit-divider.leave::after{background:var(--warn-bg,#FEF3C7);}
 .stu-quit-divider::before,.stu-quit-divider::after{content:'';flex:1;height:1px;background:#e2e0da;}
 .stu-row input[type=checkbox]{width:17px;height:17px;accent-color:var(--gm);flex-shrink:0;cursor:pointer;}
@@ -361,6 +364,20 @@ function studentGrade(sid){
   return '';
 }
 // 특정 날짜에 휴학 중인지 (students.html의 leaves 배열과 동일 기준)
+/* 학생 상태 뱃지 — 취합·입금 화면에서 휴학·자퇴를 바로 알아보도록 */
+function studentStatusTag(sid){
+  const s = STUDENTS.find(x=>x.id===sid);
+  const st = s ? (s.status||'active') : 'active';
+  if(st==='leave') return '<span class="stu-tag leave">휴학</span>';
+  if(st==='quit')  return '<span class="stu-tag quit">자퇴</span>';
+  return '';
+}
+function studentStatusText(sid){
+  const s = STUDENTS.find(x=>x.id===sid);
+  const st = s ? (s.status||'active') : 'active';
+  return st==='leave' ? '휴학' : st==='quit' ? '자퇴' : '재학';
+}
+
 function isOnLeaveOn(s, dateStr){
   if(!s.leaves || !s.leaves.length) return false;
   return s.leaves.some(lv => lv.start && dateStr>=lv.start && (!lv.end || dateStr<=lv.end));
@@ -3239,7 +3256,7 @@ function payRow(s){
   if(netv === 0){ netCell = `<span style="color:var(--tl)">₩0 · 정산 불필요</span>`; }
 
   return `<tr>
-    <td class="pay-name">${esc(s.name)}</td>
+    <td class="pay-name">${esc(s.name)}${studentStatusTag(s.id)}</td>
     <td class="pay-amt">${netCell}</td>
     <td style="border-left:2px solid var(--ivd)">${depCell}</td>
     <td style="border-left:2px solid var(--ivd)">${refCell}</td>
@@ -3354,7 +3371,7 @@ function renderReportClassGroups(list, students){
               </tr></thead>
               <tbody>
                 ${studs.map(s=>`<tr style="border-bottom:1px solid var(--ivd);cursor:pointer" onclick="viewStudentDetail('${s.id}')">
-                  <td style="padding:7px 9px;font-weight:700;color:var(--gd)">${esc(s.name)}</td>
+                  <td style="padding:7px 9px;font-weight:700;color:var(--gd)">${esc(s.name)}${studentStatusTag(s.id)}</td>
                   <td style="padding:7px 9px;color:var(--ts)">${esc(s.className||'-')}</td>
                   <td style="padding:7px 9px;text-align:center;color:var(--ts)">${s.cnt}</td>
                   <td style="padding:7px 9px;text-align:right;color:var(--gm)">${s.charge?'₩'+won(s.charge):'-'}</td>
@@ -3472,7 +3489,7 @@ function viewClassSheet(gradeKey){
                 return `<td class="${isRef?'mx-ref':'mx-chg'}"><span style="font-size:11px">${isRef?'−':''}₩${won(Math.abs(a))}</span></td>`;
               }).join('');
               return `<tr>
-                <td class="mx-namecell">${esc(s.name)}<br><span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
+                <td class="mx-namecell">${esc(s.name)}${(()=>{const t=studentStatusText(s.id);return t==='재학'?'':`<span style="font-size:9px;color:var(--warn);font-weight:700"> (${t})</span>`;})()}<br><span style="font-size:10px;color:var(--tl);font-weight:400">${esc(s.className||'')}</span></td>
                 ${cells}
                 <td class="mx-totcell">₩${won(sum)}</td>
               </tr>`;
@@ -3794,18 +3811,18 @@ async function excelReport(){
     const wb = window.XLSX.utils.book_new();
 
     // ── 시트1: 학생별 합산 ──
-    const rows1 = [['학년','반','이름','참여건수','청구','반환','순청구액']];
+    const rows1 = [['학년','반','이름','상태','참여건수','청구','반환','순청구액']];
     students.forEach(s=>{
       let charge=0, refund=0, cnt=0;
       list.forEach(e=>{ const a=amtOf(e,s.id); if(a!==null){ cnt++; if(a<0) refund+=-a; else charge+=a; } });
-      rows1.push([s.grade||'', s.className||'', s.name||'', cnt, charge, refund, charge-refund]);
+      rows1.push([s.grade||'', s.className||'', s.name||'', studentStatusText(s.id), cnt, charge, refund, charge-refund]);
     });
     // 합계행
     const tc=students.reduce((t,s)=>t+list.reduce((x,e)=>{const a=amtOf(e,s.id);return x+(a>0?a:0);},0),0);
     const tr=students.reduce((t,s)=>t+list.reduce((x,e)=>{const a=amtOf(e,s.id);return x+(a<0?-a:0);},0),0);
-    rows1.push(['','','합계','',tc,tr,tc-tr]);
+    rows1.push(['','','합계','','',tc,tr,tc-tr]);
     const ws1 = window.XLSX.utils.aoa_to_sheet(rows1);
-    ws1['!cols'] = [{wch:8},{wch:12},{wch:10},{wch:8},{wch:12},{wch:12},{wch:12}];
+    ws1['!cols'] = [{wch:8},{wch:12},{wch:10},{wch:7},{wch:8},{wch:12},{wch:12},{wch:12}];
     window.XLSX.utils.book_append_sheet(wb, ws1, '학생별 합산');
 
     // ── 시트2: 항목 매트릭스 (학생 × 항목) ──
