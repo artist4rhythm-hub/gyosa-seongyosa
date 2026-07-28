@@ -155,6 +155,30 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .crop-btn.ghost{background:transparent;}
 .crop-actions{display:flex;gap:8px;justify-content:space-between;flex-shrink:0;}
 
+/* 이전 기록 보관함 */
+.rv-card{border:1px solid var(--ivd);border-radius:11px;margin-bottom:10px;overflow:hidden;background:var(--wh);}
+.rv-card.rv-now{border-color:var(--gm);box-shadow:0 0 0 2px var(--gp);}
+.rv-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:var(--iv);
+  border-bottom:1px solid var(--ivd);font-size:11.5px;color:var(--ts);}
+.rv-seq{font-size:12px;font-weight:800;color:var(--purple-tx,#6D28D9);
+  background:var(--purple-bg,#EDE9FE);border-radius:7px;padding:2px 9px;}
+.rv-seq.now{color:var(--gm);background:var(--gp);}
+.rv-when{font-weight:600;}
+.rv-by{color:var(--tl);}
+.rv-why{margin-left:auto;font-style:italic;color:var(--goldd);}
+.rv-body{padding:10px 12px;}
+.rv-line{font-size:12.5px;color:var(--gd);line-height:1.6;}
+.rv-paid{margin-left:6px;font-size:10.5px;background:var(--ok-bg);color:var(--ok);
+  border-radius:6px;padding:1px 7px;font-weight:700;}
+.rv-stu{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;}
+.rv-chip{font-size:11px;background:var(--gp);color:var(--gd);border-radius:7px;padding:2px 8px;font-weight:600;}
+.rv-diff{margin-top:8px;padding-top:8px;border-top:1px dashed var(--ivd);font-size:11.5px;line-height:1.7;}
+.rv-in{color:var(--ok);font-weight:700;margin-right:8px;}
+.rv-out{color:var(--danger);font-weight:700;margin-right:8px;}
+.rv-amt{color:var(--goldd);font-weight:700;margin-right:8px;}
+.rv-same{color:var(--tl);}
+.ex-lockmsg{font-size:11.5px;color:var(--goldd);background:var(--goldp);
+  border:1px solid var(--gold-line,#B08D3C);border-radius:8px;padding:5px 10px;font-weight:700;}
 /* 영수증 확대 보기 */
 .iv-box{position:relative;z-index:1;width:94vw;height:90vh;display:flex;flex-direction:column;gap:8px;}
 .iv-stage{flex:1;overflow:hidden;background:#0d1512;border-radius:12px;display:flex;
@@ -530,9 +554,6 @@ let cropRotation = 0;    // 0/90/180/270
 let cropBox = {x:0,y:0,w:0,h:0};      // 화면(캔버스) 좌표 기준 박스
 let cropCanvasSize = {w:0,h:0};
 let editingId = null;        // 수정 중인 신청 ID
-let expCorrectOf  = null;    // 정정 신청 중이면 원본 신청 id
-let expCorrectSeq = 0;       // 몇 번째 정정인지
-let expOrigTotal  = 0;       // 원본 총액 (차액 계산용)
 let editingSemester = '';    // 수정 중인 신청의 학기(유지용)
 let existingReceipts = [];   // 수정 시 기존 영수증 [{id,dataUrl,idx}]
 let removedReceiptIds = new Set(); // 수정 중 삭제한 기존 영수증 ID
@@ -1280,37 +1301,144 @@ window.ivOpenTab = function(){
 };
 
 // ── 신청 수정 (작성자·슈퍼관리자) ──
-/* 잠긴 신청은 아무도 못 고친다 — 고칠 내용이 있으면 정정 신청으로 */
+/* ── 수정 권한 ──
+   잠금 전까지는 신청한 선생님도 고칠 수 있다 (학기 말 정산까지 학생 구성이 계속 바뀌므로).
+   입금이 확인되면 잠기고, 경비 관리자가 풀어주면 다시 고칠 수 있다.
+   고쳐서 저장하면 이전 내용은 '이전 기록'으로 따로 보관된다. */
 function canEditExpense(e){
   if(!e || e.deleted) return false;
-  if(e.locked || e.paid) return false;
+  if(e.locked) return false;                       // 잠금이 유일한 차단 조건
   return isExpManager(e.org) || e.createdByUid === CU?.uid;
 }
 function expEditBlockReason(e){
-  if(e && (e.locked || e.paid)) return '입금이 확인되어 잠겼습니다. 고칠 내용이 있으면 정정 신청으로 차액만 주고받습니다.';
+  if(e && e.locked) return '입금이 확인되어 잠겼습니다. 고칠 내용이 있으면 경비 관리자에게 잠금 해제를 요청하세요.';
   return '';
 }
-function canUnlockExpense(e){ return !!e && (e.locked || e.paid) && isSuper(); }
+// 잠금 해제는 경비 관리자(수퍼 포함)
+function canUnlockExpense(e){ return !!e && e.locked && isExpManager(e.org); }
 
-// 잠금 해제 (수퍼관리자) — 사유를 이력에 남긴다
+// 잠금 해제 — 사유를 이력에 남기고, 신청 담당자에게 알린다
 window.unlockExpense = async function(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
-  if(!canUnlockExpense(e)){ toast('잠금을 해제할 권한이 없습니다.','err'); return; }
-  const why = prompt('잠금을 해제하는 이유를 적어주세요.\n(이 기록은 이력에 남습니다)');
+  if(!canUnlockExpense(e)){ toast('잠금을 해제할 권한이 없습니다. (경비 관리자만 가능)','err'); return; }
+  const why = prompt('잠금을 해제하는 이유를 적어주세요.\n\n' +
+    '해제하면 신청한 선생님이 다시 고칠 수 있고,\n고치기 전 내용은 「이전 기록」에 그대로 보관됩니다.');
   if(why===null) return;
   if(!why.trim()){ toast('사유를 입력해 주세요.','err'); return; }
   try {
     await updateDoc(doc(db,'expenses',id), { locked:false });
     await pushHistory(id, 'unlocked', why.trim());
-    toast('잠금을 해제했습니다.','ok');
+    if(e.createdByUid && e.createdByUid!==CU?.uid){
+      await sendMsg([e.createdByUid], `[수정 가능] ${e.subject} 잠금이 해제되었습니다`,
+        `${ORGS[e.org]||e.org} · ${e.semester?semKor(e.semester):''}\n과목: ${e.subject}\n` +
+        `해제: ${CU.name||''}\n사유: ${why.trim()}\n\n내용을 고쳐서 다시 저장해 주세요.`);
+    }
+    toast('잠금을 해제했습니다. 신청한 선생님께 알렸습니다.','ok');
     await loadExpenses(); renderList();
   } catch(err){ toast('해제 실패: '+(err.message||''),'err'); }
 };
 
+/* ── 이전 기록 보관함 ──
+   고치기 전 내용을 expenseRevisions 에 통째로 담아둔다.
+   휴지통처럼 따로 쌓이므로 취합·집계에는 영향이 없고, 나중에 무엇이 어떻게 바뀌었는지 볼 수 있다. */
+async function snapshotExpense(e, reason){
+  try {
+    const snap = {...e};
+    delete snap.id;
+    await addDoc(collection(db,'expenseRevisions'), {
+      expenseId: e.id, org: e.org, semester: e.semester || '',
+      subject: e.subject || '', teacher: e.teacher || '',
+      seq: (e.revCount||0) + 1,
+      snapshot: snap,
+      reason: reason || '',
+      savedAt: Timestamp.now(), savedByUid: CU?.uid||'', savedByName: CU?.name||''
+    });
+    return true;
+  } catch(err){ return false; }
+}
+
+let EXP_REVS = [];     // 화면에서 열어본 이전 기록들
+
+// 이전 기록 보기 — 무엇이 어떻게 바뀌었는지 나란히 보여준다
+window.viewRevisions = async function(id){
+  const cur = EXPENSES.find(x=>x.id===id); if(!cur) return;
+  window.showLoading && window.showLoading('이전 기록을 불러오는 중…');
+  const revs = await loadRevisions(id);
+  window.hideLoading && window.hideLoading();
+  EXP_REVS = revs;
+
+  const stuNames = s => (s.students||[]).map(x=>x.name).filter(Boolean);
+  const diffLine = (a, b) => {
+    // a: 이전, b: 이후
+    const an = new Set(stuNames(a)), bn = new Set(stuNames(b));
+    const added   = [...bn].filter(x=>!an.has(x));
+    const removed = [...an].filter(x=>!bn.has(x));
+    const bits = [];
+    if(removed.length) bits.push(`<span class="rv-out">빠짐: ${removed.map(esc).join(', ')}</span>`);
+    if(added.length)   bits.push(`<span class="rv-in">추가: ${added.map(esc).join(', ')}</span>`);
+    const at=Number(a.total)||0, bt=Number(b.total)||0;
+    if(at!==bt) bits.push(`<span class="rv-amt">합계 ₩${won(at)} → ₩${won(bt)}</span>`);
+    if((a.teacher||'')!==(b.teacher||'')) bits.push(`<span class="rv-amt">담당 ${esc(a.teacher||'-')} → ${esc(b.teacher||'-')}</span>`);
+    return bits.length ? bits.join(' ') : '<span class="rv-same">내용 변화 없음</span>';
+  };
+
+  const cards = revs.map((rv,i)=>{
+    const nextSnap = revs[i+1] ? revs[i+1].snapshot : cur;   // 다음 버전(없으면 현재)
+    const s = rv.snapshot || {};
+    return `<div class="rv-card">
+      <div class="rv-head">
+        <span class="rv-seq">이전 기록 ${rv.seq||i+1}</span>
+        <span class="rv-when">${esc(rv.savedAt?fmtDateTime(rv.savedAt):'')}</span>
+        <span class="rv-by">보관: ${esc(rv.savedByName||'')}</span>
+        ${rv.reason?`<span class="rv-why">${esc(rv.reason)}</span>`:''}
+      </div>
+      <div class="rv-body">
+        <div class="rv-line"><b>${esc(s.subject||'')}</b> · ${esc(s.teacher||'')} · ${esc(s.date||'')}
+          · 대상 ${(s.students||[]).length}명 · 합계 <b>₩${won(s.total)}</b>
+          ${s.paid?'<span class="rv-paid">✅ 당시 입금완료</span>':''}</div>
+        <div class="rv-stu">${(s.students||[]).map(x=>
+          `<span class="rv-chip">${esc(x.name)} ₩${won(x.amt)}</span>`).join('') || '<span class="rv-same">학생 없음</span>'}</div>
+        <div class="rv-diff">→ ${diffLine(s, nextSnap)}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const mv=document.createElement('div'); mv.className='mov'; mv.id='rv-mod';
+  mv.innerHTML=`<div class="mbk" onclick="document.getElementById('rv-mod').remove()"></div>
+    <div class="mbox" style="max-width:820px;max-height:88vh;display:flex;flex-direction:column">
+      <div class="mtitle">📚 이전 기록</div>
+      <div class="msub">${esc(cur.subject||'')} · ${esc(cur.teacher||'')} · 보관 ${revs.length}건</div>
+      <div style="overflow:auto;flex:1;margin-top:10px">
+        ${revs.length ? cards : '<p class="empty">보관된 이전 기록이 없습니다.</p>'}
+        <div class="rv-card rv-now">
+          <div class="rv-head"><span class="rv-seq now">지금 내용</span></div>
+          <div class="rv-body">
+            <div class="rv-line"><b>${esc(cur.subject||'')}</b> · ${esc(cur.teacher||'')} · ${esc(cur.date||'')}
+              · 대상 ${(cur.students||[]).length}명 · 합계 <b>₩${won(cur.total)}</b>
+              ${cur.paid?'<span class="rv-paid">✅ 입금완료</span>':''}</div>
+            <div class="rv-stu">${(cur.students||[]).map(x=>
+              `<span class="rv-chip">${esc(x.name)} ₩${won(x.amt)}</span>`).join('')}</div>
+          </div>
+        </div>
+      </div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('rv-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+};
+async function loadRevisions(expenseId){
+  try {
+    const snap = await getDocs(query(collection(db,'expenseRevisions'), where('expenseId','==',expenseId)));
+    const out = []; snap.forEach(d=>out.push({id:d.id, ...d.data()}));
+    out.sort((a,b)=>(a.seq||0)-(b.seq||0));
+    return out;
+  } catch(err){ return []; }
+}
+
 async function editExpense(id){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
-  if(!isExpManager(e.org)){ toast('경비 관리자와 슈퍼관리자만 수정할 수 있습니다.','err'); return; }
-  if(!canEditExpense(e)){ toast(expEditBlockReason(e) || '수정할 수 없습니다.','err'); return; }
+  if(!canEditExpense(e)){
+    toast(expEditBlockReason(e) || '이 신청을 수정할 권한이 없습니다.','err'); return;
+  }
   editingId = id;
   editingSemester = e.semester || '';
   expOrg = e.org;
@@ -1347,34 +1475,7 @@ async function editExpense(id){
 }
 window.editExpense = editExpense;
 
-/* 정정 신청 — 잠긴 원본은 그대로 두고, 내용을 복사해 새 건으로 올린다 */
-window.startExpCorrection = async function(id){
-  const e = EXPENSES.find(x=>x.id===id); if(!e) return;
-  if(!(e.locked || e.paid)){ toast('아직 입금이 확인되지 않아 그냥 수정하시면 됩니다.','err'); return; }
-  if(!isExpManager(e.org) && e.createdByUid!==CU?.uid){ toast('정정 신청 권한이 없습니다.','err'); return; }
-  const already = correctionsOf(id).length;
-  if(!confirm(`이미 ₩${won(e.total)}이 입금 확인된 건입니다.\n\n` +
-      `원본은 그대로 두고 '정정 ${already+1}차' 건을 새로 만듭니다.\n` +
-      `고친 뒤 올리면 원본과의 차액만 주고받게 됩니다.\n\n계속할까요?`)) return;
-  await editExpenseAsCopy(e, already+1);
-};
 
-// 원본 내용을 새 건으로 복사해 폼에 채운다 (정정용)
-async function editExpenseAsCopy(e, seq){
-  const keep = { locked:e.locked, paid:e.paid };
-  try {
-    e.locked = false; e.paid = false;          // 폼을 채우는 동안만 잠금 해제 취급
-    await editExpense(e.id);
-  } finally {
-    e.locked = keep.locked; e.paid = keep.paid;
-  }
-  editingId    = null;                          // 수정이 아니라 '새 건'
-  expCorrectOf = e.id;
-  expCorrectSeq= seq;
-  expOrigTotal = Number(e.total)||0;
-  renderNew && renderNew();
-  toast(`정정 ${seq}차 작성 중입니다. 고친 금액을 넣으면 차액이 계산됩니다.`,'ok');
-}
 
 function cancelEdit(){
   editingId = null; editingSemester = '';
@@ -2113,13 +2214,6 @@ async function submitExpense(){
   if(record){
     record.receiptExempt = !!(receiptExempt && (existingReceipts.length + receipts.length) < 1);
     record.receiptExemptReason = record.receiptExempt ? (receiptExemptReason||'영수증 없음') : '';
-    // 정정 건이면 원본과 이어 붙이고, 차액을 함께 저장한다
-    if(expCorrectOf && !editingId){
-      record.correctionOf  = expCorrectOf;
-      record.correctionSeq = expCorrectSeq || 1;
-      record.origTotal     = expOrigTotal || 0;
-      record.diff          = (Number(record.total)||0) - (expOrigTotal||0);
-    }
   }
 
   try {
@@ -2131,8 +2225,28 @@ async function submitExpense(){
       upd.receiptCount = existingReceipts.length + receipts.length;
       upd.updatedAt = Timestamp.now();
       upd.updatedByName = CU.name||'';
+      // 고치기 전 내용을 '이전 기록'으로 통째로 보관해 둔다
+      const before = EXPENSES.find(x=>x.id===editingId);
+      let revSeq = 0;
+      if(before){
+        const wasPaid = !!before.paid;
+        if(await snapshotExpense(before, wasPaid ? '입금 확인 후 수정' : '수정')){
+          revSeq = (before.revCount||0) + 1;
+          upd.revCount = revSeq;
+          upd.lastRevAt = Timestamp.now();
+        }
+      }
       await updateDoc(doc(db,'expenses',editingId), upd);
-      await pushHistory(editingId, 'edited', '', { total:record.total });
+      const oldTotal = before ? (Number(before.total)||0) : 0;
+      const newTotal = Number(record.total)||0;
+      const oldCnt = before ? ((before.students||[]).length) : 0;
+      const newCnt = (record.students||[]).length;
+      const bits = [];
+      if(oldCnt !== newCnt) bits.push(`대상 ${oldCnt}명 → ${newCnt}명`);
+      if(oldTotal !== newTotal) bits.push(`합계 ₩${won(oldTotal)} → ₩${won(newTotal)}`);
+      await pushHistory(editingId, 'edited', bits.join(' · '),
+        { total:newTotal, prevTotal:oldTotal, rev:revSeq });
+      if(revSeq) await pushHistory(editingId, 'reverted', `이전 기록 ${revSeq}번으로 보관했습니다`, { rev:revSeq });
       // 삭제한 기존 영수증 제거
       for(const rid of removedReceiptIds){
         try { await deleteDoc(doc(db,'expenseReceipts',rid)); } catch(e4){}
@@ -2152,17 +2266,7 @@ async function submitExpense(){
       // ── 새 신청 ──
       record.receiptCount = receipts.length;
       const ref = await addDoc(collection(db,'expenses'), record);
-      // 이력 — 새 신청 또는 정정 건 작성
-      if(expCorrectOf){
-        const diff = (Number(record.total)||0) - (expOrigTotal||0);
-        await pushHistory(ref.id, 'correction', '',
-          { total:record.total, origTotal:expOrigTotal, diff, seq:expCorrectSeq });
-        await pushHistory(expCorrectOf, 'corrected',
-          `정정 ${expCorrectSeq}차 — ₩${won(expOrigTotal)} → ₩${won(record.total)} (차액 ${diff>=0?'+':''}₩${won(Math.abs(diff))})`,
-          { correctionId:ref.id, seq:expCorrectSeq, diff });
-      } else {
-        await pushHistory(ref.id, 'submitted', '', { total:record.total });
-      }
+      await pushHistory(ref.id, 'submitted', '', { total:record.total });
       for(let i=0;i<receipts.length;i++){
         window.setLoadStep && window.setLoadStep(`영수증 업로드 중… (${i+1}/${receipts.length})`, 30 + Math.round((i+1)/receipts.length*60));
         await addDoc(collection(db,'expenseReceipts'), {
@@ -2193,7 +2297,6 @@ async function submitExpense(){
     window.hideLoading && window.hideLoading();
     toast(editingId?'수정을 저장했습니다.':'경비 신청이 완료되었습니다.','ok');
     editingId = null; editingSemester = '';
-    expCorrectOf = null; expCorrectSeq = 0; expOrigTotal = 0;
     existingReceipts = []; removedReceiptIds = new Set();
     checkedIds = new Set();
     manualOpenIds = new Set();
@@ -2265,8 +2368,7 @@ async function renderList(){
           <div class="citem">
             <div style="flex:1;min-width:200px">
               <div style="font-size:15px;font-weight:700;color:var(--gd)"><span class="seq-badge" style="font-size:11px;background:var(--sb-dark);color:#fff;padding:2px 7px;border-radius:6px;font-weight:800;margin-right:5px">${expenseSeqNo(e.id)}</span>${esc(e.subject)} <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(e.items||'')}</span>${e.receiptCount?` <span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:2px 7px;border-radius:100px;font-weight:700">🧾 ${e.receiptCount}장</span>`:''}${e.paid?` <span style="font-size:11px;background:var(--ok-bg);color:var(--ok);padding:2px 8px;border-radius:8px;font-weight:700">✅ 입금완료</span>`:` <span style="font-size:11px;background:var(--warn-bg);color:var(--warn);padding:2px 8px;border-radius:8px;font-weight:700">⏳ 입금대기</span>`}${
-  isCorrection(e)?` <span style="font-size:11px;background:var(--purple-bg,#EDE9FE);color:var(--purple-tx,#6D28D9);padding:2px 8px;border-radius:8px;font-weight:700">🧾 정정 ${e.correctionSeq||1}차 · 차액 ${correctionDiff(e)>=0?'+':'−'}₩${won(Math.abs(correctionDiff(e)))}</span>`:''}${
-  correctionsOf(e.id).length?` <span style="font-size:11px;background:var(--purple-bg,#EDE9FE);color:var(--purple-tx,#6D28D9);padding:2px 8px;border-radius:8px;font-weight:700">정정 ${correctionsOf(e.id).length}건</span>`:''}</div>
+  (e.revCount||0)?` <span style="font-size:11px;background:var(--purple-bg,#EDE9FE);color:var(--purple-tx,#6D28D9);padding:2px 8px;border-radius:8px;font-weight:700">📚 이전 기록 ${e.revCount}건</span>`:''}</div>
               <div style="font-size:12px;color:var(--tl);margin-top:3px">
                 ${esc(e.date)} · ${e.semester?`<b style="color:var(--goldd)">${esc(semKor(e.semester))}</b> · `:''}${ORGS[e.org]||e.org} · ${esc(e.teacher||e.createdByName||'')} ·
                 ${e.mode==='indiv' ? `<b style="color:var(--gm)">✏️ 개별 청구</b> · ${e.count}명 · 합계 <b style="color:var(--gm)">₩${won(e.total)}</b>`
@@ -2284,10 +2386,11 @@ async function renderList(){
               ${isExpManager(e.org) ? (e.paid
                 ? `<button class="bm" style="background:var(--danger-bg);color:var(--warn)" onclick="togglePaid('${e.id}',false)">입금확인 취소</button>`
                 : `<button class="bm" style="background:var(--ok-bg);color:var(--ok);font-weight:700" onclick="togglePaid('${e.id}',true)">💰 입금 확인</button>`) : ''}
-              ${isExpManager(e.org) ? (canEditExpense(e)
-                ? `<button class="bm" onclick="editExpense('${e.id}')">✏️ 수정</button><button class="bm" style="background:var(--danger-bg);color:var(--warn)" onclick="delExpense('${e.id}')">🗑️ 삭제</button>`
-                : `<button class="bm" onclick="startExpCorrection('${e.id}')">🧾 정정 신청</button>${
-                    canUnlockExpense(e)?`<button class="bm" onclick="unlockExpense('${e.id}')">🔓 잠금 해제</button>`:''}`) : ''}
+              ${canEditExpense(e) ? `<button class="bm" onclick="editExpense('${e.id}')">✏️ 수정</button>` : ''}
+              ${(isExpManager(e.org) && canEditExpense(e)) ? `<button class="bm" style="background:var(--danger-bg);color:var(--warn)" onclick="delExpense('${e.id}')">🗑️ 삭제</button>` : ''}
+              ${canUnlockExpense(e) ? `<button class="bm" onclick="unlockExpense('${e.id}')">🔓 잠금 해제</button>` : ''}
+              ${(e.locked && !canUnlockExpense(e)) ? `<span class="ex-lockmsg">🔒 잠김 — 경비 관리자에게 해제를 요청하세요</span>` : ''}
+              ${(e.revCount||0) ? `<button class="bm" onclick="viewRevisions('${e.id}')">📚 이전 기록 ${e.revCount}</button>` : ''}
             `}
           </div>`).join('') : `<p class="empty">${expTrash?'휴지통이 비어 있습니다.':'아직 신청 내역이 없습니다.'}</p>`}
       </div>
@@ -2461,56 +2564,13 @@ const HIST_LABEL = {
   rejected:'반려',       resubmitted:'재상신', paid:'입금 확인',
   unpaid:'입금 확인 취소', edited:'내용 수정',   shared:'공유',
   comment:'의견',        locked:'수정 잠금',   unlocked:'잠금 해제',
-  corrected:'정정 신청', correction:'정정 건 작성',
+  reverted:'이전 기록 보관',
 };
 const HIST_ICON = {
   created:'📝', submitted:'📤', approved:'✅', rejected:'↩️', resubmitted:'🔁',
   paid:'💰', unpaid:'↺', edited:'✏️', shared:'📣', comment:'💬',
-  locked:'🔒', unlocked:'🔓', corrected:'🧾', correction:'🧾',
+  locked:'🔒', unlocked:'🔓', reverted:'📚',
 };
-
-/* ═══════════════════════════════════════════
-   정정 신청 (차액 정산)
-   이미 돈이 나간 신청은 고치지 않고 잠근 채 남긴다.
-   대신 '정정 건'을 새로 만들어 원본과 잇고, 실제로는 차액만 주고받는다.
-     원본 ₩80,000 → 정정 ₩95,000 이면 차액 +₩15,000 만 추가 지급
-   집계에는 차액만 더해야 월 합계가 맞는다.
-   ═══════════════════════════════════════════ */
-function isCorrection(r){ return !!(r && r.correctionOf); }
-
-// 정정 건의 차액 (원본 대비 얼마나 늘거나 줄었는지)
-function correctionDiff(r){
-  if(!isCorrection(r)) return 0;
-  return (Number(r.total)||0) - (Number(r.origTotal)||0);
-}
-
-// 집계·합계에 실제로 반영할 금액
-function effectiveTotal(r){
-  return isCorrection(r) ? correctionDiff(r) : (Number(r.total)||0);
-}
-
-// 이 신청의 정정 건들 (시간순)
-function correctionsOf(reqId){
-  return EXPENSES.filter(x=>x.correctionOf===reqId && !x.deleted)
-    .sort((a,b)=>(a.correctionSeq||0)-(b.correctionSeq||0));
-}
-
-// 화면에 보여줄 번호표 — 원본이 P001이면 정정 건은 P001-1, P001-2 …
-function correctionTag(r){
-  if(!isCorrection(r)) return '';
-  return `-${r.correctionSeq||1}`;
-}
-
-// 정정 대상이 되는 뿌리 신청 (정정의 정정도 원본을 따라감)
-function rootRequest(r){
-  let cur = r, guard = 0;
-  while(cur && cur.correctionOf && guard++ < 10){
-    const up = EXPENSES.find(x=>x.id===cur.correctionOf);
-    if(!up) break;
-    cur = up;
-  }
-  return cur || r;
-}
 
 function histEntry(type, text, meta){
   const e = { at: Timestamp.now(), type, byUid: CU?.uid||'', byName: CU?.name||'', text: text||'' };
@@ -2601,17 +2661,9 @@ async function renderReport(){
     .sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
   const canManage = isExpManager(reportOrg);
 
-  // 정정 건은 원본과의 '차액'만 반영한다 (원본 금액은 이미 걷었거나 돌려줬으므로)
   const stuAmt = (e, sid) => {
     const s = (e.students||[]).find(x=>x.id===sid);
-    if(!s) return null;
-    let amt = Number(s.amt)||0;
-    if(isCorrection(e)){
-      const src = EXPENSES.find(x=>x.id===e.correctionOf);
-      const prev = src ? (Number((src.students||[]).find(x=>x.id===sid)?.amt)||0) : 0;
-      amt = amt - prev;
-    }
-    return amt;
+    return s ? (Number(s.amt)||0) : null;
   };
   const effSum = (e) => (e.students||[]).reduce((t,s)=>t+(stuAmt(e,s.id)||0),0);
 
@@ -2620,7 +2672,7 @@ async function renderReport(){
   list.forEach(e=>{
     const sum = effSum(e);
     if(e.mode==='refund') totalRefund += sum; else totalCharge += sum;
-    totalSchool += isCorrection(e) ? 0 : (e.schoolTotal||0);
+    totalSchool += (e.schoolTotal||0);
   });
   const net = totalCharge - totalRefund;
 
@@ -3179,16 +3231,10 @@ function viewClassSheet(gradeKey){
   });
   const students = [...stuMap.values()].sort((a,b)=>gradeNum(a.grade)-gradeNum(b.grade)||(a.name||'').localeCompare(b.name||'','ko'));
   // 학생별·항목별 금액 매트릭스
-  // 정정 건은 원본과의 차액만 (원본 금액은 이미 반영돼 있으므로)
   const amtOf = (e, sid) => {
     const s = (e.students||[]).find(x=>x.id===sid);
     if(!s) return null;
-    let amt = Number(s.amt)||0;
-    if(isCorrection(e)){
-      const src = EXPENSES.find(x=>x.id===e.correctionOf);
-      const prev = src ? (Number((src.students||[]).find(x=>x.id===sid)?.amt)||0) : 0;
-      amt = amt - prev;
-    }
+    const amt = Number(s.amt)||0;
     return e.mode==='refund' ? -amt : amt;
   };
 
