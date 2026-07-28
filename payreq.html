@@ -2690,6 +2690,20 @@ function collectBreakPoints(node, canvas, breakSelectors){
   return [...cuts].filter(v=>v>=0).sort((a,b)=>a-b);
 }
 
+/* 반드시 새 페이지 맨 위에서 시작해야 하는 요소들의 위치
+   (요청서 제목이 페이지 아래에 홀로 남지 않도록)
+   첫 번째 요소는 제외한다 — 문서 제목 다음에 바로 오므로 첫 장에 함께 둔다. */
+function collectHardBreaks(node, canvas, selector, padPx){
+  const scale  = canvas.width / (node.offsetWidth || 1);
+  const docTop = node.getBoundingClientRect().top;
+  const pad    = (padPx==null ? 10 : padPx) * scale;
+  return [...node.querySelectorAll(selector)].slice(1).map(el=>{
+    const t = (el.getBoundingClientRect().top - docTop) * scale;
+    return Math.max(0, Math.round(t - pad));
+  });
+}
+window.collectHardBreaks = collectHardBreaks;
+
 window.collectBreakPoints = collectBreakPoints;
 function addCanvasToPDF(pdf, canvas, points, opt){
   const o  = Object.assign({ margin:6, quality:0.9, minFill:0.12 }, opt||{});
@@ -2699,21 +2713,27 @@ function addCanvasToPDF(pdf, canvas, points, opt){
   const pageH = Math.floor(canvas.width * (ph - o.margin*2) / iw);
   const total = canvas.height;
 
-  // 한 장에 다 들어가면 그대로
-  if(canvas.height * iw / canvas.width <= ph - o.margin*2){
+  // 한 장에 다 들어가면 그대로 (단, 새 페이지로 보낼 지점이 없을 때만)
+  if(canvas.height * iw / canvas.width <= ph - o.margin*2 && !(o.hard && o.hard.length)){
     pdf.addImage(canvas.toDataURL('image/jpeg', o.quality), 'JPEG',
       o.margin, o.margin, iw, canvas.height*iw/canvas.width);
     return 1;
   }
 
   const pts = (points && points.length) ? points : [];
+  const hardPts = (o.hard && o.hard.length) ? o.hard.slice().sort((a,b)=>a-b) : [];
   const slices = [];
   let pos = 0;
   while(pos < total){
     let end = pos + pageH;
-    if(end >= total) end = total;
-    else {
-      // 이 페이지 안에서 끊어도 되는 가장 아래 지점을 찾는다
+    // ⓐ 새 페이지에서 시작해야 하는 지점이 이 페이지 안에 있으면, 거기서 먼저 끊는다
+    const hard = hardPts.filter(t => t > pos + pageH*0.04 && t < end);
+    if(hard.length){
+      end = Math.min(...hard);
+    } else if(end >= total){
+      end = total;
+    } else {
+      // ⓑ 그 외에는 잘리면 안 되는 요소의 경계 중 가장 아래 지점에서 끊는다
       const cand = pts.filter(t => t > pos + pageH*o.minFill && t <= end);
       if(cand.length) end = Math.max(...cand);
       // 후보가 없으면(덩어리 하나가 페이지보다 큰 경우) 어쩔 수 없이 페이지 끝에서 자른다
@@ -3232,10 +3252,12 @@ async function printPayReceipts(){
     const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
     const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), mg=6;
     const iw=pw-mg*2;
-    // 요청서 카드 + 영수증 한 장 단위로 끊을 수 있게 (영수증이 두 쪽에 걸쳐 잘리지 않도록)
+    // 영수증 한 장 단위로 끊을 수 있게 (두 쪽에 걸쳐 잘리지 않도록)
     const points = collectBreakPoints(node, canvas, ['.prc-card','.prc-cell']);
+    // 요청서 제목은 언제나 새 페이지 맨 위에서 시작하게 한다
+    const hard   = collectHardBreaks(node, canvas, '.prc-card', 10);
     document.body.removeChild(h);
-    addCanvasToPDF(pdf, canvas, points, {margin:mg, quality:0.9});
+    addCanvasToPDF(pdf, canvas, points, {margin:mg, quality:0.9, hard});
     pdf.save(`영수증취합_${rpMonth}_${ORGS[rpOrg]||rpOrg}.pdf`);
     window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
