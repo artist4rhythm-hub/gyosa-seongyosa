@@ -155,6 +155,14 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .crop-btn.ghost{background:transparent;}
 .crop-actions{display:flex;gap:8px;justify-content:space-between;flex-shrink:0;}
 
+/* 학기 마감 표시줄 */
+.sl-bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:12px;
+  padding:11px 14px;border-radius:10px;font-size:12.5px;line-height:1.6;
+  background:var(--gp);border:1px solid var(--gl);color:var(--ts);}
+.sl-bar.locked{background:var(--goldp);border-color:var(--gold-line,#B08D3C);color:var(--goldd);}
+.sl-tag{font-size:12.5px;font-weight:800;color:var(--goldd);flex:none;}
+.sl-txt{flex:1;min-width:200px;}
+.sl-by{font-size:11.5px;opacity:.85;width:100%;}
 /* 이전 기록 보관함 */
 .rv-card{border:1px solid var(--ivd);border-radius:11px;margin-bottom:10px;overflow:hidden;background:var(--wh);}
 .rv-card.rv-now{border-color:var(--gm);box-shadow:0 0 0 2px var(--gp);}
@@ -575,9 +583,19 @@ function renderNew(){
   // 학기 판정 (수정 모드면 기존 학기 유지)
   const ct = currentInputTerm(expOrg);
   const allTerms = orgTerms(expOrg);
-  const blocked = !editingId && (ct===null || ct.editable===false);
+  // 마감된 학기에는 새 신청도, 수정도 할 수 없다
+  const formSem = editingId ? (editingSemester || '') : (ct && ct.term ? termKey(ct.term) : '');
+  const semLocked = isSemLocked(expOrg, formSem);
+  const blocked = semLocked || (!editingId && (ct===null || ct.editable===false));
   let blockMsg = '';
-  if(!editingId){
+  if(semLocked){
+    const info = semLockInfo(expOrg, formSem);
+    blockMsg = `<b>${esc(semKor(formSem))}</b>는 마감되었습니다. 새 신청이나 수정을 할 수 없어요.` +
+      (info && info.lockedByName ? `<br><span style="font-size:12px;opacity:.85">마감: ${esc(info.lockedByName)}` +
+        `${info.lockedAt?' · '+esc(fmtDateTime(info.lockedAt)):''}${info.reason?' · '+esc(info.reason):''}</span>` : '') +
+      `<br><span style="font-size:12px;opacity:.85">고쳐야 할 내용이 있으면 경비 관리자에게 마감 해제를 요청하세요.</span>`;
+  }
+  if(!editingId && !semLocked){
     if(ct===null) blockMsg = `${expOrg==='daniel'?'다니엘 아마츠':'지혜빛'}의 학기 일정이 등록되지 않았습니다. 출석부 설정에서 학기(개학~종업)를 먼저 등록해야 수행성 경비를 신청할 수 있습니다.`;
     else if(ct.editable===false) blockMsg = `현재는 <b>${termLabel(ct.term)}</b> 신청 가능 기간이 아닙니다. (다음 학기 시작 ${EXP_WINDOW.beforeDays}일 전부터 입력할 수 있습니다.)`;
   }
@@ -601,7 +619,10 @@ function renderNew(){
         <div class="fgrp"><label>신청 날짜 *</label><input type="date" id="ex-date" value="${todayYMD()}" onchange="onReqDateChange()"></div>
         <div class="fgrp"><label>학기 *</label>
           <select id="ex-semester">
-            ${allTerms.length ? allTerms.map(t=>`<option value="${termKey(t)}" ${termKey(t)===defaultKey?'selected':''}>${termLabel(t)}</option>`).join('') : '<option value="">학기 미등록</option>'}
+            ${allTerms.length ? allTerms.map(t=>{
+              const k = termKey(t), lk = isSemLocked(expOrg, k);
+              return `<option value="${k}" ${k===defaultKey?'selected':''} ${lk?'disabled':''}>${lk?'🔒 ':''}${termLabel(t)}${lk?' (마감)':''}</option>`;
+            }).join('') : '<option value="">학기 미등록</option>'}
           </select>
         </div>
       </div>
@@ -1307,10 +1328,12 @@ window.ivOpenTab = function(){
    고쳐서 저장하면 이전 내용은 '이전 기록'으로 따로 보관된다. */
 function canEditExpense(e){
   if(!e || e.deleted) return false;
-  if(e.locked) return false;                       // 잠금이 유일한 차단 조건
+  if(isSemLocked(e.org, e.semester)) return false; // 마감된 학기는 통째로 잠긴다
+  if(e.locked) return false;                       // 입금 확인된 개별 건
   return isExpManager(e.org) || e.createdByUid === CU?.uid;
 }
 function expEditBlockReason(e){
+  if(e && isSemLocked(e.org, e.semester)) return `${semKor(e.semester)}가 마감되어 수정할 수 없습니다. 경비 관리자에게 마감 해제를 요청하세요.`;
   if(e && e.locked) return '입금이 확인되어 잠겼습니다. 고칠 내용이 있으면 경비 관리자에게 잠금 해제를 요청하세요.';
   return '';
 }
@@ -2081,6 +2104,9 @@ function confirmCard(info){
 async function submitExpense(){
   const date = $I('ex-date')?.value || '';
   const semester = $I('ex-semester')?.value || '';
+  if(isSemLocked(expOrg, semester)){
+    toast(`${semKor(semester)}는 마감되어 저장할 수 없습니다.`,'err'); return;
+  }
   const teacher = $I('ex-teacher')?.value.trim() || '';
   const subject = $I('ex-subject')?.value.trim() || '';
   const items = $I('ex-items')?.value.trim() || '';
@@ -2311,6 +2337,7 @@ window.submitExpense = submitExpense;
 // ══════════ 신청 내역 ══════════
 async function renderList(){
   const box = $I('tab-list');
+  if(!Object.keys(EXP_LOCKS).length) { try { await loadSemLocks(); } catch(e){} }
   box.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
   window.showLoading && window.showLoading('신청 내역을 불러오는 중…');
   try {
@@ -2595,6 +2622,9 @@ function canSeeHistory(e){
 
 async function togglePaid(id, paid){
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+  if(isSemLocked(e.org, e.semester)){
+    toast(`${semKor(e.semester)}가 마감되어 바꿀 수 없습니다.`,'err'); return;
+  }
   if(!isExpManager(e.org)){ toast('경비 관리자만 입금 확인을 할 수 있습니다.','err'); return; }
   if(paid && !confirm(`"${e.subject}" (${e.teacher||e.createdByName}) 건을 입금 완료로 표시할까요?\n신청한 선생님께 입금 안내 쪽지가 발송됩니다.`)) return;
   if(!paid && !confirm('입금 확인을 취소할까요?')) return;
@@ -2627,6 +2657,99 @@ let reportOrg = '';
 let reportSem = '';
 let DEPOSITS = [];  // 예치금 입금 기록
 
+/* ═══════════════════════════════════════════
+   🔒 학기 마감
+   학기 정산이 끝나면 그 학기를 잠근다.
+   잠긴 학기에는 새 신청도, 기존 건 수정도 할 수 없어
+   나중에 취합표가 흔들리지 않는다.
+   저장: expenseLocks/{org}__{semester}
+   ═══════════════════════════════════════════ */
+let EXP_LOCKS = {};   // { 'daniel__2026-1': {locked, lockedAt, lockedByName, reason} }
+
+function semLockKey(org, sem){ return `${org}__${sem}`; }
+
+async function loadSemLocks(){
+  try {
+    const snap = await getDocs(collection(db,'expenseLocks'));
+    const out = {};
+    snap.forEach(d=>{ out[d.id] = d.data(); });
+    EXP_LOCKS = out;
+  } catch(e){ EXP_LOCKS = {}; }
+}
+
+// 이 학기가 마감되었나
+function isSemLocked(org, sem){
+  if(!org || !sem) return false;
+  const v = EXP_LOCKS[semLockKey(org, sem)];
+  return !!(v && v.locked);
+}
+function semLockInfo(org, sem){ return EXP_LOCKS[semLockKey(org, sem)] || null; }
+
+// 마감/해제 권한 — 경비 관리자(수퍼 포함)
+function canLockSem(org){ return isExpManager(org); }
+
+window.toggleSemLock = async function(org, sem, lock){
+  if(!sem){ toast('학기를 먼저 고르세요.','err'); return; }
+  if(!canLockSem(org)){ toast('학기 마감은 경비 관리자만 할 수 있습니다.','err'); return; }
+
+  const label = `${ORGS[org]||org} · ${semKor(sem)}`;
+  let reason = '';
+  if(lock){
+    const cnt = EXPENSES.filter(e=>!e.deleted && e.org===org && e.semester===sem).length;
+    const unpaid = EXPENSES.filter(e=>!e.deleted && e.org===org && e.semester===sem && !e.paid).length;
+    let msg = `${label}를 마감할까요?\n\n` +
+      `· 신청 ${cnt}건${unpaid?` (입금 확인 전 ${unpaid}건)`:''}\n` +
+      `· 마감하면 이 학기에 새 신청을 넣을 수 없습니다.\n` +
+      `· 기존 신청도 수정·삭제할 수 없습니다.\n` +
+      `· 취합표와 엑셀은 그대로 볼 수 있습니다.`;
+    if(unpaid) msg += `\n\n⚠️ 아직 입금 확인이 안 된 건이 ${unpaid}건 있습니다. 그래도 마감할까요?`;
+    if(!confirm(msg)) return;
+    reason = prompt('마감 메모 (선택) — 나중에 왜 마감했는지 알아보기 쉽게', '') || '';
+  } else {
+    if(!confirm(`${label} 마감을 풀까요?\n\n다시 신청과 수정이 가능해집니다.`)) return;
+    reason = prompt('마감을 푸는 이유를 적어주세요.') || '';
+    if(!reason.trim()){ toast('사유를 입력해 주세요.','err'); return; }
+  }
+
+  try {
+    window.showLoading && window.showLoading(lock?'학기를 마감하는 중…':'마감을 푸는 중…');
+    await setDoc(doc(db,'expenseLocks', semLockKey(org, sem)), {
+      org, semester: sem, locked: !!lock,
+      lockedAt: Timestamp.now(), lockedByUid: CU.uid, lockedByName: CU.name||'',
+      reason: reason.trim()
+    });
+    await loadSemLocks();
+    window.hideLoading && window.hideLoading();
+    toast(lock ? `${semKor(sem)}를 마감했습니다.` : `${semKor(sem)} 마감을 풀었습니다.`, 'ok');
+    renderReport();
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('처리 실패: '+(e.message||'')+' (수퍼관리자만 가능할 수 있습니다)','err');
+  }
+};
+
+// 취합 화면에 보여줄 마감 표시줄
+function semLockBarHTML(org, sem){
+  if(!sem) return '';
+  const locked = isSemLocked(org, sem);
+  const info = semLockInfo(org, sem);
+  const can = canLockSem(org);
+  if(locked){
+    return `<div class="sl-bar locked">
+      <span class="sl-tag">🔒 마감된 학기</span>
+      <span class="sl-txt">새 신청과 수정이 막혀 있습니다. 취합표는 그대로 보실 수 있어요.</span>
+      ${info?`<span class="sl-by">${esc(info.lockedByName||'')} · ${esc(info.lockedAt?fmtDateTime(info.lockedAt):'')}${
+        info.reason?` · ${esc(info.reason)}`:''}</span>`:''}
+      ${can?`<button class="bm" style="margin-left:auto" onclick="toggleSemLock('${org}','${sem}',false)">🔓 마감 풀기</button>`:''}
+    </div>`;
+  }
+  if(!can) return '';
+  return `<div class="sl-bar">
+    <span class="sl-txt">정산이 끝났으면 학기를 마감해 두세요. 이후 신청·수정이 막혀 취합표가 흔들리지 않습니다.</span>
+    <button class="bm" style="margin-left:auto" onclick="toggleSemLock('${org}','${sem}',true)">🔒 이 학기 마감</button>
+  </div>`;
+}
+
 async function renderReport(){
   const box = $I('tab-report');
   const orgs = myOrgs();
@@ -2639,6 +2762,7 @@ async function renderReport(){
     EXPENSES.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
     const dsnap = await getDocs(collection(db,'expenseDeposits'));
     DEPOSITS = []; dsnap.forEach(d=>DEPOSITS.push({id:d.id, ...d.data()}));
+    await loadSemLocks();
   } catch(e){
     window.hideLoading && window.hideLoading();
     box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
@@ -2720,9 +2844,10 @@ async function renderReport(){
       ${orgTabs}
       <div class="fgrp" style="max-width:280px"><label>학기</label>
         <select id="rp-sem" onchange="setReportSem(this.value)">
-          ${sems.length ? sems.map(s=>`<option value="${s}" ${s===reportSem?'selected':''}>${esc(semKor(s))}</option>`).join('') : '<option value="">학기 없음</option>'}
+          ${sems.length ? sems.map(s=>`<option value="${s}" ${s===reportSem?'selected':''}>${isSemLocked(reportOrg,s)?'🔒 ':''}${esc(semKor(s))}</option>`).join('') : '<option value="">학기 없음</option>'}
         </select>
       </div>
+      ${semLockBarHTML(reportOrg, reportSem)}
     </div>
 
     <div class="acard">
