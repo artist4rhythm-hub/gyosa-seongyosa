@@ -154,6 +154,23 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .crop-btn.primary:hover{background:#008558;}
 .crop-btn.ghost{background:transparent;}
 .crop-actions{display:flex;gap:8px;justify-content:space-between;flex-shrink:0;}
+
+/* 영수증 확대 보기 */
+.iv-box{position:relative;z-index:1;width:94vw;height:90vh;display:flex;flex-direction:column;gap:8px;}
+.iv-stage{flex:1;overflow:hidden;background:#0d1512;border-radius:12px;display:flex;
+  align-items:center;justify-content:center;cursor:grab;touch-action:none;}
+.iv-stage img{max-width:none;max-height:none;transform-origin:center center;
+  will-change:transform;user-select:none;-webkit-user-drag:none;}
+.iv-bar{display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;
+  background:var(--wh);border-radius:10px;padding:8px 10px;}
+.iv-btn{min-width:34px;height:32px;padding:0 10px;border:1px solid var(--ivd);background:var(--wh);
+  color:var(--gd);border-radius:8px;font-family:inherit;font-size:14px;font-weight:800;cursor:pointer;}
+.iv-btn.wide{font-size:12.5px;font-weight:700;}
+.iv-btn:hover{border-color:var(--gm);color:var(--gm);}
+.iv-pct{min-width:56px;text-align:center;font-size:12.5px;font-weight:800;color:var(--gm);}
+.iv-cnt{min-width:52px;text-align:center;font-size:12.5px;font-weight:800;color:var(--gd);}
+.iv-div{width:1px;height:20px;background:var(--ivd);margin:0 4px;}
+.iv-tip{text-align:center;font-size:11.5px;color:rgba(255,255,255,.75);}
 </style>
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
@@ -1033,11 +1050,12 @@ function compressCanvas(cv){
 function renderReceipts(){
   const box = $I('receipt-list');
   if(!box) return;
+  box.setAttribute('data-rcgroup','');   // 이 안의 영수증들을 한 묶음으로 넘겨볼 수 있게
   const totalCnt = existingReceipts.length + receipts.length;
   box.innerHTML =
     existingReceipts.map(r=>`
     <div style="position:relative;width:76px;height:76px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
-      <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)">
+      <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openImageOverlay(this.src, this)">
       <button onclick="removeExReceipt('${r.id}')" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;font-size:12px;cursor:pointer;line-height:1">×</button>
     </div>`).join('')
     + receipts.map((d,i)=>`
@@ -1062,18 +1080,200 @@ function viewReceiptBig(i){
 }
 window.viewReceiptBig = viewReceiptBig;
 
-function openImageOverlay(src){
+// 영수증 확대 보기 — 휠·핀치 확대, 드래그 이동, 원본 크기 보기
+let _ivState = null;
+let _ivList = [], _ivIdx = 0;
+
+// 클릭한 이미지가 속한 묶음(data-rcgroup)의 이미지들을 모아 넘겨볼 수 있게 한다
+function openImageOverlay(src, el){
+  let list = [src], idx = 0;
+  const node = (el && el.tagName === 'IMG') ? el : null;
+  if(node){
+    const box = node.closest('[data-rcgroup]');
+    if(box){
+      const imgs = [...box.querySelectorAll('img')].filter(im=>im.src);
+      if(imgs.length > 1){
+        list = imgs.map(im=>im.src);
+        const at = imgs.indexOf(node);
+        idx = at >= 0 ? at : 0;
+      }
+    }
+  }
+  openImageGallery(list, idx);
+}
+window.openImageOverlay = openImageOverlay;
+
+function openImageGallery(list, idx){
+  _ivList = (list && list.length) ? list : [''];
+  _ivIdx  = Math.max(0, Math.min(idx||0, _ivList.length-1));
+  const src = _ivList[_ivIdx];
+  const old = $I('img-overlay'); if(old) old.remove();
   const ov = document.createElement('div');
   ov.className = 'mov';
   ov.id = 'img-overlay';
-  ov.innerHTML = `<div class="mbk" onclick="document.getElementById('img-overlay').remove()"></div>
-    <div style="position:relative;max-width:92vw;max-height:88vh;z-index:1">
-      <img src="${src}" style="max-width:92vw;max-height:88vh;border-radius:10px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
-      <button onclick="document.getElementById('img-overlay').remove()" style="position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:50%;border:none;background:var(--wh);font-size:16px;cursor:pointer;box-shadow:0 2px 10px rgba(0,0,0,.3)">×</button>
+  ov.innerHTML = `
+    <div class="mbk" onclick="closeImageOverlay()"></div>
+    <div class="iv-box">
+      <div class="iv-stage" id="iv-stage">
+        <img id="iv-img" src="${src}" draggable="false">
+      </div>
+      <div class="iv-bar">
+        ${_ivList.length>1?`
+          <button class="iv-btn" onclick="ivPrev()" title="이전 영수증 (←)">◀</button>
+          <span class="iv-cnt" id="iv-cnt">${_ivIdx+1} / ${_ivList.length}</span>
+          <button class="iv-btn" onclick="ivNext()" title="다음 영수증 (→)">▶</button>
+          <span class="iv-div"></span>`:''}
+        <button class="iv-btn" onclick="ivZoom(-1)" title="축소">−</button>
+        <span class="iv-pct" id="iv-pct">맞춤</span>
+        <button class="iv-btn" onclick="ivZoom(1)" title="확대">＋</button>
+        <button class="iv-btn wide" onclick="ivFit()">화면 맞춤</button>
+        <button class="iv-btn wide" onclick="ivActual()">원본 크기</button>
+        <button class="iv-btn wide" onclick="ivOpenTab()">새 탭</button>
+        <button class="iv-btn wide" onclick="closeImageOverlay()">닫기</button>
+      </div>
+      <div class="iv-tip">휠(또는 두 손가락)로 확대 · 드래그로 이동 · 더블클릭으로 확대/맞춤${
+        _ivList.length>1?' · <b>← →</b> 또는 좌우로 밀어 다음 영수증':''}</div>
     </div>`;
   $I('mwrap').appendChild(ov);
+  ivInit(src);
 }
 window.openImageOverlay = openImageOverlay;
+
+window.closeImageOverlay = function(){
+  const ov = $I('img-overlay'); if(ov) ov.remove();
+  _ivState = null;
+  document.removeEventListener('keydown', ivKey);
+};
+
+function ivInit(src){
+  const img = $I('iv-img'), stage = $I('iv-stage');
+  if(!img || !stage) return;
+  _ivState = { scale:1, fit:1, x:0, y:0, drag:null, src };
+  const start = ()=>{
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    const iw = img.naturalWidth || 1, ih = img.naturalHeight || 1;
+    _ivState.fit = Math.min(sw/iw, sh/ih, 1);
+    ivSet(_ivState.fit, 0, 0);
+  };
+  if(img.complete && img.naturalWidth) start(); else img.onload = start;
+
+  stage.onwheel = e=>{
+    e.preventDefault();
+    const s = _ivState; if(!s) return;
+    const r = stage.getBoundingClientRect();
+    const cx = e.clientX - r.left - r.width/2 - s.x;
+    const cy = e.clientY - r.top  - r.height/2 - s.y;
+    const k = e.deltaY < 0 ? 1.15 : 1/1.15;
+    const ns = Math.max(s.fit*0.5, Math.min(8, s.scale*k));
+    const f = ns/s.scale;
+    ivSet(ns, s.x - cx*(f-1), s.y - cy*(f-1));
+  };
+  stage.onmousedown = e=>{
+    e.preventDefault();
+    const s=_ivState; if(!s) return;
+    s.drag = { px:e.clientX, py:e.clientY, ox:s.x, oy:s.y };
+    stage.style.cursor='grabbing';
+  };
+  document.addEventListener('mousemove', ivMove);
+  document.addEventListener('mouseup', ivUp);
+  stage.ondblclick = ()=>{
+    const s=_ivState; if(!s) return;
+    if(s.scale > s.fit*1.05) ivFit(); else ivSet(Math.max(1, s.fit*3), 0, 0);
+  };
+  // 터치 핀치
+  let pinch = null;
+  stage.ontouchstart = e=>{
+    const s=_ivState; if(!s) return;
+    if(e.touches.length===2){
+      const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      pinch = { d, scale:s.scale };
+    } else if(e.touches.length===1){
+      s.drag = { px:e.touches[0].clientX, py:e.touches[0].clientY, ox:s.x, oy:s.y };
+    }
+  };
+  stage.ontouchmove = e=>{
+    const s=_ivState; if(!s) return;
+    if(e.touches.length===2 && pinch){
+      e.preventDefault();
+      const d = Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      ivSet(Math.max(s.fit*0.5, Math.min(8, pinch.scale*(d/pinch.d))), s.x, s.y);
+    } else if(e.touches.length===1 && s.drag){
+      e.preventDefault();
+      ivSet(s.scale, s.drag.ox + (e.touches[0].clientX-s.drag.px), s.drag.oy + (e.touches[0].clientY-s.drag.py));
+    }
+  };
+  stage.ontouchend = (e)=>{
+    const s=_ivState;
+    // 확대하지 않은 상태에서 좌우로 충분히 밀면 앞·뒤 영수증으로
+    if(s && s.drag && !pinch && _ivList.length>1 && Math.abs(s.scale - s.fit) < 0.02){
+      const t = (e.changedTouches && e.changedTouches[0]) || null;
+      if(t){
+        const dx = t.clientX - s.drag.px, dy = t.clientY - s.drag.py;
+        if(Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)*1.5){ ivGo(dx < 0 ? 1 : -1); }
+        else ivSet(s.scale, 0, 0);
+      }
+    }
+    pinch=null; if(_ivState) _ivState.drag=null;
+  };
+  document.addEventListener('keydown', ivKey);
+}
+function ivMove(e){
+  const s=_ivState; if(!s || !s.drag) return;
+  ivSet(s.scale, s.drag.ox + (e.clientX-s.drag.px), s.drag.oy + (e.clientY-s.drag.py));
+}
+function ivUp(){
+  const s=_ivState; if(!s) return;
+  s.drag=null;
+  const st=$I('iv-stage'); if(st) st.style.cursor='grab';
+}
+function ivKey(e){
+  if(e.key==='Escape') closeImageOverlay();
+  else if(e.key==='ArrowLeft'){ e.preventDefault(); ivPrev(); }
+  else if(e.key==='ArrowRight'){ e.preventDefault(); ivNext(); }
+  else if(e.key==='+'||e.key==='=') ivZoom(1);
+  else if(e.key==='-') ivZoom(-1);
+  else if(e.key==='0') ivFit();
+}
+
+/* 앞·뒤 영수증으로 넘기기 */
+function ivGo(d){
+  if(_ivList.length < 2) return;
+  _ivIdx = (_ivIdx + d + _ivList.length) % _ivList.length;
+  const img = $I('iv-img'); if(!img) return;
+  const s = _ivState; if(s) s.src = _ivList[_ivIdx];
+  img.style.transform = '';
+  img.src = _ivList[_ivIdx];
+  const cnt = $I('iv-cnt'); if(cnt) cnt.textContent = `${_ivIdx+1} / ${_ivList.length}`;
+  // 새 이미지 크기에 맞춰 다시 맞춤
+  const refit = ()=>{
+    const stage = $I('iv-stage'); if(!stage || !_ivState) return;
+    const iw = img.naturalWidth||1, ih = img.naturalHeight||1;
+    _ivState.fit = Math.min(stage.clientWidth/iw, stage.clientHeight/ih, 1);
+    ivSet(_ivState.fit, 0, 0);
+  };
+  if(img.complete && img.naturalWidth) refit(); else img.onload = refit;
+}
+window.ivPrev = function(){ ivGo(-1); };
+window.ivNext = function(){ ivGo(1); };
+function ivSet(scale, x, y){
+  const s=_ivState; if(!s) return;
+  s.scale=scale; s.x=x; s.y=y;
+  const img=$I('iv-img'); if(img) img.style.transform=`translate(${x}px,${y}px) scale(${scale})`;
+  const pct=$I('iv-pct');
+  if(pct) pct.textContent = Math.abs(scale-s.fit)<0.01 ? '맞춤' : Math.round(scale*100)+'%';
+}
+window.ivZoom = function(dir){
+  const s=_ivState; if(!s) return;
+  ivSet(Math.max(s.fit*0.5, Math.min(8, s.scale*(dir>0?1.25:1/1.25))), s.x, s.y);
+};
+window.ivFit = function(){ const s=_ivState; if(s) ivSet(s.fit, 0, 0); };
+window.ivActual = function(){ const s=_ivState; if(s) ivSet(1, 0, 0); };
+window.ivOpenTab = function(){
+  const s=_ivState; if(!s) return;
+  const w = window.open(''); if(!w){ toast('팝업이 차단되었습니다','err'); return; }
+  w.document.write(`<title>영수증</title><body style="margin:0;background:#111"><img src="${s.src}" style="max-width:100%"></body>`);
+  w.document.close();
+};
 
 // ── 신청 수정 (작성자·슈퍼관리자) ──
 async function editExpense(id){
@@ -2101,9 +2301,10 @@ async function loadReceipts(expenseId){
     snap.forEach(d=>arr.push({id:d.id, ...d.data()}));
     arr.sort((a,b)=>(a.idx||0)-(b.idx||0));
     if(!arr.length){ box.innerHTML = '<span style="font-size:13px;color:var(--tl)">첨부된 영수증이 없습니다.</span>'; return; }
+    box.setAttribute('data-rcgroup','');
     box.innerHTML = arr.map(r=>`
       <div style="width:86px;height:86px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
-        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)" title="영수증 ${r.idx||''}">
+        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openImageOverlay(this.src, this)" title="영수증 ${r.idx||''} · 클릭 후 ← → 로 넘기기">
       </div>`).join('');
   } catch(err){
     box.innerHTML = `<span style="font-size:13px;color:var(--danger)">영수증을 불러올 수 없습니다: ${esc(err.message||'')}</span>`;
@@ -3003,6 +3204,72 @@ const SHEET_CSS = `
 .sheet-foot{font-size:10px;color:#a8b5ac;margin-top:12px;text-align:center;}
 `;
 
+
+/* ═══════════════════════════════════════════
+   캔버스 → PDF, 내용이 잘리지 않게 페이지 나누기
+   breakSelectors 에 해당하는 요소의 위·아래 경계에서만 페이지를 끊는다.
+   (영수증 한 장, 표의 한 줄이 두 페이지에 걸쳐 잘리는 것을 막는다)
+   ⚠️ node 가 아직 화면(문서)에 붙어 있을 때 호출해야 위치를 잴 수 있다.
+   ═══════════════════════════════════════════ */
+function collectBreakPoints(node, canvas, breakSelectors){
+  const scale  = canvas.width / (node.offsetWidth || 1);
+  const docTop = node.getBoundingClientRect().top;
+  const cuts   = new Set([0]);
+  (breakSelectors||[]).forEach(sel=>{
+    node.querySelectorAll(sel).forEach(el=>{
+      const r = el.getBoundingClientRect();
+      cuts.add(Math.round((r.top    - docTop) * scale));
+      cuts.add(Math.round((r.bottom - docTop) * scale));
+    });
+  });
+  return [...cuts].filter(v=>v>=0).sort((a,b)=>a-b);
+}
+
+window.collectBreakPoints = collectBreakPoints;
+function addCanvasToPDF(pdf, canvas, points, opt){
+  const o  = Object.assign({ margin:6, quality:0.9, minFill:0.12 }, opt||{});
+  const pw = pdf.internal.pageSize.getWidth();
+  const ph = pdf.internal.pageSize.getHeight();
+  const iw = pw - o.margin*2;
+  const pageH = Math.floor(canvas.width * (ph - o.margin*2) / iw);
+  const total = canvas.height;
+
+  // 한 장에 다 들어가면 그대로
+  if(canvas.height * iw / canvas.width <= ph - o.margin*2){
+    pdf.addImage(canvas.toDataURL('image/jpeg', o.quality), 'JPEG',
+      o.margin, o.margin, iw, canvas.height*iw/canvas.width);
+    return 1;
+  }
+
+  const pts = (points && points.length) ? points : [];
+  const slices = [];
+  let pos = 0;
+  while(pos < total){
+    let end = pos + pageH;
+    if(end >= total) end = total;
+    else {
+      // 이 페이지 안에서 끊어도 되는 가장 아래 지점을 찾는다
+      const cand = pts.filter(t => t > pos + pageH*o.minFill && t <= end);
+      if(cand.length) end = Math.max(...cand);
+      // 후보가 없으면(덩어리 하나가 페이지보다 큰 경우) 어쩔 수 없이 페이지 끝에서 자른다
+    }
+    if(end <= pos) end = Math.min(pos + pageH, total);
+    slices.push({ y:pos, h:end-pos });
+    pos = end;
+  }
+
+  slices.forEach((sl,i)=>{
+    const c = document.createElement('canvas');
+    c.width = canvas.width; c.height = sl.h;
+    c.getContext('2d').drawImage(canvas, 0, sl.y, canvas.width, sl.h, 0, 0, canvas.width, sl.h);
+    if(i>0) pdf.addPage();
+    pdf.addImage(c.toDataURL('image/jpeg', o.quality), 'JPEG',
+      o.margin, o.margin, iw, sl.h*iw/canvas.width);
+  });
+  return slices.length;
+}
+window.addCanvasToPDF = addCanvasToPDF;
+
 async function printSheet(mode){
   if(!lastSheet){ toast('출력할 표가 없습니다.','err'); return; }
   // auto: 항목 수 기준 (5개 이하 세로 A5, 초과 가로 A4)
@@ -3016,37 +3283,17 @@ async function printSheet(mode){
     await ensureJsPDF();
     // 임시 렌더 컨테이너
     const holder = document.createElement('div');
-    holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
+    holder.style.cssText = 'position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
-    document.body.removeChild(holder);
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation: landscape?'landscape':'portrait', unit:'mm', format:'a4'});
-    const pw = pdf.internal.pageSize.getWidth();
-    const ph = pdf.internal.pageSize.getHeight();
-    const margin = 8;
-    const iw = pw - margin*2;
-    const ih = canvas.height * iw / canvas.width;
-    const img = canvas.toDataURL('image/jpeg', 0.92);
-    if(ih <= ph - margin*2){
-      pdf.addImage(img, 'JPEG', margin, margin, iw, ih);
-    } else {
-      // 길면 여러 페이지 분할
-      let remaining = canvas.height, pos = 0;
-      const pageCanvasH = Math.floor(canvas.width * (ph - margin*2) / iw);
-      while(remaining > 0){
-        const slice = document.createElement('canvas');
-        slice.width = canvas.width; slice.height = Math.min(pageCanvasH, remaining);
-        slice.getContext('2d').drawImage(canvas, 0, pos, canvas.width, slice.height, 0, 0, canvas.width, slice.height);
-        const sliceImg = slice.toDataURL('image/jpeg', 0.92);
-        const sliceH = slice.height * iw / canvas.width;
-        if(pos>0) pdf.addPage();
-        pdf.addImage(sliceImg, 'JPEG', margin, margin, iw, sliceH);
-        remaining -= slice.height; pos += slice.height;
-      }
-    }
+    // 표의 줄이 두 쪽에 걸쳐 잘리지 않도록 줄 경계에서 끊는다
+    const points = collectBreakPoints(node, canvas, ['.sheet-tbl tr','.sheet-head']);
+    document.body.removeChild(holder);
+    addCanvasToPDF(pdf, canvas, points, {margin:8, quality:0.92});
     pdf.save(`수행성경비_${lastSheet.gradeKey}_${lastSheet.semKor}.pdf`);
     window.hideLoading && window.hideLoading();
     toast('PDF를 저장했습니다.','ok');
@@ -3061,11 +3308,11 @@ async function imageSheet(){
   try {
     await ensureH2C();
     const holder = document.createElement('div');
-    holder.style.cssText = 'position:fixed;left:-99999px;top:0;';
+    holder.style.cssText = 'position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const a = document.createElement('a');
     a.href = canvas.toDataURL('image/png');
@@ -3247,7 +3494,7 @@ async function buildReceiptCollectionHTML(withReceipts){
         <img src="${rc.dataUrl}">
       </div>`;
     }
-    cardsHTML += `<div class="rc-card">
+    cardsHTML += `<div class="rc-card" data-rcgroup>
       <div class="rc-chd">
         <span class="rc-seq">${b.seq}</span>
         <span class="rc-subj">${esc(e.subject)}</span>
@@ -3294,14 +3541,14 @@ async function printReceiptCollection(){
   window.showLoading && window.showLoading('영수증 취합 PDF를 만드는 중…');
   try {
     await ensureH2C(); await ensureJsPDF();
-    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;';
+    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     const { list } = expenseSeqMap();
     const withReceipts = list.filter(e=>e.receiptCount>0);
     holder.innerHTML = `<style>${RCCOL_CSS}</style>` + await buildReceiptCollectionHTML(withReceipts);
     document.body.appendChild(holder);
     const node=holder.querySelector('.rc-doc');
     await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
 
     const { jsPDF }=window.jspdf;
     const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
@@ -3312,40 +3559,10 @@ async function printReceiptCollection(){
 
     // 카드(및 헤더)의 경계 위치를 canvas 좌표로 수집 → 이 지점에서만 페이지를 끊음
     const docTop = node.getBoundingClientRect().top;
-    const breakEls = [...node.querySelectorAll('.rc-card')];
-    // 각 카드의 시작 y (canvas 좌표)
-    const cardTops = breakEls.map(el => Math.round((el.getBoundingClientRect().top - docTop) * scale));
-
+    // 카드 + 영수증 한 장 단위로 끊을 수 있게 (영수증이 두 쪽에 걸쳐 잘리지 않도록)
+    const points = collectBreakPoints(node, canvas, ['.rc-card','.rc-cell']);
     document.body.removeChild(holder);
-
-    // 페이지 경계 계산: pos부터 pageH를 넘지 않는 선에서, 카드 경계에 맞춰 자름
-    const slices = [];
-    let pos = 0;
-    const total = canvas.height;
-    while(pos < total){
-      let end = pos + pageH;
-      if(end >= total){ end = total; }
-      else {
-        // pos~end 사이에 걸치는 카드 경계 중, end보다 작은 마지막 경계로 end를 당김
-        // (카드가 페이지 중간에서 시작해 넘어가면, 그 카드 시작에서 끊어 다음 페이지로)
-        const candidates = cardTops.filter(t => t > pos + 10 && t < end);
-        if(candidates.length){
-          const cut = Math.max(...candidates);
-          // 너무 짧게 잘리는 것 방지 (페이지의 15% 이상은 채우게)
-          if(cut - pos > pageH*0.15) end = cut;
-        }
-      }
-      slices.push({ y:pos, h:end-pos });
-      pos = end;
-    }
-
-    slices.forEach((sl,i)=>{
-      const c=document.createElement('canvas'); c.width=canvas.width; c.height=sl.h;
-      c.getContext('2d').drawImage(canvas,0,sl.y,canvas.width,sl.h,0,0,canvas.width,sl.h);
-      const sh=sl.h*iw/canvas.width;
-      if(i>0) pdf.addPage();
-      pdf.addImage(c.toDataURL('image/jpeg',0.9),'JPEG',margin,margin,iw,sh);
-    });
+    addCanvasToPDF(pdf, canvas, points, {margin, quality:0.9});
     pdf.save(`영수증취합_${semKor(reportSem)}.pdf`);
     window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
@@ -3357,14 +3574,14 @@ async function imageReceiptCollection(){
   window.showLoading && window.showLoading('영수증 취합 이미지를 만드는 중…');
   try {
     await ensureH2C();
-    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;';
+    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     const { list } = expenseSeqMap();
     const withReceipts = list.filter(e=>e.receiptCount>0);
     holder.innerHTML = `<style>${RCCOL_CSS}</style>` + await buildReceiptCollectionHTML(withReceipts);
     document.body.appendChild(holder);
     const node=holder.querySelector('.rc-doc');
     await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(holder);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`영수증취합_${semKor(reportSem)}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
@@ -3469,11 +3686,11 @@ async function printAllSheet(){
   try {
     await ensureH2C(); await ensureJsPDF();
     const holder = document.createElement('div');
-    holder.style.cssText='position:fixed;left:-99999px;top:0;';
+    holder.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
     const node = holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'var(--wh)', useCORS:true});
+    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
@@ -3500,11 +3717,12 @@ async function imageAllSheet(){
   window.showLoading && window.showLoading('전체 상세표 이미지를 만드는 중…');
   try {
     await ensureH2C();
-    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;';
-    holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
+    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
+    holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}
+</style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
     const node=holder.querySelector('.sheet-doc');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)',useCORS:true});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
     document.body.removeChild(holder);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`수행성경비_전체취합_${semKor(reportSem)}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
@@ -3677,9 +3895,10 @@ async function openReceiptsOf(expenseId, subject){
     const arr=[]; snap.forEach(d=>arr.push({id:d.id,...d.data()}));
     arr.sort((a,b)=>(a.idx||0)-(b.idx||0));
     const box=$I('rc-view-list'); if(!box) return;
+    box.setAttribute('data-rcgroup','');
     box.innerHTML = arr.length ? arr.map(r=>`
       <div style="width:90px;height:90px;border:1px solid var(--ivd);border-radius:8px;overflow:hidden">
-        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:pointer" onclick="openImageOverlay(this.src)" title="영수증 ${r.idx||''}">
+        <img src="${r.dataUrl}" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in" onclick="openImageOverlay(this.src, this)" title="영수증 ${r.idx||''} · 클릭 후 ← → 로 넘기기">
       </div>`).join('') : '<span style="font-size:13px;color:var(--tl)">첨부된 영수증이 없습니다.</span>';
   } catch(e){ const box=$I('rc-view-list'); if(box) box.innerHTML=`<span style="font-size:13px;color:var(--danger)">불러올 수 없습니다: ${esc(e.message||'')}</span>`; }
 }
