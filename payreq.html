@@ -181,6 +181,33 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .iv-btn:hover{border-color:var(--gm);color:var(--gm);}
 .iv-pct{min-width:56px;text-align:center;font-size:12.5px;font-weight:800;color:var(--gm);}
 .iv-cnt{min-width:52px;text-align:center;font-size:12.5px;font-weight:800;color:var(--gd);}
+/* 진행 이력 타임라인 */
+.hs-box{margin-top:14px;border:1px solid var(--ivd);border-radius:10px;background:var(--iv);}
+.hs-box summary{padding:10px 13px;font-size:13px;font-weight:800;color:var(--gd);cursor:pointer;list-style:none;}
+.hs-box summary::-webkit-details-marker{display:none;}
+.hs-box summary::before{content:'▸ ';color:var(--gm);}
+.hs-box[open] summary::before{content:'▾ ';}
+.hs-box summary span{font-weight:600;color:var(--tl);font-size:11.5px;margin-left:4px;}
+.hs-list{padding:2px 13px 12px;}
+.hs-row{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--ivd);}
+.hs-row:first-child{border-top:none;}
+.hs-ico{flex:none;font-size:14px;line-height:1.5;}
+.hs-main{flex:1;font-size:12.5px;color:var(--gd);line-height:1.5;}
+.hs-main b{font-weight:800;}
+.hs-who{color:var(--ts);font-weight:600;margin-left:5px;}
+.hs-step{font-size:10.5px;background:var(--gp);color:var(--gm);border-radius:5px;padding:1px 6px;font-weight:700;}
+.hs-text{margin-top:3px;font-size:12px;color:var(--ts);background:var(--wh);border:1px solid var(--ivd);
+  border-radius:7px;padding:6px 9px;line-height:1.55;white-space:pre-wrap;}
+.hs-when{flex:none;font-size:10.5px;color:var(--tl);white-space:nowrap;padding-top:2px;}
+/* 신청자 메모 · 결재 코멘트 · 잠금 안내 */
+.pr-note{margin-top:10px;font-size:12.5px;color:var(--gd);background:var(--gp);
+  border:1px solid var(--gl);border-radius:9px;padding:9px 12px;line-height:1.55;}
+.pr-note b{margin-right:5px;}
+.pr-cmt{margin-top:6px;font-size:12px;color:var(--ts);background:var(--wh);
+  border:1px solid var(--ivd);border-radius:8px;padding:6px 10px;line-height:1.5;}
+.pr-lockbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;
+  font-size:12.5px;font-weight:700;color:var(--goldd);background:var(--goldp);
+  border:1px solid var(--gold-line,#B08D3C);border-radius:9px;padding:9px 12px;}
 .iv-div{width:1px;height:20px;background:var(--ivd);margin:0 4px;}
 .iv-tip{text-align:center;font-size:11.5px;color:rgba(255,255,255,.75);}
 .pr-rdup{width:26px;height:26px;flex:none;border:none;background:var(--gp);color:var(--gm);border-radius:7px;cursor:pointer;font-weight:700;font-size:13px;margin-right:4px;}
@@ -270,7 +297,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -326,6 +353,7 @@ let prRows = [];          // 항목 행들
 let prBank = { bank:'', holder:'', account:'' };
 let prReceiptTargetRow = null;  // 현재 영수증 첨부 대상 행 인덱스
 let prEditId = null;           // 수정 중인 요청서 id (없으면 신규)
+let prNote   = '';             // 결재자에게 남기는 메모 (상신 시)
 let prPending = null;          // 폼에 미리 채울 머리정보
 
 function toast(msg, type=''){
@@ -576,6 +604,8 @@ function renderNew(){
           </select>
         </div>
         <div class="pr-fld pr-full"><label>사용 용도 / 세부 내용 확인</label><input type="text" id="pr-purpose" value="${esc(P.purpose||'')}" placeholder="예: 행정실 운영 프로그램 제작용"></div>
+        <div class="pr-fld pr-full"><label>결재자에게 남길 말 <span style="font-weight:500;color:var(--tl)">(선택)</span></label>
+          <input type="text" id="pr-note" value="${esc(P.note||'')}" placeholder="예: 급하게 필요해 먼저 구입했습니다. 확인 부탁드립니다."></div>
       </div>
     </div>
 
@@ -636,13 +666,15 @@ window.dupPrRow = dupPrRow;
 // — 항목을 추가하면 폼을 다시 그리는데, 이걸 안 하면 위에 적은 내용이 날아간다
 function savePrHeader(){
   const v = id => { const e = $I(id); return e ? e.value : undefined; };
-  const date = v('pr-date'), name = v('pr-name'), dept = v('pr-dept'), purpose = v('pr-purpose');
+  const date = v('pr-date'), name = v('pr-name'), dept = v('pr-dept'),
+        purpose = v('pr-purpose'), note = v('pr-note');
   if(date===undefined && name===undefined && dept===undefined && purpose===undefined) return;
   prPending = Object.assign({}, prPending || {}, {
     date: date!==undefined ? date : (prPending&&prPending.date),
     name: name!==undefined ? name : (prPending&&prPending.name),
     dept: dept!==undefined ? dept : (prPending&&prPending.dept),
-    purpose: purpose!==undefined ? purpose : (prPending&&prPending.purpose)
+    purpose: purpose!==undefined ? purpose : (prPending&&prPending.purpose),
+    note: note!==undefined ? note : (prPending&&prPending.note)
   });
 }
 window.savePrHeader = savePrHeader;
@@ -871,6 +903,7 @@ async function submitPayReq(){
   const total = rows.reduce((s,r)=>s+(Number(r.qty)||0)*(Number(r.price)||0),0);
   if(prMode==='expense'){
     prBank = { bank:$I('pr-bank')?.value?.trim()||'', holder:$I('pr-holder')?.value?.trim()||'', account:$I('pr-account')?.value?.trim()||'' };
+    prNote = $I('pr-note')?.value?.trim() || '';
   }
 
   // 결재 라인 (지출만)
@@ -895,6 +928,7 @@ async function submitPayReq(){
     const isEdit = !!prEditId;
     const record = {
       mode:prMode, org:prOrg, date, applicantName:name, dept, purpose,
+      note: prNote,
       rows:rowsForSave, total,
       bank: prMode==='expense'?prBank:null,
       chain, chainIndex:0, status,
@@ -937,6 +971,15 @@ async function submitPayReq(){
     // 본인 계좌 저장 (다음 자동)
     if(prMode==='expense' && (prBank.bank||prBank.account)){
       try { await setDoc(doc(db,'staff',CU.uid), { payBank:prBank }, {merge:true}); } catch(e){}
+    }
+
+    // 이력 남기기 — 상신 · 재상신 · 수정을 구분해서 기록
+    if(isEdit){
+      const wasRejected = (prPending && prPending.__wasRejected) || false;
+      await pushHistory(reqId, wasRejected ? 'resubmitted' : 'edited',
+        prNote || '', { total });
+    } else {
+      await pushHistory(reqId, 'submitted', prNote || '', { total, needApproval });
     }
 
     // 쪽지: 결재 필요하면 첫 결재자에게, 아니면 회계 담당자에게
@@ -1063,14 +1106,17 @@ async function approvePayReq(id){
   const idx=r.chainIndex;
   const step=r.chain?.[idx];
   if(!step || step.uid!==CU.uid){ toast('결재 권한이 없습니다.','err'); return; }
-  if(!confirm(`₩${won(r.total)} 요청을 승인할까요?`)) return;
+  const comment = prompt(`₩${won(r.total)} 요청을 승인합니다.\n\n남기실 말이 있으면 적어주세요. (없으면 비워두고 확인)`, '');
+  if(comment === null) return;   // 취소
   window.showLoading && window.showLoading('승인 처리 중…');
   try {
     const chain=[...r.chain];
-    chain[idx]={...chain[idx], status:'approved', at:Timestamp.now()};
+    chain[idx]={...chain[idx], status:'approved', at:Timestamp.now(), comment:(comment||'').trim()};
     const isLast = idx >= chain.length-1;
     const upd = { chain, chainIndex: isLast?idx:idx+1, status: isLast?'submitted':'approving' };
     await updateDoc(doc(db,'payRequests',id), upd);
+    await pushHistory(id, 'approved', (comment||'').trim(),
+      { step: step.role||step.position||'', last: isLast });
     // 쪽지
     if(isLast){
       await sendMsg(payManagerUids(), `[경비 지급 상신] ${r.applicantName} · ₩${won(r.total)}`,
@@ -1103,8 +1149,9 @@ async function rejectPayReq(id){
   window.showLoading && window.showLoading('반려 처리 중…');
   try {
     const chain=[...r.chain];
-    chain[idx]={...chain[idx], status:'rejected', at:Timestamp.now()};
-    await updateDoc(doc(db,'payRequests',id), { chain, status:'rejected', rejectReason:reason.trim(), rejectedBy:CU.name||'', rejectedAt:Timestamp.now() });
+    chain[idx]={...chain[idx], status:'rejected', at:Timestamp.now(), comment:reason.trim()};
+    await updateDoc(doc(db,'payRequests',id), { chain, status:'rejected', rejectReason:reason.trim(), rejectedBy:CU.name||'', rejectedAt:Timestamp.now(), locked:false });
+    await pushHistory(id, 'rejected', reason.trim(), { step: step.role||step.position||'' });
     await sendMsg([r.createdByUid], `[반려] 경비 지급 요청이 반려되었습니다`,
       `용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n반려자: ${CU.name||''}\n\n사유: ${reason.trim()}\n\n내용을 수정하여 다시 신청해주세요.`);
     window.hideLoading && window.hideLoading();
@@ -2106,18 +2153,38 @@ let listTrash = false;   // 휴지통 보기
 //  - 회계(경비지급) 담당자: 언제나 가능
 function canEditReq(r){
   if(r.deleted) return false;
+  // 입금이 확인된 건은 잠긴다 — 이미 나간 돈의 내용이 바뀌면 회계 기록을 믿을 수 없게 되므로
+  if(r.locked || r.paid) return false;
   if(isPayManager()) return true;
   if(r.createdByUid !== CU.uid) return false;
-  if(r.paid) return false;
   const anyApproved = (r.chain||[]).some(c=>c.status==='approved');
   return !anyApproved;
 }
+// 잠금 해제는 수퍼관리자만 — 반드시 사유를 남긴다
+function canUnlock(r){ return !!r && (r.locked || r.paid) && isSuper(); }
 // 왜 못 고치는지 안내
 function editBlockReason(r){
-  if(r.paid) return '지급이 완료되어 수정할 수 없습니다. (회계 담당자에게 문의)';
+  if(r.locked || r.paid) return '입금이 확인되어 잠겼습니다. 고쳐야 하면 반려 후 다시 신청해 주세요.';
   if((r.chain||[]).some(c=>c.status==='approved')) return '이미 결재가 시작되어 수정할 수 없습니다. (회계 담당자에게 문의)';
   return '';
 }
+
+// 잠금 해제 (수퍼관리자) — 사유를 이력에 남긴다
+window.unlockPayReq = async function(id){
+  const r = PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
+  if(!canUnlock(r)){ toast('잠금을 해제할 권한이 없습니다.','err'); return; }
+  const why = prompt('잠금을 해제하는 이유를 적어주세요.\n(이 기록은 이력에 남아 회계 담당자가 볼 수 있습니다)');
+  if(why===null) return;
+  if(!why.trim()){ toast('사유를 입력해 주세요.','err'); return; }
+  try {
+    await updateDoc(doc(db,'payRequests',id), { locked:false });
+    await pushHistory(id, 'unlocked', why.trim());
+    await addLog('수정 잠금 해제', `${r.applicantName||''} · ₩${won(r.total)} · ${why.trim()}`);
+    toast('잠금을 해제했습니다. 수정 후 다시 확인해 주세요.','ok');
+    await loadPayRequests();
+    if(curTab==='report') await renderReport(); else await renderList();
+  } catch(e){ toast('해제 실패: '+(e.message||''),'err'); }
+};
 
 async function renderList(){
   const box=$I('tab-list');
@@ -2188,6 +2255,32 @@ window.renderList = renderList;
 
 function fmtDT(ts){ try{ const d=ts?.toDate?ts.toDate():new Date(ts?.seconds*1000); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }catch(e){return '';} }
 
+/* 이력 타임라인 — 상신부터 지금까지의 흐름을 시간순으로 */
+function historyHTML(r){
+  if(!canSeeHistory(r)) return '';
+  const list = (r.history||[]).slice().sort((a,b)=>(a.at?.seconds||0)-(b.at?.seconds||0));
+  if(!list.length) return '';
+  const rows = list.map(e=>{
+    const icon  = HIST_ICON[e.type] || '•';
+    const label = HIST_LABEL[e.type] || e.type;
+    const when  = e.at ? fmtDT(e.at) : '';
+    const extra = (e.meta && e.meta.step) ? ` <span class="hs-step">${esc(e.meta.step)}</span>` : '';
+    return `<div class="hs-row">
+      <span class="hs-ico">${icon}</span>
+      <span class="hs-main">
+        <b>${esc(label)}</b>${extra}
+        <span class="hs-who">${esc(e.byName||'')}</span>
+        ${e.text?`<div class="hs-text">${esc(e.text)}</div>`:''}
+      </span>
+      <span class="hs-when">${esc(when)}</span>
+    </div>`;
+  }).join('');
+  return `<details class="hs-box" open>
+    <summary>📜 진행 이력 <span>${list.length}건</span></summary>
+    <div class="hs-list">${rows}</div>
+  </details>`;
+}
+
 function viewPayReq(id){
   const r=PAY_REQUESTS.find(x=>x.id===id); if(!r) return;
   const mv=document.createElement('div'); mv.className='mov'; mv.id='pr-view-mod';
@@ -2204,7 +2297,10 @@ function viewPayReq(id){
     <b>결재 진행:</b> ${r.chain.map((c,i)=>{
       const st=c.status==='approved'?'✅':c.status==='rejected'?'❌':(i===r.chainIndex?'⏳':'○');
       return `${st} ${esc(c.name)}(${({head:'부서장',vp:'교감',principal:'교장'}[c.role]||c.role)})`;
-    }).join(' → ')}</div>`:'';
+    }).join(' → ')}
+    ${r.chain.filter(c=>c.comment).map(c=>
+      `<div class="pr-cmt">💬 <b>${esc(c.name)}</b> ${esc(c.comment)}</div>`).join('')}
+    </div>`:'';
   mv.innerHTML=`<div class="mbk" onclick="document.getElementById('pr-view-mod').remove()"></div>
     <div class="mbox" style="max-width:700px">
       <div class="mtitle">${r.mode==='income'?'💵 수입':'💸 지급 요청서'} 상세</div>
@@ -2216,8 +2312,12 @@ function viewPayReq(id){
         <tfoot><tr><td colspan="5" style="text-align:right;font-weight:700">합계</td><td style="text-align:right;font-weight:800;color:var(--goldd)">₩${won(r.total)}</td><td></td></tr></tfoot>
       </table></div>
       ${r.bank?`<div style="margin-top:8px;font-size:12.5px;color:var(--ts)">입금: ${esc(r.bank.bank||'')} ${esc(r.bank.account||'')} (${esc(r.bank.holder||'')})</div>`:''}
+      ${r.note?`<div class="pr-note">💬 <b>신청자 메모</b> ${esc(r.note)}</div>`:''}
       ${chainHtml}
-      <div id="pr-view-receipts" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"></div>
+      ${(r.locked||r.paid)?`<div class="pr-lockbar">🔒 입금이 확인되어 잠긴 요청서입니다. 고쳐야 하면 반려 후 다시 신청해 주세요.
+        ${canUnlock(r)?`<button class="bm" style="margin-left:auto" onclick="unlockPayReq('${r.id}')">잠금 해제</button>`:''}</div>`:''}
+      <div id="pr-view-receipts" data-rcgroup style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap"></div>
+      ${historyHTML(r)}
       <div class="mact"><button class="bs" onclick="document.getElementById('pr-view-mod').remove()">닫기</button></div>
     </div>`;
   $I('mwrap').appendChild(mv);
@@ -2616,10 +2716,12 @@ async function markPaid(id, paid){
   if(paid && !confirm(`₩${won(r.total)} 지급 완료로 처리할까요?\n신청자에게 자동으로 알림이 발송됩니다.`)) return;
   if(!paid && !confirm('지급 완료를 취소할까요?')) return;
   try {
+    // 입금이 확인되면 신청자도 더는 고칠 수 없게 잠근다 (이미 나간 돈이 바뀌면 안 되므로)
     const upd = paid
-      ? { paid:true, paidAt:Timestamp.now(), paidByUid:CU.uid, paidByName:CU.name||'' }
-      : { paid:false, paidAt:null, paidByUid:'', paidByName:'' };
+      ? { paid:true, paidAt:Timestamp.now(), paidByUid:CU.uid, paidByName:CU.name||'', locked:true }
+      : { paid:false, paidAt:null, paidByUid:'', paidByName:'', locked:false };
     await updateDoc(doc(db,'payRequests',id), upd);
+    await pushHistory(id, paid?'paid':'unpaid', '', { total:r.total });
     if(paid && r.mode!=='income'){
       await sendMsg([r.createdByUid], `[지급 완료] ₩${won(r.total)} 지급되었습니다`,
         `용도: ${r.purpose||''}\n금액: ₩${won(r.total)}\n입금계좌: ${r.bank?.bank||''} ${r.bank?.account||''}\n처리: ${CU.name||''}\n\n지급이 완료되었습니다. 확인해주세요.`);
@@ -4829,6 +4931,43 @@ async function saveCats(){
 window.saveCats = saveCats;
 
 // ── 변경 로그 ──
+/* ═══════════════════════════════════════════
+   요청서 이력 — 상신·승인·반려·지급·수정·공유·의견을 시간순으로 남긴다
+   payRequests/{id}.history 배열에 쌓이며, 상세보기에서 타임라인으로 보여준다.
+   ═══════════════════════════════════════════ */
+const HIST_LABEL = {
+  created:'작성',        submitted:'상신',     approved:'승인',
+  rejected:'반려',       resubmitted:'재상신', paid:'입금 확인',
+  unpaid:'입금 확인 취소', edited:'내용 수정',   shared:'공유',
+  comment:'의견',        locked:'수정 잠금',   unlocked:'잠금 해제',
+};
+const HIST_ICON = {
+  created:'📝', submitted:'📤', approved:'✅', rejected:'↩️', resubmitted:'🔁',
+  paid:'💰', unpaid:'↺', edited:'✏️', shared:'📣', comment:'💬',
+  locked:'🔒', unlocked:'🔓',
+};
+
+function histEntry(type, text, meta){
+  const e = { at: Timestamp.now(), type, byUid: CU?.uid||'', byName: CU?.name||'', text: text||'' };
+  if(meta) e.meta = meta;
+  return e;
+}
+
+// 이력 한 줄 추가 (동시에 여러 명이 눌러도 안전하게 arrayUnion 사용)
+async function pushHistory(reqId, type, text, meta){
+  try {
+    await updateDoc(doc(db,'payRequests',reqId), { history: arrayUnion(histEntry(type, text, meta)) });
+  } catch(e){ /* 이력 실패가 본 작업을 막지 않도록 조용히 넘어간다 */ }
+}
+
+// 이력 열람 권한: 수퍼관리자 · 회계 담당자 · 본인(신청자) · 결재선에 든 사람
+function canSeeHistory(r){
+  if(!r) return false;
+  if(isSuper() || isPayManager()) return true;
+  if(r.createdByUid === CU?.uid) return true;
+  return (r.chain||[]).some(c=>c.uid===CU?.uid);
+}
+
 async function addLog(action, detail){
   try { await addDoc(collection(db,'payLogs'), { action, detail, byUid:CU.uid, byName:CU.name||'', createdAt:Timestamp.now() }); } catch(e){}
 }
