@@ -343,7 +343,8 @@
     background:var(--iv,#F2F0EB);padding:11px}
   .pg-tray-t{font-size:12.5px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:8px}
   .pg-tray-t b{color:var(--gm,#00704A)}
-  .pg-tray-list{display:flex;flex-direction:column;gap:6px;max-height:520px;overflow:auto}
+  .pg-tray-list{display:flex;flex-direction:column;gap:6px;
+    max-height:calc(100vh - 400px);min-height:220px;overflow:auto}
   .pg-tray-card{display:flex;flex-direction:column;gap:1px;padding:7px 10px;border-radius:9px;
     background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);border-left:4px solid var(--lc,#00704A);
     cursor:grab;user-select:none}
@@ -353,12 +354,26 @@
   .pg-tray-done{font-size:12px;color:var(--gm,#00704A);font-weight:700;padding:8px 2px}
   .pg-probs{margin-top:9px;font-size:11.5px;font-weight:700;color:var(--danger,#C0392B);
     background:var(--danger-bg,#FDECEA);border-radius:8px;padding:6px 9px}
-  .pg-board{overflow-x:auto;border:1px solid var(--ivd,#E3E1DA);border-radius:11px;background:var(--wh,#fff)}
+  .pg-boardwrap{min-width:0}
+  .pg-zoom{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;
+    font-size:11.5px;color:var(--tl,#93A09A)}
+  .pg-zbtn{font-family:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:7px;background:var(--wh,#fff);
+    color:var(--ts,#5A6560);cursor:pointer}
+  .pg-zbtn:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
+  .pg-zbtn.on{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+  .pg-span{margin-left:auto;font-weight:700;color:var(--ts,#5A6560)}
+  /* 판 자체가 위아래로 스크롤 — 요일 머리와 시각 축은 붙어 있는다 */
+  .pg-board{overflow:auto;max-height:calc(100vh - 300px);min-height:360px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:11px;background:var(--wh,#fff)}
+  .pg-tip{margin-top:9px;font-size:11px;color:var(--tl,#93A09A);line-height:1.6}
   .pg-head{display:grid;grid-template-columns:56px repeat(5,minmax(112px,1fr));
-    border-bottom:1px solid var(--ivd,#E3E1DA);position:sticky;top:0;background:var(--wh,#fff);z-index:3}
+    border-bottom:1px solid var(--ivd,#E3E1DA);position:sticky;top:0;background:var(--wh,#fff);z-index:6}
+  .pg-headtime{position:sticky;left:0;background:var(--wh,#fff);z-index:7}
   .pg-headday{padding:9px 0;text-align:center;font-size:13px;font-weight:800;color:var(--gd,#1E3932)}
   .pg-grid{display:grid;grid-template-columns:56px repeat(5,minmax(112px,1fr));position:relative}
-  .pg-times{position:relative;border-right:1px solid var(--ivd,#E3E1DA);background:var(--iv,#F2F0EB)}
+  .pg-times{position:sticky;left:0;z-index:5;border-right:1px solid var(--ivd,#E3E1DA);
+    background:var(--iv,#F2F0EB)}
   .pg-tick{position:absolute;left:0;right:0;font-size:10px;color:var(--tl,#93A09A);
     padding-left:5px;border-top:1px dashed var(--ivd,#E3E1DA);line-height:1.1}
   .pg-col{position:relative;border-right:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff)}
@@ -863,7 +878,15 @@ const ORGS = { jihyebit:'지혜빛', daniel:'다니엘 아마츠' };
 let PLACE2 = {};
 let pgFrameId = '';      // 지금 배치 중인 시간표 틀
 let pgGrade   = '';      // 지금 배치 중인 학년
-const PX_PER_MIN = 1.15; // 1분당 세로 픽셀
+let PX_PER_MIN = 1.15;   // 1분당 세로 픽셀 (아래 버튼으로 조절)
+const ZOOM_STEPS = [0.75, 0.95, 1.15, 1.45, 1.8];
+const ZOOM_NAMES = ['아주 작게','작게','보통','크게','아주 크게'];
+try { const z = parseFloat(localStorage.getItem('sa_pg_zoom')); if(z && ZOOM_STEPS.includes(z)) PX_PER_MIN = z; } catch(e){}
+window.setPgZoom = function(v){
+  PX_PER_MIN = Number(v) || 1.15;
+  try { localStorage.setItem('sa_pg_zoom', String(PX_PER_MIN)); } catch(e){}
+  renderPlace2();
+};
 const SNAP_MIN   = 5;    // 5분 단위로 붙는다
 
 let GRADE_DEPT = {};
@@ -3684,13 +3707,22 @@ function drawPlaceBoard(){
   let allProbs = 0;
   DAYS.forEach(dy=> placeList(pgGrade,dy).forEach(c=>{ allProbs += checkPlacement(pgGrade,dy,c,c.id).length; }));
 
+  const zoomBtns = ZOOM_STEPS.map((z,i)=>
+    `<button class="pg-zbtn ${Math.abs(z-PX_PER_MIN)<0.01?'on':''}" onclick="setPgZoom(${z})">${ZOOM_NAMES[i]}</button>`).join('');
+
   body.innerHTML = `
     <div class="pg-wrap">
       <div class="pg-tray">
         <div class="pg-tray-t">놓을 카드 <b>${left.length}</b></div>
         <div class="pg-tray-list">${tray}</div>
         ${allProbs?`<div class="pg-probs">⚠ 겹침 ${allProbs}건</div>`:''}
+        <div class="pg-tip">카드를 <b>우클릭</b>하면 목록으로 되돌아옵니다</div>
       </div>
+      <div class="pg-boardwrap">
+        <div class="pg-zoom">
+          <span>세로 크기</span>${zoomBtns}
+          <span class="pg-span">${hm(gradeRange(pgGrade).startMin)}~${hm(gradeRange(pgGrade).endMin)}</span>
+        </div>
       <div class="pg-board">
         <div class="pg-head">
           <div class="pg-headtime"></div>
@@ -3700,6 +3732,7 @@ function drawPlaceBoard(){
           <div class="pg-times" style="height:${H}px">${ticks}</div>
           ${cols}
         </div>
+      </div>
       </div>
     </div>`;
 
@@ -3782,15 +3815,27 @@ function bindPlaceDrag(startMin){
   // 목록 카드 → 그리드
   board.querySelectorAll('.pg-tray-card').forEach(el=>{
     el.onmousedown = e=>{
+      if(e.button !== 0) return;
       e.preventDefault();
       drag = { mode:'new', lessonId:el.dataset.lesson, cardIdx:+el.dataset.idx,
         durMin:+el.dataset.dur, ghost:makeGhost(el) };
       paintAvail(drag.lessonId);
     };
   });
-  // 놓인 카드 → 옮기기
+  // 놓인 카드 → 옮기기 · 우클릭하면 목록으로 되돌리기
   board.querySelectorAll('.pg-card').forEach(el=>{
+    el.oncontextmenu = e=>{
+      e.preventDefault();
+      const day = el.dataset.day, pid = el.dataset.pid;
+      const item = placeList(pgGrade, day).find(c=>c.id===pid);
+      const l = item ? LESSONS.find(x=>x.id===item.lessonId) : null;
+      setPlaceList(pgGrade, day, placeList(pgGrade, day).filter(c=>c.id!==pid));
+      savePlace2(true);
+      renderPlace2();
+      toast(`${l?l.subject:'수업'}을(를) 목록으로 되돌렸습니다`,'ok');
+    };
     el.onmousedown = e=>{
+      if(e.button !== 0) return;   // 왼쪽 버튼만 끌기
       e.preventDefault();
       const day = el.dataset.day, pid = el.dataset.pid;
       const item = placeList(pgGrade, day).find(c=>c.id===pid);
