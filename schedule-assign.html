@@ -327,6 +327,31 @@
     background:var(--gold-bg,#F7EFD8);border:1px solid var(--gold-line,#B08D3C);border-radius:10px;margin-bottom:10px}
   .rm-selbar.on{display:flex}
   .rm-selname{font-size:13px;font-weight:800;color:var(--gold,#8A6410)}
+  /* ── 저장된 세트 ── */
+  .set-bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:14px;
+    padding:9px 13px;border-radius:10px;font-size:12.5px;
+    background:var(--iv,#F2F0EB);border:1px solid var(--ivd,#E3E1DA);color:var(--ts,#5A6560)}
+  .set-bar.on{background:var(--gp,#E8F3EF);border-color:var(--gl,#D6E9E0)}
+  .sb-tag{font-size:13px;font-weight:800;color:var(--gd,#1E3932)}
+  .sb-by{font-size:11.5px;color:var(--tl,#93A09A)}
+  .sb-none{font-size:12.5px;color:var(--tl,#93A09A)}
+  .sb-lock{font-size:11.5px;font-weight:700;color:var(--goldd,#8A6410);
+    background:var(--goldp,#F7EFD8);border-radius:7px;padding:2px 8px}
+  .set-list{display:flex;flex-direction:column;gap:10px}
+  .set-card{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;
+    padding:14px 16px;border:1px solid var(--ivd,#E3E1DA);border-radius:12px;background:var(--wh,#fff)}
+  .set-card.cur{border-color:var(--gm,#00704A);box-shadow:0 0 0 2px var(--gp,#E8F3EF)}
+  .set-main{flex:1;min-width:220px}
+  .set-nm{font-size:15px;font-weight:800;color:var(--gd,#1E3932);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .set-cur{font-size:10.5px;font-weight:800;background:var(--gm,#00704A);color:#fff;border-radius:6px;padding:2px 8px}
+  .set-meta{font-size:11.5px;color:var(--tl,#93A09A);margin-top:3px}
+  .set-cnt{display:flex;gap:12px;flex-wrap:wrap;margin-top:7px;font-size:12px;color:var(--ts,#5A6560)}
+  .set-cnt b{color:var(--gd,#1E3932);font-weight:800}
+  .set-note{margin-top:7px;font-size:12px;color:var(--ts,#5A6560);background:var(--iv,#F2F0EB);
+    border-radius:8px;padding:6px 10px;line-height:1.55}
+  .set-act{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start}
+  .rm-modebtn:disabled{opacity:.4;cursor:not-allowed}
+
   /* ── 시간표 보기 ── */
   .tv-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 12px;
     background:var(--gp,#E8F3EF);border:1px solid var(--gl,#D6E9E0);border-radius:10px;margin-bottom:14px}
@@ -422,7 +447,9 @@
     <button class="subtbtn" id="tb-lesson" onclick="showTab('lesson')">📚 수업 정의</button>
     <button class="subtbtn" id="tb-place" onclick="showTab('place')">🧩 배치</button>
     <button class="subtbtn" id="tb-view" onclick="showTab('view')">📅 시간표 보기</button>
+    <button class="subtbtn" id="tb-set" onclick="showTab('set')">💾 저장·불러오기</button>
   </div>
+  <div class="set-bar" id="set-bar"></div>
 
   <!-- 수업 가능 시간 -->
   <div id="tab-avail">
@@ -496,6 +523,9 @@
       </div>
     </div>
   </div>
+
+  <!-- 저장·불러오기 -->
+  <div id="tab-set" style="display:none"></div>
 
   <!-- 시간표 보기 -->
   <div id="tab-view" style="display:none">
@@ -691,6 +721,18 @@ rebuildSlots();
 const toHM = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
 
 let CU = null;
+const isSuper = () => !!CU && CU.role==='super';
+
+// 저장 시각 표시 (2026.07.29 14:30)
+function fmtDT(ts){
+  try {
+    const d = ts?.toDate ? ts.toDate() : (ts?.seconds ? new Date(ts.seconds*1000) : null);
+    if(!d) return '';
+    const p2 = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}.${p2(d.getMonth()+1)}.${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  } catch(e){ return ''; }
+}
+
 let TEACHERS = [];       // 선생님 목록 (staff) — 전체
 let ASSIGN_UIDS = [];    // 이번 편성에 넣을 선생님 uid (순서 유지)
 let curTeacher = null;   // 선택된 선생님 uid
@@ -709,7 +751,7 @@ let bgDeptKey = '';      // 선택된 배경 부서 (frameId::deptId)
 let curTab = 'avail';
 window.showTab = function(t){
   curTab = t;
-  ['avail','room','lesson','place','view'].forEach(k=>{
+  ['avail','room','lesson','place','view','set'].forEach(k=>{
     const btn = $I('tb-'+k); if(btn) btn.classList.toggle('active', k===t);
     const pane = $I('tab-'+k); if(pane) pane.style.display = k===t ? '' : 'none';
   });
@@ -717,6 +759,7 @@ window.showTab = function(t){
   if(t==='lesson') renderLessons();
   if(t==='place') renderPlace();
   if(t==='view'){ renderTvFrameSelect(); renderTvView(); }
+  if(t==='set') renderSets();
 };
 
 // ── 로그인 ──
@@ -736,6 +779,8 @@ onAuthStateChanged(auth, async user => {
     await loadTeachers();
     await loadFrames();
     await loadRooms();
+    await loadSets();
+    renderSetBar();
     await loadLessons();
     await loadPlacements();
     computeBgBlocks();   // 저장된 배경 부서 적용
@@ -1422,22 +1467,60 @@ let FLOORS = [];
 let curFloorId = null;
 let drawingRoom = null;   // 그리는 중인 영역
 
+/* ── 평면도 이미지는 층마다 따로 보관한다 ──
+   한 문서에 모아두면 층이 두엇만 되어도 Firestore 문서 한도(1MB)를 넘겨 저장이 실패한다.
+   timetableRooms/main 에는 층 구성과 교실 도형만 두고,
+   사진은 timetableFloorImages/{floorId} 에 한 장씩 담는다. */
+const FLOOR_IMG_COL = 'timetableFloorImages';
+
+async function loadFloorImage(floorId){
+  try {
+    const s = await getDoc(doc(db, FLOOR_IMG_COL, floorId));
+    return s.exists() ? (s.data().image || '') : '';
+  } catch(e){ return ''; }
+}
+
+async function saveFloorImage(floorId, dataUrl){
+  await setDoc(doc(db, FLOOR_IMG_COL, floorId), {
+    image: dataUrl || '', updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
+  });
+}
+
 async function loadRooms(){
   try {
     const snap = await getDoc(doc(db,'timetableRooms','main'));
     if(snap.exists() && Array.isArray(snap.data().floors)) FLOORS = snap.data().floors;
+    else FLOORS = [];
   } catch(e){ FLOORS = []; }
+
+  // 층마다 보관된 사진을 붙인다 (예전에 한 문서에 같이 담겼던 것은 그대로 쓰고 옮겨준다)
+  let needMigrate = false;
+  for(const f of FLOORS){
+    if(f.image){ needMigrate = true; continue; }   // 옛 방식 — 아래에서 옮긴다
+    if(f.hasImage) f.image = await loadFloorImage(f.id);
+  }
+  if(needMigrate){
+    for(const f of FLOORS){
+      if(!f.image) continue;
+      try { await saveFloorImage(f.id, f.image); f.hasImage = true; } catch(e){}
+    }
+    try { await saveRooms(true); } catch(e){}
+  }
 }
 
-async function saveRooms(){
+async function saveRooms(silent){
   try {
+    // 사진은 빼고 저장 (사진은 층별 문서에 따로 들어 있다)
+    const light = FLOORS.map(f => ({
+      id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!f.image
+    }));
     await setDoc(doc(db,'timetableRooms','main'), {
-      floors: FLOORS, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
+      floors: light, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
     });
-    toast('저장했습니다 ✓');
+    if(!silent) toast('저장했습니다 ✓');
   } catch(e){
     if(String(e.message||'').includes('longer than')||String(e).includes('exceeds'))
-      toast('이미지가 너무 큽니다. 더 작은 평면도를 써주세요.','err');
+      toast('저장할 내용이 너무 큽니다. 교실 수나 층 수를 줄여주세요.','err');
     else toast('저장 실패: '+(e.message||''),'err');
   }
 }
@@ -1601,8 +1684,13 @@ window.uploadFloorImage = function(ev){
       if(dataUrl.length > 900000){ dataUrl = canvas.toDataURL('image/jpeg', 0.65); }
       const f = FLOORS.find(x=>x.id===curFloorId);
       f.image = dataUrl;
-      saveRooms();
-      renderFloorContent();
+      f.hasImage = true;
+      saveFloorImage(f.id, dataUrl)
+        .then(()=>{ saveRooms(); renderFloorContent(); })
+        .catch(err=>{
+          toast('평면도 저장 실패: 사진이 너무 큽니다. 더 작은 이미지를 써주세요.','err');
+          f.image = ''; f.hasImage = false; renderFloorContent();
+        });
     };
     img.src = e.target.result;
   };
@@ -1621,6 +1709,293 @@ window.deleteFloor = function(){
   curFloorId = FLOORS[0]?.id || null;
   saveRooms(); renderFloors();
 };
+
+
+/* ═══════════════════════════════════════════
+   💾 시간표 배정 세트
+   수업 가능 시간 · 교실 배치 · 수업 정의 · 배치를
+   통째로 이름 붙여 저장한다. 학기가 바뀌면 지난 세트를
+   불러와 조금만 고쳐 쓰면 된다.
+     저장: timetableSets/{setId}
+     · 만든 사람만 덮어쓰기·이름변경·삭제 가능
+     · 다른 사람은 불러오기·복제만 (남의 작업이 흐트러지지 않게)
+     · 평면도 사진은 층별 문서에 있으므로 세트에는 담지 않는다
+   ═══════════════════════════════════════════ */
+let SETS = [];           // 저장된 세트 목록
+let curSetId = null;     // 지금 불러와 쓰고 있는 세트
+let curSetName = '';
+
+async function loadSets(){
+  try {
+    const snap = await getDocs(collection(db,'timetableSets'));
+    const out = [];
+    snap.forEach(d=>{
+      const v = d.data();
+      out.push({ id:d.id, name:v.name||'(이름 없음)', org:v.org||'',
+        createdByUid:v.createdByUid||'', createdByName:v.createdByName||'',
+        createdAt:v.createdAt||null, updatedAt:v.updatedAt||null,
+        updatedByName:v.updatedByName||'', note:v.note||'',
+        counts:v.counts||null });
+    });
+    out.sort((a,b)=>(b.updatedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.createdAt?.seconds||0));
+    SETS = out;
+  } catch(e){ SETS = []; }
+}
+
+// 이 세트를 고칠 수 있는 사람인가 (만든 사람 · 수퍼관리자)
+function canEditSet(s){
+  if(!s) return false;
+  return s.createdByUid === CU?.uid || isSuper();
+}
+
+// 지금 화면의 모든 설정을 하나로 모은다
+function collectSetSnapshot(){
+  return {
+    assignStaff: ASSIGN_UIDS.slice(),
+    availability: JSON.parse(JSON.stringify(AVAIL || {})),
+    // 사진은 빼고 층 구성과 교실 도형만 (사진은 층별 문서에 그대로 있다)
+    floors: (FLOORS||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!f.image })),
+    lessons: JSON.parse(JSON.stringify(LESSONS || [])),
+    placements: JSON.parse(JSON.stringify(PLACEMENTS || {}))
+  };
+}
+
+function setCounts(snap){
+  const placed = Object.values(snap.placements||{}).reduce((n,byDay)=>
+    n + Object.values(byDay||{}).reduce((m,byP)=>m+Object.keys(byP||{}).length,0), 0);
+  return {
+    staff: (snap.assignStaff||[]).length,
+    rooms: (snap.floors||[]).reduce((n,f)=>n+(f.rooms||[]).length,0),
+    floors: (snap.floors||[]).length,
+    lessons: (snap.lessons||[]).length,
+    placed
+  };
+}
+
+/* ── 저장 ── */
+window.saveSetAs = async function(){
+  const def = curSetName || `${new Date().getFullYear()}학년도 시간표`;
+  const name = prompt('이 시간표 배정에 이름을 붙여주세요.\n(예: 2026학년도 2학기 시간표)', def);
+  if(name===null) return;
+  if(!name.trim()){ toast('이름을 입력해 주세요.','err'); return; }
+  const note = prompt('메모 (선택) — 나중에 알아보기 쉽게', '') || '';
+  await writeSet(null, name.trim(), note.trim());
+};
+
+window.overwriteSet = async function(){
+  const s = SETS.find(x=>x.id===curSetId);
+  if(!s){ toast('먼저 세트를 불러오거나 새로 저장해 주세요.','err'); return; }
+  if(!canEditSet(s)){ toast(`"${s.createdByName}" 선생님이 저장한 세트라 덮어쓸 수 없습니다. 복제해서 쓰세요.`,'err'); return; }
+  if(!confirm(`"${s.name}"에 지금 내용을 덮어쓸까요?`)) return;
+  await writeSet(s.id, s.name, s.note||'');
+};
+
+async function writeSet(setId, name, note){
+  window.showLoading && window.showLoading('시간표 배정을 저장하는 중…');
+  try {
+    const snapshot = collectSetSnapshot();
+    const counts = setCounts(snapshot);
+    const id = setId || ('ts_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6));
+    const base = {
+      name, note, org: CU?.org||'', snapshot, counts,
+      updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'', updatedByName: CU?.name||''
+    };
+    if(!setId){
+      base.createdAt = Timestamp.now();
+      base.createdByUid = CU?.uid||'';
+      base.createdByName = CU?.name||'';
+    }
+    await setDoc(doc(db,'timetableSets', id), base, { merge: !!setId });
+    curSetId = id; curSetName = name;
+    await loadSets();
+    window.hideLoading && window.hideLoading();
+    toast(`"${name}" 저장했습니다 ✓`,'ok');
+    if(curTab==='set') renderSets();
+    renderSetBar();
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    const msg = String(e.message||'');
+    if(msg.includes('longer than') || msg.includes('exceeds'))
+      toast('저장할 내용이 너무 큽니다. 교실이나 수업 수를 줄여주세요.','err');
+    else toast('저장 실패: '+msg,'err');
+  }
+}
+
+/* ── 불러오기 ── */
+window.loadSet = async function(id){
+  const s = SETS.find(x=>x.id===id); if(!s) return;
+  if(!confirm(`"${s.name}"을(를) 불러올까요?\n\n지금 화면의 설정은 이 세트 내용으로 바뀝니다.\n(저장해두지 않은 변경은 사라집니다)`)) return;
+  window.showLoading && window.showLoading('불러오는 중…');
+  try {
+    const d = await getDoc(doc(db,'timetableSets',id));
+    if(!d.exists()) throw new Error('세트를 찾을 수 없습니다');
+    const snap = d.data().snapshot || {};
+
+    ASSIGN_UIDS = (snap.assignStaff||[]).filter(u=>TEACHERS.some(t=>t.uid===u));
+    AVAIL = JSON.parse(JSON.stringify(snap.availability||{}));
+    LESSONS = JSON.parse(JSON.stringify(snap.lessons||[]));
+    PLACEMENTS = JSON.parse(JSON.stringify(snap.placements||{}));
+    FLOORS = (snap.floors||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage:!!f.hasImage, image:'' }));
+    // 층 사진은 층별 문서에서 다시 붙인다
+    for(const f of FLOORS){ if(f.hasImage) f.image = await loadFloorImage(f.id); }
+    curFloorId = FLOORS.length ? FLOORS[0].id : null;
+
+    // 현재 작업본으로도 저장해 다른 화면과 어긋나지 않게 한다
+    await saveAssignStaff();
+    await saveAllAvailability();
+    await saveRooms(true);
+    await saveLessons(true);
+    await savePlacements(true);
+
+    curSetId = id; curSetName = d.data().name || '';
+    window.hideLoading && window.hideLoading();
+    toast(`"${curSetName}" 불러왔습니다 ✓`,'ok');
+    renderSetBar();
+    showTab('avail');
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('불러오기 실패: '+(e.message||''),'err');
+  }
+};
+
+// 선생님별 가능시간을 한꺼번에 저장 (불러오기 직후)
+async function saveAllAvailability(){
+  const uids = new Set([...(ASSIGN_UIDS||[]), ...Object.keys(AVAIL||{})]);
+  for(const uid of uids){
+    try {
+      await setDoc(doc(db,'teacherAvailability', uid), {
+        blocks: (AVAIL[uid]||{}), updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
+      });
+    } catch(e){}
+  }
+}
+
+/* ── 복제 · 이름변경 · 삭제 ── */
+window.duplicateSet = async function(id){
+  const s = SETS.find(x=>x.id===id); if(!s) return;
+  const name = prompt('복제본 이름', `${s.name} (사본)`);
+  if(name===null) return;
+  if(!name.trim()){ toast('이름을 입력해 주세요.','err'); return; }
+  window.showLoading && window.showLoading('복제하는 중…');
+  try {
+    const d = await getDoc(doc(db,'timetableSets',id));
+    if(!d.exists()) throw new Error('원본을 찾을 수 없습니다');
+    const v = d.data();
+    const nid = 'ts_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    await setDoc(doc(db,'timetableSets', nid), {
+      name: name.trim(), note: v.note||'', org: v.org||'',
+      snapshot: v.snapshot||{}, counts: v.counts||null,
+      createdAt: Timestamp.now(), createdByUid: CU?.uid||'', createdByName: CU?.name||'',
+      updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'', updatedByName: CU?.name||'',
+      copiedFrom: id, copiedFromName: v.name||''
+    });
+    await loadSets();
+    window.hideLoading && window.hideLoading();
+    toast(`"${name.trim()}"로 복제했습니다 ✓`,'ok');
+    renderSets();
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('복제 실패: '+(e.message||''),'err');
+  }
+};
+
+window.renameSet = async function(id){
+  const s = SETS.find(x=>x.id===id); if(!s) return;
+  if(!canEditSet(s)){ toast(`"${s.createdByName}" 선생님이 저장한 세트입니다. 이름을 바꿀 수 없어요.`,'err'); return; }
+  const name = prompt('새 이름', s.name);
+  if(name===null || !name.trim()) return;
+  try {
+    await setDoc(doc(db,'timetableSets',id), {
+      name: name.trim(), updatedAt: Timestamp.now(), updatedByName: CU?.name||''
+    }, { merge:true });
+    if(curSetId===id) curSetName = name.trim();
+    await loadSets(); renderSets(); renderSetBar();
+    toast('이름을 바꿨습니다 ✓','ok');
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
+window.deleteSet = async function(id){
+  const s = SETS.find(x=>x.id===id); if(!s) return;
+  if(!canEditSet(s)){ toast(`"${s.createdByName}" 선생님이 저장한 세트입니다. 지울 수 없어요.`,'err'); return; }
+  if(!confirm(`"${s.name}"을(를) 지울까요?\n\n되돌릴 수 없습니다.`)) return;
+  try {
+    await deleteDoc(doc(db,'timetableSets',id));
+    if(curSetId===id){ curSetId = null; curSetName = ''; }
+    await loadSets(); renderSets(); renderSetBar();
+    toast('지웠습니다.','ok');
+  } catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
+};
+
+/* ── 화면 ── */
+// 지금 어떤 세트로 작업 중인지 알려주는 띠
+function renderSetBar(){
+  const bar = $I('set-bar'); if(!bar) return;
+  const s = SETS.find(x=>x.id===curSetId);
+  if(!s){
+    bar.className = 'set-bar';
+    bar.innerHTML = `<span class="sb-none">아직 저장하지 않은 작업입니다</span>
+      <button class="rm-modebtn" style="margin-left:auto" onclick="saveSetAs()">💾 이름 붙여 저장</button>`;
+    return;
+  }
+  const mine = canEditSet(s);
+  bar.className = 'set-bar on';
+  bar.innerHTML = `
+    <span class="sb-tag">💾 ${esc(s.name)}</span>
+    <span class="sb-by">${esc(s.createdByName||'')} 저장${
+      s.updatedAt?` · ${esc(fmtDT(s.updatedAt))} 수정`:''}</span>
+    ${mine ? '' : '<span class="sb-lock">🔒 다른 분 세트 — 복제해서 쓰세요</span>'}
+    <span style="margin-left:auto;display:inline-flex;gap:6px">
+      ${mine?`<button class="rm-modebtn" onclick="overwriteSet()">💾 덮어쓰기</button>`:''}
+      <button class="rm-modebtn" onclick="saveSetAs()">📄 새 이름으로</button>
+    </span>`;
+}
+
+function renderSets(){
+  const box = $I('tab-set'); if(!box) return;
+  const rows = SETS.map(s=>{
+    const mine = canEditSet(s);
+    const c = s.counts||{};
+    const when = s.updatedAt || s.createdAt;
+    return `<div class="set-card ${s.id===curSetId?'cur':''}">
+      <div class="set-main">
+        <div class="set-nm">${esc(s.name)}${s.id===curSetId?'<span class="set-cur">지금 작업 중</span>':''}</div>
+        <div class="set-meta">
+          ${esc(s.createdByName||'')} 저장${when?` · ${esc(fmtDT(when))}`:''}
+          ${s.updatedByName && s.updatedByName!==s.createdByName?` · 최근 수정 ${esc(s.updatedByName)}`:''}
+        </div>
+        <div class="set-cnt">
+          <span>선생님 <b>${c.staff||0}</b></span>
+          <span>교실 <b>${c.rooms||0}</b>${c.floors?` (${c.floors}층)`:''}</span>
+          <span>수업 <b>${c.lessons||0}</b></span>
+          <span>배치 <b>${c.placed||0}</b>칸</span>
+        </div>
+        ${s.note?`<div class="set-note">${esc(s.note)}</div>`:''}
+      </div>
+      <div class="set-act">
+        <button class="rm-modebtn" onclick="loadSet('${s.id}')">📂 불러오기</button>
+        <button class="rm-modebtn" onclick="duplicateSet('${s.id}')">⧉ 복제</button>
+        <button class="rm-modebtn" ${mine?'':'disabled title="만든 사람만 바꿀 수 있어요"'} onclick="renameSet('${s.id}')">✏️ 이름</button>
+        <button class="rm-modebtn" ${mine?'':'disabled title="만든 사람만 지울 수 있어요"'} onclick="deleteSet('${s.id}')">🗑 삭제</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="panel">
+      <div class="ptitle">💾 저장된 시간표 배정
+        <span style="margin-left:auto"><button class="rm-modebtn" onclick="saveSetAs()">💾 지금 내용을 새로 저장</button></span>
+      </div>
+      <div class="pdesc">
+        수업 가능 시간 · 교실 배치 · 수업 정의 · 배치를 <b>통째로 저장</b>합니다.
+        학기가 바뀌면 지난 세트를 불러와 조금만 고쳐 쓰시면 돼요.
+        <br><span style="color:var(--tl,#93A09A)">· 저장한 사람만 덮어쓰기·이름변경·삭제할 수 있습니다. 다른 분 세트는 <b>복제</b>해서 쓰세요.
+        <br>· 평면도 사진은 층마다 따로 보관되어 세트끼리 함께 씁니다.</span>
+      </div>
+      ${SETS.length ? `<div class="set-list">${rows}</div>`
+        : `<div class="empty"><div class="ico">💾</div><div class="t1">아직 저장된 시간표 배정이 없습니다</div>
+             <div>설정을 마친 뒤 <b>지금 내용을 새로 저장</b>을 눌러보세요.</div></div>`}
+    </div>`;
+}
 
 // ═══════════════════════════════════════════
 //  📅 시간표 보기 — 학년별 · 선생님별 · 교실별
@@ -2365,12 +2740,12 @@ async function loadLessons(){
     if(snap.exists() && Array.isArray(snap.data().lessons)) LESSONS = snap.data().lessons;
   } catch(e){ LESSONS = []; }
 }
-async function saveLessons(){
+async function saveLessons(silent){
   try {
     await setDoc(doc(db,'timetableLessons','main'), {
       lessons: LESSONS, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
     });
-    toast('저장했습니다 ✓');
+    if(!silent) toast('저장했습니다 ✓');
   } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
 }
 
@@ -2541,7 +2916,7 @@ async function loadPlacements(){
     if(snap.exists() && snap.data().placements) PLACEMENTS = snap.data().placements;
   } catch(e){ PLACEMENTS = {}; }
 }
-async function savePlacements(){
+async function savePlacements(silent){
   try {
     await setDoc(doc(db,'timetablePlacements','main'), {
       placements: PLACEMENTS, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
