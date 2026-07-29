@@ -380,6 +380,23 @@
   .pg-time{display:block;font-size:9.5px;color:var(--ts,#5A6560)}
   .pg-sub{display:block;font-size:9.5px;color:var(--tl,#93A09A);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pg-warn{position:absolute;top:2px;right:4px;font-size:9.5px;font-weight:800;color:var(--danger,#C0392B)}
+  /* 드래그 중 배경 — 선생님이 올 수 있는 시간(초록) / 못 오는 시간(빨강) */
+  .pg-avlayer{position:absolute;inset:0;pointer-events:none;z-index:1}
+  .pg-av{position:absolute;left:0;right:0}
+  .pg-av.ok{top:0;bottom:0;background:rgba(0,112,74,.07)}
+  .pg-av.no{background:repeating-linear-gradient(45deg,
+    rgba(192,57,43,.22) 0 7px, rgba(192,57,43,.10) 7px 14px);
+    border-top:1px solid rgba(192,57,43,.4);border-bottom:1px solid rgba(192,57,43,.4)}
+  /* 놓일 자리 미리보기 */
+  .pg-hint{position:absolute;left:3px;right:3px;z-index:4;pointer-events:none;
+    border:2px dashed var(--gm,#00704A);border-radius:7px;background:rgba(0,112,74,.12);
+    display:flex;align-items:flex-start;justify-content:center}
+  .pg-hint.bad{border-color:var(--danger,#C0392B);background:rgba(192,57,43,.16)}
+  .pg-hint span{font-size:10px;font-weight:800;color:var(--gm,#00704A);
+    background:var(--wh,#fff);border-radius:5px;padding:1px 6px;margin-top:-9px;white-space:nowrap}
+  .pg-hint.bad span{color:var(--danger,#C0392B)}
+  .picking .pg-card{opacity:.5}
+  .pg-card{z-index:2}
   .pg-ghost{position:fixed;z-index:9999;pointer-events:none;opacity:.85;
     border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.25);padding:6px 9px;
     background:var(--wh,#fff);border-left:4px solid var(--lc,#00704A)}
@@ -3318,6 +3335,53 @@ function unplacedFor(grade){
    ④ 같은 교실을 같은 시각에 다른 학년이 씀 (강당처럼) */
 function overlaps(aS, aE, bS, bE){ return aS < bE && bS < aE; }
 
+/* ── 시간표 틀 경계에 자석처럼 붙기 ──
+   블록의 시작·끝 근처면 그쪽으로 딱 붙고, 아니면 5분 격자에 맞춘다.
+   카드가 블록보다 길면 다음 칸을 넘어가며 자리를 차지한다. */
+const SNAP_TOL = 10;   // 이 분(分) 안쪽이면 경계에 붙는다
+function snapMinute(grade, day, rawMin, durMin){
+  const { blocks } = dayBlocks(grade, day);
+  // 칸 경계가 가까이 있으면 무조건 그쪽에 붙는다 (5분 격자보다 우선)
+  let best = null, bestD = SNAP_TOL + 1;
+  blocks.forEach(b=>{
+    [b.startMin, b.endMin].forEach(c=>{
+      // 앞머리를 경계에
+      let d = Math.abs(rawMin - c);
+      if(d <= SNAP_TOL && d < bestD){ best = c; bestD = d; }
+      // 꼬리를 경계에 (긴 수업이 칸 끝에 딱 맞게)
+      d = Math.abs(rawMin - (c - durMin));
+      if(d <= SNAP_TOL && d < bestD){ best = c - durMin; bestD = d; }
+    });
+  });
+  if(best !== null) return best;
+  return Math.round(rawMin / SNAP_MIN) * SNAP_MIN;   // 붙을 데가 없으면 5분 격자
+}
+
+/* ── 선생님이 못 오는 시간대 ──
+   AVAIL 은 5분 단위 시작점 모음이라, 이어진 것끼리 묶어 구간으로 만든다. */
+function blockedRanges(day, teacherUids){
+  const marks = new Set();
+  (teacherUids||[]).forEach(u=>{
+    const a = AVAIL[u];
+    if(a && a[day]) a[day].forEach(m=>marks.add(m));
+  });
+  if(!marks.size) return [];
+  const list = [...marks].sort((a,b)=>a-b);
+  const out = [];
+  let s = list[0], prev = list[0];
+  for(let i=1;i<list.length;i++){
+    if(list[i] - prev > SNAP_MIN){ out.push({s, e:prev+SNAP_MIN}); s = list[i]; }
+    prev = list[i];
+  }
+  out.push({s, e:prev+SNAP_MIN});
+  return out;
+}
+
+// 이 자리에 놓으면 선생님 불가 시간과 겹치나
+function hitsBlocked(day, teacherUids, startMin, durMin){
+  return blockedRanges(day, teacherUids).some(r=> overlaps(startMin, startMin+durMin, r.s, r.e));
+}
+
 function checkPlacement(grade, day, item, ignoreId){
   const problems = [];
   const l = LESSONS.find(x=>x.id===item.lessonId);
@@ -3469,7 +3533,9 @@ function drawPlaceBoard(){
         title="${esc(l.subject)} ${hm(c.startMin)}~${hm(c.startMin+c.durMin)}${probs.length?'\\n⚠ '+probs.map(p=>p.msg).join('\\n⚠ '):''}">
         <b>${esc(l.subject)}</b>
         <span class="pg-time">${hm(c.startMin)}~${hm(c.startMin+c.durMin)}</span>
-        ${c.durMin>=40?`<span class="pg-sub">${esc(teachers)}${room?' · '+esc(findRoomName(room)):''}</span>`:''}
+        ${c.durMin>=35?`<span class="pg-sub">👤 ${esc(teachers||'미배정')}</span>`:''}
+        ${c.durMin>=35&&room?`<span class="pg-sub">🚪 ${esc(findRoomName(room))}</span>`
+          :(c.durMin>=25?`<span class="pg-sub">${esc(teachers||'')}${room?' · '+esc(findRoomName(room)):''}</span>`:'')}
         ${probs.length?`<span class="pg-warn">⚠ ${probs.length}</span>`:''}
       </div>`;
     }).join('');
@@ -3531,6 +3597,7 @@ function bindPlaceDrag(startMin){
       e.preventDefault();
       drag = { mode:'new', lessonId:el.dataset.lesson, cardIdx:+el.dataset.idx,
         durMin:+el.dataset.dur, ghost:makeGhost(el) };
+      paintAvail(drag.lessonId);
     };
   });
   // 놓인 카드 → 옮기기
@@ -3543,8 +3610,33 @@ function bindPlaceDrag(startMin){
       drag = { mode:'move', pid, fromDay:day, lessonId:item.lessonId, cardIdx:item.cardIdx,
         durMin:item.durMin, ghost:makeGhost(el) };
       el.classList.add('dragging');
+      paintAvail(drag.lessonId);
     };
   });
+
+  // 드래그하는 동안 그 수업 선생님 기준으로 배경을 칠한다 (초록=가능, 빨강=불가)
+  function paintAvail(lessonId){
+    const l = LESSONS.find(x=>x.id===lessonId);
+    const uids = l ? (l.teacherUids||[]) : [];
+    board.querySelectorAll('.pg-col').forEach(col=>{
+      const day = col.dataset.day;
+      const { startMin:ds } = gradeRange(pgGrade);
+      let html = '<div class="pg-av ok"></div>';
+      blockedRanges(day, uids).forEach(r=>{
+        html += `<div class="pg-av no" style="top:${(r.s-ds)*PX_PER_MIN}px;height:${(r.e-r.s)*PX_PER_MIN}px"></div>`;
+      });
+      const layer = document.createElement('div');
+      layer.className = 'pg-avlayer';
+      layer.innerHTML = html;
+      col.appendChild(layer);
+    });
+    board.classList.add('picking');
+  }
+  function clearAvail(){
+    board.querySelectorAll('.pg-avlayer').forEach(l=>l.remove());
+    board.querySelectorAll('.pg-hint').forEach(l=>l.remove());
+    board.classList.remove('picking');
+  }
 
   function makeGhost(src){
     const g = src.cloneNode(true);
@@ -3559,15 +3651,39 @@ function bindPlaceDrag(startMin){
     if(!drag) return;
     drag.ghost.style.left = (e.clientX + 12) + 'px';
     drag.ghost.style.top  = (e.clientY - 10) + 'px';
-    // 어느 요일 칸 위인가
-    const col = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pg-col');
+
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const col = el ? el.closest('.pg-col') : null;
     board.querySelectorAll('.pg-col').forEach(c=>c.classList.toggle('over', c===col));
+    board.querySelectorAll('.pg-hint').forEach(x=>x.remove());
+    if(!col) return;
+
+    // 놓일 자리를 미리 보여준다 (자석처럼 붙은 결과 그대로)
+    const day = col.dataset.day;
+    const rect = col.getBoundingClientRect();
+    const raw = startMin + (e.clientY - rect.top) / PX_PER_MIN;
+    let min = snapMinute(pgGrade, day, raw, drag.durMin);
+    const b = dayBlocks(pgGrade, day);
+    const lo = b.blocks.length ? b.startMin : startMin;
+    const hi = b.blocks.length ? b.endMin : startMin + 600;
+    min = Math.max(lo, Math.min(min, hi - drag.durMin));
+    drag.preview = { day, min };
+
+    const l = LESSONS.find(x=>x.id===drag.lessonId);
+    const bad = hitsBlocked(day, l?(l.teacherUids||[]):[], min, drag.durMin);
+    const hint = document.createElement('div');
+    hint.className = 'pg-hint' + (bad ? ' bad' : '');
+    hint.style.top = (min - startMin) * PX_PER_MIN + 'px';
+    hint.style.height = drag.durMin * PX_PER_MIN + 'px';
+    hint.innerHTML = `<span>${hm(min)}~${hm(min+drag.durMin)}${bad?' · 불가 시간':''}</span>`;
+    col.appendChild(hint);
   };
 
   document.onmouseup = e=>{
     if(!drag) return;
     const d = drag; drag = null;
     d.ghost.remove();
+    clearAvail();
     board.querySelectorAll('.pg-col').forEach(c=>c.classList.remove('over'));
     board.querySelectorAll('.pg-card').forEach(c=>c.classList.remove('dragging'));
 
@@ -3585,10 +3701,20 @@ function bindPlaceDrag(startMin){
 
     const day = col.dataset.day;
     const rect = col.getBoundingClientRect();
-    let min = startMin + Math.round(((e.clientY - rect.top) / PX_PER_MIN) / SNAP_MIN) * SNAP_MIN;
+    const raw = startMin + (e.clientY - rect.top) / PX_PER_MIN;
+    let min = snapMinute(pgGrade, day, raw, d.durMin);
     // 하루 범위 안으로
     const { startMin:ds, endMin:de } = (function(){ const b = dayBlocks(pgGrade, day); return b.blocks.length? b : gradeRange(pgGrade); })();
     min = Math.max(ds, Math.min(min, de - d.durMin));
+
+    // 선생님이 불가로 둔 시간에는 놓을 수 없다
+    const lsn = LESSONS.find(x=>x.id===d.lessonId);
+    if(hitsBlocked(day, lsn?(lsn.teacherUids||[]):[], min, d.durMin)){
+      const names = (lsn?(lsn.teacherUids||[]):[]).map(u=>(TEACHERS.find(t=>t.uid===u)||{}).name).filter(Boolean).join(', ');
+      toast(`${names||'담당 선생님'}이(가) 이 시간을 불가로 두어 놓을 수 없습니다.`,'err');
+      renderPlace2();
+      return;
+    }
 
     if(d.mode==='move'){
       setPlaceList(pgGrade, d.fromDay, placeList(pgGrade,d.fromDay).filter(c=>c.id!==d.pid));
