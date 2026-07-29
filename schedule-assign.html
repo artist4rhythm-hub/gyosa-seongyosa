@@ -520,6 +520,16 @@
     border-radius:5px;padding:3px 7px;margin:0 3px 3px 0;line-height:1.2}
   .lc-slot.linked{outline:2px solid var(--goldd,#8A6410);outline-offset:-2px}
 
+  .tone-pick{display:inline-flex;align-items:center;gap:5px;margin-left:auto;flex-wrap:wrap}
+  .tone-lab{font-size:11px;color:var(--tl,#93A09A);font-weight:700}
+  .tone-btn{display:inline-flex;align-items:center;gap:5px;font-family:inherit;font-size:11.5px;
+    font-weight:700;padding:4px 9px;border:1px solid var(--ivd,#E3E1DA);border-radius:8px;
+    background:var(--wh,#fff);color:var(--ts,#5A6560);cursor:pointer}
+  .tone-btn:hover{border-color:var(--gm,#00704A)}
+  .tone-btn.on{border-color:var(--gm,#00704A);color:var(--gm,#00704A);background:var(--gp,#E8F3EF)}
+  .tone-dots{display:inline-flex;gap:2px}
+  .tone-dots i{width:7px;height:7px;border-radius:2px;display:block}
+
   .lesson-card{position:relative}
   .lc-dup{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:6px;
     border:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);color:var(--tl,#93A09A);
@@ -814,6 +824,7 @@
       <div class="lesson-stick">
         <button class="btn-p2" onclick="openLessonDlg()">+ 수업 추가</button>
         <span class="ls-hint" id="lesson-sum"></span>
+        <span class="tone-pick" id="tone-pick"></span>
       </div>
 
       <!-- 학년이 어느 부서 시간표를 쓰는지 -->
@@ -946,6 +957,7 @@ function guardSave(kind, nowCount){
   }
   const before = _lastCount[kind];
   // 원래 여럿 있던 것이 통째로 비면 실수일 가능성이 크다
+  if(kind === '배치') return true;   // 배치는 비우는 것도 정상이라 막지 않는다
   if(before != null && before >= 3 && nowCount === 0){
     toast(`${kind} 내용이 모두 비어 있어 저장하지 않았습니다. 새로고침 후 다시 시도해 주세요.`,'err');
     console.warn('[저장 차단] 빈 값 덮어쓰기 방지:', kind, before, '→', nowCount);
@@ -974,13 +986,56 @@ let GRADE_DEPT = {};
 let SETS = [];           // 저장된 세트 목록
 let curSetId = null;     // 지금 불러와 쓰고 있는 세트
 let curSetName = '';
-// 파스텔 24색 — 수업이 많아도 서로 구분되도록 색상환을 고르게 나눴다
-const LESSON_COLORS = [
-  '#7FB5A0','#8FB8E0','#E8A87C','#D9A0C0','#A79BD4','#7EBDC9',
-  '#E09B9B','#8FC49A','#D4B483','#B9A4D9','#7FC0B5','#E0A97C',
-  '#9BAEDD','#DDA0BC','#93C7A3','#CFAF7E','#A9C8DE','#C9A0D0',
-  '#8CC5B8','#E3B08A','#9FB3D9','#D3A5B8','#A6CBA0','#C7B78F'
-];
+/* 색상 톤 — 화면에서 골라 쓴다. 각 24색, 색상환을 고르게 나눠 서로 구분된다. */
+const COLOR_TONES = {
+  pastel: { name:'파스텔', desc:'연하고 부드러운 색', colors:[
+    '#7FB5A0','#8FB8E0','#E8A87C','#D9A0C0','#A79BD4','#7EBDC9',
+    '#E09B9B','#8FC49A','#D4B483','#B9A4D9','#7FC0B5','#E0A97C',
+    '#9BAEDD','#DDA0BC','#93C7A3','#CFAF7E','#A9C8DE','#C9A0D0',
+    '#8CC5B8','#E3B08A','#9FB3D9','#D3A5B8','#A6CBA0','#C7B78F' ]},
+  vivid: { name:'선명', desc:'또렷하게 구분되는 색', colors:[
+    '#1B9E77','#2E86C1','#E8710A','#C2185B','#6A3D9A','#0891B2',
+    '#D32F2F','#388E3C','#B8860B','#7B1FA2','#00897B','#E65100',
+    '#3949AB','#AD1457','#2E7D32','#8D6E00','#0277BD','#8E24AA',
+    '#00796B','#EF6C00','#283593','#C2185B','#43A047','#795548' ]},
+  earth: { name:'차분', desc:'눈이 편한 흙빛 계열', colors:[
+    '#6B8E7F','#7A8FA6','#B5896A','#A67C8C','#8C82A0','#6F94A0',
+    '#B07E7E','#7D9B7F','#A89070','#93869E','#6E948C','#B08A6B',
+    '#82909E','#A88296','#7F9B85','#9C8C6E','#8697A6','#9A82A0',
+    '#719189','#AE8B72','#7E88A0','#A08290','#84A07E','#9C9078' ]},
+  bright: { name:'밝게', desc:'환하고 산뜻한 색', colors:[
+    '#5FC9A8','#6FB3F2','#FFB067','#F58FC0','#B39DFF','#5FC7DE',
+    '#FF9A9A','#79D68C','#F2C46B','#C4A6FF','#5FD1C0','#FFA96B',
+    '#8FA9FF','#FF9CC7','#86DB9B','#E3BE72','#8CC4F2','#DA9FEB',
+    '#63D2BC','#FFBC84','#93A5FF','#EE9BB8','#9BDB8C','#DBC489' ]}
+};
+let COLOR_TONE = 'pastel';
+try { const t = localStorage.getItem('sa_tone'); if(t && COLOR_TONES[t]) COLOR_TONE = t; } catch(e){}
+let LESSON_COLORS = COLOR_TONES[COLOR_TONE].colors;
+
+window.setColorTone = function(tone){
+  if(!COLOR_TONES[tone]) return;
+  const oldColors = LESSON_COLORS.slice();
+  COLOR_TONE = tone;
+  LESSON_COLORS = COLOR_TONES[tone].colors;
+  try { localStorage.setItem('sa_tone', tone); } catch(e){}
+  // 이미 정해둔 색은 같은 자리의 새 톤 색으로 옮겨 준다 (수업끼리 구분은 그대로 유지)
+  let changed = 0;
+  LESSONS.forEach(l=>{
+    if(!l.color) return;
+    const i = oldColors.indexOf(l.color);
+    if(i >= 0){ l.color = LESSON_COLORS[i]; changed++; }
+  });
+  if(changed) saveLessons(true);
+  if(typeof dlgColor !== 'undefined'){
+    const j = oldColors.indexOf(dlgColor);
+    if(j >= 0) dlgColor = LESSON_COLORS[j];
+    if(document.getElementById('ld-colors')) renderColorPicker();
+  }
+  renderLessons();
+  if(curTab==='place') renderPlace2();
+  toast(`${COLOR_TONES[tone].name} 색으로 바꿨습니다`,'ok');
+};
 // 배경이 밝으면 진한 글자, 어두우면 흰 글자
 function inkOn(hex){
   const c = String(hex||'#7FB5A0').replace('#','');
@@ -996,12 +1051,24 @@ function tintOf(hex, alpha){
   const n = parseInt(c.length===3 ? c.split('').map(x=>x+x).join('') : c, 16);
   return `rgba(${(n>>16)&255}, ${(n>>8)&255}, ${n&255}, ${alpha})`;
 }
-// 색을 안 고른 예전 수업은 이름으로 항상 같은 색을 만들어 준다
+/* 색을 직접 고르지 않은 수업에 색을 나눠준다.
+   과목이 먼저 만들어진 순서대로 색상표를 차례로 쓰므로,
+   수업이 24개까지는 서로 겹치지 않는다.
+   (이름 해시로 정하면 몇 개만 있어도 같은 색이 나오는 일이 생긴다) */
 function autoLessonColor(name){
-  const s = String(name||'');
-  let n = 0;
-  for(let i=0;i<s.length;i++) n = (n*31 + s.charCodeAt(i)) >>> 0;
-  return LESSON_COLORS[n % LESSON_COLORS.length];
+  const nm = String(name||'').trim();
+  if(!nm) return LESSON_COLORS[0];
+  const seen = [];
+  for(const l of (LESSONS||[])){
+    const s = (l.subject||'').trim();
+    if(s && seen.indexOf(s) < 0) seen.push(s);
+  }
+  let i = seen.indexOf(nm);
+  if(i < 0){
+    // 아직 목록에 없는 이름(새로 만드는 중) — 뒤에 이어 붙인다
+    i = seen.length;
+  }
+  return LESSON_COLORS[i % LESSON_COLORS.length];
 }
 
 const GRADE_ORDER = {
@@ -2103,6 +2170,7 @@ let autoSaveOn = true;
 try { autoSaveOn = localStorage.getItem('sa_autosave') !== 'off'; } catch(e){}
 
 let _avTimer = null, _setTimer = null;
+let _dragging = false;   // 카드를 끌고 있는 동안엔 자동 저장을 미룬다
 let _saveState = 'idle';   // idle | pending | saving | saved | error
 
 function setSaveState(s, msg){
@@ -2138,6 +2206,7 @@ function scheduleAvailSave(){
 function scheduleSetSync(){
   if(!autoSaveOn || !curSetId) return;
   if(!dataReady || loadFailed) return;   // 불러오다 만 상태로 세트를 덮어쓰지 않는다
+  if(_dragging){ clearTimeout(_setTimer); _setTimer = setTimeout(scheduleSetSync, 800); return; }
   const s = SETS.find(x=>x.id===curSetId);
   if(!s || !canEditSet(s)) return;      // 남의 세트는 건드리지 않는다
   setSaveState('pending');
@@ -3424,6 +3493,15 @@ function renderLessons(){
   });
   list.innerHTML = html;
 
+  const tp = $I('tone-pick');
+  if(tp){
+    tp.innerHTML = `<span class="tone-lab">색상</span>` + Object.entries(COLOR_TONES).map(([k,v])=>
+      `<button class="tone-btn ${k===COLOR_TONE?'on':''}" onclick="setColorTone('${k}')" title="${esc(v.desc)}">
+        <span class="tone-dots">${v.colors.slice(0,4).map(c=>`<i style="background:${c}"></i>`).join('')}</span>
+        ${esc(v.name)}
+      </button>`).join('');
+  }
+
   const sum = $I('lesson-sum');
   if(sum){
     const cards = mine.reduce((n,l)=>n + bundleGroups(l.hours,l.bundle).length, 0);
@@ -4111,6 +4189,7 @@ function bindPlaceDrag(startMin){
       e.preventDefault();
       drag = { mode:'new', lessonId:el.dataset.lesson, cardIdx:+el.dataset.idx,
         durMin:+el.dataset.dur, ghost:makeGhost(el) };
+      _dragging = true;
       paintAvail(drag.lessonId);
     };
   });
@@ -4137,6 +4216,7 @@ function bindPlaceDrag(startMin){
       drag = { mode:'move', pid, fromDay:day, lessonId:item.lessonId, cardIdx:item.cardIdx,
         durMin:item.durMin, ghost:makeGhost(el) };
       el.classList.add('dragging');
+      _dragging = true;
       paintAvail(drag.lessonId);
     };
   });
@@ -4209,6 +4289,7 @@ function bindPlaceDrag(startMin){
   document.onmouseup = e=>{
     if(!drag) return;
     const d = drag; drag = null;
+    _dragging = false;
     d.ghost.remove();
     clearAvail();
     board.querySelectorAll('.pg-col').forEach(c=>c.classList.remove('over'));
