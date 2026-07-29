@@ -906,7 +906,8 @@
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, Timestamp }
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
+  collection, getDocs, query, where, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -925,6 +926,36 @@ const esc = s => (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;
 const ORGS = { jihyebit:'지혜빛', daniel:'다니엘 아마츠' };
 /* 수업별 색 — 같은 선생님이라도 과목이 다르면 색이 달라야
    "1학년은 국어가 이만큼이구나" 하고 한눈에 들어온다 */
+/* ── 데이터 보호 ──
+   불러오기가 끝나기 전이나, 불러오다 실패한 상태에서 저장이 나가면
+   서버에 있던 내용이 빈 값으로 덮여 사라진다. 그걸 막는다. */
+let dataReady = false;          // 처음 불러오기가 정상으로 끝났나
+let loadFailed = false;         // 불러오다 실패한 게 있나
+const _lastCount = {};          // 마지막으로 확인한 개수 (급격한 손실 감지용)
+
+let _applyingSet = false;   // 세트를 불러와 덮어쓰는 중
+function guardSave(kind, nowCount){
+  if(_applyingSet){ _lastCount[kind] = nowCount; return true; }
+  if(!dataReady){
+    console.warn('[저장 보류] 아직 불러오는 중입니다:', kind);
+    return false;
+  }
+  if(loadFailed){
+    toast('불러오기에 실패한 상태라 저장하지 않았습니다. 새로고침해 주세요.','err');
+    return false;
+  }
+  const before = _lastCount[kind];
+  // 원래 여럿 있던 것이 통째로 비면 실수일 가능성이 크다
+  if(before != null && before >= 3 && nowCount === 0){
+    toast(`${kind} 내용이 모두 비어 있어 저장하지 않았습니다. 새로고침 후 다시 시도해 주세요.`,'err');
+    console.warn('[저장 차단] 빈 값 덮어쓰기 방지:', kind, before, '→', nowCount);
+    return false;
+  }
+  _lastCount[kind] = nowCount;
+  return true;
+}
+function noteCount(kind, n){ _lastCount[kind] = n; }
+
 let PLACE2 = {};
 let pgFrameId = '';      // 지금 배치 중인 시간표 틀
 let pgGrade   = '';      // 지금 배치 중인 학년
@@ -1057,8 +1088,17 @@ onAuthStateChanged(auth, async user => {
     await loadGradeDept();
     renderSetBar();
     await loadLessons();
-    await loadPlacements();
     await loadPlace2();
+
+    // 여기까지 왔으면 불러오기가 끝났다 — 이제부터 저장을 허용한다
+    noteCount('교실 배치', (FLOORS||[]).length);
+    noteCount('수업 정의', (LESSONS||[]).length);
+    noteCount('배치', Object.keys(PLACE2||{}).length);
+    noteCount('편성 대상', (ASSIGN_UIDS||[]).length);
+    dataReady = true;
+    if(loadFailed){
+      toast('일부 내용을 불러오지 못했습니다. 새로고침 후 확인해 주세요.','err');
+    }
     computeBgBlocks();   // 저장된 배경 부서 적용
     recomputeRange();    // 시각 범위 계산
   } catch(e){
@@ -1116,6 +1156,7 @@ async function loadAssignStaff(){
 }
 
 async function saveAssignStaff(){
+  if(!guardSave('편성 대상', (ASSIGN_UIDS||[]).length)) return;
   if(window.touched) touched();
   try {
     await setDoc(doc(db,'timetables','assignStaff'), {
@@ -1829,7 +1870,7 @@ async function loadRooms(){
     const snap = await getDoc(doc(db,'timetableRooms','main'));
     if(snap.exists() && Array.isArray(snap.data().floors)) FLOORS = snap.data().floors;
     else FLOORS = [];
-  } catch(e){ FLOORS = []; }
+  } catch(e){ loadFailed = true; FLOORS = []; }
 
   // 층마다 보관된 사진을 붙인다 (예전에 한 문서에 같이 담겼던 것은 그대로 쓰고 옮겨준다)
   let needMigrate = false;
@@ -1847,6 +1888,7 @@ async function loadRooms(){
 }
 
 async function saveRooms(silent){
+  if(!guardSave('교실 배치', (FLOORS||[]).length)) return;
   if(window.touched) touched();
   try {
     // 사진은 빼고 저장 (사진은 층별 문서에 따로 들어 있다)
@@ -2082,6 +2124,7 @@ function setSaveState(s, msg){
 /* ① 수업 가능 시간 — 잠시 뒤 알아서 저장 */
 function scheduleAvailSave(){
   if(!autoSaveOn || !curTeacher) return;
+  if(!dataReady || loadFailed) return;
   setSaveState('pending');
   clearTimeout(_avTimer);
   _avTimer = setTimeout(async ()=>{
@@ -2094,6 +2137,7 @@ function scheduleAvailSave(){
 /* ② 열어둔 세트에도 함께 반영 */
 function scheduleSetSync(){
   if(!autoSaveOn || !curSetId) return;
+  if(!dataReady || loadFailed) return;   // 불러오다 만 상태로 세트를 덮어쓰지 않는다
   const s = SETS.find(x=>x.id===curSetId);
   if(!s || !canEditSet(s)) return;      // 남의 세트는 건드리지 않는다
   setSaveState('pending');
@@ -2343,6 +2387,10 @@ window.overwriteSet = async function(){
 };
 
 async function writeSet(setId, name, note, silent){
+  if(!dataReady || loadFailed){
+    toast('불러오기가 끝나지 않아 저장하지 않았습니다. 새로고침해 주세요.','err');
+    return;
+  }
   if(!silent) window.showLoading && window.showLoading('시간표 배정을 저장하는 중…');
   try {
     const snapshot = collectSetSnapshot();
@@ -2378,6 +2426,7 @@ window.loadSet = async function(id){
   const s = SETS.find(x=>x.id===id); if(!s) return;
   if(!confirm(`"${s.name}"을(를) 불러올까요?\n\n지금 화면의 설정은 이 세트 내용으로 바뀝니다.\n(저장해두지 않은 변경은 사라집니다)`)) return;
   window.showLoading && window.showLoading('불러오는 중…');
+  _applyingSet = true;
   try {
     const d = await getDoc(doc(db,'timetableSets',id));
     if(!d.exists()) throw new Error('세트를 찾을 수 없습니다');
@@ -2402,11 +2451,13 @@ window.loadSet = async function(id){
     await saveGradeDept();
 
     curSetId = id; curSetName = d.data().name || '';
+    _applyingSet = false;
     window.hideLoading && window.hideLoading();
     toast(`"${curSetName}" 불러왔습니다 ✓`,'ok');
     renderSetBar();
     showTab('avail');
   } catch(e){
+    _applyingSet = false;
     window.hideLoading && window.hideLoading();
     toast('불러오기 실패: '+(e.message||''),'err');
   }
@@ -3289,9 +3340,10 @@ async function loadLessons(){
   try {
     const snap = await getDoc(doc(db,'timetableLessons','main'));
     if(snap.exists() && Array.isArray(snap.data().lessons)) LESSONS = snap.data().lessons;
-  } catch(e){ LESSONS = []; }
+  } catch(e){ loadFailed = true; LESSONS = []; }
 }
 async function saveLessons(silent){
+  if(!guardSave('수업 정의', (LESSONS||[]).length)) return;
   if(window.touched) touched();
   try {
     await setDoc(doc(db,'timetableLessons','main'), {
@@ -3588,6 +3640,7 @@ function setPlaceList(grade, day, arr){
 }
 
 async function savePlace2(silent){
+  if(!guardSave('배치', Object.keys(PLACE2||{}).length)) return;
   if(window.touched) touched();
   try {
     await setDoc(doc(db,'timetablePlacements','v2'), {
