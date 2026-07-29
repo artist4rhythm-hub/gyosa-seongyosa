@@ -2414,7 +2414,7 @@ function canEditSet(s){
 function collectSetSnapshot(){
   return {
     assignStaff: ASSIGN_UIDS.slice(),
-    availability: JSON.parse(JSON.stringify(AVAIL || {})),
+    availability: availToPlain(),           // Set 은 그대로 저장되지 않으므로 배열로 바꾼다
     // 사진은 빼고 층 구성과 교실 도형만 (사진은 층별 문서에 그대로 있다)
     floors: (FLOORS||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!f.image })),
     lessons: JSON.parse(JSON.stringify(LESSONS || [])),
@@ -2493,7 +2493,15 @@ async function writeSet(setId, name, note, silent){
 /* ── 불러오기 ── */
 window.loadSet = async function(id){
   const s = SETS.find(x=>x.id===id); if(!s) return;
-  if(!confirm(`"${s.name}"을(를) 불러올까요?\n\n지금 화면의 설정은 이 세트 내용으로 바뀝니다.\n(저장해두지 않은 변경은 사라집니다)`)) return;
+  const c = s.counts || {};
+  const nowAv = Object.keys(AVAIL||{}).filter(u=>DAYS.some(d=>(AVAIL[u]||{})[d]&&AVAIL[u][d].size)).length;
+  if(!confirm(
+    `"${s.name}"을(를) 불러올까요?\n\n` +
+    `이 세트: 선생님 ${c.staff||0} · 교실 ${c.rooms||0} · 수업 ${c.lessons||0} · 배치 ${c.placed||0}칸\n\n` +
+    `지금 화면의 설정이 이 세트 내용으로 바뀝니다.\n` +
+    (nowAv ? `※ 지금 수업 가능 시간을 정해둔 선생님이 ${nowAv}분 있습니다.\n` +
+             `   이 세트에 가능 시간이 들어 있으면 그것으로 바뀝니다.\n\n` : '\n') +
+    `계속할까요?`)) return;
   window.showLoading && window.showLoading('불러오는 중…');
   _applyingSet = true;
   try {
@@ -2502,7 +2510,8 @@ window.loadSet = async function(id){
     const snap = d.data().snapshot || {};
 
     ASSIGN_UIDS = (snap.assignStaff||[]).filter(u=>TEACHERS.some(t=>t.uid===u));
-    AVAIL = JSON.parse(JSON.stringify(snap.availability||{}));
+    const _av = plainToAvail(snap.availability);
+    if(Object.keys(_av).length) AVAIL = _av;   // 세트에 들어 있을 때만 바꾼다
     LESSONS = JSON.parse(JSON.stringify(snap.lessons||[]));
     PLACE2 = JSON.parse(JSON.stringify(snap.place2||{}));
     GRADE_DEPT = JSON.parse(JSON.stringify(snap.gradeDept||{}));
@@ -2532,14 +2541,56 @@ window.loadSet = async function(id){
   }
 };
 
-// 선생님별 가능시간을 한꺼번에 저장 (불러오기 직후)
+/* 수업 가능 시간은 화면에서 Set 으로 다루는데, Set 은 그대로 저장되지 않는다.
+   세트에 담고 꺼낼 때 배열 ↔ Set 으로 바꿔준다. */
+function availToPlain(){
+  const out = {};
+  Object.keys(AVAIL||{}).forEach(uid=>{
+    const byDay = AVAIL[uid] || {};
+    out[uid] = {};
+    DAYS.forEach(dy=>{
+      const v = byDay[dy];
+      out[uid][dy] = v ? [...v].sort((a,b)=>a-b) : [];
+    });
+  });
+  return out;
+}
+function plainToAvail(plain){
+  const out = {};
+  Object.keys(plain||{}).forEach(uid=>{
+    const byDay = plain[uid] || {};
+    out[uid] = {};
+    DAYS.forEach(dy=>{
+      const v = byDay[dy];
+      out[uid][dy] = new Set(Array.isArray(v) ? v : []);
+    });
+  });
+  return out;
+}
+
+// 세트를 불러온 뒤, 선생님별 가능시간을 각자의 문서에 반영한다.
+//  · 저장하는 칸 이름을 화면이 읽는 것과 똑같이 맞춘다 (unavailable)
+//  · merge 로 저장해 문서의 다른 내용(메모 등)을 지우지 않는다
+//  · 세트에 가능시간이 없으면 아예 건드리지 않는다 (예전 세트를 불러와도 지워지지 않게)
 async function saveAllAvailability(){
-  const uids = new Set([...(ASSIGN_UIDS||[]), ...Object.keys(AVAIL||{})]);
-  for(const uid of uids){
+  const keys = Object.keys(AVAIL||{});
+  if(!keys.length) return;
+  for(const uid of keys){
+    const byDay = AVAIL[uid] || {};
+    const unavailable = {};
+    let any = false;
+    DAYS.forEach(dy=>{
+      const arr = byDay[dy] ? [...byDay[dy]].sort((a,b)=>a-b) : [];
+      unavailable[dy] = arr;
+      if(arr.length) any = true;
+    });
     try {
+      const t = TEACHERS.find(x=>x.uid===uid);
       await setDoc(doc(db,'teacherAvailability', uid), {
-        blocks: (AVAIL[uid]||{}), updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
-      });
+        uid, name: t?.name||'', org: t?.org||'',
+        unavailable, step: STEP, startMin: START_MIN, endMin: END_MIN,
+        updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
+      }, { merge:true });
     } catch(e){}
   }
 }
