@@ -555,6 +555,14 @@
   .sb-tag{font-size:13px;font-weight:800;color:var(--gd,#1E3932)}
   .sb-by{font-size:11.5px;color:var(--tl,#93A09A)}
   .sb-none{font-size:12.5px;color:var(--tl,#93A09A)}
+  .as-toggle{font-family:inherit;font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;
+    border:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);color:var(--tl,#93A09A);cursor:pointer}
+  .as-toggle.on{border-color:var(--gm,#00704A);color:var(--gm,#00704A);background:var(--gp,#E8F3EF)}
+  .save-state{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;min-width:0}
+  .save-state.edit{color:var(--goldd,#8A6410);background:var(--goldp,#F7EFD8)}
+  .save-state.busy{color:var(--info,#2563EB);background:var(--info-bg,#DBEAFE)}
+  .save-state.done{color:var(--gm,#00704A);background:var(--gp,#E8F3EF)}
+  .save-state.err{color:var(--danger,#C0392B);background:var(--danger-bg,#FDECEA)}
   .sb-lock{font-size:11.5px;font-weight:700;color:var(--goldd,#8A6410);
     background:var(--goldp,#F7EFD8);border-radius:7px;padding:2px 8px}
   .set-list{display:flex;flex-direction:column;gap:10px}
@@ -1098,6 +1106,7 @@ async function loadAssignStaff(){
 }
 
 async function saveAssignStaff(){
+  if(window.touched) touched();
   try {
     await setDoc(doc(db,'timetables','assignStaff'), {
       uids: ASSIGN_UIDS, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
@@ -1828,6 +1837,7 @@ async function loadRooms(){
 }
 
 async function saveRooms(silent){
+  if(window.touched) touched();
   try {
     // 사진은 빼고 저장 (사진은 층별 문서에 따로 들어 있다)
     const light = FLOORS.map(f => ({
@@ -2031,6 +2041,81 @@ window.deleteFloor = function(){
 
 
 /* ═══════════════════════════════════════════
+   💾 자동 저장
+   교실 배치·수업 정의·배치는 원래 고칠 때마다 곧바로 저장된다.
+   여기서 하는 일은 두 가지.
+     ① 수업 가능 시간 — 저장 버튼을 안 눌러도 잠시 뒤 알아서 저장
+     ② 열어둔 세트 — 내가 만든 세트라면, 어느 탭에서 고쳤든 그 세트에도 함께 반영
+   ═══════════════════════════════════════════ */
+let autoSaveOn = true;
+try { autoSaveOn = localStorage.getItem('sa_autosave') !== 'off'; } catch(e){}
+
+let _avTimer = null, _setTimer = null;
+let _saveState = 'idle';   // idle | pending | saving | saved | error
+
+function setSaveState(s, msg){
+  _saveState = s;
+  const el = $I('save-state'); if(!el) return;
+  const map = {
+    idle:   ['', ''],
+    pending:['edit', '고친 내용 있음'],
+    saving: ['busy', '저장하는 중…'],
+    saved:  ['done', '저장됨'],
+    error:  ['err',  msg || '저장 실패']
+  };
+  const [cls, txt] = map[s] || map.idle;
+  el.className = 'save-state ' + cls;
+  el.textContent = txt;
+  if(s==='saved'){ clearTimeout(el._t); el._t = setTimeout(()=>{ if(_saveState==='saved') setSaveState('idle'); }, 2600); }
+}
+
+/* ① 수업 가능 시간 — 잠시 뒤 알아서 저장 */
+function scheduleAvailSave(){
+  if(!autoSaveOn || !curTeacher) return;
+  setSaveState('pending');
+  clearTimeout(_avTimer);
+  _avTimer = setTimeout(async ()=>{
+    setSaveState('saving');
+    try { await saveAvail(true); setSaveState('saved'); }
+    catch(e){ setSaveState('error', e.message); }
+  }, 1200);
+}
+
+/* ② 열어둔 세트에도 함께 반영 */
+function scheduleSetSync(){
+  if(!autoSaveOn || !curSetId) return;
+  const s = SETS.find(x=>x.id===curSetId);
+  if(!s || !canEditSet(s)) return;      // 남의 세트는 건드리지 않는다
+  setSaveState('pending');
+  clearTimeout(_setTimer);
+  _setTimer = setTimeout(async ()=>{
+    setSaveState('saving');
+    try {
+      await writeSet(curSetId, s.name, s.note||'', true);
+      setSaveState('saved');
+    } catch(e){ setSaveState('error', e.message); }
+  }, 2500);
+}
+
+// 어느 탭에서 고쳤든 이걸 부르면 된다
+function touched(){ scheduleSetSync(); }
+window.touched = touched;
+
+window.toggleAutoSave = function(){
+  autoSaveOn = !autoSaveOn;
+  try { localStorage.setItem('sa_autosave', autoSaveOn ? 'on' : 'off'); } catch(e){}
+  toast(autoSaveOn ? '자동 저장을 켰습니다' : '자동 저장을 껐습니다 — 직접 저장해 주세요', 'ok');
+  renderSetBar();
+};
+
+// 페이지를 떠나기 전에 아직 안 끝난 저장이 있으면 알린다
+window.addEventListener('beforeunload', e=>{
+  if(_saveState==='pending' || _saveState==='saving'){
+    e.preventDefault(); e.returnValue = '';
+  }
+});
+
+/* ═══════════════════════════════════════════
    🏷️ 학년이 어느 부서 시간표를 쓰는지
    시간표 틀은 부서(초등부·중고등부…) 단위로 만들어져 있고,
    배치는 학년별로 한다. 그 사이를 이어주는 표.
@@ -2046,6 +2131,7 @@ async function loadGradeDept(){
 }
 
 async function saveGradeDept(){
+  if(window.touched) touched();
   try {
     await setDoc(doc(db,'timetables','gradeDept'), {
       map: GRADE_DEPT, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
@@ -2209,7 +2295,6 @@ function collectSetSnapshot(){
     // 사진은 빼고 층 구성과 교실 도형만 (사진은 층별 문서에 그대로 있다)
     floors: (FLOORS||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!f.image })),
     lessons: JSON.parse(JSON.stringify(LESSONS || [])),
-    placements: JSON.parse(JSON.stringify(PLACEMENTS || {})),
     place2: JSON.parse(JSON.stringify(PLACE2 || {})),          // 시각 기반 배치
     gradeDept: JSON.parse(JSON.stringify(GRADE_DEPT || {}))    // 학년별 부서
   };
@@ -2247,8 +2332,8 @@ window.overwriteSet = async function(){
   await writeSet(s.id, s.name, s.note||'');
 };
 
-async function writeSet(setId, name, note){
-  window.showLoading && window.showLoading('시간표 배정을 저장하는 중…');
+async function writeSet(setId, name, note, silent){
+  if(!silent) window.showLoading && window.showLoading('시간표 배정을 저장하는 중…');
   try {
     const snapshot = collectSetSnapshot();
     const counts = setCounts(snapshot);
@@ -2266,7 +2351,7 @@ async function writeSet(setId, name, note){
     curSetId = id; curSetName = name;
     await loadSets();
     window.hideLoading && window.hideLoading();
-    toast(`"${name}" 저장했습니다 ✓`,'ok');
+    if(!silent) toast(`"${name}" 저장했습니다 ✓`,'ok');
     if(curTab==='set') renderSets();
     renderSetBar();
   } catch(e){
@@ -2291,7 +2376,6 @@ window.loadSet = async function(id){
     ASSIGN_UIDS = (snap.assignStaff||[]).filter(u=>TEACHERS.some(t=>t.uid===u));
     AVAIL = JSON.parse(JSON.stringify(snap.availability||{}));
     LESSONS = JSON.parse(JSON.stringify(snap.lessons||[]));
-    PLACEMENTS = JSON.parse(JSON.stringify(snap.placements||{}));
     PLACE2 = JSON.parse(JSON.stringify(snap.place2||{}));
     GRADE_DEPT = JSON.parse(JSON.stringify(snap.gradeDept||{}));
     FLOORS = (snap.floors||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage:!!f.hasImage, image:'' }));
@@ -2304,7 +2388,6 @@ window.loadSet = async function(id){
     await saveAllAvailability();
     await saveRooms(true);
     await saveLessons(true);
-    await savePlacements(true);
     await savePlace2(true);
     await saveGradeDept();
 
@@ -2392,9 +2475,14 @@ window.deleteSet = async function(id){
 function renderSetBar(){
   const bar = $I('set-bar'); if(!bar) return;
   const s = SETS.find(x=>x.id===curSetId);
+  const auto = `<button class="as-toggle ${autoSaveOn?'on':''}" onclick="toggleAutoSave()"
+      title="${autoSaveOn?'자동 저장이 켜져 있습니다':'자동 저장이 꺼져 있습니다'}">${autoSaveOn?'⟳ 자동 저장 켬':'⏸ 자동 저장 끔'}</button>
+    <span class="save-state" id="save-state"></span>`;
+
   if(!s){
     bar.className = 'set-bar';
-    bar.innerHTML = `<span class="sb-none">아직 저장하지 않은 작업입니다</span>
+    bar.innerHTML = `<span class="sb-none">아직 저장하지 않은 작업입니다 — 고친 내용은 그때그때 서버에 남습니다</span>
+      ${auto}
       <button class="rm-modebtn" style="margin-left:auto" onclick="saveSetAs()">💾 이름 붙여 저장</button>`;
     return;
   }
@@ -2404,9 +2492,9 @@ function renderSetBar(){
     <span class="sb-tag">💾 ${esc(s.name)}</span>
     <span class="sb-by">${esc(s.createdByName||'')} 저장${
       s.updatedAt?` · ${esc(fmtDT(s.updatedAt))} 수정`:''}</span>
-    ${mine ? '' : '<span class="sb-lock">🔒 다른 분 세트 — 복제해서 쓰세요</span>'}
-    <span style="margin-left:auto;display:inline-flex;gap:6px">
-      ${mine?`<button class="rm-modebtn" onclick="overwriteSet()">💾 덮어쓰기</button>`:''}
+    ${mine ? auto : '<span class="sb-lock">🔒 다른 분 세트 — 복제해서 쓰세요</span>'}
+    <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center">
+      ${mine?`<button class="rm-modebtn" onclick="overwriteSet()">💾 지금 저장</button>`:''}
       <button class="rm-modebtn" onclick="saveSetAs()">📄 새 이름으로</button>
     </span>`;
 }
@@ -2450,6 +2538,8 @@ function renderSets(){
         수업 가능 시간 · 교실 배치 · 수업 정의 · 배치를 <b>통째로 저장</b>합니다.
         학기가 바뀌면 지난 세트를 불러와 조금만 고쳐 쓰시면 돼요.
         <br><span style="color:var(--tl,#93A09A)">· 저장한 사람만 덮어쓰기·이름변경·삭제할 수 있습니다. 다른 분 세트는 <b>복제</b>해서 쓰세요.
+        <br>· <b>어느 탭에서 고치든 한꺼번에</b> 담깁니다 — 수업 가능 시간 · 교실 배치 · 수업 정의 · 배치 · 학년별 부서까지.
+        <br>· 자동 저장이 켜져 있으면, 내가 만든 세트는 고칠 때마다 알아서 갱신됩니다.
         <br>· 평면도 사진은 층마다 따로 보관되어 세트끼리 함께 씁니다.</span>
       </div>
       ${SETS.length ? `<div class="set-list">${rows}</div>`
@@ -2492,36 +2582,26 @@ function periodsOf(frameId, deptId, dy){
   return periods;
 }
 
-/* 선택한 틀의 모든 배치를 평평하게 수집 */
+/* 선택한 틀에 놓인 배치를 모두 모은다 (배치 탭에서 만든 그대로) */
 function tvCollect(){
   const out = [];
-  const f = FRAMES.find(x=>x.id===tvFrameId);
-  if(!f || !f.snapshot) return out;
-  const depts = f.snapshot.departments || [];
-
-  depts.forEach(dept=>{
-    const key = `${tvFrameId}::${dept.id}`;
-    const pl = PLACEMENTS[key];
-    if(!pl) return;
+  const byGrade = PLACE2[tvFrameId] || {};
+  Object.keys(byGrade).forEach(grade=>{
+    const deptId = deptOfGrade(tvFrameId, grade);
+    const f = FRAMES.find(x=>x.id===tvFrameId);
+    const dept = f && f.snapshot ? (f.snapshot.departments||[]).find(d=>d.id===deptId) : null;
     DAYS.forEach(dy=>{
-      const byP = pl[dy]; if(!byP) return;
-      const periods = periodsOf(tvFrameId, dept.id, dy);
-      Object.keys(byP).forEach(pnoStr=>{
-        const cell = byP[pnoStr]; if(!cell) return;
-        const pno  = Number(pnoStr);
-        const p    = periods[pno-1]; if(!p) return;
-        const les  = LESSONS.find(l=>l.id===cell.lessonId); if(!les) return;
-        // 연강이면 끝 시각을 뒤 교시까지 늘림
-        const size = Math.max(1, Number(cell.size)||1);
-        const last = periods[pno-1+size-1] || p;
+      (byGrade[grade][dy] || []).forEach(c=>{
+        const les = LESSONS.find(l=>l.id===c.lessonId); if(!les) return;
         out.push({
-          day: dy, startMin: p.startMin, endMin: last.endMin,
-          periodNo: pno, size,
-          deptId: dept.id, deptName: dept.name || '',
+          day: dy, startMin: c.startMin, endMin: c.startMin + c.durMin,
+          size: 1,
+          deptId: deptId || '', deptName: dept ? dept.name : '',
+          grade,
           lesson: les,
-          grades: les.grades || [],
+          grades: [grade],
           teacherUids: les.teacherUids || [],
-          roomId: les.roomId || ''
+          roomId: c.roomId || les.roomId || ''
         });
       });
     });
@@ -3202,6 +3282,7 @@ async function loadLessons(){
   } catch(e){ LESSONS = []; }
 }
 async function saveLessons(silent){
+  if(window.touched) touched();
   try {
     await setDoc(doc(db,'timetableLessons','main'), {
       lessons: LESSONS, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
@@ -3491,6 +3572,7 @@ function setPlaceList(grade, day, arr){
 }
 
 async function savePlace2(silent){
+  if(window.touched) touched();
   try {
     await setDoc(doc(db,'timetablePlacements','v2'), {
       placements: PLACE2, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
@@ -4090,14 +4172,15 @@ window.copyMonToAll = function(){
   toast('월요일 설정을 모든 요일에 복사했어요');
 };
 
-function markDirty(){ dirty=true; updateSaveNote(); }
+function markDirty(){ dirty=true; updateSaveNote();   if(window.scheduleAvailSave) scheduleAvailSave();
+}
 function updateSaveNote(){
   const note=$I('save-note'); if(!note) return;
   if(dirty){ note.textContent='● 저장하지 않은 변경사항이 있습니다'; note.classList.add('dirty'); }
   else { note.textContent='모든 변경사항이 저장되었습니다.'; note.classList.remove('dirty'); }
 }
 
-window.saveAvail = async function(){
+window.saveAvail = async function(silent){
   if(!curTeacher) return;
   const a = AVAIL[curTeacher];
   const unavailable = {};
@@ -4111,9 +4194,10 @@ window.saveAvail = async function(){
       updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'',
     }, {merge:true});
     dirty=false; updateSaveNote(); renderTeacherList();
-    toast('저장했습니다 ✓');
+    if(!silent) toast('저장했습니다 ✓');
   }catch(e){
     toast('저장 실패: '+(e.message||''));
+    throw e;
   }
 };
 
