@@ -380,6 +380,43 @@
   .pg-time{display:block;font-size:9.5px;color:var(--ts,#5A6560)}
   .pg-sub{display:block;font-size:9.5px;color:var(--tl,#93A09A);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pg-warn{position:absolute;top:2px;right:4px;font-size:9.5px;font-weight:800;color:var(--danger,#C0392B)}
+  /* 공통 모달 (카드 자세히 보기 등) */
+  .mov{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+  .mbk{position:absolute;inset:0;background:rgba(15,25,21,.45)}
+  .mbox{position:relative;z-index:1;width:100%;max-width:520px;max-height:88vh;overflow:auto;
+    background:var(--wh,#fff);border-radius:16px;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.28)}
+  .mtitle{font-size:18px;font-weight:800;color:var(--gd,#1E3932);letter-spacing:-.02em}
+  .msub{font-size:12.5px;color:var(--tl,#93A09A);margin-top:4px}
+  .mact{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:14px;
+    border-top:1px solid var(--ivd,#E3E1DA)}
+  .mact .bp{background:var(--gm,#00704A);color:#fff;border:none;border-radius:9px;
+    padding:9px 18px;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+  .mact .bs{background:var(--wh,#fff);color:var(--gm,#00704A);border:1.5px solid var(--gm,#00704A);
+    border-radius:9px;padding:9px 16px;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+
+  /* 카드 자세히 보기 */
+  .pg-info{position:absolute;bottom:2px;right:3px;width:16px;height:16px;line-height:1;
+    border-radius:50%;border:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);
+    color:var(--tl,#93A09A);font-size:10px;font-weight:800;cursor:pointer;padding:0;z-index:3}
+  .pg-info:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
+  .pg-card.thin .pg-info{bottom:1px;width:14px;height:14px;font-size:9px}
+  .ci-box{background:var(--iv,#F2F0EB);border-radius:10px;padding:10px 13px;margin:12px 0}
+  .ci-row{display:flex;gap:10px;font-size:13px;padding:3px 0}
+  .ci-row span{color:var(--tl,#93A09A);min-width:44px}
+  .ci-row b{color:var(--gd,#1E3932);font-weight:700}
+  .ci-probs{background:var(--danger-bg,#FDECEA);color:var(--danger,#C0392B);border-radius:9px;
+    padding:9px 12px;font-size:12.5px;line-height:1.7;font-weight:700}
+  .ci-good{background:var(--gp,#E8F3EF);color:var(--gm,#00704A);border-radius:9px;
+    padding:9px 12px;font-size:12.5px;font-weight:700}
+  .ci-sec{font-size:12.5px;font-weight:800;color:var(--gm,#00704A);margin:14px 0 7px}
+  .ci-t{border:1px solid var(--ivd,#E3E1DA);border-radius:9px;padding:9px 12px;margin-bottom:7px}
+  .ci-tn{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;color:var(--gd,#1E3932)}
+  .ci-dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .ci-tl{margin-top:5px}
+  .ci-line{font-size:12px;color:var(--ts,#5A6560);line-height:1.7}
+  .ci-line.ok{color:var(--gm,#00704A)}
+  .ci-line.bad{color:var(--danger,#C0392B);font-weight:700}
+
   /* 드래그 중 배경 — 선생님이 올 수 있는 시간(초록) / 못 오는 시간(빨강) */
   .pg-avlayer{position:absolute;inset:0;pointer-events:none;z-index:1}
   .pg-av{position:absolute;left:0;right:0}
@@ -768,6 +805,10 @@
         <div style="flex:1">
           <label class="fld-label">1회 길이 <span style="font-weight:400;color:var(--tl)">(분)</span></label>
           <input type="number" id="ld-dur" class="fld-input" min="5" max="180" step="5" value="50">
+        </div>
+        <div style="flex:1">
+          <label class="fld-label">연강 사이 쉼 <span style="font-weight:400;color:var(--tl)">(분)</span></label>
+          <input type="number" id="ld-brk" class="fld-input" min="0" max="30" step="5" value="5">
         </div>
         <div style="flex:1">
           <label class="fld-label">묶음 크기 <span style="font-weight:400;color:var(--tl)">(연강)</span></label>
@@ -1560,6 +1601,67 @@ window.togglePMark = function(idx, dy, pno){
 };
 window.onSetTitle = function(idx, v){ const s=memosOf()[idx]; if(s){ s.title=v; markDirty(); } };
 window.onSetNote  = function(idx, v){ const s=memosOf()[idx]; if(s){ s.note=v; markDirty(); } };
+
+function bindGridEvents(){
+  const grid = $I('av-grid'); if(!grid) return;
+
+  const applyToCell = (el)=>{
+    if(!el || !el.classList || !el.classList.contains('av-slot')) return;
+    const dy = el.dataset.day; const m = Number(el.dataset.m);
+    if(dy===undefined || Number.isNaN(m)) return;
+    const set = AVAIL[curTeacher][dy];
+    if(paintMode==='no'){ set.add(m); el.classList.remove('ok'); el.classList.add('no'); }
+    else { set.delete(m); el.classList.remove('no'); el.classList.add('ok'); }
+    markDirty();
+  };
+  const slotAt = (x, y)=>{
+    const el = document.elementFromPoint(x, y);
+    if(!el) return null;
+    return el.classList.contains('av-slot') ? el : el.closest('.av-slot');
+  };
+
+  // 두 점 사이를 촘촘히 보간해서 중간 셀도 모두 칠함 (드래그 빠져도 연속 적용)
+  const paintLine = (x1,y1,x2,y2)=>{
+    const dist = Math.hypot(x2-x1, y2-y1);
+    const steps = Math.max(1, Math.ceil(dist/6));   // 6px 간격
+    for(let i=0;i<=steps;i++){
+      const x = x1 + (x2-x1)*i/steps;
+      const y = y1 + (y2-y1)*i/steps;
+      applyToCell(slotAt(x,y));
+    }
+  };
+
+  const startPaint = (x,y)=>{
+    const el = slotAt(x,y); if(!el) return false;
+    painting = true;
+    const dy=el.dataset.day, m=Number(el.dataset.m);
+    paintMode = AVAIL[curTeacher][dy].has(m) ? 'ok' : 'no';   // 시작 칸 반대로 토글
+    applyToCell(el);
+    lastPt = {x,y};
+    return true;
+  };
+  const movePaint = (x,y)=>{
+    if(!painting) return;
+    if(lastPt) paintLine(lastPt.x, lastPt.y, x, y);
+    else applyToCell(slotAt(x,y));
+    lastPt = {x,y};
+  };
+
+  // 마우스
+  grid.addEventListener('mousedown', e=>{
+    if(startPaint(e.clientX, e.clientY)) e.preventDefault();
+  });
+  window.addEventListener('mousemove', e=>{
+    if(painting){ movePaint(e.clientX, e.clientY); e.preventDefault(); }
+  });
+  // 터치
+  grid.addEventListener('touchstart', e=>{
+    const t=e.touches[0]; if(startPaint(t.clientX, t.clientY)) e.preventDefault();
+  }, {passive:false});
+  window.addEventListener('touchmove', e=>{
+    if(painting){ const t=e.touches[0]; movePaint(t.clientX, t.clientY); e.preventDefault(); }
+  }, {passive:false});
+}
 
 // 가능/불가를 글로 정리 (연속 구간 병합)
 function renderSummary(){
@@ -3080,7 +3182,7 @@ function renderLessons(){
       const dur = Number(l.durMin)||50;
       // 카드 한 장이 실제로 몇 분인지 그대로 보여준다 (길이만큼 폭도 다르게)
       const cardChips = groups.map(sz=>{
-        const m = dur*sz;
+        const m = cardMinutes(l, sz);
         return `<span class="lc-slot ${sz>1?'linked':''}" style="min-width:${Math.max(30, Math.round(m*0.62))}px"
           title="${m}분">${m}</span>`;
       }).join('');
@@ -3137,6 +3239,7 @@ window.openLessonDlg = function(id){
   $I('ld-hours').value = l ? (l.hours||3) : 3;
   $I('ld-bundle').value = l ? (l.bundle||1) : 1;
   $I('ld-dur').value = l ? (l.durMin||50) : 50;
+  $I('ld-brk').value = l ? (l.linkBreak!=null ? l.linkBreak : 5) : 5;
   dlgColor = l ? (l.color || autoLessonColor(l.subject)) : LESSON_COLORS[0];
   dlgGrades = new Set(l ? (l.grades||[]) : []);
   dlgTeachers = new Set(l ? (l.teacherUids||[]) : []);
@@ -3163,6 +3266,7 @@ window.openLessonDlg = function(id){
   $I('ld-hours').oninput = updateBundlePreview;
   $I('ld-bundle').onchange = updateBundlePreview;
   $I('ld-dur').oninput = updateBundlePreview;
+  $I('ld-brk').oninput = updateBundlePreview;
   $I('ld-subject').oninput = ()=>{ if(!editingLessonId) renderColorPicker(); };
   const delBtn = $I('ld-del'); if(delBtn) delBtn.style.display = editingLessonId ? '' : 'none';
   $I('lesson-dlg').style.display = 'flex';
@@ -3196,10 +3300,12 @@ function updateBundlePreview(){
   const groups = bundleGroups(h, b);
   const subject = ($I('ld-subject')?.value||'').trim() || '수업';
   // 실제 시간표에 놓일 카드 모습 그대로 (색·길이 반영)
+  const brk = Number($I('ld-brk')?.value);
   const chips = groups.map(sz=>{
-    const m = dur*sz;
+    const b = isNaN(brk) ? 5 : brk;
+    const m = dur*sz + b*(sz-1);
     return `<span class="bp-card" style="--c:${dlgColor}">
-      <b>${esc(subject)}</b><span>${m}분${sz>1?` · ${sz}시수 연강`:''}</span></span>`;
+      <b>${esc(subject)}</b><span>${m}분${sz>1?` · ${sz}연강 (쉼 ${b}분 포함)`:''}</span></span>`;
   }).join('');
   $I('ld-preview').innerHTML = groups.length
     ? `<div style="font-size:11.5px;color:var(--ts);margin-bottom:6px">→ 시간표에 카드 ${groups.length}장이 놓입니다 (주 ${dur*h}분)</div>
@@ -3216,6 +3322,7 @@ window.saveLessonDlg = function(){
     hours: Number($I('ld-hours').value)||1,
     bundle: Number($I('ld-bundle').value)||1,
     durMin: Number($I('ld-dur').value)||50,   // 1회 수업 길이
+    linkBreak: (function(){ const v=Number($I('ld-brk').value); return isNaN(v)?5:v; })(),  // 연강 사이 쉼
     color: dlgColor,                           // 시간표에 보일 색
     roomId: $I('ld-room').value || '',
   };
@@ -3322,10 +3429,20 @@ function unplacedFor(grade){
     bundleGroups(l.hours, l.bundle).forEach((sz, idx)=>{
       if(placed.has(l.id+'#'+idx)) return;
       out.push({ lessonId:l.id, cardIdx:idx, size:sz,
-        durMin:(Number(l.durMin)||50)*sz, lesson:l });
+        durMin: cardMinutes(l, sz), lesson:l });
     });
   });
   return out;
+}
+
+/* 연강 카드의 실제 길이 — 붙여서 하는 수업 사이에 쉬는 시간을 넣어준다.
+   40분 수업 2연강이면 40 + 5(쉼) + 40 = 85분 자리를 차지한다. */
+const LINK_BREAK = 5;   // 연강 사이 쉬는 시간(분)
+function cardMinutes(lesson, size){
+  const d = Number(lesson.durMin)||50;
+  const n = Math.max(1, Number(size)||1);
+  const brk = (lesson.linkBreak!=null) ? Number(lesson.linkBreak) : LINK_BREAK;
+  return d*n + brk*(n-1);
 }
 
 /* ── 충돌 검사 ──
@@ -3528,15 +3645,18 @@ function drawPlaceBoard(){
       const probs = checkPlacement(pgGrade, dy, c, c.id);
       const room = c.roomId || l.roomId || '';
       const teachers = (l.teacherUids||[]).map(u=>(TEACHERS.find(t=>t.uid===u)||{}).name).filter(Boolean).join(', ');
-      return `<div class="pg-card ${probs.length?'bad':''}" data-pid="${c.id}" data-day="${dy}"
+      const roomName = room ? findRoomName(room) : '';
+      const tall = c.durMin >= 35;
+      return `<div class="pg-card ${probs.length?'bad':''} ${tall?'':'thin'}" data-pid="${c.id}" data-day="${dy}"
         style="top:${(c.startMin-startMin)*PX_PER_MIN}px;height:${c.durMin*PX_PER_MIN}px;--lc:${lessonColor(l)}"
-        title="${esc(l.subject)} ${hm(c.startMin)}~${hm(c.startMin+c.durMin)}${probs.length?'\\n⚠ '+probs.map(p=>p.msg).join('\\n⚠ '):''}">
+        title="${esc(l.subject)} ${hm(c.startMin)}~${hm(c.startMin+c.durMin)}\n👤 ${esc(teachers||'미배정')}${roomName?'\n🚪 '+esc(roomName):''}${probs.length?'\n⚠ '+probs.map(p=>p.msg).join('\n⚠ '):''}">
         <b>${esc(l.subject)}</b>
         <span class="pg-time">${hm(c.startMin)}~${hm(c.startMin+c.durMin)}</span>
-        ${c.durMin>=35?`<span class="pg-sub">👤 ${esc(teachers||'미배정')}</span>`:''}
-        ${c.durMin>=35&&room?`<span class="pg-sub">🚪 ${esc(findRoomName(room))}</span>`
-          :(c.durMin>=25?`<span class="pg-sub">${esc(teachers||'')}${room?' · '+esc(findRoomName(room)):''}</span>`:'')}
+        ${tall
+          ? `<span class="pg-sub">👤 ${esc(teachers||'미배정')}</span>${roomName?`<span class="pg-sub">🚪 ${esc(roomName)}</span>`:''}`
+          : `<span class="pg-sub">${esc(teachers||'미배정')}${roomName?' · '+esc(roomName):''}</span>`}
         ${probs.length?`<span class="pg-warn">⚠ ${probs.length}</span>`:''}
+        <button class="pg-info" onmousedown="event.stopPropagation()" onclick="event.stopPropagation();openCardInfo('${dy}','${c.id}')" title="자세히 보기">i</button>
       </div>`;
     }).join('');
 
@@ -3585,6 +3705,74 @@ function drawPlaceBoard(){
 
   bindPlaceDrag(startMin);
 }
+
+/* ── 카드 자세히 보기 — 담당 선생님의 수업 조건까지 함께 ── */
+window.openCardInfo = function(day, pid){
+  const c = placeList(pgGrade, day).find(x=>x.id===pid); if(!c) return;
+  const l = LESSONS.find(x=>x.id===c.lessonId); if(!l) return;
+  const probs = checkPlacement(pgGrade, day, c, c.id);
+  const roomName = (c.roomId||l.roomId) ? findRoomName(c.roomId||l.roomId) : '';
+
+  // 담당 선생님별 그날 사정
+  const tRows = (l.teacherUids||[]).map(uid=>{
+    const t = TEACHERS.find(x=>x.uid===uid);
+    const ranges = blockedRanges(day, [uid]);
+    const hit = ranges.filter(r=> overlaps(c.startMin, c.startMin+c.durMin, r.s, r.e));
+    // 그날 다른 학년에서 맡은 수업
+    const others = [];
+    Object.keys(PLACE2[pgFrameId]||{}).forEach(g=>{
+      (PLACE2[pgFrameId][g][day]||[]).forEach(o=>{
+        if(o.id===pid) return;
+        const ol = LESSONS.find(x=>x.id===o.lessonId);
+        if(ol && (ol.teacherUids||[]).includes(uid))
+          others.push({ g, subject:ol.subject, s:o.startMin, e:o.startMin+o.durMin });
+      });
+    });
+    others.sort((a,b)=>a.s-b.s);
+    return `<div class="ci-t">
+      <div class="ci-tn"><span class="ci-dot" style="background:${t?t.color:'#999'}"></span>${esc(t?t.name:'(알 수 없음)')}</div>
+      <div class="ci-tl">
+        ${ranges.length
+          ? `<div class="ci-line ${hit.length?'bad':''}">🚫 ${day}요일 못 오는 시간: ${ranges.map(r=>hm(r.s)+'~'+hm(r.e)).join(', ')}${hit.length?' — 지금 자리와 겹칩니다':''}</div>`
+          : `<div class="ci-line ok">✓ ${day}요일은 종일 가능</div>`}
+        ${others.length
+          ? `<div class="ci-line">📚 그날 다른 수업: ${others.map(o=>`${o.g} ${esc(o.subject)} ${hm(o.s)}~${hm(o.e)}`).join(' · ')}</div>`
+          : `<div class="ci-line">📚 그날 다른 수업 없음</div>`}
+      </div>
+    </div>`;
+  }).join('') || '<div class="ci-line">담당 선생님이 지정되지 않았습니다.</div>';
+
+  const mv = document.createElement('div'); mv.className='mov'; mv.id='ci-mod';
+  mv.innerHTML = `<div class="mbk" onclick="document.getElementById('ci-mod').remove()"></div>
+    <div class="mbox" style="max-width:520px">
+      <div class="mtitle" style="border-left:5px solid ${lessonColor(l)};padding-left:10px">${esc(l.subject)}</div>
+      <div class="msub">${esc(pgGrade)} · ${day}요일 ${hm(c.startMin)}~${hm(c.startMin+c.durMin)} (${c.durMin}분)</div>
+
+      <div class="ci-box">
+        <div class="ci-row"><span>담당</span><b>${esc((l.teacherUids||[]).map(u=>(TEACHERS.find(t=>t.uid===u)||{}).name).filter(Boolean).join(', ')||'미배정')}</b></div>
+        <div class="ci-row"><span>장소</span><b>${esc(roomName||'지정 안 함')}</b></div>
+        <div class="ci-row"><span>시수</span><b>주 ${l.hours}시수 · 1회 ${l.durMin||50}분${(c.durMin>(l.durMin||50))?` (연강)`:''}</b></div>
+      </div>
+
+      ${probs.length ? `<div class="ci-probs">${probs.map(p=>`<div>⚠ ${esc(p.msg)}</div>`).join('')}</div>` : '<div class="ci-good">✓ 겹치는 곳이 없습니다</div>'}
+
+      <div class="ci-sec">담당 선생님 사정</div>
+      ${tRows}
+
+      <div class="mact">
+        <button class="bs" onclick="removeCard('${day}','${pid}')">목록으로 빼기</button>
+        <button class="bp" onclick="document.getElementById('ci-mod').remove()">닫기</button>
+      </div>
+    </div>`;
+  ($I('mwrap') || document.body).appendChild(mv);
+};
+
+window.removeCard = function(day, pid){
+  setPlaceList(pgGrade, day, placeList(pgGrade, day).filter(c=>c.id!==pid));
+  savePlace2(true);
+  document.getElementById('ci-mod')?.remove();
+  renderPlace2();
+};
 
 /* ── 드래그로 놓기·옮기기 ── */
 function bindPlaceDrag(startMin){
