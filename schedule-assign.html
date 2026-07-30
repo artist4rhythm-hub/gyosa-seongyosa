@@ -639,6 +639,17 @@
     border:1px solid var(--ivd,#E3E1DA);border-radius:7px;background:var(--wh,#fff);
     color:var(--ts,#5A6560);cursor:pointer}
 
+  /* ── 버전 표시·목록 ── */
+  .sb-ver{display:inline-block;font-size:10.5px;font-weight:900;padding:1px 7px;border-radius:100px;
+    background:var(--gm,#00704A);color:#fff;vertical-align:1px}
+  .ver-list{display:flex;flex-direction:column;gap:6px;max-height:min(52vh,420px);overflow-y:auto}
+  .ver-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--ivd,#E3E1DA);
+    border-radius:10px;background:var(--wh,#fff)}
+  .ver-no{font-size:12.5px;font-weight:900;color:var(--gm,#00704A);min-width:32px}
+  .ver-meta{font-size:11.5px;color:var(--ts,#5A6560);flex:1;line-height:1.5}
+  .ver-cnt{color:var(--tl,#93A09A);margin-left:6px}
+  .ver-act{display:inline-flex;gap:5px}
+
   /* ── 저장된 세트 ── */
   .set-bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:14px;
     padding:9px 13px;border-radius:10px;font-size:12.5px;
@@ -861,6 +872,7 @@
           <button class="vbtn" id="vb-all" onclick="setView('all')">👥 전체 현황</button>
         </span>
       </div>
+      <div id="avail-gate"></div>
       <div class="pdesc" id="avail-desc">
         각 선생님이 <b>수업에 들어갈 수 있는 시간</b>을 요일별로 설정합니다. 기본은 모두 <b style="color:#1E7A44">가능</b>이며,
         배치가 안 되는 시간(다른 기관 일정·개인 사정 등)을 <b style="color:#C0392B">불가</b>로 칠하세요.
@@ -1273,15 +1285,85 @@ const isSuper = () => !!CU && CU.role==='super';
    권한이 없으면 화면은 볼 수 있지만 고칠 수는 없다. */
 let TT_EDITORS = [];
 let CAN_EDIT = false;
+
+/* ── 가능 시간 입력 개폐 ──
+   시간표 담당자가 열어줘야 선생님들이 자기 가능 시간을 입력할 수 있다.
+   timetableConfig/inputOpen 문서가 없으면 열림으로 본다 (예전과 같게). */
+let INPUT_OPEN = true;
+let INPUT_OPEN_META = null;   // { updatedByName, updatedAt }
+
 async function loadEditors(){
   try {
     const s = await getDoc(doc(db,'timetableConfig','editors'));
     TT_EDITORS = (s.exists() && Array.isArray(s.data().uids)) ? s.data().uids : [];
   } catch(e){ TT_EDITORS = []; }
   CAN_EDIT = isSuper() || TT_EDITORS.includes(CU?.uid);
+  try {
+    const g = await getDoc(doc(db,'timetableConfig','inputOpen'));
+    if(g.exists()){
+      INPUT_OPEN = g.data().open !== false;
+      INPUT_OPEN_META = { updatedByName: g.data().updatedByName||'', updatedAt: g.data().updatedAt||null };
+    }
+  } catch(e){ /* 문서가 없거나 못 읽으면 열림 유지 */ }
 }
-// 내 가능 시간은 내가 고칠 수 있다
-function canEditAvailOf(uid){ return CAN_EDIT || uid === CU?.uid; }
+
+/* 담당자가 입력을 열고 닫는다 */
+window.toggleInputOpen = async function(){
+  if(!CAN_EDIT){ toast('시간표 담당자만 여닫을 수 있습니다.','err'); return; }
+  const next = !INPUT_OPEN;
+  if(!confirm(next
+    ? '선생님들의 수업 가능 시간 입력을 열까요?\n열면 각자 자기 가능 시간을 입력·수정할 수 있습니다.'
+    : '수업 가능 시간 입력을 닫을까요?\n닫으면 선생님들은 보기만 되고 입력·수정이 막힙니다.\n(시간표 담당자는 계속 고칠 수 있어요)')) return;
+  try {
+    await setDoc(doc(db,'timetableConfig','inputOpen'), {
+      open: next,
+      updatedByUid: CU?.uid||'', updatedByName: CU?.name||'',
+      updatedAt: Timestamp.now()
+    });
+    INPUT_OPEN = next;
+    INPUT_OPEN_META = { updatedByName: CU?.name||'', updatedAt: { seconds: Math.floor(Date.now()/1000) } };
+    renderAvailGate();
+    toast(next ? '입력을 열었습니다 — 선생님들이 이제 입력할 수 있어요 ✓'
+               : '입력을 닫았습니다 — 선생님들은 보기만 됩니다 ✓','ok');
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+};
+
+/* 개폐 안내 띠 그리기 */
+function renderAvailGate(){
+  const box = document.getElementById('avail-gate'); if(!box) return;
+  if(CAN_EDIT){
+    box.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;
+        padding:11px 14px;border-radius:11px;
+        background:${INPUT_OPEN?'var(--gp,#E8F3EF)':'var(--iv,#F2F0EB)'};
+        border:1.5px solid ${INPUT_OPEN?'var(--gm,#00704A)':'var(--ivd,#E3E1DA)'}">
+        <span style="font-size:13px;font-weight:800;color:${INPUT_OPEN?'var(--gm,#00704A)':'var(--ts,#5A6560)'}">
+          ${INPUT_OPEN?'🔓 선생님 입력 열림':'🔒 선생님 입력 닫힘'}</span>
+        <span style="font-size:11.5px;color:var(--tl,#93A09A)">
+          ${INPUT_OPEN?'선생님들이 각자 자기 가능 시간을 입력할 수 있습니다.'
+                      :'선생님들은 보기만 됩니다. 담당자만 고칠 수 있어요.'}
+          ${INPUT_OPEN_META?` · ${esc(INPUT_OPEN_META.updatedByName||'')} ${fmtDT(INPUT_OPEN_META.updatedAt)}`:''}</span>
+        <button class="rm-modebtn" style="margin-left:auto" onclick="toggleInputOpen()">
+          ${INPUT_OPEN?'🔒 입력 닫기':'🔓 입력 열기'}</button>
+      </div>`;
+  } else if(!INPUT_OPEN){
+    box.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;
+        padding:12px 14px;border-radius:11px;background:var(--gold-bg,#F7EFD8);
+        border:1.5px solid var(--gold,#8A6410)">
+        <span style="font-size:16px">🔒</span>
+        <span style="font-size:12.5px;color:var(--gold,#8A6410);line-height:1.6">
+          지금은 <b>수업 가능 시간 입력이 닫혀</b> 있어요. 내 가능 시간을 보기만 할 수 있습니다.<br>
+          입력이 필요하면 시간표 담당 선생님께 열어 달라고 말씀해 주세요.</span>
+      </div>`;
+  } else {
+    box.innerHTML = '';
+  }
+}
+
+// 내 가능 시간은 내가 고칠 수 있다 — 단, 담당자가 입력을 열어둔 동안만
+function canEditAvailOf(uid){ return CAN_EDIT || (uid === CU?.uid && INPUT_OPEN); }
+window.canEditAvailOf = canEditAvailOf;
 
 function needEdit(){
   if(CAN_EDIT) return true;
@@ -1361,6 +1443,7 @@ onAuthStateChanged(auth, async user => {
     await loadSets();
     await loadGradeDept();
     renderSetBar();
+    renderAvailGate();
     await loadLessons();
     await loadPlace2();
 
@@ -2041,12 +2124,22 @@ function renderMemo(){
 }
 window.renderMemo = renderMemo;
 
+function availEditGuard(){
+  if(canEditAvailOf(curTeacher)) return true;
+  toast(curTeacher===CU?.uid && !INPUT_OPEN
+    ? '지금은 입력이 닫혀 있어요. 시간표 담당 선생님이 열면 입력할 수 있습니다.'
+    : '다른 선생님의 수업 가능 시간은 고칠 수 없습니다.','err');
+  return false;
+}
+
 window.addMemoSet = function(){
+  if(!availEditGuard()) return;
   const sets = memosOf();
   sets.push({ title:`조건 ${sets.length+1}`, marks:{}, note:'' });
   markDirty(); renderMemo();
 };
 window.delMemoSet = function(idx){
+  if(!availEditGuard()) return;
   const sets = memosOf();
   if(!sets[idx]) return;
   if(confirm(`"${sets[idx].title||'이 조건'}"을(를) 삭제할까요?`)){
@@ -2054,6 +2147,7 @@ window.delMemoSet = function(idx){
   }
 };
 window.togglePMark = function(idx, dy, pno){
+  if(!availEditGuard()) return;
   const set = memosOf()[idx]; if(!set) return;
   if(!set.marks) set.marks = {};
   if(!set.marks[dy]) set.marks[dy] = {};
@@ -2062,8 +2156,9 @@ window.togglePMark = function(idx, dy, pno){
   else { set.marks[dy][pno] = curMark; }
   markDirty(); renderMemo();
 };
-window.onSetTitle = function(idx, v){ const s=memosOf()[idx]; if(s){ s.title=v; markDirty(); } };
-window.onSetNote  = function(idx, v){ const s=memosOf()[idx]; if(s){ s.note=v; markDirty(); } };
+window.onSetTitle = function(idx, v){
+  if(!canEditAvailOf(curTeacher)) return; const s=memosOf()[idx]; if(s){ s.title=v; markDirty(); } };
+window.onSetNote  = function(idx, v){ if(!canEditAvailOf(curTeacher)) return; const s=memosOf()[idx]; if(s){ s.note=v; markDirty(); } };
 
 function bindGridEvents(){
   const grid = $I('av-grid'); if(!grid) return;
@@ -2096,6 +2191,12 @@ function bindGridEvents(){
 
   const startPaint = (x,y)=>{
     const el = slotAt(x,y); if(!el) return false;
+    if(!canEditAvailOf(curTeacher)){
+      toast(curTeacher===CU?.uid && !INPUT_OPEN
+        ? '지금은 입력이 닫혀 있어요. 시간표 담당 선생님이 열면 입력할 수 있습니다.'
+        : '다른 선생님의 수업 가능 시간은 고칠 수 없습니다.','err');
+      return false;
+    }
     painting = true;
     const dy=el.dataset.day, m=Number(el.dataset.m);
     paintMode = AVAIL[curTeacher][dy].has(m) ? 'ok' : 'no';   // 시작 칸 반대로 토글
@@ -2665,7 +2766,7 @@ async function loadSets(){
         createdByUid:v.createdByUid||'', createdByName:v.createdByName||'',
         createdAt:v.createdAt||null, updatedAt:v.updatedAt||null,
         updatedByName:v.updatedByName||'', note:v.note||'',
-        counts:v.counts||null });
+        counts:v.counts||null, lastVer:Number(v.lastVer||0) });
     });
     out.sort((a,b)=>(b.updatedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.createdAt?.seconds||0));
     SETS = out;
@@ -2719,7 +2820,7 @@ window.overwriteSet = async function(){
   const s = SETS.find(x=>x.id===curSetId);
   if(!s){ toast('먼저 세트를 불러오거나 새로 저장해 주세요.','err'); return; }
   if(!canEditSet(s)){ toast(`"${s.createdByName}" 선생님이 저장한 세트라 덮어쓸 수 없습니다. 복제해서 쓰세요.`,'err'); return; }
-  if(!confirm(`"${s.name}"에 지금 내용을 덮어쓸까요?`)) return;
+  if(!confirm(`"${s.name}"에 지금 내용을 저장할까요?\n\n저장하면 v${(s.lastVer||0)+1} 버전으로도 남아, 나중에 이 시점으로 되돌릴 수 있어요.`)) return;
   await writeSet(s.id, s.name, s.note||'');
 };
 
@@ -2742,11 +2843,33 @@ async function writeSet(setId, name, note, silent){
       base.createdByUid = CU?.uid||'';
       base.createdByName = CU?.name||'';
     }
+
+    /* 버전 번호 — 버튼으로 저장할 때만 새 버전을 남긴다 (자동 반영은 작업본만 갱신) */
+    let newVer = 0;
+    if(!silent){
+      const prev = SETS.find(x=>x.id===setId);
+      newVer = (prev?.lastVer || 0) + 1;
+      base.lastVer = newVer;
+    }
+
     await setDoc(doc(db,'timetableSets', id), base, { merge: !!setId });
+
+    if(!silent && newVer){
+      try {
+        await setDoc(doc(db,'timetableSetVersions', id + '_v' + newVer), {
+          setId: id, ver: newVer, name, note,
+          snapshot, counts,
+          createdByUid: CU?.uid||'', createdByName: CU?.name||'',
+          createdAt: Timestamp.now()
+        });
+        pruneVersions(id, newVer);   // 오래된 버전 정리 (기다리지 않음)
+      } catch(e){ /* 버전 기록 실패해도 본 저장은 유효 */ }
+    }
+
     curSetId = id; curSetName = name;
     await loadSets();
     window.hideLoading && window.hideLoading();
-    if(!silent) toast(`"${name}" 저장했습니다 ✓`,'ok');
+    if(!silent) toast(newVer ? `"${name}" v${newVer} 버전으로 저장했습니다 ✓` : `"${name}" 저장했습니다 ✓`,'ok');
     if(curTab==='set') renderSets();
     renderSetBar();
   } catch(e){
@@ -2756,6 +2879,30 @@ async function writeSet(setId, name, note, silent){
       toast('저장할 내용이 너무 큽니다. 교실이나 수업 수를 줄여주세요.','err');
     else toast('저장 실패: '+msg,'err');
   }
+}
+
+/* 스냅샷 하나를 화면과 작업본에 적용한다 (세트 불러오기 · 버전 되돌리기 공용) */
+async function applySetSnapshot(snap){
+  ASSIGN_UIDS = (snap.assignStaff||[]).filter(u=>TEACHERS.some(t=>t.uid===u));
+  const _av = plainToAvail(snap.availability);
+  if(Object.keys(_av).length) AVAIL = _av;   // 스냅샷에 들어 있을 때만 바꾼다
+  LESSONS = JSON.parse(JSON.stringify(snap.lessons||[]));
+  PLACE2 = JSON.parse(JSON.stringify(snap.place2||{}));
+  GRADE_DEPT = JSON.parse(JSON.stringify(snap.gradeDept||{}));
+  FLOORS = (snap.floors||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage:!!f.hasImage, image:'' }));
+  // 층 사진은 층별 문서에서 다시 붙인다
+  for(const f of FLOORS){ if(f.hasImage) f.image = await loadFloorImage(f.id); }
+  curFloorId = FLOORS.length ? FLOORS[0].id : null;
+
+  // 현재 작업본으로도 저장해 다른 화면과 어긋나지 않게 한다
+  await saveAssignStaff();
+  await saveAllAvailability();
+  await saveRooms(true);
+  await saveLessons(true);
+  await savePlace2(true);
+  await saveGradeDept();
+
+  try { cleanGhostPlacements(); } catch(e){}
 }
 
 /* ── 불러오기 ── */
@@ -2775,28 +2922,7 @@ window.loadSet = async function(id){
   try {
     const d = await getDoc(doc(db,'timetableSets',id));
     if(!d.exists()) throw new Error('세트를 찾을 수 없습니다');
-    const snap = d.data().snapshot || {};
-
-    ASSIGN_UIDS = (snap.assignStaff||[]).filter(u=>TEACHERS.some(t=>t.uid===u));
-    const _av = plainToAvail(snap.availability);
-    if(Object.keys(_av).length) AVAIL = _av;   // 세트에 들어 있을 때만 바꾼다
-    LESSONS = JSON.parse(JSON.stringify(snap.lessons||[]));
-    PLACE2 = JSON.parse(JSON.stringify(snap.place2||{}));
-    GRADE_DEPT = JSON.parse(JSON.stringify(snap.gradeDept||{}));
-    FLOORS = (snap.floors||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage:!!f.hasImage, image:'' }));
-    // 층 사진은 층별 문서에서 다시 붙인다
-    for(const f of FLOORS){ if(f.hasImage) f.image = await loadFloorImage(f.id); }
-    curFloorId = FLOORS.length ? FLOORS[0].id : null;
-
-    // 현재 작업본으로도 저장해 다른 화면과 어긋나지 않게 한다
-    await saveAssignStaff();
-    await saveAllAvailability();
-    await saveRooms(true);
-    await saveLessons(true);
-    await savePlace2(true);
-    await saveGradeDept();
-
-    try { cleanGhostPlacements(); } catch(e){}
+    await applySetSnapshot(d.data().snapshot || {});
     curSetId = id; curSetName = d.data().name || '';
     _applyingSet = false;
     window.hideLoading && window.hideLoading();
@@ -2908,12 +3034,111 @@ window.renameSet = async function(id){
   } catch(e){ toast('실패: '+(e.message||''),'err'); }
 };
 
+/* ═══ 🕘 버전 — 버튼으로 저장할 때마다 v1, v2… 로 남는 기록 ═══ */
+const KEEP_VERSIONS = 30;   // 세트마다 최근 30개까지 보관
+
+async function fetchVersions(setId){
+  const out = [];
+  try {
+    const snap = await getDocs(query(collection(db,'timetableSetVersions'), where('setId','==',setId)));
+    snap.forEach(d=>{ const v=d.data(); out.push({ id:d.id, ver:Number(v.ver||0), name:v.name||'',
+      counts:v.counts||{}, createdByUid:v.createdByUid||'', createdByName:v.createdByName||'', createdAt:v.createdAt||null }); });
+  } catch(e){}
+  out.sort((a,b)=>b.ver-a.ver);
+  return out;
+}
+
+/* 오래된 버전 정리 — 최근 KEEP_VERSIONS개만 남긴다 */
+async function pruneVersions(setId){
+  try {
+    const vs = await fetchVersions(setId);
+    for(const v of vs.slice(KEEP_VERSIONS)){
+      try { await deleteDoc(doc(db,'timetableSetVersions', v.id)); } catch(e){}
+    }
+  } catch(e){}
+}
+
+window.openVersions = async function(setId){
+  const s = SETS.find(x=>x.id===setId); if(!s) return;
+  window.showLoading && window.showLoading('버전을 불러오는 중…');
+  const vs = await fetchVersions(setId);
+  window.hideLoading && window.hideLoading();
+
+  const mine = canEditSet(s);
+  const rows = vs.map(v=>{
+    const c = v.counts||{};
+    return `<div class="ver-row">
+      <span class="ver-no">v${v.ver}</span>
+      <span class="ver-meta">${esc(v.createdByName||'')} · ${esc(fmtDT(v.createdAt))}
+        <span class="ver-cnt">수업 ${c.lessons||0} · 배치 ${c.placed||0}칸</span></span>
+      <span class="ver-act">
+        <button class="rm-modebtn" onclick="restoreVersion('${setId}','${v.id}',${v.ver})">↩ 이 버전으로</button>
+        ${mine?`<button class="rm-modebtn" onclick="deleteVersion('${setId}','${v.id}',${v.ver})">🗑</button>`:''}
+      </span>
+    </div>`;
+  }).join('');
+
+  const ov = document.createElement('div');
+  ov.className = 'mov'; ov.id = 'ver-mod';
+  ov.innerHTML = `<div class="mbox" style="max-width:560px;width:94vw">
+    <div class="mtitle">🕘 "${esc(s.name)}" 버전 기록</div>
+    <div style="font-size:12px;color:var(--tl,#93A09A);margin:4px 0 12px;line-height:1.6">
+      💾 버전 저장을 누를 때마다 그 순간의 전체 내용이 버전으로 남습니다. 최근 ${KEEP_VERSIONS}개까지 보관돼요.<br>
+      되돌리면 그 버전 내용이 화면과 작업본에 적용됩니다 — 되돌린 뒤 다시 버전 저장을 누르면 새 버전으로 확정돼요.</div>
+    ${vs.length ? `<div class="ver-list">${rows}</div>`
+      : `<div style="text-align:center;padding:26px 0;color:var(--tl,#93A09A);font-size:13px">
+           아직 저장된 버전이 없습니다.<br>💾 버전 저장을 누르면 첫 버전(v1)이 만들어져요.</div>`}
+  </div>`;
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+};
+
+window.restoreVersion = async function(setId, verId, verNo){
+  const s = SETS.find(x=>x.id===setId); if(!s) return;
+  if(!confirm(`v${verNo} 버전으로 되돌릴까요?\n\n지금 화면의 내용이 그 버전으로 바뀝니다.\n(바뀐 내용을 남기려면 되돌리기 전에 💾 버전 저장을 먼저 눌러두세요)`)) return;
+  window.showLoading && window.showLoading(`v${verNo} 버전으로 되돌리는 중…`);
+  _applyingSet = true;
+  try {
+    const d = await getDoc(doc(db,'timetableSetVersions', verId));
+    if(!d.exists()) throw new Error('버전을 찾을 수 없습니다');
+    await applySetSnapshot(d.data().snapshot || {});
+    curSetId = setId; curSetName = s.name;
+    _applyingSet = false;
+    window.hideLoading && window.hideLoading();
+    document.getElementById('ver-mod')?.remove();
+    toast(`v${verNo} 버전으로 되돌렸습니다 ✓ — 확정하려면 💾 버전 저장을 눌러주세요`,'ok');
+    renderSetBar();
+    showTab('avail');
+  } catch(e){
+    _applyingSet = false;
+    window.hideLoading && window.hideLoading();
+    toast('되돌리기 실패: '+(e.message||''),'err');
+  }
+};
+
+window.deleteVersion = async function(setId, verId, verNo){
+  const s = SETS.find(x=>x.id===setId);
+  if(!s || !canEditSet(s)){ toast('만든 사람만 버전을 지울 수 있어요.','err'); return; }
+  if(!confirm(`v${verNo} 버전을 지울까요? 되돌릴 수 없습니다.`)) return;
+  try {
+    await deleteDoc(doc(db,'timetableSetVersions', verId));
+    document.getElementById('ver-mod')?.remove();
+    openVersions(setId);
+    toast('지웠습니다.','ok');
+  } catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
+};
+
 window.deleteSet = async function(id){
   const s = SETS.find(x=>x.id===id); if(!s) return;
   if(!canEditSet(s)){ toast(`"${s.createdByName}" 선생님이 저장한 세트입니다. 지울 수 없어요.`,'err'); return; }
   if(!confirm(`"${s.name}"을(를) 지울까요?\n\n되돌릴 수 없습니다.`)) return;
   try {
     await deleteDoc(doc(db,'timetableSets',id));
+    // 딸린 버전들도 정리 (실패해도 무시)
+    try {
+      const vs = await getDocs(query(collection(db,'timetableSetVersions'), where('setId','==',id)));
+      for(const v of vs.docs){ try { await deleteDoc(v.ref); } catch(e){} }
+    } catch(e){}
     if(curSetId===id){ curSetId = null; curSetName = ''; }
     await loadSets(); renderSets(); renderSetBar();
     toast('지웠습니다.','ok');
@@ -2939,12 +3164,13 @@ function renderSetBar(){
   const mine = canEditSet(s);
   bar.className = 'set-bar on';
   bar.innerHTML = `
-    <span class="sb-tag">💾 ${esc(s.name)}</span>
+    <span class="sb-tag">💾 ${esc(s.name)}${s.lastVer?` <b class="sb-ver">v${s.lastVer}</b>`:''}</span>
     <span class="sb-by">${esc(s.createdByName||'')} 저장${
       s.updatedAt?` · ${esc(fmtDT(s.updatedAt))} 수정`:''}</span>
     ${mine ? auto : '<span class="sb-lock">🔒 다른 분 세트 — 복제해서 쓰세요</span>'}
     <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center">
-      ${mine?`<button class="rm-modebtn" onclick="overwriteSet()">💾 지금 저장</button>`:''}
+      ${mine?`<button class="rm-modebtn" onclick="overwriteSet()">💾 버전 저장${s.lastVer?` (v${s.lastVer+1})`:''}</button>`:''}
+      <button class="rm-modebtn" onclick="openVersions('${s.id}')">🕘 버전</button>
       <button class="rm-modebtn" onclick="saveSetAs()">📄 새 이름으로</button>
     </span>`;
 }
@@ -2957,7 +3183,7 @@ function renderSets(){
     const when = s.updatedAt || s.createdAt;
     return `<div class="set-card ${s.id===curSetId?'cur':''}">
       <div class="set-main">
-        <div class="set-nm">${esc(s.name)}${s.id===curSetId?'<span class="set-cur">지금 작업 중</span>':''}</div>
+        <div class="set-nm">${esc(s.name)}${s.lastVer?` <span class="sb-ver">v${s.lastVer}</span>`:''}${s.id===curSetId?'<span class="set-cur">지금 작업 중</span>':''}</div>
         <div class="set-meta">
           ${esc(s.createdByName||'')} 저장${when?` · ${esc(fmtDT(when))}`:''}
           ${s.updatedByName && s.updatedByName!==s.createdByName?` · 최근 수정 ${esc(s.updatedByName)}`:''}
@@ -2972,6 +3198,7 @@ function renderSets(){
       </div>
       <div class="set-act">
         <button class="rm-modebtn" onclick="loadSet('${s.id}')">📂 불러오기</button>
+        <button class="rm-modebtn" onclick="openVersions('${s.id}')">🕘 버전${s.lastVer?` ${s.lastVer}`:''}</button>
         <button class="rm-modebtn" onclick="duplicateSet('${s.id}')">⧉ 복제</button>
         <button class="rm-modebtn" ${mine?'':'disabled title="만든 사람만 바꿀 수 있어요"'} onclick="renameSet('${s.id}')">✏️ 이름</button>
         <button class="rm-modebtn" ${mine?'':'disabled title="만든 사람만 지울 수 있어요"'} onclick="deleteSet('${s.id}')">🗑 삭제</button>
@@ -2990,6 +3217,7 @@ function renderSets(){
         <br><span style="color:var(--tl,#93A09A)">· 저장한 사람만 덮어쓰기·이름변경·삭제할 수 있습니다. 다른 분 세트는 <b>복제</b>해서 쓰세요.
         <br>· <b>어느 탭에서 고치든 한꺼번에</b> 담깁니다 — 수업 가능 시간 · 교실 배치 · 수업 정의 · 배치 · 학년별 부서까지.
         <br>· 자동 저장이 켜져 있으면, 내가 만든 세트는 고칠 때마다 알아서 갱신됩니다.
+        <br>· <b>💾 버전 저장</b>을 누를 때마다 그 순간이 <b>v1, v2…</b> 버전으로 남아, 🕘 버전에서 언제든 되돌릴 수 있어요.
         <br>· 평면도 사진은 층마다 따로 보관되어 세트끼리 함께 씁니다.</span>
       </div>
       ${SETS.length ? `<div class="set-list">${rows}</div>`
@@ -5259,7 +5487,9 @@ function updateSaveNote(){
 window.saveAvail = async function(silent){
   if(!curTeacher) return;
   if(!canEditAvailOf(curTeacher)){
-    if(!silent) toast('다른 선생님의 수업 가능 시간은 고칠 수 없습니다.','err');
+    if(!silent) toast(curTeacher===CU?.uid && !INPUT_OPEN
+      ? '지금은 입력이 닫혀 있어요. 시간표 담당 선생님이 열면 입력할 수 있습니다.'
+      : '다른 선생님의 수업 가능 시간은 고칠 수 없습니다.','err');
     return;
   }
   const a = AVAIL[curTeacher];
