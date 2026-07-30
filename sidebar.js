@@ -45,6 +45,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, m=>
 window.setCrumb = function(parts){
   const tail = document.getElementById('tb-tail');
   if(!tail) return;
+  window.__crumbManual = true;   // 페이지가 직접 정하면 자동 감지를 멈춘다
   const list = (parts||[]).filter(Boolean).map(p=>
     typeof p === 'string' ? { label:p } : p);
   if(!list.length){ tail.innerHTML = ''; return; }
@@ -65,6 +66,52 @@ window.setCrumb = function(parts){
     };
   });
 };
+
+/* ═══ 지금 열린 탭을 알아서 경로에 잇는다 ═══
+   화면마다 탭 함수 이름이 달라도, 켜진 탭 버튼을 찾아 이름을 읽어 쓴다.
+   각 페이지를 고치지 않아도 경로가 따라온다. */
+const TAB_SEL = '.tabs-sub > .tab-sub, .subtb > .subtbtn, .subtabs > .subtbtn';
+
+// 탭 버튼에서 이름만 뽑아낸다 (이모지·알림 숫자 제외)
+function tabLabel(btn){
+  const c = btn.cloneNode(true);
+  c.querySelectorAll('.badge,.tb-b,.nb,.dot,.cnt,.num,[class*="badge"]').forEach(x=>x.remove());
+  return c.textContent
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}]/gu,'')
+    .replace(/\s*\d+\s*$/,'')        // 끝에 붙은 숫자
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function crumbFromTabs(){
+  // 페이지가 직접 setCrumb 을 부르고 있으면 건드리지 않는다
+  if(window.__crumbManual) return;
+  const on = document.querySelector(
+    '.tabs-sub > .tab-sub.on, .tabs-sub > .tab-sub.active,' +
+    '.subtb > .subtbtn.on, .subtb > .subtbtn.active,' +
+    '.subtabs > .subtbtn.on, .subtabs > .subtbtn.active');
+  if(!on){ return; }
+  // 이모지·기호·알림 숫자는 떼고 글자만 남긴다
+  const label = tabLabel(on);
+  if(!label) return;
+
+  // 큰 갈래가 따로 있으면 그것도 앞에 (시간표처럼 두 화면을 오가는 경우)
+  const main = document.querySelector('.tabs-main > .tab-main.on');
+  const parts = [];
+  if(main){
+    const m = tabLabel(main);
+    if(m) parts.push(m);
+  }
+  parts.push(label);
+  if(window.setCrumb) window.setCrumb(parts);
+}
+window.crumbFromTabs = crumbFromTabs;
+
+// 탭을 누르면 잠시 뒤 경로를 맞춘다 (화면이 다 그려진 다음에)
+document.addEventListener('click', e=>{
+  const t = e.target;
+  if(t && t.closest && t.closest(TAB_SEL)) setTimeout(crumbFromTabs, 40);
+}, true);
 
 /* ═══ 큰 글자 보기 (보통 / 크게 / 아주 크게) ═══
    저장: localStorage gyosa_fs = 'md' | 'lg' | 'xl' (기기마다 따로)
@@ -261,6 +308,8 @@ function renderSidebar(){
     </div>`;
   // 버튼이 방금 그려졌으니 지금 고른 글자 크기를 표시해 준다
   if(window.applyFS) window.applyFS();
+  // 열려 있는 탭을 경로에 잇는다
+  setTimeout(()=>{ if(window.crumbFromTabs) crumbFromTabs(); }, 120);
 }
 
 function sbOrgLabel(){
