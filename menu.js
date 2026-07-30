@@ -50,9 +50,9 @@ const MENU = [
         tabs:['결재할 문서','내가 올린 문서','완료 문서','내 서명','직책 관리'],
         badge:'approval' },
       { key:'timetable', label:'시간표', icon:'grid_view', href:'timetable.html',
-        desc:'시간표 틀 · 시간표 배정',
-        tabs:['시간표 틀 만들기','시간표 틀 보관함','수업 가능 시간','교실 배치','수업 정의','배치'],
-        alt:['schedule-assign.html'] },
+        desc:'시간표 틀 · 배정 · 완성 시간표',
+        tabs:['시간표 틀 만들기','시간표 틀 보관함','수업 가능 시간','교실 배치','수업 정의','배치','완성 시간표'],
+        alt:['schedule-assign.html','timetable-final.html'] },
     ]
   },
   {

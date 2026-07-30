@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>완성 시간표 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="교사선교사">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="theme.css">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:var(--bg,#f4f2ec);color:var(--ink,#1a2420)}
+  #gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--bg,#f4f2ec);z-index:100}
+  #gate .box{text-align:center}
+  #gate-msg{font-size:14px;color:var(--ts,#5a6560);margin-bottom:14px}
+  #gate-btn{display:none;background:#2d6a4f;color:#fff;border:none;padding:10px 22px;border-radius:9px;font-family:inherit;font-weight:700;cursor:pointer}
+
+  .panel{background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);border-radius:14px;padding:18px;margin-bottom:14px}
+  .ptitle{font-size:15px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .pdesc{font-size:12.5px;color:var(--ts,#5a6560);line-height:1.7;margin-bottom:14px}
+  .empty{text-align:center;padding:44px 16px;color:var(--tl,#93A09A)}
+  .empty .ico{font-size:34px;margin-bottom:10px}
+  .empty .t1{font-size:14.5px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:6px}
+  .empty div{font-size:12.5px;line-height:1.7}
+
+  .btn{font-family:inherit;font-size:13px;font-weight:700;padding:8px 15px;border-radius:9px;
+    border:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);color:var(--ts,#5A6560);cursor:pointer}
+  .btn:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
+  .btn-p{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:var(--wh,#fff)}
+  .btn-p:hover{opacity:.9;color:var(--wh,#fff)}
+  .btn-sm{font-size:12px;padding:6px 12px}
+
+  /* ── 게시 목록 ── */
+  .pb-now{background:var(--gp,#E8F3EF);border:1px solid var(--gl,#C3E0D4);border-radius:11px;
+    padding:13px 15px;margin-bottom:12px}
+  .pb-row{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .pb-ico{font-size:19px;flex:none}
+  .pb-t{font-size:14.5px;font-weight:800;color:var(--gd,#1E3932)}
+  .pb-m{font-size:11.5px;color:var(--ts,#5A6560);margin-top:2px}
+  .pb-act{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .pb-make{display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+    padding-top:12px;margin-top:12px;border-top:1px dashed var(--ivd,#E3E1DA)}
+  .pb-sel{font-family:inherit;font-size:12.5px;padding:7px 11px;border:1px solid var(--ivd,#E3E1DA);
+    border-radius:8px;background:var(--wh,#fff);color:var(--ink);min-width:200px}
+  .pb-hint{font-size:11.5px;color:var(--tl,#93A09A);line-height:1.65;margin-top:9px}
+  .pb-list{display:flex;flex-direction:column;gap:7px}
+  .pb-item{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:11px 14px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:10px;background:var(--wh,#fff)}
+  .pb-item.on{border-color:var(--gm,#00704A);background:var(--gp,#E8F3EF)}
+  .pb-badge{font-size:10px;font-weight:800;background:var(--gm,#00704A);color:var(--wh,#fff);
+    border-radius:5px;padding:2px 7px;flex:none}
+  .pb-old{font-size:10px;font-weight:800;background:var(--iv,#F2F0EB);color:var(--tl,#93A09A);
+    border-radius:5px;padding:2px 7px;flex:none}
+
+  /* ── 보기 ── */
+  .vw-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:11px 13px;
+    background:var(--gp,#E8F3EF);border-radius:11px;margin-bottom:14px}
+  .vw-kb{font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:8px;
+    border:1px solid transparent;background:transparent;color:var(--ts,#5A6560);cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px}
+  .vw-kb:hover{background:var(--wh,#fff)}
+  .vw-kb.on{background:var(--gm,#00704A);color:var(--wh,#fff)}
+  .vw-sel{font-family:inherit;font-size:12.5px;padding:7px 11px;border:1px solid var(--ivd,#E3E1DA);
+    border-radius:8px;background:var(--wh,#fff);color:var(--ink);min-width:150px}
+  .vw-right{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+
+  .tv-sheet{background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);border-radius:12px;padding:18px;overflow-x:auto}
+  .tv-head{margin-bottom:14px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+  .tv-title{font-size:19px;font-weight:800;color:var(--gd,#1E3932);letter-spacing:-.02em;margin-bottom:2px}
+  .tv-meta{font-size:12px;color:var(--tl,#93A09A)}
+  .tv-zoom{margin-left:auto;display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+    font-size:11px;color:var(--tl,#93A09A)}
+  .tv-zb{font-family:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:7px;background:var(--wh,#fff);
+    color:var(--ts,#5A6560);cursor:pointer}
+  .tv-zb:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
+  .tv-zb.on{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+
+  .tv-board{border:1px solid var(--ivd,#E3E1DA);border-radius:11px;overflow:hidden;min-width:660px}
+  .tv-hd{display:grid;grid-template-columns:58px repeat(5,minmax(0,1fr));
+    background:var(--gp,#E8F3EF);border-bottom:1px solid var(--ivd,#E3E1DA)}
+  .tv-hd-d{padding:9px 0;text-align:center;font-size:calc(13.5px * var(--tvf,1));
+    font-weight:800;color:var(--gd,#1E3932)}
+  .tv-grid{display:grid;grid-template-columns:58px repeat(5,minmax(0,1fr));position:relative}
+  .tv-times{position:relative;background:var(--iv,#F2F0EB);border-right:1px solid var(--ivd,#E3E1DA)}
+  .tv-tick{position:absolute;left:0;right:0;font-size:calc(10px * var(--tvf,1));color:var(--tl,#93A09A);
+    padding-left:6px;border-top:1px dashed var(--ivd,#E3E1DA);line-height:1.1}
+  .tv-col{position:relative;border-right:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff)}
+  .tv-col:last-child{border-right:none}
+  .tv-bg{position:absolute;left:0;right:0;box-sizing:border-box;pointer-events:none;overflow:hidden;
+    border-top:1px solid var(--ivd,#E3E1DA)}
+  .tv-bg.cls{background:rgba(0,112,74,.045)}
+  .tv-bg.rest{background:repeating-linear-gradient(45deg,rgba(147,160,154,.10) 0 6px,transparent 6px 12px)}
+  .tv-bg span{font-size:calc(9px * var(--tvf,1));color:var(--tl,#93A09A);padding:1px 4px;display:block;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tv-bg.tiny span{display:none}
+  .tv-card{position:absolute;left:3px;right:3px;box-sizing:border-box;overflow:hidden;
+    border-radius:7px;border:1px solid var(--ivd,#E3E1DA);border-left:3px solid var(--lc,#7FB5A0);
+    background-color:var(--wh,#fff);
+    background-image:linear-gradient(var(--lc-bg,#F2F7F5),var(--lc-bg,#F2F7F5));
+    display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(30,57,50,.07)}
+  .tv-c-top{flex:1;min-height:0;padding:3px 6px;overflow:hidden}
+  .tv-c-top b{display:block;font-size:calc(11.5px * var(--tvf,1));font-weight:800;
+    color:var(--gd,#1E3932);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tv-c-time{display:block;font-size:calc(9.5px * var(--tvf,1));color:var(--ts,#5A6560);line-height:1.35}
+  .tv-c-sub{display:block;font-size:calc(9.5px * var(--tvf,1));color:var(--tl,#93A09A)}
+  .tv-c-foot{display:flex;align-items:center;gap:5px;background:var(--tb,#93A09A);padding:2px 6px;flex:none}
+  .tv-c-who{font-size:calc(9.5px * var(--tvf,1));font-weight:800;color:#fff;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;line-height:1.5}
+  .tv-c-room{margin-left:auto;font-size:calc(9px * var(--tvf,1));font-weight:700;color:#fff;flex:none;
+    background:rgba(255,255,255,.24);border-radius:4px;padding:0 5px;line-height:1.5}
+  .tv-card.mid .tv-c-top{padding:2px 6px}
+  .tv-card.mid .tv-c-top b{font-size:calc(11px * var(--tvf,1))}
+  .tv-card.mid .tv-c-time{font-size:calc(9px * var(--tvf,1))}
+  .tv-card.small{flex-direction:row;align-items:center;gap:6px;padding:0 6px}
+  .tv-card.small .tv-c-top{flex:1;padding:0;min-width:0}
+  .tv-card.small .tv-c-top b{font-size:calc(10.5px * var(--tvf,1));line-height:1.2}
+  .tv-card.small .tv-c-foot{background:transparent;padding:0;flex:none;max-width:60%}
+  .tv-card.small .tv-c-who{color:var(--tb,#5A6560);font-size:calc(9.5px * var(--tvf,1));line-height:1.2}
+  .tv-card.small .tv-c-room{background:var(--iv,#F2F0EB);color:var(--ts,#5A6560);
+    margin-left:4px;font-size:calc(8.5px * var(--tvf,1));line-height:1.4}
+
+  /* ── 인쇄 고르기 ── */
+  .pr-ov{position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:20px}
+  .pr-bk{position:absolute;inset:0;background:rgba(15,25,21,.5)}
+  .pr-box{position:relative;z-index:1;width:100%;max-width:540px;max-height:88vh;display:flex;
+    flex-direction:column;background:var(--wh,#fff);border-radius:16px;padding:20px 22px;
+    box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .pr-t{font-size:17px;font-weight:800;color:var(--gd,#1E3932)}
+  .pr-d{font-size:12.5px;color:var(--ts,#5A6560);line-height:1.65;margin:5px 0 12px}
+  .pr-kinds{display:flex;gap:5px;margin-bottom:11px;flex-wrap:wrap}
+  .pr-k{font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:8px;
+    border:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);color:var(--ts,#5A6560);cursor:pointer}
+  .pr-k.on{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+  .pr-list{flex:1;overflow:auto;border:1px solid var(--ivd,#E3E1DA);border-radius:10px;padding:5px;
+    max-height:290px}
+  .pr-row{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:8px;
+    cursor:pointer;font-size:13px;color:var(--ink)}
+  .pr-row:hover{background:var(--iv,#F2F0EB)}
+  .pr-row.on{background:var(--gp,#E8F3EF)}
+  .pr-row b{font-weight:700;color:var(--gd,#1E3932)}
+  .pr-cnt{margin-left:auto;font-size:11px;color:var(--tl,#93A09A)}
+  .pr-all{display:flex;align-items:center;gap:9px;padding:7px 4px;font-size:12px;color:var(--ts,#5A6560)}
+  .pr-act{display:flex;align-items:center;gap:8px;margin-top:14px;padding-top:13px;
+    border-top:1px solid var(--ivd,#E3E1DA)}
+  .pr-n{font-size:12px;color:var(--tl,#93A09A);margin-right:auto}
+
+  /* ── 인쇄 ──
+     화면에 보이는 것 말고, 고른 시간표만 한 장에 하나씩 나오게 한다 */
+  #printArea{display:none}
+  @media print{
+    @page{ size:A4 landscape; margin:10mm }
+    html,body{background:#fff !important}
+    body.printing > *{display:none !important}
+    body.printing #printArea{display:block !important}
+    body.printing #sb, body.printing #tb, body.printing #mn,
+    body.printing .pr-ov, body.printing #toast{display:none !important}
+    #printArea .pr-page{page-break-after:always;break-after:page}
+    #printArea .pr-page:last-child{page-break-after:auto;break-after:auto}
+    #printArea .tv-sheet{border:none;padding:0;box-shadow:none}
+    #printArea .tv-zoom{display:none}
+    #printArea .tv-board{min-width:0}
+    #printArea .tv-card,#printArea .tv-bg,#printArea .tv-hd,
+    #printArea .tv-c-foot,#printArea .tv-times{
+      -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+  @media(max-width:640px){
+    .tv-sheet{padding:12px}
+    .vw-right{margin-left:0;width:100%}
+  }
+</style>
+</head>
+<body>
+
+<div id="gate"><div class="box"><div id="gate-msg">불러오는 중…</div><button id="gate-btn" onclick="location.reload()">다시 시도</button></div></div>
+
+<div id="ms" style="display:none">
+
+  <div class="tabs-main" id="topTabs"></div>
+
+  <!-- 관리자: 게시하는 자리 -->
+  <div class="panel" id="pub-panel" style="display:none">
+    <div class="ptitle">📌 시간표 게시</div>
+    <div class="pdesc">
+      게시하면 그때의 배정이 <b>사진처럼 굳어</b> 보관됩니다. 이어서 배정을 고쳐도 게시된 시간표는 그대로예요.
+      <br><span style="color:var(--tl,#93A09A)">· 게시된 시간표는 <b>모든 선생님</b>이 볼 수 있습니다. · 지난 학기 것도 남아 있어 언제든 다시 볼 수 있어요.</span>
+    </div>
+    <div id="pub-now"></div>
+    <div class="pb-make">
+      <span style="font-size:12.5px;color:var(--ts,#5A6560)">저장해둔 배정</span>
+      <select class="pb-sel" id="pub-set"></select>
+      <button class="btn btn-p" onclick="doPublish()">📌 새로 게시</button>
+    </div>
+    <div class="pb-hint" id="pub-hint"></div>
+  </div>
+
+  <!-- 보는 자리 -->
+  <div class="panel">
+    <div class="ptitle">🗓 완성 시간표
+      <span style="margin-left:auto;display:inline-flex;gap:8px;align-items:center">
+        <span style="font-size:12px;color:var(--ts,#5A6560)">시간표</span>
+        <select class="pb-sel" id="vw-pub" onchange="onPickPublished()"></select>
+      </span>
+    </div>
+    <div class="pdesc" id="vw-desc"></div>
+    <div class="vw-bar" id="vw-bar" style="display:none">
+      <button class="vw-kb on" id="vk-mine" onclick="setVwKind('mine')">👤 내 시간표</button>
+      <button class="vw-kb" id="vk-grade" onclick="setVwKind('grade')">🎓 학년별</button>
+      <button class="vw-kb" id="vk-teacher" onclick="setVwKind('teacher')">🧑‍🏫 선생님별</button>
+      <button class="vw-kb" id="vk-room" onclick="setVwKind('room')">🏫 교실별</button>
+      <select class="vw-sel" id="vw-target" onchange="setVwTarget(this.value)"></select>
+      <span class="vw-right">
+        <button class="btn btn-sm" onclick="openPrint()">🖨 인쇄 · PDF</button>
+      </span>
+    </div>
+    <div id="vw-content"></div>
+  </div>
+
+</div>
+
+<div id="printArea"></div>
+<div id="toast" style="position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+  background:var(--gd,#1E3932);color:#fff;padding:11px 20px;border-radius:10px;font-size:13.5px;
+  font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s;z-index:400"></div>
+
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
+  collection, getDocs, query, where, Timestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: "AIzaSyBqZLcEr0OtNsWEeVIkJDU1YWfnmPVvJfE",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "1073095678851",
+  appId: "1:1073095678851:web:8e4f3ba9e15b8b0e6d0e5f"
+});
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $I = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const ORGS = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const DAYS = ['월','화','수','목','금'];
+const hm = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const parseHM = s => { const [a,b]=String(s||'0:0').split(':').map(Number); return (a||0)*60+(b||0); };
+
+function toast(msg, kind){
+  const t=$I('toast'); if(!t) return;
+  t.textContent=msg; t.style.background = kind==='err' ? '#C0392B' : 'var(--gd,#1E3932)';
+  t.style.opacity='1'; clearTimeout(t._t);
+  t._t=setTimeout(()=>{ t.style.opacity='0'; }, 2400);
+}
+function fmtDT(ts){
+  if(!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+let CU = null;
+let PUBS = [];        // 게시된 시간표들
+let CUR = null;       // 지금 보고 있는 게시본
+let SETS = [];        // 저장해둔 배정 (게시할 거리)
+
+/* 색 · 이름 — 배정 화면과 같은 규칙 */
+const LESSON_COLORS = [
+  '#7FB5A0','#8FB8E0','#E8A87C','#D9A0C0','#A79BD4','#7EBDC9',
+  '#E09B9B','#8FC49A','#D4B483','#B9A4D9','#7FC0B5','#E0A97C',
+  '#9BAEDD','#DDA0BC','#93C7A3','#CFAF7E','#A9C8DE','#C9A0D0',
+  '#8CC5B8','#E3B08A','#9FB3D9','#D3A5B8','#A6CBA0','#C7B78F'
+];
+function tintOf(hex, alpha){
+  const c = String(hex||'#7FB5A0').replace('#','');
+  const n = parseInt(c.length===3 ? c.split('').map(x=>x+x).join('') : c, 16);
+  return `rgba(${(n>>16)&255}, ${(n>>8)&255}, ${n&255}, ${alpha})`;
+}
+function lessonColor(l){
+  if(!l) return LESSON_COLORS[0];
+  if(l.color) return l.color;
+  const names = [];
+  (CUR?.snapshot?.lessons||[]).forEach(x=>{
+    const s=(x.subject||'').trim(); if(s && names.indexOf(s)<0) names.push(s);
+  });
+  const i = names.indexOf((l.subject||'').trim());
+  return LESSON_COLORS[(i<0?0:i) % LESSON_COLORS.length];
+}
+function teacherOf(uid){ return (CUR?.snapshot?.teachers||[]).find(t=>t.uid===uid) || null; }
+function tName(uid){ return (teacherOf(uid)||{}).name || ''; }
+function tColor(uid){ return (teacherOf(uid)||{}).color || '#93A09A'; }
+function teacherLabel(lesson, uids){
+  const list = (uids && uids.length) ? uids : (lesson ? (lesson.teacherUids||[]) : []);
+  const names = list.map(tName).filter(Boolean);
+  if(!names.length) return '미배정';
+  if(names.length <= 2) return names.join(', ');
+  const lead = lesson && lesson.leadUid && list.includes(lesson.leadUid) ? lesson.leadUid : list[0];
+  return `${tName(lead)} 외 ${names.length-1}명`;
+}
+function teacherLead(lesson, uids){
+  const list = (uids && uids.length) ? uids : (lesson ? (lesson.teacherUids||[]) : []);
+  if(lesson && lesson.leadUid && list.includes(lesson.leadUid)) return lesson.leadUid;
+  return list[0];
+}
+function findRoomName(roomId){
+  for(const f of (CUR?.snapshot?.floors||[])){
+    const r = (f.rooms||[]).find(x=>x.id===roomId);
+    if(r) return r.name;
+  }
+  return '';
+}
+
+/* 게시본에서 부서 블록 읽기 */
+function dayBlocksOf(grade, day){
+  const snap = CUR?.snapshot; if(!snap) return { blocks:[], startMin:0, endMin:0 };
+  const f = (snap.frames||[]).find(x=>x.id===snap.frameId) || (snap.frames||[])[0];
+  if(!f || !f.snapshot) return { blocks:[], startMin:0, endMin:0 };
+  const deptId = (snap.gradeDept?.[f.id]||{})[grade] || '';
+  const dept = (f.snapshot.departments||[]).find(d=>d.id===deptId);
+  if(!dept) return { blocks:[], startMin:0, endMin:0 };
+  const btMap = {}; (f.snapshot.blockTypes||[]).forEach(b=>btMap[b.id]=b);
+  const wk = f.snapshot.weekArrangements || {};
+  const arr = (wk[day] && wk[day][deptId]) || (f.snapshot.arrangements && f.snapshot.arrangements[deptId]) || null;
+  if(!arr) return { blocks:[], startMin:0, endMin:0 };
+  let cur = parseHM(dept.start || '08:40');
+  const startMin = cur, blocks = [];
+  arr.forEach(item=>{
+    const bt = btMap[item.typeId]; if(!bt) return;
+    const dur = Number(item.durOverride!=null ? item.durOverride : bt.dur) || 0;
+    blocks.push({ name:bt.name, dur, isClass:!!bt.countsAsClass, startMin:cur, endMin:cur+dur });
+    cur += dur;
+  });
+  return { blocks, startMin, endMin:cur };
+}
+
+/* 게시본의 배치를 평평하게 */
+function collect(){
+  const snap = CUR?.snapshot; if(!snap) return [];
+  const out = [];
+  const byGrade = snap.place2?.[snap.frameId] || {};
+  Object.keys(byGrade).forEach(grade=>{
+    DAYS.forEach(dy=>{
+      (byGrade[grade][dy] || []).forEach(c=>{
+        const les = (snap.lessons||[]).find(l=>l.id===c.lessonId); if(!les) return;
+        out.push({ day:dy, startMin:c.startMin, endMin:c.startMin+c.durMin,
+          grade, lesson:les, grades:[grade],
+          teacherUids:les.teacherUids||[], roomId:c.roomId || les.roomId || '' });
+      });
+    });
+  });
+  return out;
+}
+
+/* ═══ 보기 ═══ */
+let vwKind = 'mine';    // mine | grade | teacher | room
+let vwTarget = '';
+const TV_ZOOMS = [2.1, 2.7, 3.4, 4.3, 5.4];
+const TV_ZOOM_NAMES = ['작게','보통','크게','아주 크게','최대'];
+const TV_FONT = { 2.1:1, 2.7:1.14, 3.4:1.3, 4.3:1.5, 5.4:1.72 };
+let tvZoom = 2.7;
+try { const z = parseFloat(localStorage.getItem('tf_zoom')); if(z && TV_ZOOMS.includes(z)) tvZoom = z; } catch(e){}
+window.setTvZoom = function(v){
+  tvZoom = Number(v) || 2.7;
+  try { localStorage.setItem('tf_zoom', String(tvZoom)); } catch(e){}
+  renderView();
+};
+
+window.setVwKind = function(k){
+  vwKind = k; vwTarget = '';
+  ['mine','grade','teacher','room'].forEach(x=>{
+    const b = $I('vk-'+x); if(b) b.classList.toggle('on', x===k);
+  });
+  try { localStorage.setItem('tf_kind', k); } catch(e){}
+  renderView();
+};
+window.setVwTarget = function(v){ vwTarget = v; renderView(); };
+
+function targetsOf(all){
+  if(vwKind==='mine') return [{ id:CU.uid, label:(CU.name||'나')+' 선생님' }];
+  if(vwKind==='grade'){
+    const set = new Set(); all.forEach(it=>it.grades.forEach(g=>set.add(g)));
+    return [...set].sort((a,b)=>String(a).localeCompare(String(b),'ko',{numeric:true}))
+      .map(g=>({ id:String(g), label:String(g) }));
+  }
+  if(vwKind==='teacher'){
+    const set = new Set(); all.forEach(it=>it.teacherUids.forEach(u=>set.add(u)));
+    return [...set].map(u=>({ id:u, label:tName(u)||'(알 수 없음)' }))
+      .sort((a,b)=>a.label.localeCompare(b.label,'ko'));
+  }
+  const set = new Set(); all.forEach(it=>{ if(it.roomId) set.add(it.roomId); });
+  return [...set].map(r=>({ id:r, label:findRoomName(r)||'(교실)' }))
+    .sort((a,b)=>a.label.localeCompare(b.label,'ko'));
+}
+function matchOf(it, kind, target){
+  if(kind==='mine' || kind==='teacher') return it.teacherUids.includes(target);
+  if(kind==='grade') return it.grades.map(String).includes(String(target));
+  return it.roomId === target;
+}
+
+/* 시간표 한 장을 그린다 (화면·인쇄 같은 코드) */
+function sheetHTML(kind, target, label, opt){
+  const all = collect();
+  const mine = all.filter(it=>matchOf(it, kind, target));
+  if(!mine.length) return '';
+
+  const TV_PPM = (opt && opt.ppm) || tvZoom;
+  const f = TV_FONT[TV_PPM] || 1;
+
+  let s0 = Math.min(...mine.map(x=>x.startMin));
+  let e0 = Math.max(...mine.map(x=>x.endMin));
+  const bgBlocks = {};
+  if(kind==='grade'){
+    DAYS.forEach(dy=>{
+      const b = dayBlocksOf(target, dy);
+      bgBlocks[dy] = b.blocks || [];
+      if(b.blocks?.length){ s0 = Math.min(s0, b.startMin); e0 = Math.max(e0, b.endMin); }
+    });
+  }
+  const H = Math.round((e0 - s0) * TV_PPM);
+
+  const cols = DAYS.map(dy=>{
+    const bg = (bgBlocks[dy]||[]).map(b=>`
+      <div class="tv-bg ${b.isClass?'cls':'rest'} ${b.dur*TV_PPM < 15 ? 'tiny':''}"
+        style="top:${(b.startMin-s0)*TV_PPM}px;height:${b.dur*TV_PPM}px"><span>${esc(b.name)}</span></div>`).join('');
+    const cards = mine.filter(it=>it.day===dy).map(it=>{
+      const dur = it.endMin - it.startMin, px = dur * TV_PPM;
+      const size = px >= 62*f ? 'big' : px >= 40*f ? 'mid' : 'small';
+      const who = teacherLabel(it.lesson, it.teacherUids);
+      const room = it.roomId ? findRoomName(it.roomId) : '';
+      const lead = teacherLead(it.lesson, it.teacherUids);
+      const bar = lead ? tColor(lead) : '#93A09A';
+      const sub = kind==='grade' ? '' : (it.grade || '');
+      return `<div class="tv-card ${size}"
+        style="top:${(it.startMin-s0)*TV_PPM}px;height:${px}px;
+               --lc:${lessonColor(it.lesson)};--lc-bg:${tintOf(lessonColor(it.lesson),.16)};--tb:${bar}">
+        <div class="tv-c-top">
+          <b>${esc(it.lesson.subject)}</b>
+          ${size!=='small' ? `<span class="tv-c-time">${hm(it.startMin)}~${hm(it.endMin)}</span>` : ''}
+          ${size==='big' && sub ? `<span class="tv-c-sub">${esc(sub)}</span>` : ''}
+        </div>
+        <div class="tv-c-foot">
+          <span class="tv-c-who">${esc(who)}</span>
+          ${room?`<span class="tv-c-room">${esc(room)}</span>`:''}
+        </div>
+      </div>`;
+    }).join('');
+    return `<div class="tv-col" style="height:${H}px">${bg}${cards}</div>`;
+  }).join('');
+
+  let ticks = '';
+  for(let m = Math.ceil(s0/30)*30; m <= e0; m += 30){
+    ticks += `<div class="tv-tick" style="top:${(m-s0)*TV_PPM}px">${hm(m)}</div>`;
+  }
+  const kindLabel = kind==='grade'?'학년별':kind==='room'?'교실별':'선생님별';
+
+  return `<div class="tv-sheet">
+      <div class="tv-head">
+        <div>
+          <div class="tv-title">${esc(label)} 시간표</div>
+          <div class="tv-meta">${esc(CUR.title||'')} · ${kindLabel} · 주 ${mine.length}시간 · ${hm(s0)}~${hm(e0)}</div>
+        </div>
+        ${opt&&opt.noZoom ? '' : `<div class="tv-zoom">
+          <span>세로 크기</span>
+          ${TV_ZOOMS.map((z,i)=>`<button class="tv-zb ${Math.abs(z-tvZoom)<0.01?'on':''}"
+            onclick="setTvZoom(${z})">${TV_ZOOM_NAMES[i]}</button>`).join('')}
+        </div>`}
+      </div>
+      <div class="tv-board" style="--tvf:${f}">
+        <div class="tv-hd"><div class="tv-hd-t"></div>${DAYS.map(d=>`<div class="tv-hd-d">${d}</div>`).join('')}</div>
+        <div class="tv-grid" style="height:${H}px">
+          <div class="tv-times" style="height:${H}px">${ticks}</div>
+          ${cols}
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderView(){
+  const box = $I('vw-content'); if(!box) return;
+  const bar = $I('vw-bar');
+
+  if(!CUR){
+    if(bar) bar.style.display='none';
+    box.innerHTML = `<div class="empty"><div class="ico">🗓</div>
+      <div class="t1">아직 게시된 시간표가 없습니다</div>
+      <div>관리자가 시간표를 게시하면 여기에 나옵니다.</div></div>`;
+    return;
+  }
+  if(bar) bar.style.display='flex';
+
+  const all = collect();
+  if(!all.length){
+    box.innerHTML = `<div class="empty"><div class="ico">🧩</div>
+      <div class="t1">이 시간표에는 배치된 수업이 없습니다</div></div>`;
+    return;
+  }
+
+  const targets = targetsOf(all);
+  const sel = $I('vw-target');
+  if(sel){
+    if(!targets.some(t=>t.id===vwTarget)) vwTarget = targets.length ? targets[0].id : '';
+    sel.innerHTML = targets.map(t=>`<option value="${esc(t.id)}" ${t.id===vwTarget?'selected':''}>${esc(t.label)}</option>`).join('');
+    sel.style.display = (vwKind==='mine') ? 'none' : '';
+  }
+
+  const label = (targets.find(t=>t.id===vwTarget)||{}).label || '';
+  const html = sheetHTML(vwKind, vwTarget, label);
+  box.innerHTML = html || `<div class="empty"><div class="ico">🔍</div>
+      <div class="t1">${esc(label)} 에 배치된 수업이 없습니다</div>
+      <div>${vwKind==='mine'?'아직 수업이 배정되지 않았습니다.':'다른 대상을 골라보세요.'}</div></div>`;
+}
+
+/* ═══ 게시 ═══ */
+const canPublish = () => !!CU && (CU.role==='super' || CU.role==='org_admin');
+
+async function loadPublished(){
+  try {
+    const snap = await getDocs(collection(db,'timetablePublished'));
+    PUBS = snap.docs.map(d=>({ id:d.id, ...d.data() }))
+      .sort((a,b)=>(b.publishedAt?.seconds||0)-(a.publishedAt?.seconds||0));
+  } catch(e){ PUBS = []; }
+}
+async function loadSets(){
+  try {
+    const snap = await getDocs(collection(db,'timetableSets'));
+    SETS = snap.docs.map(d=>({ id:d.id, ...d.data() }))
+      .sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
+  } catch(e){ SETS = []; }
+}
+
+function renderPubPanel(){
+  const panel = $I('pub-panel');
+  if(!canPublish()){ if(panel) panel.style.display='none'; return; }
+  if(panel) panel.style.display='';
+
+  const now = PUBS.find(p=>p.active);
+  const box = $I('pub-now');
+  if(box){
+    box.innerHTML = now ? `
+      <div class="pb-now"><div class="pb-row">
+        <span class="pb-ico">✅</span>
+        <div style="min-width:0">
+          <div class="pb-t">${esc(now.title)}</div>
+          <div class="pb-m">${esc(now.publishedByName||'')} 게시 · ${fmtDT(now.publishedAt)} · 수업 ${now.counts?.placed||0}칸</div>
+        </div>
+        <span class="pb-act"><button class="btn btn-sm" onclick="unpublish('${now.id}')">내리기</button></span>
+      </div></div>`
+      : `<div class="empty" style="padding:22px 10px">
+        <div class="t1">지금 게시된 시간표가 없습니다</div>
+        <div>아래에서 배정을 골라 게시하면 모든 선생님이 볼 수 있습니다.</div></div>`;
+  }
+
+  const sel = $I('pub-set');
+  if(sel){
+    sel.innerHTML = SETS.length
+      ? SETS.map(s=>`<option value="${s.id}">${esc(s.name)}${s.updatedAt?` · ${fmtDT(s.updatedAt)}`:''}</option>`).join('')
+      : '<option value="">저장된 배정이 없습니다</option>';
+  }
+  const hint = $I('pub-hint');
+  if(hint){
+    const old = PUBS.filter(p=>!p.active).length;
+    hint.innerHTML = SETS.length
+      ? `시간표 배정 화면의 <b>저장·불러오기</b>에 담아둔 것 중에서 고릅니다.` +
+        (old ? ` 지난 게시본 ${old}개는 아래 목록에서 다시 볼 수 있어요.` : '')
+      : `먼저 <b>시간표 배정</b>에서 작업을 저장해 주세요.`;
+  }
+}
+
+window.doPublish = async function(){
+  if(!canPublish()){ toast('게시 권한이 없습니다.','err'); return; }
+  const setId = $I('pub-set')?.value;
+  const s = SETS.find(x=>x.id===setId);
+  if(!s){ toast('게시할 배정을 골라 주세요.','err'); return; }
+
+  const title = prompt('게시할 이름을 적어 주세요.', s.name || '시간표');
+  if(title===null) return;
+  if(!title.trim()){ toast('이름을 적어 주세요.','err'); return; }
+
+  const snap = s.snapshot || {};
+  const place2 = snap.place2 || {};
+  const frameId = Object.keys(place2)[0] || '';
+  let placed = 0;
+  Object.values(place2).forEach(byGrade=>Object.values(byGrade||{}).forEach(byDay=>
+    Object.values(byDay||{}).forEach(list=>{ placed += (list||[]).length; })));
+
+  try {
+    // 지금 게시된 것을 내린다 (한 번에 하나만 앞에 세운다)
+    for(const p of PUBS.filter(x=>x.active)){
+      await updateDoc(doc(db,'timetablePublished',p.id), { active:false });
+    }
+    await addDoc(collection(db,'timetablePublished'), {
+      title: title.trim(),
+      org: CU.org || '',
+      active: true,
+      publishedAt: Timestamp.now(),
+      publishedByUid: CU.uid,
+      publishedByName: CU.name || '',
+      counts: { placed, lessons:(snap.lessons||[]).length },
+      snapshot: {
+        frameId,
+        frames: FRAMES_CACHE,
+        floors: snap.floors || [],
+        lessons: snap.lessons || [],
+        place2,
+        gradeDept: snap.gradeDept || {},
+        teachers: TEACHERS_CACHE,
+      }
+    });
+    await loadPublished();
+    CUR = PUBS.find(p=>p.active) || PUBS[0] || null;
+    renderPubPanel(); renderPubSelect(); renderView();
+    toast('게시했습니다 ✓');
+  } catch(e){ toast('게시 실패: '+(e.message||''),'err'); }
+};
+
+window.unpublish = async function(id){
+  if(!confirm('게시를 내릴까요?\n\n선생님들이 볼 수 없게 됩니다. 기록은 남아 있어 다시 올릴 수 있어요.')) return;
+  try {
+    await updateDoc(doc(db,'timetablePublished',id), { active:false });
+    await loadPublished();
+    CUR = PUBS.find(p=>p.active) || PUBS[0] || null;
+    renderPubPanel(); renderPubSelect(); renderView();
+    toast('내렸습니다');
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
+function renderPubSelect(){
+  const sel = $I('vw-pub'); if(!sel) return;
+  sel.innerHTML = PUBS.length
+    ? PUBS.map(p=>`<option value="${p.id}" ${CUR&&p.id===CUR.id?'selected':''}>${
+        esc(p.title)}${p.active?' (지금)':''} · ${fmtDT(p.publishedAt)}</option>`).join('')
+    : '<option value="">게시된 시간표 없음</option>';
+  const d = $I('vw-desc');
+  if(d){
+    d.innerHTML = CUR
+      ? `<b>${esc(CUR.title)}</b> · ${esc(CUR.publishedByName||'')} 게시 · ${fmtDT(CUR.publishedAt)}` +
+        (CUR.active ? ' <span style="color:var(--gm,#00704A);font-weight:700">· 지금 쓰는 시간표</span>'
+                    : ' <span style="color:var(--tl,#93A09A)">· 지난 시간표</span>')
+      : '게시된 시간표가 아직 없습니다.';
+  }
+}
+window.onPickPublished = function(){
+  const id = $I('vw-pub')?.value;
+  CUR = PUBS.find(p=>p.id===id) || null;
+  vwTarget = '';
+  renderPubSelect(); renderView();
+};
+
+/* ═══ 인쇄 — 고른 것만, 한 장에 하나씩 ═══ */
+let prKind = 'grade';
+let prPicked = new Set();
+
+window.openPrint = function(){
+  if(!CUR){ toast('게시된 시간표가 없습니다.','err'); return; }
+  prKind = (vwKind==='mine') ? 'teacher' : vwKind;
+  prPicked = new Set();
+  if(vwKind==='mine') prPicked.add(CU.uid);
+  else if(vwTarget) prPicked.add(vwTarget);
+
+  const mv=document.createElement('div'); mv.className='pr-ov'; mv.id='pr-mod';
+  mv.innerHTML = `<div class="pr-bk" onclick="closePrint()"></div>
+    <div class="pr-box">
+      <div class="pr-t">🖨 인쇄 · PDF</div>
+      <div class="pr-d">고른 시간표만 <b>한 장에 하나씩</b> 나옵니다. 여러 개를 한 번에 뽑을 수 있어요.</div>
+      <div class="pr-kinds">
+        <button class="pr-k" data-k="grade" onclick="setPrKind('grade')">🎓 학년별</button>
+        <button class="pr-k" data-k="teacher" onclick="setPrKind('teacher')">🧑‍🏫 선생님별</button>
+        <button class="pr-k" data-k="room" onclick="setPrKind('room')">🏫 교실별</button>
+      </div>
+      <label class="pr-all"><input type="checkbox" id="pr-all" onchange="toggleAllPrint(this.checked)"> 모두 고르기</label>
+      <div class="pr-list" id="pr-list"></div>
+      <div class="pr-act">
+        <span class="pr-n" id="pr-n"></span>
+        <button class="btn" onclick="closePrint()">취소</button>
+        <button class="btn btn-p" onclick="doPrint()">인쇄하기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(mv);
+  setPrKind(prKind);
+};
+window.closePrint = function(){ document.getElementById('pr-mod')?.remove(); };
+
+window.setPrKind = function(k){
+  prKind = k;
+  document.querySelectorAll('.pr-k').forEach(b=>b.classList.toggle('on', b.dataset.k===k));
+  const all = collect();
+  const saveK = vwKind; vwKind = k;
+  const targets = targetsOf(all);
+  vwKind = saveK;
+  const box = $I('pr-list'); if(!box) return;
+  box.innerHTML = targets.map(t=>{
+    const n = all.filter(it=>matchOf(it, k, t.id)).length;
+    return `<label class="pr-row ${prPicked.has(t.id)?'on':''}">
+      <input type="checkbox" value="${esc(t.id)}" ${prPicked.has(t.id)?'checked':''}
+        onchange="togglePrint(this)">
+      <b>${esc(t.label)}</b><span class="pr-cnt">${n}시간</span></label>`;
+  }).join('') || '<div class="pr-d" style="text-align:center">대상이 없습니다</div>';
+  updatePrCount();
+};
+window.togglePrint = function(cb){
+  if(cb.checked) prPicked.add(cb.value); else prPicked.delete(cb.value);
+  cb.closest('.pr-row').classList.toggle('on', cb.checked);
+  updatePrCount();
+};
+window.toggleAllPrint = function(on){
+  document.querySelectorAll('#pr-list input').forEach(cb=>{
+    cb.checked = on; togglePrint(cb);
+  });
+};
+function updatePrCount(){
+  const el = $I('pr-n'); if(!el) return;
+  el.textContent = prPicked.size ? `${prPicked.size}장 나옵니다` : '고른 것이 없습니다';
+}
+
+window.doPrint = function(){
+  if(!prPicked.size){ toast('인쇄할 것을 골라 주세요.','err'); return; }
+  const all = collect();
+  const saveK = vwKind; vwKind = prKind;
+  const targets = targetsOf(all);
+  vwKind = saveK;
+
+  // 종이에 알맞은 크기로 그린다 (화면 크기와 따로)
+  const pages = targets.filter(t=>prPicked.has(t.id)).map(t=>{
+    const html = sheetHTML(prKind, t.id, t.label, { ppm:2.7, noZoom:true });
+    return html ? `<div class="pr-page">${html}</div>` : '';
+  }).filter(Boolean).join('');
+
+  if(!pages){ toast('내보낼 내용이 없습니다.','err'); return; }
+  $I('printArea').innerHTML = pages;
+  closePrint();
+  document.body.classList.add('printing');
+  const done = ()=>{
+    document.body.classList.remove('printing');
+    $I('printArea').innerHTML = '';
+    window.removeEventListener('afterprint', done);
+  };
+  window.addEventListener('afterprint', done);
+  setTimeout(()=>window.print(), 120);
+};
+
+/* ═══ 시작 ═══ */
+let FRAMES_CACHE = [], TEACHERS_CACHE = [];
+const T_COLORS = ['#00704A','#3F7CB5','#7C6BC4','#C0871F','#B5612E','#4A8C6F','#9C5B86',
+  '#5A6B8C','#6A8E3C','#807A6B','#2E7D6B','#8E6FA8','#C25B7E','#0D8478','#A8742A'];
+
+onAuthStateChanged(auth, async user => {
+  if(!user){ $I('gate-msg').textContent='로그인이 필요합니다.'; $I('gate-btn').style.display='inline-block'; return; }
+  try {
+    const sdoc = await getDoc(doc(db,'staff',user.uid));
+    if(!sdoc.exists()){ $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    CU = { uid:user.uid, ...sdoc.data() };
+    window.ORGS = ORGS;
+    if(window.renderShell) renderShell('timetable', CU);
+
+    // 위 탭
+    $I('topTabs').innerHTML = `
+      <a href="timetable.html" class="tab-main"><span class="tab-ic">📐</span>시간표 틀</a>
+      <a href="schedule-assign.html" class="tab-main"><span class="tab-ic">🗓️</span>시간표 배정</a>
+      <a href="timetable-final.html" class="tab-main on"><span class="tab-ic">✅</span>완성 시간표</a>`;
+    if(window.setCrumb) setCrumb(['완성 시간표']);
+
+    $I('gate').style.display='none';
+    $I('ms').style.display='block';
+
+    // 게시할 때 담아둘 것들
+    try {
+      const st = await getDocs(collection(db,'staff'));
+      TEACHERS_CACHE = st.docs.map((d,i)=>{
+        const s=d.data();
+        return { uid:d.id, name:s.name||'', org:s.org||'', orgs:s.orgs||[],
+          color:T_COLORS[i%T_COLORS.length] };
+      });
+      const fr = await getDoc(doc(db,'timetables','main'));
+      FRAMES_CACHE = (fr.exists() && fr.data().list) ? fr.data().list : [];
+    } catch(e){}
+
+    await loadPublished();
+    if(canPublish()) await loadSets();
+    CUR = PUBS.find(p=>p.active) || PUBS[0] || null;
+
+    try { const k = localStorage.getItem('tf_kind'); if(k) vwKind = k; } catch(e){}
+    ['mine','grade','teacher','room'].forEach(x=>{
+      const b = $I('vk-'+x); if(b) b.classList.toggle('on', x===vwKind);
+    });
+
+    renderPubPanel();
+    renderPubSelect();
+    renderView();
+  } catch(e){
+    $I('gate-msg').textContent='오류: '+(e.message||'');
+    $I('gate-btn').style.display='inline-block';
+  }
+});
+
+</script>
+</body>
+</html>
