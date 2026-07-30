@@ -334,6 +334,9 @@
     .pg-wrap .pg-tray-list{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
       max-height:none;min-height:0;padding-bottom:4px}
     .pg-wrap .pg-tray-card{flex:none;min-width:132px;max-width:180px}
+    .pg-wrap .pg-tray-card.edge{margin-top:0;margin-left:9px}
+    .pg-wrap .pg-tray-card.edge::before{top:0;bottom:0;left:-6px;right:auto;
+      border-top:none;border-left:1px dashed var(--ivd,#E3E1DA)}
     .pg-board{max-height:calc(100vh - 420px);min-height:520px}
   }
   /* 좁은 화면 (폰·작은 패드) */
@@ -363,6 +366,16 @@
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .pg-tray-card span{font-size:10.5px;color:var(--ts,#5A6560);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  /* 합반 카드 — 먼저 놓아야 하므로 눈에 띄게 */
+  .pg-tray-card.shared{outline:1.5px solid var(--gm,#00704A);outline-offset:-1px}
+  .pg-tray-card.edge{margin-top:9px;position:relative}
+  .pg-tray-card.edge::before{content:'';position:absolute;top:-6px;left:0;right:0;
+    border-top:1px dashed var(--ivd,#E3E1DA)}
+  .tc-sh{font-size:10px;font-weight:800;color:var(--gm,#00704A);
+    background:var(--gp,#E8F3EF);border-radius:5px;padding:1px 6px;
+    align-self:flex-start;margin:1px 0}
+  .tt-sh{font-size:10px;font-weight:800;color:var(--gm,#00704A);
+    background:var(--gp,#E8F3EF);border-radius:5px;padding:1px 7px;margin-left:6px}
   .tc-who{font-weight:700;color:var(--gm,#00704A)}
   .tc-who.none{color:var(--goldd,#8A6410);font-weight:800}
   .tc-dur{color:var(--tl,#93A09A)}
@@ -4012,6 +4025,25 @@ function cardMinutes(lesson, size, idx){
    ④ 같은 교실을 같은 시각에 다른 학년이 씀 (강당처럼) */
 function overlaps(aS, aE, bS, bE){ return aS < bE && bS < aE; }
 
+/* 합반 학년을 짧게 적는다 — 이어지는 학년은 범위로 묶는다
+   ['1학년','2학년','3학년','7학년'] → '1~3 · 7학년' */
+function sharedLabel(grades){
+  const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+  const idx = (grades||[]).map(g=>order.indexOf(g)).filter(i=>i>=0).sort((a,b)=>a-b);
+  if(!idx.length) return (grades||[]).join(' · ');
+  const num = g => String(g).replace(/[^0-9]/g,'');
+  const runs = [];
+  let s = idx[0], prev = idx[0];
+  for(let i=1;i<idx.length;i++){
+    if(idx[i] !== prev+1){ runs.push([s,prev]); s = idx[i]; }
+    prev = idx[i];
+  }
+  runs.push([s,prev]);
+  const unit = /세$/.test(order[idx[0]]||'') ? '세' : '학년';
+  const parts = runs.map(([a,b])=> a===b ? num(order[a]) : `${num(order[a])}~${num(order[b])}`);
+  return parts.join(' · ') + unit;
+}
+
 /* 합반 수업 — 여러 학년이 함께 듣는 수업.
    한 학년에 놓으면 나머지 학년에도 같은 시각으로 함께 놓인다.
    같은 수업이므로 선생님이나 교실이 겹쳐도 문제가 아니다. */
@@ -4257,7 +4289,18 @@ function drawPlaceBoard(){
 
   // 아직 안 놓은 카드
   const left = unplacedFor(pgGrade);
-  const tray = left.length ? left.map(c=>{
+  // 합반은 여러 학년을 한꺼번에 잡으므로 먼저 놓는 편이 낫다 — 위로 올린다
+  const sorted = left.slice().sort((a,b)=>{
+    const as = isShared(a.lesson) ? 0 : 1;
+    const bs = isShared(b.lesson) ? 0 : 1;
+    if(as !== bs) return as - bs;
+    // 합반끼리는 학년 수가 많은 쪽부터 (자리 잡기가 더 까다롭다)
+    const an = (a.lesson.grades||[]).length, bn = (b.lesson.grades||[]).length;
+    return bn - an || (a.lesson.subject||'').localeCompare(b.lesson.subject||'','ko');
+  });
+  const sharedN = sorted.filter(c=>isShared(c.lesson)).length;
+
+  const tray = sorted.length ? sorted.map((c,i)=>{
     // 담당 선생님 — 먼저 배정하시는 협력 선생님이 누구인지 바로 보이게
     const names = (c.lesson.teacherUids||[])
       .map(u=>(TEACHERS.find(t=>t.uid===u)||{}).name).filter(Boolean);
@@ -4265,11 +4308,18 @@ function drawPlaceBoard(){
       : names.length === 1 ? names[0]
       : `${names[0]} +${names.length-1}`;
     const room = c.lesson.roomId ? findRoomName(c.lesson.roomId) : '';
-    return `<div class="pg-tray-card" draggable="true" data-lesson="${c.lessonId}" data-idx="${c.cardIdx}"
+    const sh = isShared(c.lesson);
+    const shTxt = sh ? sharedLabel(c.lesson.grades) : '';
+    // 합반이 끝나는 자리에 선을 하나 긋는다
+    const edge = (sharedN && i === sharedN) ? ' edge' : '';
+    return `<div class="pg-tray-card ${sh?'shared':''}${edge}" draggable="true"
+      data-lesson="${c.lessonId}" data-idx="${c.cardIdx}"
       data-dur="${c.durMin}" style="--lc:${lessonColor(c.lesson)};--lc-bg:${tintOf(lessonColor(c.lesson),.14)}"
-      title="${esc(c.lesson.subject)} · ${c.durMin}분${c.size>1?` · ${c.size}연강`:''}
+      title="${esc(c.lesson.subject)} · ${c.durMin}분${c.size>1?` · ${c.size}연강`:''}${
+        sh?`\n🤝 ${esc((c.lesson.grades||[]).join(', '))} 합반`:''}
 👤 ${esc(names.join(', ')||'담당 없음')}${room?`\n🚪 ${esc(room)}`:''}">
       <b>${esc(c.lesson.subject)}</b>
+      ${sh?`<span class="tc-sh">🤝 ${esc(shTxt)} 합반</span>`:''}
       <span class="tc-who ${names.length?'':'none'}">👤 ${esc(who)}</span>
       <span class="tc-dur">${c.durMin}분${c.size>1?` · ${c.size}연강`:''}${room?` · ${esc(room)}`:''}</span>
     </div>`;
@@ -4286,7 +4336,8 @@ function drawPlaceBoard(){
   body.innerHTML = `
     <div class="pg-wrap">
       <div class="pg-tray">
-        <div class="pg-tray-t">놓을 카드 <b>${left.length}</b></div>
+        <div class="pg-tray-t">놓을 카드 <b>${left.length}</b>${
+          sharedN?`<span class="tt-sh">🤝 합반 ${sharedN}</span>`:''}</div>
         <div class="pg-tray-list">${tray}</div>
         ${allProbs?`<div class="pg-probs">⚠ 겹침 ${allProbs}건</div>`:''}
         <div class="pg-tip">카드를 <b>우클릭</b>하면 목록으로 되돌아옵니다</div>
