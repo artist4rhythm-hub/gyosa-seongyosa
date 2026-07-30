@@ -429,6 +429,7 @@
 
 <div class="wrap">
   <div class="toolbar">
+    <button class="btn btn-primary btn-sm" id="btnOver" style="display:none">💾 덮어쓰기</button>
     <button class="btn btn-primary btn-sm" id="btnSaveAs">이름 붙여 저장</button>
     <button class="btn btn-sm" id="btnUndo" title="Ctrl+Z">되돌리기</button>
     <button class="btn btn-sm" id="btnExcel">엑셀 내보내기</button>
@@ -1958,6 +1959,8 @@ document.addEventListener('change',e=>{
    현재는 메모리 보관. 다음 단계에서 이 배열을 Firestore 컬렉션으로 옮기면 됨.
 */
 let savedTimetables=[];
+let curSavedId = '';        // 지금 불러와 고치고 있는 틀
+let curSavedName = '';
 
 // Firebase에서 받은 목록으로 교체 (module script가 호출)
 window.ttSetSaved = function(arr){
@@ -1979,6 +1982,9 @@ function openSaveDlg(){
   $('#saveDlg').showModal();
   setTimeout(()=>$('#saveName').focus(),50);
 }
+const _bo = document.getElementById('btnOver');
+if(_bo) _bo.onclick = overwriteCurrent;
+
 $('#saveConfirm').onclick=()=>{
   const name=$('#saveName').value.trim();
   if(!name){ flash('이름을 입력하세요'); return; }
@@ -2000,6 +2006,32 @@ $('#saveConfirm').onclick=()=>{
   if(window.ttSyncToCloud) window.ttSyncToCloud();
 };
 
+/* 지금 고치고 있는 틀에 그대로 덮어쓴다 */
+function renderSaveBtn(){
+  const b = document.getElementById('btnOver'); if(!b) return;
+  const it = savedTimetables.find(s=>s.id===curSavedId);
+  if(!it){ b.style.display='none'; return; }
+  b.style.display='';
+  b.textContent = `💾 "${it.name}"에 덮어쓰기`;
+  b.disabled = !canEditSaved(it);
+  b.title = canEditSaved(it) ? '' : '저장한 담당자만 덮어쓸 수 있습니다';
+  b.style.opacity = canEditSaved(it) ? '' : '.5';
+}
+window.renderSaveBtn = renderSaveBtn;
+
+function overwriteCurrent(){
+  const it = savedTimetables.find(s=>s.id===curSavedId);
+  if(!it){ flash('먼저 저장된 틀을 불러와 주세요'); return; }
+  if(!canEditSaved(it)){ flash('이 시간표는 저장한 담당자만 수정할 수 있습니다'); return; }
+  if(!confirm(`"${it.name}" 에 지금 내용을 덮어쓸까요?\n\n이전 내용은 되돌릴 수 없습니다.`)) return;
+  it.snapshot = JSON.parse(JSON.stringify(state));
+  it.savedAt = new Date().toISOString();
+  renderSaved();
+  if(window.ttSyncToCloud) window.ttSyncToCloud();
+  flash(`"${it.name}" 덮어쓰기 완료`);
+}
+window.overwriteCurrent = overwriteCurrent;
+
 // 저장된 시간표를 수정/삭제할 권한 (본인이 저장했거나 슈퍼)
 function canEditSaved(item){
   const myUid = localStorage.getItem('gyosa_uid')||'';
@@ -2012,12 +2044,16 @@ function canEditSaved(item){
 window.canEditSaved = canEditSaved;
 
 function loadTimetable(id){
+  // 어느 틀을 고치고 있는지 기억해 둔다 (덮어쓰기 버튼에서 쓴다)
+  const _it = savedTimetables.find(s=>s.id===id);
+  if(_it){ curSavedId = id; curSavedName = _it.name || ''; }
   const item=savedTimetables.find(s=>s.id===id);
   if(!item) return;
   state=JSON.parse(JSON.stringify(item.snapshot));
   renderAll();
   flash(`"${item.name}" 불러옴`);
   window.scrollTo({top:0,behavior:'smooth'});
+  if(typeof renderSaveBtn==='function') renderSaveBtn();
 }
 function duplicateTimetable(id){
   const item=savedTimetables.find(s=>s.id===id);

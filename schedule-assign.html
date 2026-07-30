@@ -449,6 +449,14 @@
   .mact .bs{background:var(--wh,#fff);color:var(--gm,#00704A);border:1.5px solid var(--gm,#00704A);
     border-radius:9px;padding:9px 16px;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
 
+  /* 틀 바꾸기 안내 */
+  .mf-box{background:var(--iv,#F2F0EB);border-radius:10px;padding:12px 14px;margin:12px 0}
+  .mf-row{font-size:13.5px;color:var(--gd,#1E3932);line-height:1.7}
+  .mf-row b{color:var(--gm,#00704A)}
+  .mf-row2{font-size:12.5px;color:var(--ts,#5A6560);line-height:1.7;margin-top:6px}
+  .mf-opt{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ts,#5A6560);
+    cursor:pointer;padding:4px 2px}
+
   /* 카드 자세히 보기 */
   .pg-info{position:absolute;bottom:2px;right:3px;width:16px;height:16px;line-height:1;
     border-radius:50%;border:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);
@@ -4447,9 +4455,98 @@ window.renderPlace2 = renderPlace2;
 (function(){ try { const s=localStorage.getItem('sa_pg_frame'); if(s) pgFrameId=s; } catch(e){} })();
 
 window.onPgFrame = function(){
-  pgFrameId = $I('pg-frame').value;
-  try { localStorage.setItem('sa_pg_frame', pgFrameId); } catch(e){}
+  const prev = pgFrameId;
+  const next = $I('pg-frame').value;
+  pgFrameId = next;
+  try { localStorage.setItem('sa_pg_frame', next); } catch(e){}
+
+  // 앞 틀에 놓아둔 카드가 있고 새 틀은 비어 있으면 옮길지 물어본다
+  const had = countPlaced(prev), has = countPlaced(next);
+  if(prev && next && prev !== next && had > 0 && has === 0){
+    setTimeout(()=>askMoveFrame(prev, next, had), 60);
+  }
   renderPlace2();
+};
+
+/* 이 틀에 놓인 카드가 몇 장인가 */
+function countPlaced(frameId){
+  if(!frameId) return 0;
+  let n = 0;
+  Object.values(PLACE2[frameId] || {}).forEach(byDay=>
+    Object.values(byDay||{}).forEach(list=>{ n += (list||[]).length; }));
+  return n;
+}
+
+/* 틀만 바꾸고 배치는 그대로 옮긴다
+   시각은 그대로 두되, 새 틀의 칸 경계에 가까우면 그 자리에 맞춰 준다 */
+window.askMoveFrame = function(fromId, toId, cnt){
+  const fn = (FRAMES.find(f=>f.id===fromId)||{}).name || '앞 틀';
+  const tn = (FRAMES.find(f=>f.id===toId)||{}).name || '새 틀';
+  const mv = document.createElement('div'); mv.className='mov'; mv.id='mf-mod';
+  mv.innerHTML = `<div class="mbk" onclick="closeMoveFrame()"></div>
+    <div class="mbox" style="max-width:480px">
+      <div class="mtitle">틀을 바꾸셨습니다</div>
+      <div class="msub">${esc(fn)} → ${esc(tn)}</div>
+      <div class="mf-box">
+        <div class="mf-row"><b>${esc(fn)}</b> 에 놓아둔 수업이 <b>${cnt}칸</b> 있습니다.</div>
+        <div class="mf-row2">새 틀로 그대로 옮길까요? 시각은 지금 그대로 두고,
+          새 틀의 칸 경계에 가까우면 <b>그 자리에 맞춰</b> 드립니다.</div>
+      </div>
+      <label class="mf-opt"><input type="checkbox" id="mf-snap" checked>
+        새 틀의 칸에 맞춰 정리하기</label>
+      <div class="mact">
+        <button class="bs" onclick="closeMoveFrame()">그냥 두기</button>
+        <button class="bp" onclick="doMoveFrame('${fromId}','${toId}')">옮기기</button>
+      </div>
+    </div>`;
+  ($I('mwrap') || document.body).appendChild(mv);
+};
+window.closeMoveFrame = function(){ document.getElementById('mf-mod')?.remove(); };
+
+window.doMoveFrame = async function(fromId, toId){
+  const snapTo = !!document.getElementById('mf-snap')?.checked;
+  const src = PLACE2[fromId] || {};
+  const saveF = pgFrameId, saveG = pgGrade;
+  pgFrameId = toId;
+
+  const out = {};
+  let moved = 0, fixed = 0;
+  Object.keys(src).forEach(grade=>{
+    out[grade] = {};
+    Object.keys(src[grade]||{}).forEach(day=>{
+      out[grade][day] = (src[grade][day]||[]).map(c=>{
+        let st = c.startMin;
+        if(snapTo){
+          pgGrade = grade;
+          const b = dayBlocks(grade, day);
+          if(b.blocks.length){
+            // 가장 가까운 칸 경계를 찾는다 (앞머리·꼬리 모두)
+            let best = st, bd = 999;
+            b.blocks.forEach(bl=>{
+              [bl.startMin, bl.endMin].forEach(edge=>{
+                let d = Math.abs(st - edge);
+                if(d < bd){ bd = d; best = edge; }
+                d = Math.abs(st - (edge - c.durMin));
+                if(d < bd){ bd = d; best = edge - c.durMin; }
+              });
+            });
+            if(bd <= 20 && best !== st){ st = best; fixed++; }
+            st = Math.max(b.startMin, Math.min(st, b.endMin - c.durMin));
+          }
+        }
+        moved++;
+        return { ...c, startMin: st };
+      });
+    });
+  });
+  pgFrameId = saveF; pgGrade = saveG;
+
+  PLACE2[toId] = out;
+  pgFrameId = toId;
+  await savePlace2(true);
+  closeMoveFrame();
+  renderPlace2();
+  toast(`${moved}칸을 옮겼습니다${fixed?` · ${fixed}칸은 새 칸에 맞췄어요`:''}`,'ok');
 };
 window.setPgGrade = function(g){ pgGrade = g; renderPlace2(); };
 
