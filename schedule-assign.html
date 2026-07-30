@@ -333,7 +333,7 @@
     .pg-wrap .pg-tray{position:static;order:-1;min-width:0}
     .pg-wrap .pg-tray-list{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
       max-height:none;min-height:0;padding-bottom:4px}
-    .pg-wrap .pg-tray-card{flex:none;min-width:104px}
+    .pg-wrap .pg-tray-card{flex:none;min-width:132px;max-width:180px}
     .pg-board{max-height:calc(100vh - 420px);min-height:520px}
   }
   /* 좁은 화면 (폰·작은 패드) */
@@ -342,7 +342,7 @@
     .pg-wrap .pg-tray{position:static;order:-1;min-width:0}
     .pg-wrap .pg-tray-list{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
       max-height:none;min-height:0}
-    .pg-wrap .pg-tray-card{flex:none;min-width:100px}
+    .pg-wrap .pg-tray-card{flex:none;min-width:126px;max-width:170px}
     .pg-head,.pg-grid{grid-template-columns:44px repeat(5,minmax(88px,1fr))}
     .pg-board{max-height:calc(100vh - 300px);min-height:380px}
     .pg-gtab{padding:6px 10px;font-size:12px}
@@ -359,8 +359,13 @@
     background:var(--lc-bg,#fff);border:1px solid var(--ivd,#E3E1DA);border-left:4px solid var(--lc,#7FB5A0);
     cursor:grab;user-select:none}
   .pg-tray-card:active{cursor:grabbing}
-  .pg-tray-card b{font-size:12.5px;font-weight:800;color:var(--gd,#1E3932)}
-  .pg-tray-card span{font-size:10.5px;color:var(--ts,#5A6560)}
+  .pg-tray-card b{font-size:12.5px;font-weight:800;color:var(--gd,#1E3932);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .pg-tray-card span{font-size:10.5px;color:var(--ts,#5A6560);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+  .tc-who{font-weight:700;color:var(--gm,#00704A)}
+  .tc-who.none{color:var(--goldd,#8A6410);font-weight:800}
+  .tc-dur{color:var(--tl,#93A09A)}
   .pg-tray-done{font-size:12px;color:var(--gm,#00704A);font-weight:700;padding:8px 2px}
   .pg-probs{margin-top:9px;font-size:11.5px;font-weight:700;color:var(--danger,#C0392B);
     background:var(--danger-bg,#FDECEA);border-radius:8px;padding:6px 9px}
@@ -4211,12 +4216,23 @@ function drawPlaceBoard(){
 
   // 아직 안 놓은 카드
   const left = unplacedFor(pgGrade);
-  const tray = left.length ? left.map(c=>`
-    <div class="pg-tray-card" draggable="true" data-lesson="${c.lessonId}" data-idx="${c.cardIdx}"
-      data-dur="${c.durMin}" style="--lc:${lessonColor(c.lesson)};--lc-bg:${tintOf(lessonColor(c.lesson),.14)}">
+  const tray = left.length ? left.map(c=>{
+    // 담당 선생님 — 먼저 배정하시는 협력 선생님이 누구인지 바로 보이게
+    const names = (c.lesson.teacherUids||[])
+      .map(u=>(TEACHERS.find(t=>t.uid===u)||{}).name).filter(Boolean);
+    const who = names.length === 0 ? '미배정'
+      : names.length === 1 ? names[0]
+      : `${names[0]} +${names.length-1}`;
+    const room = c.lesson.roomId ? findRoomName(c.lesson.roomId) : '';
+    return `<div class="pg-tray-card" draggable="true" data-lesson="${c.lessonId}" data-idx="${c.cardIdx}"
+      data-dur="${c.durMin}" style="--lc:${lessonColor(c.lesson)};--lc-bg:${tintOf(lessonColor(c.lesson),.14)}"
+      title="${esc(c.lesson.subject)} · ${c.durMin}분${c.size>1?` · ${c.size}연강`:''}
+👤 ${esc(names.join(', ')||'담당 없음')}${room?`\n🚪 ${esc(room)}`:''}">
       <b>${esc(c.lesson.subject)}</b>
-      <span>${c.durMin}분${c.size>1?` · ${c.size}연강`:''}</span>
-    </div>`).join('')
+      <span class="tc-who ${names.length?'':'none'}">👤 ${esc(who)}</span>
+      <span class="tc-dur">${c.durMin}분${c.size>1?` · ${c.size}연강`:''}${room?` · ${esc(room)}`:''}</span>
+    </div>`;
+  }).join('')
     : '<div class="pg-tray-done">✓ 이 학년은 모두 놓았습니다</div>';
 
   // 전체 문제 요약
