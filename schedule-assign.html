@@ -675,16 +675,33 @@
     overflow:hidden;text-overflow:ellipsis}
   .tv-c-room{margin-left:auto;font-size:9px;font-weight:700;color:#fff;flex:none;
     background:rgba(255,255,255,.24);border-radius:4px;padding:0 5px}
-  .tv-card.thin .tv-c-top{padding:1px 6px}
-  .tv-card.thin .tv-c-top b{font-size:10.5px}
-  .tv-card.thin .tv-c-time{display:none}
+  /* 짧은 카드는 글자를 줄이고 줄 사이를 좁힌다 */
+  .tv-card.mid .tv-c-top{padding:2px 6px}
+  .tv-card.mid .tv-c-top b{font-size:11px}
+  .tv-card.mid .tv-c-time{font-size:9px}
+  .tv-card.small{flex-direction:row;align-items:center;gap:5px;padding:0 6px}
+  .tv-card.small .tv-c-top{flex:1;padding:0;min-width:0}
+  .tv-card.small .tv-c-top b{font-size:10.5px}
+  .tv-card.small .tv-c-foot{background:transparent;padding:0;flex:none;max-width:58%}
+  .tv-card.small .tv-c-who{color:var(--tb,#5A6560);font-size:9.5px}
+  .tv-card.small .tv-c-room{background:var(--iv,#F2F0EB);color:var(--ts,#5A6560);
+    margin-left:4px;font-size:8.5px}
   @media print{
     .tv-board{min-width:0}
     .tv-card{box-shadow:none}
   }
-  .tv-head{margin-bottom:14px}
+  .tv-head{margin-bottom:14px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+  .tv-zoom{margin-left:auto;display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+    font-size:11px;color:var(--tl,#93A09A)}
+  .tv-zb{font-family:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:7px;background:var(--wh,#fff);
+    color:var(--ts,#5A6560);cursor:pointer}
+  .tv-zb:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
+  .tv-zb.on{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+  @media print{ .tv-zoom{display:none} }
   .tv-title{font-size:19px;font-weight:800;color:var(--gd,#1E3932);letter-spacing:-.02em}
-  .tv-meta{font-size:12px;color:var(--tl,#93A09A);margin-top:3px}
+  .tv-title{margin-bottom:2px}
+  .tv-meta{font-size:12px;color:var(--tl,#93A09A)}
   .tv-tbl{width:100%;border-collapse:separate;border-spacing:0;min-width:640px}
   .tv-tbl th,.tv-tbl td{border:1px solid var(--ivd,#E3E1DA);padding:0;vertical-align:top}
   .tv-tbl thead th{background:var(--gp,#E8F3EF);color:var(--gd,#1E3932);font-size:13px;
@@ -2870,6 +2887,17 @@ function renderSets(){
 // ═══════════════════════════════════════════
 let tvFrameId = '';
 let tvKind    = 'grade';   // 'grade' | 'teacher' | 'room'
+/* 세로 크기 — 글자가 눌리지 않게 넉넉히 잡는다.
+   20분짜리 짧은 수업도 과목·시각·선생님이 다 보이려면 40px 안팎은 있어야 한다. */
+const TV_ZOOMS = [1.4, 1.8, 2.3, 3.0];
+const TV_ZOOM_NAMES = ['작게','보통','크게','아주 크게'];
+let tvZoom = 1.8;
+try { const z = parseFloat(localStorage.getItem('sa_tv_zoom')); if(z && TV_ZOOMS.includes(z)) tvZoom = z; } catch(e){}
+window.setTvZoom = function(v){
+  tvZoom = Number(v) || 1.8;
+  try { localStorage.setItem('sa_tv_zoom', String(tvZoom)); } catch(e){}
+  renderTvView();
+};
 let tvTarget  = '';
 
 function hm(min){
@@ -2930,7 +2958,8 @@ function tvTargets(items){
     const set = new Set();
     items.forEach(it=> it.grades.forEach(g=>set.add(g)));
     return [...set].sort((a,b)=>String(a).localeCompare(String(b),'ko',{numeric:true}))
-      .map(g=>({ id:String(g), label:`${g}학년` }));
+      // 학년 이름에 이미 '학년'·'세'가 들어 있으므로 그대로 쓴다
+      .map(g=>({ id:String(g), label:String(g) }));
   }
   if(tvKind==='teacher'){
     const set = new Set();
@@ -2963,8 +2992,8 @@ function tvCellHTML(it, showTime){
   const grades = (it.grades||[]).join('·');
   let sub = '';
   if(tvKind==='grade')        sub = [teachers, room].filter(Boolean).join(' · ');
-  else if(tvKind==='teacher') sub = [grades?grades+'학년':'', room].filter(Boolean).join(' · ');
-  else                        sub = [grades?grades+'학년':'', teachers].filter(Boolean).join(' · ');
+  else if(tvKind==='teacher') sub = [grades||'', room].filter(Boolean).join(' · ');
+  else                        sub = [grades||'', teachers].filter(Boolean).join(' · ');
   return `<div class="tv-cell" style="--lc:${lessonColor(l)}">
       <div class="tv-sub-nm">${esc(l.subject||'수업')}</div>
       ${showTime?`<div class="tv-sub-time">${hm(it.startMin)}~${hm(it.endMin)}</div>`:''}
@@ -3018,7 +3047,7 @@ function renderTvView(){
      · 시간표 틀의 부서 블록을 배경에 깔고
      · 그 위에 실제 시각·길이대로 카드를 놓는다
      · 카드 왼쪽 띠는 선생님 색, 교실은 뱃지로 붙여 한눈에 나뉘게 한다 */
-  const TV_PPM = 1.25;                 // 1분당 세로 픽셀
+  const TV_PPM = tvZoom;               // 1분당 세로 픽셀 (아래 버튼으로 조절)
   const frameName = (FRAMES.find(f=>f.id===tvFrameId)||{}).name || '';
   const kindLabel = tvKind==='grade' ? '학년별' : (tvKind==='teacher' ? '선생님별' : '교실별');
   const totalCards = mine.length;
@@ -3042,16 +3071,8 @@ function renderTvView(){
   }
   const H = Math.round((e0 - s0) * TV_PPM);
 
-  // 선생님 색을 미리 뽑아둔다 (범례에도 쓴다)
-  const usedT = [];
-  mine.forEach(it=>(it.teacherUids||[]).forEach(u=>{ if(!usedT.includes(u)) usedT.push(u); }));
   const tColor = uid => (TEACHERS.find(t=>t.uid===uid)||{}).color || '#93A09A';
   const tName  = uid => (TEACHERS.find(t=>t.uid===uid)||{}).name || '';
-
-  const legend = usedT.length ? `<div class="tv-leg">
-      <span class="tv-leg-t">선생님</span>
-      ${usedT.map(u=>`<span class="tv-leg-i"><i style="background:${tColor(u)}"></i>${esc(tName(u))}</span>`).join('')}
-    </div>` : '';
 
   // 요일 칸
   const cols = DAYS.map(dy=>{
@@ -3061,7 +3082,8 @@ function renderTvView(){
 
     const cards = mine.filter(it=>it.day===dy).map(it=>{
       const dur = it.endMin - it.startMin;
-      const tall = dur >= 34;
+      const px  = dur * TV_PPM;          // 이 카드가 실제로 차지할 높이
+      const size = px >= 62 ? 'big' : px >= 40 ? 'mid' : 'small';
       const names = (it.teacherUids||[]).map(tName).filter(Boolean);
       const who = names.length===0 ? '미배정'
         : names.length===1 ? names[0] : `${names[0]} +${names.length-1}`;
@@ -3069,14 +3091,14 @@ function renderTvView(){
       const lead = (it.teacherUids||[])[0];
       const bar  = lead ? tColor(lead) : '#93A09A';
       const sub  = tvKind==='grade' ? '' : (it.grade || (it.grades||[]).join('·'));
-      return `<div class="tv-card ${tall?'':'thin'}"
-        style="top:${(it.startMin-s0)*TV_PPM}px;height:${dur*TV_PPM}px;
+      return `<div class="tv-card ${size}"
+        style="top:${(it.startMin-s0)*TV_PPM}px;height:${px}px;
                --lc:${lessonColor(it.lesson)};--lc-bg:${tintOf(lessonColor(it.lesson),.16)};--tb:${bar}"
         title="${esc(it.lesson.subject)} ${hm(it.startMin)}~${hm(it.endMin)}\n👤 ${esc(names.join(', ')||'미배정')}${room?`\n🚪 ${esc(room)}`:''}">
         <div class="tv-c-top">
           <b>${esc(it.lesson.subject)}</b>
-          <span class="tv-c-time">${hm(it.startMin)}~${hm(it.endMin)}</span>
-          ${tall && sub ? `<span class="tv-c-sub">${esc(sub)}</span>` : ''}
+          ${size!=='small' ? `<span class="tv-c-time">${hm(it.startMin)}~${hm(it.endMin)}</span>` : ''}
+          ${size==='big' && sub ? `<span class="tv-c-sub">${esc(sub)}</span>` : ''}
         </div>
         <div class="tv-c-foot">
           <span class="tv-c-who">${esc(who)}</span>
@@ -3099,8 +3121,12 @@ function renderTvView(){
       <div class="tv-head">
         <div class="tv-title">${esc(label)} 시간표</div>
         <div class="tv-meta">${esc(frameName)} · ${kindLabel} · 주 ${totalCards}시간 · ${hm(s0)}~${hm(e0)}</div>
+        <div class="tv-zoom">
+          <span>세로 크기</span>
+          ${TV_ZOOMS.map((z,i)=>`<button class="tv-zb ${Math.abs(z-tvZoom)<0.01?'on':''}"
+            onclick="setTvZoom(${z})">${TV_ZOOM_NAMES[i]}</button>`).join('')}
+        </div>
       </div>
-      ${legend}
       <div class="tv-board">
         <div class="tv-hd">
           <div class="tv-hd-t"></div>
