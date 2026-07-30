@@ -169,6 +169,18 @@
   .palette{display:flex;flex-wrap:wrap;gap:6px;padding:10px 13px;border-bottom:1px dashed var(--line-soft);background:var(--iv)}
   .palette .pchip{font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--line);background:var(--wh);font-weight:550;cursor:grab;user-select:none}
   .palette .pchip:active{cursor:grabbing}
+  /* 색상 컨셉 고르기 */
+  .tone-bar{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;margin-left:6px}
+  .tone-lab{font-size:11px;font-weight:700;color:var(--ink-faint)}
+  .tone-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-bottom:9px;
+    margin-bottom:9px;border-bottom:1px dashed var(--line)}
+  .tone-b{display:inline-flex;align-items:center;gap:5px;font-family:inherit;font-size:11.5px;
+    font-weight:600;padding:4px 9px;border:1px solid var(--line);border-radius:7px;
+    background:var(--panel);color:var(--ink-2, var(--ink));cursor:pointer}
+  .tone-b:hover{border-color:var(--accent)}
+  .tone-b.on{border-color:var(--accent);color:var(--accent);background:var(--accent-bg, var(--iv))}
+  .tone-dots{display:inline-flex;gap:2px}
+  .tone-dots i{width:8px;height:8px;border-radius:2px;display:block}
   .slotlist{padding:9px 11px;min-height:46px}
   .slot{display:flex;align-items:center;gap:9px;padding:7px 9px;border:1px solid var(--line-soft);border-radius:8px;margin-bottom:6px;background:var(--wh);cursor:grab}
   .slot.dragging{opacity:.4}
@@ -420,6 +432,7 @@
     <button class="btn btn-sm" id="btnUndo" title="Ctrl+Z">되돌리기</button>
     <button class="btn btn-sm" id="btnExcel">엑셀 내보내기</button>
     <button class="btn btn-sm btn-ghost" id="btnReset" style="display:none">초기화</button>
+    <span class="tone-bar" id="toneBar"></span>
     <span class="faint" style="align-self:center;font-size:12px" id="saveState"></span>
   </div>
 
@@ -787,7 +800,103 @@ const PALETTE_GROUPS = [
 ];
 const REST_COLOR = '#C9C6BC';
 
+/* ═══════════════════════════════════════════
+   색상 컨셉 — 같은 색조를 네 가지 느낌으로
+   기본(진한) 색을 밝기·선명함만 바꿔 만들어 내므로
+   그린·블루 같은 묶음 이름은 어느 톤에서나 그대로 맞는다.
+   ═══════════════════════════════════════════ */
+//  sr = 채도 비율, smin = 채도 최저값, dl = 밝기 더하기, lmax = 밝기 상한
+//  (채도를 일정량 빼면 원래 흐린 색이 회색이 되어 버리므로 비율로 줄인다)
+const TONE_DEF = {
+  deep:   { name:'진한',   desc:'또렷하고 묵직한 색',  sr:1.00, smin:0,  dl: 0,  lmax:100 },
+  bright: { name:'밝은',   desc:'환하고 산뜻한 색',    sr:0.95, smin:38, dl:16,  lmax:62 },
+  pastel: { name:'파스텔', desc:'연하고 부드러운 색',  sr:0.62, smin:30, dl:28,  lmax:76 },
+  muted:  { name:'차분한', desc:'눈이 편한 낮은 채도', sr:0.52, smin:20, dl:10,  lmax:56 },
+};
+let COLOR_TONE = 'deep';
+try { const t = localStorage.getItem('tt_tone'); if(t && TONE_DEF[t]) COLOR_TONE = t; } catch(e){}
+
+function hexToHsl(hex){
+  let c = String(hex||'#00704A').replace('#','');
+  if(c.length===3) c = c.split('').map(x=>x+x).join('');
+  const r=parseInt(c.slice(0,2),16)/255, g=parseInt(c.slice(2,4),16)/255, b=parseInt(c.slice(4,6),16)/255;
+  const mx=Math.max(r,g,b), mn=Math.min(r,g,b), d=mx-mn;
+  let hh=0;
+  if(d){
+    if(mx===r) hh=((g-b)/d+(g<b?6:0));
+    else if(mx===g) hh=(b-r)/d+2;
+    else hh=(r-g)/d+4;
+    hh*=60;
+  }
+  const l=(mx+mn)/2;
+  const s = d===0 ? 0 : d/(1-Math.abs(2*l-1));
+  return { h:hh, s:s*100, l:l*100 };
+}
+function hslToHex(hh,s,l){
+  s=Math.max(0,Math.min(100,s))/100; l=Math.max(0,Math.min(100,l))/100;
+  const c=(1-Math.abs(2*l-1))*s, x=c*(1-Math.abs(((hh/60)%2)-1)), m=l-c/2;
+  let r,g,b;
+  if(hh<60){r=c;g=x;b=0} else if(hh<120){r=x;g=c;b=0} else if(hh<180){r=0;g=c;b=x}
+  else if(hh<240){r=0;g=x;b=c} else if(hh<300){r=x;g=0;b=c} else {r=c;g=0;b=x}
+  const to=v=>Math.round((v+m)*255).toString(16).padStart(2,'0');
+  return '#'+to(r)+to(g)+to(b);
+}
+// 기본 색을 지금 톤으로 옮긴다 (색조는 그대로 두고 밝기·선명함만 바꾼다)
+function toneColor(hex, tone){
+  const d = TONE_DEF[tone||COLOR_TONE];
+  if(!d || d.sr===1 && d.dl===0) return hex;
+  const c = hexToHsl(hex);
+  const s = Math.max(d.smin, c.s * d.sr);
+  const l = Math.min(d.lmax, c.l + d.dl);
+  return hslToHex(c.h, s, l);
+}
+// 지금 톤으로 만든 팔레트
+function tonedGroups(tone){
+  return PALETTE_GROUPS.map(g=>({ name:g.name, colors:g.colors.map(c=>toneColor(c, tone)) }));
+}
+// 어느 톤의 어느 자리 색인지 찾아 다른 톤의 같은 자리로 옮긴다
+function moveColorToTone(hex, fromTone, toTone){
+  const from = tonedGroups(fromTone);
+  for(let gi=0; gi<from.length; gi++){
+    const ci = from[gi].colors.findIndex(c=>c.toLowerCase()===String(hex||'').toLowerCase());
+    if(ci >= 0) return toneColor(PALETTE_GROUPS[gi].colors[ci], toTone);
+  }
+  return toneColor(hex, toTone);   // 팔레트에 없는 색이면 그대로 옮긴다
+}
+
 const uid = () => Math.random().toString(36).slice(2,9);
+
+/* 색상 컨셉을 바꾼다 — 이미 정해둔 수업 종류·부서 색도 같은 자리의 새 톤 색으로 옮긴다 */
+function renderToneBar(){
+  const bar = document.getElementById('toneBar');
+  if(!bar) return;
+  bar.innerHTML = `<span class="tone-lab">색상</span>` + Object.entries(TONE_DEF).map(([k,d])=>
+    `<button type="button" class="tone-b ${k===COLOR_TONE?'on':''}" onclick="pickTone('${k}')" title="${d.desc}">
+      <span class="tone-dots">${[0,1,3,5].map(gi=>
+        `<i style="background:${toneColor(PALETTE_GROUPS[gi].colors[0], k)}"></i>`).join('')}</span>${d.name}
+    </button>`).join('');
+}
+window.renderToneBar = renderToneBar;
+
+function applyColorTone(tone){
+  if(!TONE_DEF[tone] || tone===COLOR_TONE) { COLOR_TONE = tone||COLOR_TONE; return; }
+  const from = COLOR_TONE;
+  COLOR_TONE = tone;
+  try { localStorage.setItem('tt_tone', tone); } catch(e){}
+  if(typeof state === 'object' && state){
+    (state.blockTypes||[]).forEach(t=>{ if(t.color) t.color = moveColorToTone(t.color, from, tone); });
+    (state.departments||[]).forEach(d=>{ if(d.color) d.color = moveColorToTone(d.color, from, tone); });
+  }
+}
+window.applyColorTone = applyColorTone;
+
+// 화면 위 컨셉 고르기 — 전체를 한 번에 바꾼다
+window.pickTone = function(tone){
+  applyColorTone(tone);
+  if(typeof renderAll==='function') renderAll();
+  if(typeof pushHistory==='function') pushHistory();
+  if(typeof flash==='function') flash(`${TONE_DEF[tone].name} 색으로 바꿨습니다`);
+};
 
 let state = null;
 
@@ -1089,6 +1198,7 @@ function renderTypes(){
       Object.keys(wd).forEach(k=>{ wd[k]=wd[k].filter(s=>s.typeId!==id); });
     });
     renderTypes(); renderBoard(); renderOutput();
+  if(typeof renderToneBar==='function') renderToneBar();
   });
 }
 
@@ -1782,7 +1892,20 @@ function openTypeDlg(id){
   editingTypeId=id||null;
   const dlg=$('#typeDlg');
   const sw=$('#tSwatches'); sw.innerHTML='';
-  PALETTE_GROUPS.forEach(g=>{
+  // 색상 컨셉 고르기
+  const toneRow=document.createElement('div'); toneRow.className='tone-row';
+  toneRow.innerHTML = `<span class="sw-glabel">컨셉</span>` +
+    Object.entries(TONE_DEF).map(([k,d])=>
+      `<button type="button" class="tone-b ${k===COLOR_TONE?'on':''}" data-tone="${k}" title="${d.desc}">
+        <span class="tone-dots">${tonedGroups(k)[0].colors.slice(0,3).map(c=>`<i style="background:${c}"></i>`).join('')}${
+          tonedGroups(k)[3].colors.slice(0,1).map(c=>`<i style="background:${c}"></i>`).join('')}</span>${d.name}
+      </button>`).join('');
+  sw.appendChild(toneRow);
+  toneRow.querySelectorAll('.tone-b').forEach(b=>{
+    b.onclick=()=>{ applyColorTone(b.dataset.tone); openTypeDlg(editingTypeId); };
+  });
+
+  tonedGroups(COLOR_TONE).forEach(g=>{
     const row=document.createElement('div'); row.className='sw-group';
     row.innerHTML=`<span class="sw-glabel">${g.name}</span>`;
     const wrap=document.createElement('div'); wrap.className='sw-colors';
@@ -1801,7 +1924,7 @@ function openTypeDlg(id){
     $('#tCounts').checked = !!t.countsAsClass;
   } else {
     $('#dlgTitle').textContent='수업 종류 추가';
-    $('#tName').value=''; $('#tDur').value=40; dlgColor=PALETTE[0];
+    $('#tName').value=''; $('#tDur').value=40; dlgColor=toneColor(PALETTE[0]);
     $('#tCommon').checked=false; $('#tRest').checked=false; $('#tCounts').checked=true;
   }
   sw.querySelectorAll('button').forEach(b=>b.classList.toggle('sel',b.style.background===hexToRgb(dlgColor)||rgbEq(b.style.background,dlgColor)));
@@ -2376,7 +2499,7 @@ function ensurePlanning(){
   });
   delete p.subjects;
 }
-function renderAll(){ ensureWeek(); ensurePlanning(); renderDayBar(); renderDepts(); renderStartMode(); renderTypes(); renderBoard(); renderOutput(); renderWeekStats(); renderPlanning(); }
+function renderAll(){ ensureWeek(); ensurePlanning(); renderDayBar(); renderDepts(); renderStartMode(); renderTypes(); renderBoard(); renderOutput(); renderWeekStats(); renderPlanning(); renderToneBar(); }
 
 /* ---------- 요일 바 ---------- */
 function renderDayBar(){
