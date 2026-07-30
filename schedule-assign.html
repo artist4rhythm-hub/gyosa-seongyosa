@@ -1177,6 +1177,16 @@ onAuthStateChanged(auth, async user => {
     await loadLessons();
     await loadPlace2();
 
+    // 지워진 수업의 흔적이 배치에 남아 있으면 치운다
+    // (그대로 두면 화면에 보이지 않는 카드가 겹침으로 잡혀 원인을 찾기 어렵다)
+    try {
+      const ghosts = cleanGhostPlacements();
+      if(ghosts){
+        await savePlace2(true);
+        setTimeout(()=>toast(`지워진 수업의 흔적 ${ghosts}장을 정리했습니다`,'ok'), 900);
+      }
+    } catch(e){}
+
     // 여기까지 왔으면 불러오기가 끝났다 — 이제부터 저장을 허용한다
     noteCount('교실 배치', (FLOORS||[]).length);
     noteCount('수업 정의', (LESSONS||[]).length);
@@ -2548,6 +2558,7 @@ window.loadSet = async function(id){
     await savePlace2(true);
     await saveGradeDept();
 
+    try { cleanGhostPlacements(); } catch(e){}
     curSetId = id; curSetName = d.data().name || '';
     _applyingSet = false;
     window.hideLoading && window.hideLoading();
@@ -3775,10 +3786,67 @@ window.delEditingLesson = function(){
 
 window.delLesson = function(id){
   const l = LESSONS.find(x=>x.id===id); if(!l) return;
-  if(confirm(`"${l.subject}" 수업을 삭제할까요?`)){
-    LESSONS = LESSONS.filter(x=>x.id!==id);
-    saveLessons(); closeLessonDlg(); renderLessons();
-  }
+  // 이 수업이 시간표에 몇 장 놓여 있는지 미리 알려준다
+  let placed = 0;
+  Object.values(PLACE2||{}).forEach(byGrade=>
+    Object.values(byGrade||{}).forEach(byDay=>
+      Object.values(byDay||{}).forEach(list=>{
+        placed += (list||[]).filter(c=>c.lessonId===id).length; })));
+
+  const msg = `"${l.subject}" 수업을 삭제할까요?` +
+    (placed ? `\n\n시간표에 놓인 ${placed}장도 함께 지워집니다.` : '');
+  if(!confirm(msg)) return;
+
+  LESSONS = LESSONS.filter(x=>x.id!==id);
+  // 배치판에서도 이 수업의 카드를 모두 치운다 (안 지우면 보이지 않는 카드가 남아 겹침으로 잡힌다)
+  let removed = 0;
+  Object.keys(PLACE2||{}).forEach(fid=>{
+    Object.keys(PLACE2[fid]||{}).forEach(g=>{
+      Object.keys(PLACE2[fid][g]||{}).forEach(dy=>{
+        const before = PLACE2[fid][g][dy] || [];
+        const after = before.filter(c=>c.lessonId!==id);
+        if(after.length !== before.length){
+          removed += before.length - after.length;
+          PLACE2[fid][g][dy] = after;
+        }
+      });
+    });
+  });
+  saveLessons();
+  if(removed) savePlace2(true);
+  closeLessonDlg();
+  renderLessons();
+  if(curTab==='place') renderPlace2();
+  if(removed) toast(`시간표에서 ${removed}장도 함께 지웠습니다`,'ok');
+};
+
+/* 이미 남아 있는 '보이지 않는 카드' 청소
+   수업을 지웠는데 배치가 남아 있으면 겹침으로 잡히면서 원인을 찾기 어렵다. */
+function cleanGhostPlacements(){
+  const ids = new Set(LESSONS.map(l=>l.id));
+  let removed = 0;
+  Object.keys(PLACE2||{}).forEach(fid=>{
+    Object.keys(PLACE2[fid]||{}).forEach(g=>{
+      Object.keys(PLACE2[fid][g]||{}).forEach(dy=>{
+        const before = PLACE2[fid][g][dy] || [];
+        const after = before.filter(c=>ids.has(c.lessonId));
+        if(after.length !== before.length){
+          removed += before.length - after.length;
+          PLACE2[fid][g][dy] = after;
+        }
+      });
+    });
+  });
+  return removed;
+}
+window.cleanGhostPlacements = cleanGhostPlacements;
+
+window.fixGhosts = async function(){
+  const n = cleanGhostPlacements();
+  if(!n){ toast('정리할 것이 없습니다 — 모두 제대로 놓여 있어요','ok'); return; }
+  await savePlace2(true);
+  renderPlace2();
+  toast(`보이지 않던 카드 ${n}장을 치웠습니다`,'ok');
 };
 
 // ═══════════════════════════════════════════
@@ -3976,9 +4044,10 @@ function checkPlacement(grade, day, item, ignoreId){
   placeList(grade, day).forEach(o=>{
     if(o.id===ignoreId) return;
     if(o.lessonId===item.lessonId && o.cardIdx===item.cardIdx) return;   // 자기 자신(합반 복제본)
+    const ol = LESSONS.find(x=>x.id===o.lessonId);
+    if(!ol) return;   // 지워진 수업의 흔적 — 겹침으로 세지 않는다
     if(overlaps(s,e,o.startMin,o.startMin+o.durMin)){
-      const ol = LESSONS.find(x=>x.id===o.lessonId);
-      problems.push({ type:'grade', msg:`같은 시간에 ${ol?ol.subject:'다른 수업'}이(가) 있습니다` });
+      problems.push({ type:'grade', msg:`같은 시간에 ${ol.subject}이(가) 있습니다` });
     }
   });
 
@@ -4171,6 +4240,8 @@ function drawPlaceBoard(){
           <button class="pg-snapbtn ${snapOn?'on':''}" onclick="toggleSnap()"
             title="${snapOn?'칸 경계에 붙습니다 — 끌면서 Alt 를 누르면 잠시 풀립니다':'5분 단위로 자유롭게 놓입니다'}">
             🧲 자석 ${snapOn?'켬':'끔'}</button>
+          <button class="pg-snapbtn pg-clean" onclick="fixGhosts()"
+            title="지워진 수업의 흔적이 남아 겹침으로 잡힐 때 누르세요">🧹 정리</button>
           <span class="pg-span">${hm(gradeRange(pgGrade).startMin)}~${hm(gradeRange(pgGrade).endMin)}</span>
         </div>
       <div class="pg-board">
