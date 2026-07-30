@@ -1122,12 +1122,48 @@ let homeMapOpen = false;   // 전체 기능 지도 펼침 여부
 function toggleHomeMap(){ homeMapOpen = !homeMapOpen; renderHome(); }
 window.toggleHomeMap = toggleHomeMap;
 
+/* 날마다 다른 말씀 — 가르치고 섬기는 자리에 어울리는 구절들 */
 const HOME_VERSES = [
   { t:'지혜 있는 자는 궁창의 빛과 같이 빛날 것이요', r:'다니엘 12:3' },
   { t:'마땅히 행할 길을 아이에게 가르치라', r:'잠언 22:6' },
   { t:'네 시작은 미약하였으나 네 나중은 심히 창대하리라', r:'욥기 8:7' },
   { t:'여호와를 경외하는 것이 지혜의 근본이라', r:'잠언 9:10' },
   { t:'무엇을 하든지 마음을 다하여 주께 하듯 하라', r:'골로새서 3:23' },
+  { t:'선을 행하다가 낙심하지 말지니', r:'갈라디아서 6:9' },
+  { t:'네 길을 여호와께 맡기라', r:'시편 37:5' },
+  { t:'내가 너와 함께 하여 너를 지키리라', r:'창세기 28:15' },
+  { t:'사랑은 오래 참고 사랑은 온유하며', r:'고린도전서 13:4' },
+  { t:'수고하고 무거운 짐 진 자들아 다 내게로 오라', r:'마태복음 11:28' },
+  { t:'주의 말씀은 내 발에 등이요 내 길에 빛이니이다', r:'시편 119:105' },
+  { t:'범사에 감사하라', r:'데살로니가전서 5:18' },
+  { t:'서로 친절하게 하며 불쌍히 여기며', r:'에베소서 4:32' },
+  { t:'어린 아이들이 내게 오는 것을 용납하라', r:'마태복음 19:14' },
+  { t:'너희는 세상의 빛이라', r:'마태복음 5:14' },
+  { t:'주를 앙망하는 자는 새 힘을 얻으리니', r:'이사야 40:31' },
+  { t:'두려워하지 말라 내가 너를 도우리라', r:'이사야 41:13' },
+  { t:'심는 대로 거두리라', r:'갈라디아서 6:7' },
+  { t:'네 마음을 다하여 여호와를 신뢰하라', r:'잠언 3:5' },
+  { t:'그의 인자하심이 영원하도다', r:'시편 136:1' },
+  { t:'날마다 우리 짐을 지시는 주를 찬송할지로다', r:'시편 68:19' },
+  { t:'내게 능력 주시는 자 안에서 모든 것을 할 수 있느니라', r:'빌립보서 4:13' },
+  { t:'화평하게 하는 자는 복이 있나니', r:'마태복음 5:9' },
+  { t:'서로 짐을 져 주라', r:'갈라디아서 6:2' },
+  { t:'말씀을 가르치는 자와 함께하라', r:'갈라디아서 6:6' },
+  { t:'너희 착한 행실을 보고 하나님께 영광을 돌리게 하라', r:'마태복음 5:16' },
+  { t:'아침마다 새로우니 주의 성실하심이 크시도이다', r:'예레미야애가 3:23' },
+  { t:'여호와는 나의 목자시니 내게 부족함이 없으리로다', r:'시편 23:1' },
+  { t:'네 손이 일할 것을 힘써 하라', r:'전도서 9:10' },
+  { t:'기쁨으로 섬기라', r:'시편 100:2' },
+  { t:'온유한 자는 복이 있나니', r:'마태복음 5:5' },
+  { t:'인내로써 경주하며', r:'히브리서 12:1' },
+  { t:'우리가 선을 행하되 낙심하지 아니하면', r:'갈라디아서 6:9' },
+  { t:'평강의 하나님이 너희와 함께 계시리라', r:'빌립보서 4:9' },
+  { t:'주께서 네 모든 길을 지키시리라', r:'시편 91:11' },
+  { t:'지혜를 얻는 것이 금을 얻는 것보다 낫고', r:'잠언 16:16' },
+  { t:'진리를 알지니 진리가 너희를 자유롭게 하리라', r:'요한복음 8:32' },
+  { t:'서로 격려하고 서로 세워 주라', r:'데살로니가전서 5:11' },
+  { t:'아이가 자라며 지혜가 충족하며', r:'누가복음 2:40' },
+  { t:'내 은혜가 네게 족하도다', r:'고린도후서 12:9' },
 ];
 
 function renderHome(){
@@ -1137,19 +1173,14 @@ function renderHome(){
   const days = ['일','월','화','수','목','금','토'];
   const dateStr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${days[now.getDay()]}요일`;
   const hh = now.getHours();
-  const greet = hh < 6  ? '늦은 밤까지 수고가 많으십니다'
-              : hh < 11 ? '좋은 아침입니다'
-              : hh < 14 ? '점심은 드셨나요'
-              : hh < 18 ? '오후도 힘내세요'
-              : hh < 22 ? '오늘도 수고 많으셨습니다'
-              :           '편안한 밤 되세요';
+  const greet = pickGreeting(now);
   const org = ORGS[CU.org]||CU.org;
   const dept = CU.dept && CU.dept!=='전체' ? ' · '+CU.dept : '';
   const pos = CU.position ? ' · '+CU.position : '';
   const isAdmin = ['super','org_admin','tab_admin'].includes(CU.role);
 
   // 날짜 기준으로 말씀 선택 (매일 바뀜)
-  const dayIdx = Math.floor(now.getTime()/86400000) % HOME_VERSES.length;
+  const dayIdx = (Math.floor(now.getTime()/86400000) * 13) % HOME_VERSES.length;
   const V = HOME_VERSES[dayIdx];
 
   // ── ① 할 일 ──
@@ -1298,6 +1329,66 @@ function renderHome(){
       .hm-qt.faded{opacity:.4}
       .hm-qhint{grid-column:1/-1;font-size:12px;color:var(--tl);padding:2px 4px;line-height:1.5}
       .hm-pt{font-size:14px;font-weight:800;color:var(--gd);margin-bottom:11px;display:flex;align-items:center;gap:7px}
+      /* 🌤 날씨 · 📝 메모 — 나란히 두고, 좁아지면 위아래로 */
+      .hm-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+        gap:14px;margin-bottom:16px}
+      .hm-wx,.hm-memo{background:var(--panel);border:1px solid var(--line);
+        border-radius:14px;padding:14px 16px;min-width:0}
+      .wx-load{font-size:12.5px;color:var(--tl);padding:14px 2px;text-align:center}
+      .wx-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+      .wx-t{font-size:14px;font-weight:800;color:var(--gd)}
+      .wx-sel{margin-left:auto;font-family:inherit;font-size:12px;padding:4px 8px;
+        border:1px solid var(--ivd);border-radius:7px;background:var(--wh);color:var(--ts)}
+      .wx-now{display:flex;align-items:center;gap:14px;margin-bottom:11px}
+      .wx-temp{font-size:38px;font-weight:300;color:var(--gd);line-height:1;
+        font-variant-numeric:tabular-nums}
+      .wx-sub{font-size:12px;color:var(--ts);line-height:1.65}
+      .wx-sun{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+        font-size:12px;color:var(--ts);background:var(--iv);border-radius:9px;
+        padding:8px 11px;margin-bottom:11px}
+      .wx-sun b{color:var(--gd);font-weight:800}
+      .wx-len{margin-left:auto;color:var(--tl);font-size:11.5px}
+      .wx-week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+      .wx-d{text-align:center;padding:7px 2px;border-radius:8px;background:var(--iv)}
+      .wx-d.on{background:var(--gp);outline:1px solid var(--gl)}
+      .wx-dn{font-size:11px;color:var(--tl);font-weight:700}
+      .wx-d.on .wx-dn{color:var(--gm)}
+      .wx-di{font-size:17px;line-height:1.5}
+      .wx-dt{font-size:11.5px;color:var(--gd)}
+      .wx-dt b{font-weight:800}
+      .wx-dt span{color:var(--tl);margin-left:2px}
+      .wx-dp{font-size:10px;color:var(--info);min-height:13px;font-weight:700}
+
+      .mm-head{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+      .mm-t{font-size:14px;font-weight:800;color:var(--gd)}
+      .mm-state{margin-left:auto;font-size:11px;font-weight:700;color:var(--tl);
+        padding:2px 8px;border-radius:6px}
+      .mm-state.busy{color:var(--info);background:var(--info-bg)}
+      .mm-state.done{color:var(--gm);background:var(--gp)}
+      .mm-state.err{color:var(--danger);background:var(--danger-bg)}
+      .mm-text{width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;
+        line-height:1.7;padding:10px 12px;border:1px solid var(--ivd);border-radius:10px;
+        background:var(--wh);color:var(--ink);resize:vertical;min-height:112px}
+      .mm-text:focus{outline:none;border-color:var(--gm)}
+      .mm-foot{display:flex;align-items:center;gap:9px;margin-top:8px}
+      .mm-hint{font-size:11px;color:var(--tl);line-height:1.5}
+      .mm-btn{margin-left:auto;font-family:inherit;font-size:11.5px;font-weight:700;
+        padding:5px 11px;border:1px solid var(--ivd);border-radius:7px;
+        background:var(--wh);color:var(--ts);cursor:pointer;flex:none}
+      .mm-btn:hover{border-color:var(--danger);color:var(--danger)}
+
+      /* 패드 · 좁은 화면 */
+      @media(max-width:1100px){
+        .hm-cols{grid-template-columns:minmax(0,1fr)}
+      }
+      @media(max-width:560px){
+        .hm-wx,.hm-memo{padding:12px 13px}
+        .wx-temp{font-size:32px}
+        .wx-week{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+        .wx-d:nth-child(n+5){display:none}
+        .wx-len{margin-left:0;width:100%}
+      }
+
       /* 🕰 시계 */
       .hm-clock{display:flex;align-items:center;gap:16px;flex-wrap:wrap;
         margin:16px 0 4px;padding:13px 16px;border-radius:14px;
@@ -1335,6 +1426,11 @@ function renderHome(){
             <div class="hm-vr">${esc(V.r)}</div>
           </div>
         </div>
+      </div>
+
+      <div class="hm-cols">
+        <div class="hm-wx" id="hm-wx"><div class="wx-load">날씨를 불러오는 중…</div></div>
+        <div class="hm-memo" id="hm-memo"></div>
       </div>
 
       <div class="hm-today" id="hm-today">
@@ -1406,6 +1502,10 @@ function renderHome(){
   }
 
   startClock();
+  renderMemo();
+  renderWeather();
+  loadWeather().then(()=>renderWeather());
+  loadMemo().then(()=>renderMemo());
   loadTodayStrip();
   renderQuickTiles();
   loadHomeBoards();
@@ -1782,6 +1882,242 @@ function startClock(){
   tick();
   _clockTimer = setInterval(tick, 1000);
 }
+
+
+/* ═══════════════════════════════════════════
+   🌤 환영 문구 — 시간대마다 여러 개를 두고 날마다 다르게 고른다
+   ═══════════════════════════════════════════ */
+const GREETINGS = {
+  dawn: [   // 0~6시
+    '늦은 밤까지 수고가 많으십니다', '이 새벽도 지켜 주시길',
+    '고요한 시간이네요', '무리하지 마시고 조금 쉬세요',
+    '새벽을 여시는 손길에 감사합니다', '이른 시간까지 애쓰시네요',
+  ],
+  morning: [  // 6~11시
+    '좋은 아침입니다', '오늘 하루도 반갑습니다',
+    '아침 공기가 좋은 날이네요', '새 하루를 열어 주셨습니다',
+    '오늘도 아이들이 기다립니다', '기분 좋은 시작이 되시길',
+    '오늘 하루가 선물처럼 열리기를', '아침부터 부지런하시네요',
+  ],
+  lunch: [   // 11~14시
+    '점심은 드셨나요', '오전도 잘 보내셨네요',
+    '잠시 숨 돌리는 시간이면 좋겠습니다', '든든히 채우고 가세요',
+    '한숨 고르실 시간입니다', '오늘 오전 어떠셨어요',
+  ],
+  afternoon: [  // 14~18시
+    '오후도 힘내세요', '남은 시간도 잘 보내시길',
+    '오후 햇살이 길어지는 시간이네요', '조금만 더 힘내 봅니다',
+    '오후에도 아이들 웃음이 가득하길', '고단하시면 잠시 쉬어 가세요',
+    '하루의 절반을 잘 지나오셨습니다',
+  ],
+  evening: [  // 18~22시
+    '오늘도 수고 많으셨습니다', '하루를 잘 마무리하시길',
+    '애쓰신 하루였습니다', '오늘 하루도 잘 심으셨습니다',
+    '저녁은 편안하게 보내세요', '수고하신 만큼 쉬어 가세요',
+    '오늘의 몫을 다하셨습니다',
+  ],
+  night: [   // 22~24시
+    '편안한 밤 되세요', '오늘 하루 감사했습니다',
+    '푹 쉬시고 내일 뵙겠습니다', '고요한 밤이 되시길',
+    '오늘도 잘 지나왔습니다', '내일은 또 새 힘이 있을 거예요',
+  ],
+};
+function greetSlot(hh){
+  return hh < 6 ? 'dawn' : hh < 11 ? 'morning' : hh < 14 ? 'lunch'
+       : hh < 18 ? 'afternoon' : hh < 22 ? 'evening' : 'night';
+}
+function pickGreeting(now){
+  const list = GREETINGS[greetSlot(now.getHours())];
+  // 날짜 + 시간대로 고르므로 같은 날 같은 때는 같은 인사가 나온다
+  const seed = Math.floor(now.getTime()/86400000) * 7 + now.getHours();
+  return list[seed % list.length];
+}
+
+/* ═══════════════════════════════════════════
+   🌤 날씨 · 일출 일몰
+   Open-Meteo 를 쓴다. 가입도 열쇠도 필요 없고,
+   여러 기관의 예보 모델을 함께 계산해 정확도가 높다.
+   ═══════════════════════════════════════════ */
+const WX_PLACES = {
+  suwon:   { name:'수원',   lat:37.2636, lon:127.0286 },
+  hwado:   { name:'화도',   lat:37.6489, lon:127.3086 },
+  seoul:   { name:'서울',   lat:37.5665, lon:126.9780 },
+  namyangju:{ name:'남양주', lat:37.6360, lon:127.2165 },
+};
+let WX_PLACE = 'suwon';
+try { const v = localStorage.getItem('hm_wx_place'); if(v && WX_PLACES[v]) WX_PLACE = v; } catch(e){}
+
+// 날씨 번호 → 우리말과 그림
+const WX_CODE = {
+  0:['맑음','☀️'], 1:['대체로 맑음','🌤'], 2:['구름 조금','⛅'], 3:['흐림','☁️'],
+  45:['안개','🌫'], 48:['서리 안개','🌫'],
+  51:['가랑비','🌦'], 53:['가랑비','🌦'], 55:['짙은 가랑비','🌦'],
+  56:['얼어붙는 비','🌧'], 57:['얼어붙는 비','🌧'],
+  61:['약한 비','🌧'], 63:['비','🌧'], 65:['강한 비','🌧'],
+  66:['얼어붙는 비','🌧'], 67:['얼어붙는 비','🌧'],
+  71:['약한 눈','🌨'], 73:['눈','🌨'], 75:['많은 눈','❄️'], 77:['눈발','🌨'],
+  80:['소나기','🌦'], 81:['소나기','🌧'], 82:['강한 소나기','⛈'],
+  85:['소낙눈','🌨'], 86:['많은 소낙눈','❄️'],
+  95:['천둥번개','⛈'], 96:['천둥번개·우박','⛈'], 99:['심한 천둥번개','⛈'],
+};
+function wxName(c){ return (WX_CODE[c]||['—','·'])[0]; }
+function wxIcon(c){ return (WX_CODE[c]||['—','·'])[1]; }
+
+let WX_DATA = null;
+async function loadWeather(){
+  const p = WX_PLACES[WX_PLACE];
+  const url = 'https://api.open-meteo.com/v1/forecast'
+    + `?latitude=${p.lat}&longitude=${p.lon}`
+    + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'
+    + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max'
+    + '&timezone=Asia%2FSeoul&forecast_days=7';
+  try {
+    const r = await fetch(url);
+    if(!r.ok) throw new Error('날씨를 받아오지 못했습니다');
+    WX_DATA = await r.json();
+    try { localStorage.setItem('hm_wx_cache', JSON.stringify({ at:Date.now(), place:WX_PLACE, data:WX_DATA })); } catch(e){}
+    return true;
+  } catch(e){
+    // 못 받아오면 최근에 받아둔 것을 보여준다 (한 시간 안쪽이면)
+    try {
+      const c = JSON.parse(localStorage.getItem('hm_wx_cache')||'null');
+      if(c && c.place===WX_PLACE && Date.now()-c.at < 3600000){ WX_DATA = c.data; return true; }
+    } catch(e2){}
+    return false;
+  }
+}
+
+window.setWxPlace = async function(k){
+  if(!WX_PLACES[k]) return;
+  WX_PLACE = k;
+  try { localStorage.setItem('hm_wx_place', k); } catch(e){}
+  const box = $I('hm-wx'); if(box) box.innerHTML = '<div class="wx-load">불러오는 중…</div>';
+  await loadWeather();
+  renderWeather();
+};
+
+function renderWeather(){
+  const box = $I('hm-wx'); if(!box) return;
+  const p = WX_PLACES[WX_PLACE];
+  const sel = Object.entries(WX_PLACES).map(([k,v])=>
+    `<option value="${k}" ${k===WX_PLACE?'selected':''}>${esc(v.name)}</option>`).join('');
+
+  if(!WX_DATA || !WX_DATA.current){
+    box.innerHTML = `<div class="wx-head">
+        <span class="wx-t">🌤 날씨</span>
+        <select class="wx-sel" onchange="setWxPlace(this.value)">${sel}</select>
+      </div>
+      <div class="wx-load">날씨를 불러오지 못했습니다. 잠시 뒤 다시 열어보세요.</div>`;
+    return;
+  }
+
+  const c = WX_DATA.current, d = WX_DATA.daily;
+  const DOW = ['일','월','화','수','목','금','토'];
+  const hm2 = iso => { const t=new Date(iso); const p2=n=>String(n).padStart(2,'0');
+    return `${p2(t.getHours())}:${p2(t.getMinutes())}`; };
+
+  // 낮 길이
+  const rise = new Date(d.sunrise[0]), set = new Date(d.sunset[0]);
+  const dayMin = Math.round((set - rise)/60000);
+
+  const days = (d.time||[]).slice(0,7).map((iso,i)=>{
+    const dt = new Date(iso);
+    const today = i===0;
+    return `<div class="wx-d ${today?'on':''}">
+      <div class="wx-dn">${today?'오늘':DOW[dt.getDay()]}</div>
+      <div class="wx-di">${wxIcon(d.weather_code[i])}</div>
+      <div class="wx-dt"><b>${Math.round(d.temperature_2m_max[i])}°</b>
+        <span>${Math.round(d.temperature_2m_min[i])}°</span></div>
+      ${d.precipitation_probability_max && d.precipitation_probability_max[i] >= 30
+        ? `<div class="wx-dp">${d.precipitation_probability_max[i]}%</div>` : '<div class="wx-dp"></div>'}
+    </div>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div class="wx-head">
+      <span class="wx-t">${wxIcon(c.weather_code)} ${esc(wxName(c.weather_code))}</span>
+      <select class="wx-sel" onchange="setWxPlace(this.value)">${sel}</select>
+    </div>
+    <div class="wx-now">
+      <span class="wx-temp">${Math.round(c.temperature_2m)}°</span>
+      <div class="wx-sub">
+        <div>체감 ${Math.round(c.apparent_temperature)}° · 습도 ${c.relative_humidity_2m}%</div>
+        <div>바람 ${c.wind_speed_10m}m/s · ${Math.round(d.temperature_2m_min[0])}° / ${Math.round(d.temperature_2m_max[0])}°</div>
+      </div>
+    </div>
+    <div class="wx-sun">
+      <span>🌅 해돋이 <b>${hm2(d.sunrise[0])}</b></span>
+      <span>🌇 해넘이 <b>${hm2(d.sunset[0])}</b></span>
+      <span class="wx-len">낮 ${Math.floor(dayMin/60)}시간 ${dayMin%60}분</span>
+    </div>
+    <div class="wx-week">${days}</div>`;
+}
+
+/* ═══════════════════════════════════════════
+   📝 내 메모 — 본인만 보고 쓴다
+   저장: userMemos/{uid}
+   ═══════════════════════════════════════════ */
+let MEMO_TEXT = '';
+let _memoTimer = null;
+
+async function loadMemo(){
+  try {
+    const s = await getDoc(doc(db,'userMemos', CU.uid));
+    MEMO_TEXT = (s.exists() && typeof s.data().text === 'string') ? s.data().text : '';
+  } catch(e){ MEMO_TEXT = ''; }
+}
+
+async function saveMemo(text){
+  try {
+    await setDoc(doc(db,'userMemos', CU.uid), {
+      text, updatedAt: Timestamp.now(), uid: CU.uid, name: CU.name||''
+    }, { merge:true });
+    return true;
+  } catch(e){ return false; }
+}
+
+function renderMemo(){
+  const box = $I('hm-memo'); if(!box) return;
+  const n = MEMO_TEXT ? MEMO_TEXT.split('\n').filter(x=>x.trim()).length : 0;
+  box.innerHTML = `
+    <div class="mm-head">
+      <span class="mm-t">📝 내 메모</span>
+      <span class="mm-state" id="mm-state">${n?`${n}줄`:''}</span>
+    </div>
+    <textarea id="mm-text" class="mm-text" rows="5"
+      placeholder="여기에 적어두면 이 자리에 그대로 남습니다.&#10;· 오늘 챙길 일&#10;· 잊지 말 것&#10;나만 볼 수 있어요.">${esc(MEMO_TEXT)}</textarea>
+    <div class="mm-foot">
+      <span class="mm-hint">적으면 잠시 뒤 저절로 저장됩니다 · 나만 볼 수 있어요</span>
+      <button class="mm-btn" onclick="clearMemo()">비우기</button>
+    </div>`;
+
+  const ta = $I('mm-text');
+  ta.oninput = ()=>{
+    MEMO_TEXT = ta.value;
+    const st = $I('mm-state'); if(st){ st.textContent = '적는 중…'; st.className='mm-state busy'; }
+    clearTimeout(_memoTimer);
+    _memoTimer = setTimeout(async ()=>{
+      const ok = await saveMemo(MEMO_TEXT);
+      const s2 = $I('mm-state');
+      if(s2){
+        s2.textContent = ok ? '저장됨' : '저장 실패';
+        s2.className = 'mm-state ' + (ok?'done':'err');
+        setTimeout(()=>{ const s3=$I('mm-state');
+          if(s3 && s3.textContent==='저장됨'){
+            const c = MEMO_TEXT.split('\n').filter(x=>x.trim()).length;
+            s3.textContent = c?`${c}줄`:''; s3.className='mm-state'; }
+        }, 2200);
+      }
+    }, 1000);
+  };
+}
+
+window.clearMemo = async function(){
+  if(MEMO_TEXT && !confirm('메모를 모두 비울까요?')) return;
+  MEMO_TEXT = '';
+  await saveMemo('');
+  renderMemo();
+};
 
 // ③ 오늘 한눈에 (내 출근 · 오늘 일정 · 오늘 생일)
 async function loadTodayStrip(){
