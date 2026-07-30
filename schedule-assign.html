@@ -477,6 +477,17 @@
   .pg-av.no{background:repeating-linear-gradient(45deg,
     rgba(192,57,43,.22) 0 7px, rgba(192,57,43,.10) 7px 14px);
     border-top:1px solid rgba(192,57,43,.4);border-bottom:1px solid rgba(192,57,43,.4)}
+  /* 이미 다른 수업이 차 있는 시간 (합반이면 걸리는 학년을 모두 합쳐서) */
+  .pg-av.busy{background:repeating-linear-gradient(-45deg,
+    rgba(138,100,16,.20) 0 6px, rgba(138,100,16,.07) 6px 12px);
+    border-top:1px solid rgba(138,100,16,.35);border-bottom:1px solid rgba(138,100,16,.35)}
+  .picking-shared .pg-av.busy{background:repeating-linear-gradient(-45deg,
+    rgba(138,100,16,.30) 0 6px, rgba(138,100,16,.12) 6px 12px)}
+  /* 놓일 자리에 붙는 까닭 */
+  .pg-why{position:absolute;left:0;right:0;bottom:2px;font-style:normal;
+    font-size:9.5px;font-weight:800;color:#fff;background:var(--danger,#C0392B);
+    border-radius:5px;padding:1px 5px;margin:0 3px;text-align:center;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* 놓일 자리 미리보기 */
   .pg-hint{position:absolute;left:3px;right:3px;z-index:4;pointer-events:none;
     border:2px dashed var(--gm,#00704A);border-radius:7px;background:rgba(0,112,74,.12);
@@ -4397,6 +4408,60 @@ function putCardEverywhere(lessonId, cardIdx, day, startMin, durMin, roomId, bas
   return grades.length;
 }
 
+/* 끌고 있는 카드를 이 자리에 놓으면 어떤 문제가 생기나
+   합반이면 걸리는 학년을 모두 살핀다 (놓고 나서가 아니라 놓기 전에 알려주려고) */
+// 문제를 한 줄로 (여러 개면 가장 급한 것 + 개수)
+function issueBrief(issues){
+  if(!issues.length) return '';
+  const order = { grade:0, room:1, teacher:2, block:3 };
+  const top = issues.slice().sort((a,b)=>(order[a.type]??9)-(order[b.type]??9))[0];
+  const head = { grade:'겹침', room:'교실 겹침', teacher:'선생님 겹침', block:'불가 시간' }[top.type] || '겹침';
+  const who = top.grade ? `${top.grade} ` : '';
+  return `⚠ ${who}${head}` + (issues.length>1 ? ` 외 ${issues.length-1}건` : '');
+}
+
+function previewIssues(day, lessonId, cardIdx, startMin, durMin, ignoreId){
+  const l = LESSONS.find(x=>x.id===lessonId);
+  if(!l) return [];
+  const grades = (l.grades && l.grades.length) ? l.grades : [pgGrade];
+  const item = { id:'__preview', lessonId, cardIdx, startMin, durMin, roomId:'' };
+  const seen = new Set(), out = [];
+  grades.forEach(g=>{
+    checkPlacement(g, day, item, ignoreId).forEach(pb=>{
+      const key = pb.type + '|' + pb.msg;
+      if(seen.has(key)) return;
+      seen.add(key);
+      out.push({ ...pb, grade:g });
+    });
+  });
+  return out;
+}
+
+/* 이 학년들에서 이미 차 있는 시간대 (합반이면 여러 학년을 합쳐서)
+   같은 수업의 다른 카드는 뺀다 — 자기 자리로 다시 놓는 걸 막지 않도록 */
+function busyRanges(day, lessonId, ignoreId){
+  const l = LESSONS.find(x=>x.id===lessonId);
+  const grades = (l && l.grades && l.grades.length) ? l.grades : [pgGrade];
+  const out = [];
+  grades.forEach(g=>{
+    placeList(g, day).forEach(c=>{
+      if(c.id === ignoreId) return;
+      if(c.lessonId === lessonId) return;
+      if(!LESSONS.find(x=>x.id===c.lessonId)) return;   // 지워진 수업의 흔적
+      out.push({ s:c.startMin, e:c.startMin + c.durMin });
+    });
+  });
+  // 겹치는 구간끼리 합친다
+  out.sort((a,b)=>a.s-b.s);
+  const merged = [];
+  out.forEach(r=>{
+    const last = merged[merged.length-1];
+    if(last && r.s <= last.e) last.e = Math.max(last.e, r.e);
+    else merged.push({ ...r });
+  });
+  return merged;
+}
+
 /* ── 카드 자세히 보기 — 담당 선생님의 수업 조건까지 함께 ── */
 window.openCardInfo = function(day, pid){
   const c = placeList(pgGrade, day).find(x=>x.id===pid); if(!c) return;
@@ -4479,7 +4544,7 @@ function bindPlaceDrag(startMin){
       drag = { mode:'new', lessonId:el.dataset.lesson, cardIdx:+el.dataset.idx,
         durMin:+el.dataset.dur, ghost:makeGhost(el) };
       _dragging = true;
-      paintAvail(drag.lessonId);
+      paintAvail(drag.lessonId, null);
     };
   });
   // 놓인 카드 → 옮기기 · 우클릭하면 목록으로 되돌리기
@@ -4506,18 +4571,24 @@ function bindPlaceDrag(startMin){
         durMin:item.durMin, ghost:makeGhost(el) };
       el.classList.add('dragging');
       _dragging = true;
-      paintAvail(drag.lessonId);
+      paintAvail(drag.lessonId, pid);
     };
   });
 
   // 드래그하는 동안 그 수업 선생님 기준으로 배경을 칠한다 (초록=가능, 빨강=불가)
-  function paintAvail(lessonId){
+  function paintAvail(lessonId, ignoreId){
     const l = LESSONS.find(x=>x.id===lessonId);
     const uids = l ? (l.teacherUids||[]) : [];
+    const shared = isShared(l);
     board.querySelectorAll('.pg-col').forEach(col=>{
       const day = col.dataset.day;
       const { startMin:ds } = gradeRange(pgGrade);
       let html = '<div class="pg-av ok"></div>';
+      // ① 이미 다른 수업이 차 있는 시간 (합반이면 걸리는 학년을 모두 합쳐서)
+      busyRanges(day, lessonId, ignoreId).forEach(r=>{
+        html += `<div class="pg-av busy" style="top:${(r.s-ds)*PX_PER_MIN}px;height:${(r.e-r.s)*PX_PER_MIN}px"></div>`;
+      });
+      // ② 선생님이 못 오는 시간
       blockedRanges(day, uids).forEach(r=>{
         html += `<div class="pg-av no" style="top:${(r.s-ds)*PX_PER_MIN}px;height:${(r.e-r.s)*PX_PER_MIN}px"></div>`;
       });
@@ -4527,11 +4598,13 @@ function bindPlaceDrag(startMin){
       col.appendChild(layer);
     });
     board.classList.add('picking');
+    if(shared) board.classList.add('picking-shared');
   }
   function clearAvail(){
     board.querySelectorAll('.pg-avlayer').forEach(l=>l.remove());
     board.querySelectorAll('.pg-hint').forEach(l=>l.remove());
     board.classList.remove('picking');
+    board.classList.remove('picking-shared');
   }
 
   function makeGhost(src){
@@ -4567,15 +4640,17 @@ function bindPlaceDrag(startMin){
     min = Math.max(lo, Math.min(min, hi - drag.durMin));
     drag.preview = { day, min };
 
-    const l = LESSONS.find(x=>x.id===drag.lessonId);
-    const bad = hitsBlocked(day, l?(l.teacherUids||[]):[], min, drag.durMin);
+    // 놓기 전에 문제를 살핀다 (합반이면 걸리는 학년을 모두)
+    const issues = previewIssues(day, drag.lessonId, drag.cardIdx, min, drag.durMin,
+      drag.mode==='move' ? drag.pid : null);
+    const bad = issues.length > 0;
     const snapped = (snapOn && !free);
     const hint = document.createElement('div');
     hint.className = 'pg-hint' + (bad ? ' bad' : '') + (snapped ? '' : ' free');
     hint.style.top = (min - startMin) * PX_PER_MIN + 'px';
     hint.style.height = drag.durMin * PX_PER_MIN + 'px';
-    hint.innerHTML = `<span>${snapped?'🧲 ':''}${hm(min)}~${hm(min+drag.durMin)}${
-      bad?' · 불가 시간':''}${snapped?'':' · 자유'}</span>`;
+    hint.innerHTML = `<span>${snapped?'🧲 ':''}${hm(min)}~${hm(min+drag.durMin)}${snapped?'':' · 자유'}</span>`
+      + (bad ? `<em class="pg-why">${esc(issueBrief(issues))}</em>` : '');
     col.appendChild(hint);
   };
 
@@ -4591,15 +4666,16 @@ function bindPlaceDrag(startMin){
     const lo = b.blocks.length ? b.startMin : startMin;
     const hi = b.blocks.length ? b.endMin : startMin + 600;
     min = Math.max(lo, Math.min(min, hi - drag.durMin));
-    const l = LESSONS.find(x=>x.id===drag.lessonId);
-    const bad = hitsBlocked(day, l?(l.teacherUids||[]):[], min, drag.durMin);
+    const issues = previewIssues(day, drag.lessonId, drag.cardIdx, min, drag.durMin,
+      drag.mode==='move' ? drag.pid : null);
+    const bad = issues.length > 0;
     const snapped = (snapOn && !free);
     const hint = document.createElement('div');
     hint.className = 'pg-hint' + (bad?' bad':'') + (snapped?'':' free');
     hint.style.top = (min - startMin) * PX_PER_MIN + 'px';
     hint.style.height = drag.durMin * PX_PER_MIN + 'px';
-    hint.innerHTML = `<span>${snapped?'🧲 ':''}${hm(min)}~${hm(min+drag.durMin)}${
-      bad?' · 불가 시간':''}${snapped?'':' · 자유'}</span>`;
+    hint.innerHTML = `<span>${snapped?'🧲 ':''}${hm(min)}~${hm(min+drag.durMin)}${snapped?'':' · 자유'}</span>`
+      + (bad ? `<em class="pg-why">${esc(issueBrief(issues))}</em>` : '');
     col.appendChild(hint);
     drag.preview = { day, min };
   };
