@@ -2283,6 +2283,14 @@ async function renderAccessCtl(){
       <p class="adesc">선생님별로 페이지 접근을 열고 닫습니다. <b style="color:var(--ok)">✓ 허용</b> / <b style="color:var(--danger)">✕ 차단</b> — 누르면 바뀝니다.
       🔒는 협력교사 권한 자체로 막힌 것이고, 개인 설정보다 우선합니다. 차단하면 메뉴에서 숨겨지고 주소로 들어가도 막힙니다.</p>
       <style>
+        .tt-ed-wrap{display:flex;gap:6px;flex-wrap:wrap}
+        .tt-ed{font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 13px;
+          border:1.5px solid var(--ivd);border-radius:9px;background:var(--wh);
+          color:var(--ts);cursor:pointer}
+        .tt-ed:hover{border-color:var(--gm)}
+        .tt-ed.on{background:var(--gm);border-color:var(--gm);color:#fff}
+        .tt-ed.sup{background:var(--goldp);border-color:var(--goldd);color:var(--goldd);cursor:default}
+        .tt-sup{font-size:10px;opacity:.8}
         .acc-t{width:30px;height:30px;border-radius:8px;border:1.5px solid;cursor:pointer;font-size:13px;font-weight:900;font-family:inherit;transition:all .12s}
         .acc-t.on{background:var(--ok-bg);border-color:var(--ok-bg);color:var(--ok)}
         .acc-t.on:hover{background:var(--ok-bg);border-color:var(--ok)}
@@ -2306,8 +2314,63 @@ async function renderAccessCtl(){
         · 변경은 즉시 저장되며, 해당 선생님이 <b>다음에 페이지를 열 때</b>부터 적용됩니다. (이미 열어둔 화면은 새로고침 후)<br>
         · 슈퍼관리자(—)는 항상 전체 접근이며 차단할 수 없습니다.
       </p>
+    </div>` + ttEditorBoxHTML();
+  renderTTEditors();
+}
+
+/* ── 🗓 시간표를 짤 수 있는 사람 ──
+   여기 지정된 분과 수퍼관리자만 시간표 틀·배정·배치를 고칠 수 있다.
+   나머지 선생님은 완성 시간표를 보고, 자기 수업 가능 시간만 적는다. */
+function ttEditorBoxHTML(){
+  return `<div class="asc" style="margin-top:14px">
+    <h3 style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:5px">🗓 시간표 담당자</h3>
+    <p style="font-size:12.5px;color:var(--ts);line-height:1.7;margin-bottom:12px">
+      여기 고른 분과 <b>수퍼관리자</b>만 시간표 틀·수업 정의·배치를 고칠 수 있습니다.
+      <br><span style="color:var(--tl)">· 나머지 선생님은 완성 시간표를 보고, <b>자기 수업 가능 시간</b>만 적을 수 있어요.
+      · 실수로 남의 작업을 지우는 일을 막아 줍니다.</span>
+    </p>
+    <div id="tt-ed-box"><div style="font-size:12.5px;color:var(--tl)">불러오는 중…</div></div>
+  </div>`;
+}
+
+let TT_EDITORS = [];
+async function renderTTEditors(){
+  const box = $I('tt-ed-box'); if(!box) return;
+  try {
+    const s = await getDoc(doc(db,'timetableConfig','editors'));
+    TT_EDITORS = (s.exists() && Array.isArray(s.data().uids)) ? s.data().uids : [];
+  } catch(e){ TT_EDITORS = []; }
+
+  const list = Object.values(STAFF_CACHE||{})
+    .filter(s => !s.noAuth && (s.acStatus||'active')!=='quit' && s.role!=='partner')
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+
+  const chips = list.map(s=>{
+    const on = TT_EDITORS.includes(s.uid);
+    const sup = s.role==='super';
+    return `<button class="tt-ed ${on?'on':''} ${sup?'sup':''}"
+      onclick="${sup?'':`toggleTTEditor('${s.uid}')`}"
+      title="${sup?'수퍼관리자는 항상 고칠 수 있습니다':''}">
+      ${esc(s.name||'')}${sup?' <span class="tt-sup">항상</span>':''}</button>`;
+  }).join('');
+
+  const n = TT_EDITORS.length;
+  box.innerHTML = `<div class="tt-ed-wrap">${chips}</div>
+    <div style="font-size:12px;color:${n?'var(--gm)':'var(--goldd)'};margin-top:10px;font-weight:700">
+      ${n ? `지정된 담당자 ${n}분` : '아직 지정된 분이 없습니다 — 수퍼관리자만 시간표를 짤 수 있습니다'}
     </div>`;
 }
+
+window.toggleTTEditor = async function(uid){
+  const i = TT_EDITORS.indexOf(uid);
+  if(i>=0) TT_EDITORS.splice(i,1); else TT_EDITORS.push(uid);
+  try {
+    await setDoc(doc(db,'timetableConfig','editors'), {
+      uids: TT_EDITORS, updatedAt: Timestamp.now(), updatedByUid: CU.uid
+    }, { merge:true });
+    renderTTEditors();
+  } catch(e){ alert('저장 실패: '+(e.message||'')); }
+};
 window.renderAccessCtl = renderAccessCtl;
 
 async function togglePageDeny(uid, key){
