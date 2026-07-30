@@ -372,6 +372,13 @@
     color:var(--ts,#5A6560);cursor:pointer}
   .pg-zbtn:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
   .pg-zbtn.on{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+  .pg-snapbtn{font-family:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:7px;background:var(--wh,#fff);
+    color:var(--tl,#93A09A);cursor:pointer;margin-left:8px;white-space:nowrap}
+  .pg-snapbtn:hover{border-color:var(--gm,#00704A)}
+  .pg-snapbtn.on{border-color:var(--gm,#00704A);color:var(--gm,#00704A);background:var(--gp,#E8F3EF)}
+  /* 자석이 풀린 상태의 미리보기 */
+  .pg-hint.free{border-style:dotted;border-width:2px}
   .pg-span{margin-left:auto;font-weight:700;color:var(--ts,#5A6560)}
   /* 판 자체가 위아래로 스크롤 — 요일 머리와 시각 축은 붙어 있는다 */
   .pg-board{overflow:auto;max-height:calc(100vh - 210px);min-height:480px;
@@ -3900,7 +3907,23 @@ function isShared(l){ return !!l && (l.grades||[]).length > 1; }
    블록의 시작·끝 근처면 그쪽으로 딱 붙고, 아니면 5분 격자에 맞춘다.
    카드가 블록보다 길면 다음 칸을 넘어가며 자리를 차지한다. */
 const SNAP_TOL = 10;   // 이 분(分) 안쪽이면 경계에 붙는다
-function snapMinute(grade, day, rawMin, durMin){
+let snapOn = true;     // 자석 켜짐 (Alt 를 누르고 있으면 잠시 풀린다)
+try { snapOn = localStorage.getItem('sa_snap') !== 'off'; } catch(e){}
+window.toggleSnap = function(){
+  snapOn = !snapOn;
+  try { localStorage.setItem('sa_snap', snapOn ? 'on' : 'off'); } catch(e){}
+  renderPlace2();
+  toast(snapOn ? '자석을 켰습니다 — 칸 경계에 붙습니다'
+               : '자석을 껐습니다 — 5분 단위로 자유롭게 놓입니다', 'ok');
+};
+
+/* noSnap 이 참이면 경계에 붙이지 않고 5분 격자에만 맞춘다.
+   (자석을 껐거나, 끌면서 Alt 를 누르고 있을 때) */
+function snapMinute(grade, day, rawMin, durMin, noSnap){
+  if(noSnap || !snapOn) return Math.round(rawMin / SNAP_MIN) * SNAP_MIN;
+  return snapToEdge(grade, day, rawMin, durMin);
+}
+function snapToEdge(grade, day, rawMin, durMin){
   const { blocks } = dayBlocks(grade, day);
   // 칸 경계가 가까이 있으면 무조건 그쪽에 붙는다 (5분 격자보다 우선)
   let best = null, bestD = SNAP_TOL + 1;
@@ -4037,7 +4060,8 @@ function renderPlace2(){
       </div>
       <div class="pdesc">
         수업 카드를 <b>실제 시각 위에 끌어다</b> 놓습니다. 카드 높이가 곧 수업 길이예요.
-        <br><span style="color:var(--tl,#93A09A)">· 5분 단위로 붙습니다. · 놓은 카드를 다시 끌면 옮겨지고, 밖으로 끌어내면 목록으로 돌아갑니다.
+        <br><span style="color:var(--tl,#93A09A)">· <b>자석</b>이 켜져 있으면 칸 경계에 딱 붙고, 끌면서 <b>Alt</b>(⌥)를 누르면 잠시 풀려 칸 중간에도 놓입니다.
+        <br>· 놓은 카드를 다시 끌면 옮겨지고, 밖으로 끌어내거나 우클릭하면 목록으로 돌아갑니다.
         <br>· 선생님이 겹치거나 불가 시간이면, 교실이 겹치면 <b>빨갛게</b> 표시됩니다.</span>
       </div>
       ${!pgFrameId ? `<div class="empty"><div class="ico">🧩</div><div class="t1">시간표 틀을 고르세요</div></div>`
@@ -4144,6 +4168,9 @@ function drawPlaceBoard(){
       <div class="pg-boardwrap">
         <div class="pg-zoom">
           <span>세로 크기</span>${zoomBtns}
+          <button class="pg-snapbtn ${snapOn?'on':''}" onclick="toggleSnap()"
+            title="${snapOn?'칸 경계에 붙습니다 — 끌면서 Alt 를 누르면 잠시 풀립니다':'5분 단위로 자유롭게 놓입니다'}">
+            🧲 자석 ${snapOn?'켬':'끔'}</button>
           <span class="pg-span">${hm(gradeRange(pgGrade).startMin)}~${hm(gradeRange(pgGrade).endMin)}</span>
         </div>
       <div class="pg-board">
@@ -4352,7 +4379,9 @@ function bindPlaceDrag(startMin){
     const day = col.dataset.day;
     const rect = col.getBoundingClientRect();
     const raw = startMin + (e.clientY - rect.top) / PX_PER_MIN;
-    let min = snapMinute(pgGrade, day, raw, drag.durMin);
+    const free = !!e.altKey;                       // Alt 를 누르고 있으면 자석 해제
+    drag.lastRaw = raw; drag.lastCol = col; drag.free = free;
+    let min = snapMinute(pgGrade, day, raw, drag.durMin, free);
     const b = dayBlocks(pgGrade, day);
     const lo = b.blocks.length ? b.startMin : startMin;
     const hi = b.blocks.length ? b.endMin : startMin + 600;
@@ -4361,13 +4390,42 @@ function bindPlaceDrag(startMin){
 
     const l = LESSONS.find(x=>x.id===drag.lessonId);
     const bad = hitsBlocked(day, l?(l.teacherUids||[]):[], min, drag.durMin);
+    const snapped = (snapOn && !free);
     const hint = document.createElement('div');
-    hint.className = 'pg-hint' + (bad ? ' bad' : '');
+    hint.className = 'pg-hint' + (bad ? ' bad' : '') + (snapped ? '' : ' free');
     hint.style.top = (min - startMin) * PX_PER_MIN + 'px';
     hint.style.height = drag.durMin * PX_PER_MIN + 'px';
-    hint.innerHTML = `<span>${hm(min)}~${hm(min+drag.durMin)}${bad?' · 불가 시간':''}</span>`;
+    hint.innerHTML = `<span>${snapped?'🧲 ':''}${hm(min)}~${hm(min+drag.durMin)}${
+      bad?' · 불가 시간':''}${snapped?'':' · 자유'}</span>`;
     col.appendChild(hint);
   };
+
+  // 끌고 있는 동안 Alt 를 누르거나 떼면 미리보기를 바로 고쳐 보여준다
+  const onAlt = ev=>{
+    if(!drag || !drag.lastCol) return;
+    if(ev.key !== 'Alt') return;
+    const col = drag.lastCol, day = col.dataset.day;
+    const free = ev.type === 'keydown';
+    board.querySelectorAll('.pg-hint').forEach(x=>x.remove());
+    let min = snapMinute(pgGrade, day, drag.lastRaw, drag.durMin, free);
+    const b = dayBlocks(pgGrade, day);
+    const lo = b.blocks.length ? b.startMin : startMin;
+    const hi = b.blocks.length ? b.endMin : startMin + 600;
+    min = Math.max(lo, Math.min(min, hi - drag.durMin));
+    const l = LESSONS.find(x=>x.id===drag.lessonId);
+    const bad = hitsBlocked(day, l?(l.teacherUids||[]):[], min, drag.durMin);
+    const snapped = (snapOn && !free);
+    const hint = document.createElement('div');
+    hint.className = 'pg-hint' + (bad?' bad':'') + (snapped?'':' free');
+    hint.style.top = (min - startMin) * PX_PER_MIN + 'px';
+    hint.style.height = drag.durMin * PX_PER_MIN + 'px';
+    hint.innerHTML = `<span>${snapped?'🧲 ':''}${hm(min)}~${hm(min+drag.durMin)}${
+      bad?' · 불가 시간':''}${snapped?'':' · 자유'}</span>`;
+    col.appendChild(hint);
+    drag.preview = { day, min };
+  };
+  document.addEventListener('keydown', onAlt);
+  document.addEventListener('keyup', onAlt);
 
   document.onmouseup = e=>{
     if(!drag) return;
@@ -4393,7 +4451,7 @@ function bindPlaceDrag(startMin){
     const day = col.dataset.day;
     const rect = col.getBoundingClientRect();
     const raw = startMin + (e.clientY - rect.top) / PX_PER_MIN;
-    let min = snapMinute(pgGrade, day, raw, d.durMin);
+    let min = snapMinute(pgGrade, day, raw, d.durMin, !!e.altKey);
     // 하루 범위 안으로
     const { startMin:ds, endMin:de } = (function(){ const b = dayBlocks(pgGrade, day); return b.blocks.length? b : gradeRange(pgGrade); })();
     min = Math.max(ds, Math.min(min, de - d.durMin));
