@@ -536,6 +536,9 @@
   .lc-dup:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
 
   /* ── 수업 색 고르기 · 카드 미리보기 ── */
+  .tchip.other{opacity:.72;border-style:dashed}
+  .tc-org{font-size:10px;color:var(--tl,#93A09A);margin-left:5px;font-weight:600}
+  .tc-note{width:100%;font-size:11px;color:var(--tl,#93A09A);margin-top:6px;line-height:1.5}
   .ld-colors{display:grid;grid-template-columns:repeat(12,1fr);gap:5px;margin-top:6px;max-width:420px}
   @media(max-width:640px){ .ld-colors{grid-template-columns:repeat(8,1fr)} }
   .ld-color{width:100%;aspect-ratio:1;height:auto;border-radius:7px;border:2px solid transparent;
@@ -1214,7 +1217,12 @@ async function loadTeachers(){  const snap = await getDocs(collection(db,'staff'
   const COLORS = ['#00704A','#3F7CB5','#7C6BC4','#C0871F','#B5612E','#4A8C6F','#9C5B86','#6A8E3C','#5A6B8C','#807A6B','#0D8478','#B5484D'];
   TEACHERS = snap.docs.map((d,i)=>{
     const s = d.data();
-    return { uid:d.id, name:s.name||'(이름 없음)', org:s.org||'', dept:s.dept||'', role:s.role||'teacher', color:COLORS[i%COLORS.length] };
+    // 교직원은 여러 기관에 걸쳐 있을 수 있다 (교장·교감처럼).
+    // 다른 화면과 같은 방식으로 orgs 배열을 먼저 보고, 없으면 org 하나를 쓴다.
+    const orgs = (Array.isArray(s.orgs) && s.orgs.length) ? s.orgs.slice()
+               : (s.org ? [s.org] : []);
+    return { uid:d.id, name:s.name||'(이름 없음)', org:s.org||orgs[0]||'', orgs,
+      dept:s.dept||'', role:s.role||'teacher', color:COLORS[i%COLORS.length] };
   }).filter(t=> t.role!=='super' || true)   // 전원 표시 (super도 수업할 수 있음)
     .sort((a,b)=> (a.org||'').localeCompare(b.org||'') || a.name.localeCompare(b.name,'ko'));
 
@@ -1271,6 +1279,25 @@ async function saveAssignStaff(){
 function lessonTeacherPool(){
   const picked = assignedTeachers();
   return picked.length ? picked : TEACHERS;
+}
+
+/* 이 선생님이 그 기관에 속하나
+   · orgs 에 들어 있으면 속한다 (여러 기관을 겸하는 경우)
+   · 수퍼관리자는 어느 기관에서나 수업할 수 있다
+   · 소속이 하나도 적혀 있지 않으면 가리지 않는다 (놓치는 일이 없도록) */
+function teacherInOrg(t, org){
+  if(!t) return false;
+  if(!org) return true;
+  if(t.role === 'super') return true;
+  const list = (t.orgs && t.orgs.length) ? t.orgs : (t.org ? [t.org] : []);
+  if(!list.length) return true;
+  return list.includes(org);
+}
+// 이 선생님의 소속을 글로 (여러 곳이면 모두)
+function teacherOrgLabel(t){
+  const list = (t && t.orgs && t.orgs.length) ? t.orgs : (t && t.org ? [t.org] : []);
+  if(!list.length) return '';
+  return list.map(o=>ORGS[o]||o).join(' · ');
 }
 
 // 편성 대상 선생님 목록 (화면 순서대로)
@@ -1454,7 +1481,7 @@ function renderTeacherList(){
       <span class="tt-dot" style="background:${t.color}"></span>
       <span class="tt-who">
         <span class="tt-nm">${esc(t.name)}</span>
-        <span class="tt-meta">${esc(ORGS[t.org]||t.org||'')}</span>
+        <span class="tt-meta">${esc(teacherOrgLabel(t))}</span>
       </span>
       ${inPicked
         ? `<span class="tt-flag ${blocked?'set':'none'}">${blocked?'설정됨':'전체 가능'}</span>
@@ -3665,12 +3692,26 @@ window.openLessonDlg = function(id){
   const order = GRADE_ORDER[lessonOrg] || [];
   $I('ld-grades').innerHTML = order.map(g=>
     `<span class="gchip ${dlgGrades.has(g)?'on':''}" onclick="toggleDlgGrade('${g}')">${esc(g)}</span>`).join('');
-  // 선생님 (해당 기관)
-  const orgTeachers = lessonTeacherPool().filter(t=> t.org===lessonOrg);
-  $I('ld-teachers').innerHTML = orgTeachers.length
-    ? orgTeachers.map(t=>`<span class="tchip ${dlgTeachers.has(t.uid)?'on':''}" onclick="toggleDlgTeacher('${t.uid}')">
-        <span class="tc-dot" style="background:${t.color}"></span>${esc(t.name)}</span>`).join('')
-    : '<span style="font-size:12px;color:var(--tl)">이 기관 소속 교직원이 없습니다.</span>';
+  /* 담당 선생님 — 기관을 가리지 않고 모두 보여준다.
+     교장·교감처럼 여러 기관을 겸하시거나, 다른 기관 선생님이 협력 수업에 들어가는 일이 있어
+     소속으로 걸러 버리면 정작 필요한 분이 목록에 안 나온다.
+     대신 이 기관 소속을 위에 두고, 다른 기관 분은 소속을 함께 적어 구분한다. */
+  const pool = lessonTeacherPool().slice().sort((a,b)=>{
+    const ai = teacherInOrg(a, lessonOrg) ? 0 : 1;
+    const bi = teacherInOrg(b, lessonOrg) ? 0 : 1;
+    return ai - bi || (a.name||'').localeCompare(b.name||'','ko');
+  });
+  const outCnt = pool.filter(t=>!teacherInOrg(t, lessonOrg)).length;
+  $I('ld-teachers').innerHTML = pool.length
+    ? pool.map(t=>{
+        const mine = teacherInOrg(t, lessonOrg);
+        return `<span class="tchip ${dlgTeachers.has(t.uid)?'on':''} ${mine?'':'other'}"
+          onclick="toggleDlgTeacher('${t.uid}')"
+          title="${esc(t.name)}${teacherOrgLabel(t)?' · '+esc(teacherOrgLabel(t)):''}">
+          <span class="tc-dot" style="background:${t.color}"></span>${esc(t.name)}${
+          mine ? '' : `<span class="tc-org">${esc(teacherOrgLabel(t))}</span>`}</span>`;
+      }).join('') + (outCnt ? `<div class="tc-note">아래 회색은 다른 기관 선생님입니다 (${outCnt}분)</div>` : '')
+    : '<span style="font-size:12px;color:var(--tl)">등록된 교직원이 없습니다.</span>';
   // 교실
   const roomOpts = ['<option value="">지정 안 함</option>'];
   FLOORS.forEach(f=>{ (f.rooms||[]).forEach(r=>{
@@ -3698,7 +3739,7 @@ function openLessonDlgRefreshChips(){
   const order = GRADE_ORDER[lessonOrg] || [];
   $I('ld-grades').innerHTML = order.map(g=>
     `<span class="gchip ${dlgGrades.has(g)?'on':''}" onclick="toggleDlgGrade('${g}')">${esc(g)}</span>`).join('');
-  const orgTeachers = lessonTeacherPool().filter(t=> t.org===lessonOrg);
+  const orgTeachers = lessonTeacherPool().filter(t=> teacherInOrg(t, lessonOrg));
   $I('ld-teachers').innerHTML = orgTeachers.map(t=>`<span class="tchip ${dlgTeachers.has(t.uid)?'on':''}" onclick="toggleDlgTeacher('${t.uid}')">
       <span class="tc-dot" style="background:${t.color}"></span>${esc(t.name)}</span>`).join('');
 }
