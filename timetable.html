@@ -2555,28 +2555,85 @@ function renderDayBar(){
   });
 }
 
-/* ---------- 요일 복사 ---------- */
+/* ---------- 요일 복사 (부서별 선택) ----------
+   전에는 모든 부서가 통째로 복사됐는데,
+   이제 부서를 골라 그 부서 시간표만 다른 요일로 복사할 수 있다.
+   고르지 않은 부서의 대상 요일 내용은 그대로 남는다. */
 function copyDay(){
   ensureWeek();
-  const from=state.activeDay;
-  const others=state.weekDays.filter(d=>d!==from);
+  const from = state.activeDay;
+  const others = state.weekDays.filter(d=>d!==from);
   if(!others.length){ flash('복사할 다른 요일이 없습니다'); return; }
-  const sel=prompt(`"${from}" 요일을 어느 요일(들)로 복사할까요?\n쉼표로 구분 (예: 화,수) · "전체" 입력 시 모든 요일\n\n가능한 요일: ${others.join(', ')}`, others.join(','));
-  if(sel===null) return;
-  let targets;
-  if(sel.trim()==='전체') targets=others;
-  else targets=sel.split(/[,\s]+/).map(s=>s.trim()).filter(s=>others.includes(s));
-  if(!targets.length){ flash('대상 요일이 없습니다'); return; }
-  pushHistory(`${from} 요일을 ${targets.join('·')}(으)로 복사`);
-  const src=state.weekArrangements[from];
-  targets.forEach(t=>{
-    const copy={};
-    state.departments.forEach(d=>{ copy[d.id]=JSON.parse(JSON.stringify(src[d.id]||[])); });
-    state.weekArrangements[t]=copy;
-  });
-  renderDayBar(); renderBoard(); renderOutput(); renderWeekStats();
-  flash(`${from} → ${targets.join('·')} 복사 완료`);
+  const depts = state.departments || [];
+  if(!depts.length){ flash('부서가 없습니다'); return; }
+
+  document.getElementById('cpday-mod')?.remove();
+  const ov = document.createElement('div');
+  ov.id = 'cpday-mod';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:400;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,25,21,.5)';
+  const chip = (val,label,checked,cls)=>`
+    <label class="cp-chip ${cls}" style="display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1.5px solid var(--line,#E3E1DA);border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:700;background:var(--panel,#fff)">
+      <input type="checkbox" value="${val}" ${checked?'checked':''} style="accent-color:var(--gm,#00704A)">${label}</label>`;
+  ov.innerHTML = `
+    <div class="mbox" style="position:relative;background:var(--panel,#fff);border-radius:16px;padding:20px 22px;width:100%;max-width:460px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="font-size:16px;font-weight:800;margin-bottom:4px">📋 요일 복사</div>
+      <div style="font-size:12px;color:var(--ink-faint,#93A09A);line-height:1.6;margin-bottom:14px">
+        <b>${from}</b>요일의 시간표를 다른 요일로 복사합니다.<br>
+        부서를 고르면 <b>그 부서만</b> 복사되고, 나머지 부서의 대상 요일 내용은 그대로 남아요.</div>
+
+      <div style="font-size:12px;font-weight:800;margin-bottom:7px">1️⃣ 어느 요일로 복사할까요?</div>
+      <div id="cp-days" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+        ${others.map(d=>chip(d, d+'요일', false, 'cp-day')).join('')}
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+        <span style="font-size:12px;font-weight:800">2️⃣ 어느 부서를 복사할까요?</span>
+        <button type="button" onclick="cpDayAll(true)" style="font-family:inherit;font-size:11px;padding:3px 9px;border:1px solid var(--line,#E3E1DA);border-radius:6px;background:none;cursor:pointer">모두</button>
+        <button type="button" onclick="cpDayAll(false)" style="font-family:inherit;font-size:11px;padding:3px 9px;border:1px solid var(--line,#E3E1DA);border-radius:6px;background:none;cursor:pointer">해제</button>
+      </div>
+      <div id="cp-depts" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
+        ${depts.map(d=>`
+          <label class="cp-chip cp-dept" style="display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1.5px solid var(--line,#E3E1DA);border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:700;background:var(--panel,#fff)">
+            <input type="checkbox" value="${d.id}" checked style="accent-color:var(--gm,#00704A)">
+            <span style="width:10px;height:10px;border-radius:3px;background:${d.color||'#888'};display:inline-block"></span>${d.name}</label>`).join('')}
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-sm btn-ghost" onclick="document.getElementById('cpday-mod').remove()">취소</button>
+        <button class="btn btn-sm" onclick="doCopyDay('${from}')">복사하기</button>
+      </div>
+    </div>`;
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
 }
+
+function cpDayAll(on){
+  document.querySelectorAll('#cp-depts input').forEach(cb=>cb.checked=on);
+}
+window.cpDayAll = cpDayAll;
+
+function doCopyDay(from){
+  const targets = [...document.querySelectorAll('#cp-days input:checked')].map(cb=>cb.value);
+  const deptIds = [...document.querySelectorAll('#cp-depts input:checked')].map(cb=>cb.value);
+  if(!targets.length){ flash('복사할 요일을 골라 주세요'); return; }
+  if(!deptIds.length){ flash('복사할 부서를 골라 주세요'); return; }
+  const names = state.departments.filter(d=>deptIds.includes(d.id)).map(d=>d.name);
+  const allD = deptIds.length === state.departments.length;
+  pushHistory(`${from} 요일 → ${targets.join('·')} 복사 (${allD?'모든 부서':names.join('·')})`);
+  const src = state.weekArrangements[from] || {};
+  targets.forEach(t=>{
+    const dst = state.weekArrangements[t] || {};
+    // 고른 부서만 덮어쓴다 — 나머지 부서는 대상 요일 것 유지
+    deptIds.forEach(id=>{ dst[id] = JSON.parse(JSON.stringify(src[id]||[])); });
+    // 고르지 않은 부서 자리도 비어 있으면 빈 배열로 채워둔다
+    state.departments.forEach(d=>{ if(!dst[d.id]) dst[d.id]=[]; });
+    state.weekArrangements[t] = dst;
+  });
+  document.getElementById('cpday-mod')?.remove();
+  renderDayBar(); renderBoard(); renderOutput(); renderWeekStats();
+  flash(`${from} → ${targets.join('·')} 복사 완료 (${allD?'모든 부서':names.join('·')})`);
+}
+window.doCopyDay = doCopyDay;
 
 /* ---------- 요일 관리(추가/삭제) ---------- */
 const ALL_DAYS=['월','화','수','목','금','토','일'];

@@ -1592,11 +1592,13 @@ function assignedTeachers(){
 function isAssigned(uid){ return ASSIGN_UIDS.includes(uid); }
 
 window.addAssign = function(uid){
+  if(!needEdit()) return;
   if(isAssigned(uid)) return;
   ASSIGN_UIDS.push(uid);
   saveAssignStaff(); renderTeacherList();
 };
 window.removeAssign = function(uid){
+  if(!needEdit()) return;
   ASSIGN_UIDS = ASSIGN_UIDS.filter(u=>u!==uid);
   if(curTeacher===uid){ curTeacher=null;
     const ge=$I('grid-empty'), gc=$I('grid-content');
@@ -1606,10 +1608,12 @@ window.removeAssign = function(uid){
   saveAssignStaff(); renderTeacherList();
 };
 window.addAllAssign = function(){
+  if(!needEdit()) return;
   TEACHERS.forEach(t=>{ if(!isAssigned(t.uid)) ASSIGN_UIDS.push(t.uid); });
   saveAssignStaff(); renderTeacherList();
 };
 window.clearAssign = function(){
+  if(!needEdit()) return;
   if(!ASSIGN_UIDS.length) return;
   if(!confirm('편성 대상을 모두 비울까요?\n(설정해둔 가능 시간은 지워지지 않습니다)')) return;
   ASSIGN_UIDS = []; curTeacher = null;
@@ -1770,17 +1774,17 @@ function renderTeacherList(){
       </span>
       ${inPicked
         ? `<span class="tt-flag ${blocked?'set':'none'}">${blocked?'설정됨':'전체 가능'}</span>
-           <button class="tt-x" title="편성 대상에서 빼기"
-             onclick="event.stopPropagation();removeAssign('${t.uid}')">−</button>`
-        : `<button class="tt-plus" title="편성 대상에 넣기"
-             onclick="event.stopPropagation();addAssign('${t.uid}')">＋</button>`}
+           ${CAN_EDIT?`<button class="tt-x" title="편성 대상에서 빼기"
+             onclick="event.stopPropagation();removeAssign('${t.uid}')">−</button>`:''}`
+        : (CAN_EDIT?`<button class="tt-plus" title="편성 대상에 넣기"
+             onclick="event.stopPropagation();addAssign('${t.uid}')">＋</button>`:'')}
     </div>`;
   };
 
   box.innerHTML = `
     <div class="tt-head">
       <span>편성 대상 <b>${picked.length}명</b></span>
-      ${picked.length?`<button class="tt-mini" onclick="clearAssign()">비우기</button>`:''}
+      ${picked.length && CAN_EDIT?`<button class="tt-mini" onclick="clearAssign()">비우기</button>`:''}
     </div>
     <div class="tt-zone" id="tt-pick" data-zone="pick">
       ${picked.length ? picked.map(t=>row(t,true)).join('')
@@ -1789,7 +1793,7 @@ function renderTeacherList(){
 
     <div class="tt-head" style="margin-top:14px">
       <span>전체 선생님 <b>${rest.length}명</b></span>
-      ${rest.length?`<button class="tt-mini" onclick="addAllAssign()">모두 추가</button>`:''}
+      ${rest.length && CAN_EDIT?`<button class="tt-mini" onclick="addAllAssign()">모두 추가</button>`:''}
     </div>
     <div class="tt-zone pool" id="tt-pool" data-zone="pool">
       ${rest.length ? rest.map(t=>row(t,false)).join('')
@@ -1801,6 +1805,7 @@ function renderTeacherList(){
 
 /* 선생님 카드 드래그 — 구역 간 이동 + 편성 대상 내 순서 변경 */
 function bindTeacherDrag(){
+  if(!CAN_EDIT) return;   // 보기 전용 — 편성 대상은 담당자만 움직인다
   const box = $I('tt-list'); if(!box) return;
   let fromUid = null, fromZone = null;
 
@@ -2340,6 +2345,7 @@ async function saveRooms(silent){
 }
 
 window.addFloor = function(){
+  if(!needEdit()) return;
   const name = prompt('층 이름을 입력하세요 (예: 1층, 2층, 본관 1층)', `${FLOORS.length+1}층`);
   if(!name) return;
   const f = { id: 'fl_'+Math.random().toString(36).slice(2,8), name:name.trim(), image:'', rooms:[] };
@@ -2370,6 +2376,7 @@ function renderFloors(){
 
 /* 층 탭 순서 드래그 */
 function bindFloorTabDrag(){
+  if(!CAN_EDIT) return;   // 보기 전용
   const tabs = $I('floor-tabs'); if(!tabs) return;
   let fromId = null;
   tabs.querySelectorAll('.floor-tab').forEach(el=>{
@@ -2416,6 +2423,7 @@ function moveFloorTo(srcId, dstId, before){
 
 // 좌우 버튼으로 한 칸씩 이동 (터치 기기·키보드 대체 수단)
 window.shiftFloor = function(dir){
+  if(!needEdit()) return;
   const i = FLOORS.findIndex(f=>f.id===curFloorId);
   const j = i + dir;
   if(i < 0 || j < 0 || j >= FLOORS.length) return;
@@ -2481,6 +2489,7 @@ function renderFloorContent(){
 
 // 이미지 업로드 + 압축
 window.uploadFloorImage = function(ev){
+  if(!needEdit()) return;
   const file = ev.target.files && ev.target.files[0]; if(!file) return;
   const reader = new FileReader();
   reader.onload = e=>{
@@ -2512,11 +2521,13 @@ window.uploadFloorImage = function(ev){
 };
 
 window.renameFloor = function(){
+  if(!needEdit()) return;
   const f = FLOORS.find(x=>x.id===curFloorId); if(!f) return;
   const n = prompt('층 이름', f.name); if(!n) return;
   f.name = n.trim(); saveRooms(); renderFloors();
 };
 window.deleteFloor = function(){
+  if(!needEdit()) return;
   const f = FLOORS.find(x=>x.id===curFloorId); if(!f) return;
   if(!confirm(`"${f.name}"을(를) 삭제할까요?\n이 층의 교실 ${(f.rooms||[]).length}개도 함께 삭제됩니다.`)) return;
   FLOORS = FLOORS.filter(x=>x.id!==curFloorId);
@@ -2668,6 +2679,7 @@ window.onGradeDeptFrame = function(){
 };
 
 window.setGradeDept = async function(grade, deptId){
+  if(!needEdit()) return;
   if(!gdFrameId) return;
   setDeptOfGrade(gdFrameId, grade, deptId);
   await saveGradeDept();
@@ -2738,6 +2750,7 @@ function renderGradeDept(){
 window.renderGradeDept = renderGradeDept;
 
 window.assignRestTo = async function(deptId){
+  if(!needEdit()) return;
   if(!gdFrameId) return;
   gradesInUse().forEach(g=>{ if(!deptOfGrade(gdFrameId,g)) setDeptOfGrade(gdFrameId, g, deptId); });
   await saveGradeDept();
@@ -2808,6 +2821,7 @@ function setCounts(snap){
 
 /* ── 저장 ── */
 window.saveSetAs = async function(){
+  if(!needEdit()) return;
   const def = curSetName || `${new Date().getFullYear()}학년도 시간표`;
   const name = prompt('이 시간표 배정에 이름을 붙여주세요.\n(예: 2026학년도 2학기 시간표)', def);
   if(name===null) return;
@@ -2817,6 +2831,7 @@ window.saveSetAs = async function(){
 };
 
 window.overwriteSet = async function(){
+  if(!needEdit()) return;
   const s = SETS.find(x=>x.id===curSetId);
   if(!s){ toast('먼저 세트를 불러오거나 새로 저장해 주세요.','err'); return; }
   if(!canEditSet(s)){ toast(`"${s.createdByName}" 선생님이 저장한 세트라 덮어쓸 수 없습니다. 복제해서 쓰세요.`,'err'); return; }
@@ -2907,6 +2922,7 @@ async function applySetSnapshot(snap){
 
 /* ── 불러오기 ── */
 window.loadSet = async function(id){
+  if(!needEdit()) return;
   const s = SETS.find(x=>x.id===id); if(!s) return;
   const c = s.counts || {};
   const nowAv = Object.keys(AVAIL||{}).filter(u=>DAYS.some(d=>(AVAIL[u]||{})[d]&&AVAIL[u][d].size)).length;
@@ -2992,6 +3008,7 @@ async function saveAllAvailability(){
 
 /* ── 복제 · 이름변경 · 삭제 ── */
 window.duplicateSet = async function(id){
+  if(!needEdit()) return;
   const s = SETS.find(x=>x.id===id); if(!s) return;
   const name = prompt('복제본 이름', `${s.name} (사본)`);
   if(name===null) return;
@@ -3072,7 +3089,7 @@ window.openVersions = async function(setId){
       <span class="ver-meta">${esc(v.createdByName||'')} · ${esc(fmtDT(v.createdAt))}
         <span class="ver-cnt">수업 ${c.lessons||0} · 배치 ${c.placed||0}칸</span></span>
       <span class="ver-act">
-        <button class="rm-modebtn" onclick="restoreVersion('${setId}','${v.id}',${v.ver})">↩ 이 버전으로</button>
+        ${CAN_EDIT?`<button class="rm-modebtn" onclick="restoreVersion('${setId}','${v.id}',${v.ver})">↩ 이 버전으로</button>`:''}
         ${mine?`<button class="rm-modebtn" onclick="deleteVersion('${setId}','${v.id}',${v.ver})">🗑</button>`:''}
       </span>
     </div>`;
@@ -3094,6 +3111,7 @@ window.openVersions = async function(setId){
 };
 
 window.restoreVersion = async function(setId, verId, verNo){
+  if(!needEdit()) return;
   const s = SETS.find(x=>x.id===setId); if(!s) return;
   if(!confirm(`v${verNo} 버전으로 되돌릴까요?\n\n지금 화면의 내용이 그 버전으로 바뀝니다.\n(바뀐 내용을 남기려면 되돌리기 전에 💾 버전 저장을 먼저 눌러두세요)`)) return;
   window.showLoading && window.showLoading(`v${verNo} 버전으로 되돌리는 중…`);
@@ -3154,6 +3172,15 @@ function renderSetBar(){
       title="${autoSaveOn?'자동 저장이 켜져 있습니다':'자동 저장이 꺼져 있습니다'}">${autoSaveOn?'⟳ 자동 저장 켬':'⏸ 자동 저장 끔'}</button>
     <span class="save-state" id="save-state"></span>`;
 
+  if(!CAN_EDIT){
+    bar.className = 'set-bar';
+    bar.innerHTML = s
+      ? `<span class="sb-tag">💾 ${esc(s.name)}${s.lastVer?` <b class="sb-ver">v${s.lastVer}</b>`:''}</span>
+         <span class="sb-by">${esc(s.createdByName||'')} 저장</span>
+         <span class="sb-lock" style="margin-left:auto">👀 보기 전용</span>`
+      : `<span class="sb-none">👀 보기 전용 — 시간표는 담당 선생님이 관리합니다</span>`;
+    return;
+  }
   if(!s){
     bar.className = 'set-bar';
     bar.innerHTML = `<span class="sb-none">아직 저장하지 않은 작업입니다 — 고친 내용은 그때그때 서버에 남습니다</span>
@@ -3197,11 +3224,11 @@ function renderSets(){
         ${s.note?`<div class="set-note">${esc(s.note)}</div>`:''}
       </div>
       <div class="set-act">
-        <button class="rm-modebtn" onclick="loadSet('${s.id}')">📂 불러오기</button>
+        ${CAN_EDIT?`<button class="rm-modebtn" onclick="loadSet('${s.id}')">📂 불러오기</button>`:''}
         <button class="rm-modebtn" onclick="openVersions('${s.id}')">🕘 버전${s.lastVer?` ${s.lastVer}`:''}</button>
-        <button class="rm-modebtn" onclick="duplicateSet('${s.id}')">⧉ 복제</button>
+        ${CAN_EDIT?`<button class="rm-modebtn" onclick="duplicateSet('${s.id}')">⧉ 복제</button>
         <button class="rm-modebtn" ${mine?'':'disabled title="만든 사람만 바꿀 수 있어요"'} onclick="renameSet('${s.id}')">✏️ 이름</button>
-        <button class="rm-modebtn" ${mine?'':'disabled title="만든 사람만 지울 수 있어요"'} onclick="deleteSet('${s.id}')">🗑 삭제</button>
+        <button class="rm-modebtn" ${mine?'':'disabled title="만든 사람만 지울 수 있어요"'} onclick="deleteSet('${s.id}')">🗑 삭제</button>`:''}
       </div>
     </div>`;
   }).join('');
@@ -3209,7 +3236,7 @@ function renderSets(){
   box.innerHTML = `
     <div class="panel">
       <div class="ptitle">💾 저장된 시간표 배정
-        <span style="margin-left:auto"><button class="rm-modebtn" onclick="saveSetAs()">💾 지금 내용을 새로 저장</button></span>
+        ${CAN_EDIT?`<span style="margin-left:auto"><button class="rm-modebtn" onclick="saveSetAs()">💾 지금 내용을 새로 저장</button></span>`:''}
       </div>
       <div class="pdesc">
         수업 가능 시간 · 교실 배치 · 수업 정의 · 배치를 <b>통째로 저장</b>합니다.
@@ -3727,6 +3754,7 @@ function findRoom(rid){
 
 /* ── 모드 전환 ── */
 window.setRoomMode = function(m){
+  if(!needEdit()) return;
   roomMode = m;
   polyDraft = null;
   if(m!=='sel') selRoomId = null;
@@ -3831,6 +3859,7 @@ function updateSelBar(){
 window.deselectRoom = function(){ selRoomId = null; drawRooms(); };
 
 window.renameRoom = function(){
+  if(!needEdit()) return;
   const r = findRoom(selRoomId); if(!r) return;
   const n = prompt('교실 이름', r.name);
   if(n===null) return;
@@ -3840,6 +3869,7 @@ window.renameRoom = function(){
 };
 
 window.deleteRoom = function(){
+  if(!needEdit()) return;
   const r = findRoom(selRoomId); if(!r) return;
   if(!confirm(`"${r.name}" 교실을 삭제할까요?`)) return;
   const f = curFloor();
@@ -3849,6 +3879,7 @@ window.deleteRoom = function(){
 };
 
 window.straightenRoom = function(){
+  if(!needEdit()) return;
   const r = findRoom(selRoomId); if(!r) return;
   roomPts(r).forEach(p=>{ delete p.cx; delete p.cy; });
   saveRooms(); drawRooms();
@@ -3871,9 +3902,9 @@ function initFloorEditor(){
   }
   svg.setAttribute('class', 'fp-svg mode-'+roomMode);
 
-  svg.onmousedown  = onDown;
-  svg.ontouchstart = onDown;
-  svg.ondblclick   = onDblClick;
+  svg.onmousedown  = CAN_EDIT ? onDown : null;   // 보기 전용이면 그리기·이동 금지
+  svg.ontouchstart = CAN_EDIT ? onDown : null;
+  svg.ondblclick   = CAN_EDIT ? onDblClick : null;
   svg.oncontextmenu = e=>{ if(e.target.dataset && e.target.dataset.vertex!=null){ e.preventDefault(); removeVertex(e.target); } };
   svg.onmousemove  = onHover;
 
@@ -4102,6 +4133,7 @@ function removeVertex(el){
 
 // 목록 칩에서 교실 선택
 window.openRoomMenu = function(rid){
+  if(!needEdit()) return;
   setRoomMode('sel');
   selRoomId = rid;
   drawRooms();
@@ -4274,6 +4306,7 @@ function findRoomName(roomId){
 // ── 다이얼로그 ──
 /* 수업 복제 — 비슷한 수업을 여러 개 만들 때 */
 window.duplicateLesson = function(id, ev){
+  if(!needEdit()) return;
   if(ev) ev.stopPropagation();
   const l = LESSONS.find(x=>x.id===id); if(!l) return;
   const name = prompt('복제본 이름', `${l.subject} (사본)`);
@@ -4289,6 +4322,7 @@ window.duplicateLesson = function(id, ev){
 };
 
 window.openLessonDlg = function(id){
+  if(!needEdit()) return;
   editingLessonId = id || null;
   const l = id ? LESSONS.find(x=>x.id===id) : null;
   $I('ldlg-title').textContent = l ? '수업 편집' : '수업 추가';
@@ -4453,6 +4487,7 @@ function updateBundlePreview(){
     : '';
 }
 window.saveLessonDlg = function(){
+  if(!needEdit()) return;
   const subject = $I('ld-subject').value.trim();
   if(!subject){ toast('과목명을 입력하세요.','err'); return; }
   if(!dlgGrades.size){ toast('듣는 학년을 하나 이상 선택하세요.','err'); return; }
@@ -4482,11 +4517,13 @@ window.saveLessonDlg = function(){
 };
 // 지금 열어둔 수업을 지운다 (버튼에서 부른다)
 window.delEditingLesson = function(){
+  if(!needEdit()) return;
   if(!editingLessonId){ toast('먼저 수업을 골라주세요.','err'); return; }
   window.delLesson(editingLessonId);
 };
 
 window.delLesson = function(id){
+  if(!needEdit()) return;
   const l = LESSONS.find(x=>x.id===id); if(!l) return;
   // 이 수업이 시간표에 몇 장 놓여 있는지 미리 알려준다
   let placed = 0;
@@ -4544,6 +4581,7 @@ function cleanGhostPlacements(){
 window.cleanGhostPlacements = cleanGhostPlacements;
 
 window.fixGhosts = async function(){
+  if(!needEdit()) return;
   const n = cleanGhostPlacements();
   if(!n){ toast('정리할 것이 없습니다 — 모두 제대로 놓여 있어요','ok'); return; }
   await savePlace2(true);
@@ -4893,6 +4931,7 @@ function countPlaced(frameId){
 /* 틀만 바꾸고 배치는 그대로 옮긴다
    시각은 그대로 두되, 새 틀의 칸 경계에 가까우면 그 자리에 맞춰 준다 */
 window.askMoveFrame = function(fromId, toId, cnt){
+  if(!needEdit()) return;
   const fn = (FRAMES.find(f=>f.id===fromId)||{}).name || '앞 틀';
   const tn = (FRAMES.find(f=>f.id===toId)||{}).name || '새 틀';
   const mv = document.createElement('div'); mv.className='mov'; mv.id='mf-mod';
@@ -4917,6 +4956,7 @@ window.askMoveFrame = function(fromId, toId, cnt){
 window.closeMoveFrame = function(){ document.getElementById('mf-mod')?.remove(); };
 
 window.doMoveFrame = async function(fromId, toId){
+  if(!needEdit()) return;
   const snapTo = !!document.getElementById('mf-snap')?.checked;
   const src = PLACE2[fromId] || {};
   const saveF = pgFrameId, saveG = pgGrade;
@@ -5244,6 +5284,7 @@ window.openCardInfo = function(day, pid){
 };
 
 window.removeCard = function(day, pid){
+  if(!needEdit()) return;
   const item = placeList(pgGrade, day).find(c=>c.id===pid);
   if(item) removeCardEverywhere(item.lessonId, item.cardIdx);
   savePlace2(true);
@@ -5253,6 +5294,7 @@ window.removeCard = function(day, pid){
 
 /* ── 드래그로 놓기·옮기기 ── */
 function bindPlaceDrag(startMin){
+  if(!CAN_EDIT) return;   // 보기 전용 — 배치는 담당자만 움직인다
   const board = $I('pg-body'); if(!board) return;
   let drag = null;
 
