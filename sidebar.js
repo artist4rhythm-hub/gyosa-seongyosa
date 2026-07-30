@@ -34,6 +34,38 @@
   };
 })();
 
+/* ═══ 상단 경로에 세부 탭 잇기 ═══
+   각 페이지에서 탭을 옮길 때 부르면 된다.
+     setCrumb(['시간표 배정', '배치'])
+     setCrumb([{label:'시간표 배정', go:()=>switchTop('assign')}, {label:'배치'}])
+   좁은 화면에서는 앞부분을 접어 마지막 두 개만 보여준다. */
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, m=>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+window.setCrumb = function(parts){
+  const tail = document.getElementById('tb-tail');
+  if(!tail) return;
+  const list = (parts||[]).filter(Boolean).map(p=>
+    typeof p === 'string' ? { label:p } : p);
+  if(!list.length){ tail.innerHTML = ''; return; }
+
+  window.__crumbTail = list;
+  const sep = '<span class="tb-sep">›</span>';
+  tail.innerHTML = list.map((p,i)=>{
+    const last = i === list.length - 1;
+    const cls = 'tb-t' + (last ? ' on' : '') + (p.go ? ' go' : '');
+    const idx = p.go ? ` data-ci="${i}"` : '';
+    return sep + `<span class="${cls}"${idx}>${esc(p.label)}</span>`;
+  }).join('');
+
+  tail.querySelectorAll('.tb-t.go').forEach(el=>{
+    el.onclick = ()=>{
+      const p = (window.__crumbTail||[])[+el.dataset.ci];
+      if(p && typeof p.go === 'function') p.go();
+    };
+  });
+};
+
 /* ═══ 큰 글자 보기 (보통 / 크게 / 아주 크게) ═══
    저장: localStorage gyosa_fs = 'md' | 'lg' | 'xl' (기기마다 따로)
    theme.css 의 --zoom 을 바꿔 본문·사이드바가 함께 커진다. */
@@ -292,10 +324,11 @@ function renderTopbar(){
     <button class="tb-menu" onclick="openDrawer()" aria-label="메뉴">
       <span class="material-symbols-rounded">menu</span>
     </button>
-    <div class="tb-crumb">
+    <div class="tb-crumb" id="tb-crumb">
       ${it ? `<span class="tb-g">${it.group}</span>
-        <span class="material-symbols-rounded tb-sep">chevron_right</span>
+        <span class="tb-sep">›</span>
         <span class="tb-p">${it.label}</span>` : '<span class="tb-p">홈</span>'}
+      <span id="tb-tail"></span>
     </div>
     <div class="tb-right">
       <a class="tb-ic" href="message.html" aria-label="쪽지">
@@ -424,8 +457,22 @@ function injectSidebarCSS(){
 .tb-menu{display:none;border:none;background:none;cursor:pointer;color:var(--ink);padding:4px;}
 .tb-crumb{display:flex;align-items:center;gap:4px;flex:1;min-width:0;}
 .tb-g{font-size:12.5px;color:var(--ink-3);}
-.tb-sep{font-size:16px;color:var(--ink-3);}
+.tb-sep{font-size:15px;color:var(--ink-3);margin:0 5px;flex:none;line-height:1;}
 .tb-p{font-size:14.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* 세부 탭 경로 */
+#tb-tail{display:inline-flex;align-items:center;gap:0;min-width:0;}
+.tb-t{font-size:13.5px;font-weight:600;color:var(--ink-3, var(--tl));white-space:nowrap;}
+.tb-t.on{font-weight:700;color:var(--ink);}
+.tb-t.go{cursor:pointer;}
+.tb-t.go:hover{color:var(--gm);text-decoration:underline;text-underline-offset:3px;}
+@media(max-width:900px){
+  /* 좁으면 마지막 두 개만 남긴다 */
+  #tb-tail .tb-t:not(:nth-last-child(-n+3)){display:none;}
+  #tb-tail .tb-sep:not(:nth-last-child(-n+4)){display:none;}
+}
+@media(max-width:640px){
+  .tb-g,.tb-crumb > .tb-sep:first-of-type{display:none;}
+}
 .tb-right{display:flex;align-items:center;gap:6px;}
 .tb-ic{position:relative;color:var(--ink-2);text-decoration:none;display:flex;padding:6px;border-radius:8px;}
 .tb-ic:hover{background:var(--sb-mint-2);}
@@ -444,6 +491,8 @@ function injectSidebarCSS(){
 .sb-mr{font-size:calc(11px * var(--zoom));}
 .theme-toggle{font-size:calc(12px * var(--zoom));}
 #tb .tb-p{font-size:calc(14.5px * var(--zoom));}
+#tb .tb-t{font-size:calc(13.5px * var(--zoom));}
+#tb .tb-g{font-size:calc(12.5px * var(--zoom));}
 
 /* ── 글자 크기 고르기 ── */
 .fs-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}

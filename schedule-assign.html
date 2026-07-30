@@ -20,19 +20,6 @@
   #gate-msg{font-size:14px;color:var(--ts,#5a6560);margin-bottom:14px}
   #gate-btn{display:none;background:#2d6a4f;color:#fff;border:none;padding:10px 22px;border-radius:9px;font-family:inherit;font-weight:700;cursor:pointer}
 
-  .tt-switch{display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid var(--ivd,#E3E1DA);padding-bottom:0}
-  .tt-sw-btn{font-family:inherit;font-size:14.5px;font-weight:700;padding:11px 22px;border-radius:10px 10px 0 0;
-    text-decoration:none;color:var(--ts,#5a6560);background:transparent;border:2px solid transparent;border-bottom:none;
-    margin-bottom:-2px;transition:all .12s}
-  .tt-sw-btn:hover{color:var(--gd,#1E3932);background:var(--iv,#F2F0EB)}
-  .tt-sw-btn.on{color:var(--gd,#1E3932);background:var(--wh,#fff);border-color:var(--ivd,#E3E1DA);border-bottom:2px solid var(--wh,#fff)}
-  .subtb{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
-  .subtbtn{font-family:inherit;font-size:13.5px;font-weight:700;padding:9px 18px;border:1.5px solid var(--ivd,#E3E1DA);
-    border-radius:10px;background:var(--wh,#fff);color:var(--ts,#5a6560);cursor:pointer;transition:all .12s}
-  .subtbtn:hover{border-color:var(--gm,#00704A)}
-  .subtbtn.active{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff;font-weight:800}
-  .subtbtn.soon{opacity:.5;cursor:default}
-  .subtbtn.soon:hover{border-color:var(--ivd,#E3E1DA)}
 
   .panel{background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);border-radius:14px;padding:18px;margin-bottom:14px}
   .ptitle{font-size:15px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -675,18 +662,18 @@
 
 <div id="ms" style="display:none">
 
-  <div class="tt-switch">
-    <a href="timetable.html" class="tt-sw-btn">📐 시간표 틀</a>
-    <a href="schedule-assign.html" class="tt-sw-btn on">🗓️ 시간표 배정</a>
+  <div class="tabs-main">
+    <a href="timetable.html" class="tab-main"><span class="tab-ic">📐</span>시간표 틀</a>
+    <a href="schedule-assign.html" class="tab-main on"><span class="tab-ic">🗓️</span>시간표 배정</a>
   </div>
 
   <div class="subtb">
-    <button class="subtbtn active" id="tb-avail" onclick="showTab('avail')">🕐 수업 가능 시간</button>
-    <button class="subtbtn" id="tb-room" onclick="showTab('room')">🏫 교실 배치</button>
-    <button class="subtbtn" id="tb-lesson" onclick="showTab('lesson')">📚 수업 정의</button>
-    <button class="subtbtn" id="tb-place" onclick="showTab('place')">🧩 배치</button>
-    <button class="subtbtn" id="tb-view" onclick="showTab('view')">📅 시간표 보기</button>
-    <button class="subtbtn" id="tb-set" onclick="showTab('set')">💾 저장·불러오기</button>
+    <button class="tab-sub on" id="tb-avail" onclick="showTab('avail')"><span class="tab-ic">🕐</span>수업 가능 시간</button>
+    <button class="tab-sub" id="tb-room" onclick="showTab('room')"><span class="tab-ic">🏫</span>교실 배치</button>
+    <button class="tab-sub" id="tb-lesson" onclick="showTab('lesson')"><span class="tab-ic">📚</span>수업 정의</button>
+    <button class="tab-sub" id="tb-place" onclick="showTab('place')"><span class="tab-ic">🧩</span>배치</button>
+    <button class="tab-sub" id="tb-view" onclick="showTab('view')"><span class="tab-ic">📅</span>시간표 보기</button>
+    <button class="tab-sub" id="tb-set" onclick="showTab('set')"><span class="tab-ic">💾</span>저장·불러오기</button>
   </div>
   <div class="set-bar" id="set-bar"></div>
 
@@ -1075,6 +1062,17 @@ const GRADE_ORDER = {
   daniel: ['1학년','2학년','3학년','4학년','5학년','6학년','7학년','8학년','9학년','10학년','11학년','12학년'],
   jihyebit: ['4세','5세','6세','7세'],
 };
+/* 상단 경로에 지금 보고 있는 탭을 잇는다 */
+const TAB_NAMES = { avail:'수업 가능 시간', room:'교실 배치', lesson:'수업 정의',
+  place:'배치', view:'시간표 보기', set:'저장·불러오기' };
+function updateCrumb(t){
+  if(!window.setCrumb) return;
+  window.setCrumb([
+    { label:'시간표 배정', go:()=>{ location.href='schedule-assign.html'; } },
+    TAB_NAMES[t] || ''
+  ]);
+}
+
 function toast(msg){ const t=$I('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
 
 // ── 시각 격자 상수 ──
@@ -1124,7 +1122,7 @@ let curTab = 'avail';
 window.showTab = function(t){
   curTab = t;
   ['avail','room','lesson','place','view','set'].forEach(k=>{
-    const btn = $I('tb-'+k); if(btn) btn.classList.toggle('active', k===t);
+    const btn = $I('tb-'+k); if(btn) btn.classList.toggle('on', k===t);
     const pane = $I('tab-'+k); if(pane) pane.style.display = k===t ? '' : 'none';
   });
   if(t==='room') renderFloors();
@@ -1132,6 +1130,7 @@ window.showTab = function(t){
   if(t==='place') renderPlace2();
   if(t==='view'){ renderTvFrameSelect(); renderTvView(); }
   if(t==='set') renderSets();
+  updateCrumb(t);
 };
 
 // ── 로그인 ──
@@ -1534,8 +1533,8 @@ window.setView = function(v){
     if(!confirm('저장하지 않은 변경사항이 있습니다. 전체 현황으로 이동할까요?')) return;
   }
   curView = v;
-  $I('vb-one').classList.toggle('active', v==='one');
-  $I('vb-all').classList.toggle('active', v==='all');
+  $I('vb-one').classList.toggle('on', v==='one');
+  $I('vb-all').classList.toggle('on', v==='all');
   $I('view-one').style.display = v==='one' ? '' : 'none';
   $I('view-all').style.display = v==='all' ? '' : 'none';
   const desc = $I('avail-desc');
