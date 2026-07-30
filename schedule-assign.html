@@ -635,6 +635,53 @@
   .tv-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:10px 12px;
     background:var(--gp,#E8F3EF);border:1px solid var(--gl,#D6E9E0);border-radius:10px;margin-bottom:14px}
   .tv-sheet{background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);border-radius:12px;padding:18px;overflow-x:auto}
+  /* ── 시간표 보기 — 배치 화면과 같은 모습 ── */
+  .tv-leg{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;
+    padding:8px 11px;background:var(--iv,#F2F0EB);border-radius:9px}
+  .tv-leg-t{font-size:11px;font-weight:800;color:var(--tl,#93A09A)}
+  .tv-leg-i{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;
+    font-weight:700;color:var(--ts,#5A6560)}
+  .tv-leg-i i{width:10px;height:10px;border-radius:50%;display:block;flex:none}
+  .tv-board{border:1px solid var(--ivd,#E3E1DA);border-radius:11px;overflow:hidden;min-width:660px}
+  .tv-hd{display:grid;grid-template-columns:58px repeat(5,minmax(0,1fr));
+    background:var(--gp,#E8F3EF);border-bottom:1px solid var(--ivd,#E3E1DA)}
+  .tv-hd-d{padding:9px 0;text-align:center;font-size:13.5px;font-weight:800;color:var(--gd,#1E3932)}
+  .tv-grid{display:grid;grid-template-columns:58px repeat(5,minmax(0,1fr));position:relative}
+  .tv-times{position:relative;background:var(--iv,#F2F0EB);border-right:1px solid var(--ivd,#E3E1DA)}
+  .tv-tick{position:absolute;left:0;right:0;font-size:10px;color:var(--tl,#93A09A);
+    padding-left:6px;border-top:1px dashed var(--ivd,#E3E1DA);line-height:1.1}
+  .tv-col{position:relative;border-right:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff)}
+  .tv-col:last-child{border-right:none}
+  .tv-bg{position:absolute;left:0;right:0;box-sizing:border-box;pointer-events:none;overflow:hidden;
+    border-top:1px solid var(--ivd,#E3E1DA)}
+  .tv-bg.cls{background:rgba(0,112,74,.045)}
+  .tv-bg.rest{background:repeating-linear-gradient(45deg,rgba(147,160,154,.10) 0 6px,transparent 6px 12px)}
+  .tv-bg span{font-size:9px;color:var(--tl,#93A09A);padding:1px 4px;display:block;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tv-bg.tiny span{display:none}
+  /* 카드 — 위는 과목 색, 아래 띠는 선생님 색 */
+  .tv-card{position:absolute;left:3px;right:3px;box-sizing:border-box;overflow:hidden;
+    border-radius:7px;border:1px solid var(--ivd,#E3E1DA);border-left:3px solid var(--lc,#7FB5A0);
+    background:var(--lc-bg,#F2F7F5);display:flex;flex-direction:column;
+    box-shadow:0 1px 2px rgba(30,57,50,.07)}
+  .tv-c-top{flex:1;min-height:0;padding:3px 6px;overflow:hidden}
+  .tv-c-top b{display:block;font-size:11.5px;font-weight:800;color:var(--gd,#1E3932);
+    line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tv-c-time{display:block;font-size:9.5px;color:var(--ts,#5A6560)}
+  .tv-c-sub{display:block;font-size:9.5px;color:var(--tl,#93A09A)}
+  .tv-c-foot{display:flex;align-items:center;gap:5px;background:var(--tb,#93A09A);
+    padding:2px 6px;flex:none}
+  .tv-c-who{font-size:9.5px;font-weight:800;color:#fff;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .tv-c-room{margin-left:auto;font-size:9px;font-weight:700;color:#fff;flex:none;
+    background:rgba(255,255,255,.24);border-radius:4px;padding:0 5px}
+  .tv-card.thin .tv-c-top{padding:1px 6px}
+  .tv-card.thin .tv-c-top b{font-size:10.5px}
+  .tv-card.thin .tv-c-time{display:none}
+  @media print{
+    .tv-board{min-width:0}
+    .tv-card{box-shadow:none}
+  }
   .tv-head{margin-bottom:14px}
   .tv-title{font-size:19px;font-weight:800;color:var(--gd,#1E3932);letter-spacing:-.02em}
   .tv-meta{font-size:12px;color:var(--tl,#93A09A);margin-top:3px}
@@ -2967,45 +3014,103 @@ function renderTvView(){
     return;
   }
 
-  // 시각 축: 등장하는 시작시각들을 모아 정렬 (부서마다 시각이 달라도 한 표에 모임)
-  const startSet = [...new Set(mine.map(it=>it.startMin))].sort((a,b)=>a-b);
-
-  // 요일 × 시작시각 → 항목들
-  const grid = {};
-  mine.forEach(it=>{
-    const k = it.day+'|'+it.startMin;
-    (grid[k] = grid[k] || []).push(it);
-  });
-
+  /* ── 배치 화면과 같은 모습으로 그린다 ──
+     · 시간표 틀의 부서 블록을 배경에 깔고
+     · 그 위에 실제 시각·길이대로 카드를 놓는다
+     · 카드 왼쪽 띠는 선생님 색, 교실은 뱃지로 붙여 한눈에 나뉘게 한다 */
+  const TV_PPM = 1.25;                 // 1분당 세로 픽셀
   const frameName = (FRAMES.find(f=>f.id===tvFrameId)||{}).name || '';
   const kindLabel = tvKind==='grade' ? '학년별' : (tvKind==='teacher' ? '선생님별' : '교실별');
   const totalCards = mine.length;
 
-  let rows = '';
-  startSet.forEach(sm=>{
-    // 같은 시각에 시작해도 끝나는 때가 다를 수 있다(연강 등).
-    // 끝이 하나면 머리글에 쓰고, 섞이면 칸마다 제 시간을 적어 오해가 없게 한다.
-    const ends = [...new Set(mine.filter(it=>it.startMin===sm).map(it=>it.endMin))];
-    const mixed = ends.length > 1;
-    rows += `<tr><th class="tv-time"><b>${hm(sm)}</b>` +
-      (mixed ? `<span class="mix">끝 시각 다름</span>` : `<span>${hm(ends[0])}</span>`) + `</th>`;
+  // 이 화면에 담을 시각 범위
+  let s0 = Math.min(...mine.map(x=>x.startMin));
+  let e0 = Math.max(...mine.map(x=>x.endMin));
+  // 배경으로 쓸 부서 — 학년별로 볼 때는 그 학년의 부서를 그대로 쓴다
+  let bgBlocks = {};
+  if(tvKind === 'grade'){
     DAYS.forEach(dy=>{
-      const list = grid[dy+'|'+sm] || [];
-      rows += `<td>${list.map(it=>tvCellHTML(it, mixed)).join('')}</td>`;
+      const saveG = pgGrade, saveF = pgFrameId;
+      pgGrade = tvTarget; pgFrameId = tvFrameId;
+      const b = dayBlocks(tvTarget, dy);
+      pgGrade = saveG; pgFrameId = saveF;
+      bgBlocks[dy] = b.blocks || [];
+      if(b.blocks && b.blocks.length){
+        s0 = Math.min(s0, b.startMin); e0 = Math.max(e0, b.endMin);
+      }
     });
-    rows += `</tr>`;
-  });
+  }
+  const H = Math.round((e0 - s0) * TV_PPM);
+
+  // 선생님 색을 미리 뽑아둔다 (범례에도 쓴다)
+  const usedT = [];
+  mine.forEach(it=>(it.teacherUids||[]).forEach(u=>{ if(!usedT.includes(u)) usedT.push(u); }));
+  const tColor = uid => (TEACHERS.find(t=>t.uid===uid)||{}).color || '#93A09A';
+  const tName  = uid => (TEACHERS.find(t=>t.uid===uid)||{}).name || '';
+
+  const legend = usedT.length ? `<div class="tv-leg">
+      <span class="tv-leg-t">선생님</span>
+      ${usedT.map(u=>`<span class="tv-leg-i"><i style="background:${tColor(u)}"></i>${esc(tName(u))}</span>`).join('')}
+    </div>` : '';
+
+  // 요일 칸
+  const cols = DAYS.map(dy=>{
+    const bg = (bgBlocks[dy]||[]).map(b=>`
+      <div class="tv-bg ${b.isClass?'cls':'rest'} ${b.dur*TV_PPM < 15 ? 'tiny':''}"
+        style="top:${(b.startMin-s0)*TV_PPM}px;height:${b.dur*TV_PPM}px"><span>${esc(b.name)}</span></div>`).join('');
+
+    const cards = mine.filter(it=>it.day===dy).map(it=>{
+      const dur = it.endMin - it.startMin;
+      const tall = dur >= 34;
+      const names = (it.teacherUids||[]).map(tName).filter(Boolean);
+      const who = names.length===0 ? '미배정'
+        : names.length===1 ? names[0] : `${names[0]} +${names.length-1}`;
+      const room = it.roomId ? findRoomName(it.roomId) : '';
+      const lead = (it.teacherUids||[])[0];
+      const bar  = lead ? tColor(lead) : '#93A09A';
+      const sub  = tvKind==='grade' ? '' : (it.grade || (it.grades||[]).join('·'));
+      return `<div class="tv-card ${tall?'':'thin'}"
+        style="top:${(it.startMin-s0)*TV_PPM}px;height:${dur*TV_PPM}px;
+               --lc:${lessonColor(it.lesson)};--lc-bg:${tintOf(lessonColor(it.lesson),.16)};--tb:${bar}"
+        title="${esc(it.lesson.subject)} ${hm(it.startMin)}~${hm(it.endMin)}\n👤 ${esc(names.join(', ')||'미배정')}${room?`\n🚪 ${esc(room)}`:''}">
+        <div class="tv-c-top">
+          <b>${esc(it.lesson.subject)}</b>
+          <span class="tv-c-time">${hm(it.startMin)}~${hm(it.endMin)}</span>
+          ${tall && sub ? `<span class="tv-c-sub">${esc(sub)}</span>` : ''}
+        </div>
+        <div class="tv-c-foot">
+          <span class="tv-c-who">${esc(who)}</span>
+          ${room?`<span class="tv-c-room">${esc(room)}</span>`:''}
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="tv-col" style="height:${H}px">${bg}${cards}</div>`;
+  }).join('');
+
+  // 시각 눈금 (30분마다)
+  let ticks = '';
+  for(let m = Math.ceil(s0/30)*30; m <= e0; m += 30){
+    ticks += `<div class="tv-tick" style="top:${(m-s0)*TV_PPM}px">${hm(m)}</div>`;
+  }
 
   box.innerHTML = `
     <div class="tv-sheet" id="tv-sheet">
       <div class="tv-head">
         <div class="tv-title">${esc(label)} 시간표</div>
-        <div class="tv-meta">${esc(frameName)} · ${kindLabel} · 주 ${totalCards}시간</div>
+        <div class="tv-meta">${esc(frameName)} · ${kindLabel} · 주 ${totalCards}시간 · ${hm(s0)}~${hm(e0)}</div>
       </div>
-      <table class="tv-tbl">
-        <thead><tr><th class="tv-time">시각</th>${DAYS.map(d=>`<th>${d}</th>`).join('')}</tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
+      ${legend}
+      <div class="tv-board">
+        <div class="tv-hd">
+          <div class="tv-hd-t"></div>
+          ${DAYS.map(d=>`<div class="tv-hd-d">${d}</div>`).join('')}
+        </div>
+        <div class="tv-grid" style="height:${H}px">
+          <div class="tv-times" style="height:${H}px">${ticks}</div>
+          ${cols}
+        </div>
+      </div>
     </div>`;
 }
 
