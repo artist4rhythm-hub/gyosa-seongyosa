@@ -177,6 +177,11 @@
   .tv-card.small .tv-c-room{flex:0 1 auto;min-width:0;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
 
+  /* ── ☕ 쉬는 시간 카드 — 점선 테두리로 수업과 구분 ── */
+  .tv-card.rest{ border-style:dashed; box-shadow:none; opacity:.95 }
+  .tv-card.rest .tv-c-top b{ font-weight:700 }
+  .tv-card.rest .tv-c-time{ opacity:.85 }
+
   /* ── 🔎 수업 카드 자세히 보기 ── */
   .tv-card{cursor:pointer}
   .tv-card:focus-visible{outline:2px solid var(--gm,#00704A);outline-offset:1px}
@@ -504,6 +509,9 @@ function cardSizeOf(lesson, cardIdx){
   return Number(g[cardIdx]) || 1;
 }
 
+
+/* 쉬는 시간 카드 — 수업 시수에 들어가지 않는 시간 (아침 조회·점심·청소 등) */
+function isRestLesson(l){ return !!l && l.kind === 'break'; }
 /* 게시본의 배치를 평평하게 */
 function collect(){
   const snap = CUR?.snapshot; if(!snap) return [];
@@ -604,20 +612,20 @@ function sheetHTML(kind, target, label, opt){
       const lead = teacherLead(it.lesson, it.teacherUids);
       const bar = lead ? tColor(lead) : '#93A09A';
       const sub = kind==='grade' ? '' : (it.grade || '');
-      return `<div class="tv-card ${size}" data-lesson="${esc(it.lesson.id||'')}"
+      return `<div class="tv-card ${size} ${isRestLesson(it.lesson)?'rest':''}" data-lesson="${esc(it.lesson.id||'')}"
         data-day="${dy}" data-start="${it.startMin}" tabindex="0"
         onclick="openTvInfo('${esc(it.lesson.id||'')}','${dy}',${it.startMin})"
         style="top:${(it.startMin-s0)*TV_PPM}px;height:${px}px;
                --lc:${lessonColor(it.lesson)};--lc-bg:${tintOf(lessonColor(it.lesson),.16)};--tb:${bar}">
         <div class="tv-c-top">
-          <b>${esc(it.lesson.subject)}</b>
+          <b>${isRestLesson(it.lesson)?'☕ ':''}${esc(it.lesson.subject)}</b>
           ${size!=='small' ? `<span class="tv-c-time">${hm(it.startMin)}~${hm(it.endMin)} <i>${dur}분</i></span>` : ''}
           ${size==='big' && sub ? `<span class="tv-c-sub">${esc(sub)}</span>` : ''}
         </div>
-        <div class="tv-c-foot">
+        ${isRestLesson(it.lesson) ? '' : `<div class="tv-c-foot">
           <span class="tv-c-who">${esc(who)}</span>
           ${room?`<span class="tv-c-room">${esc(room)}</span>`:''}
-        </div>
+        </div>`}
       </div>`;
     }).join('');
     return `<div class="tv-col" style="height:${H}px">${bg}${cards}</div>`;
@@ -1399,7 +1407,7 @@ window.openTvInfo = function(lessonId, day, startMin){
       <span class="tvi-day">${esc(it.day)}</span>
       <span class="tvi-time">${hm(it.startMin)}~${hm(it.endMin)}</span>
       <span class="tvi-dur">${it.endMin-it.startMin}분${szR>1?` · ${szR}연강`:''}</span>
-      <span class="tvi-p">${fmtPeriods(pR)}시수</span>
+      ${isRestLesson(les)?'':`<span class="tvi-p">${fmtPeriods(pR)}시수</span>`}
       ${r?`<span class="tvi-room">${esc(r)}</span>`:''}
     </div>`;
   }).join('');
@@ -1421,24 +1429,28 @@ window.openTvInfo = function(lessonId, day, startMin){
       </div>
 
       <div class="tvi-stats">
-        <div class="tvi-stat"><b>${fmtPeriods(periods)}</b><span>주당 시수</span></div>
+        ${isRestLesson(les)
+          ? `<div class="tvi-stat"><b>${slots.length}</b><span>주당 횟수</span></div>`
+          : `<div class="tvi-stat"><b>${fmtPeriods(periods)}</b><span>주당 시수</span></div>`}
         <div class="tvi-stat"><b>${hours?`${hours}시간 `:''}${mins?`${mins}분`:(hours?'':'0분')}</b><span>주당 시간</span></div>
         <div class="tvi-stat"><b>${slots.length}장</b><span>카드 수</span></div>
       </div>
 
       <div class="tvi-lines">
-        <div class="tvi-line"><span class="tvi-k">👤 담당</span>
+        ${isRestLesson(les) ? '' : `<div class="tvi-line"><span class="tvi-k">👤 담당</span>
           <span class="tvi-v">${names.length?esc(names.join(', ')):'<span style="opacity:.6">미배정</span>'}</span></div>
-        ${room?`<div class="tvi-line"><span class="tvi-k">🚪 교실</span><span class="tvi-v">${esc(room)}</span></div>`:''}
+        ${room?`<div class="tvi-line"><span class="tvi-k">🚪 교실</span><span class="tvi-v">${esc(room)}</span></div>`:''}`}
         <div class="tvi-line"><span class="tvi-k">🕐 지금 칸</span>
           <span class="tvi-v">${esc(hit.day)} ${hm(hit.startMin)}~${hm(hit.endMin)}</span></div>
       </div>
 
       <div class="tvi-listt">📅 이 수업이 놓인 자리</div>
       <div class="tvi-list">${rows}</div>
-      <div class="tvi-note">1시수 = <b>${baseMin}분</b> 기준으로 셈했습니다${
-        slots.some(it=>cardSizeOf(les, it.cardIdx)>1) ? ' · 연강은 사이 쉬는 시간을 빼고 셉니다' : ''}.<br>
-        같은 수업 ${slots.length}칸이 시간표에서 함께 <b>반짝이고</b> 있어요.</div>
+      <div class="tvi-note">${isRestLesson(les)
+        ? '☕ <b>쉬는 시간</b>이라 수업 시수에 들어가지 않습니다.'
+        : `1시수 = <b>${baseMin}분</b> 기준으로 셈했습니다${
+            slots.some(it=>cardSizeOf(les, it.cardIdx)>1) ? ' · 연강은 사이 쉬는 시간을 빼고 셉니다' : ''}.`}<br>
+        같은 ${isRestLesson(les)?'시간':'수업'} ${slots.length}칸이 시간표에서 함께 <b>반짝이고</b> 있어요.</div>
     </div>`;
   document.body.appendChild(ov);
   tvGlow(lessonId);
