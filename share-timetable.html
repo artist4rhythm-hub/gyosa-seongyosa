@@ -158,6 +158,8 @@ body{margin:0;min-height:100vh;background:var(--iv);color:var(--ink);
   .tvi-day{font-weight:900;color:var(--gd,#1E3932);flex:none;min-width:16px}
   .tvi-time{color:var(--ts,#5A6560);font-weight:700}
   .tvi-dur{color:var(--tl,#93A09A)}
+  .tvi-p{font-size:11px;font-weight:800;color:var(--gm,#00704A);
+    background:var(--gp,#E8F3EF);border-radius:5px;padding:1px 7px;flex:none}
   .tvi-room{margin-left:auto;font-size:11px;font-weight:700;color:var(--ts,#5A6560);
     background:var(--wh,#fff);border-radius:5px;padding:1px 7px;overflow-wrap:anywhere}
   .tvi-note{font-size:11px;color:var(--tl,#93A09A);margin-top:11px;line-height:1.6}
@@ -371,6 +373,52 @@ function dayBlocksOf(grade, day){
   return { blocks, startMin, endMin:cur };
 }
 
+
+/* ═══════════════════════════════════════════
+   ⏱ 주당 시수 계산
+   · 기준 분은 부서마다 다르다 — 초등부 40분, 중·고등부 50분
+     (시간표 틀의 부서 설정 "1시수 기준 분"에서 정한다)
+   · 연강은 사이에 쉬는 시간이 끼어 있으므로 그만큼 빼고 센다
+     예) 40분 2연강 = 85분 카드 → (85−5) ÷ 40 = 2시수
+   · 낱개로 긴 수업(70분·120분 등)은 통으로 센다
+     예) 초등부 70분 한 장 → 70 ÷ 40 = 1.75시수
+   ═══════════════════════════════════════════ */
+function cardPeriods(durMin, size, brk, base){
+  const b = Number(base) || 40;
+  const n = Math.max(1, Number(size) || 1);
+  const gap = (n > 1) ? (Number(brk) || 0) * (n - 1) : 0;   // 연강일 때만 쉼을 뺀다
+  const eff = Math.max(0, (Number(durMin) || 0) - gap);
+  return eff / b;
+}
+
+/* 1.5 · 2 처럼 보기 좋게 (소수 둘째 자리까지, 끝의 0은 지운다) */
+function fmtPeriods(x){
+  const n = Math.round((Number(x) || 0) * 100) / 100;
+  return String(n);
+}
+
+/* 이 학년이 쓰는 부서의 1시수 기준 분 (게시본 안의 틀에서 찾는다) */
+function periodBaseOf(grade){
+  const snap = CUR && CUR.snapshot; if(!snap) return 40;
+  const fid = snap.frameId;
+  const deptId = ((snap.gradeDept||{})[fid]||{})[grade] || '';
+  const f = (snap.frames||[]).find(x=>x.id===fid) || (snap.frames||[])[0];
+  const d = f && f.snapshot ? (f.snapshot.departments||[]).find(x=>x.id===deptId) : null;
+  return Number(d && d.periodMin) || 40;
+}
+
+/* 배치된 카드 한 장이 몇 연강인지 (수업 정의에서 역산) */
+function cardSizeOf(lesson, cardIdx){
+  if(!lesson || cardIdx==null) return 1;
+  const h = Number(lesson.hours)||0;
+  let g = Array.isArray(lesson.groups) ? lesson.groups.map(n=>Math.max(1,Number(n)||1)) : null;
+  if(!(g && g.length && g.reduce((a,b)=>a+b,0) === h)){
+    g = []; const b = Math.max(1, Number(lesson.bundle)||1); let left = h;
+    while(left > 0){ const x = Math.min(b, left); g.push(x); left -= x; }
+  }
+  return Number(g[cardIdx]) || 1;
+}
+
 /* 게시본의 배치를 평평하게 */
 function collect(){
   const snap = CUR?.snapshot; if(!snap) return [];
@@ -381,7 +429,7 @@ function collect(){
       (byGrade[grade][dy] || []).forEach(c=>{
         const les = (snap.lessons||[]).find(l=>l.id===c.lessonId); if(!les) return;
         out.push({ day:dy, startMin:c.startMin, endMin:c.startMin+c.durMin,
-          grade, lesson:les, grades:[grade],
+          grade, lesson:les, grades:[grade], cardIdx:c.cardIdx,
           teacherUids:les.teacherUids||[], roomId:c.roomId || les.roomId || '' });
       });
     });
@@ -679,6 +727,15 @@ window.openTvInfo = function(lessonId, day, startMin){
   const totalMin = slots.reduce((n,it)=>n + (it.endMin - it.startMin), 0);
   const hours = Math.floor(totalMin/60), mins = totalMin%60;
 
+  /* 주당 시수 — 부서 기준 분으로 계산한다.
+     연강은 사이 쉼을 빼고, 낱개로 긴 수업은 통으로 센다. */
+  const brk = (les.linkBreak!=null) ? Number(les.linkBreak) : 5;
+  const baseMin = periodBaseOf(hit.grade || (hit.grades||[])[0]);
+  const periods = slots.reduce((n,it)=>{
+    const sz = cardSizeOf(les, it.cardIdx);
+    return n + cardPeriods(it.endMin - it.startMin, sz, brk, baseMin);
+  }, 0);
+
   // 이 수업이 들어가는 학년 모두
   const grades = [...new Set(same.flatMap(it=>it.grades && it.grades.length ? it.grades : [it.grade]))]
     .filter(Boolean);
@@ -690,10 +747,14 @@ window.openTvInfo = function(lessonId, day, startMin){
   const rows = slots.map(it=>{
     const isThis = it.day===hit.day && it.startMin===hit.startMin;
     const r = it.roomId ? findRoomName(it.roomId) : '';
+    const szR = cardSizeOf(les, it.cardIdx);
+    const pR = cardPeriods(it.endMin - it.startMin, szR,
+      (les.linkBreak!=null?Number(les.linkBreak):5), periodBaseOf(it.grade || (it.grades||[])[0]));
     return `<div class="tvi-row ${isThis?'on':''}">
       <span class="tvi-day">${esc(it.day)}</span>
       <span class="tvi-time">${hm(it.startMin)}~${hm(it.endMin)}</span>
-      <span class="tvi-dur">${it.endMin-it.startMin}분</span>
+      <span class="tvi-dur">${it.endMin-it.startMin}분${szR>1?` · ${szR}연강`:''}</span>
+      <span class="tvi-p">${fmtPeriods(pR)}시수</span>
       ${r?`<span class="tvi-room">${esc(r)}</span>`:''}
     </div>`;
   }).join('');
@@ -715,9 +776,9 @@ window.openTvInfo = function(lessonId, day, startMin){
       </div>
 
       <div class="tvi-stats">
-        <div class="tvi-stat"><b>${slots.length}</b><span>주당 시수</span></div>
+        <div class="tvi-stat"><b>${fmtPeriods(periods)}</b><span>주당 시수</span></div>
         <div class="tvi-stat"><b>${hours?`${hours}시간 `:''}${mins?`${mins}분`:(hours?'':'0분')}</b><span>주당 시간</span></div>
-        <div class="tvi-stat"><b>${hit.endMin-hit.startMin}분</b><span>1회 길이</span></div>
+        <div class="tvi-stat"><b>${slots.length}장</b><span>카드 수</span></div>
       </div>
 
       <div class="tvi-lines">
@@ -730,7 +791,9 @@ window.openTvInfo = function(lessonId, day, startMin){
 
       <div class="tvi-listt">📅 이 수업이 놓인 자리</div>
       <div class="tvi-list">${rows}</div>
-      <div class="tvi-note">같은 수업 ${slots.length}칸이 시간표에서 함께 <b>반짝이고</b> 있어요.</div>
+      <div class="tvi-note">1시수 = <b>${baseMin}분</b> 기준으로 셈했습니다${
+        slots.some(it=>cardSizeOf(les, it.cardIdx)>1) ? ' · 연강은 사이 쉬는 시간을 빼고 셉니다' : ''}.<br>
+        같은 수업 ${slots.length}칸이 시간표에서 함께 <b>반짝이고</b> 있어요.</div>
     </div>`;
   document.body.appendChild(ov);
   tvGlow(lessonId);
