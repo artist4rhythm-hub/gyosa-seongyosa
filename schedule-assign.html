@@ -635,9 +635,21 @@
     font-family:inherit;font-size:11px;font-weight:700;text-align:right;background:var(--wh,#fff)}
   .bp-edit em{font-style:normal;font-size:9.5px;font-weight:700;color:var(--goldd,#8A6410);
     background:var(--goldp,#F7EFD8);border-radius:5px;padding:1px 5px}
-  .bp-reset{margin-top:7px;font-family:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;
+  .bp-reset{font-family:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;
     border:1px solid var(--ivd,#E3E1DA);border-radius:7px;background:var(--wh,#fff);
     color:var(--ts,#5A6560);cursor:pointer}
+  .bp-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  /* 낱개(1시수) 표시 — 연강 배지와 구분되게 차분한 색 */
+  .bp-edit em.one{color:var(--ts,#5A6560);background:var(--iv,#F2F0EB)}
+  /* 카드 구성 편집 — 묶기·풀기 */
+  .bp-grp{display:flex;gap:4px;margin-top:2px}
+  .bp-gb{font-family:inherit;font-size:10px;font-weight:700;padding:3px 7px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:6px;background:var(--wh,#fff);
+    color:var(--gm,#00704A);cursor:pointer;white-space:nowrap}
+  .bp-gb:hover:not(:disabled){border-color:var(--gm,#00704A);background:var(--gp,#E8F3EF)}
+  .bp-gb:disabled{opacity:.35;cursor:not-allowed;color:var(--tl,#93A09A)}
+  .bp-help{font-size:11px;color:var(--ts,#5A6560);line-height:1.65;margin-top:8px;
+    background:var(--iv,#F2F0EB);border-radius:8px;padding:8px 11px}
 
   /* ── 👀 보기 전용 모드 ──
      고칠 권한이 없으면 조작 요소를 아예 잠근다.
@@ -4421,6 +4433,18 @@ function bundleGroups(hours, bundle){
   return groups;
 }
 
+/* 이 수업이 시간표에 몇 장으로, 각 장이 몇 시수씩 놓이는지.
+   카드마다 연강 여부를 따로 정해 두었으면(groups) 그것을 쓰고,
+   정해 두지 않았으면 예전처럼 묶음 크기로 고르게 나눈다.
+   예) 4시수인데 2시수만 연강 → groups = [2,1,1] (85분 한 장 + 40분 두 장) */
+function lessonGroups(l){
+  if(!l) return [];
+  const h = Number(l.hours)||0;
+  const g = Array.isArray(l.groups) ? l.groups.map(n=>Math.max(1, Number(n)||1)) : null;
+  if(g && g.length && g.reduce((a,b)=>a+b,0) === h) return g;
+  return bundleGroups(h, l.bundle);
+}
+
 function renderLessons(){
   const empty = $I('lesson-empty');
   const list = $I('lesson-list');
@@ -4450,7 +4474,7 @@ function renderLessons(){
       <span class="lg-sum">${byGrade[g].length}과목 · 주 ${gHours}시수 · ${Math.floor(gTotal/60)}시간 ${gTotal%60}분</span>
     </div><div class="lg-cards">`;
     byGrade[g].forEach(l=>{
-      const groups = bundleGroups(l.hours, l.bundle);
+      const groups = lessonGroups(l);
       const teachers = (l.teacherUids||[]).map(uid=>{
         const t = TEACHERS.find(x=>x.uid===uid); return t?t.name:'(?)';
       }).join(', ');
@@ -4502,7 +4526,7 @@ function renderLessons(){
 
   const sum = $I('lesson-sum');
   if(sum){
-    const cards = mine.reduce((n,l)=>n + bundleGroups(l.hours,l.bundle).length, 0);
+    const cards = mine.reduce((n,l)=>n + lessonGroups(l).length, 0);
     const mins  = mine.reduce((n,l)=>n + (Number(l.hours)||0)*(Number(l.durMin)||50), 0);
     sum.textContent = `${mine.length}과목 · 카드 ${cards}장 · 주 ${Math.floor(mins/60)}시간 ${mins%60}분`;
   }
@@ -4561,6 +4585,7 @@ window.openLessonDlg = function(id){
   $I('ld-brk').value = l ? (l.linkBreak!=null ? l.linkBreak : 5) : 5;
   dlgColor = l ? (l.color || autoLessonColor(l.subject)) : LESSON_COLORS[0];
   dlgCardDurs = (l && Array.isArray(l.cardDurs)) ? l.cardDurs.slice() : [];
+  dlgGroups = l ? lessonGroups(l).slice() : [];
   dlgLead = (l && l.leadUid) ? l.leadUid : '';
   dlgGrades = new Set(l ? (l.grades||[]) : []);
   dlgTeachers = new Set(l ? (l.teacherUids||[]) : []);
@@ -4608,8 +4633,9 @@ window.openLessonDlg = function(id){
   // 1회 길이나 연강 쉼을 바꾸면 카드 전체에 한꺼번에 반영한다
   $I('ld-dur').oninput = ()=>{ dlgCardDurs = []; updateBundlePreview(); };
   $I('ld-brk').oninput = ()=>{ dlgCardDurs = []; updateBundlePreview(); };
-  $I('ld-hours').oninput = updateBundlePreview;
-  $I('ld-bundle').onchange = ()=>{ dlgCardDurs = []; updateBundlePreview(); };
+  // 시수를 바꾸면 구성이 어긋나므로 다시 잡는다 (미리보기가 알아서 맞춘다)
+  $I('ld-hours').oninput = ()=>{ dlgGroups = []; dlgCardDurs = []; updateBundlePreview(); };
+  $I('ld-bundle').onchange = ()=>{ dlgGroups = []; dlgCardDurs = []; updateBundlePreview(); };
   $I('ld-subject').oninput = ()=>{ if(!editingLessonId) renderColorPicker(); };
   const delBtn = $I('ld-del'); if(delBtn) delBtn.style.display = editingLessonId ? '' : 'none';
   $I('lesson-dlg').style.display = 'flex';
@@ -4629,6 +4655,7 @@ function openLessonDlgRefreshChips(){
 }
 let dlgColor = LESSON_COLORS[0];
 let dlgCardDurs = [];    // 카드별 길이 (요일마다 다른 수업용)
+let dlgGroups = [];      // 카드 구성 — 각 카드가 몇 시수인지 (예: [2,1,1])
 let dlgLead = '';        // 대표 선생님 (세 분 넘을 때 카드에 이름이 나올 분)
 
 window.setDlgLead = function(uid){
@@ -4668,6 +4695,32 @@ window.setCardDur = function(i, v){
   updateBundlePreview();
 };
 window.resetCardDurs = function(){ dlgCardDurs = []; updateBundlePreview(); };
+
+/* ── 카드 구성 편집 — 같은 수업 안에서 연강과 낱개를 섞는다 ──
+   예) 4시수 중 2시수만 연강 → [2,1,1]
+   묶기: 이 카드와 다음 카드를 붙여 연강으로
+   풀기: 연강 한 시수를 떼어 따로 놓는다 */
+window.mergeGroup = function(i){
+  if(i < 0 || i >= dlgGroups.length - 1) return;
+  dlgGroups[i] = dlgGroups[i] + dlgGroups[i+1];
+  dlgGroups.splice(i+1, 1);
+  dlgCardDurs = [];               // 길이는 기본값으로 다시 잡는다
+  updateBundlePreview();
+};
+window.splitGroup = function(i){
+  const sz = dlgGroups[i];
+  if(!sz || sz <= 1) return;
+  dlgGroups.splice(i, 1, sz - 1, 1);
+  dlgCardDurs = [];
+  updateBundlePreview();
+};
+window.resetGroups = function(){
+  const h = Number($I('ld-hours').value)||0;
+  const b = Number($I('ld-bundle').value)||1;
+  dlgGroups = bundleGroups(h, b);
+  dlgCardDurs = [];
+  updateBundlePreview();
+};
 function renderColorPicker(){
   const box = $I('ld-colors'); if(!box) return;
   box.innerHTML = LESSON_COLORS.map(c=>
@@ -4680,7 +4733,12 @@ function updateBundlePreview(){
   const h = Number($I('ld-hours').value)||0;
   const b = Number($I('ld-bundle').value)||1;
   const dur = Number($I('ld-dur')?.value)||0;
-  const groups = bundleGroups(h, b);
+  // 시수가 바뀌었거나 아직 구성이 없으면 묶음 크기로 고르게 나눈다
+  if(!Array.isArray(dlgGroups) || !dlgGroups.length ||
+     dlgGroups.reduce((a,x)=>a+x,0) !== h){
+    dlgGroups = bundleGroups(h, b);
+  }
+  const groups = dlgGroups;
   const subject = ($I('ld-subject')?.value||'').trim() || '수업';
   // 실제 시간표에 놓일 카드 모습 그대로 (색·길이 반영)
   const brk = Number($I('ld-brk')?.value);
@@ -4699,7 +4757,13 @@ function updateBundlePreview(){
       <b>${esc(subject)} <span class="bp-no">${i+1}</span>${custom?'<span class="bp-mark">✎ 따로</span>':''}</b>
       <span class="bp-edit">
         <input type="number" min="5" max="240" step="5" value="${m}" onchange="setCardDur(${i}, this.value)">분
-        ${sz>1?`<em>${sz}연강</em>`:''}
+        ${sz>1?`<em>${sz}연강</em>`:'<em class="one">1시수</em>'}
+      </span>
+      <span class="bp-grp">
+        <button type="button" class="bp-gb" onclick="splitGroup(${i})" ${sz>1?'':'disabled'}
+          title="연강 한 시수를 떼어 따로 놓습니다">⊖ 풀기</button>
+        <button type="button" class="bp-gb" onclick="mergeGroup(${i})" ${i<groups.length-1?'':'disabled'}
+          title="다음 카드와 붙여 연강으로 만듭니다">⊕ 뒤와 묶기</button>
       </span>
       ${custom?`<span class="bp-base">기본 ${base}분</span>`:''}</span>`;
   }).join('');
@@ -4710,8 +4774,15 @@ function updateBundlePreview(){
          <span style="color:var(--tl)">— 요일마다 시간이 다르면 아래에서 카드별로 고치세요</span>
        </div>
        <div class="bp-cards">${chips}</div>
-       ${dlgCardDurs.some((v,i)=>v !== (dur*groups[i] + brkMin*(groups[i]-1)))
-         ? `<button type="button" class="bp-reset" onclick="resetCardDurs()">↺ 모두 기본 길이로</button>` : ''}`
+       <div class="bp-help">💡 <b>⊕ 뒤와 묶기</b>로 연강을 만들고, <b>⊖ 풀기</b>로 따로 떼어 놓습니다.
+         한 수업 안에서 <b>연강과 낱개를 섞을 수 있어요</b> — 예: 4시수 중 2시수만 연강.</div>
+       <div class="bp-btns">
+         ${dlgCardDurs.some((v,i)=>v !== (dur*groups[i] + brkMin*(groups[i]-1)))
+           ? `<button type="button" class="bp-reset" onclick="resetCardDurs()">↺ 모두 기본 길이로</button>` : ''}
+         ${groups.length !== bundleGroups(h,b).length ||
+           groups.some((sz,i)=>sz !== bundleGroups(h,b)[i])
+           ? `<button type="button" class="bp-reset" onclick="resetGroups()">↺ 묶음 구성 되돌리기</button>` : ''}
+       </div>`
     : '';
 }
 window.saveLessonDlg = function(){
@@ -4727,6 +4798,7 @@ window.saveLessonDlg = function(){
     durMin: Number($I('ld-dur').value)||50,   // 1회 수업 길이
     linkBreak: (function(){ const v=Number($I('ld-brk').value); return isNaN(v)?5:v; })(),  // 연강 사이 쉼
     cardDurs: dlgCardDurs.slice(),          // 카드별 길이 (요일마다 다를 때)
+    groups: dlgGroups.slice(),              // 카드 구성 — 연강·낱개를 섞을 수 있다
     leadUid: (dlgLead && dlgTeachers.has(dlgLead)) ? dlgLead : '',   // 대표 선생님
     color: dlgColor,                           // 시간표에 보일 색
     roomId: $I('ld-room').value || '',
@@ -4904,7 +4976,7 @@ function unplacedFor(grade){
   DAYS.forEach(dy=> placeList(grade, dy).forEach(c=> placed.add(c.lessonId+'#'+c.cardIdx)));
   const out = [];
   LESSONS.filter(l=>(l.grades||[]).includes(grade)).forEach(l=>{
-    bundleGroups(l.hours, l.bundle).forEach((sz, idx)=>{
+    lessonGroups(l).forEach((sz, idx)=>{
       if(placed.has(l.id+'#'+idx)) return;
       out.push({ lessonId:l.id, cardIdx:idx, size:sz,
         durMin: cardMinutes(l, sz, idx), lesson:l });
