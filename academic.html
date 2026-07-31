@@ -67,7 +67,8 @@
   .cw-wk.break{ background:var(--m-bg); color:var(--m-tx); }
   .cw-wk.break .wknum{ color:var(--m-tx); font-size:10px; }
 
-  .cw-body{ flex:1; position:relative; min-height:104px; display:flex; flex-direction:column; }
+  .cw-body{ flex:1; position:relative; min-height:96px; display:flex; flex-direction:column;
+    min-width:0; }
 
   /* 바탕 — 주말·공휴일 칠 */
   .cw-bg{ position:absolute; inset:0; display:grid; grid-template-columns:repeat(7,1fr); z-index:0; }
@@ -80,32 +81,35 @@
 
   /* 날짜 줄 */
   .cw-nums{ position:relative; z-index:1; display:grid; grid-template-columns:repeat(7,1fr); }
-  .cw-n{ padding:5px 8px; display:flex; align-items:baseline; gap:5px; min-height:26px; }
+  .cw-n{ padding:5px 8px; display:flex; align-items:baseline; gap:5px;
+    min-height:26px; flex-wrap:wrap; min-width:0; }
   .cw-n b{ font-size:15px; font-weight:800; color:var(--gd); }
   .cw-n.sun b, .cw-n.hol b{ color:var(--danger); }
   .cw-n.sat b{ color:var(--m-tx); }
-  .cw-hn{ font-size:10px; font-weight:700; color:var(--danger); line-height:1.2;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cw-hn{ font-size:10px; font-weight:700; color:var(--danger); line-height:1.25;
+    white-space:normal; overflow-wrap:anywhere; word-break:keep-all; }
 
   /* 시간대 구역 */
   .cw-sec{ position:relative; z-index:1; padding:1px 0 2px; }
   .cw-sec.am, .cw-sec.pm{ border-top:1px dashed var(--ivd); min-height:34px; }
   .cw-lab{ position:absolute; left:3px; top:1px; font-size:8px; font-weight:700;
     color:var(--tl); opacity:.5; pointer-events:none; z-index:2; }
-  .cw-lanes{ display:flex; flex-direction:column; gap:2px; padding:2px 0; }
-  .cw-lane{ display:grid; grid-template-columns:repeat(7,1fr); gap:0; min-height:0; }
-  .cw-lane.empty{ min-height:16px; }
+  .cw-lanes{ display:flex; flex-direction:column; gap:3px; padding:3px 0; }
+  .cw-lane{ display:grid; grid-template-columns:repeat(7,1fr); gap:0;
+    align-items:stretch; min-height:0; }
+  .cw-lane.empty{ min-height:14px; }
 
   /* 가로로 이어지는 행사 띠 */
+  /* 행사 띠 — 글자가 길면 줄을 바꿔 내려가고, 그만큼 칸이 넓어진다 */
   .ev-bar{ margin:0 2px; padding:3px 6px; border-radius:5px; color:#fff;
-    font-size:10.5px; font-weight:700; line-height:1.3; cursor:pointer;
-    overflow:hidden; display:flex; align-items:center; gap:3px;
-    transition:filter .1s; }
+    font-size:10.5px; font-weight:700; line-height:1.35; cursor:pointer;
+    display:flex; align-items:center; justify-content:flex-start; gap:3px;
+    flex-wrap:wrap; min-width:0; transition:filter .1s; }
   .ev-bar:hover{ filter:brightness(1.07); }
-  .ev-bar .eb-t{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ev-bar .eb-t{ white-space:normal; overflow-wrap:anywhere; word-break:keep-all; min-width:0; }
   .ev-bar .eb-s{ font-size:9px; font-weight:600; opacity:.9;
-    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .ev-bar.wide{ justify-content:center; }        /* 여러 날 이어지면 가운데 정렬 */
+    white-space:normal; overflow-wrap:anywhere; word-break:keep-all; }
+  .ev-bar.wide{ justify-content:center; text-align:center; }   /* 여러 날 이어지면 가운데 */
 
   /* 예전 이름도 살려둔다 (다른 곳에서 쓰는 곳이 있어) */
   .ev-chip{ font-size:10.5px; font-weight:700; line-height:1.25; padding:3px 6px;
@@ -309,10 +313,6 @@
     <div class="ac-head">
       <h1 class="ac-title">📅 학사일정</h1>
       <div class="ac-toolbar">
-        <div class="ac-viewtoggle">
-          <button id="v-teacher" class="on" onclick="setView('teacher')">교사용</button>
-          <button id="v-parent" onclick="setView('parent')">학부모용</button>
-        </div>
         <div class="ac-nav">
           <button onclick="moveMonth(-1)">‹</button>
           <div class="ac-ym"><span id="ym-main">—</span><small id="ym-sub"></small></div>
@@ -1334,9 +1334,8 @@ window.goToday = function(){
   render();
 };
 window.setView = function(v){
-  curView=v;
-  $I('v-teacher').classList.toggle('on', v==='teacher');
-  $I('v-parent').classList.toggle('on', v==='parent');
+  curView = v;
+  renderViewBar();
   render();
 };
 
@@ -1475,7 +1474,6 @@ function applyZoom(force){
 
 function renderViewBar(){
   const bar = $I('vw-bar'); if(!bar) return;
-  if(curTab !== 'view'){ bar.style.display='none'; return; }
   bar.style.display='';
   const i = ZOOM_STEPS.indexOf(CAL_ZOOM);
   bar.innerHTML = `
@@ -1628,14 +1626,13 @@ window.toggleEditor = async function(uid){
 };
 
 /* 이 사람이 볼 수 있는 기관 */
+/* 학사일정은 두 기관이 서로의 일정을 볼 수 있어야 한다.
+   (한 건물에서 함께 지내니 서로 언제 행사·방학인지 알아야 하므로)
+   그래서 보기는 모든 기관을 열어주고, 고치는 권한만 따로 관리한다. */
 function myOrgs(){
-  if(!CU) return ['daniel'];
-  let list = (CU.role==='super')
-    ? ['daniel','jihyebit']
-    : ((CU.orgs && CU.orgs.length) ? CU.orgs.slice() : (CU.org ? [CU.org] : []));
-  if(!list.length) list = ['daniel'];
+  let list = ['daniel','jihyebit'];
   // 내 소속 기관을 앞에 둔다 — 처음 열었을 때 익숙한 쪽이 먼저 보이게
-  if(CU.org && list.includes(CU.org)) list = [CU.org, ...list.filter(o=>o!==CU.org)];
+  if(CU && CU.org && list.includes(CU.org)) list = [CU.org, ...list.filter(o=>o!==CU.org)];
   return list;
 }
 
