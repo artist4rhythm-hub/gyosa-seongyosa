@@ -219,6 +219,10 @@
   .cb-chip:hover{border-color:var(--cc)}
   .cb-chip.on{background:var(--cc);border-color:var(--cc);color:#fff}
   .cb-chip.on i{background:rgba(255,255,255,.85)}
+  .cb-with{font-family:inherit;font-size:11.5px;font-weight:700;padding:6px 11px;
+    border:1px dashed var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);
+    color:var(--tl,#93A09A);cursor:pointer;white-space:nowrap;margin-left:4px}
+  .cb-with.on{border-style:solid;border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
   .cb-note{font-size:11px;color:var(--tl,#93A09A);margin-left:auto}
   @media(max-width:700px){ .cb-note{width:100%;margin-left:0} }
 
@@ -570,6 +574,8 @@ let curYear = new Date().getFullYear();
 let curMonth = new Date().getMonth()+1;
 let curView = 'teacher';
 let curTab = 'view';        // 'view' 보기 · 'edit' 편집
+let SHOW_ALL_CAL = true;    // 기관 캘린더를 볼 때 «DA 전체»도 함께 보여줄지
+try { SHOW_ALL_CAL = localStorage.getItem('ac_showall') !== 'off'; } catch(e){}
 let DRAG_ON = false;        // 끌어서 옮기기 (실수 방지를 위해 켤 때만 동작)
 let CAL_ZOOM = 100;         // 달력 크기 (%)
 const ZOOM_STEPS = [55,65,75,85,100,115,130,150,175,200];
@@ -687,8 +693,12 @@ async function loadEvents(year){
 function applyEventScope(){
   if(ORG === ORG_ALL){ EVENTS = ALL_EVENTS.slice(); return; }   // 세 캘린더 겹쳐보기
   if(ORG === 'all'){ EVENTS = ALL_EVENTS.filter(e => calOf(e)==='all'); return; }
-  // 기관 캘린더를 볼 때는 «DA 전체»도 함께 보여준다 (두 기관 모두에 해당하니까)
-  EVENTS = ALL_EVENTS.filter(e => { const o = calOf(e); return o === ORG || o === 'all'; });
+  // 기관 캘린더를 볼 때 «DA 전체»(정기휴가·창립일 등)도 함께 보여줄지는 고를 수 있다
+  EVENTS = ALL_EVENTS.filter(e => {
+    const o = calOf(e);
+    if(o === ORG) return true;
+    return o === 'all' && SHOW_ALL_CAL;
+  });
 }
 
 /* 그 날짜가 휴교인지 — 휴교로 넣어둔 일정이 덮고 있으면 그 이름 */
@@ -1523,6 +1533,16 @@ document.addEventListener('keydown', e=>{
    ═══════════════════════════════════════════════ */
 let dragInfo = null;
 
+/* 기관 캘린더를 볼 때 «DA 전체»를 겹쳐 볼지 */
+window.toggleShowAll = function(){
+  SHOW_ALL_CAL = !SHOW_ALL_CAL;
+  try { localStorage.setItem('ac_showall', SHOW_ALL_CAL ? 'on' : 'off'); } catch(e){}
+  applyEventScope();
+  renderCalBar(); renderViewBar(); render();
+  toast(SHOW_ALL_CAL ? 'DA 전체 일정을 함께 보여줍니다'
+                     : 'DA 전체 일정을 감췄습니다 — 이 캘린더 것만 보여요','ok');
+};
+
 window.toggleDrag = function(){
   if(!CAN_EDIT){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); return; }
   DRAG_ON = !DRAG_ON;
@@ -1826,6 +1846,9 @@ function renderCalBar(){
       return `<button class="cb-chip ${on?'on':''}" style="--cc:${color}"
         onclick="switchOrg('${k}')"><i></i>${esc(label)}${editable?'<b title="고칠 수 있어요">✏️</b>':''}</button>`;
     }).join('')}
+    ${(ORG==='daniel'||ORG==='jihyebit')?`<button class="cb-with ${SHOW_ALL_CAL?'on':''}"
+      onclick="toggleShowAll()" title="정기휴가·창립일처럼 두 기관 공통 일정을 함께 볼지 정합니다"
+      >${SHOW_ALL_CAL?'☑':'☐'} DA 전체 함께</button>`:''}
     <span class="cb-note">${ORG===ORG_ALL ? '세 캘린더를 겹쳐 보는 중 — 고치려면 하나를 골라주세요'
       : (CAN_EDIT ? '이 캘린더를 고칠 수 있습니다' : '보기만 할 수 있습니다')}</span>
   </div>`;
@@ -1869,6 +1892,7 @@ window.myOrgs = myOrgs;
 Object.defineProperty(window, 'curTab', { get:()=>curTab });
 Object.defineProperty(window, 'CAL_ZOOM', { get:()=>CAL_ZOOM });
 Object.defineProperty(window, 'DRAG_ON', { get:()=>DRAG_ON });
+Object.defineProperty(window, 'SHOW_ALL_CAL', { get:()=>SHOW_ALL_CAL });
 Object.defineProperty(window, 'EDITORS', { get:()=>EDITORS });
 window.canEditCal = canEditCal;
 window.canEditAny = canEditAny;
