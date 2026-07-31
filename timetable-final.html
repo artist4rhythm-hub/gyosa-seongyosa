@@ -49,6 +49,18 @@
     border-radius:8px;background:var(--wh,#fff);color:var(--ink);min-width:200px}
   .pb-hint{font-size:11.5px;color:var(--tl,#93A09A);line-height:1.65;margin-top:9px}
 
+  /* ── 선생님용 공유 링크 줄 ── */
+  .vs-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:10px 13px;margin-bottom:12px;border-radius:11px;
+    background:var(--gp,#E8F3EF);border:1px solid var(--gl,#C3E0D4)}
+  .vs-ic{font-size:14px;flex:none}
+  .vs-t{font-size:12.5px;font-weight:800;color:var(--gm,#00704A);flex:none}
+  .vs-url{flex:1;min-width:180px;font-family:inherit;font-size:11.5px;padding:7px 10px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);
+    color:var(--ts,#5A6560)}
+  .vs-note{font-size:11px;color:var(--tl,#93A09A);flex-basis:100%}
+  @media(max-width:640px){ .vs-url{min-width:0} }
+
   /* ── 게시 기록 관리 ── */
   .pl-head{display:flex;align-items:center;gap:8px;margin:14px 0 8px}
   .pl-t{font-size:12.5px;font-weight:800;color:var(--gd,#1E3932)}
@@ -306,6 +318,7 @@
       </span>
     </div>
     <div class="pdesc" id="vw-desc"></div>
+    <div id="vw-share"></div>
     <div class="vw-bar" id="vw-bar" style="display:none">
       <button class="vw-kb on" id="vk-mine" onclick="setVwKind('mine')">👤 내 시간표</button>
       <button class="vw-kb" id="vk-grade" onclick="setVwKind('grade')">🎓 학년별</button>
@@ -681,7 +694,6 @@ const canPublish = () => !!CU && (CU.role==='super' || CU.role==='org_admin');
 let SHARE = null;
 
 async function loadShare(){
-  if(!canPublish()){ SHARE = null; return; }
   try {
     const snap = await getDocs(collection(db,'sharedTimetables'));
     SHARE = snap.docs.length ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null;
@@ -730,6 +742,7 @@ window.shareOn = async function(){
 };
 
 window.shareOff = async function(){
+  if(!canPublish()){ toast('공유를 끌 권한이 없습니다.','err'); return; }
   if(!SHARE) return;
   if(!confirm('공유를 끌까요?\n\n기존 링크는 더 이상 열리지 않습니다.\n다시 켜면 새 링크가 만들어져요.')) return;
   try {
@@ -746,6 +759,21 @@ window.copyShareURL = function(){
     .then(()=>toast('링크를 복사했습니다 ✓','ok'))
     .catch(()=>{ prompt('아래 링크를 복사하세요', url); });
 };
+
+/* 선생님용 — 링크를 복사하거나 열기만 (만들기·끄기는 관리자 몫) */
+function renderShareLine(){
+  const box = $I('vw-share'); if(!box) return;
+  if(canPublish() || !SHARE){ box.innerHTML=''; return; }   // 관리자는 위 게시 자리에서 관리
+  box.innerHTML = `
+    <div class="vs-row">
+      <span class="vs-ic">🔗</span>
+      <span class="vs-t">공유 링크</span>
+      <input readonly value="${esc(shareURL())}" onclick="this.select()" class="vs-url">
+      <button class="btn btn-sm" onclick="copyShareURL()">📋 복사</button>
+      <a class="btn btn-sm" href="${esc(shareURL())}" target="_blank" style="text-decoration:none">↗ 열기</a>
+      <span class="vs-note">로그인 없이 볼 수 있어요 — 학부모님께 전해 드릴 수 있습니다</span>
+    </div>`;
+}
 
 function renderShareBox(){
   const box = $I('pub-share'); if(!box) return;
@@ -804,6 +832,7 @@ async function loadRest(){
   const keepId = CUR?.id || '';
   try {
     await loadPublished();
+    await loadShare();   // 공유 링크는 선생님도 복사해 나눌 수 있다
     if(canPublish()){
       // 게시할 때 쓰는 자료는 게시 권한자만 받는다 (선생님에겐 필요 없다)
       try {
@@ -817,11 +846,11 @@ async function loadRest(){
         FRAMES_CACHE = (fr.exists() && fr.data().list) ? fr.data().list : [];
       } catch(e){}
       await loadSets();
-      await loadShare();
     }
     // 같은 게시본을 계속 보고 있게 다시 이어 준다
     CUR = PUBS.find(p=>p.id===keepId) || PUBS.find(p=>p.active) || pubsForView()[0] || null;
     renderPubPanel();
+    renderShareLine();
     renderPubSelect();
     if(!keepId) renderView();   // 처음에 띄울 게 없었다면 이제 그린다
   } catch(e){ /* 뒤에서 채우는 일이라 조용히 넘어간다 */ }
