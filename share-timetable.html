@@ -109,7 +109,62 @@ body{margin:0;min-height:100vh;background:var(--iv);color:var(--ink);
   .tv-card.small .tv-c-room{background:var(--iv,#F2F0EB);color:var(--ts,#5A6560);
     margin-left:4px;font-size:calc(8.5px * var(--tvf,1));line-height:1.4}
 
-@media(max-width:640px){ body{padding:8px} .paper{padding:10px;border-radius:11px} }
+
+  /* ══ 📱 압축 모드 — 좁은 화면에서 월~금을 한 화면에 ══
+     자바스크립트가 화면 폭을 보고 .compact 를 붙인다.
+     (미디어 쿼리를 쓰면 화면 밖에서 그리는 저장용 판까지 압축되어 버린다) */
+  .tv-sheet.compact{ padding:7px; border-radius:10px; overflow-x:hidden; }
+  .tv-sheet.compact .tv-board{ min-width:0; }          /* 5일이 폭에 맞춰 줄어든다 */
+  .tv-sheet.compact .tv-hd,
+  .tv-sheet.compact .tv-grid{ grid-template-columns:30px repeat(5,minmax(0,1fr)); }
+  .tv-sheet.compact .tv-tick{ font-size:8.5px; padding-left:2px; }
+  .tv-sheet.compact .tv-hd-d{ padding:5px 0; font-size:calc(11.5px * var(--tvf,1)); }
+  .tv-sheet.compact .tv-head{ margin-bottom:7px; }
+  .tv-sheet.compact .tv-title{ font-size:15px; }
+  .tv-sheet.compact .tv-meta{ font-size:10.5px; }
+
+  /* 카드 — 좌우 여백을 최소로, 글자는 줄바꿈해서 최대한 담는다 */
+  .tv-sheet.compact .tv-card{ left:1px; right:1px; border-radius:5px; border-left-width:2.5px; }
+  .tv-sheet.compact .tv-c-top{ padding:2px 3px; }
+  .tv-sheet.compact .tv-c-top b{
+    font-size:calc(10.5px * var(--tvf,1)); line-height:1.2;
+    white-space:normal; word-break:break-all;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .tv-sheet.compact .tv-c-time{ font-size:calc(8.5px * var(--tvf,1)); line-height:1.25; }
+  .tv-sheet.compact .tv-c-time i{ display:none; }      /* "40분" 은 접는다 */
+  .tv-sheet.compact .tv-c-sub{ font-size:calc(8.5px * var(--tvf,1)); }
+  .tv-sheet.compact .tv-c-foot{ padding:1px 3px; gap:3px; }
+  .tv-sheet.compact .tv-c-who{ font-size:calc(8.5px * var(--tvf,1)); line-height:1.25;
+    -webkit-line-clamp:1; word-break:break-all; }
+  .tv-sheet.compact .tv-c-room{ font-size:calc(8px * var(--tvf,1)); padding:0 3px;
+    max-width:54%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tv-sheet.compact .tv-bg span{ font-size:8px; padding:0 2px; }
+  /* 아주 납작한 카드는 과목만 */
+  .tv-sheet.compact .tv-card.small{ gap:3px; padding:0 3px; }
+  .tv-sheet.compact .tv-card.small .tv-c-foot{ max-width:46%; }
+
+  /* ══ 세로 크기 조절 ══ */
+  .tv-zoom{display:flex;align-items:center;gap:4px;flex:none}
+  .tv-zstep{font-family:inherit;font-size:14px;font-weight:900;line-height:1;
+    width:28px;height:28px;border:1px solid var(--ivd,#E3E1DA);border-radius:8px;
+    background:var(--wh,#fff);color:var(--gm,#00704A);cursor:pointer;flex:none}
+  .tv-zstep:disabled{opacity:.35;cursor:not-allowed}
+  .tv-zval{font-size:11.5px;font-weight:800;color:var(--ts,#5A6560);
+    min-width:42px;text-align:center;flex:none}
+  .tv-zfit{font-family:inherit;font-size:11.5px;font-weight:700;padding:6px 11px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);
+    color:var(--ts,#5A6560);cursor:pointer;white-space:nowrap;flex:none}
+  .tv-zfit.on{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+
+  @media(max-width:720px){
+    body{padding:5px}
+    .paper{padding:6px;border-radius:11px}
+    .top{gap:8px;margin-bottom:8px}
+    .top img{width:34px;height:34px}
+    .top .t1{font-size:14px}
+    .vw-bar{padding:8px 9px;gap:5px;margin-bottom:9px}
+    .foot{margin:10px auto 20px}
+  }
 </style>
 </head>
 <body>
@@ -277,16 +332,87 @@ function collect(){
 /* ═══ 보기 ═══ */
 let vwKind = 'grade';    // grade | teacher | room (공개 페이지엔 '내 시간표' 없음)
 let vwTarget = '';
-const TV_ZOOMS = [2.1, 2.7, 3.4, 4.3, 5.4];
-const TV_ZOOM_NAMES = ['작게','보통','크게','아주 크게','최대'];
-const TV_FONT = { 2.1:1, 2.7:1.14, 3.4:1.3, 4.3:1.5, 5.4:1.72 };
+/* 세로 크기 — 촘촘하게 나눠 미세 조절이 되게 한다.
+   2.7 을 100% 로 보고, 아래로는 폰 한 화면에 들어갈 만큼 작게까지 내려간다. */
+const TV_ZOOMS = [0.85, 1.0, 1.15, 1.3, 1.5, 1.7, 1.9, 2.1, 2.4, 2.7,
+                  3.0, 3.4, 3.8, 4.3, 4.8, 5.4];
+const TV_BASE = 2.7;
+/* 글자 배율 — 칸이 작아지면 글자도 함께 줄어든다 (너무 작아지지 않게 바닥을 둔다) */
+function fontScaleOf(ppm){
+  return Math.max(0.74, Math.min(1.72, 0.62 + (ppm / TV_BASE) * 0.46));
+}
+const TV_FONT = {};
+TV_ZOOMS.forEach(z=>{ TV_FONT[z] = fontScaleOf(z); });
+
 let tvZoom = 2.7;
-try { const z = parseFloat(localStorage.getItem('stf_zoom')); if(z && TV_ZOOMS.includes(z)) tvZoom = z; } catch(e){}
+let tvFit = false;   // 한 화면 맞춤을 켜 두면 화면이 바뀔 때 다시 계산한다
+try {
+  const z = parseFloat(localStorage.getItem('stf_zoom'));
+  if(z && TV_ZOOMS.includes(z)) tvZoom = z;
+  tvFit = localStorage.getItem('stf_fit') === 'on';
+} catch(e){}
+
+function zoomPct(z){ return Math.round((z / TV_BASE) * 100); }
+
 window.setTvZoom = function(v){
-  tvZoom = Number(v) || 2.7;
-  try { localStorage.setItem('stf_zoom', String(tvZoom)); } catch(e){}
+  tvZoom = Number(v) || TV_BASE;
+  tvFit = false;
+  try {
+    localStorage.setItem('stf_zoom', String(tvZoom));
+    localStorage.setItem('stf_fit', 'off');
+  } catch(e){}
   renderView();
 };
+
+/* − / + 한 단계씩 */
+window.stepTvZoom = function(dir){
+  let i = TV_ZOOMS.findIndex(z=>Math.abs(z-tvZoom)<0.001);
+  if(i < 0){   // 맞춤으로 들어간 중간값이면 가장 가까운 단계에서 출발
+    i = TV_ZOOMS.reduce((best,z,k)=>
+      Math.abs(z-tvZoom) < Math.abs(TV_ZOOMS[best]-tvZoom) ? k : best, 0);
+  }
+  const next = Math.max(0, Math.min(TV_ZOOMS.length-1, i + dir));
+  setTvZoom(TV_ZOOMS[next]);
+};
+
+/* 📱 한 화면 맞춤 — 하루 길이를 화면 높이에 맞춰 배율을 계산한다 */
+window.fitTvZoom = function(){
+  if(tvFit){   // 다시 누르면 끄고 기본으로
+    tvFit = false;
+    try { localStorage.setItem('stf_fit','off'); } catch(e){}
+    renderView();
+    return;
+  }
+  tvFit = true;
+  try { localStorage.setItem('stf_fit','on'); } catch(e){}
+  applyFitZoom();
+  renderView();
+};
+
+/* 지금 화면에서 하루가 다 보이도록 배율을 정한다 */
+function applyFitZoom(){
+  const span = currentSpan();
+  if(!span) return;
+  // 화면 높이에서 머리말·보기막대·머리글·여백을 뺀 만큼이 표가 쓸 수 있는 높이
+  const used = 210;
+  const avail = Math.max(240, window.innerHeight - used);
+  const z = avail / span;
+  tvZoom = Math.max(TV_ZOOMS[0], Math.min(TV_ZOOMS[TV_ZOOMS.length-1], Math.round(z*100)/100));
+}
+
+/* 지금 보고 있는 시간표의 하루 길이(분) */
+function currentSpan(){
+  const all = collect();
+  const mine = all.filter(it=>matchOf(it, vwKind, vwTarget));
+  if(!mine.length) return 0;
+  let s0 = Math.min(...mine.map(x=>x.startMin));
+  let e0 = Math.max(...mine.map(x=>x.endMin));
+  if(vwKind==='grade'){
+    DAYS.forEach(dy=>{ const b = dayBlocksOf(vwTarget, dy);
+      if(b.blocks?.length){ s0=Math.min(s0,b.startMin); e0=Math.max(e0,b.endMin); } });
+  }
+  return Math.max(30, e0 - s0);
+}
 
 window.setVwKind = function(k){
   vwKind = k; vwTarget = '';
@@ -328,7 +454,7 @@ function sheetHTML(kind, target, label, opt){
 
   const TV_PPM = (opt && opt.ppm) || tvZoom;
   // 표에 없는 배율(인쇄용 자동 계산)이면 배율에 견주어 글자 크기를 잡는다
-  const f = TV_FONT[TV_PPM] || Math.max(0.82, Math.min(1.3, TV_PPM / 2.7));
+  const f = TV_FONT[TV_PPM] || fontScaleOf(TV_PPM);
 
   let s0 = Math.min(...mine.map(x=>x.startMin));
   let e0 = Math.max(...mine.map(x=>x.endMin));
@@ -383,11 +509,7 @@ function sheetHTML(kind, target, label, opt){
           <div class="tv-title">${esc(label)} 시간표</div>
           <div class="tv-meta">${esc(CUR.title||'')} · ${kindLabel} · 주 ${mine.length}시간 · ${hm(s0)}~${hm(e0)}</div>
         </div>
-        ${opt&&opt.noZoom ? '' : `<div class="tv-zoom">
-          <span>세로 크기</span>
-          ${TV_ZOOMS.map((z,i)=>`<button class="tv-zb ${Math.abs(z-tvZoom)<0.01?'on':''}"
-            onclick="setTvZoom(${z})">${TV_ZOOM_NAMES[i]}</button>`).join('')}
-        </div>`}
+
       </div>
       <div class="tv-board" style="--tvf:${f}">
         <div class="tv-hd"><div class="tv-hd-t"></div>${DAYS.map(d=>`<div class="tv-hd-d">${d}</div>`).join('')}</div>
@@ -411,20 +533,44 @@ function renderView(){
     '<div class="state" style="margin:30px auto;box-shadow:none"><div class="ico">🗓️</div><div class="t1">표시할 수업이 없습니다</div></div>'; bar.innerHTML=''; return; }
   if(!vwTarget || !targets.some(t=>String(t.id)===String(vwTarget))) vwTarget = targets[0].id;
 
+  if(tvFit) applyFitZoom();   // 한 화면 맞춤이 켜져 있으면 지금 화면에 맞춰 다시 계산
+
   const kinds = [ ['grade','🎓 학년별'], ['teacher','🧑‍🏫 선생님별'], ['room','🏫 교실별'] ];
+  const iz = TV_ZOOMS.findIndex(z=>Math.abs(z-tvZoom)<0.001);
   bar.innerHTML = `
     ${kinds.map(([k,lb])=>`<button class="vw-k ${vwKind===k?'on':''}" onclick="setVwKind('${k}')">${lb}</button>`).join('')}
     <select class="vw-sel" onchange="setVwTarget(this.value)">
       ${targets.map(t=>`<option value="${esc(t.id)}" ${String(t.id)===String(vwTarget)?'selected':''}>${esc(t.label)}</option>`).join('')}
     </select>
-    <span style="margin-left:auto;display:inline-flex;gap:4px;align-items:center">
-      <span style="font-size:11px;color:var(--tl)">크기</span>
-      ${TV_ZOOMS.map((z,i)=>`<button class="vw-k ${tvZoom===z?'on':''}" style="padding:5px 10px;font-size:11px" onclick="setTvZoom(${z})">${TV_ZOOM_NAMES[i]}</button>`).join('')}
+    <span class="tv-zoom" style="margin-left:auto">
+      <span style="font-size:11px;color:var(--tl)">세로</span>
+      <button class="tv-zstep" onclick="stepTvZoom(-1)" ${iz===0?'disabled':''} title="세로로 줄이기">−</button>
+      <span class="tv-zval">${zoomPct(tvZoom)}%</span>
+      <button class="tv-zstep" onclick="stepTvZoom(1)" ${iz===TV_ZOOMS.length-1?'disabled':''} title="세로로 늘리기">＋</button>
+      <button class="tv-zfit ${tvFit?'on':''}" onclick="fitTvZoom()"
+        title="하루가 한 화면에 다 들어오도록 맞춥니다">⤢ 한 화면</button>
     </span>`;
 
   const t = targets.find(x=>String(x.id)===String(vwTarget));
   $I('tv-out').innerHTML = sheetHTML(vwKind, t.id, t.label, { noZoom:true }) || '';
+  applyCompact();
 }
+
+/* 화면이 좁으면 압축 모드 — 월~금이 한 화면에 들어온다.
+   (저장용으로 화면 밖에 그리는 판에는 붙이지 않는다) */
+function applyCompact(){
+  const narrow = window.innerWidth <= 720;
+  document.querySelectorAll('#tv-out .tv-sheet').forEach(el=>{
+    el.classList.toggle('compact', narrow);
+  });
+}
+
+/* 화면을 돌리거나 크기가 바뀌면 다시 맞춘다 */
+let _rzTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_rzTimer);
+  _rzTimer = setTimeout(()=>{ if(CUR) renderView(); }, 180);
+});
 
 /* ══ 시작 — 공유 문서를 읽는다 (로그인 불필요) ══ */
 const shareId = new URLSearchParams(location.search).get('id');
@@ -461,16 +607,59 @@ function loadH2C(){
 }
 loadH2C();
 
+/* 🖼 이미지 저장 — 화면에 보이는 만큼이 아니라 시간표 전체를 담는다.
+   화면 밖에 넉넉한 폭으로 다시 그린 뒤 그것을 뜨기 때문에,
+   폰처럼 좁은 화면에서도 월~금이 잘리지 않고 전부 들어간다. */
+const EXP_W = 1000;   // 저장용 판 폭 (화면 크기와 무관)
+
 window.saveImage = async function(){
+  const btn = document.querySelector('.top .btn.p');
+  const orig = btn ? btn.textContent : '';
   try {
+    if(btn){ btn.disabled = true; btn.textContent = '이미지 만드는 중…'; }
     if(!window.html2canvas){
       loadH2C();
       await new Promise((res,rej)=>{ const c=setInterval(()=>{ if(window.html2canvas){clearInterval(c);res();} },100);
         setTimeout(()=>{clearInterval(c); if(!window.html2canvas) rej(new Error('이미지 모듈 로드 실패 (인터넷 확인)'));},8000); });
     }
-    const node = document.querySelector('#tv-out .tv-sheet') || $I('tv-out');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
-    const filename = (document.title.split(' · ')[0]||'완성시간표') + '.png';
+
+    const all = collect();
+    const targets = targetsOf(all);
+    const t = targets.find(x=>String(x.id)===String(vwTarget)) || targets[0];
+    if(!t) throw new Error('내보낼 시간표가 없습니다');
+
+    // 저장본은 읽기 좋은 크기로 (화면에서 아무리 작게 줄여 놨어도 또렷하게)
+    const span = currentSpan() || 400;
+    const ppm = Math.max(1.7, Math.min(3.2, 1150 / span));
+
+    const holder = document.createElement('div');
+    holder.style.cssText = `position:fixed;left:-13000px;top:0;width:${EXP_W}px;`
+      + 'background:#ffffff;padding:22px;box-sizing:border-box;z-index:-1;';
+    holder.innerHTML = sheetHTML(vwKind, t.id, t.label, { ppm, noZoom:true }) || '';
+    const sheet = holder.querySelector('.tv-sheet');
+    if(sheet){
+      sheet.classList.remove('compact');            // 저장본은 압축하지 않는다
+      sheet.style.border = 'none';
+      sheet.style.padding = '0';
+      sheet.style.overflow = 'visible';             // 가로 스크롤 구간까지 전부
+      sheet.style.background = '#ffffff';
+    }
+    const board = holder.querySelector('.tv-board');
+    if(board) board.style.minWidth = '0';
+    document.body.appendChild(holder);
+
+    let canvas;
+    try {
+      await new Promise(r=>setTimeout(r, 80));      // 글꼴·배치가 자리잡을 시간
+      const W = EXP_W, H = Math.max(holder.scrollHeight, holder.offsetHeight);
+      canvas = await window.html2canvas(holder, {
+        scale: 2, backgroundColor:'#ffffff', useCORS:true, logging:false,
+        width: W, height: H, windowWidth: W, scrollX: 0, scrollY: 0
+      });
+    } finally { holder.remove(); }
+
+    const base = (document.title.split(' · ')[0] || '완성시간표');
+    const filename = `${base}_${String(t.label||'').replace(/[\\/:*?"<>|]/g,'')}.png`;
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
       || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
     if(isMobile && navigator.canShare){
@@ -483,6 +672,7 @@ window.saveImage = async function(){
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=filename;
     document.body.appendChild(a); a.click(); a.remove();
   } catch(e){ alert('이미지 저장 실패: '+(e.message||'')); }
+  finally { if(btn){ btn.disabled = false; btn.textContent = orig; } }
 };
 </script>
 </body>
