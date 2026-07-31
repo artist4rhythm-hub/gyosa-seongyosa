@@ -639,6 +639,19 @@
     border:1px solid var(--ivd,#E3E1DA);border-radius:7px;background:var(--wh,#fff);
     color:var(--ts,#5A6560);cursor:pointer}
 
+  /* ── 👀 보기 전용 모드 ──
+     고칠 권한이 없으면 조작 요소를 아예 잠근다.
+     (눌린 뒤 거절하면 되는 줄 알고 헛수고하게 되므로) */
+  /* 조작 요소 — 흐리게 + 잠금 */
+  .ro-lock{ opacity:.5; cursor:not-allowed !important; pointer-events:none !important; }
+  select.ro-lock{ background:var(--iv,#F2F0EB) !important; }
+  /* 내용 요소(수업 카드 등) — 읽어야 하므로 흐리게 하지 않고 클릭만 막는다 */
+  .ro-soft{ cursor:default !important; pointer-events:none !important; }
+  .ro-hide{ display:none !important; }
+  .ro-note{ display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700;
+    color:var(--gold,#8A6410); background:var(--gold-bg,#F7EFD8);
+    border-radius:7px; padding:5px 11px; }
+
   /* ── 버전 표시·목록 ── */
   .sb-ver{display:inline-block;font-size:10.5px;font-weight:900;padding:1px 7px;border-radius:100px;
     background:var(--gm,#00704A);color:#fff;vertical-align:1px}
@@ -1189,6 +1202,7 @@ let LESSON_COLORS = COLOR_TONES[COLOR_TONE].colors;
 
 window.setColorTone = function(tone){
   if(!COLOR_TONES[tone]) return;
+  if(!needEdit()) return;
   const oldColors = LESSON_COLORS.slice();
   COLOR_TONE = tone;
   LESSON_COLORS = COLOR_TONES[tone].colors;
@@ -1328,6 +1342,48 @@ window.toggleInputOpen = async function(){
   } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
 };
 
+/* 👀 보기 전용 잠금 — 고칠 권한이 없으면 조작 요소를 잠근다.
+   화면을 다시 그린 뒤에도 유지되도록 관찰자로 계속 지켜본다. */
+const RO_LOCK_SEL = [
+  '.gd-sel',            // 학년별 부서 배정
+  '.gd-quick button',   // 남은 학년을 ○○부로
+  '.tone-btn',          // 색상 톤
+  '.lc-dup',            // 수업 복제
+  '.rm-modebtn[id^="rmm-"]',   // 교실 그리기 모드
+  '.pg-snapbtn',        // 자석·정리
+  '.btn-p2',            // + 수업 추가
+  '[onclick^="fillAll"]',      // 전체 가능 / 전체 불가
+  '[onclick^="copyMonToAll"]', // 월요일 → 전체 복사
+  '[onclick^="saveAvail"]',    // 가능 시간 저장하기
+].join(',');
+
+/* 내용은 그대로 읽되 클릭만 막을 것들 */
+const RO_SOFT_SEL = [
+  '.lesson-card',   // 수업 카드 — 과목·선생님·시수를 읽어야 하므로 흐리게 하지 않는다
+].join(',');
+
+function applyReadOnlyLock(){
+  if(CAN_EDIT) return;
+  document.querySelectorAll(RO_SOFT_SEL).forEach(el=>{
+    el.classList.add('ro-soft');
+    if(!el.title) el.title = '보기만 할 수 있습니다';
+  });
+  document.querySelectorAll(RO_LOCK_SEL).forEach(el=>{
+    el.classList.add('ro-lock');
+    if(el.tagName === 'SELECT' || el.tagName === 'BUTTON') el.disabled = true;
+    if(!el.title) el.title = '보기만 할 수 있습니다 — 시간표 담당 선생님께 문의해 주세요';
+  });
+}
+window.applyReadOnlyLock = applyReadOnlyLock;
+
+/* 화면이 다시 그려져도 잠금이 풀리지 않게 지켜본다 */
+function watchReadOnly(){
+  if(CAN_EDIT) return;
+  applyReadOnlyLock();
+  const mo = new MutationObserver(()=>applyReadOnlyLock());
+  mo.observe(document.body, { childList:true, subtree:true });
+}
+
 /* 개폐 안내 띠 그리기 */
 function renderAvailGate(){
   const box = document.getElementById('avail-gate'); if(!box) return;
@@ -1434,7 +1490,9 @@ onAuthStateChanged(auth, async user => {
         bar.innerHTML = `<span class="ro-ic">👀</span>
           <div><b>보기만 할 수 있습니다</b>
           <div class="ro-d">시간표를 짜는 일은 수퍼관리자와 지정된 담당자만 할 수 있습니다.
-            내 <b>수업 가능 시간</b>은 직접 고칠 수 있어요.</div></div>`;
+            ${INPUT_OPEN
+              ? '내 <b>수업 가능 시간</b>은 직접 고칠 수 있어요.'
+              : '지금은 <b>수업 가능 시간 입력도 닫혀</b> 있어, 모든 내용을 보기만 할 수 있습니다.'}</div></div>`;
       }
     }
     await loadTeachers();
@@ -1444,6 +1502,7 @@ onAuthStateChanged(auth, async user => {
     await loadGradeDept();
     renderSetBar();
     renderAvailGate();
+    watchReadOnly();   // 👀 권한 없으면 조작 요소를 잠근다
     await loadLessons();
     await loadPlace2();
 
@@ -2740,11 +2799,12 @@ function renderGradeDept(){
 
   const done = grades.filter(g=>deptOfGrade(gdFrameId,g)).length;
   box.innerHTML = `
-    <div class="gd-sum">${grades.length}개 학년 중 <b>${done}개</b> 배정됨</div>
+    <div class="gd-sum">${grades.length}개 학년 중 <b>${done}개</b> 배정됨
+      ${CAN_EDIT?'':'<span class="ro-note" style="margin-left:8px">👀 보기 전용</span>'}</div>
     <div class="gd-list">${rows}</div>
-    <div class="gd-quick">
+    ${CAN_EDIT?`<div class="gd-quick">
       ${depts.map(d=>`<button class="rm-modebtn" onclick="assignRestTo('${d.id}')">남은 학년을 ${esc(d.name)}${josaRo(d.name)}</button>`).join('')}
-    </div>`;
+    </div>`:''}`;
 }
 
 window.renderGradeDept = renderGradeDept;
@@ -3037,6 +3097,7 @@ window.duplicateSet = async function(id){
 };
 
 window.renameSet = async function(id){
+  if(!needEdit()) return;
   const s = SETS.find(x=>x.id===id); if(!s) return;
   if(!canEditSet(s)){ toast(`"${s.createdByName}" 선생님이 저장한 세트입니다. 이름을 바꿀 수 없어요.`,'err'); return; }
   const name = prompt('새 이름', s.name);
@@ -5503,6 +5564,7 @@ document.addEventListener('touchend', endPaint);
 document.addEventListener('touchcancel', endPaint);
 
 window.fillAll = function(mode){
+  if(!availEditGuard()) return;
   const a = AVAIL[curTeacher];
   DAYS.forEach(dy=>{
     if(mode==='no') SLOTS.forEach(m=>a[dy].add(m));
@@ -5511,6 +5573,7 @@ window.fillAll = function(mode){
   markDirty(); renderGrid();
 };
 window.copyMonToAll = function(){
+  if(!availEditGuard()) return;
   const a = AVAIL[curTeacher];
   const mon = new Set(a['월']);
   DAYS.forEach(dy=>{ if(dy!=='월'){ a[dy] = new Set(mon); } });
