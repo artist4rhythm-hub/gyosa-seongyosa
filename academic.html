@@ -206,6 +206,41 @@
     #cal-mount .cal-grid{ transform:scale(var(--acz)); transform-origin:top left; }
   }
 
+  /* ── 📚 캘린더 고르기 ── */
+  .cal-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+    padding:10px 13px;margin-bottom:12px;border-radius:12px;
+    background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA)}
+  .cb-lab{font-size:12.5px;font-weight:800;color:var(--gd,#1E3932);margin-right:2px}
+  .cb-chip{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:12px;
+    font-weight:700;padding:7px 13px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:9px;
+    background:var(--wh,#fff);color:var(--ts,#5A6560);cursor:pointer;white-space:nowrap}
+  .cb-chip i{width:9px;height:9px;border-radius:3px;background:var(--cc);display:inline-block;flex:none}
+  .cb-chip b{font-size:10px}
+  .cb-chip:hover{border-color:var(--cc)}
+  .cb-chip.on{background:var(--cc);border-color:var(--cc);color:#fff}
+  .cb-chip.on i{background:rgba(255,255,255,.85)}
+  .cb-note{font-size:11px;color:var(--tl,#93A09A);margin-left:auto}
+  @media(max-width:700px){ .cb-note{width:100%;margin-left:0} }
+
+  /* ── 🖐 옮기기 ── */
+  .vw-drag{font-family:inherit;font-size:11.5px;font-weight:700;padding:6px 11px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);
+    color:var(--ts,#5A6560);cursor:pointer;white-space:nowrap}
+  .vw-drag:hover{border-color:var(--gm,#00704A)}
+  .vw-drag.on{background:var(--goldd,#8A6410);border-color:var(--goldd,#8A6410);color:#fff}
+  body.drag-on .ev-bar.draggable{cursor:grab}
+  body.drag-on .ev-bar.draggable:active{cursor:grabbing}
+  body.drag-on .ev-bar.draggable{box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.5)}
+  .cwb.drop{background:var(--gl,#D4E9E2) !important;
+    box-shadow:inset 0 0 0 2px var(--gm,#00704A)}
+
+  /* ── 🔑 담당자 (캘린더별) ── */
+  .ed-block{padding:11px 0;border-top:1px solid var(--ivd,#E3E1DA)}
+  .ed-block:first-child{border-top:none;padding-top:0}
+  .ed-h{display:flex;align-items:center;gap:7px;margin-bottom:8px;font-size:12.5px;color:var(--gd,#1E3932)}
+  .ed-dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+  .ed-n{font-size:11px;font-weight:600;color:var(--tl,#93A09A);margin-left:auto}
+
   /* ── 보기 도구 막대 ── */
   .vw-bar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;
     padding:9px 12px;margin-bottom:12px;border-radius:11px;
@@ -236,14 +271,17 @@
     border-radius:11px;padding:10px 14px;margin-bottom:12px}
 
   /* ── 🌈 학년 색 점 ── */
-  .ev-dots{display:inline-flex;gap:2px;margin-left:4px;vertical-align:1px}
-  .ev-dots i{width:6px;height:6px;border-radius:50%;display:inline-block;
-    box-shadow:0 0 0 1px rgba(255,255,255,.6)}
-  .ev-org{display:inline-block;width:6px;height:6px;border-radius:2px;margin-right:4px;
-    vertical-align:1px;background:#fff;opacity:.9}
-  .ev-org.jihyebit{background:#C13FA5}
-  .ev-org.daniel{background:#2FB344}
-  .ev-org.both{width:auto;height:auto;background:none;font-size:9px}
+  /* 학년 동그라미 — 안에 숫자를 넣어 범례 없이도 알 수 있게 */
+  .ev-dots{display:inline-flex;gap:2px;margin-left:4px;flex-wrap:wrap;align-items:center}
+  .ev-dots i{min-width:14px;height:14px;padding:0 2px;border-radius:100px;display:inline-flex;
+    align-items:center;justify-content:center;font-style:normal;font-size:9px;font-weight:900;
+    color:#fff;line-height:1;box-shadow:0 0 0 1.2px rgba(255,255,255,.75)}
+  /* 어느 캘린더 것인지 */
+  .ev-org{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px;
+    flex:none;background:#fff;opacity:.95}
+  .ev-org.all{background:#FFFFFF}
+  .ev-org.daniel{background:#BDF5CE}
+  .ev-org.jihyebit{background:#E9D5FF}
 
   /* 반짝임 */
   @keyframes evGlowPulse{
@@ -490,10 +528,22 @@ const GRADE_ORDER = {
   daniel: ['1학년','2학년','3학년','4학년','5학년','6학년','7학년','8학년','9학년','10학년','11학년','12학년'],
   jihyebit: ['4세','5세','6세','7세'],
 };
-const ORGS = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
-const ORG_BOTH = 'both';    // 두 기관에 함께 적용되는 일정 (정기 휴가·방학 등)
-const ORG_ALL  = '__all__'; // 두 기관을 겹쳐서 함께 보는 상태 (보기 전용)
-const ORG_LABEL = o => o===ORG_BOTH ? '두 기관 공통' : (ORGS[o]||o);
+/* 📚 학사일정은 캘린더 세 개로 나눠 운영한다.
+     all      — DA 전체 일정 (두 기관 모두에 해당하는 일정)
+     daniel   — 다니엘 아마츠 학사일정
+     jihyebit — 지혜빛 선교원 학사일정
+   캘린더마다 고칠 수 있는 담당자를 따로 정한다. */
+const CALS = {
+  all:      { label:'DA 전체 일정',        short:'전체',   color:'#00704A' },
+  daniel:   { label:'다니엘 아마츠 학사일정', short:'다니엘', color:'#2FB344' },
+  jihyebit: { label:'지혜빛 선교원 학사일정', short:'지혜빛', color:'#8E4EC6' },
+};
+const CAL_KEYS = ['all','daniel','jihyebit'];
+const ORGS = { all:'DA 전체', daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const ORG_ALL = '__all__';   // 세 캘린더를 겹쳐서 함께 보는 상태
+/* 예전에 'both' 로 넣어둔 일정은 «DA 전체»로 읽는다 */
+function calOf(e){ const o = (e && e.org) || 'daniel'; return o === 'both' ? 'all' : o; }
+const ORG_LABEL = o => o===ORG_ALL ? '모든 캘린더' : ((CALS[o]&&CALS[o].label) || o);
 
 /* 부서 — 시간표 틀에 정해둔 부서(초등부·중등부·고등부)를 그대로 가져온다 */
 let DEPTS = [];
@@ -520,6 +570,7 @@ let curYear = new Date().getFullYear();
 let curMonth = new Date().getMonth()+1;
 let curView = 'teacher';
 let curTab = 'view';        // 'view' 보기 · 'edit' 편집
+let DRAG_ON = false;        // 끌어서 옮기기 (실수 방지를 위해 켤 때만 동작)
 let CAL_ZOOM = 100;         // 달력 크기 (%)
 const ZOOM_STEPS = [55,65,75,85,100,115,130,150,175,200];
 try { const z = parseInt(localStorage.getItem('ac_zoom')); if(z) CAL_ZOOM = z; } catch(e){}
@@ -528,15 +579,35 @@ let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
 const isSuper = () => !!CU && CU.role === 'super';
 
+/* 캘린더마다 담당자를 따로 둔다.
+   academicConfig/editors = { all:[uid…], daniel:[uid…], jihyebit:[uid…] }
+   예전에 { uids:[…] } 로 저장해둔 것은 세 캘린더 모두의 담당자로 읽는다. */
 async function loadEditors(){
-  let uids = [];
+  EDITORS = { all:[], daniel:[], jihyebit:[] };
   try {
     const s = await getDoc(doc(db,'academicConfig','editors'));
-    uids = (s.exists() && Array.isArray(s.data().uids)) ? s.data().uids : [];
+    if(s.exists()){
+      const d = s.data();
+      if(Array.isArray(d.uids)){                 // 예전 방식
+        CAL_KEYS.forEach(k=>{ EDITORS[k] = d.uids.slice(); });
+      }
+      CAL_KEYS.forEach(k=>{ if(Array.isArray(d[k])) EDITORS[k] = d[k].slice(); });
+    }
   } catch(e){}
-  EDITOR_UIDS = uids;
-  CAN_EDIT = isSuper() || CU?.role === 'org_admin' || uids.includes(CU?.uid);
+  refreshCanEdit();
 }
+
+/* 이 캘린더를 고칠 수 있는가 */
+function canEditCal(cal){
+  if(!CU || !cal || cal === ORG_ALL) return false;
+  if(CU.role === 'super') return true;                      // 수퍼는 전부
+  if(CU.role === 'org_admin' && cal === CU.org) return true; // 기관관리자는 자기 기관
+  return (EDITORS[cal]||[]).includes(CU.uid);               // 지정된 담당자
+}
+/* 어느 캘린더든 하나라도 고칠 수 있으면 편집 탭이 보인다 */
+function canEditAny(){ return CAL_KEYS.some(canEditCal); }
+
+function refreshCanEdit(){ CAN_EDIT = canEditCal(ORG); }
 function needEdit(){
   if(ORG === ORG_ALL){
     toast('두 기관을 겹쳐 보는 중에는 고칠 수 없습니다. 기관을 하나 골라주세요.','err');
@@ -614,12 +685,10 @@ async function loadEvents(year){
 
 /* 지금 고른 기관의 행사만 보여준다 */
 function applyEventScope(){
-  if(ORG === ORG_ALL){ EVENTS = ALL_EVENTS.slice(); return; }   // 두 기관 겹쳐보기
-  // 이 기관 것 + 두 기관 공통 것을 함께 보여준다
-  EVENTS = ALL_EVENTS.filter(e => {
-    const o = e.org || 'daniel';
-    return o === ORG || o === ORG_BOTH;
-  });
+  if(ORG === ORG_ALL){ EVENTS = ALL_EVENTS.slice(); return; }   // 세 캘린더 겹쳐보기
+  if(ORG === 'all'){ EVENTS = ALL_EVENTS.filter(e => calOf(e)==='all'); return; }
+  // 기관 캘린더를 볼 때는 «DA 전체»도 함께 보여준다 (두 기관 모두에 해당하니까)
+  EVENTS = ALL_EVENTS.filter(e => { const o = calOf(e); return o === ORG || o === 'all'; });
 }
 
 /* 그 날짜가 휴교인지 — 휴교로 넣어둔 일정이 덮고 있으면 그 이름 */
@@ -722,20 +791,26 @@ function weekBars(days, slot){
 }
 
 /* 대상 학년을 색 점으로 — 이름을 다 적으면 칸이 꽉 차서 뭉개진다 */
+/* 학년 이름에서 숫자만 (1학년→1, 12학년→12, 5세→5) */
+function gradeNum(g){
+  const m = String(g||'').match(/(\d+)/);
+  return m ? m[1] : String(g||'').slice(0,1);
+}
 function targetDots(e){
   if(!e.scope || e.scope==='all') return '';
   const list = e.targets||[];
   if(e.scope==='dept') return `<span class="ev-tgt">${esc('〈'+list.join('·')+'〉')}</span>`;
+  // 동그라미 안에 학년 숫자를 넣어 범례를 안 봐도 알 수 있게 한다
   return `<span class="ev-dots">${list.map(g=>
-    `<i style="background:${gradeColor(g)}" title="${esc(g)}"></i>`).join('')}</span>`;
+    `<i style="background:${gradeColor(g)}" title="${esc(g)}">${esc(gradeNum(g))}</i>`).join('')}</span>`;
 }
 
 /* 두 기관을 겹쳐 볼 때 어느 기관 것인지 표시 */
 function orgMark(e){
-  if(ORG !== ORG_ALL) return '';
-  const o = e.org || 'daniel';
-  if(o === ORG_BOTH) return '<span class="ev-org both" title="두 기관 공통">🤝</span>';
-  return `<span class="ev-org ${o}" title="${esc(ORGS[o]||'')}"></span>`;
+  const o = calOf(e);
+  // 겹쳐 볼 때, 그리고 기관 캘린더에 섞여 나오는 «DA 전체» 일정에 표시를 붙인다
+  if(ORG !== ORG_ALL && !(o === 'all' && ORG !== 'all')) return '';
+  return `<span class="ev-org ${o}" title="${esc((CALS[o]||{}).label||'')}"></span>`;
 }
 
 /* 칸의 행사를 눌렀을 때 — 보기 탭이면 상세 카드, 편집 탭이면 편집 창 */
@@ -745,12 +820,15 @@ window.onEvClick = function(id, ev){
   else openEvInfo(id);
 };
 
-function barHTML(b){
+function barHTML(b, days){
   const e = b.ev;
-  const cls = (b.span>1) ? 'ev-bar wide' : 'ev-bar';
-  return `<div class="${cls}" data-ev="${e.id}"
+  const canDrag = DRAG_ON && CAN_EDIT && canEditCal(calOf(e));
+  const fromDs = (days && days[b.start]) ? days[b.start].ds : '';
+  const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'');
+  return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}"
+    ${canDrag?`draggable="true" ondragstart="onBarDrag(event,'${e.id}','${fromDs}')"`:''}
     style="grid-column:${b.start+1} / span ${b.span};background:${evColor(e)}"
-    title="${esc(e.title)}${e.subtitle?' · '+esc(e.subtitle):''}"
+    title="${esc(e.title)}${e.subtitle?' · '+esc(e.subtitle):''}${canDrag?'\n끌어서 날짜를 옮길 수 있어요':''}"
     onclick="onEvClick('${e.id}', event)">${orgMark(e)}<span class="eb-t">${esc(e.title)}</span>${
     e.subtitle && b.span>1 ? `<span class="eb-s">${esc(e.subtitle)}</span>` : ''}${targetDots(e)}</div>`;
 }
@@ -806,7 +884,9 @@ function render(){
       ? `<div class="cw-wk break"><span class="wknum">${esc(brk)}</span></div>`
       : `<div class="cw-wk"><span class="wknum">${wknum}</span><span>주</span></div>`;
 
-    html += '<div class="cw-body">';
+    const dsList = days.map(x=>x?x.ds:'').join(',');
+    html += `<div class="cw-body" data-days="${dsList}"
+      ondragover="onWeekOver(event)" ondragleave="onWeekLeave(event)" ondrop="onWeekDrop(event)">`;
 
     // 바탕 (주말·공휴일 칠)
     html += '<div class="cw-bg">' + days.map((x,i)=>{
@@ -835,7 +915,7 @@ function render(){
       html += '<div class="cw-lanes">';
       if(lanes.length){
         lanes.forEach(lane=>{
-          html += '<div class="cw-lane">' + lane.map(barHTML).join('') + '</div>';
+          html += '<div class="cw-lane">' + lane.map(b=>barHTML(b, days)).join('') + '</div>';
         });
       } else {
         html += '<div class="cw-lane empty"></div>';
@@ -1098,7 +1178,7 @@ window.openEventDlg = function(id, ds, slot){
   dlgWeekdays = new Set(e ? (e.weekdays||[]) : []);
   dlgScope = e ? (e.scope||'all') : 'all';
   dlgColor = e ? (e.color||'') : '';
-  dlgOrg = e ? (e.org || 'daniel') : ORG;
+  dlgOrg = e ? calOf(e) : (canEditCal(ORG) ? ORG : (CAL_KEYS.find(canEditCal) || 'daniel'));
   curOrg = ORG;
 
   const ov = document.createElement('div');
@@ -1108,15 +1188,13 @@ window.openEventDlg = function(id, ds, slot){
       <div class="mtitle">${e?'행사 고치기':'행사 추가'}</div>
       <div class="msub">기간·시간대·대상을 정하면 달력에 그대로 표시됩니다.</div>
 
-      <label class="fld-label">어느 기관 일정인가요?</label>
+      <label class="fld-label">어느 캘린더에 넣을까요?</label>
       <div class="chips" id="ev-org">
-        ${myOrgs().map(o=>`<button type="button" class="chip ${dlgOrg===o?'on':''}" data-org="${o}"
-          onclick="pickEvOrg('${o}')">${ORGS[o]}</button>`).join('')}
-        ${myOrgs().length>1?`<button type="button" class="chip ${dlgOrg===ORG_BOTH?'on':''}" data-org="${ORG_BOTH}"
-          onclick="pickEvOrg('${ORG_BOTH}')">🤝 두 기관 공통</button>`:''}
+        ${CAL_KEYS.filter(canEditCal).map(k=>`<button type="button" class="chip ${dlgOrg===k?'on':''}"
+          data-org="${k}" onclick="pickEvOrg('${k}')">${esc(CALS[k].label)}</button>`).join('')}
       </div>
       <div style="font-size:11px;color:var(--tl,#93A09A);margin-top:5px;line-height:1.6">
-        정기 휴가·방학처럼 두 기관이 <b>똑같이 쉬는 일정</b>은 «두 기관 공통»으로 넣으면 양쪽 달력에 함께 나옵니다.</div>
+        정기 휴가·방학처럼 두 기관이 <b>똑같이 쉬는 일정</b>은 «DA 전체 일정»에 넣으면 양쪽 달력에 함께 나옵니다.</div>
 
       <label class="fld-label">제목</label>
       <input class="fld-input" id="ev-title" value="${esc(e?e.title:'')}" placeholder="예: 신년 수양회">
@@ -1235,9 +1313,9 @@ function renderTargetPicker(){
   const box = $I('ev-targets'); if(!box) return;
   if(dlgScope==='all'){ box.innerHTML=''; return; }
   const list = dlgScope==='dept' ? DEPTS
-    : (dlgOrg===ORG_BOTH
+    : (dlgOrg==='all'
         ? [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])]
-        : (GRADE_ORDER[dlgOrg]||[]));
+        : (GRADE_ORDER[dlgOrg] || GRADE_ORDER.daniel || []));
   box.innerHTML = `<div class="chips">${list.map(v=>
     `<button type="button" class="chip ${dlgTargets.has(v)?'on':''}" onclick="toggleTarget('${esc(v)}')">${esc(v)}</button>`).join('')}</div>`;
 }
@@ -1264,7 +1342,7 @@ window.saveEvent = async function(){
     weekdays: [...dlgWeekdays].sort(),
     scope: dlgScope,
     targets: dlgScope==='all' ? [] : [...dlgTargets],
-    org: dlgOrg,                    // 이 행사가 속한 기관 ('both' = 두 기관 공통)
+    org: dlgOrg,                    // 이 행사가 속한 캘린더
     category: cat,
     color: dlgColor || '',
     audience: aud,
@@ -1396,7 +1474,7 @@ window.openEvInfo = function(id){
       <div class="evi-tags">
         <span class="evi-tag" style="background:${cat.color}">${cat.label}</span>
         <span class="evi-tag lite">${TIME_SLOTS[e.timeOfDay]||''}</span>
-        ${org===ORG_BOTH
+        ${org==='all'
           ? '<span class="evi-tag lite">🤝 두 기관 공통</span>'
           : `<span class="evi-tag lite">${esc(ORGS[org]||'')}</span>`}
         ${e.audience==='teacher'?'<span class="evi-tag lite">교사만</span>':''}
@@ -1437,6 +1515,88 @@ window.openEvInfo = function(id){
 document.addEventListener('keydown', e=>{
   if(e.key === 'Escape' && document.getElementById('ev-info')) closeEvInfo();
 });
+
+/* ═══════════════════════════════════════════════
+   🖐 끌어서 날짜 옮기기
+   실수로 옮기는 걸 막으려고 «옮기기»를 켰을 때만 끌 수 있다.
+   며칠짜리 행사는 통째로 같은 날수만큼 밀린다.
+   ═══════════════════════════════════════════════ */
+let dragInfo = null;
+
+window.toggleDrag = function(){
+  if(!CAN_EDIT){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); return; }
+  DRAG_ON = !DRAG_ON;
+  document.body.classList.toggle('drag-on', DRAG_ON);
+  renderViewBar(); render();
+  toast(DRAG_ON ? '옮기기를 켰습니다 — 행사를 끌어서 날짜를 바꿀 수 있어요'
+                : '옮기기를 껐습니다','ok');
+};
+
+window.onBarDrag = function(ev, id, fromDs){
+  dragInfo = { id, fromDs };
+  try {
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData('text/plain', id);
+  } catch(e){}
+};
+
+/* 마우스가 어느 날짜 칸 위에 있는지 */
+function dayAt(body, clientX){
+  const list = (body.dataset.days||'').split(',');
+  const r = body.getBoundingClientRect();
+  const i = Math.max(0, Math.min(6, Math.floor((clientX - r.left) / (r.width/7))));
+  return { idx:i, ds:list[i]||'' };
+}
+
+window.onWeekOver = function(ev){
+  if(!dragInfo) return;
+  ev.preventDefault();
+  try { ev.dataTransfer.dropEffect = 'move'; } catch(e){}
+  const body = ev.currentTarget;
+  const { idx, ds } = dayAt(body, ev.clientX);
+  body.querySelectorAll('.cwb').forEach((c,i)=> c.classList.toggle('drop', i===idx && !!ds));
+};
+window.onWeekLeave = function(ev){
+  ev.currentTarget.querySelectorAll('.cwb.drop').forEach(c=>c.classList.remove('drop'));
+};
+
+window.onWeekDrop = async function(ev){
+  ev.preventDefault();
+  const body = ev.currentTarget;
+  body.querySelectorAll('.cwb.drop').forEach(c=>c.classList.remove('drop'));
+  if(!dragInfo) return;
+  const info = dragInfo; dragInfo = null;
+
+  const { ds } = dayAt(body, ev.clientX);
+  if(!ds || ds === info.fromDs) return;
+
+  const e = EVENTS.find(x=>x.id===info.id);
+  if(!e) return;
+  if(!canEditCal(calOf(e))){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); return; }
+
+  // 며칠 밀렸는지
+  const delta = Math.round(
+    (new Date(ds+'T00:00:00') - new Date(info.fromDs+'T00:00:00')) / 86400000);
+  if(!delta) return;
+
+  const shift = (d, n) => {
+    const t = new Date(d+'T00:00:00');
+    t.setDate(t.getDate()+n);
+    return `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+  };
+  const ns = shift(e.startDate, delta), ne = shift(e.endDate, delta);
+
+  try {
+    await updateDoc(doc(db,'academicEvents', e.id), {
+      startDate: ns, endDate: ne,
+      year: Number(ns.slice(0,4)),
+      updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
+    });
+    await loadEvents(curYear);
+    render();
+    toast(`"${e.title}" ${delta>0?`${delta}일 뒤로`:`${-delta}일 앞으로`} 옮겼습니다 ✓`,'ok');
+  } catch(err){ toast('옮기기 실패: '+(err.message||''),'err'); }
+};
 
 /* ═══════════════════════════════════════════════
    📐 보기 도구 — 크기 조절 · 한 화면 맞춤
@@ -1481,6 +1641,8 @@ function renderViewBar(){
       <button class="${curView==='teacher'?'on':''}" onclick="setView('teacher')">교사용</button>
       <button class="${curView==='parent'?'on':''}" onclick="setView('parent')">학부모용</button>
     </div>
+    ${CAN_EDIT?`<button class="vw-drag ${DRAG_ON?'on':''}" onclick="toggleDrag()"
+      title="켜면 행사를 끌어서 날짜를 옮길 수 있어요">🖐 옮기기 ${DRAG_ON?'켬':'끔'}</button>`:''}
     <span class="vw-theme">
       <span class="vw-lab">색</span>
       ${Object.entries(COLOR_THEMES).map(([k,v])=>{
@@ -1517,7 +1679,7 @@ function renderGradeLegend(){
    🗂 탭 — 보기 · 편집
    ═══════════════════════════════════════════════ */
 window.showAcTab = function(t){
-  if(t === 'edit' && !CAN_EDIT) return;
+  if(t === 'edit' && !canEditAny()) return;
   curTab = t;
   document.querySelectorAll('#topTabs .tab-main').forEach(b=>
     b.classList.toggle('on', b.dataset.tab === t));
@@ -1536,7 +1698,7 @@ function renderTabs(){
   tb.innerHTML = `
     <button class="tab-main ${curTab==='view'?'on':''}" data-tab="view" onclick="showAcTab('view')">
       <span class="tab-ic">📅</span>학사일정</button>
-    ${CAN_EDIT?`<button class="tab-main ${curTab==='edit'?'on':''}" data-tab="edit" onclick="showAcTab('edit')">
+    ${canEditAny()?`<button class="tab-main ${curTab==='edit'?'on':''}" data-tab="edit" onclick="showAcTab('edit')">
       <span class="tab-ic">✏️</span>일정 편집</button>`:''}`;
 }
 
@@ -1553,7 +1715,7 @@ function renderClosedPanel(){
     ? list.map(e=>`<div class="tb-row">
         <span class="tb-nm">🚫 ${esc(e.title)}</span>
         <span class="tb-dt">${esc(e.startDate)}${e.endDate!==e.startDate?` ~ ${esc(e.endDate)}`:''}</span>
-        ${e.org===ORG_BOTH?'<span class="tb-dt" style="color:var(--gm,#00704A);font-weight:700">🤝 두 기관</span>':''}
+        ${e.org==='all'?'<span class="tb-dt" style="color:var(--gm,#00704A);font-weight:700">🤝 두 기관</span>':''}
         <span class="tb-act">
           <button class="btn btn-sm" onclick="openEventDlg('${e.id}')">✏️ 고치기</button>
           <button class="btn btn-sm btn-dg" onclick="delEvent('${e.id}')">🗑</button>
@@ -1579,7 +1741,7 @@ window.openClosedDlg = function(){
    🔑 담당자 지정 (수퍼관리자)
    ═══════════════════════════════════════════════ */
 let STAFF_LIST = [];
-let EDITOR_UIDS = [];
+let EDITORS = { all:[], daniel:[], jihyebit:[] };
 
 async function loadStaffList(){
   if(!isSuper()) return;
@@ -1595,33 +1757,49 @@ function renderEditorPanel(){
   const p = $I('editor-panel');
   if(!isSuper() || curTab !== 'edit'){ p.style.display='none'; return; }
   p.style.display='';
-  const rows = STAFF_LIST.map(s=>{
-    const always = s.role==='super' || s.role==='org_admin';
-    const on = always || EDITOR_UIDS.includes(s.uid);
-    return `<button type="button" class="chip ${on?'on':''}" ${always?'disabled title="관리자는 늘 고칠 수 있어요"':''}
-      style="${always?'opacity:.6;cursor:default':''}"
-      onclick="toggleEditor('${s.uid}')">${esc(s.name)}${always?' 🔒':''}</button>`;
+
+  const blocks = CAL_KEYS.map(cal=>{
+    const c = CALS[cal];
+    const rows = STAFF_LIST.map(s=>{
+      const always = s.role==='super' || (s.role==='org_admin' && cal===s.org);
+      const on = always || (EDITORS[cal]||[]).includes(s.uid);
+      return `<button type="button" class="chip ${on?'on':''}"
+        ${always?'disabled title="관리자는 늘 고칠 수 있어요"':''}
+        style="${always?'opacity:.6;cursor:default':''}"
+        onclick="toggleEditor('${cal}','${s.uid}')">${esc(s.name)}${always?' 🔒':''}</button>`;
+    }).join('');
+    return `<div class="ed-block">
+      <div class="ed-h"><span class="ed-dot" style="background:${c.color}"></span>
+        <b>${esc(c.label)}</b>
+        <span class="ed-n">담당자 ${(EDITORS[cal]||[]).length}명</span></div>
+      <div class="chips">${rows || '<span class="tb-none">교직원이 없습니다.</span>'}</div>
+    </div>`;
   }).join('');
-  $I('editor-list').innerHTML = `<div class="chips">${rows || '<span class="tb-none">교직원이 없습니다.</span>'}</div>
-    <div style="font-size:11.5px;color:var(--tl,#93A09A);margin-top:10px;line-height:1.6">
-      🔒 표시는 수퍼관리자·기관관리자 — 따로 고르지 않아도 편집할 수 있습니다.<br>
-      지금 담당자: <b>${EDITOR_UIDS.length}명</b></div>`;
+
+  $I('editor-list').innerHTML = blocks + `
+    <div style="font-size:11.5px;color:var(--tl,#93A09A);margin-top:12px;line-height:1.7">
+      🔒 표시는 수퍼관리자(전체)와 그 기관의 기관관리자 — 따로 고르지 않아도 편집할 수 있습니다.<br>
+      캘린더마다 담당자를 따로 정할 수 있어요. 예를 들어 지혜빛 담당 선생님은 지혜빛 캘린더만 고치게 됩니다.</div>`;
 }
 
-window.toggleEditor = async function(uid){
+window.toggleEditor = async function(cal, uid){
   if(!isSuper()){ toast('수퍼관리자만 담당자를 정할 수 있습니다.','err'); return; }
+  if(!CALS[cal]) return;
   const s = STAFF_LIST.find(x=>x.uid===uid);
-  if(s && (s.role==='super' || s.role==='org_admin')) return;
-  EDITOR_UIDS = EDITOR_UIDS.includes(uid)
-    ? EDITOR_UIDS.filter(u=>u!==uid) : [...EDITOR_UIDS, uid];
+  if(s && (s.role==='super' || (s.role==='org_admin' && cal===s.org))) return;
+
+  const cur = EDITORS[cal] || [];
+  EDITORS[cal] = cur.includes(uid) ? cur.filter(u=>u!==uid) : [...cur, uid];
   try {
     await setDoc(doc(db,'academicConfig','editors'), {
-      uids: EDITOR_UIDS,
+      all: EDITORS.all, daniel: EDITORS.daniel, jihyebit: EDITORS.jihyebit,
       updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
     }, { merge:true });
+    refreshCanEdit();
     renderEditorPanel();
-    toast(EDITOR_UIDS.includes(uid) ? `${s?.name||''} 담당자로 지정했습니다 ✓`
-                                    : `${s?.name||''} 담당자에서 뺐습니다`,'ok');
+    toast(EDITORS[cal].includes(uid)
+      ? `${s?.name||''} — ${CALS[cal].short} 담당자로 지정했습니다 ✓`
+      : `${s?.name||''} — ${CALS[cal].short} 담당자에서 뺐습니다`,'ok');
   } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
 };
 
@@ -1636,9 +1814,29 @@ function myOrgs(){
   return list;
 }
 
-/* 기관을 바꾸면 그 기관의 학년도·행사로 갈아 끼운다 */
+/* 캘린더 고르기 막대 */
+function renderCalBar(){
+  const box = $I('org-bar'); if(!box) return;
+  const items = [[ORG_ALL,'🔗 모두 보기','#5A6560'], ...CAL_KEYS.map(k=>[k, CALS[k].label, CALS[k].color])];
+  box.innerHTML = `<div class="cal-bar">
+    <span class="cb-lab">📚 캘린더</span>
+    ${items.map(([k,label,color])=>{
+      const on = ORG===k;
+      const editable = k!==ORG_ALL && canEditCal(k);
+      return `<button class="cb-chip ${on?'on':''}" style="--cc:${color}"
+        onclick="switchOrg('${k}')"><i></i>${esc(label)}${editable?'<b title="고칠 수 있어요">✏️</b>':''}</button>`;
+    }).join('')}
+    <span class="cb-note">${ORG===ORG_ALL ? '세 캘린더를 겹쳐 보는 중 — 고치려면 하나를 골라주세요'
+      : (CAN_EDIT ? '이 캘린더를 고칠 수 있습니다' : '보기만 할 수 있습니다')}</span>
+  </div>`;
+}
+
+/* 캘린더를 바꾸면 그 캘린더의 학년도·행사로 갈아 끼운다 */
 async function switchOrg(o){
-  ORG = o; curOrg = o;
+  ORG = o; curOrg = (o===ORG_ALL || o==='all') ? 'daniel' : o;
+  try { localStorage.setItem('academic_cal', o); } catch(e){}
+  refreshCanEdit();
+  if(curTab==='edit' && !CAN_EDIT) curTab = 'view';
   applyYearScope();
   // 이 기관에 그 학년도가 없으면 가장 가까운 것으로
   if(YEARS.length && !YEARS.some(y=>String(y.year)===String(curYear))){
@@ -1646,7 +1844,10 @@ async function switchOrg(o){
   }
   await loadYear(curYear);
   await loadEvents(curYear);
+  renderCalBar();
+  renderTabs();
   renderYearBar();
+  renderViewBar();
   render();
 }
 window.switchOrg = switchOrg;
@@ -1667,6 +1868,11 @@ Object.defineProperty(window, 'YEARS', { get:()=>YEARS });
 window.myOrgs = myOrgs;
 Object.defineProperty(window, 'curTab', { get:()=>curTab });
 Object.defineProperty(window, 'CAL_ZOOM', { get:()=>CAL_ZOOM });
+Object.defineProperty(window, 'DRAG_ON', { get:()=>DRAG_ON });
+Object.defineProperty(window, 'EDITORS', { get:()=>EDITORS });
+window.canEditCal = canEditCal;
+window.canEditAny = canEditAny;
+window.calOf = calOf;
 
 /* ═══════════════════════════════════════════════
    시작
@@ -1692,16 +1898,13 @@ onAuthStateChanged(auth, async user => {
     await loadStaffList();
     await loadDepts();
 
-    // 기관 고르기 — 지혜빛 선교원과 다니엘 아마츠는 학사일정이 서로 다르다
-    const orgs = myOrgs();
-    ORG = orgs[0] || 'daniel';
-    if(window.OrgBar){
-      ORG = OrgBar.init({
-        orgs, labels: ORGS, storeKey: 'academic_org',
-        allowAll: true,                    // 두 기관을 겹쳐 볼 수 있게
-        onChange: (o)=> switchOrg(o),
-      }) || ORG;
-    }
+    // 캘린더 고르기 — 세 캘린더를 개별로 보거나 겹쳐 볼 수 있다
+    try {
+      const saved = localStorage.getItem('academic_cal');
+      if(saved && (CALS[saved] || saved===ORG_ALL)) ORG = saved;
+      else ORG = (CU.org && CALS[CU.org]) ? CU.org : 'daniel';
+    } catch(e){ ORG = 'daniel'; }
+    refreshCanEdit();
     curOrg = ORG;
 
     await loadYears();
@@ -1713,15 +1916,16 @@ onAuthStateChanged(auth, async user => {
     await loadYear(curYear);
     await loadEvents(curYear);
 
-    if(!CAN_EDIT){
+    if(!canEditAny()){
       $I('ro-mount').innerHTML = `<div class="ro-bar"><span style="font-size:19px">👀</span>
         <div><b>보기만 할 수 있습니다</b>
-        <div class="ro-d">학사일정은 수퍼관리자·기관관리자와 지정된 담당자가 관리합니다.
+        <div class="ro-d">학사일정은 수퍼관리자와 캘린더마다 지정된 담당자가 관리합니다.
           행사를 누르면 자세한 내용을 볼 수 있어요.</div></div></div>`;
     }
 
     $I('gate').style.display='none';
     $I('ms').style.display='block';
+    renderCalBar();
     renderTabs();
     showAcTab('view');          // 처음엔 보기 화면
     renderYearBar();
