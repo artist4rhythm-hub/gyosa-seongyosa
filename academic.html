@@ -187,6 +187,7 @@
   <div class="ac-wrap">
 
     <div id="ro-mount"></div>
+    <div id="org-bar"></div>
 
     <div class="ac-head">
       <h1 class="ac-title">📅 학사일정</h1>
@@ -216,7 +217,7 @@
 
     <!-- 담당자: 학기·방학 골격 -->
     <div class="panel" id="term-panel" style="display:none">
-      <div class="ptitle">🗂 학기 · 방학
+      <div class="ptitle">🗂 <span id="tp-org"></span> 학기 · 방학
         <span style="margin-left:auto;display:flex;gap:6px">
           <button class="btn btn-sm" onclick="openTermDlg('term')">+ 학기 추가</button>
           <button class="btn btn-sm" onclick="openTermDlg('break')">+ 방학 추가</button>
@@ -330,7 +331,8 @@ let EVENTS = [];
 let curYear = new Date().getFullYear();
 let curMonth = new Date().getMonth()+1;
 let curView = 'teacher';
-let curOrg = 'daniel';
+let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
+let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
 const isSuper = () => !!CU && CU.role === 'super';
 
@@ -351,18 +353,34 @@ function needEdit(){
 /* ═══════════════════════════════════════════════
    불러오기 · 저장
    ═══════════════════════════════════════════════ */
+/* 기관마다 학사일정이 따로 돌아간다.
+   지혜빛 선교원과 다니엘 아마츠는 학기·방학·행사가 서로 달라서
+   문서를 기관별로 나눠 담는다.  academicYears/{기관}_{연도} */
+function yearDocId(year, org){ return `${org || ORG}_${year}`; }
+
+let ALL_YEARS = [];   // 모든 기관의 학년도 (원본)
+
 async function loadYears(){
-  YEARS = [];
+  ALL_YEARS = [];
   try {
     const snap = await getDocs(collection(db,'academicYears'));
-    YEARS = snap.docs.map(d=>({ id:d.id, ...d.data() }))
-      .sort((a,b)=>(b.year||0)-(a.year||0));
+    ALL_YEARS = snap.docs.map(d=>({ id:d.id, ...d.data() }));
   } catch(e){}
+  applyYearScope();
+}
+
+/* 지금 고른 기관의 학년도만 추린다 */
+function applyYearScope(){
+  YEARS = ALL_YEARS
+    .filter(y => (y.org || 'daniel') === ORG)
+    .sort((a,b)=>(b.year||0)-(a.year||0));
 }
 
 async function loadYear(year){
   YEAR_INFO = { year, label:`${year}학년도`, terms:[], breaks:[] };
-  const hit = YEARS.find(y=>String(y.year)===String(year));
+  let hit = ALL_YEARS.find(y=> y.id === yearDocId(year));
+  // 기관을 나누기 전에 만든 문서(문서ID가 연도만)도 읽어준다
+  if(!hit && ORG === 'daniel') hit = ALL_YEARS.find(y=> y.id === String(year) && !y.org);
   if(hit){
     YEAR_INFO = { year:hit.year, label:hit.label||`${year}학년도`,
       terms: hit.terms||[], breaks: hit.breaks||[] };
@@ -372,8 +390,9 @@ async function loadYear(year){
 async function saveYear(){
   if(!needEdit()) return;
   try {
-    await setDoc(doc(db,'academicYears', String(YEAR_INFO.year)), {
+    await setDoc(doc(db,'academicYears', yearDocId(YEAR_INFO.year)), {
       year: Number(YEAR_INFO.year),
+      org: ORG,
       label: YEAR_INFO.label || `${YEAR_INFO.year}학년도`,
       terms: YEAR_INFO.terms, breaks: YEAR_INFO.breaks,
       weekStart: 'sun',
@@ -383,12 +402,20 @@ async function saveYear(){
   } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
 }
 
+let ALL_EVENTS = [];
+
 async function loadEvents(year){
-  EVENTS = [];
+  ALL_EVENTS = [];
   try {
     const snap = await getDocs(query(collection(db,'academicEvents'), where('year','==',Number(year))));
-    EVENTS = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    ALL_EVENTS = snap.docs.map(d=>({ id:d.id, ...d.data() }));
   } catch(e){}
+  applyEventScope();
+}
+
+/* 지금 고른 기관의 행사만 보여준다 */
+function applyEventScope(){
+  EVENTS = ALL_EVENTS.filter(e => (e.org || 'daniel') === ORG);
 }
 
 /* ═══════════════════════════════════════════════
@@ -431,7 +458,7 @@ function evColor(e){ return e.color || (CATEGORIES[e.category]||CATEGORIES.event
 function render(){
   const y=curYear, m=curMonth;
   $I('ym-main').textContent = `${y}년 ${m}월`;
-  $I('ym-sub').textContent = curView==='teacher'?'교사용 · 상세':'학부모용 · 안내';
+  $I('ym-sub').textContent = `${ORGS[ORG]||''} · ${curView==='teacher'?'교사용':'학부모용'}`;
   document.body.classList.toggle('can-edit', CAN_EDIT);
 
   const holidays = getHolidaysKR(y);
@@ -542,13 +569,14 @@ function renderYearBar(){
   if(!opts.includes(curYear)) opts.unshift(curYear);
   sel.innerHTML = opts.map(y=>`<option value="${y}" ${y===curYear?'selected':''}>${y}학년도</option>`).join('');
 
-  const exists = YEARS.some(y=>String(y.year)===String(curYear));
+  const exists = YEARS.some(y=>String(y.year)===String(curYear))
+    || (ORG==='daniel' && ALL_YEARS.some(y=>y.id===String(curYear) && !y.org));
   $I('yr-note').textContent = exists
     ? `학기 ${(YEAR_INFO.terms||[]).length}개 · 방학 ${(YEAR_INFO.breaks||[]).length}개`
-    : '아직 만들지 않은 학년도입니다';
+    : `${ORGS[ORG]||''}에 아직 만들지 않은 학년도입니다`;
 
   $I('yr-act').innerHTML = CAN_EDIT
-    ? (exists ? '' : `<button class="btn btn-sm btn-p" onclick="createYear()">＋ ${curYear}학년도 만들기</button>`)
+    ? (exists ? '' : `<button class="btn btn-sm btn-p" onclick="createYear()">＋ ${ORGS[ORG]||''} ${curYear}학년도 만들기</button>`)
       + `<button class="btn btn-sm" onclick="newYearPrompt()">다른 학년도 추가</button>`
     : '';
 }
@@ -587,6 +615,7 @@ function renderTermPanel(){
   const p = $I('term-panel');
   if(!CAN_EDIT){ p.style.display='none'; return; }
   p.style.display='';
+  const to = $I('tp-org'); if(to) to.textContent = ORGS[ORG]||'';
   const rows = [];
   (YEAR_INFO.terms||[]).forEach((t,i)=>{
     rows.push(`<div class="tb-row">
@@ -701,7 +730,7 @@ window.openEventDlg = function(id, ds, slot){
   dlgWeekdays = new Set(e ? (e.weekdays||[]) : []);
   dlgScope = e ? (e.scope||'all') : 'all';
   dlgColor = e ? (e.color||'') : '';
-  curOrg = e ? (e.org||'daniel') : curOrg;
+  curOrg = ORG;
 
   const ov = document.createElement('div');
   ov.className='mov'; ov.id='ev-mod';
@@ -826,12 +855,8 @@ window.toggleTarget = function(v){
 function renderTargetPicker(){
   const box = $I('ev-targets'); if(!box) return;
   if(dlgScope==='all'){ box.innerHTML=''; return; }
-  const list = dlgScope==='dept' ? DEPTS : (GRADE_ORDER[curOrg]||[]);
-  const orgBar = dlgScope==='grade'
-    ? `<div class="chips" style="margin-bottom:6px">${Object.entries(ORGS).map(([k,v])=>
-        `<button type="button" class="chip ${curOrg===k?'on':''}" onclick="pickOrg('${k}')">${v}</button>`).join('')}</div>`
-    : '';
-  box.innerHTML = orgBar + `<div class="chips">${list.map(v=>
+  const list = dlgScope==='dept' ? DEPTS : (GRADE_ORDER[ORG]||[]);
+  box.innerHTML = `<div class="chips">${list.map(v=>
     `<button type="button" class="chip ${dlgTargets.has(v)?'on':''}" onclick="toggleTarget('${esc(v)}')">${esc(v)}</button>`).join('')}</div>`;
 }
 window.pickOrg = function(k){ curOrg = k; renderTargetPicker(); };
@@ -857,7 +882,7 @@ window.saveEvent = async function(){
     weekdays: [...dlgWeekdays].sort(),
     scope: dlgScope,
     targets: dlgScope==='all' ? [] : [...dlgTargets],
-    org: dlgScope==='grade' ? curOrg : '',
+    org: ORG,                       // 이 행사가 속한 기관
     category: cat,
     color: dlgColor || '',
     audience: aud,
@@ -933,6 +958,33 @@ window.setView = function(v){
   render();
 };
 
+/* 이 사람이 볼 수 있는 기관 */
+function myOrgs(){
+  if(!CU) return ['daniel'];
+  let list = (CU.role==='super')
+    ? ['daniel','jihyebit']
+    : ((CU.orgs && CU.orgs.length) ? CU.orgs.slice() : (CU.org ? [CU.org] : []));
+  if(!list.length) list = ['daniel'];
+  // 내 소속 기관을 앞에 둔다 — 처음 열었을 때 익숙한 쪽이 먼저 보이게
+  if(CU.org && list.includes(CU.org)) list = [CU.org, ...list.filter(o=>o!==CU.org)];
+  return list;
+}
+
+/* 기관을 바꾸면 그 기관의 학년도·행사로 갈아 끼운다 */
+async function switchOrg(o){
+  ORG = o; curOrg = o;
+  applyYearScope();
+  // 이 기관에 그 학년도가 없으면 가장 가까운 것으로
+  if(YEARS.length && !YEARS.some(y=>String(y.year)===String(curYear))){
+    curYear = YEARS[0].year;
+  }
+  await loadYear(curYear);
+  await loadEvents(curYear);
+  renderYearBar();
+  render();
+}
+window.switchOrg = switchOrg;
+
 /* 화면에서 부르거나 확인할 수 있게 밖으로 내어둔다 */
 window.render = render;
 window.eventsOn = eventsOn;
@@ -944,6 +996,9 @@ Object.defineProperty(window, 'curYear', { get:()=>curYear, set:v=>{curYear=v;} 
 Object.defineProperty(window, 'curMonth', { get:()=>curMonth, set:v=>{curMonth=v;} });
 Object.defineProperty(window, 'curView', { get:()=>curView });
 Object.defineProperty(window, 'CAN_EDIT', { get:()=>CAN_EDIT });
+Object.defineProperty(window, 'ORG', { get:()=>ORG });
+Object.defineProperty(window, 'YEARS', { get:()=>YEARS });
+window.myOrgs = myOrgs;
 
 /* ═══════════════════════════════════════════════
    시작
@@ -967,6 +1022,18 @@ onAuthStateChanged(auth, async user => {
 
     await loadEditors();
     await loadDepts();
+
+    // 기관 고르기 — 지혜빛 선교원과 다니엘 아마츠는 학사일정이 서로 다르다
+    const orgs = myOrgs();
+    ORG = orgs[0] || 'daniel';
+    if(window.OrgBar){
+      ORG = OrgBar.init({
+        orgs, labels: ORGS, storeKey: 'academic_org',
+        onChange: (o)=> switchOrg(o),
+      }) || ORG;
+    }
+    curOrg = ORG;
+
     await loadYears();
 
     // 만들어 둔 학년도가 있으면 올해에 가장 가까운 것으로 시작
@@ -994,6 +1061,7 @@ onAuthStateChanged(auth, async user => {
 });
 </script>
 
+<script src="org-bar.js"></script>
 <script src="loading.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
