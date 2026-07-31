@@ -48,6 +48,33 @@
   .pb-sel{font-family:inherit;font-size:12.5px;padding:7px 11px;border:1px solid var(--ivd,#E3E1DA);
     border-radius:8px;background:var(--wh,#fff);color:var(--ink);min-width:200px}
   .pb-hint{font-size:11.5px;color:var(--tl,#93A09A);line-height:1.65;margin-top:9px}
+
+  /* ── 게시 기록 관리 ── */
+  .pl-head{display:flex;align-items:center;gap:8px;margin:14px 0 8px}
+  .pl-t{font-size:12.5px;font-weight:800;color:var(--gd,#1E3932)}
+  .pl-toggle{margin-left:auto;font-family:inherit;font-size:11.5px;font-weight:700;
+    padding:5px 12px;border:1px solid var(--ivd,#E3E1DA);border-radius:8px;
+    background:var(--wh,#fff);color:var(--ts,#5A6560);cursor:pointer}
+  .pl-list{display:flex;flex-direction:column;gap:6px}
+  .pl-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:9px 12px;border:1px solid var(--ivd,#E3E1DA);border-radius:10px;
+    background:var(--wh,#fff)}
+  .pl-row.cur{background:var(--gp,#E8F3EF);border-color:var(--gl,#C3E0D4)}
+  .pl-row.arc{background:var(--iv,#F2F0EB);opacity:.82}
+  .pl-ic{font-size:15px;flex:none}
+  .pl-main{min-width:140px;flex:1}
+  .pl-nm{font-size:12.5px;font-weight:800;color:var(--gd,#1E3932)}
+  .pl-mt{font-size:11px;color:var(--tl,#93A09A);margin-top:2px}
+  .pl-badge{font-size:9.5px;font-weight:800;border-radius:5px;padding:2px 7px;flex:none}
+  .pl-badge.now{background:var(--gm,#00704A);color:#fff}
+  .pl-badge.arc{background:var(--ivd,#E3E1DA);color:var(--ts,#5A6560)}
+  .pl-act{margin-left:auto;display:flex;gap:5px;flex-wrap:wrap}
+  .pl-b{font-family:inherit;font-size:11.5px;font-weight:700;padding:5px 11px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);
+    color:var(--ts,#5A6560);cursor:pointer;white-space:nowrap}
+  .pl-b:hover{border-color:var(--gm,#00704A);color:var(--gm,#00704A)}
+  .pl-b.dg{color:var(--danger,#C0392B)}
+  .pl-b.dg:hover{border-color:var(--danger,#C0392B);color:var(--danger,#C0392B)}
   .pb-list{display:flex;flex-direction:column;gap:7px}
   .pb-item{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:11px 14px;
     border:1px solid var(--ivd,#E3E1DA);border-radius:10px;background:var(--wh,#fff)}
@@ -197,10 +224,11 @@
     <div class="ptitle">📌 시간표 게시</div>
     <div class="pdesc">
       게시하면 그때의 배정이 <b>사진처럼 굳어</b> 보관됩니다. 이어서 배정을 고쳐도 게시된 시간표는 그대로예요.
-      <br><span style="color:var(--tl,#93A09A)">· 게시된 시간표는 <b>모든 선생님</b>이 볼 수 있습니다. · 지난 학기 것도 남아 있어 언제든 다시 볼 수 있어요.</span>
+      <br><span style="color:var(--tl,#93A09A)">· 게시된 시간표는 <b>모든 선생님</b>이 볼 수 있습니다. · 지난 것은 <b>보관</b>해 두면 선생님 목록에서 감춰집니다.</span>
     </div>
     <div id="pub-now"></div>
     <div id="pub-share"></div>
+    <div id="pub-list"></div>
     <div class="pb-make">
       <span style="font-size:12.5px;color:var(--ts,#5A6560)">저장해둔 배정</span>
       <select class="pb-sel" id="pub-set"></select>
@@ -275,7 +303,10 @@ function toast(msg, kind){
 }
 function fmtDT(ts){
   if(!ts) return '';
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  // Timestamp · {seconds} · 문자열 어느 쪽이 와도 읽는다 (NaN 표시 방지)
+  const d = ts.toDate ? ts.toDate()
+          : (typeof ts.seconds === 'number' ? new Date(ts.seconds*1000) : new Date(ts));
+  if(isNaN(d.getTime())) return '';
   const p=n=>String(n).padStart(2,'0');
   return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
@@ -658,6 +689,7 @@ function renderPubPanel(){
   if(!canPublish()){ if(panel) panel.style.display='none'; return; }
   if(panel) panel.style.display='';
   renderShareBox();
+  renderPubList();
 
   const now = PUBS.find(p=>p.active);
   const box = $I('pub-now');
@@ -687,7 +719,7 @@ function renderPubPanel(){
     const old = PUBS.filter(p=>!p.active).length;
     hint.innerHTML = SETS.length
       ? `시간표 배정 화면의 <b>저장·불러오기</b>에 담아둔 것 중에서 고릅니다.` +
-        (old ? ` 지난 게시본 ${old}개는 아래 목록에서 다시 볼 수 있어요.` : '')
+        (old ? ` 지난 게시본 ${old}개는 아래 <b>게시 기록</b>에서 정리할 수 있어요.` : '')
       : `먼저 <b>시간표 배정</b>에서 작업을 저장해 주세요.`;
   }
 }
@@ -733,7 +765,7 @@ window.doPublish = async function(){
       }
     });
     await loadPublished();
-    CUR = PUBS.find(p=>p.active) || PUBS[0] || null;
+    CUR = PUBS.find(p=>p.active) || pubsForView()[0] || null;
     await syncShare();   // 공유 링크가 켜져 있으면 그 문서도 최신으로
     renderPubPanel(); renderPubSelect(); renderView();
     toast('게시했습니다 ✓');
@@ -745,7 +777,7 @@ window.unpublish = async function(id){
   try {
     await updateDoc(doc(db,'timetablePublished',id), { active:false });
     await loadPublished();
-    CUR = PUBS.find(p=>p.active) || PUBS[0] || null;
+    CUR = PUBS.find(p=>p.active) || pubsForView()[0] || null;
     await syncShare();   // 공유 링크에는 "게시 없음"으로 반영
     renderPubPanel(); renderPubSelect(); renderView();
     toast('내렸습니다');
@@ -754,19 +786,135 @@ window.unpublish = async function(id){
 
 function renderPubSelect(){
   const sel = $I('vw-pub'); if(!sel) return;
-  sel.innerHTML = PUBS.length
-    ? PUBS.map(p=>`<option value="${p.id}" ${CUR&&p.id===CUR.id?'selected':''}>${
-        esc(p.title)}${p.active?' (지금)':''} · ${fmtDT(p.publishedAt)}</option>`).join('')
+  // 보관한 것은 목록에서 뺀다. 다만 관리자가 기록에서 '보기'로 띄워 둔 것은 남긴다.
+  let list = pubsForView();
+  if(CUR && !list.some(p=>p.id===CUR.id)) list = [CUR, ...list];
+  sel.innerHTML = list.length
+    ? list.map(p=>`<option value="${p.id}" ${CUR&&p.id===CUR.id?'selected':''}>${
+        esc(p.title)}${p.active?' (지금)':(p.archived?' (보관)':'')} · ${fmtDT(p.publishedAt)}</option>`).join('')
     : '<option value="">게시된 시간표 없음</option>';
   const d = $I('vw-desc');
   if(d){
     d.innerHTML = CUR
       ? `<b>${esc(CUR.title)}</b> · ${esc(CUR.publishedByName||'')} 게시 · ${fmtDT(CUR.publishedAt)}` +
         (CUR.active ? ' <span style="color:var(--gm,#00704A);font-weight:700">· 지금 쓰는 시간표</span>'
-                    : ' <span style="color:var(--tl,#93A09A)">· 지난 시간표</span>')
+         : CUR.archived ? ' <span style="color:var(--tl,#93A09A)">· 보관된 시간표</span>'
+                        : ' <span style="color:var(--tl,#93A09A)">· 지난 시간표</span>')
       : '게시된 시간표가 아직 없습니다.';
   }
 }
+/* ═══ 📚 게시 기록 관리 — 보관·삭제·다시 게시 ═══
+   보관(archived)해 두면 선생님 목록에서 감춰지고, 관리자만 기록에서 볼 수 있다.
+   중간에 고쳐 다시 게시하다 보면 같은 이름이 쌓이므로 정리할 수 있게 한다. */
+
+/* 선생님에게 보여줄 게시본 — 보관한 것은 뺀다 */
+function pubsForView(){ return PUBS.filter(p=>!p.archived); }
+
+let plOpen = false;
+window.togglePubList = function(){ plOpen = !plOpen; renderPubList(); };
+
+function renderPubList(){
+  const box = $I('pub-list'); if(!box) return;
+  if(!canPublish()){ box.innerHTML=''; return; }
+  if(!PUBS.length){ box.innerHTML=''; return; }
+
+  const arc = PUBS.filter(p=>p.archived).length;
+  const head = `
+    <div class="pl-head">
+      <span class="pl-t">📚 게시 기록 ${PUBS.length}개${arc?` <span style="color:var(--tl,#93A09A);font-weight:600">(보관 ${arc})</span>`:''}</span>
+      <button class="pl-toggle" onclick="togglePubList()">${plOpen?'접기 ▲':'관리 ▼'}</button>
+    </div>`;
+
+  if(!plOpen){ box.innerHTML = head; return; }
+
+  const rows = PUBS.map(p=>{
+    const cls = p.active ? 'cur' : (p.archived ? 'arc' : '');
+    return `<div class="pl-row ${cls}">
+      <span class="pl-ic">${p.active?'✅':(p.archived?'📦':'🗂')}</span>
+      <div class="pl-main">
+        <div class="pl-nm">${esc(p.title||'(이름 없음)')}</div>
+        <div class="pl-mt">${esc(p.publishedByName||'')} 게시 · ${fmtDT(p.publishedAt)} · 수업 ${p.counts?.placed||0}칸</div>
+      </div>
+      ${p.active?'<span class="pl-badge now">지금</span>':''}
+      ${p.archived?'<span class="pl-badge arc">보관됨</span>':''}
+      <span class="pl-act">
+        <button class="pl-b" onclick="viewPub('${p.id}')">👁 보기</button>
+        ${p.active?'' : `<button class="pl-b" onclick="republish('${p.id}')">📌 이걸로 게시</button>`}
+        ${p.active?'' : (p.archived
+            ? `<button class="pl-b" onclick="setPubArchived('${p.id}',false)">↩ 되돌리기</button>`
+            : `<button class="pl-b" onclick="setPubArchived('${p.id}',true)">📦 보관</button>`)}
+        <button class="pl-b dg" onclick="deletePub('${p.id}')">🗑 삭제</button>
+      </span>
+    </div>`;
+  }).join('');
+
+  box.innerHTML = head + `<div class="pl-list">${rows}</div>
+    <div class="pb-hint">
+      · <b>보관</b>하면 선생님 목록에서 감춰집니다 — 기록은 남아 있어 언제든 되돌릴 수 있어요.<br>
+      · <b>이걸로 게시</b>를 누르면 그 시간표가 지금 쓰는 시간표가 되고, 공유 링크도 함께 바뀝니다.<br>
+      · <b>삭제</b>는 되돌릴 수 없습니다. 지난 기록을 남겨두려면 보관을 쓰세요.</div>`;
+}
+
+/* 기록에서 하나를 골라 아래 화면에 띄운다 (보관한 것도 관리자는 볼 수 있다) */
+window.viewPub = function(id){
+  const p = PUBS.find(x=>x.id===id); if(!p) return;
+  CUR = p; vwTarget = '';
+  renderPubSelect(); renderView();
+  $I('vw-pub')?.scrollIntoView({ behavior:'smooth', block:'center' });
+  toast(`"${p.title||''}"을(를) 띄웠습니다`,'ok');
+};
+
+/* 지난 게시본을 다시 지금 쓰는 시간표로 */
+window.republish = async function(id){
+  if(!canPublish()){ toast('게시 권한이 없습니다.','err'); return; }
+  const p = PUBS.find(x=>x.id===id); if(!p) return;
+  if(!confirm(`"${p.title||''}"을(를) 지금 쓰는 시간표로 할까요?\n\n지금 게시된 것은 자동으로 내려갑니다.`)) return;
+  try {
+    for(const x of PUBS.filter(v=>v.active && v.id!==id)){
+      await updateDoc(doc(db,'timetablePublished',x.id), { active:false });
+    }
+    await updateDoc(doc(db,'timetablePublished',id), { active:true, archived:false });
+    await loadPublished();
+    CUR = PUBS.find(x=>x.active) || PUBS[0] || null;
+    await syncShare();
+    renderPubPanel(); renderPubSelect(); renderView();
+    toast('이 시간표로 게시했습니다 ✓','ok');
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
+/* 보관 / 보관 해제 */
+window.setPubArchived = async function(id, on){
+  if(!canPublish()){ toast('권한이 없습니다.','err'); return; }
+  const p = PUBS.find(x=>x.id===id); if(!p) return;
+  if(on && p.active){ toast('지금 게시된 시간표는 먼저 내려주세요.','err'); return; }
+  try {
+    await updateDoc(doc(db,'timetablePublished',id), { archived: !!on });
+    await loadPublished();
+    if(CUR && CUR.id===id) CUR = PUBS.find(x=>x.active) || pubsForView()[0] || PUBS[0] || null;
+    renderPubPanel(); renderPubSelect(); renderView();
+    toast(on ? '보관했습니다 — 선생님 목록에서 감춰집니다 ✓'
+             : '보관을 풀었습니다 — 다시 보입니다 ✓','ok');
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
+/* 기록에서 지우기 */
+window.deletePub = async function(id){
+  if(!canPublish()){ toast('권한이 없습니다.','err'); return; }
+  const p = PUBS.find(x=>x.id===id); if(!p) return;
+  const wasActive = !!p.active;
+  if(!confirm(`"${p.title||''}" 게시 기록을 지울까요?\n${fmtDT(p.publishedAt)} · 수업 ${p.counts?.placed||0}칸\n\n` +
+    (wasActive ? '⚠️ 지금 게시된 시간표입니다. 지우면 선생님들이 볼 수 없게 됩니다.\n\n' : '') +
+    '되돌릴 수 없습니다.')) return;
+  try {
+    await deleteDoc(doc(db,'timetablePublished',id));
+    await loadPublished();
+    CUR = PUBS.find(x=>x.active) || pubsForView()[0] || PUBS[0] || null;
+    if(wasActive) await syncShare();
+    renderPubPanel(); renderPubSelect(); renderView();
+    toast('지웠습니다','ok');
+  } catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
+};
+
 window.onPickPublished = function(){
   const id = $I('vw-pub')?.value;
   CUR = PUBS.find(p=>p.id===id) || null;
@@ -1055,7 +1203,7 @@ onAuthStateChanged(auth, async user => {
 
     await loadPublished();
     if(canPublish()){ await loadSets(); await loadShare(); }
-    CUR = PUBS.find(p=>p.active) || PUBS[0] || null;
+    CUR = PUBS.find(p=>p.active) || pubsForView()[0] || null;
 
     try { const k = localStorage.getItem('tf_kind'); if(k) vwKind = k; } catch(e){}
     ['mine','grade','teacher','room'].forEach(x=>{
