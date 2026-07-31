@@ -226,6 +226,24 @@
       <div class="pdesc">학기와 방학 기간을 정해두면 달력 왼쪽에 <b>주차</b>와 <b>방학 이름</b>이 표시됩니다.</div>
       <div class="tb-list" id="term-list"></div>
     </div>
+
+    <!-- 담당자: 휴교 · 공휴일 -->
+    <div class="panel" id="closed-panel" style="display:none">
+      <div class="ptitle">🚫 휴교 · 임시 휴일
+        <span style="margin-left:auto"><button class="btn btn-sm" onclick="openClosedDlg()">+ 휴교일 추가</button></span>
+      </div>
+      <div class="pdesc">법정 공휴일은 자동으로 들어갑니다. <b>임시공휴일·재량휴업·태풍 휴교</b>처럼
+        따로 생기는 날만 여기에 넣으면 달력에 <b>빨간 날</b>로 표시됩니다.</div>
+      <div class="tb-list" id="closed-list"></div>
+    </div>
+
+    <!-- 수퍼관리자: 담당자 지정 -->
+    <div class="panel" id="editor-panel" style="display:none">
+      <div class="ptitle">🔑 학사일정 담당자</div>
+      <div class="pdesc">여기서 고른 선생님이 <b>학사일정을 만들고 고칠 수</b> 있습니다.
+        수퍼관리자와 기관관리자는 늘 고칠 수 있어요.</div>
+      <div id="editor-list"></div>
+    </div>
   </div>
 </div>
 
@@ -296,6 +314,9 @@ const CATEGORIES = {
   event:{label:'행사',color:'#8B5CF6'}, program:{label:'프로그램',color:'#3B82F6'},
   break:{label:'방학',color:'#F97316'}, exam:{label:'시험',color:'#16A34A'},
   worship:{label:'예배·기도회',color:'#0D9488'}, admin:{label:'행정',color:'#6B7280'},
+  /* 휴교 — 학교가 쉬는 날. 달력에서 공휴일과 같은 빨간 칸으로 보인다.
+     법정 공휴일은 자동으로 들어가고, 임시공휴일·재량휴업 같은 건 여기에 넣는다. */
+  closed:{label:'휴교·휴일',color:'#DC2626'},
 };
 const TIME_SLOTS = { am:'오전', pm:'오후', allday:'종일' };
 const EV_COLORS = ['#8B5CF6','#3B82F6','#0D9488','#16A34A','#F97316','#E11D48','#6B7280','#B5A642'];
@@ -306,6 +327,8 @@ const GRADE_ORDER = {
   jihyebit: ['4세','5세','6세','7세'],
 };
 const ORGS = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const ORG_BOTH = 'both';   // 두 기관에 함께 적용되는 일정 (정기 휴가·방학 등)
+const ORG_LABEL = o => o===ORG_BOTH ? '두 기관 공통' : (ORGS[o]||o);
 
 /* 부서 — 시간표 틀에 정해둔 부서(초등부·중등부·고등부)를 그대로 가져온다 */
 let DEPTS = [];
@@ -342,6 +365,7 @@ async function loadEditors(){
     const s = await getDoc(doc(db,'academicConfig','editors'));
     uids = (s.exists() && Array.isArray(s.data().uids)) ? s.data().uids : [];
   } catch(e){}
+  EDITOR_UIDS = uids;
   CAN_EDIT = isSuper() || CU?.role === 'org_admin' || uids.includes(CU?.uid);
 }
 function needEdit(){
@@ -415,7 +439,17 @@ async function loadEvents(year){
 
 /* 지금 고른 기관의 행사만 보여준다 */
 function applyEventScope(){
-  EVENTS = ALL_EVENTS.filter(e => (e.org || 'daniel') === ORG);
+  // 이 기관 것 + 두 기관 공통 것을 함께 보여준다
+  EVENTS = ALL_EVENTS.filter(e => {
+    const o = e.org || 'daniel';
+    return o === ORG || o === ORG_BOTH;
+  });
+}
+
+/* 그 날짜가 휴교인지 — 휴교로 넣어둔 일정이 덮고 있으면 그 이름 */
+function closedOn(ds){
+  const hit = eventsOn(ds).find(e => e.category === 'closed');
+  return hit ? hit.title : null;
 }
 
 /* ═══════════════════════════════════════════════
@@ -501,16 +535,19 @@ function render(){
     week.forEach((d,di)=>{
       if(!d){ html += '<div class="cal-cell empty"><div class="cal-daynum">&nbsp;</div><div class="cal-slots"><div class="cal-slot"></div><div class="cal-slot"></div></div></div>'; return; }
       const ds = dateStr(y,m,d);
-      const holName = holidays[ds];
+      const evs = eventsOn(ds);
+      const closedName = closedOn(ds);          // 휴교로 넣어둔 날
+      const holName = holidays[ds] || closedName;
       let cls='cal-cell';
       if(di===0) cls+=' sunday';
       else if(di===6) cls+=' saturday';
       if(holName) cls+=' holiday';
 
-      const evs = eventsOn(ds);
-      const allday = evs.filter(e=>e.timeOfDay==='allday');
-      const am = evs.filter(e=>e.timeOfDay==='am');
-      const pm = evs.filter(e=>e.timeOfDay==='pm');
+      // 휴교는 날짜 옆에 이름으로 보여주니 칸 안에서는 빼서 겹치지 않게 한다
+      const shown = evs.filter(e=> !(e.category==='closed' && e.title===closedName));
+      const allday = shown.filter(e=>e.timeOfDay==='allday');
+      const am = shown.filter(e=>e.timeOfDay==='am');
+      const pm = shown.filter(e=>e.timeOfDay==='pm');
 
       html += `<div class="${cls}">`;
       html += `<div class="cal-daynum">${d}${holName?`<span class="cal-holname">${esc(holName)}</span>`:''}</div>`;
@@ -535,6 +572,8 @@ function render(){
   $I('cal-mount').innerHTML = html;
   renderLegend();
   renderTermPanel();
+  renderClosedPanel();
+  renderEditorPanel();
 }
 
 function evChip(e){
@@ -555,7 +594,7 @@ function renderLegend(){
     const c=CATEGORIES[cat]; if(!c) return;
     html += `<span><i style="background:${c.color}"></i>${c.label}</span>`;
   });
-  html += `<span><i style="background:#E5484D"></i>공휴일</span>`;
+  html += `<span><i style="background:#E5484D"></i>공휴일 · 휴교</span>`;
   if(!hasHolidayData(y)) html += `<span style="color:var(--goldd,#8A6410)">⚠ ${y}년 공휴일 자료 없음 — 직접 넣어주세요</span>`;
   $I('legend').innerHTML = html;
 }
@@ -660,6 +699,13 @@ window.openTermDlg = function(kind, idx){
         <div style="flex:1"><label class="fld-label">종료일</label>
           <input type="date" class="fld-input" id="tm-end" value="${esc(cur?cur.end:'')}"></div>
       </div>
+      ${myOrgs().length>1 ? `<label style="display:flex;align-items:center;gap:8px;margin-top:14px;
+        font-size:12.5px;font-weight:700;color:var(--ts,#5A6560);cursor:pointer">
+        <input type="checkbox" id="tm-both" style="accent-color:var(--gm,#00704A);width:16px;height:16px">
+        🤝 두 기관에 같이 넣기
+      </label>
+      <div style="font-size:11px;color:var(--tl,#93A09A);margin-top:5px;line-height:1.6">
+        방학처럼 두 기관이 똑같이 쉬면 켜 주세요 — 다니엘 아마츠와 지혜빛 선교원 양쪽에 함께 들어갑니다.</div>` : ''}
       <div class="mact">
         <button class="btn" onclick="closeTermDlg()">취소</button>
         <button class="btn btn-p" onclick="saveTerm('${kind}',${idx==null?'null':idx})">저장</button>
@@ -686,8 +732,36 @@ window.saveTerm = async function(kind, idx){
   YEAR_INFO[key].sort((a,b)=> a.start.localeCompare(b.start));
 
   await saveYear();
+
+  // 두 기관에 같이 넣기 — 다른 기관 학년도에도 같은 항목을 더한다
+  const both = $I('tm-both')?.checked;
+  let alsoN = 0;
+  if(both){
+    for(const o of myOrgs()){
+      if(o === ORG) continue;
+      try {
+        const ref = doc(db,'academicYears', yearDocId(YEAR_INFO.year, o));
+        const s = await getDoc(ref);
+        const cur = s.exists() ? s.data() : { year:Number(YEAR_INFO.year), org:o,
+          label:`${YEAR_INFO.year}학년도`, terms:[], breaks:[], weekStart:'sun' };
+        const list = Array.isArray(cur[key]) ? cur[key] : [];
+        // 같은 이름·기간이 이미 있으면 겹쳐 넣지 않는다
+        const dup = list.some(x=> x.name===name && x.start===start && x.end===end);
+        if(!dup){
+          list.push({ id: kind[0]+Math.random().toString(36).slice(2,7), name, start, end });
+          list.sort((a,b)=> a.start.localeCompare(b.start));
+          cur[key] = list; cur.org = o; cur.year = Number(YEAR_INFO.year);
+          cur.updatedByUid = CU?.uid||''; cur.updatedByName = CU?.name||''; cur.updatedAt = Timestamp.now();
+          await setDoc(ref, cur, { merge:true });
+          alsoN++;
+        }
+      } catch(e){}
+    }
+    await loadYears();
+  }
+
   closeTermDlg(); renderYearBar(); render();
-  toast('저장했습니다 ✓','ok');
+  toast(alsoN ? `저장했습니다 ✓ — 다른 기관에도 함께 넣었어요` : '저장했습니다 ✓','ok');
 };
 
 window.delTerm = async function(kind, idx){
@@ -708,7 +782,15 @@ let dlgTargets = new Set();
 let dlgWeekdays = new Set();
 let dlgColor = '';
 let dlgScope = 'all';
+let dlgOrg = 'daniel';      // 이 행사가 어느 기관 것인지 ('both' = 두 기관 공통)
 let editingEventId = null;
+
+window.pickEvOrg = function(o){
+  dlgOrg = o;
+  document.querySelectorAll('#ev-org .chip').forEach(b=>b.classList.toggle('on', b.dataset.org===o));
+  dlgTargets.clear();
+  renderTargetPicker();
+};
 
 /* 빈 칸을 누르면 그 날짜·시간대로 새 행사 */
 window.addOn = function(ds, slot, ev){
@@ -730,6 +812,7 @@ window.openEventDlg = function(id, ds, slot){
   dlgWeekdays = new Set(e ? (e.weekdays||[]) : []);
   dlgScope = e ? (e.scope||'all') : 'all';
   dlgColor = e ? (e.color||'') : '';
+  dlgOrg = e ? (e.org || 'daniel') : ORG;
   curOrg = ORG;
 
   const ov = document.createElement('div');
@@ -738,6 +821,16 @@ window.openEventDlg = function(id, ds, slot){
     <div class="mbox">
       <div class="mtitle">${e?'행사 고치기':'행사 추가'}</div>
       <div class="msub">기간·시간대·대상을 정하면 달력에 그대로 표시됩니다.</div>
+
+      <label class="fld-label">어느 기관 일정인가요?</label>
+      <div class="chips" id="ev-org">
+        ${myOrgs().map(o=>`<button type="button" class="chip ${dlgOrg===o?'on':''}" data-org="${o}"
+          onclick="pickEvOrg('${o}')">${ORGS[o]}</button>`).join('')}
+        ${myOrgs().length>1?`<button type="button" class="chip ${dlgOrg===ORG_BOTH?'on':''}" data-org="${ORG_BOTH}"
+          onclick="pickEvOrg('${ORG_BOTH}')">🤝 두 기관 공통</button>`:''}
+      </div>
+      <div style="font-size:11px;color:var(--tl,#93A09A);margin-top:5px;line-height:1.6">
+        정기 휴가·방학처럼 두 기관이 <b>똑같이 쉬는 일정</b>은 «두 기관 공통»으로 넣으면 양쪽 달력에 함께 나옵니다.</div>
 
       <label class="fld-label">제목</label>
       <input class="fld-input" id="ev-title" value="${esc(e?e.title:'')}" placeholder="예: 신년 수양회">
@@ -855,7 +948,10 @@ window.toggleTarget = function(v){
 function renderTargetPicker(){
   const box = $I('ev-targets'); if(!box) return;
   if(dlgScope==='all'){ box.innerHTML=''; return; }
-  const list = dlgScope==='dept' ? DEPTS : (GRADE_ORDER[ORG]||[]);
+  const list = dlgScope==='dept' ? DEPTS
+    : (dlgOrg===ORG_BOTH
+        ? [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])]
+        : (GRADE_ORDER[dlgOrg]||[]));
   box.innerHTML = `<div class="chips">${list.map(v=>
     `<button type="button" class="chip ${dlgTargets.has(v)?'on':''}" onclick="toggleTarget('${esc(v)}')">${esc(v)}</button>`).join('')}</div>`;
 }
@@ -882,7 +978,7 @@ window.saveEvent = async function(){
     weekdays: [...dlgWeekdays].sort(),
     scope: dlgScope,
     targets: dlgScope==='all' ? [] : [...dlgTargets],
-    org: ORG,                       // 이 행사가 속한 기관
+    org: dlgOrg,                    // 이 행사가 속한 기관 ('both' = 두 기관 공통)
     category: cat,
     color: dlgColor || '',
     audience: aud,
@@ -958,6 +1054,91 @@ window.setView = function(v){
   render();
 };
 
+/* ═══════════════════════════════════════════════
+   🚫 휴교 · 임시 휴일
+   ═══════════════════════════════════════════════ */
+function renderClosedPanel(){
+  const p = $I('closed-panel');
+  if(!CAN_EDIT){ p.style.display='none'; return; }
+  p.style.display='';
+  const list = EVENTS.filter(e=>e.category==='closed')
+    .sort((a,b)=> String(a.startDate).localeCompare(String(b.startDate)));
+  $I('closed-list').innerHTML = list.length
+    ? list.map(e=>`<div class="tb-row">
+        <span class="tb-nm">🚫 ${esc(e.title)}</span>
+        <span class="tb-dt">${esc(e.startDate)}${e.endDate!==e.startDate?` ~ ${esc(e.endDate)}`:''}</span>
+        ${e.org===ORG_BOTH?'<span class="tb-dt" style="color:var(--gm,#00704A);font-weight:700">🤝 두 기관</span>':''}
+        <span class="tb-act">
+          <button class="btn btn-sm" onclick="openEventDlg('${e.id}')">✏️ 고치기</button>
+          <button class="btn btn-sm btn-dg" onclick="delEvent('${e.id}')">🗑</button>
+        </span></div>`).join('')
+    : '<div class="tb-none">아직 넣은 휴교일이 없습니다. 법정 공휴일은 자동으로 표시돼요.</div>';
+}
+
+/* 휴교일 추가 — 행사 창을 휴교로 맞춰서 연다 */
+window.openClosedDlg = function(){
+  if(!needEdit()) return;
+  openEventDlg(null, '', 'allday');
+  setTimeout(()=>{
+    pickCat('closed');
+    pickSlot('allday');
+    const t = $I('ev-title'); if(t) t.placeholder = '예: 임시공휴일, 재량휴업일, 태풍 휴교';
+    const ttl = document.querySelector('#ev-mod .mtitle'); if(ttl) ttl.textContent = '휴교일 추가';
+    const sub = document.querySelector('#ev-mod .msub');
+    if(sub) sub.textContent = '넣으면 달력에 빨간 날로 표시됩니다. 여러 날이면 기간으로 넣으세요.';
+  }, 30);
+};
+
+/* ═══════════════════════════════════════════════
+   🔑 담당자 지정 (수퍼관리자)
+   ═══════════════════════════════════════════════ */
+let STAFF_LIST = [];
+let EDITOR_UIDS = [];
+
+async function loadStaffList(){
+  if(!isSuper()) return;
+  try {
+    const snap = await getDocs(collection(db,'staff'));
+    STAFF_LIST = snap.docs.map(d=>({ uid:d.id, ...d.data() }))
+      .filter(s=>s.name)
+      .sort((a,b)=> String(a.name).localeCompare(String(b.name),'ko'));
+  } catch(e){ STAFF_LIST = []; }
+}
+
+function renderEditorPanel(){
+  const p = $I('editor-panel');
+  if(!isSuper()){ p.style.display='none'; return; }
+  p.style.display='';
+  const rows = STAFF_LIST.map(s=>{
+    const always = s.role==='super' || s.role==='org_admin';
+    const on = always || EDITOR_UIDS.includes(s.uid);
+    return `<button type="button" class="chip ${on?'on':''}" ${always?'disabled title="관리자는 늘 고칠 수 있어요"':''}
+      style="${always?'opacity:.6;cursor:default':''}"
+      onclick="toggleEditor('${s.uid}')">${esc(s.name)}${always?' 🔒':''}</button>`;
+  }).join('');
+  $I('editor-list').innerHTML = `<div class="chips">${rows || '<span class="tb-none">교직원이 없습니다.</span>'}</div>
+    <div style="font-size:11.5px;color:var(--tl,#93A09A);margin-top:10px;line-height:1.6">
+      🔒 표시는 수퍼관리자·기관관리자 — 따로 고르지 않아도 편집할 수 있습니다.<br>
+      지금 담당자: <b>${EDITOR_UIDS.length}명</b></div>`;
+}
+
+window.toggleEditor = async function(uid){
+  if(!isSuper()){ toast('수퍼관리자만 담당자를 정할 수 있습니다.','err'); return; }
+  const s = STAFF_LIST.find(x=>x.uid===uid);
+  if(s && (s.role==='super' || s.role==='org_admin')) return;
+  EDITOR_UIDS = EDITOR_UIDS.includes(uid)
+    ? EDITOR_UIDS.filter(u=>u!==uid) : [...EDITOR_UIDS, uid];
+  try {
+    await setDoc(doc(db,'academicConfig','editors'), {
+      uids: EDITOR_UIDS,
+      updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
+    }, { merge:true });
+    renderEditorPanel();
+    toast(EDITOR_UIDS.includes(uid) ? `${s?.name||''} 담당자로 지정했습니다 ✓`
+                                    : `${s?.name||''} 담당자에서 뺐습니다`,'ok');
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+};
+
 /* 이 사람이 볼 수 있는 기관 */
 function myOrgs(){
   if(!CU) return ['daniel'];
@@ -1021,6 +1202,7 @@ onAuthStateChanged(auth, async user => {
     if(window.setCrumb) setCrumb(['학사일정']);
 
     await loadEditors();
+    await loadStaffList();
     await loadDepts();
 
     // 기관 고르기 — 지혜빛 선교원과 다니엘 아마츠는 학사일정이 서로 다르다
