@@ -766,6 +766,52 @@
   .tv-card.small .tv-c-who{-webkit-line-clamp:1;flex:0 1 auto;min-width:0}
   .tv-card.small .tv-c-room{flex:0 1 auto;min-width:0;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
+
+  /* ── 🔎 수업 카드 자세히 보기 ── */
+  .tv-card{cursor:pointer}
+  .tv-card:focus-visible{outline:2px solid var(--gm,#00704A);outline-offset:1px}
+  @keyframes tvGlowPulse{
+    0%,100%{ box-shadow:0 1px 2px rgba(30,57,50,.07); filter:none; }
+    50%    { box-shadow:0 0 0 3px rgba(0,112,74,.45), 0 2px 10px rgba(0,112,74,.30); filter:brightness(1.06); }
+  }
+  .tv-card.tv-glow{ animation:tvGlowPulse 1.15s ease-in-out infinite; z-index:5 }
+  @media (prefers-reduced-motion:reduce){
+    .tv-card.tv-glow{ animation:none; box-shadow:0 0 0 3px rgba(0,112,74,.45) }
+  }
+
+  .tvi-ov{position:fixed;inset:0;z-index:500;display:flex;align-items:center;justify-content:center;padding:18px}
+  .tvi-bk{position:absolute;inset:0;background:rgba(15,25,21,.5)}
+  .tvi-box{position:relative;z-index:1;width:100%;max-width:420px;max-height:86vh;overflow-y:auto;
+    background:var(--wh,#fff);border-radius:16px;padding:20px 22px;
+    box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .tvi-x{position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:50%;
+    border:none;background:rgba(0,0,0,.06);color:#555;font-size:15px;line-height:1;cursor:pointer}
+  .tvi-x:hover{background:rgba(0,0,0,.12)}
+  .tvi-head{display:flex;align-items:center;gap:11px;margin-bottom:14px;padding-right:26px}
+  .tvi-bar{width:5px;align-self:stretch;min-height:34px;border-radius:100px;background:var(--lc,#7FB5A0);flex:none}
+  .tvi-nm{font-size:17px;font-weight:900;color:var(--gd,#1E3932);line-height:1.25;overflow-wrap:anywhere}
+  .tvi-sub{font-size:12px;color:var(--tl,#93A09A);margin-top:2px;overflow-wrap:anywhere}
+  .tvi-stats{display:flex;gap:7px;margin-bottom:14px}
+  .tvi-stat{flex:1;background:var(--lc-bg,#F2F7F5);border-radius:10px;padding:10px 6px;text-align:center}
+  .tvi-stat b{display:block;font-size:15px;font-weight:900;color:var(--gd,#1E3932);line-height:1.2}
+  .tvi-stat span{display:block;font-size:10.5px;color:var(--ts,#5A6560);margin-top:3px}
+  .tvi-lines{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+  .tvi-line{display:flex;gap:9px;font-size:12.5px;line-height:1.5}
+  .tvi-k{color:var(--tl,#93A09A);flex:none;min-width:62px}
+  .tvi-v{color:var(--ink,#1F2320);font-weight:700;overflow-wrap:anywhere}
+  .tvi-listt{font-size:12px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:6px}
+  .tvi-list{display:flex;flex-direction:column;gap:4px}
+  .tvi-row{display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:8px;
+    background:var(--iv,#F2F0EB);font-size:12px}
+  .tvi-row.on{background:var(--lc-bg,#F2F7F5);box-shadow:inset 0 0 0 1.5px var(--lc,#7FB5A0)}
+  .tvi-day{font-weight:900;color:var(--gd,#1E3932);flex:none;min-width:16px}
+  .tvi-time{color:var(--ts,#5A6560);font-weight:700}
+  .tvi-dur{color:var(--tl,#93A09A)}
+  .tvi-room{margin-left:auto;font-size:11px;font-weight:700;color:var(--ts,#5A6560);
+    background:var(--wh,#fff);border-radius:5px;padding:1px 7px;overflow-wrap:anywhere}
+  .tvi-note{font-size:11px;color:var(--tl,#93A09A);margin-top:11px;line-height:1.6}
+  @media(max-width:640px){ .tvi-ov{padding:10px} .tvi-box{padding:17px 16px;max-height:88vh} }
+
   .tv-card.small .tv-c-who{color:var(--tb,#5A6560);font-size:calc(9.5px * var(--tvf,1));line-height:1.2}
   .tv-card.small .tv-c-room{background:var(--iv,#F2F0EB);color:var(--ts,#5A6560);
     margin-left:4px;font-size:calc(8.5px * var(--tvf,1));line-height:1.4}
@@ -3326,6 +3372,113 @@ function renderSets(){
     </div>`;
 }
 
+
+/* ═══════════════════════════════════════════
+   🔎 수업 카드 자세히 보기
+   카드를 누르면 그 수업이 한 주에 몇 시간·몇 분 들어가는지,
+   어느 요일 어느 시각에 놓였는지, 누가 들어가고 어느 교실인지 보여준다.
+   보는 동안 같은 수업 카드들이 함께 반짝여 한눈에 찾을 수 있다.
+   ═══════════════════════════════════════════ */
+
+/* 같은 수업 카드에 반짝임을 켜고 끈다 */
+function tvGlow(lessonId){
+  document.querySelectorAll('.tv-card.tv-glow').forEach(el=>el.classList.remove('tv-glow'));
+  if(!lessonId) return;
+  document.querySelectorAll(`.tv-card[data-lesson="${CSS.escape(lessonId)}"]`)
+    .forEach(el=>el.classList.add('tv-glow'));
+}
+window.tvGlow = tvGlow;
+
+window.closeTvInfo = function(){
+  document.getElementById('tvi-mod')?.remove();
+  tvGlow(null);
+};
+
+window.openTvInfo = function(lessonId, day, startMin){
+  if(!lessonId) return;
+  const all = (typeof tvCollect === 'function') ? tvCollect() : [];
+  const same = all.filter(it => (it.lesson && it.lesson.id) === lessonId);
+  const hit  = same.find(it => it.day===day && String(it.startMin)===String(startMin)) || same[0];
+  if(!hit) return;
+
+  const les = hit.lesson || {};
+  // 같은 수업이 여러 학년에 함께 들어가면 한 번만 세도록 요일·시각으로 묶는다
+  const slotKey = it => `${it.day}|${it.startMin}|${it.endMin}`;
+  const slots = [];
+  const seen = new Set();
+  same.forEach(it=>{
+    const k = slotKey(it);
+    if(seen.has(k)) return;
+    seen.add(k);
+    slots.push(it);
+  });
+  slots.sort((a,b)=> (DAYS.indexOf(a.day)-DAYS.indexOf(b.day)) || (a.startMin-b.startMin));
+
+  const totalMin = slots.reduce((n,it)=>n + (it.endMin - it.startMin), 0);
+  const hours = Math.floor(totalMin/60), mins = totalMin%60;
+
+  // 이 수업이 들어가는 학년 모두
+  const grades = [...new Set(same.flatMap(it=>it.grades && it.grades.length ? it.grades : [it.grade]))]
+    .filter(Boolean);
+  // 담당 선생님 (대표 먼저)
+  const uids = hit.teacherUids || les.teacherUids || [];
+  const names = uids.map(u=>(TEACHERS.find(t=>t.uid===u)||{}).name||'').filter(Boolean);
+  const room = hit.roomId ? findRoomName(hit.roomId) : '';
+
+  const rows = slots.map(it=>{
+    const isThis = it.day===hit.day && it.startMin===hit.startMin;
+    const r = it.roomId ? findRoomName(it.roomId) : '';
+    return `<div class="tvi-row ${isThis?'on':''}">
+      <span class="tvi-day">${esc(it.day)}</span>
+      <span class="tvi-time">${hm(it.startMin)}~${hm(it.endMin)}</span>
+      <span class="tvi-dur">${it.endMin-it.startMin}분</span>
+      ${r?`<span class="tvi-room">${esc(r)}</span>`:''}
+    </div>`;
+  }).join('');
+
+  closeTvInfo();
+  const ov = document.createElement('div');
+  ov.id = 'tvi-mod';
+  ov.className = 'tvi-ov';
+  ov.innerHTML = `
+    <div class="tvi-bk" onclick="closeTvInfo()"></div>
+    <div class="tvi-box" style="--lc:${lessonColor(les)};--lc-bg:${tintOf(lessonColor(les),.16)}">
+      <button class="tvi-x" onclick="closeTvInfo()" aria-label="닫기">✕</button>
+      <div class="tvi-head">
+        <span class="tvi-bar"></span>
+        <div style="min-width:0">
+          <div class="tvi-nm">${esc(les.subject||'수업')}</div>
+          <div class="tvi-sub">${esc(grades.join(' · ')||'')}</div>
+        </div>
+      </div>
+
+      <div class="tvi-stats">
+        <div class="tvi-stat"><b>${slots.length}</b><span>주당 시수</span></div>
+        <div class="tvi-stat"><b>${hours?`${hours}시간 `:''}${mins?`${mins}분`:(hours?'':'0분')}</b><span>주당 시간</span></div>
+        <div class="tvi-stat"><b>${hit.endMin-hit.startMin}분</b><span>1회 길이</span></div>
+      </div>
+
+      <div class="tvi-lines">
+        <div class="tvi-line"><span class="tvi-k">👤 담당</span>
+          <span class="tvi-v">${names.length?esc(names.join(', ')):'<span style="opacity:.6">미배정</span>'}</span></div>
+        ${room?`<div class="tvi-line"><span class="tvi-k">🚪 교실</span><span class="tvi-v">${esc(room)}</span></div>`:''}
+        <div class="tvi-line"><span class="tvi-k">🕐 지금 칸</span>
+          <span class="tvi-v">${esc(hit.day)} ${hm(hit.startMin)}~${hm(hit.endMin)}</span></div>
+      </div>
+
+      <div class="tvi-listt">📅 이 수업이 놓인 자리</div>
+      <div class="tvi-list">${rows}</div>
+      <div class="tvi-note">같은 수업 ${slots.length}칸이 시간표에서 함께 <b>반짝이고</b> 있어요.</div>
+    </div>`;
+  document.body.appendChild(ov);
+  tvGlow(lessonId);
+};
+
+/* 자세히 보기가 열려 있을 때 Esc 로 닫기 */
+document.addEventListener('keydown', e=>{
+  if(e.key === 'Escape' && document.getElementById('tvi-mod')) closeTvInfo();
+});
+
 // ═══════════════════════════════════════════
 //  📅 시간표 보기 — 학년별 · 선생님별 · 교실별
 //  배치(PLACEMENTS)를 읽어 관점만 바꿔 보여준다.
@@ -3567,7 +3720,9 @@ function renderTvView(fitH){
       const lead = teacherLead(it.lesson, it.teacherUids);
       const bar  = lead ? tColor(lead) : '#93A09A';
       const sub  = tvKind==='grade' ? '' : (it.grade || (it.grades||[]).join('·'));
-      return `<div class="tv-card ${size}"
+      return `<div class="tv-card ${size}" data-lesson="${esc(it.lesson.id||'')}"
+        data-day="${dy}" data-start="${it.startMin}" tabindex="0"
+        onclick="openTvInfo('${esc(it.lesson.id||'')}','${dy}',${it.startMin})"
         style="top:${(it.startMin-s0)*TV_PPM}px;height:${px}px;
                --lc:${lessonColor(it.lesson)};--lc-bg:${tintOf(lessonColor(it.lesson),.16)};--tb:${bar}"
         title="${esc(it.lesson.subject)} ${hm(it.startMin)}~${hm(it.endMin)}\n👤 ${esc(names.join(', ')||'미배정')}${room?`\n🚪 ${esc(room)}`:''}">
