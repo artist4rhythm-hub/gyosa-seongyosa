@@ -153,8 +153,18 @@ function birthInfo(birth){
   }
   return `${y}년생${age}`;
 }
-// 부서 옵션 (다니엘만 부서 있음)
-const DEPTS = {jihyebit:['전체'], daniel:['초등부','중등부','고등부']};
+// 부서 옵션 — 관리자 화면 「부서 관리」(adminConfig/depts)와 같은 목록을 쓴다
+const DEPTS = {jihyebit:['전체'], daniel:['초등부','중고등부','행정실']};
+async function loadDeptsCfg(){
+  try {
+    const s = await getDoc(doc(db,'adminConfig','depts'));
+    if(s.exists()){
+      const d = s.data();
+      if(Array.isArray(d.daniel) && d.daniel.length) DEPTS.daniel = d.daniel.slice();
+      if(Array.isArray(d.jihyebit) && d.jihyebit.length) DEPTS.jihyebit = d.jihyebit.slice();
+    }
+  } catch(e){}
+}
 // 학년 옵션 (참고용 - 자유 입력도 가능)
 const GRADES = {
   jihyebit:['4세','5세','6세','7세'],
@@ -245,6 +255,7 @@ onAuthStateChanged(auth, async (user) => {
     window.showLoading && window.showLoading('불러오는 중…');
 
     await loadClassEditors();
+    await loadDeptsCfg();
     await loadStudents();
     await loadStaff();
     window.hideLoading && window.hideLoading();
@@ -403,7 +414,8 @@ window.closeMod = closeMod;
 
 function updClassDept(selDept, selGrade){
   const org = $I('c-org').value;
-  const depts = DEPTS[org] || ['전체'];
+  const depts = (DEPTS[org] || ['전체']).slice();
+  if(selDept && !depts.includes(selDept)) depts.push(selDept);   // 옛 부서 이름도 보이게
   const ds = $I('c-dept');
   ds.innerHTML = depts.map(d=>`<option value="${d}"${selDept===d?' selected':''}>${d}</option>`).join('');
   // 학년 복수 선택 체크박스

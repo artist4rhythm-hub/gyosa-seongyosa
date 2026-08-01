@@ -344,6 +344,25 @@ const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
 
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
+
+/* ── 🏷 부서 목록 (관리자 「부서 관리」와 동일 원본: adminConfig/depts) ── */
+const DEPTS_DEFAULT = {daniel:['초등부','중고등부','행정실'], jihyebit:['전체']};
+let DEPTS_CFG = {daniel:[...DEPTS_DEFAULT.daniel], jihyebit:[...DEPTS_DEFAULT.jihyebit]};
+async function loadDeptsCfg(){
+  try {
+    const s = await getDoc(doc(db,'adminConfig','depts'));
+    if(s.exists()){
+      const d = s.data();
+      if(Array.isArray(d.daniel) && d.daniel.length) DEPTS_CFG.daniel = d.daniel.slice();
+      if(Array.isArray(d.jihyebit) && d.jihyebit.length) DEPTS_CFG.jihyebit = d.jihyebit.slice();
+    }
+  } catch(e){}
+}
+function deptOptsHTML(org, sel){
+  const arr = (DEPTS_CFG[org]||['전체']).slice();
+  if(sel && !arr.includes(sel)) arr.push(sel);
+  return arr.map(d=>`<option value="${d}"${sel===d?' selected':''}>${d}</option>`).join('');
+}
 const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'풀타임 교사',partner:'협력교사'};
 const pad=n=>String(n).padStart(2,'0');
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -430,6 +449,7 @@ onAuthStateChanged(auth, async (user) => {
       $I('ls').style.display = 'none';
       $I('ms').style.display = 'flex';
       await loadAttConfig();
+      await loadDeptsCfg();
       // 로그인 기록 저장 (비동기, 실패해도 진행)
       recordLogin(user.uid, data.name, data.org).catch(()=>{});
       showMain();
@@ -1835,7 +1855,7 @@ function openNoticeForm(){
             <select id="nt-org" class="minput" onchange="onNoticeOrgChange()">${orgOpts}</select></div>
           <div class="fgrp" id="nt-dept-grp" style="display:none"><label class="mlabel">부서</label>
             <select id="nt-dept" class="minput">
-              <option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>
+              ${(DEPTS_CFG.daniel||[]).map(dd=>`<option value="${dd}">${dd}</option>`).join('')}
             </select></div>
           <div class="fgrp" id="nt-user-grp" style="display:none"><label class="mlabel">대상 교직원</label>
             <select id="nt-user" class="minput">${Object.entries(STAFF_CACHE).map(([,a])=>`<option value="${a.uid}">${a.name} (${ORGS[a.org]||a.org})</option>`).join('')}</select></div>
@@ -3240,14 +3260,13 @@ function toggleFMode(){
 
 function updDept(){
   const o=$I('no')?.value, d=$I('nd'); if(!d) return;
-  d.innerHTML=o==='jihyebit'?'<option value="전체">전체</option>':
-    '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
+  d.innerHTML = deptOptsHTML(o);
 }
 
 function updEditDept(){
   const o=$I('es-org')?.value, d=$I('es-dept'); if(!d) return;
-  d.innerHTML=o==='jihyebit'?'<option value="전체">전체</option>':
-    '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
+  const cur = d.value;
+  d.innerHTML = deptOptsHTML(o, cur);
 }
 
 // 권한이 기관관리자면 복수 기관 체크박스, 아니면 단일 드롭다운
@@ -3392,9 +3411,7 @@ function openEditStaff(uid, name, org, dept, role){
   const el=document.createElement('div'); el.id='edit-staff-mod';
   const cur = STAFF_CACHE[uid] || {};
   const acStatus = cur.acStatus || 'active';
-  const deptOpts = (o, sel) => o==='jihyebit'
-    ? `<option value="전체"${sel==='전체'?' selected':''}>전체</option>`
-    : `<option value="초등부"${sel==='초등부'?' selected':''}>초등부</option><option value="중고등부"${sel==='중고등부'?' selected':''}>중고등부</option><option value="행정실"${sel==='행정실'?' selected':''}>행정실</option>`;
+  const deptOpts = (o, sel) => deptOptsHTML(o, sel);
   el.innerHTML=`
     <div class="mov">
       <div class="mbk" onclick="document.getElementById('edit-staff-mod').remove()"></div>

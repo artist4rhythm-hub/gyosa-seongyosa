@@ -345,6 +345,27 @@ const S2P={}, SINF={};
 TREE.forEach(p=>p.s.forEach(s=>{S2P[s.k]=p.k; SINF[s.k]={...s,pk:p.k,pl:p.l,c:p.c,b:p.b};}));
 
 const ORGS={jihyebit:'지혜빛',daniel:'다니엘 아마츠'};
+
+/* ── 🏷 부서 목록 (컨트롤 타워 「부서 관리」에서 고친다) ──
+   adminConfig/depts = { daniel:[…], jihyebit:[…] } · 문서가 없으면 기본값 */
+const DEPTS_DEFAULT = {daniel:['초등부','중고등부','행정실'], jihyebit:['전체']};
+let DEPTS_CFG = {daniel:[...DEPTS_DEFAULT.daniel], jihyebit:[...DEPTS_DEFAULT.jihyebit]};
+async function loadDeptsCfg(){
+  try {
+    const s = await getDoc(doc(db,'adminConfig','depts'));
+    if(s.exists()){
+      const d = s.data();
+      if(Array.isArray(d.daniel) && d.daniel.length) DEPTS_CFG.daniel = d.daniel.slice();
+      if(Array.isArray(d.jihyebit) && d.jihyebit.length) DEPTS_CFG.jihyebit = d.jihyebit.slice();
+    }
+  } catch(e){}
+}
+/* 부서 <option> — 지금 값이 목록에서 빠져 있어도 보이게 함께 넣는다 */
+function deptOptsHTML(org, sel){
+  const arr = (DEPTS_CFG[org]||['전체']).slice();
+  if(sel && !arr.includes(sel)) arr.push(sel);
+  return arr.map(d=>`<option value="${d}"${sel===d?' selected':''}>${d}</option>`).join('');
+}
 const ROLES={super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'풀타임 교사',partner:'협력교사'};
 const pad=n=>String(n).padStart(2,'0');
 function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -431,6 +452,7 @@ onAuthStateChanged(auth, async (user) => {
       $I('ls').style.display = 'none';
       $I('ms').style.display = 'flex';
       await loadAttConfig();
+      await loadDeptsCfg();
       // 로그인 기록 저장 (비동기, 실패해도 진행)
       recordLogin(user.uid, data.name, data.org).catch(()=>{});
       showMain();
@@ -771,7 +793,7 @@ async function loadStaff() {
       <div style="display:flex;gap:6px;flex-shrink:0">
         <button class="bm" onclick="openEditStaff('${s.uid}','${s.name}','${s.org}','${s.dept}','${s.role}')">✏️ 수정</button>
         <button class="bm" style="background:var(--warn-bg);color:var(--warn)" onclick="openResetPw('${s.uid}')">🔑 비번</button>
-        ${isSU?`<button class="bm" style="background:var(--purple-bg);color:#7c3aed" onclick="showPw('${s.uid}')">👁 확인</button>`:''}        ${s.uid!==CU.uid?`<button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="deleteStaff('${s.uid}')">🗑 삭제</button>`:''}
+        ${isSU?`<button class="bm" style="background:var(--purple-bg);color:#7c3aed" onclick="showPw('${s.uid}')">👁 확인</button>`:''}        ${ac==='active'&&s.uid!==CU.uid?`<button class="bm" style="background:var(--warn-bg);color:var(--warn)" onclick="openRetire('${s.uid}')">🚪 퇴사</button>`:''}        ${s.uid!==CU.uid?`<button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="deleteStaff('${s.uid}')">🗑 삭제</button>`:''}
       </div>
     </div>`;
   }).join('') : '<p class="empty">교직원이 없습니다.</p>';
@@ -1910,7 +1932,7 @@ function openNoticeForm(){
             <select id="nt-org" class="minput" onchange="onNoticeOrgChange()">${orgOpts}</select></div>
           <div class="fgrp" id="nt-dept-grp" style="display:none"><label class="mlabel">부서</label>
             <select id="nt-dept" class="minput">
-              <option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>
+              ${(DEPTS_CFG.daniel||[]).map(dd=>`<option value="${dd}">${dd}</option>`).join('')}
             </select></div>
           <div class="fgrp" id="nt-user-grp" style="display:none"><label class="mlabel">대상 교직원</label>
             <select id="nt-user" class="minput">${Object.entries(STAFF_CACHE).map(([,a])=>`<option value="${a.uid}">${a.name} (${ORGS[a.org]||a.org})</option>`).join('')}</select></div>
@@ -2320,6 +2342,7 @@ async function renderAccessCtl(){
   }).join('');
 
   box.innerHTML = `
+    <div id="acc-cards" class="acc-cards"></div>
     <div class="asc">
       <h3 class="actitle" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">🔐 페이지 접근 권한
         <select onchange="window._accSort=this.value; renderAccessCtl();" style="height:32px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:12.5px;background:var(--iv);font-family:inherit;font-weight:600">
@@ -2393,6 +2416,17 @@ async function renderAccessCtl(){
         .duty-cg:last-child{margin-bottom:0}
         .duty-cg-l{display:block;font-size:11px;font-weight:800;color:var(--tl);margin-bottom:5px}
 
+        /* 컨트롤 타워 상태 카드 */
+        .acc-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px;margin-bottom:16px}
+        .acc-card{border:1px solid var(--ivd);border-radius:12px;background:var(--wh);padding:12px 14px}
+        .acc-card.click{cursor:pointer;transition:border-color .12s}
+        .acc-card.click:hover{border-color:var(--gm)}
+        .acc-card .n{font-size:22px;font-weight:900;color:var(--gd);line-height:1.1}
+        .acc-card .n.warn{color:var(--goldd)}
+        .acc-card .n.ok{color:var(--gm)}
+        .acc-card .t{font-size:11.5px;font-weight:800;color:var(--ts);margin-top:4px}
+        .acc-card .d{font-size:10.5px;color:var(--tl);margin-top:2px;line-height:1.5}
+
                 .acc-t{width:30px;height:30px;border-radius:8px;border:1.5px solid;cursor:pointer;font-size:13px;font-weight:900;font-family:inherit;transition:all .12s}
         .acc-t.on{background:var(--ok-bg);border-color:var(--ok-bg);color:var(--ok)}
         .acc-t.on:hover{background:var(--ok-bg);border-color:var(--ok)}
@@ -2419,6 +2453,7 @@ async function renderAccessCtl(){
     </div>` + dutyBoxHTML();
   await loadDuties();
   renderDutyPanel();
+  renderAccCards();
 }
 
 
@@ -2668,6 +2703,46 @@ function renderDutyPanel(){
       </thead>
       <tbody>${rows}</tbody>
     </table></div>`;
+}
+
+/* ── 컨트롤 타워 상태 카드 ── */
+async function renderAccCards(){
+  const el = $I('acc-cards'); if(!el) return;
+  const staff = Object.values(STAFF_CACHE||{});
+  const emptyDuty = DUTY_DEFS.filter(d=>!((DUTY[d.key]||[]).length));
+  const active = staff.filter(s=>!s.noAuth && (s.acStatus||'active')==='active').length;
+  const leave  = staff.filter(s=>(s.acStatus||'')==='leave').length;
+  const noAuth = staff.filter(s=>s.noAuth).length;
+  const denyCnt = staff.filter(s=>Array.isArray(s.pageDeny)&&s.pageDeny.length).length;
+  let recent = '—';
+  try {
+    const d7 = new Date(Date.now() - 7*24*3600*1000);
+    const qs = await getDocs(query(collection(db,'activityLogs'), where('at','>=',Timestamp.fromDate(d7))));
+    let n = 0;
+    qs.forEach(x=>{ const c = x.data().category; if(['담당자','접근권한','학년담당','퇴사'].includes(c)) n++; });
+    recent = n + '건';
+  } catch(e){}
+  el.innerHTML = `
+    <div class="acc-card click" onclick="document.getElementById('duty-box')?.scrollIntoView({behavior:'smooth',block:'start'})" title="담당자 표로 이동">
+      <div class="n ${emptyDuty.length?'warn':'ok'}">${emptyDuty.length?emptyDuty.length+'곳':'없음'}</div>
+      <div class="t">🧭 담당 공백</div>
+      <div class="d">${emptyDuty.length?esc(emptyDuty.map(d=>d.label).slice(0,3).join(' · '))+(emptyDuty.length>3?' 외':''):'모든 기능에 담당자가 있어요'}</div>
+    </div>
+    <div class="acc-card">
+      <div class="n">${active}명</div>
+      <div class="t">👥 재직 계정</div>
+      <div class="d">휴직 ${leave} · 명부 전용 ${noAuth}</div>
+    </div>
+    <div class="acc-card">
+      <div class="n ${denyCnt?'warn':'ok'}">${denyCnt?denyCnt+'명':'없음'}</div>
+      <div class="t">🔒 페이지 차단 설정</div>
+      <div class="d">${denyCnt?'아래 표에서 ✕ 칸을 확인하세요':'따로 차단한 규칙이 없습니다'}</div>
+    </div>
+    <div class="acc-card">
+      <div class="n">${recent}</div>
+      <div class="t">📜 최근 7일 권한 변경</div>
+      <div class="d">담당자 · 접근권한 · 학년담당 · 퇴사</div>
+    </div>`;
 }
 
 function dutyBoxHTML(){
@@ -3408,6 +3483,30 @@ window.clearSession = clearSession;
 function renderAdmSys(){
   const isOA=['super','org_admin'].includes(CU.role), isSU=CU.role==='super';
   $I('ca-sys').innerHTML=`
+  <style>
+    .dept-org{margin-bottom:14px}
+    .dept-org:last-child{margin-bottom:0}
+    .dept-orgname{font-size:13px;font-weight:800;color:var(--gd);margin-bottom:7px}
+    .dept-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+    .dept-chip{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--wh);padding:6px 8px 6px 12px;font-size:13px}
+    .dept-chip b{font-weight:800;color:var(--gd)}
+    .dept-chip i{font-style:normal;font-size:10.5px;color:var(--tl)}
+    .dept-chip button{border:none;background:transparent;cursor:pointer;font-size:12px;padding:2px 3px;border-radius:5px;color:var(--ts);font-family:inherit}
+    .dept-chip button:hover{background:var(--iv)}
+    .dept-add{display:flex;gap:6px;align-items:center}
+    .ny-prog{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .ny-prog .bar{flex:1;height:9px;border-radius:100px;background:var(--ivd);overflow:hidden}
+    .ny-prog .bar i{display:block;height:100%;background:var(--gm);border-radius:100px;transition:width .25s}
+    .ny-prog b{font-size:12.5px;color:var(--gm);white-space:nowrap}
+    .ny-step{display:flex;align-items:flex-start;gap:10px;padding:11px 4px;border-bottom:1px solid var(--ivd)}
+    .ny-step:last-child{border-bottom:none}
+    .ny-step input{width:19px;height:19px;margin-top:1px;accent-color:var(--gm);cursor:pointer}
+    .ny-step .ny-body{flex:1;min-width:0}
+    .ny-step .ny-body b{display:block;font-size:13.5px;color:var(--gd)}
+    .ny-step.done .ny-body b{color:var(--tl);text-decoration:line-through}
+    .ny-step .ny-body span{display:block;font-size:12px;color:var(--ts);line-height:1.55;margin-top:2px}
+    .ny-step.done .ny-body span{color:var(--tl)}
+  </style>
   <div class="asc">
     ${isOA?`
     <div class="acard">
@@ -3451,6 +3550,25 @@ function renderAdmSys(){
       <button class="bp" onclick="createAcc()">계정 발급</button>
     </div>`:'' }
 
+    ${isSU?`
+    <div class="acard">
+      <h3 class="actitle">🏷 부서 관리</h3>
+      <p class="adesc">기관별 부서 목록을 여기 한 곳에서 관리합니다. 바꾸면 <b>계정 발급 · 교직원 수정 · 명부 · 반 편성</b>의 부서 선택지에 모두 적용됩니다.
+        <span style="color:var(--tl)">이름을 바꾸면 그 부서로 등록된 교직원과 반의 부서도 함께 새 이름으로 바뀝니다. 사용 중인 부서는 지울 수 없어요.</span></p>
+      <div id="dept-mgr"><p class="empty" style="font-size:13px">불러오는 중…</p></div>
+    </div>`:''}
+
+    ${isOA?`
+    <div class="acard">
+      <h3 class="actitle">🎒 새 학년도 준비 도우미</h3>
+      <p class="adesc">신학기에 챙길 일을 순서대로 안내합니다. 끝낸 단계는 체크해두면 저장되어 언제 다시 열어도 이어집니다.</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+        <label style="font-size:13px;font-weight:700;color:var(--ts)">준비할 학년도</label>
+        <select id="ny-year" onchange="changeNyYear()" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv);font-family:inherit;font-weight:600"></select>
+      </div>
+      <div id="ny-steps"></div>
+    </div>`:''}
+
     <div class="acard">
       <h3 class="actitle">👥 전체 교직원 목록</h3>
       <div class="frow" style="margin-bottom:12px">
@@ -3462,6 +3580,8 @@ function renderAdmSys(){
     </div>
   </div>`;
   if(isOA) updDept();
+  if(isSU) renderDeptMgr();
+  if(isOA) initNewYear();
   loadStaff();
 }
 
@@ -3646,16 +3766,278 @@ function toggleFMode(){
   loadOv();
 }
 
+
+/* ═══════════════ 🏷 부서 관리 (컨트롤 타워) ═══════════════
+   기관별 부서 목록을 adminConfig/depts 한 문서에서 관리한다.
+   이름을 바꾸면 그 부서로 등록된 교직원(staff)과 반(classes)의
+   부서 이름도 함께 옮겨 준다. */
+async function renderDeptMgr(){
+  const box = $I('dept-mgr'); if(!box) return;
+  if(!Object.keys(STAFF_CACHE||{}).length){ try{ await reloadStaffCache(); }catch(e){} }
+  const orgBlock = (org)=>{
+    const chips = (DEPTS_CFG[org]||[]).map(d=>{
+      const inUse = Object.values(STAFF_CACHE||{}).filter(s=>s.org===org && s.dept===d).length;
+      return `<span class="dept-chip">
+        <b>${esc(d)}</b><i>${inUse?inUse+'명':''}</i>
+        <button title="이름 바꾸기" onclick="renameDept('${org}','${esc(d)}')">✏️</button>
+        <button title="삭제" onclick="delDept('${org}','${esc(d)}')">✕</button>
+      </span>`;
+    }).join('');
+    return `<div class="dept-org">
+      <div class="dept-orgname">${ORGS[org]||org}</div>
+      <div class="dept-chips">${chips||'<span class="empty" style="font-size:12px">부서 없음</span>'}</div>
+      <div class="dept-add">
+        <input id="nd-${org}" placeholder="새 부서 이름" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv);outline:none;font-family:inherit">
+        <button class="bs" onclick="addDept('${org}')">＋ 추가</button>
+      </div>
+    </div>`;
+  };
+  box.innerHTML = orgBlock('daniel') + orgBlock('jihyebit');
+}
+window.renderDeptMgr = renderDeptMgr;
+
+async function saveDeptsCfg(){
+  await setDoc(doc(db,'adminConfig','depts'), {
+    daniel: DEPTS_CFG.daniel, jihyebit: DEPTS_CFG.jihyebit,
+    updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name||''
+  });
+}
+
+async function addDept(org){
+  const inp = $I('nd-'+org); if(!inp) return;
+  const name = (inp.value||'').trim();
+  if(!name) return toast('부서 이름을 입력하세요.','err');
+  if((DEPTS_CFG[org]||[]).includes(name)) return toast('이미 있는 부서입니다.','err');
+  try {
+    DEPTS_CFG[org] = [...(DEPTS_CFG[org]||[]), name];
+    await saveDeptsCfg();
+    logActivity('입력','부서',`${ORGS[org]||org} ${name} 추가`);
+    toast('부서를 추가했습니다.','ok');
+    renderDeptMgr();
+  } catch(e){ DEPTS_CFG[org] = DEPTS_CFG[org].filter(d=>d!==name); toast('실패: '+(e.message||''),'err'); }
+}
+window.addDept = addDept;
+
+async function renameDept(org, oldName){
+  const nn = prompt(`「${oldName}」의 새 이름을 입력하세요.\n이 부서로 등록된 교직원·반 정보도 함께 새 이름으로 바뀝니다.`, oldName);
+  if(nn===null) return;
+  const name = nn.trim();
+  if(!name || name===oldName) return;
+  if((DEPTS_CFG[org]||[]).includes(name)) return toast('이미 있는 부서 이름입니다.','err');
+  try {
+    DEPTS_CFG[org] = (DEPTS_CFG[org]||[]).map(d=>d===oldName?name:d);
+    await saveDeptsCfg();
+    // 교직원 이관
+    let sc=0;
+    for(const s of Object.values(STAFF_CACHE||{})){
+      if(s.org===org && s.dept===oldName){
+        await updateDoc(doc(db,'staff',s.uid), {dept:name});
+        s.dept = name; sc++;
+      }
+    }
+    // 반 이관
+    let cc=0;
+    try {
+      const cs = await getDocs(collection(db,'classes'));
+      for(const d of cs.docs){
+        const c = d.data();
+        if(c.org===org && c.dept===oldName){ await updateDoc(doc(db,'classes',d.id), {dept:name}); cc++; }
+      }
+    } catch(e){}
+    logActivity('수정','부서',`${ORGS[org]||org} ${oldName} → ${name} (교직원 ${sc}명 · 반 ${cc}개 이관)`);
+    toast(`이름을 바꿨습니다 — 교직원 ${sc}명 · 반 ${cc}개 함께 변경`,'ok');
+    renderDeptMgr();
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+}
+window.renameDept = renameDept;
+
+async function delDept(org, name){
+  const staffUse = Object.values(STAFF_CACHE||{}).filter(s=>s.org===org && s.dept===name).length;
+  let classUse = 0;
+  try {
+    const cs = await getDocs(collection(db,'classes'));
+    cs.forEach(d=>{ const c=d.data(); if(c.org===org && c.dept===name) classUse++; });
+  } catch(e){}
+  if(staffUse || classUse) return toast(`사용 중이라 지울 수 없습니다 — 교직원 ${staffUse}명 · 반 ${classUse}개. 먼저 소속을 옮겨주세요.`,'err');
+  if(!confirm(`「${name}」 부서를 삭제할까요?`)) return;
+  try {
+    DEPTS_CFG[org] = (DEPTS_CFG[org]||[]).filter(d=>d!==name);
+    await saveDeptsCfg();
+    logActivity('삭제','부서',`${ORGS[org]||org} ${name}`);
+    toast('삭제했습니다.');
+    renderDeptMgr();
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+}
+window.delDept = delDept;
+
+/* ═══════════════ 🚪 퇴사 원클릭 ═══════════════
+   계정 잠금(acStatus:'quit') + 모든 기능별 담당 해제 + 학년별 출석 담당 해제
+   + 담임·대리 해제를 한 번에 처리한다. */
+const RETIRE_DUTY_DOCS = [
+  {col:'timetableConfig', id:'editors',  fields:['uids']},
+  {col:'academicConfig',  id:'editors',  fields:['all','daniel','jihyebit','uids']},
+  {col:'payConfig',       id:'managers', fields:['list']},
+  {col:'expenseConfig',   id:'managers', fields:['list']},
+  {col:'attendConfig',    id:'editors',  fields:['uids']},
+  {col:'classConfig',     id:'editors',  fields:['uids','studentUids']},
+];
+
+function openRetire(uid){
+  const s = STAFF_CACHE[uid]; if(!s) return toast('교직원 정보를 찾을 수 없습니다.','err');
+  const today = new Date();
+  const ds = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
+  const el = document.createElement('div'); el.id='retire-mod';
+  el.innerHTML = `
+    <div class="mov">
+      <div class="mbk" onclick="document.getElementById('retire-mod').remove()"></div>
+      <div class="mbox">
+        <div class="mtitle">🚪 퇴사 처리 — ${esc(s.name||'')}</div>
+        <div class="msub">아래 정리를 한 번에 처리합니다. 명부와 기록은 그대로 남습니다.</div>
+        <div style="background:var(--iv);border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.9;margin-bottom:14px">
+          ① 계정을 <b>퇴직</b> 상태로 바꿔 로그인을 막습니다<br>
+          ② 기능별 담당(시간표·학사일정·경비·출석부·반편성 등)에서 <b>모두 해제</b>합니다<br>
+          ③ 학년별 출석 담당에서 해제합니다<br>
+          ④ 맡고 있던 반의 <b>담임·대리를 해제</b>합니다
+        </div>
+        <div class="fgrp"><label>퇴직일</label><input type="date" id="rt-date" value="${ds}"></div>
+        <div class="mact">
+          <button class="bs" onclick="document.getElementById('retire-mod').remove()">취소</button>
+          <button class="bp" style="background:var(--danger)" onclick="retireStaff('${uid}')">퇴사 처리</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+window.openRetire = openRetire;
+
+async function retireStaff(uid){
+  const s = STAFF_CACHE[uid]; if(!s) return;
+  const dt = $I('rt-date')?.value || '';
+  try {
+    // ① 계정 잠금
+    await updateDoc(doc(db,'staff',uid), {acStatus:'quit', ...(dt?{leaveDate:dt}:{})});
+    s.acStatus = 'quit'; if(dt) s.leaveDate = dt;
+    // ② 기능별 담당 해제
+    let dn = 0;
+    for(const cfg of RETIRE_DUTY_DOCS){
+      try {
+        const g = await getDoc(doc(db,cfg.col,cfg.id));
+        if(!g.exists()) continue;
+        const data = g.data(); const upd = {}; let hit = false;
+        for(const f of cfg.fields){
+          if(Array.isArray(data[f]) && data[f].includes(uid)){
+            upd[f] = data[f].filter(u=>u!==uid); hit = true; dn++;
+          }
+        }
+        if(hit) await setDoc(doc(db,cfg.col,cfg.id), {...upd, updatedAt:Timestamp.now(), updatedByUid:CU.uid, updatedByName:CU.name||''}, {merge:true});
+      } catch(e){}
+    }
+    // ③ 학년별 출석 담당 해제
+    try {
+      const g = await getDoc(doc(db,'attendConfig','gradeAssign'));
+      if(g.exists() && g.data().v){
+        const v = {...g.data().v}; let hit = false;
+        Object.keys(v).forEach(k=>{
+          if(Array.isArray(v[k]) && v[k].includes(uid)){
+            v[k] = v[k].filter(u=>u!==uid); if(!v[k].length) delete v[k]; hit = true; dn++;
+          }
+        });
+        if(hit) await setDoc(doc(db,'attendConfig','gradeAssign'), {v, updatedAt:Timestamp.now(), updatedByUid:CU.uid, updatedByName:CU.name||''});
+      }
+    } catch(e){}
+    // ④ 담임·대리 해제
+    let hn = 0;
+    try {
+      const cs = await getDocs(collection(db,'classes'));
+      for(const d of cs.docs){
+        const c = d.data(); const upd = {}; let hit = false;
+        if(c.teacherUid===uid){ upd.teacherUid=''; if('teacherName' in c) upd.teacherName=''; hit = true; }
+        if(Array.isArray(c.deputies) && c.deputies.includes(uid)){ upd.deputies = c.deputies.filter(u=>u!==uid); hit = true; }
+        if(hit){ await updateDoc(doc(db,'classes',d.id), upd); hn++; }
+      }
+    } catch(e){}
+    logActivity('권한','퇴사',`${s.name} 퇴사 처리`, `담당 ${dn}건 · 담임/대리 ${hn}반 해제${dt?' · 퇴직일 '+dt:''}`);
+    document.getElementById('retire-mod')?.remove();
+    toast(`${s.name} 선생님 퇴사 처리 완료 — 담당 ${dn}건 · 담임/대리 ${hn}반 해제`,'ok');
+    loadStaff();
+  } catch(e){ toast('퇴사 처리 실패: '+(e.message||''),'err'); }
+}
+window.retireStaff = retireStaff;
+
+/* ═══════════════ 🎒 새 학년도 준비 도우미 ═══════════════
+   신학기 준비 단계를 체크리스트로 안내한다.
+   진행 상태: adminConfig/yearTransition = { y2026:{terms:true,…} } */
+const NY_STEPS = [
+  {k:'terms',     t:'학기 일정 등록',        d:'출석부 → 설정에서 새 학년도 1·2학기 개학일과 종업일을 넣습니다. 수업일수 계산의 뿌리예요.', href:'attend.html'},
+  {k:'academic',  t:'학사일정 새 학년도',     d:'학사일정에서 새 학년도 달력을 만들고 방학·큰 행사의 골격을 잡습니다.', href:'academic.html'},
+  {k:'promote',   t:'반 편성 · 진급',        d:'반 편성에서 새 학년도 반을 만들고 학생들을 진급시켜 배정합니다.', href:'class.html'},
+  {k:'homeroom',  t:'담임 · 대리 확인',      d:'각 반의 담임과 대리 선생님을 확인합니다. 출석 기록 권한의 기본이에요.', href:'class.html'},
+  {k:'grade',     t:'학년별 출석 담당 지정',  d:'출석부 → 설정에서 학년마다 출석을 기록할 선생님을 지정합니다.', href:'attend.html'},
+  {k:'duty',      t:'기능별 담당자 점검',     d:'담당자 표에서 빈자리와 그만두신 분을 정리합니다.', href:'#acc'},
+  {k:'timetable', t:'시간표 준비',           d:'시간표 틀을 만들고 수업을 정의해 새 학기 시간표를 짭니다.', href:'timetable.html'},
+];
+let NY_STATE = {};
+let NY_YEAR = null;
+
+function nyDefaultYear(){
+  const d = new Date();
+  return (d.getMonth()+1) >= 9 ? d.getFullYear()+1 : d.getFullYear();
+}
+async function initNewYear(){
+  if(!NY_YEAR) NY_YEAR = nyDefaultYear();
+  const sel = $I('ny-year');
+  if(sel){
+    const cy = new Date().getFullYear();
+    const ys = [...new Set([cy-1, cy, cy+1, NY_YEAR])].sort();
+    sel.innerHTML = ys.map(y=>`<option value="${y}"${y===NY_YEAR?' selected':''}>${y}학년도</option>`).join('');
+  }
+  try {
+    const g = await getDoc(doc(db,'adminConfig','yearTransition'));
+    NY_STATE = g.exists() ? (g.data()||{}) : {};
+  } catch(e){ NY_STATE = {}; }
+  renderNySteps();
+}
+window.initNewYear = initNewYear;
+function changeNyYear(){ NY_YEAR = Number($I('ny-year').value); renderNySteps(); }
+window.changeNyYear = changeNyYear;
+function renderNySteps(){
+  const box = $I('ny-steps'); if(!box) return;
+  const st = NY_STATE['y'+NY_YEAR] || {};
+  const done = NY_STEPS.filter(s=>st[s.k]).length;
+  const pct = Math.round(done/NY_STEPS.length*100);
+  box.innerHTML = `
+    <div class="ny-prog"><div class="bar"><i style="width:${pct}%"></i></div><b>${done}/${NY_STEPS.length} 단계 완료</b></div>
+    ` + NY_STEPS.map((s,i)=>`
+    <div class="ny-step ${st[s.k]?'done':''}">
+      <input type="checkbox" ${st[s.k]?'checked':''} onchange="toggleNyStep('${s.k}')" title="완료 표시">
+      <div class="ny-body"><b>${i+1}. ${s.t}</b><span>${s.d}</span></div>
+      ${s.href==='#acc'
+        ? `<button class="bs" style="flex-shrink:0" onclick="showAdmTab('acc')">이동</button>`
+        : `<a class="bs" href="${s.href}" style="flex-shrink:0;text-decoration:none;display:inline-flex;align-items:center">이동</a>`}
+    </div>`).join('');
+}
+async function toggleNyStep(k){
+  const key = 'y'+NY_YEAR;
+  NY_STATE[key] = NY_STATE[key] || {};
+  if(NY_STATE[key][k]) delete NY_STATE[key][k]; else NY_STATE[key][k] = true;
+  if(!Object.keys(NY_STATE[key]).length) delete NY_STATE[key];
+  renderNySteps();
+  try {
+    const save = {}; Object.keys(NY_STATE).forEach(x=>{ if(x.startsWith('y')) save[x]=NY_STATE[x]; });
+    await setDoc(doc(db,'adminConfig','yearTransition'), {...save, updatedAt:Timestamp.now(), updatedByUid:CU.uid});
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}
+window.toggleNyStep = toggleNyStep;
+
 function updDept(){
   const o=$I('no')?.value, d=$I('nd'); if(!d) return;
-  d.innerHTML=o==='jihyebit'?'<option value="전체">전체</option>':
-    '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
+  d.innerHTML = deptOptsHTML(o);
 }
 
 function updEditDept(){
   const o=$I('es-org')?.value, d=$I('es-dept'); if(!d) return;
-  d.innerHTML=o==='jihyebit'?'<option value="전체">전체</option>':
-    '<option value="초등부">초등부</option><option value="중고등부">중고등부</option><option value="행정실">행정실</option>';
+  const cur = d.value;
+  d.innerHTML = deptOptsHTML(o, cur);
 }
 
 // 권한이 기관관리자면 복수 기관 체크박스, 아니면 단일 드롭다운
@@ -3800,9 +4182,7 @@ function openEditStaff(uid, name, org, dept, role){
   const el=document.createElement('div'); el.id='edit-staff-mod';
   const cur = STAFF_CACHE[uid] || {};
   const acStatus = cur.acStatus || 'active';
-  const deptOpts = (o, sel) => o==='jihyebit'
-    ? `<option value="전체"${sel==='전체'?' selected':''}>전체</option>`
-    : `<option value="초등부"${sel==='초등부'?' selected':''}>초등부</option><option value="중고등부"${sel==='중고등부'?' selected':''}>중고등부</option><option value="행정실"${sel==='행정실'?' selected':''}>행정실</option>`;
+  const deptOpts = (o, sel) => deptOptsHTML(o, sel);
   el.innerHTML=`
     <div class="mov">
       <div class="mbk" onclick="document.getElementById('edit-staff-mod').remove()"></div>
