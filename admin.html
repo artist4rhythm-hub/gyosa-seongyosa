@@ -643,7 +643,11 @@ async function saveEditStaff(uid) {
     if ($I('es-org-jihyebit')?.checked) orgs.push('jihyebit');
     if ($I('es-org-daniel')?.checked) orgs.push('daniel');
     if (orgs.length === 0) return toast('관리 기관을 하나 이상 선택하세요.', 'err');
-    org = orgs[0];        // 대표 기관 (호환용)
+    /* 대표 기관: 원래 대표 기관이 여전히 체크되어 있으면 그대로 둔다.
+       (예전에는 무조건 첫 체크박스(지혜빛)로 바뀌어, 두 기관을 고르면
+        다니엘 소속이던 분이 지혜빛 소속처럼 보이는 문제가 있었다) */
+    const prevOrg = (STAFF_CACHE[uid]||{}).org;
+    org = orgs.includes(prevOrg) ? prevOrg : orgs[0];
     dept = '전체';
   } else {
     org = $I('es-org').value;
@@ -2365,11 +2369,14 @@ async function renderAccessCtl(){
         .duty-warn span{color:var(--ts);font-weight:400}
 
         /* 사람별 표 */
-        .duty-tw{overflow-x:auto;border:1px solid var(--ivd);border-radius:11px}
+        /* 표가 제 창 안에서 스크롤되게 하여 열 제목이 항상 위에 붙어 있게 한다 */
+        .duty-tw{overflow:auto;max-height:76vh;border:1px solid var(--ivd);border-radius:11px}
         .duty-t{border-collapse:collapse;width:100%;min-width:640px;background:var(--wh)}
         .duty-t th,.duty-t td{border-bottom:1px solid var(--ivd);padding:6px 4px;text-align:center}
         .duty-t thead th{background:var(--gp);font-size:11px;font-weight:800;color:var(--gd);
-          position:sticky;top:0;padding:8px 4px}
+          position:sticky;padding:8px 4px;z-index:3;box-shadow:0 1px 0 var(--ivd)}
+        .duty-t thead tr:first-child th{top:0;height:32px}
+        .duty-t thead tr:nth-child(2) th{top:31px;height:34px}
         .duty-th{font-size:11px;line-height:1.4;display:inline-block}
         .duty-nmh{text-align:left !important;padding-left:12px !important;min-width:110px}
         .duty-nm{text-align:left !important;padding-left:12px !important;font-size:12.5px;white-space:nowrap}
@@ -2403,8 +2410,8 @@ async function renderAccessCtl(){
 
         /* 사람별 표 — 기관·부서 구분 행 + 첫 열 고정 */
         .duty-gh{font-size:11px;letter-spacing:.02em}
-        .duty-t th:first-child,.duty-t td:first-child{position:sticky;left:0;background:var(--wh);z-index:1}
-        .duty-t thead th:first-child{background:var(--gp);z-index:2}
+        .duty-t th:first-child,.duty-t td:first-child{position:sticky;left:0;background:var(--wh);z-index:2}
+        .duty-t thead th:first-child{background:var(--gp);z-index:4}
         .duty-t tr.duty-sec td{position:static;background:var(--iv);text-align:left;
           padding:7px 12px;font-size:11.5px;font-weight:800;color:var(--gd);
           border-top:1px solid var(--ivd)}
@@ -2579,12 +2586,23 @@ window.toggleDuty = async function(key, uid){
    다니엘 아마츠(초등부→중고등부→행정실) → 지혜빛 선교원 순.
    부서가 '전체'면 기관 이름만 쓴다. */
 function dutyGroupKey(s){
-  const org = ORGS[s.org] || s.org || '기타';
+  const oid = s.__dutyOrg || s.org;
+  const org = ORGS[oid] || oid || '기타';
   return (s.dept && s.dept!=='전체') ? org+' · '+s.dept : org;
 }
 function dutyGrouped(staff){
-  const order=[], map={};
+  /* 두 기관을 함께 관리하는 분(orgs 배열이 2개 이상)은
+     각 기관 섹션에 모두 나오게 펼친다 — 어느 기관 쪽에서 찾아도 보이도록.
+     칸은 같은 계정을 켜고 끄는 것이라 어느 줄에서 눌러도 똑같이 적용된다. */
+  const expanded = [];
   staff.forEach(s=>{
+    if(Array.isArray(s.orgs) && s.orgs.length > 1){
+      s.orgs.forEach(o=>expanded.push({...s, __dutyOrg:o, __multi:true,
+        dept: (o===s.org ? s.dept : '전체')}));
+    } else expanded.push(s);
+  });
+  const order=[], map={};
+  expanded.forEach(s=>{
     const k=dutyGroupKey(s);
     if(!map[k]){ map[k]=[]; order.push(k); }
     map[k].push(s);
@@ -2687,7 +2705,7 @@ function renderDutyPanel(){
                     : s.role==='tab_admin' ? '부서장' : '교사';
       return `<tr>
         <td class="duty-nm"><b>${esc(s.name||'')}</b>
-          <span class="duty-role">${roleLab}</span></td>
+          <span class="duty-role">${roleLab}${s.__multi?' · 두 기관':''}</span></td>
         ${cells}
         <td class="duty-sum">${n ? `${n}개` : '—'}</td>
       </tr>`;
