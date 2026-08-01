@@ -59,13 +59,14 @@
   .ch-d{ padding:11px 6px; text-align:center; font-size:14px; font-weight:800; color:#fff; }
   .ch-d.sun{ color:#FFB4A8; } .ch-d.sat{ color:#A8C8FF; }
 
-  .cal-week{ display:flex; border-bottom:1px solid var(--ivd); }
+  .cal-week{ display:flex; border-bottom:1px solid var(--ivd); align-items:stretch; }
   .cw-wk{ width:78px; flex:none; padding:8px 5px; text-align:center; font-size:9.5px;
     font-weight:700; color:var(--ts); background:var(--gp); border-right:1px solid var(--ivd);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:1px; line-height:1.25; }
   .cw-wk .wk-nm{ font-size:9.5px; font-weight:700; color:var(--ts); opacity:.85;
-    word-break:keep-all; overflow-wrap:anywhere; }
+    word-break:keep-all; overflow-wrap:anywhere; line-height:1.3; }
+  .cw-wk .wk-nm + .wk-nm{ margin-top:-1px; }
   .cw-wk .wknum{ font-size:16px; font-weight:800; color:var(--gd); }
   .cw-wk.break{ background:var(--m-bg); }
   .cw-wk.break .wk-nm, .cw-wk.break .wknum{ color:var(--m-tx); }
@@ -283,16 +284,16 @@
     border-radius:11px;padding:10px 14px;margin-bottom:12px}
 
   /* ── 🌈 학년 색 점 ── */
-  /* 학년 배지 — 초등 ● · 중등 ■ · 고등 ★, 안에 숫자 */
+  /* 학년 배지 — 초등 ● · 중등 ■ · 고등 ▲, 안에 숫자 */
   .ev-dots{display:inline-flex;gap:2px;margin-left:4px;flex-wrap:wrap;align-items:center}
   .gb{min-width:16px;height:16px;padding:0 3px;display:inline-flex;align-items:center;
     justify-content:center;font-style:normal;font-size:9.5px;font-weight:900;line-height:1;flex:none}
   .gb.circle{border-radius:100px}
   .gb.square{border-radius:3px}
-  .gb-star{width:21px;height:21px;flex:none;display:inline-block;vertical-align:middle}
-  .gl-i .gb-star{width:19px;height:19px}
+  .gb-tri{width:22px;height:22px;flex:none;display:inline-block;vertical-align:middle}
+  .gl-i .gb-tri{width:20px;height:20px}
   .gl-i .gb{min-width:15px;height:15px;font-size:9px}
-  .evi-g .gb-star{width:18px;height:18px}
+  .evi-g .gb-tri{width:19px;height:19px}
   .evi-g .gb{min-width:15px;height:15px;font-size:9px}
   /* 어느 캘린더 것인지 */
   .ev-org{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px;
@@ -558,9 +559,9 @@ function gradeShape(g){
   const s = String(g||'');
   if(!s.includes('학년')) return 'circle';
   const n = parseInt(gradeNum(g), 10) || 0;
-  if(n >= 10) return 'star';
-  if(n >= 7)  return 'square';
-  return 'circle';
+  if(n >= 10) return 'tri';      // 고등 — 삼각형
+  if(n >= 7)  return 'square';   // 중등 — 네모
+  return 'circle';               // 초등 — 동그라미
 }
 
 /* 바탕색이 밝으면 글자를 어둡게 — 주황·노랑·초록·하늘 위 흰 글씨는 잘 안 보인다.
@@ -577,12 +578,13 @@ function onColor(hex){
 function gradeBadge(g, forLegend){
   const c = gradeColor(g), n = gradeNum(g), sh = gradeShape(g);
   const ring = forLegend ? 'none' : '1.2px';
-  if(sh === 'star'){
-    return `<svg class="gb-star" viewBox="0 0 24 24" role="img" aria-label="${esc(g)}"><title>${esc(g)}</title>
-      <path d="M12 2 L20.7 17.5 L3.3 17.5 Z" fill="${c}" stroke="#fff" stroke-width="${forLegend?0:1.3}" stroke-linejoin="round"/>
-      <path d="M12 22 L3.3 6.5 L20.7 6.5 Z" fill="${c}" stroke="#fff" stroke-width="${forLegend?0:1.3}" stroke-linejoin="round"/>
-      <text x="12" y="12.4" text-anchor="middle" dominant-baseline="central"
-        font-size="9.5" font-weight="800" fill="${onColor(c)}">${esc(n)}</text></svg>`;
+  if(sh === 'tri'){
+    // 삼각형은 아래쪽이 넓다 — 숫자를 조금 내려 두 자리도 또렷하게
+    return `<svg class="gb-tri" viewBox="0 0 24 24" role="img" aria-label="${esc(g)}"><title>${esc(g)}</title>
+      <path d="M12 2.2 L22.4 20.8 L1.6 20.8 Z" fill="${c}"
+        stroke="#fff" stroke-width="${forLegend?0:1.4}" stroke-linejoin="round"/>
+      <text x="12" y="16.4" text-anchor="middle" dominant-baseline="central"
+        font-size="9.6" font-weight="800" fill="${onColor(c)}">${esc(n)}</text></svg>`;
   }
   return `<i class="gb ${sh}" title="${esc(g)}"
     style="background:${c};color:${onColor(c)};box-shadow:${ring==='none'?'none':`0 0 0 ${ring} rgba(255,255,255,.8)`}">${esc(n)}</i>`;
@@ -922,6 +924,17 @@ function render(){
 
   /* 주차는 학기·방학마다 새로 센다.
      개학일이 든 주가 «2학기 1주차», 가정학습의 달이 시작된 주가 «가정학습의 달 1주차». */
+  /* 학기·방학 이름을 주차 칸에 보기 좋게 나눈다.
+     · 이름에 «/» 를 넣으면 그 자리에서 줄이 바뀐다 (예: 여름/가정학습의 달)
+     · 없으면 띄어쓰기가 있을 때 첫 칸에서 한 번만 끊는다 */
+  function wrapName(name){
+    const s = String(name||'').trim();
+    if(s.includes('/')) return s.split('/').map(x=>x.trim()).filter(Boolean);
+    const i = s.indexOf(' ');
+    if(i > 0 && s.length > 6) return [s.slice(0,i), s.slice(i+1)];
+    return [s];
+  }
+
   const sunOf = str => {
     const t = new Date(str+'T00:00:00');
     t.setDate(t.getDate() - t.getDay());
@@ -975,7 +988,7 @@ function render(){
     html += '<div class="cal-week">';
     html += wl.name
       ? `<div class="cw-wk ${wl.kind==='break'?'break':'term'}">
-           <span class="wk-nm">${esc(wl.name)}</span>
+           ${wrapName(wl.name).map(s=>`<span class="wk-nm">${esc(s)}</span>`).join('')}
            <span class="wknum">${wl.num}</span><span>주차</span></div>`
       : `<div class="cw-wk none"><span class="wk-none">—</span></div>`;
 
@@ -1023,12 +1036,26 @@ function render(){
 
   html += '</div>';
   $I('cal-mount').innerHTML = html;
+  evenWeekHeights();
   renderLegend();
   renderGradeLegend();
   applyZoom();
   renderTermPanel();
   renderClosedPanel();
   renderEditorPanel();
+}
+
+/* 주마다 내용이 달라 높이가 들쭉날쭉해지므로,
+   가장 높은 주에 맞춰 모두 같은 두께로 만든다. */
+function evenWeekHeights(){
+  const rows = [...document.querySelectorAll('#cal-mount .cal-week')];
+  if(!rows.length) return;
+  rows.forEach(r=>{ r.style.minHeight = ''; });
+  requestAnimationFrame(()=>{
+    let max = 0;
+    rows.forEach(r=>{ max = Math.max(max, r.offsetHeight); });
+    if(max > 0) rows.forEach(r=>{ r.style.minHeight = max + 'px'; });
+  });
 }
 
 function evChip(e){
@@ -1148,7 +1175,10 @@ window.openTermDlg = function(kind, idx){
         :'방학 기간은 달력 왼쪽에 방학 이름으로 표시됩니다.'}</div>
       <label class="fld-label">이름</label>
       <input class="fld-input" id="tm-name" value="${esc(cur?cur.name:'')}"
-        placeholder="${kind==='term'?'예: 1학기':'예: Summer-Break'}">
+        placeholder="${kind==='term'?'예: 1학기':'예: 여름/가정학습의 달'}">
+      <div style="font-size:11px;color:var(--tl,#93A09A);margin-top:5px;line-height:1.6">
+        달력 주차 칸에서 줄을 바꾸고 싶은 자리에 <b>/</b> 를 넣으세요 —
+        <code style="font-size:11px">여름/가정학습의 달</code> → «여름» 다음 줄에 «가정학습의 달»</div>
       <div class="fld-row">
         <div style="flex:1"><label class="fld-label">시작일</label>
           <input type="date" class="fld-input" id="tm-start" value="${esc(cur?cur.start:'')}"></div>
@@ -1834,7 +1864,7 @@ function renderGradeLegend(){
   const list = [...used].sort((a,b)=> order.indexOf(a) - order.indexOf(b));
   box.innerHTML = `<div class="gl-wrap"><span class="gl-t">🌈 학년</span>
     ${list.map(g=>`<span class="gl-i">${gradeBadge(g, true)}${esc(g)}</span>`).join('')}
-    <span class="gl-note">초등 ● · 중등 ■ · 고등 ★ — 행사를 누르면 자세히 볼 수 있어요</span></div>`;
+    <span class="gl-note">초등 ● · 중등 ■ · 고등 ▲ — 행사를 누르면 자세히 볼 수 있어요</span></div>`;
 }
 
 /* ═══════════════════════════════════════════════
@@ -2038,6 +2068,8 @@ Object.defineProperty(window, 'SHOW_ALL_CAL', { get:()=>SHOW_ALL_CAL });
 Object.defineProperty(window, 'EDITORS', { get:()=>EDITORS });
 window.canEditCal = canEditCal;
 window.loadEvents = loadEvents;
+window.loadYears = loadYears;
+window.loadYear = loadYear;
 window.canEditAny = canEditAny;
 window.calOf = calOf;
 
