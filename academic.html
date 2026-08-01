@@ -85,6 +85,18 @@
   .cwb.sunday{ background:var(--f-bg); }
   .cwb.saturday{ background:var(--m-bg); }
   .cwb.holiday{ background:var(--danger-bg); }
+  /* 오늘 — 늘 테두리로 표시 */
+  .cwb.today{ box-shadow:inset 0 0 0 2px var(--gm,#00704A); }
+  .cw-n.today b{ color:var(--gm,#00704A); }
+  .cw-td{ font-size:9px; font-weight:800; color:#fff; background:var(--gm,#00704A);
+    border-radius:100px; padding:1px 6px; line-height:1.4; }
+  @keyframes tdBlink{
+    0%,100%{ box-shadow:inset 0 0 0 2px var(--gm,#00704A); background:transparent; }
+    50%    { box-shadow:inset 0 0 0 3px var(--gm,#00704A); background:rgba(0,112,74,.16); }
+  }
+  .cwb.td-blink{ animation:tdBlink .55s ease-in-out 4; }
+  .cw-n.td-blink b{ animation:tdBlink .55s ease-in-out 4; border-radius:6px; }
+  @media (prefers-reduced-motion:reduce){ .td-blink{ animation:none !important; } }
 
   /* 날짜 줄 */
   .cw-nums{ position:relative; z-index:1; display:grid; grid-template-columns:repeat(7,1fr); }
@@ -246,6 +258,29 @@
     box-shadow:inset 0 0 0 2px var(--gm,#00704A)}
   .cw-lane.drop{box-shadow:inset 0 2px 0 var(--gm,#00704A), inset 0 -2px 0 var(--gm,#00704A);
     background:rgba(0,112,74,.07)}
+
+  /* ── 🔗 공유 링크 ── */
+  .sh-block{padding:13px 0;border-top:1px solid var(--ivd,#E3E1DA)}
+  .sh-block:first-child{border-top:none;padding-top:0}
+  .sh-h{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--gd,#1E3932);margin-bottom:4px}
+  .sh-dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+  .sh-nm{font-size:11.5px;font-weight:600;color:var(--ts,#5A6560);
+    background:var(--iv,#F2F0EB);border-radius:6px;padding:2px 8px;margin-left:auto}
+  .sh-off{font-size:11px;color:var(--tl,#93A09A);margin-left:auto}
+  .sh-d{font-size:11.5px;color:var(--tl,#93A09A);line-height:1.6;margin-bottom:9px}
+  .sh-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:7px}
+  .sh-url{flex:1;min-width:200px;font-family:inherit;font-size:11.5px;padding:7px 10px;
+    border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);color:var(--ts,#5A6560)}
+  .sh-acts{display:flex;gap:5px;flex-wrap:wrap}
+
+  /* 공유 링크로 들어온 화면 — 편집 자리는 다 감춘다 */
+  body.share-mode #topTabs,
+  body.share-mode #term-panel,
+  body.share-mode #closed-panel,
+  body.share-mode #share-panel,
+  body.share-mode #editor-panel,
+  body.share-mode #edit-hint,
+  body.share-mode #yr-act{ display:none !important; }
 
   /* ── 🔑 담당자 (캘린더별) ── */
   .ed-block{padding:11px 0;border-top:1px solid var(--ivd,#E3E1DA)}
@@ -415,6 +450,15 @@
       <div class="pdesc">법정 공휴일은 자동으로 들어갑니다. <b>임시공휴일·재량휴업·태풍 휴교</b>처럼
         따로 생기는 날만 여기에 넣으면 달력에 <b>빨간 날</b>로 표시됩니다.</div>
       <div class="tb-list" id="closed-list"></div>
+    </div>
+
+    <!-- 설정: 공유 링크 -->
+    <div class="panel" id="share-panel" style="display:none">
+      <div class="ptitle">🔗 공유 링크</div>
+      <div class="pdesc">링크를 아는 사람은 <b>로그인 없이</b> 학사일정을 볼 수 있습니다.
+        <b>학부모용</b>은 «학부모 공개»로 표시한 일정만 보이고, <b>선생님용</b>은 교사 전용 일정까지 다 보입니다.<br>
+        고친 내용을 링크에 반영하려면 <b>지금 내용으로 올리기</b>를 눌러 주세요.</div>
+      <div id="share-list"></div>
     </div>
 
     <!-- 수퍼관리자: 담당자 지정 -->
@@ -979,7 +1023,8 @@ function render(){
       if(!d) return null;
       const ds = dateStr(y,m,d);
       const closedName = closedOn(ds);
-      return { d, ds, dow:i, holName: holidays[ds] || closedName, closedName };
+      return { d, ds, dow:i, holName: holidays[ds] || closedName, closedName,
+               isToday: ds === todayStr() };
     });
 
     const firstValid = days.find(x=>x);
@@ -1003,15 +1048,17 @@ function render(){
       else if(x.holName) c += ' holiday';
       else if(i===0) c += ' sunday';
       else if(i===6) c += ' saturday';
-      return `<div class="${c}"></div>`;
+      if(x && x.isToday) c += ' today';
+      return `<div class="${c}"${x?` data-ds="${x.ds}"`:''}></div>`;
     }).join('') + '</div>';
 
     // 날짜 줄
     html += '<div class="cw-nums">' + days.map((x,i)=>{
       if(!x) return '<div class="cw-n"></div>';
-      const dcls = x.holName ? 'hol' : (i===0 ? 'sun' : i===6 ? 'sat' : '');
+      const dcls = (x.holName ? 'hol' : (i===0 ? 'sun' : i===6 ? 'sat' : '')) + (x.isToday?' today':'');
       return `<div class="cw-n ${dcls}" onclick="addOn('${x.ds}','am',event)">
-        <b>${x.d}</b>${x.holName?`<span class="cw-hn">${esc(x.holName)}</span>`:''}</div>`;
+        <b>${x.d}</b>${x.isToday?'<span class="cw-td">오늘</span>':''}${
+        x.holName?`<span class="cw-hn">${esc(x.holName)}</span>`:''}</div>`;
     }).join('') + '</div>';
 
     // 종일 · 오전 · 오후 띠
@@ -1185,13 +1232,14 @@ window.openTermDlg = function(kind, idx){
         <div style="flex:1"><label class="fld-label">종료일</label>
           <input type="date" class="fld-input" id="tm-end" value="${esc(cur?cur.end:'')}"></div>
       </div>
-      ${myOrgs().length>1 ? `<label style="display:flex;align-items:center;gap:8px;margin-top:14px;
-        font-size:12.5px;font-weight:700;color:var(--ts,#5A6560);cursor:pointer">
-        <input type="checkbox" id="tm-both" style="accent-color:var(--gm,#00704A);width:16px;height:16px">
-        🤝 두 기관에 같이 넣기
-      </label>
-      <div style="font-size:11px;color:var(--tl,#93A09A);margin-top:5px;line-height:1.6">
-        방학처럼 두 기관이 똑같이 쉬면 켜 주세요 — 다니엘 아마츠와 지혜빛 선교원 양쪽에 함께 들어갑니다.</div>` : ''}
+      <label class="fld-label" style="margin-top:14px">어느 캘린더에 넣을까요?</label>
+      <div class="chips" id="tm-cals">
+        ${CAL_KEYS.filter(canEditCal).map(k=>`<button type="button"
+          class="chip ${k===ORG?'on':''}" data-cal="${k}" onclick="toggleTmCal('${k}')">${esc(CALS[k].label)}</button>`).join('')}
+      </div>
+      <div style="font-size:11px;color:var(--tl,#93A09A);margin-top:6px;line-height:1.6">
+        보통은 <b>세 캘린더 모두</b> 같은 학기·방학을 쓰지만, 필요하면 캘린더마다 다르게 정할 수 있어요.
+        <button type="button" class="btn btn-sm" style="margin-left:6px" onclick="tmCalAll()">모두 고르기</button></div>
       <div class="mact">
         <button class="btn" onclick="closeTermDlg()">취소</button>
         <button class="btn btn-p" onclick="saveTerm('${kind}',${idx==null?'null':idx})">저장</button>
@@ -1200,6 +1248,14 @@ window.openTermDlg = function(kind, idx){
   document.body.appendChild(ov);
 };
 window.closeTermDlg = function(){ $I('term-mod')?.remove(); };
+
+window.toggleTmCal = function(k){
+  const b = document.querySelector(`#tm-cals .chip[data-cal="${k}"]`);
+  if(b) b.classList.toggle('on');
+};
+window.tmCalAll = function(){
+  document.querySelectorAll('#tm-cals .chip').forEach(b=>b.classList.add('on'));
+};
 
 window.saveTerm = async function(kind, idx){
   if(!needEdit()) return;
@@ -1219,35 +1275,33 @@ window.saveTerm = async function(kind, idx){
 
   await saveYear();
 
-  // 두 기관에 같이 넣기 — 다른 기관 학년도에도 같은 항목을 더한다
-  const both = $I('tm-both')?.checked;
+  // 고른 다른 캘린더에도 같은 항목을 더한다
+  const picked = [...document.querySelectorAll('#tm-cals .chip.on')].map(b=>b.dataset.cal);
   let alsoN = 0;
-  if(both){
-    for(const o of myOrgs()){
-      if(o === ORG) continue;
-      try {
-        const ref = doc(db,'academicYears', yearDocId(YEAR_INFO.year, o));
-        const s = await getDoc(ref);
-        const cur = s.exists() ? s.data() : { year:Number(YEAR_INFO.year), org:o,
-          label:`${YEAR_INFO.year}학년도`, terms:[], breaks:[], weekStart:'sun' };
-        const list = Array.isArray(cur[key]) ? cur[key] : [];
-        // 같은 이름·기간이 이미 있으면 겹쳐 넣지 않는다
-        const dup = list.some(x=> x.name===name && x.start===start && x.end===end);
-        if(!dup){
-          list.push({ id: kind[0]+Math.random().toString(36).slice(2,7), name, start, end });
-          list.sort((a,b)=> a.start.localeCompare(b.start));
-          cur[key] = list; cur.org = o; cur.year = Number(YEAR_INFO.year);
-          cur.updatedByUid = CU?.uid||''; cur.updatedByName = CU?.name||''; cur.updatedAt = Timestamp.now();
-          await setDoc(ref, cur, { merge:true });
-          alsoN++;
-        }
-      } catch(e){}
-    }
-    await loadYears();
+  for(const o of picked){
+    if(o === ORG || !canEditCal(o)) continue;
+    try {
+      const ref = doc(db,'academicYears', yearDocId(YEAR_INFO.year, o));
+      const s = await getDoc(ref);
+      const cur = s.exists() ? s.data() : { year:Number(YEAR_INFO.year), org:o,
+        label:`${YEAR_INFO.year}학년도`, terms:[], breaks:[], weekStart:'sun' };
+      const list = Array.isArray(cur[key]) ? cur[key] : [];
+      // 같은 이름·기간이 이미 있으면 겹쳐 넣지 않는다
+      const dup = list.some(x=> x.name===name && x.start===start && x.end===end);
+      if(!dup){
+        list.push({ id: kind[0]+Math.random().toString(36).slice(2,7), name, start, end });
+        list.sort((a,b)=> a.start.localeCompare(b.start));
+        cur[key] = list; cur.org = o; cur.year = Number(YEAR_INFO.year);
+        cur.updatedByUid = CU?.uid||''; cur.updatedByName = CU?.name||''; cur.updatedAt = Timestamp.now();
+        await setDoc(ref, cur, { merge:true });
+        alsoN++;
+      }
+    } catch(e){}
   }
+  if(alsoN) await loadYears();
 
   closeTermDlg(); renderYearBar(); render();
-  toast(alsoN ? `저장했습니다 ✓ — 다른 기관에도 함께 넣었어요` : '저장했습니다 ✓','ok');
+  toast(alsoN ? `저장했습니다 ✓ — 다른 캘린더 ${alsoN}곳에도 함께 넣었어요` : '저장했습니다 ✓','ok');
 };
 
 window.delTerm = async function(kind, idx){
@@ -1530,12 +1584,38 @@ window.moveMonth = function(delta){
   if(curMonth<1){ curMonth=12; curYear--; onPickYear(curYear); return; }
   render();
 };
+function todayStr(){
+  const t = new Date();
+  return `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+}
+
+/* 오늘 칸을 잠깐 깜박여 어디인지 바로 눈에 띄게 한다 */
+function blinkToday(){
+  setTimeout(()=>{
+    const cell = document.querySelector('#cal-mount .cwb.today');
+    const num  = document.querySelector('#cal-mount .cw-n.today');
+    [cell, num].forEach(el=>{
+      if(!el) return;
+      el.classList.remove('td-blink');
+      void el.offsetWidth;              // 애니메이션을 다시 시작시킨다
+      el.classList.add('td-blink');
+      setTimeout(()=>el.classList.remove('td-blink'), 2600);
+    });
+    if(cell) cell.scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 60);
+}
+
 window.goToday = function(){
-  const now=new Date();
+  const now = new Date();
   const y = now.getFullYear();
   curMonth = now.getMonth()+1;
-  if(y !== curYear){ curYear = y; onPickYear(y); return; }
+  if(y !== curYear){
+    curYear = y;
+    onPickYear(y).then(blinkToday);
+    return;
+  }
   render();
+  blinkToday();
 };
 window.setView = function(v){
   curView = v;
@@ -1871,27 +1951,29 @@ function renderGradeLegend(){
    🗂 탭 — 보기 · 편집
    ═══════════════════════════════════════════════ */
 window.showAcTab = function(t){
-  if(t === 'edit' && !canEditAny()) return;
+  if((t === 'edit' || t === 'set') && !canEditAny()) return;
   curTab = t;
   document.querySelectorAll('#topTabs .tab-main').forEach(b=>
     b.classList.toggle('on', b.dataset.tab === t));
   document.body.classList.toggle('edit-mode', t === 'edit');
+  document.body.classList.toggle('set-mode', t === 'set');
   const ed = $I('edit-hint'); if(ed) ed.style.display = t==='edit' ? '' : 'none';
-  ['term-panel','closed-panel','editor-panel'].forEach(id=>{
-    const p = $I(id); if(p) p.style.display = (t==='edit') ? '' : 'none';
-  });
   closeEvInfo();
   renderViewBar();
   render();
+  renderSharePanel();
 };
 
 function renderTabs(){
   const tb = $I('topTabs'); if(!tb) return;
+  if(SHARE_MODE){ tb.innerHTML = ''; return; }
   tb.innerHTML = `
     <button class="tab-main ${curTab==='view'?'on':''}" data-tab="view" onclick="showAcTab('view')">
       <span class="tab-ic">📅</span>학사일정</button>
     ${canEditAny()?`<button class="tab-main ${curTab==='edit'?'on':''}" data-tab="edit" onclick="showAcTab('edit')">
-      <span class="tab-ic">✏️</span>일정 편집</button>`:''}`;
+      <span class="tab-ic">✏️</span>일정 편집</button>
+    <button class="tab-main ${curTab==='set'?'on':''}" data-tab="set" onclick="showAcTab('set')">
+      <span class="tab-ic">⚙️</span>설정</button>`:''}`;
 }
 
 /* ═══════════════════════════════════════════════
@@ -1929,6 +2011,194 @@ window.openClosedDlg = function(){
   }, 30);
 };
 
+
+/* ═══════════════════════════════════════════════
+   🔗 공유 링크 — 학부모용 · 선생님용
+   링크를 아는 사람은 로그인 없이 학사일정을 볼 수 있다.
+   학부모용에는 «학부모 공개»로 표시한 일정만 담는다.
+     academicConfig/share      = { parent:{id,name}, teacher:{id,name} }
+     sharedAcademic/{id}       = { audience, name, active, snapshot, updatedAt }
+   ═══════════════════════════════════════════════ */
+let SHARES = { parent:null, teacher:null };
+
+async function loadShares(){
+  SHARES = { parent:null, teacher:null };
+  if(!canEditAny()) return;
+  try {
+    const s = await getDoc(doc(db,'academicConfig','share'));
+    if(s.exists()){
+      const d = s.data();
+      if(d.parent && d.parent.id)  SHARES.parent  = d.parent;
+      if(d.teacher && d.teacher.id) SHARES.teacher = d.teacher;
+    }
+  } catch(e){}
+}
+
+function shareURL(id){
+  return location.href.replace(/[?#].*$/,'') + '?share=' + id;
+}
+
+/* 지금 학사일정을 통째로 담아 링크에 올린다 */
+async function buildSnapshot(audience){
+  let years = [], events = [];
+  try {
+    const ys = await getDocs(collection(db,'academicYears'));
+    years = ys.docs.map(d=>({ id:d.id, ...d.data() }));
+  } catch(e){}
+  try {
+    const es = await getDocs(collection(db,'academicEvents'));
+    events = es.docs.map(d=>({ id:d.id, ...d.data() }));
+  } catch(e){}
+  if(audience === 'parent'){
+    events = events.filter(e => (e.audience||'both') !== 'teacher');
+    events = events.map(e => { const { memo, ...rest } = e; return rest; });   // 교사 메모는 뺀다
+  }
+  return { years, events, depts: DEPTS.slice() };
+}
+
+async function pushShare(kind){
+  const cur = SHARES[kind];
+  if(!cur || !cur.id) return;
+  const snapshot = await buildSnapshot(kind);
+  await setDoc(doc(db,'sharedAcademic', cur.id), {
+    audience: kind, name: cur.name || (kind==='parent'?'학사일정 (학부모용)':'학사일정 (선생님용)'),
+    active: true, snapshot,
+    updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
+  });
+}
+
+window.makeShare = async function(kind){
+  if(!canEditAny()){ toast('권한이 없습니다.','err'); return; }
+  const def = kind==='parent' ? '학사일정 (학부모용)' : '학사일정 (선생님용)';
+  const name = prompt('링크 이름을 정해 주세요 — 받는 분에게 보이는 제목입니다.', def);
+  if(name === null) return;
+  const id = 'ac_' + Array.from(crypto.getRandomValues(new Uint8Array(12)),
+    b=>'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
+  window.showLoading && window.showLoading('공유 링크를 만드는 중…');
+  try {
+    SHARES[kind] = { id, name: (name||'').trim() || def, createdAt: Timestamp.now() };
+    await pushShare(kind);
+    await setDoc(doc(db,'academicConfig','share'), {
+      [kind]: { id, name: SHARES[kind].name, createdByName: CU?.name||'', createdAt: Timestamp.now() },
+    }, { merge:true });
+    window.hideLoading && window.hideLoading();
+    renderSharePanel();
+    toast('공유 링크를 만들었습니다 ✓','ok');
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    SHARES[kind] = null;
+    toast('만들기 실패: '+(e.message||''),'err');
+  }
+};
+
+window.refreshShare = async function(kind){
+  if(!SHARES[kind]) return;
+  window.showLoading && window.showLoading('지금 내용을 올리는 중…');
+  try {
+    await pushShare(kind);
+    window.hideLoading && window.hideLoading();
+    renderSharePanel();
+    toast('지금 내용으로 올렸습니다 ✓ — 링크를 새로고침하면 보여요','ok');
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('올리기 실패: '+(e.message||''),'err');
+  }
+};
+
+window.renameShare = async function(kind){
+  const cur = SHARES[kind]; if(!cur) return;
+  const name = prompt('링크 이름을 바꿉니다.', cur.name || '');
+  if(name === null) return;
+  try {
+    SHARES[kind].name = (name||'').trim() || cur.name;
+    await setDoc(doc(db,'academicConfig','share'),
+      { [kind]: { ...SHARES[kind] } }, { merge:true });
+    await pushShare(kind);
+    renderSharePanel();
+    toast('이름을 바꿨습니다 ✓','ok');
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
+/* 초기화 — 옛 링크를 닫고 새 주소로 다시 만든다 */
+window.resetShare = async function(kind){
+  const cur = SHARES[kind]; if(!cur) return;
+  if(!confirm('링크를 새로 만들까요?\n\n지금 링크는 더 이상 열리지 않습니다.\n이미 나눠준 분들께는 새 링크를 다시 보내야 해요.')) return;
+  window.showLoading && window.showLoading('새 링크를 만드는 중…');
+  try {
+    try { await deleteDoc(doc(db,'sharedAcademic', cur.id)); } catch(e){}
+    const id = 'ac_' + Array.from(crypto.getRandomValues(new Uint8Array(12)),
+      b=>'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
+    SHARES[kind] = { ...cur, id, createdAt: Timestamp.now() };
+    await pushShare(kind);
+    await setDoc(doc(db,'academicConfig','share'),
+      { [kind]: { ...SHARES[kind] } }, { merge:true });
+    window.hideLoading && window.hideLoading();
+    renderSharePanel();
+    toast('새 링크를 만들었습니다 ✓ — 예전 링크는 닫혔어요','ok');
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('실패: '+(e.message||''),'err');
+  }
+};
+
+window.stopShare = async function(kind){
+  const cur = SHARES[kind]; if(!cur) return;
+  if(!confirm('공유를 끌까요?\n\n링크가 더 이상 열리지 않습니다.')) return;
+  try {
+    await deleteDoc(doc(db,'sharedAcademic', cur.id));
+    SHARES[kind] = null;
+    await setDoc(doc(db,'academicConfig','share'), { [kind]: null }, { merge:true });
+    renderSharePanel();
+    toast('공유를 껐습니다','ok');
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
+window.copyShare = function(kind){
+  const cur = SHARES[kind]; if(!cur) return;
+  const url = shareURL(cur.id);
+  (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+    .then(()=>toast('링크를 복사했습니다 ✓','ok'))
+    .catch(()=>{ prompt('아래 링크를 복사하세요', url); });
+};
+
+function renderSharePanel(){
+  const p = $I('share-panel'); if(!p) return;
+  if(!canEditAny() || curTab !== 'set'){ p.style.display='none'; return; }
+  p.style.display='';
+
+  const block = (kind, label, desc, color) => {
+    const cur = SHARES[kind];
+    if(!cur){
+      return `<div class="sh-block">
+        <div class="sh-h"><span class="sh-dot" style="background:${color}"></span><b>${label}</b>
+          <span class="sh-off">아직 만들지 않음</span></div>
+        <div class="sh-d">${desc}</div>
+        <button class="btn btn-sm btn-p" onclick="makeShare('${kind}')">🔗 링크 만들기</button>
+      </div>`;
+    }
+    return `<div class="sh-block">
+      <div class="sh-h"><span class="sh-dot" style="background:${color}"></span><b>${label}</b>
+        <span class="sh-nm">${esc(cur.name||'')}</span></div>
+      <div class="sh-d">${desc}</div>
+      <div class="sh-row">
+        <input readonly value="${esc(shareURL(cur.id))}" onclick="this.select()" class="sh-url">
+        <button class="btn btn-sm" onclick="copyShare('${kind}')">📋 복사</button>
+        <a class="btn btn-sm" href="${esc(shareURL(cur.id))}" target="_blank" style="text-decoration:none">↗ 열기</a>
+      </div>
+      <div class="sh-acts">
+        <button class="btn btn-sm btn-p" onclick="refreshShare('${kind}')">⬆ 지금 내용으로 올리기</button>
+        <button class="btn btn-sm" onclick="renameShare('${kind}')">✏️ 이름</button>
+        <button class="btn btn-sm" onclick="resetShare('${kind}')">♻️ 링크 새로 만들기</button>
+        <button class="btn btn-sm btn-dg" onclick="stopShare('${kind}')">공유 끄기</button>
+      </div>
+    </div>`;
+  };
+
+  $I('share-list').innerHTML =
+    block('parent','학부모용','«학부모 공개»로 표시한 일정만 보입니다. 교사용 메모는 빠집니다.','#2FA84F') +
+    block('teacher','선생님용','교사 전용 일정까지 모두 보입니다.','#2F6FD0');
+}
+
 /* ═══════════════════════════════════════════════
    🔑 담당자 지정 (수퍼관리자)
    ═══════════════════════════════════════════════ */
@@ -1947,7 +2217,7 @@ async function loadStaffList(){
 
 function renderEditorPanel(){
   const p = $I('editor-panel');
-  if(!isSuper() || curTab !== 'edit'){ p.style.display='none'; return; }
+  if(!isSuper() || curTab !== 'set'){ p.style.display='none'; return; }
   p.style.display='';
 
   const blocks = CAL_KEYS.map(cal=>{
@@ -2065,6 +2335,8 @@ Object.defineProperty(window, 'curTab', { get:()=>curTab });
 Object.defineProperty(window, 'CAL_ZOOM', { get:()=>CAL_ZOOM });
 Object.defineProperty(window, 'DRAG_ON', { get:()=>DRAG_ON });
 Object.defineProperty(window, 'SHOW_ALL_CAL', { get:()=>SHOW_ALL_CAL });
+Object.defineProperty(window, 'SHARES', { get:()=>SHARES });
+Object.defineProperty(window, 'SHARE_MODE', { get:()=>SHARE_MODE });
 Object.defineProperty(window, 'EDITORS', { get:()=>EDITORS });
 window.canEditCal = canEditCal;
 window.loadEvents = loadEvents;
@@ -2076,7 +2348,71 @@ window.calOf = calOf;
 /* ═══════════════════════════════════════════════
    시작
    ═══════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════
+   🔗 공유 링크로 들어온 경우 — 로그인 없이 보기만
+   같은 화면을 그대로 쓰되, 저장해둔 내용만 읽어서 보여준다.
+   ═══════════════════════════════════════════════ */
+let SHARE_MODE = false;
+const shareId = new URLSearchParams(location.search).get('share');
+
+async function startShareView(){
+  SHARE_MODE = true;
+  document.body.classList.add('share-mode');
+  try {
+    const s = await getDoc(doc(db,'sharedAcademic', shareId));
+    if(!s.exists() || s.data().active === false){
+      $I('gate-msg').innerHTML = '이 링크는 더 이상 열리지 않습니다.<br>학교에 새 링크를 요청해 주세요.';
+      return;
+    }
+    const d = s.data();
+    const snap = d.snapshot || {};
+    ALL_YEARS  = snap.years  || [];
+    ALL_EVENTS = snap.events || [];
+    DEPTS = snap.depts || ['초등부','중등부','고등부'];
+    curView = (d.audience === 'parent') ? 'parent' : 'teacher';
+    CAN_EDIT = false;
+
+    const years = [...new Set(ALL_YEARS.map(y=>y.year))].sort((a,b)=>b-a);
+    if(years.length && !years.includes(curYear)) curYear = years[0];
+    try {
+      const saved = localStorage.getItem('academic_cal_share');
+      ORG = (saved && (CALS[saved] || saved===ORG_ALL)) ? saved : ORG_ALL;
+    } catch(e){ ORG = ORG_ALL; }
+
+    applyYearScope();
+    await loadYear(curYear);
+    applyEventScope();
+
+    document.title = (d.name || '학사일정') + ' · 교사 선교사';
+    $I('ro-mount').innerHTML = `<div class="ro-bar"><span style="font-size:19px">📅</span>
+      <div><b>${esc(d.name || '학사일정')}</b>
+      <div class="ro-d">${d.audience==='parent'?'학부모님께 공개된 일정입니다.':'선생님용 일정입니다.'}
+        ${d.updatedAt?` · ${esc(fmtWhen(d.updatedAt))} 기준`:''}<br>
+        행사를 누르면 자세한 내용을 볼 수 있어요.</div></div></div>`;
+
+    $I('gate').style.display='none';
+    $I('ms').style.display='block';
+    renderCalBar();
+    renderViewBar();
+    renderYearBar();
+    render();
+  } catch(e){
+    $I('gate-msg').textContent = '불러오지 못했습니다: ' + (e.message||'');
+  }
+}
+
+function fmtWhen(ts){
+  try {
+    const d = ts?.toDate ? ts.toDate() : (ts?.seconds ? new Date(ts.seconds*1000) : null);
+    if(!d) return '';
+    return `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}`;
+  } catch(e){ return ''; }
+}
+
+if(shareId){ startShareView(); }
+
 onAuthStateChanged(auth, async user => {
+  if(shareId) return;              // 공유 링크로 들어왔으면 로그인 흐름을 타지 않는다
   if(!user){
     $I('gate-msg').textContent='로그인이 필요합니다.';
     $I('gate-btn').style.display='inline-block';
@@ -2096,6 +2432,7 @@ onAuthStateChanged(auth, async user => {
     await loadEditors();
     await loadStaffList();
     await loadDepts();
+    await loadShares();
 
     // 캘린더 고르기 — 세 캘린더를 개별로 보거나 겹쳐 볼 수 있다
     try {
