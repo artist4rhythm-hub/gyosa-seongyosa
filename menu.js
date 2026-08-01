@@ -90,7 +90,7 @@ const MENU = [
     items: [
       { key:'adm', label:'관리자', icon:'admin_panel_settings', href:'admin.html',
         desc:'교직원 · 인사 · 보안 · 로그',
-        tabs:['통합관리','출근부 설정','인사정보','접속·보안','로그인 기록','활동 로그'], admin:true },
+        tabs:['통합관리','출근부 설정','인사정보','접근 권한','접속·보안','로그인 기록','활동 로그'], admin:true },
     ]
   },
 ];

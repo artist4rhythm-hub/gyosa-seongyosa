@@ -213,7 +213,20 @@ function orgOptionsHTML(includeAll){
   if(orgs.includes('daniel')) h += '<option value="daniel">다니엘 아마츠</option>';
   return h;
 }
-const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+/* ── 반편성을 고칠 수 있는 사람 ──
+   수퍼·기관관리자는 늘 열려 있고, 그 외에는
+   관리자 → 접근 권한 → 기능별 담당자에서 「반편성」에 지정된 분만.
+   (부서장·교사도 지정만 하면 고칠 수 있어요) */
+let CLASS_EDITORS = [];
+const isAdmin = () => CU &&
+  (['super','org_admin'].includes(CU.role) || CLASS_EDITORS.includes(CU.uid));
+
+async function loadClassEditors(){
+  try {
+    const s = await getDoc(doc(db,'classConfig','editors'));
+    CLASS_EDITORS = (s.exists() && Array.isArray(s.data().uids)) ? s.data().uids : [];
+  } catch(e){ CLASS_EDITORS = []; }
+}
 
 onAuthStateChanged(auth, async (user) => {
   if(!user){
@@ -230,8 +243,8 @@ onAuthStateChanged(auth, async (user) => {
   if(window.guardPage && !guardPage(CU, 'class')) return;
   renderShell('class', CU);
     window.showLoading && window.showLoading('불러오는 중…');
-    
-    
+
+    await loadClassEditors();
     await loadStudents();
     await loadStaff();
     window.hideLoading && window.hideLoading();

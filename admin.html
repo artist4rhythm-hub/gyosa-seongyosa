@@ -2347,7 +2347,7 @@ async function renderAccessCtl(){
         .duty-t th,.duty-t td{border-bottom:1px solid var(--ivd);padding:6px 4px;text-align:center}
         .duty-t thead th{background:var(--gp);font-size:11px;font-weight:800;color:var(--gd);
           position:sticky;top:0;padding:8px 4px}
-        .duty-th{font-size:10px;line-height:1.35;display:inline-block}
+        .duty-th{font-size:11px;line-height:1.4;display:inline-block}
         .duty-nmh{text-align:left !important;padding-left:12px !important;min-width:110px}
         .duty-nm{text-align:left !important;padding-left:12px !important;font-size:12.5px;white-space:nowrap}
         .duty-role{font-size:10px;color:var(--tl);margin-left:5px;font-weight:600}
@@ -2378,15 +2378,22 @@ async function renderAccessCtl(){
         .duty-chip.auto{background:var(--goldp);border-color:var(--goldd);color:var(--goldd);cursor:default}
         .duty-chip i{font-style:normal;font-size:10px;opacity:.85}
 
-        .tt-ed-wrap{display:flex;gap:6px;flex-wrap:wrap}
-        .tt-ed{font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 13px;
-          border:1.5px solid var(--ivd);border-radius:9px;background:var(--wh);
-          color:var(--ts);cursor:pointer}
-        .tt-ed:hover{border-color:var(--gm)}
-        .tt-ed.on{background:var(--gm);border-color:var(--gm);color:#fff}
-        .tt-ed.sup{background:var(--goldp);border-color:var(--goldd);color:var(--goldd);cursor:default}
-        .tt-sup{font-size:10px;opacity:.8}
-        .acc-t{width:30px;height:30px;border-radius:8px;border:1.5px solid;cursor:pointer;font-size:13px;font-weight:900;font-family:inherit;transition:all .12s}
+        /* 사람별 표 — 기관·부서 구분 행 + 첫 열 고정 */
+        .duty-gh{font-size:11px;letter-spacing:.02em}
+        .duty-t th:first-child,.duty-t td:first-child{position:sticky;left:0;background:var(--wh);z-index:1}
+        .duty-t thead th:first-child{background:var(--gp);z-index:2}
+        .duty-t tr.duty-sec td{position:static;background:var(--iv);text-align:left;
+          padding:7px 12px;font-size:11.5px;font-weight:800;color:var(--gd);
+          border-top:1px solid var(--ivd)}
+        .duty-sec span{position:sticky;left:12px;display:inline-block}
+        .duty-sec i{font-style:normal;font-weight:700;color:var(--tl);font-size:10.5px;margin-left:4px}
+
+        /* 기능별 — 기관·부서 소그룹 */
+        .duty-cg{margin-bottom:9px}
+        .duty-cg:last-child{margin-bottom:0}
+        .duty-cg-l{display:block;font-size:11px;font-weight:800;color:var(--tl);margin-bottom:5px}
+
+                .acc-t{width:30px;height:30px;border-radius:8px;border:1.5px solid;cursor:pointer;font-size:13px;font-weight:900;font-family:inherit;transition:all .12s}
         .acc-t.on{background:var(--ok-bg);border-color:var(--ok-bg);color:var(--ok)}
         .acc-t.on:hover{background:var(--ok-bg);border-color:var(--ok)}
         .acc-t.off{background:var(--danger-bg);border-color:var(--danger-bg);color:var(--danger)}
@@ -2432,20 +2439,21 @@ const DUTY_DEFS = [
     doc:['timetableConfig','editors'], field:'uids',
     always:s=>s.role==='super' },
 
-  { key:'ac_all', icon:'📅', label:'학사일정 · DA 전체',
+  /* 학사일정 세 칸은 grp로 묶여 표 머리에서 「📅 학사일정」 한 지붕 아래 놓인다 */
+  { key:'ac_all', icon:'📅', label:'학사일정 · DA 전체', grp:'📅 학사일정', sub:'DA 전체',
     desc:'두 기관 공통 일정 (정기휴가·창립일 등)',
     doc:['academicConfig','editors'], field:'all',
     always:s=>s.role==='super' },
-  { key:'ac_daniel', icon:'📅', label:'학사일정 · 다니엘 아마츠',
+  { key:'ac_daniel', icon:'📅', label:'학사일정 · 다니엘 아마츠', grp:'📅 학사일정', sub:'다니엘',
     desc:'다니엘 아마츠 학사일정',
     doc:['academicConfig','editors'], field:'daniel',
     always:s=>s.role==='super' || (s.role==='org_admin' && s.org==='daniel') },
-  { key:'ac_jihyebit', icon:'📅', label:'학사일정 · 지혜빛 선교원',
+  { key:'ac_jihyebit', icon:'📅', label:'학사일정 · 지혜빛 선교원', grp:'📅 학사일정', sub:'지혜빛',
     desc:'지혜빛 선교원 학사일정',
     doc:['academicConfig','editors'], field:'jihyebit',
     always:s=>s.role==='super' || (s.role==='org_admin' && s.org==='jihyebit') },
 
-  { key:'payreq', icon:'💳', label:'경비 지급 요청서',
+  { key:'payreq', icon:'💳', label:'경비 지급 요청서', short:'경비 요청',
     desc:'지급 처리 · 취합 · 설정',
     doc:['payConfig','managers'], field:'list',
     always:s=>s.role==='super' },
@@ -2459,6 +2467,20 @@ const DUTY_DEFS = [
     desc:'출결 항목 · 출석부 설정',
     doc:['attendConfig','editors'], field:'uids',
     always:s=>s.role==='super' },
+
+  /* 🧩 반편성 — 반 만들기·학생 배정·진급. 수퍼·기관관리자는 늘 열려 있고,
+     부서장·교사는 여기서 담당자로 지정해야 고칠 수 있다 */
+  { key:'class', icon:'🧩', label:'반편성',
+    desc:'반 만들기 · 학생 배정 · 진급',
+    doc:['classConfig','editors'], field:'uids',
+    always:s=>s.role==='super' || s.role==='org_admin' },
+
+  /* 🎓 학생관리 — 담당자는 반편성과 같은 문서(classConfig/editors)의
+     studentUids 칸에 담는다 (문서 하나로 학사 담당을 함께 관리) */
+  { key:'students', icon:'🎓', label:'학생관리',
+    desc:'학생 등록 · 정보 수정 · 삭제',
+    doc:['classConfig','editors'], field:'studentUids',
+    always:s=>s.role==='super' || s.role==='org_admin' },
 ];
 
 let DUTY = {};              // { key: [uid…] }
@@ -2518,9 +2540,34 @@ window.toggleDuty = async function(key, uid){
   }
 };
 
+/* ── 기관·부서로 묶기 ──
+   다니엘 아마츠(초등부→중고등부→행정실) → 지혜빛 선교원 순.
+   부서가 '전체'면 기관 이름만 쓴다. */
+function dutyGroupKey(s){
+  const org = ORGS[s.org] || s.org || '기타';
+  return (s.dept && s.dept!=='전체') ? org+' · '+s.dept : org;
+}
+function dutyGrouped(staff){
+  const order=[], map={};
+  staff.forEach(s=>{
+    const k=dutyGroupKey(s);
+    if(!map[k]){ map[k]=[]; order.push(k); }
+    map[k].push(s);
+  });
+  const rank=k=>{
+    let r = k.startsWith('다니엘')?0 : k.startsWith('지혜빛')?100 : 200;
+    if(k.includes('초등부')) r+=1; else if(k.includes('중고등부')) r+=2;
+    else if(k.includes('행정실')) r+=3;   /* 부서 없음(기관 공통)은 맨 앞 */
+    return r;
+  };
+  order.sort((a,b)=>rank(a)-rank(b)||a.localeCompare(b,'ko'));
+  return order.map(k=>({key:k, list:map[k]}));
+}
+
 function renderDutyPanel(){
   const box = $I('duty-box'); if(!box) return;
   const staff = dutyStaffList();
+  const groups = dutyGrouped(staff);
 
   const head = `<div class="duty-head">
     <div class="duty-sw">
@@ -2542,17 +2589,21 @@ function renderDutyPanel(){
     : '';
 
   if(DUTY_VIEW === 'duty'){
-    // 기능별 — 무엇을 누가 맡고 있나
+    // 기능별 — 무엇을 누가 맡고 있나 (선생님은 기관·부서로 묶어 보여준다)
     const rows = DUTY_DEFS.map(d=>{
       const list = DUTY[d.key]||[];
       const autos = staff.filter(s=>d.always(s));
       const names = list.map(u=>STAFF_CACHE[u]?.name).filter(Boolean);
-      const chips = staff.map(s=>{
-        const auto = d.always(s);
-        const on = auto || list.includes(s.uid);
-        return `<button class="duty-chip ${on?'on':''} ${auto?'auto':''}"
-          ${auto?'disabled title="관리자라 늘 열려 있습니다"':''}
-          onclick="toggleDuty('${d.key}','${s.uid}')">${esc(s.name||'')}${auto?' <i>늘</i>':''}</button>`;
+      const grpHtml = groups.map(g=>{
+        const chips = g.list.map(s=>{
+          const auto = d.always(s);
+          const on = auto || list.includes(s.uid);
+          return `<button class="duty-chip ${on?'on':''} ${auto?'auto':''}"
+            ${auto?'disabled title="관리자라 늘 열려 있습니다"':''}
+            onclick="toggleDuty('${d.key}','${s.uid}')">${esc(s.name||'')}${auto?' <i>늘</i>':''}</button>`;
+        }).join('');
+        return `<div class="duty-cg"><span class="duty-cg-l">${esc(g.key)}</span>
+          <div class="duty-chips">${chips}</div></div>`;
       }).join('');
       return `<div class="duty-row">
         <div class="duty-rh"><span class="duty-ic">${d.icon}</span>
@@ -2560,38 +2611,61 @@ function renderDutyPanel(){
           <span class="duty-d">${esc(d.desc)}</span>
           <span class="duty-cnt ${names.length?'':'zero'}">${
             names.length ? `담당 ${names.length}명` : (autos.length?'관리자만':'담당자 없음')}</span></div>
-        <div class="duty-chips">${chips}</div>
+        ${grpHtml}
       </div>`;
     }).join('');
     box.innerHTML = head + warn + `<div class="duty-list">${rows}</div>`;
     return;
   }
 
-  // 사람별 — 한 줄에서 그 사람의 모든 담당을 켜고 끈다
-  const ths = DUTY_DEFS.map(d=>
-    `<th title="${esc(d.desc)}"><span class="duty-th">${d.icon}<br>${esc(d.label.replace('학사일정 · ','').replace('경비 지급 요청서','경비 요청'))}</span></th>`).join('');
-  const rows = staff.map(s=>{
-    const cells = DUTY_DEFS.map(d=>{
-      const auto = d.always(s);
-      const on = auto || (DUTY[d.key]||[]).includes(s.uid);
-      return `<td><button class="duty-cell ${on?'on':''} ${auto?'auto':''}"
-        ${auto?'disabled title="관리자라 늘 열려 있습니다"':''}
-        onclick="toggleDuty('${d.key}','${s.uid}')">${auto?'늘':(on?'✓':'')}</button></td>`;
+  // ── 사람별 — 한 줄에서 그 사람의 모든 담당을 켜고 끈다 ──
+  // 표 머리 2단: grp가 같은 연속 칸(학사일정)은 윗줄에서 한 지붕으로 묶는다
+  const th1=[], th2=[];
+  for(let i=0;i<DUTY_DEFS.length;i++){
+    const d = DUTY_DEFS[i];
+    if(d.grp){
+      let j=i; while(j<DUTY_DEFS.length && DUTY_DEFS[j].grp===d.grp) j++;
+      th1.push(`<th colspan="${j-i}" class="duty-gh">${d.grp}</th>`);
+      for(let k=i;k<j;k++){
+        const dd = DUTY_DEFS[k];
+        th2.push(`<th title="${esc(dd.desc)}"><span class="duty-th">${esc(dd.sub||dd.label)}</span></th>`);
+      }
+      i=j-1;
+    } else {
+      th1.push(`<th rowspan="2" title="${esc(d.desc)}"><span class="duty-th">${d.icon}<br>${esc(d.short||d.label)}</span></th>`);
+    }
+  }
+
+  const colN = 2 + DUTY_DEFS.length;   // 이름 + 기능들 + 합계
+  const rows = groups.map(g=>{
+    const sec = `<tr class="duty-sec"><td colspan="${colN}"><span>🏫 ${esc(g.key)} <i>${g.list.length}명</i></span></td></tr>`;
+    const trs = g.list.map(s=>{
+      const cells = DUTY_DEFS.map(d=>{
+        const auto = d.always(s);
+        const on = auto || (DUTY[d.key]||[]).includes(s.uid);
+        return `<td><button class="duty-cell ${on?'on':''} ${auto?'auto':''}"
+          ${auto?'disabled title="관리자라 늘 열려 있습니다"':''}
+          onclick="toggleDuty('${d.key}','${s.uid}')">${auto?'늘':(on?'✓':'')}</button></td>`;
+      }).join('');
+      const n = DUTY_DEFS.filter(d=>d.always(s) || (DUTY[d.key]||[]).includes(s.uid)).length;
+      const roleLab = s.role==='super' ? '슈퍼' : s.role==='org_admin' ? '기관관리자'
+                    : s.role==='tab_admin' ? '부서장' : '교사';
+      return `<tr>
+        <td class="duty-nm"><b>${esc(s.name||'')}</b>
+          <span class="duty-role">${roleLab}</span></td>
+        ${cells}
+        <td class="duty-sum">${n ? `${n}개` : '—'}</td>
+      </tr>`;
     }).join('');
-    const n = DUTY_DEFS.filter(d=>d.always(s) || (DUTY[d.key]||[]).includes(s.uid)).length;
-    const roleLab = s.role==='super' ? '슈퍼' : s.role==='org_admin' ? '기관관리자'
-                  : s.role==='tab_admin' ? '탭관리자' : '교사';
-    return `<tr>
-      <td class="duty-nm"><b>${esc(s.name||'')}</b>
-        <span class="duty-role">${roleLab}</span></td>
-      ${cells}
-      <td class="duty-sum">${n ? `${n}개` : '—'}</td>
-    </tr>`;
+    return sec + trs;
   }).join('');
 
   box.innerHTML = head + warn + `<div class="duty-tw">
     <table class="duty-t">
-      <thead><tr><th class="duty-nmh">선생님</th>${ths}<th>합계</th></tr></thead>
+      <thead>
+        <tr><th class="duty-nmh" rowspan="2">선생님</th>${th1.join('')}<th rowspan="2">합계</th></tr>
+        <tr>${th2.join('')}</tr>
+      </thead>
       <tbody>${rows}</tbody>
     </table></div>`;
 }
@@ -2601,66 +2675,13 @@ function dutyBoxHTML(){
     <h3 style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:5px">🏛 기능별 담당자</h3>
     <p style="font-size:12.5px;color:var(--ts);line-height:1.7;margin-bottom:12px">
       여기 고른 분과 <b>수퍼관리자</b>가 각 기능을 고칠 수 있습니다.
-      <br><span style="color:var(--tl)">· 각 화면(시간표·학사일정 등)에서도 지정할 수 있고, 여기서는 <b>한눈에 보고 함께</b> 고칩니다.
+      <br><span style="color:var(--tl)">· 시간표·학사일정·경비는 각 화면에서도 지정할 수 있고, 여기서는 <b>한눈에 보고 함께</b> 고칩니다.
       · 선생님이 그만두면 이 표에서 그 줄만 비우면 됩니다.</span>
     </p>
     <div id="duty-box"><div style="font-size:12.5px;color:var(--tl)">불러오는 중…</div></div>
   </div>`;
 }
 
-/* ── 🗓 시간표를 짤 수 있는 사람 ──
-   여기 지정된 분과 수퍼관리자만 시간표 틀·배정·배치를 고칠 수 있다.
-   나머지 선생님은 완성 시간표를 보고, 자기 수업 가능 시간만 적는다. */
-function ttEditorBoxHTML(){
-  return `<div class="asc" style="margin-top:14px">
-    <h3 style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:5px">🗓 시간표 담당자</h3>
-    <p style="font-size:12.5px;color:var(--ts);line-height:1.7;margin-bottom:12px">
-      여기 고른 분과 <b>수퍼관리자</b>만 시간표 틀·수업 정의·배치를 고칠 수 있습니다.
-      <br><span style="color:var(--tl)">· 나머지 선생님은 완성 시간표를 보고, <b>자기 수업 가능 시간</b>만 적을 수 있어요.
-      · 실수로 남의 작업을 지우는 일을 막아 줍니다.</span>
-    </p>
-    <div id="tt-ed-box"><div style="font-size:12.5px;color:var(--tl)">불러오는 중…</div></div>
-  </div>`;
-}
-
-let TT_EDITORS = [];
-async function renderTTEditors(){
-  const box = $I('tt-ed-box'); if(!box) return;
-  try {
-    const s = await getDoc(doc(db,'timetableConfig','editors'));
-    TT_EDITORS = (s.exists() && Array.isArray(s.data().uids)) ? s.data().uids : [];
-  } catch(e){ TT_EDITORS = []; }
-
-  const list = Object.values(STAFF_CACHE||{})
-    .filter(s => !s.noAuth && (s.acStatus||'active')!=='quit' && s.role!=='partner')
-    .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
-
-  const chips = list.map(s=>{
-    const on = TT_EDITORS.includes(s.uid);
-    const sup = s.role==='super';
-    return `<button class="tt-ed ${on?'on':''} ${sup?'sup':''}"
-      onclick="${sup?'':`toggleTTEditor('${s.uid}')`}"
-      title="${sup?'수퍼관리자는 항상 고칠 수 있습니다':''}">
-      ${esc(s.name||'')}${sup?' <span class="tt-sup">항상</span>':''}</button>`;
-  }).join('');
-
-  const n = TT_EDITORS.length;
-  box.innerHTML = `<div class="tt-ed-wrap">${chips}</div>
-    <div style="font-size:12px;color:${n?'var(--gm)':'var(--goldd)'};margin-top:10px;font-weight:700">
-      ${n ? `지정된 담당자 ${n}분` : '아직 지정된 분이 없습니다 — 수퍼관리자만 시간표를 짤 수 있습니다'}
-    </div>`;
-}
-
-window.toggleTTEditor = async function(uid){
-  const i = TT_EDITORS.indexOf(uid);
-  if(i>=0) TT_EDITORS.splice(i,1); else TT_EDITORS.push(uid);
-  try {
-    await setDoc(doc(db,'timetableConfig','editors'), {
-      uids: TT_EDITORS, updatedAt: Timestamp.now(), updatedByUid: CU.uid
-    }, { merge:true });
-    renderTTEditors();
-  } catch(e){ alert('저장 실패: '+(e.message||'')); }
-};
 window.renderAccessCtl = renderAccessCtl;
 
 async function togglePageDeny(uid, key){

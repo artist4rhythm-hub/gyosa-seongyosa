@@ -204,7 +204,20 @@ function orgOptionsHTML(includeAll, selected){
   if(orgs.includes('daniel')) h += `<option value="daniel"${selected==='daniel'?' selected':''}>다니엘 아마츠</option>`;
   return h;
 }
-const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+/* ── 학생 정보를 고칠 수 있는 사람 ──
+   수퍼·기관관리자는 늘 열려 있고, 그 외에는
+   관리자 → 접근 권한 → 기능별 담당자에서 「학생관리」에 지정된 분만.
+   (담당자 명단은 classConfig/editors 문서의 studentUids 칸) */
+let STUDENT_EDITORS = [];
+const isAdmin = () => CU &&
+  (['super','org_admin'].includes(CU.role) || STUDENT_EDITORS.includes(CU.uid));
+
+async function loadStudentEditors(){
+  try {
+    const g = await getDoc(doc(db,'classConfig','editors'));
+    STUDENT_EDITORS = (g.exists() && Array.isArray(g.data().studentUids)) ? g.data().studentUids : [];
+  } catch(e){ STUDENT_EDITORS = []; }
+}
 
 // ── 로그인 확인 ──
 onAuthStateChanged(auth, async (user) => {
@@ -231,6 +244,7 @@ onAuthStateChanged(auth, async (user) => {
     
     
     window.showLoading && window.showLoading('학생 정보를 불러오는 중…');
+    await loadStudentEditors();
     window.setLoadStep && window.setLoadStep('학생 명단 불러오는 중…', 35);
     await loadStudents();
     window.setLoadStep && window.setLoadStep('반 편성 불러오는 중…', 75);
