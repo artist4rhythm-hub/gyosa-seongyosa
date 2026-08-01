@@ -49,6 +49,17 @@
     border-radius:8px;background:var(--wh,#fff);color:var(--ink);min-width:200px}
   .pb-hint{font-size:11.5px;color:var(--tl,#93A09A);line-height:1.65;margin-top:9px}
 
+  /* 뒤에서 채우는 동안 보여줄 자리 */
+  .pb-wait{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    font-size:12.5px;color:var(--ts,#5A6560);
+    background:var(--iv,#F2F0EB);border-radius:11px;padding:14px 16px}
+  .pb-wait.err{background:var(--goldp,#F7EFD8);color:var(--goldd,#8A6410)}
+  .pb-spin{width:14px;height:14px;border-radius:50%;flex:none;
+    border:2px solid var(--ivd,#E3E1DA);border-top-color:var(--gm,#00704A);
+    animation:pbSpin .7s linear infinite}
+  @keyframes pbSpin{ to{ transform:rotate(360deg) } }
+  @media (prefers-reduced-motion:reduce){ .pb-spin{ animation:none } }
+
   /* ── 선생님용 공유 링크 줄 ── */
   .vs-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
     padding:10px 13px;margin-bottom:12px;border-radius:11px;
@@ -137,7 +148,8 @@
   .tv-bg.rest{background:repeating-linear-gradient(45deg,rgba(147,160,154,.10) 0 6px,transparent 6px 12px)}
   .tv-bg span{font-size:calc(9px * var(--tvf,1));color:var(--tl,#93A09A);padding:1px 4px;display:block;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .tv-bg.tiny span{display:none}
+  /* 아주 얇은 띠는 글자를 줄여서라도 보여준다 (예전엔 아예 감췄다) */
+  .tv-bg.tiny span{font-size:calc(7.5px * var(--tvf,1));padding:0 3px;line-height:1.1}
   .tv-card{position:absolute;left:3px;right:3px;box-sizing:border-box;overflow:hidden;
     border-radius:7px;border:1px solid var(--ivd,#E3E1DA);border-left:3px solid var(--lc,#7FB5A0);
     background-color:var(--wh,#fff);
@@ -176,6 +188,29 @@
   .tv-card.small .tv-c-who{-webkit-line-clamp:1;flex:0 1 auto;min-width:0}
   .tv-card.small .tv-c-room{flex:0 1 auto;min-width:0;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis}
+
+  /* ── 아주 좁은 칸 (5분 쉬는시간·15분 등) ──
+     칸이 낮아 글자가 잘리므로 한 단계 더 작게, 한 줄로 눕혀서 담는다 */
+  .tv-card.tiny{flex-direction:row;align-items:center;gap:4px;padding:0 4px;
+    border-left-width:2.5px;border-radius:5px}
+  .tv-card.tiny .tv-c-top{flex:1;padding:0;min-width:0;display:flex;align-items:center;gap:3px}
+  .tv-card.tiny .tv-c-top b{font-size:calc(9px * var(--tvf,1));line-height:1.15;
+    -webkit-line-clamp:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tv-card.tiny .tv-c-time{font-size:calc(8px * var(--tvf,1));line-height:1.15;
+    white-space:nowrap;flex:none;opacity:.85}
+  .tv-card.tiny .tv-c-time i{display:none}
+  .tv-card.tiny .tv-c-sub{display:none}
+  .tv-card.tiny .tv-c-foot{background:transparent;padding:0;flex:0 1 auto;min-width:0;
+    flex-wrap:nowrap;max-width:52%}
+  .tv-card.tiny .tv-c-who{font-size:calc(8px * var(--tvf,1));line-height:1.15;color:var(--ts,#5A6560);
+    -webkit-line-clamp:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .tv-card.tiny .tv-c-room{font-size:calc(7.5px * var(--tvf,1));padding:0 3px;
+    color:var(--ts,#5A6560);background:rgba(0,0,0,.06);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;min-width:0}
+
+  /* 짧은 칸의 선생님 이름 — 한 줄에 안 들어가면 줄을 바꿔 다 보이게 */
+  .tv-card.small .tv-c-foot{flex-wrap:wrap;row-gap:0}
+  .tv-card.small .tv-c-who{-webkit-line-clamp:2;white-space:normal;overflow-wrap:anywhere}
 
   /* ── 쉬는 시간 카드 — 회색으로 수업과 구분 ── */
   .tv-card.rest{ box-shadow:none; opacity:.97 }
@@ -606,7 +641,8 @@ function sheetHTML(kind, target, label, opt){
         style="top:${(b.startMin-s0)*TV_PPM}px;height:${b.dur*TV_PPM}px"><span>${esc(b.name)}</span></div>`).join('');
     const cards = mine.filter(it=>it.day===dy).map(it=>{
       const dur = it.endMin - it.startMin, px = dur * TV_PPM;
-      const size = px >= 62*f ? 'big' : px >= 40*f ? 'mid' : 'small';
+      // 칸 높이에 따라 네 단계 — 좁을수록 글자를 줄여 잘리지 않게 한다
+      const size = px >= 62*f ? 'big' : px >= 40*f ? 'mid' : px >= 22*f ? 'small' : 'tiny';
       const who = teacherLabel(it.lesson, it.teacherUids);
       const room = it.roomId ? findRoomName(it.roomId) : '';
       const lead = teacherLead(it.lesson, it.teacherUids);
@@ -836,41 +872,61 @@ async function loadActivePublished(){
 
 /* 화면을 띄운 뒤, 지난 게시본·저장 배정·공유 상태를 뒤에서 채운다 */
 let _restLoaded = false;
+let _restDone = false;     // 뒤에서 채우는 일이 끝났는지 (끝나기 전엔 «불러오는 중»으로 알린다)
+let _restFailed = false;
 async function loadRest(){
   if(_restLoaded) return;
   _restLoaded = true;
   const keepId = CUR?.id || '';
   try {
-    await loadPublished();
-    await loadShare();   // 공유 링크는 선생님도 복사해 나눌 수 있다
+    // 게시본 목록과 공유 상태를 함께 받는다
+    await Promise.all([ loadPublished(), loadShare() ]);
     if(canPublish()){
       // 게시할 때 쓰는 자료는 게시 권한자만 받는다 (선생님에겐 필요 없다)
-      try {
-        const st = await getDocs(collection(db,'staff'));
-        TEACHERS_CACHE = st.docs.map((d,i)=>{
+      // 셋을 한꺼번에 받아 기다리는 시간을 줄인다 (차례로 받으면 세 배 걸린다)
+      // 교직원·틀은 없어도 화면이 도니 조용히 넘어가지만,
+      // 저장된 배정은 못 받으면 알려야 한다 (게시할 때 꼭 필요하므로)
+      const [stR, frR] = await Promise.all([
+        getDocs(collection(db,'staff')).catch(()=>null),
+        getDoc(doc(db,'timetables','main')).catch(()=>null),
+        loadSets(),
+      ]);
+      if(stR){
+        TEACHERS_CACHE = stR.docs.map((d,i)=>{
           const s=d.data();
           return { uid:d.id, name:s.name||'', org:s.org||'', orgs:s.orgs||[],
             color:teacherColorAt(i) };
         });
-        const fr = await getDoc(doc(db,'timetables','main'));
-        FRAMES_CACHE = (fr.exists() && fr.data().list) ? fr.data().list : [];
-      } catch(e){}
-      await loadSets();
+      }
+      if(frR && frR.exists()) FRAMES_CACHE = frR.data().list || [];
     }
     // 같은 게시본을 계속 보고 있게 다시 이어 준다
     CUR = PUBS.find(p=>p.id===keepId) || PUBS.find(p=>p.active) || pubsForView()[0] || null;
+    _restDone = true;
     renderPubPanel();
     renderShareLine();
     renderPubSelect();
     if(!keepId) renderView();   // 처음에 띄울 게 없었다면 이제 그린다
-  } catch(e){ /* 뒤에서 채우는 일이라 조용히 넘어간다 */ }
+  } catch(e){
+    // 실패해도 화면은 살아 있어야 한다 — 다시 받을 수 있게 알려준다
+    _restDone = true; _restFailed = true;
+    renderPubPanel();
+    renderShareLine();
+  }
 }
+
+/* 게시 자리에서 «다시 불러오기»를 눌렀을 때 */
+window.retryRest = async function(){
+  _restLoaded = false; _restDone = false; _restFailed = false;
+  renderPubPanel();
+  await loadRest();
+};
 async function loadSets(){
-  try {
-    const snap = await getDocs(collection(db,'timetableSets'));
-    SETS = snap.docs.map(d=>({ id:d.id, ...d.data() }))
-      .sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
-  } catch(e){ SETS = []; }
+  // 실패를 조용히 삼키면 «저장된 배정이 없습니다»로 보여 오해하게 된다.
+  // 못 받았으면 위로 알려서 «다시 불러오기»를 띄운다.
+  const snap = await getDocs(collection(db,'timetableSets'));
+  SETS = snap.docs.map(d=>({ id:d.id, ...d.data() }))
+    .sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
 }
 
 function renderPubPanel(){
@@ -882,6 +938,24 @@ function renderPubPanel(){
 
   const now = PUBS.find(p=>p.active);
   const box = $I('pub-now');
+
+  // 아직 뒤에서 채우는 중 — 자리를 미리 잡아 «불러오는 중»으로 알린다
+  if(!_restDone){
+    if(box) box.innerHTML = `<div class="pb-wait">
+      <span class="pb-spin"></span> 게시 정보를 불러오는 중…</div>`;
+    const sel0 = $I('pub-set');
+    if(sel0) sel0.innerHTML = '<option value="">불러오는 중…</option>';
+    const h0 = $I('pub-hint');
+    if(h0) h0.innerHTML = '저장해둔 배정을 가져오고 있습니다. 잠시만 기다려 주세요.';
+    return;
+  }
+  if(_restFailed){
+    if(box) box.innerHTML = `<div class="pb-wait err">
+      ⚠️ 게시 정보를 불러오지 못했습니다.
+      <button class="btn btn-sm" style="margin-left:8px" onclick="retryRest()">다시 불러오기</button></div>`;
+    return;
+  }
+
   if(box){
     box.innerHTML = now ? `
       <div class="pb-now"><div class="pb-row">
@@ -1520,6 +1594,7 @@ onAuthStateChanged(auth, async user => {
     });
 
     window.setLoadStep && window.setLoadStep('시간표를 그리는 중…', 80);
+    renderPubPanel();        // 게시 자리를 미리 잡아 «불러오는 중»으로 보여준다
     renderPubSelect();
     renderView();
     window.setLoadStep && window.setLoadStep('완료', 100);
