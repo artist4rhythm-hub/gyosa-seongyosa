@@ -2330,6 +2330,54 @@ async function renderAccessCtl(){
       <p class="adesc">선생님별로 페이지 접근을 열고 닫습니다. <b style="color:var(--ok)">✓ 허용</b> / <b style="color:var(--danger)">✕ 차단</b> — 누르면 바뀝니다.
       🔒는 협력교사 권한 자체로 막힌 것이고, 개인 설정보다 우선합니다. 차단하면 메뉴에서 숨겨지고 주소로 들어가도 막힙니다.</p>
       <style>
+        /* ── 🏛 기능별 담당자 ── */
+        .duty-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+        .duty-sw{display:flex;border:1.5px solid var(--ivd);border-radius:9px;overflow:hidden}
+        .duty-sw button{font-family:inherit;font-size:12px;font-weight:700;padding:7px 13px;
+          border:none;background:var(--wh);color:var(--ts);cursor:pointer}
+        .duty-sw button.on{background:var(--gm);color:#fff}
+        .duty-note{font-size:11.5px;color:var(--tl);line-height:1.6}
+        .duty-warn{font-size:12px;color:var(--goldd);background:var(--goldp);
+          border-radius:9px;padding:9px 13px;margin-bottom:11px;line-height:1.7}
+        .duty-warn span{color:var(--ts);font-weight:400}
+
+        /* 사람별 표 */
+        .duty-tw{overflow-x:auto;border:1px solid var(--ivd);border-radius:11px}
+        .duty-t{border-collapse:collapse;width:100%;min-width:640px;background:var(--wh)}
+        .duty-t th,.duty-t td{border-bottom:1px solid var(--ivd);padding:6px 4px;text-align:center}
+        .duty-t thead th{background:var(--gp);font-size:11px;font-weight:800;color:var(--gd);
+          position:sticky;top:0;padding:8px 4px}
+        .duty-th{font-size:10px;line-height:1.35;display:inline-block}
+        .duty-nmh{text-align:left !important;padding-left:12px !important;min-width:110px}
+        .duty-nm{text-align:left !important;padding-left:12px !important;font-size:12.5px;white-space:nowrap}
+        .duty-role{font-size:10px;color:var(--tl);margin-left:5px;font-weight:600}
+        .duty-sum{font-size:11.5px;font-weight:700;color:var(--gm)}
+        .duty-cell{width:30px;height:28px;border-radius:7px;border:1.5px solid var(--ivd);
+          background:var(--wh);color:var(--tl);font-size:12px;font-weight:900;
+          font-family:inherit;cursor:pointer;transition:all .12s}
+        .duty-cell:hover:not(:disabled){border-color:var(--gm)}
+        .duty-cell.on{background:var(--gm);border-color:var(--gm);color:#fff}
+        .duty-cell.auto{background:var(--goldp);border-color:var(--goldd);color:var(--goldd);
+          font-size:10px;cursor:default}
+
+        /* 기능별 목록 */
+        .duty-list{display:flex;flex-direction:column;gap:9px}
+        .duty-row{border:1px solid var(--ivd);border-radius:11px;padding:11px 13px;background:var(--wh)}
+        .duty-rh{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px}
+        .duty-ic{font-size:15px}
+        .duty-rh b{font-size:13px;color:var(--gd)}
+        .duty-d{font-size:11.5px;color:var(--tl)}
+        .duty-cnt{margin-left:auto;font-size:11.5px;font-weight:700;color:var(--gm)}
+        .duty-cnt.zero{color:var(--goldd)}
+        .duty-chips{display:flex;gap:5px;flex-wrap:wrap}
+        .duty-chip{font-family:inherit;font-size:12px;font-weight:700;padding:6px 11px;
+          border:1.5px solid var(--ivd);border-radius:8px;background:var(--wh);
+          color:var(--ts);cursor:pointer}
+        .duty-chip:hover:not(:disabled){border-color:var(--gm)}
+        .duty-chip.on{background:var(--gm);border-color:var(--gm);color:#fff}
+        .duty-chip.auto{background:var(--goldp);border-color:var(--goldd);color:var(--goldd);cursor:default}
+        .duty-chip i{font-style:normal;font-size:10px;opacity:.85}
+
         .tt-ed-wrap{display:flex;gap:6px;flex-wrap:wrap}
         .tt-ed{font-family:inherit;font-size:12.5px;font-weight:700;padding:7px 13px;
           border:1.5px solid var(--ivd);border-radius:9px;background:var(--wh);
@@ -2361,8 +2409,203 @@ async function renderAccessCtl(){
         · 변경은 즉시 저장되며, 해당 선생님이 <b>다음에 페이지를 열 때</b>부터 적용됩니다. (이미 열어둔 화면은 새로고침 후)<br>
         · 슈퍼관리자(—)는 항상 전체 접근이며 차단할 수 없습니다.
       </p>
-    </div>` + ttEditorBoxHTML();
-  renderTTEditors();
+    </div>` + dutyBoxHTML();
+  await loadDuties();
+  renderDutyPanel();
+}
+
+
+/* ═══════════════════════════════════════════════
+   🏛 담당자 한눈에 보기 — 컨트롤 타워
+   기능마다 흩어져 있던 담당자 지정을 한 자리에 모은다.
+   각 화면(시간표·학사일정 등)에서도 그대로 고칠 수 있고,
+   여기서는 «누가 무엇을 맡고 있는지»를 한눈에 보고 함께 고친다.
+   ═══════════════════════════════════════════════ */
+
+/* 관리 대상 — 새 기능이 생기면 여기 한 줄만 더하면 된다.
+     doc   : 담당자를 담아둔 문서
+     field : 그 문서 안의 칸 이름
+     always: 지정하지 않아도 늘 고칠 수 있는 사람 (역할로 판단) */
+const DUTY_DEFS = [
+  { key:'timetable', icon:'🗓', label:'시간표',
+    desc:'시간표 틀 · 수업 정의 · 배치',
+    doc:['timetableConfig','editors'], field:'uids',
+    always:s=>s.role==='super' },
+
+  { key:'ac_all', icon:'📅', label:'학사일정 · DA 전체',
+    desc:'두 기관 공통 일정 (정기휴가·창립일 등)',
+    doc:['academicConfig','editors'], field:'all',
+    always:s=>s.role==='super' },
+  { key:'ac_daniel', icon:'📅', label:'학사일정 · 다니엘 아마츠',
+    desc:'다니엘 아마츠 학사일정',
+    doc:['academicConfig','editors'], field:'daniel',
+    always:s=>s.role==='super' || (s.role==='org_admin' && s.org==='daniel') },
+  { key:'ac_jihyebit', icon:'📅', label:'학사일정 · 지혜빛 선교원',
+    desc:'지혜빛 선교원 학사일정',
+    doc:['academicConfig','editors'], field:'jihyebit',
+    always:s=>s.role==='super' || (s.role==='org_admin' && s.org==='jihyebit') },
+
+  { key:'payreq', icon:'💳', label:'경비 지급 요청서',
+    desc:'지급 처리 · 취합 · 설정',
+    doc:['payConfig','managers'], field:'list',
+    always:s=>s.role==='super' },
+
+  { key:'expense', icon:'💰', label:'수행성 경비',
+    desc:'경비 취합 · 마감 · 설정',
+    doc:['expenseConfig','managers'], field:'list',
+    always:s=>s.role==='super' },
+
+  { key:'attend', icon:'✅', label:'출석부',
+    desc:'출결 항목 · 출석부 설정',
+    doc:['attendConfig','editors'], field:'uids',
+    always:s=>s.role==='super' },
+];
+
+let DUTY = {};              // { key: [uid…] }
+let DUTY_VIEW = 'person';   // 'person' 사람별 · 'duty' 기능별
+
+async function loadDuties(){
+  DUTY = {};
+  // 문서를 한 번씩만 읽는다 (학사일정처럼 한 문서에 여러 칸이 있으므로)
+  const docs = {};
+  for(const d of DUTY_DEFS){
+    const id = d.doc.join('/');
+    if(!(id in docs)){
+      try {
+        const s = await getDoc(doc(db, d.doc[0], d.doc[1]));
+        docs[id] = s.exists() ? s.data() : {};
+      } catch(e){ docs[id] = {}; }
+    }
+    const data = docs[id];
+    let list = Array.isArray(data[d.field]) ? data[d.field].slice() : [];
+    // 학사일정의 예전 저장 방식({uids:[…]})도 받아준다
+    if(!list.length && d.doc[0]==='academicConfig' && Array.isArray(data.uids)) list = data.uids.slice();
+    DUTY[d.key] = list;
+  }
+}
+
+function dutyStaffList(){
+  return Object.values(STAFF_CACHE||{})
+    .filter(s => !s.noAuth && (s.acStatus||'active')!=='quit' && s.role!=='partner')
+    .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+}
+
+window.setDutyView = function(v){ DUTY_VIEW = v; renderDutyPanel(); };
+
+window.toggleDuty = async function(key, uid){
+  if(CU.role !== 'super'){ alert('수퍼관리자만 담당자를 정할 수 있습니다.'); return; }
+  const def = DUTY_DEFS.find(d=>d.key===key); if(!def) return;
+  const s = STAFF_CACHE[uid];
+  if(s && def.always(s)) return;    // 늘 권한이 있는 사람은 건드리지 않는다
+
+  const cur = DUTY[key] || [];
+  DUTY[key] = cur.includes(uid) ? cur.filter(u=>u!==uid) : [...cur, uid];
+
+  try {
+    await setDoc(doc(db, def.doc[0], def.doc[1]), {
+      [def.field]: DUTY[key],
+      updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name||'',
+    }, { merge:true });
+    renderDutyPanel();
+    try {
+      logActivity('권한', '담당자',
+        `${s?.name||''} — ${def.label} ${DUTY[key].includes(uid)?'지정':'해제'}`);
+    } catch(e){}
+  } catch(e){
+    DUTY[key] = cur;                // 되돌린다
+    alert('저장 실패: '+(e.message||''));
+    renderDutyPanel();
+  }
+};
+
+function renderDutyPanel(){
+  const box = $I('duty-box'); if(!box) return;
+  const staff = dutyStaffList();
+
+  const head = `<div class="duty-head">
+    <div class="duty-sw">
+      <button class="${DUTY_VIEW==='person'?'on':''}" onclick="setDutyView('person')">👤 사람별</button>
+      <button class="${DUTY_VIEW==='duty'?'on':''}" onclick="setDutyView('duty')">🗂 기능별</button>
+    </div>
+    <span class="duty-note">칸을 눌러 담당을 켜고 끕니다 · <b>늘</b>은 관리자라 자동으로 열려 있는 자리예요</span>
+  </div>`;
+
+  // ── 빠진 자리 알림 ──
+  /* 따로 지정한 담당자가 없는 기능을 알려준다.
+     수퍼관리자는 어차피 다 열려 있으니 «있음»으로 치지 않는다 —
+     그러면 경고가 영영 안 떠서 빠뜨린 걸 못 찾기 때문이다. */
+  const empty = DUTY_DEFS.filter(d=> !((DUTY[d.key]||[]).length));
+  const warn = empty.length
+    ? `<div class="duty-warn">⚠️ 따로 지정한 담당자가 없는 기능 —
+        <b>${empty.map(d=>esc(d.label)).join(' · ')}</b>
+        <span>지금은 관리자만 고칠 수 있습니다. 맡을 분이 있으면 아래에서 골라주세요.</span></div>`
+    : '';
+
+  if(DUTY_VIEW === 'duty'){
+    // 기능별 — 무엇을 누가 맡고 있나
+    const rows = DUTY_DEFS.map(d=>{
+      const list = DUTY[d.key]||[];
+      const autos = staff.filter(s=>d.always(s));
+      const names = list.map(u=>STAFF_CACHE[u]?.name).filter(Boolean);
+      const chips = staff.map(s=>{
+        const auto = d.always(s);
+        const on = auto || list.includes(s.uid);
+        return `<button class="duty-chip ${on?'on':''} ${auto?'auto':''}"
+          ${auto?'disabled title="관리자라 늘 열려 있습니다"':''}
+          onclick="toggleDuty('${d.key}','${s.uid}')">${esc(s.name||'')}${auto?' <i>늘</i>':''}</button>`;
+      }).join('');
+      return `<div class="duty-row">
+        <div class="duty-rh"><span class="duty-ic">${d.icon}</span>
+          <b>${esc(d.label)}</b>
+          <span class="duty-d">${esc(d.desc)}</span>
+          <span class="duty-cnt ${names.length?'':'zero'}">${
+            names.length ? `담당 ${names.length}명` : (autos.length?'관리자만':'담당자 없음')}</span></div>
+        <div class="duty-chips">${chips}</div>
+      </div>`;
+    }).join('');
+    box.innerHTML = head + warn + `<div class="duty-list">${rows}</div>`;
+    return;
+  }
+
+  // 사람별 — 한 줄에서 그 사람의 모든 담당을 켜고 끈다
+  const ths = DUTY_DEFS.map(d=>
+    `<th title="${esc(d.desc)}"><span class="duty-th">${d.icon}<br>${esc(d.label.replace('학사일정 · ','').replace('경비 지급 요청서','경비 요청'))}</span></th>`).join('');
+  const rows = staff.map(s=>{
+    const cells = DUTY_DEFS.map(d=>{
+      const auto = d.always(s);
+      const on = auto || (DUTY[d.key]||[]).includes(s.uid);
+      return `<td><button class="duty-cell ${on?'on':''} ${auto?'auto':''}"
+        ${auto?'disabled title="관리자라 늘 열려 있습니다"':''}
+        onclick="toggleDuty('${d.key}','${s.uid}')">${auto?'늘':(on?'✓':'')}</button></td>`;
+    }).join('');
+    const n = DUTY_DEFS.filter(d=>d.always(s) || (DUTY[d.key]||[]).includes(s.uid)).length;
+    const roleLab = s.role==='super' ? '슈퍼' : s.role==='org_admin' ? '기관관리자'
+                  : s.role==='tab_admin' ? '탭관리자' : '교사';
+    return `<tr>
+      <td class="duty-nm"><b>${esc(s.name||'')}</b>
+        <span class="duty-role">${roleLab}</span></td>
+      ${cells}
+      <td class="duty-sum">${n ? `${n}개` : '—'}</td>
+    </tr>`;
+  }).join('');
+
+  box.innerHTML = head + warn + `<div class="duty-tw">
+    <table class="duty-t">
+      <thead><tr><th class="duty-nmh">선생님</th>${ths}<th>합계</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+}
+
+function dutyBoxHTML(){
+  return `<div class="asc" style="margin-top:14px">
+    <h3 style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:5px">🏛 기능별 담당자</h3>
+    <p style="font-size:12.5px;color:var(--ts);line-height:1.7;margin-bottom:12px">
+      여기 고른 분과 <b>수퍼관리자</b>가 각 기능을 고칠 수 있습니다.
+      <br><span style="color:var(--tl)">· 각 화면(시간표·학사일정 등)에서도 지정할 수 있고, 여기서는 <b>한눈에 보고 함께</b> 고칩니다.
+      · 선생님이 그만두면 이 표에서 그 줄만 비우면 됩니다.</span>
+    </p>
+    <div id="duty-box"><div style="font-size:12.5px;color:var(--tl)">불러오는 중…</div></div>
+  </div>`;
 }
 
 /* ── 🗓 시간표를 짤 수 있는 사람 ──
