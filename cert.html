@@ -683,6 +683,24 @@ function canIssueCareer(){
   return ['super','org_admin','tab_admin'].includes(CU?.role);
 }
 
+/* ── 누구의 재직·경력증명서까지 발급할 수 있나 ──
+   · 수퍼관리자: 전체
+   · 기관관리자: 자기 기관 교직원 (두 기관 관리자는 두 기관 모두)
+   · 부서장: 자기 부서원 (행정실장은 행정 업무 특성상 다니엘 전체)
+   · 교사·협력교사: 본인 것만 */
+function canIssueStaffCert(s){
+  if(!CU || !s) return false;
+  if(s.uid === CU.uid) return true;                       // 본인은 언제나
+  const so = s.orgs && s.orgs.length ? s.orgs : [s.org];
+  if(CU.role === 'super') return true;
+  if(CU.role === 'org_admin') return so.some(o => myOrgs().includes(o));
+  if(CU.role === 'tab_admin'){
+    if(CU.dept === '행정실') return so.includes(CU.org);  // 행정실장: 기관 전체
+    return s.org === CU.org && s.dept === CU.dept;        // 부서장: 자기 부서
+  }
+  return false;
+}
+
 // 재직증명서 시트 HTML
 function buildEmployCert(rec){
   const cfg = ORG_CONFIG[rec.org] || ORG_CONFIG.daniel;
@@ -757,7 +775,12 @@ function renderStaffIssue(){
   box.innerHTML = `
     <div class="acard">
       <h3 class="actitle">👔 재직증명서 발급 (${ORGS[staffOrg]||staffOrg})</h3>
-      <p class="adesc">교직원을 선택하면 재직증명서를 미리 확인하고 발급할 수 있습니다. 생년월일·주소·입사일·직위가 모두 있어야 발급됩니다.</p>
+      <p class="adesc">${
+        CU.role==='super' ? '교직원을 선택하면 재직증명서를 미리 확인하고 발급할 수 있습니다.' :
+        CU.role==='org_admin' ? '관리하시는 기관의 교직원 재직증명서를 발급할 수 있습니다.' :
+        CU.role==='tab_admin' ? (CU.dept==='행정실' ? '행정실장은 기관 전체 교직원의 재직증명서를 발급할 수 있습니다.' : `${esc(CU.dept||'')} 부서원의 재직증명서를 발급할 수 있습니다.`) :
+        '본인의 재직증명서를 발급할 수 있습니다.'
+      } 생년월일·주소·입사일·직위가 모두 있어야 발급됩니다.</p>
       ${orgTabs}
       <input type="text" id="staff-search" placeholder="이름 검색" value="${esc(staffSearch)}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);width:100%;margin-bottom:14px;font-family:inherit">
       <div class="slist" id="staff-slist"></div>
@@ -773,7 +796,8 @@ window.setStaffOrg = setStaffOrg;
 function renderStaffList(){
   const box = $I('staff-slist'); if(!box) return;
   let list = STAFF_ALL
-    .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(staffOrg));   // 퇴직자 포함 (경력증명서)
+    .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(staffOrg))   // 퇴직자 포함 (경력증명서)
+    .filter(s => canIssueStaffCert(s));   // 발급 범위: 수퍼=전체 · 기관관리자=기관 · 부서장=부서 · 교사=본인
   if(staffSearch){
     const q = staffSearch.toLowerCase();
     list = list.filter(s => (s.name||'').toLowerCase().includes(q));
@@ -822,6 +846,7 @@ let previewStaff = null;
 function openStaffPreview(uid, mode){
   const s = STAFF_ALL.find(x=>x.uid===uid);
   if(!s){ toast('교직원을 찾을 수 없습니다.','err'); return; }
+  if(!canIssueStaffCert(s)){ toast('이 선생님의 증명서를 발급할 권한이 없습니다.','err'); return; }
   const quit = (s.acStatus||'active') === 'quit';
   const isCareer = mode === 'career' || quit;                // 퇴직자는 항상 경력증명서
   if(isCareer && !canIssueCareer()){
@@ -933,6 +958,7 @@ window.closeStaffPreview = closeStaffPreview;
 
 async function doIssueStaff(uid, org, mode){
   const s = STAFF_ALL.find(x=>x.uid===uid); if(!s) return;
+  if(!canIssueStaffCert(s)){ toast('이 선생님의 증명서를 발급할 권한이 없습니다.','err'); return; }
   const cfg = ORG_CONFIG[org]; if(!cfg){ toast('이 기관은 발급을 지원하지 않습니다.','err'); return; }
   const issueDate = todayYMD();
   const isCareer = mode === 'career';
@@ -1220,6 +1246,15 @@ async function renderList(){
     CERTS = []; snap.forEach(d=>CERTS.push({id:d.id, ...d.data()}));
     const orgs = myOrgs();
     CERTS = CERTS.filter(c=>orgs.includes(c.org));
+    /* 교직원 증명서(재직·경력)는 개인정보(생년월일·주소)가 담기니
+       발급 범위와 같은 규칙으로만 보인다. 학생 재학증명서는 기관 기준 유지. */
+    CERTS = CERTS.filter(c=>{
+      if(c.kind!=='employ' && c.kind!=='career') return true;   // 재학증명서
+      const s = STAFF_ALL.find(x=>x.uid===c.staffUid);
+      if(s) return canIssueStaffCert(s);
+      // 명부에서 지워진 분의 기록은 관리자만
+      return ['super','org_admin'].includes(CU.role);
+    });
     CERTS.sort((a,b)=>{
       const ta = a.createdAt?.seconds||0, tb=b.createdAt?.seconds||0;
       return tb-ta;
@@ -1231,7 +1266,7 @@ async function renderList(){
   box.innerHTML = `
     <div class="acard">
       <h3 class="actitle">📋 발급 목록</h3>
-      <p class="adesc">발급된 증명서 목록입니다. 같은 기관 선생님과 관리자가 열람할 수 있습니다. <b>PDF</b>는 도장 없이 출력용(인쇄 후 행정실에서 직인 날인), <b>이미지</b>는 도장이 포함되어 바로 사용할 수 있습니다.</p>
+      <p class="adesc">발급된 증명서 목록입니다. 재학증명서는 같은 기관 선생님이, 재직·경력증명서는 발급 권한이 있는 범위까지만 보입니다. <b>PDF</b>는 도장 없이 출력용(인쇄 후 행정실에서 직인 날인), <b>이미지</b>는 도장이 포함되어 바로 사용할 수 있습니다.</p>
       <div class="clist">
         ${CERTS.length ? CERTS.map(c=>`
           <div class="citem">
@@ -1387,7 +1422,17 @@ function certPrintCSS(){
 
 // 증명서를 A4 캔버스로 렌더 (공통) — hideStamp로 도장 유무
 async function renderCertCanvas(c, hideStamp){
-  if(!window.html2canvas){ loadHtml2Canvas(); throw new Error('이미지 모듈 로딩 중입니다. 잠시 후 다시 시도하세요.'); }
+  if(!window.html2canvas){
+    loadHtml2Canvas();
+    // 5초까지 로딩을 기다렸다가 진행 — 버튼을 다시 누를 필요 없게
+    await new Promise((res, rej)=>{
+      let n = 0;
+      const t = setInterval(()=>{
+        if(window.html2canvas){ clearInterval(t); res(); }
+        else if(++n > 50){ clearInterval(t); rej(new Error('이미지 모듈을 불러오지 못했습니다. 인터넷 연결을 확인해주세요.')); }
+      }, 100);
+    });
+  }
   const MM = 3.779527559;
   const W = Math.round(210 * MM);   // 794px
   const H = Math.round(297 * MM);   // 1123px
@@ -1420,11 +1465,76 @@ async function pdfCert(id){
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
     pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
-    pdf.save(`${c.type}증명서_${c.studentName}_${c.docNo}.pdf`);
-    toast('PDF를 저장했습니다. (도장 없이)','ok');
+    const fname = `${c.type}증명서_${c.studentName}_${c.docNo}.pdf`;
+    // 아이패드·휴대폰: 공유 시트 ("파일에 저장" 선택) · 컴퓨터: 바로 내려받기
+    let shared = false;
+    if(isTouchDevice() && navigator.canShare){
+      try {
+        const file = new File([pdf.output('blob')], fname, {type:'application/pdf'});
+        if(navigator.canShare({files:[file]})){
+          await navigator.share({files:[file]});
+          shared = true;
+        }
+      } catch(e){ if(e && e.name==='AbortError'){ return; } }
+    }
+    if(!shared) pdf.save(fname);
+    toast(shared ? '공유 시트에서 "파일에 저장"을 누르면 담깁니다. (도장 없이)' : 'PDF를 저장했습니다. (도장 없이)','ok');
   } catch(e){ toast('PDF 저장 실패: '+(e.message||''),'err'); }
 }
 window.pdfCert = pdfCert;
+
+/* ── 기기별 저장 방법 ──
+   · 아이패드·아이폰·휴대폰(터치 기기): 공유 시트를 띄운다 → "이미지 저장"을 누르면 사진 앱에 담긴다.
+     (예전 방식(데이터 주소 + download 속성)은 아이패드 사파리가 무시해서 아무 일도 안 일어났다)
+   · 컴퓨터: 파일로 바로 내려받는다.
+   · 공유 시트가 없는 옛 기기: 이미지를 화면에 띄우고 길게 눌러 저장하도록 안내한다. */
+const isTouchDevice = () => (navigator.maxTouchPoints||0) > 0 || 'ontouchstart' in window;
+
+async function saveCanvasImage(canvas, filename){
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+  if(!blob) throw new Error('이미지 생성에 실패했습니다.');
+  // ① 터치 기기: 공유 시트 (사진 앱 저장·카톡 전송 등)
+  if(isTouchDevice() && navigator.canShare){
+    try {
+      const file = new File([blob], filename, {type:'image/png'});
+      if(navigator.canShare({files:[file]})){
+        await navigator.share({files:[file]});
+        return 'share';
+      }
+    } catch(e){
+      if(e && e.name === 'AbortError') return 'cancel';   // 사용자가 시트를 닫음 — 오류 아님
+      /* 공유 실패 시 아래 방법으로 이어간다 */
+    }
+  }
+  // ② 컴퓨터: 바로 내려받기
+  if(!isTouchDevice()){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 5000);
+    return 'download';
+  }
+  // ③ 옛 터치 기기: 길게 눌러 저장
+  showImageSaveModal(URL.createObjectURL(blob), filename);
+  return 'modal';
+}
+
+function showImageSaveModal(url, filename){
+  document.getElementById('imgsave-mod')?.remove();
+  const el = document.createElement('div'); el.id = 'imgsave-mod'; el.className='mov';
+  el.innerHTML = `
+    <div class="mbk" onclick="document.getElementById('imgsave-mod').remove()"></div>
+    <div class="mbox" style="max-width:560px">
+      <div class="mtitle">🖼️ 이미지 저장</div>
+      <div class="msub">아래 이미지를 <b>길게 눌러</b> "사진에 추가" 또는 "이미지 저장"을 선택하세요.</div>
+      <div style="max-height:60vh;overflow:auto;border:1px solid var(--ivd);border-radius:10px;background:var(--iv);padding:8px;text-align:center">
+        <img src="${url}" alt="${esc(filename)}" style="max-width:100%;height:auto;border-radius:6px">
+      </div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('imgsave-mod').remove()">닫기</button></div>
+    </div>`;
+  document.body.appendChild(el);
+}
 
 // 이미지 저장 (도장 포함) — 바로 사용
 async function imageCert(id){
@@ -1432,11 +1542,10 @@ async function imageCert(id){
   toast('이미지를 만드는 중…');
   try {
     const canvas = await renderCertCanvas(c, false); // 도장 포함
-    const link = document.createElement('a');
-    link.download = `${c.type}증명서_${c.studentName}_${c.docNo}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-    toast('이미지를 저장했습니다. (도장 포함)','ok');
+    const how = await saveCanvasImage(canvas, `${c.type}증명서_${c.studentName}_${c.docNo}.png`);
+    if(how==='share') toast('공유 시트에서 "이미지 저장"을 누르면 사진에 담깁니다.','ok');
+    else if(how==='download') toast('이미지를 저장했습니다. (도장 포함)','ok');
+    else if(how==='modal') toast('이미지를 길게 눌러 저장하세요.','ok');
   } catch(e){ toast('이미지 저장 실패: '+(e.message||''),'err'); }
 }
 window.imageCert = imageCert;
