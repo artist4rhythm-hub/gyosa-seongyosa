@@ -212,6 +212,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
@@ -338,13 +339,15 @@ const isSuper = () => !!CU && CU.role==='super';
 function isExpManager(org){
   if(!CU) return false;
   if(CU.role==='super') return true;
-  const mgrs = EXP_MANAGERS[org] || [];
+  // 기관별 배열 + 컨트롤 타워(접근 권한)에서 지정한 공통 list 둘 다 인정
+  const mgrs = [...(EXP_MANAGERS[org]||[]), ...(Array.isArray(EXP_MANAGERS.list)?EXP_MANAGERS.list:[])];
   return mgrs.includes(CU.uid);
 }
 // 어느 기관이든 경비 관리자거나 슈퍼인가
 function isAnyExpManager(){
   if(!CU) return false;
   if(CU.role==='super') return true;
+  if(Array.isArray(EXP_MANAGERS.list) && EXP_MANAGERS.list.includes(CU.uid)) return true;
   return myOrgs().some(o=>(EXP_MANAGERS[o]||[]).includes(CU.uid));
 }
 const myOrgs = () => CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
@@ -467,6 +470,17 @@ async function loadData(){
     } catch(e3){ EXP_MANAGERS = {}; }
     // 마감된 학기 — 어느 탭으로 바로 들어와도 막히도록 처음에 함께 읽어둔다
     try { await loadSemLocks(); } catch(e4){}
+    // ⏱ 타임머신 — 입금·환급 기록을 저장 직전에 자동 보관
+    if(window.TM) TM.init({
+      page:'expense', pageLabel:'수행성 경비', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU.uid, name:CU.name||''}),
+      canRestore:()=>CU.role==='super' || CU.role==='org_admin' || isExpManager(payOrg),
+      targets:[
+        {col:'studentPayments', docId:()=>payDocId(), label:'입금·환급 기록 (지금 보는 기관·학기)'},
+      ],
+      onRestored: async ()=>{ if($I('tab-pay') && $I('tab-pay').style.display!=='none') renderPay(); }
+    });
   } catch(e){ toast('데이터 로드 실패: '+e.message,'err'); }
   finally { window.hideLoading && window.hideLoading(); }
 }
@@ -3309,6 +3323,7 @@ async function savePayments(){
   if(!isExpManager(payOrg) && CU.role!=='super'){ toast('경비 관리자만 저장할 수 있습니다.','err'); return; }
   try {
     window.showLoading && window.showLoading('저장 중…');
+    await TM.snapDoc('studentPayments', payDocId(), '입금·환급 저장 전');
     await setDoc(doc(db,'studentPayments', payDocId()), {
       org:payOrg, semester:paySem, students:PAYMENTS,
       updatedAt:Timestamp.now(), updatedByUid:CU.uid, updatedByName:CU.name||''

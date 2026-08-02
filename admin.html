@@ -234,6 +234,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="badges.js"></script>
 </head>
@@ -310,6 +311,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       <button class="subtbtn" id="sa-sec" onclick="showAdmTab('sec')" style="display:none">🛡️ 접속·보안</button>
       <button class="subtbtn" id="sa-log" onclick="showAdmTab('log')" style="display:none">🔐 로그인 기록</button>
       <button class="subtbtn" id="sa-act" onclick="showAdmTab('act')" style="display:none">📜 활동 로그</button>
+      <button class="subtbtn" id="sa-tm" onclick="showAdmTab('tm')" style="display:none">⏱ 타임머신</button>
     </div>
     <div id="ca-sys" class="tc"></div>
     <div id="ca-att" class="tc" style="display:none"></div>
@@ -319,6 +321,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div id="ca-log" class="tc" style="display:none"></div>
     <div id="ca-act" class="tc" style="display:none"></div>
     <div id="ca-org" class="tc" style="display:none"></div>
+    <div id="ca-tm" class="tc" style="display:none"></div>
   </div>
 </div>
 
@@ -1219,6 +1222,27 @@ async function showMain(){
   $I('t-adm').style.display=isAdmin?'flex':'none';
   // 관리자 탭 4묶음: 역할별 표시는 refreshAdmBars()가 한 곳에서 관리
   refreshAdmBars();
+  // ⏱ 타임머신 — 담당자 판·부서 목록을 저장 직전에 자동 보관
+  if(window.TM) window.TM.init({
+    page:'admin', pageLabel:'관리자', db,
+    F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+    me:()=>({uid:CU.uid, name:CU.name||''}),
+    canRestore:()=>['super','org_admin'].includes(CU.role),
+    targets:[
+      {col:'timetableConfig', docId:'editors',  label:'시간표 담당자'},
+      {col:'academicConfig',  docId:'editors',  label:'학사일정 담당자'},
+      {col:'payConfig',       docId:'managers', label:'경비 요청 담당자'},
+      {col:'expenseConfig',   docId:'managers', label:'수행성 경비 담당자'},
+      {col:'attendConfig',    docId:'editors',  label:'출석부 담당자'},
+      {col:'classConfig',     docId:'editors',  label:'반편성·학생관리 담당자'},
+      {col:'adminConfig',     docId:'depts',    label:'부서 목록'},
+    ],
+    onRestored: async ()=>{
+      await loadDeptsCfg();
+      const cur = document.querySelector('#adm-subbar .subtbtn.active')?.id?.replace('sa-','');
+      if(cur && cur!=='tm') showAdmTab(cur);
+    }
+  });
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
   await reloadStaffCache();
   updateNoticeDot();
@@ -2158,6 +2182,7 @@ const ADM_TABS = {
   sec:{grp:'sec',  roles:['super']},
   log:{grp:'sec',  roles:['super']},
   act:{grp:'sec',  roles:['super']},
+  tm: {grp:'sec',  roles:['super']},   // ⏱ 타임머신 (전체 스냅샷)
 };
 let ADM_GRP = 'acct';
 function admTabAllowed(k){ return CU && ADM_TABS[k] && ADM_TABS[k].roles.includes(CU.role); }
@@ -2186,7 +2211,7 @@ function showAdmTab(sub){
   refreshAdmBars();
   document.querySelectorAll('#adm-subbar .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act','ca-org'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act','ca-org','ca-tm'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
@@ -2196,6 +2221,21 @@ function showAdmTab(sub){
   if(sub==='log') renderLoginLog();
   if(sub==='act') renderActivityLog();
   if(sub==='org') renderAdmOrg();
+  if(sub==='tm') renderAdmTm();
+}
+
+// ── 관리자 > 보안·기록 > ⏱ 타임머신 (전체 스냅샷 모니터링) ──
+function renderAdmTm(){
+  $I('ca-tm').innerHTML = `
+  <div class="asc">
+    <div class="acard">
+      <h3 class="actitle">⏱ 타임머신 — 전체 스냅샷</h3>
+      <p class="adesc">모든 화면에서 자동 보관된 <b>저장 직전</b> 상태들입니다. 여기서 바로 되돌리거나 오래된 보관본을 정리할 수 있어요.
+        <span style="color:var(--tl)">누가·언제·무엇을 바꿨는지는 옆의 «활동 로그» 탭에서 분류 필터로 함께 추적하세요. 대상마다 최근 15개까지 자동 보관됩니다.</span></p>
+      <div id="tm-adm-box"></div>
+    </div>
+  </div>`;
+  if(window.TM) window.TM.renderAdminList($I('tm-adm-box'));
 }
 
 // ══════════ 관리자 > 인사정보 현황 ══════════
@@ -2614,6 +2654,7 @@ window.toggleDuty = async function(key, uid){
   DUTY[key] = cur.includes(uid) ? cur.filter(u=>u!==uid) : [...cur, uid];
 
   try {
+    await window.TM.snapDoc(def.doc[0], def.doc[1], `담당자 변경: ${def.label}`);
     await setDoc(doc(db, def.doc[0], def.doc[1]), {
       [def.field]: DUTY[key],
       updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name||'',
@@ -3873,6 +3914,7 @@ async function renderDeptMgr(){
 window.renderDeptMgr = renderDeptMgr;
 
 async function saveDeptsCfg(){
+  await window.TM.snapDoc('adminConfig','depts','부서 목록 변경');
   await setDoc(doc(db,'adminConfig','depts'), {
     daniel: DEPTS_CFG.daniel, jihyebit: DEPTS_CFG.jihyebit,
     updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name||''
@@ -3990,6 +4032,12 @@ async function retireStaff(uid){
   const s = STAFF_CACHE[uid]; if(!s) return;
   const dt = $I('rt-date')?.value || '';
   try {
+    // ⏱ 되돌릴 수 있게: 담당 문서들과 반 편성을 통째로 보관해 둔다
+    try {
+      for(const cfg of RETIRE_DUTY_DOCS) await window.TM.snapDoc(cfg.col, cfg.id, `퇴사 정리 전 (${s.name})`);
+      await window.TM.snapDoc('attendConfig','gradeAssign',`퇴사 정리 전 (${s.name})`);
+      await window.TM.snapBundle('classes', {}, `퇴사 정리 전 — 반 편성 (${s.name})`);
+    } catch(e0){}
     // ① 계정 잠금
     await updateDoc(doc(db,'staff',uid), {acStatus:'quit', ...(dt?{leaveDate:dt}:{})});
     s.acStatus = 'quit'; if(dt) s.leaveDate = dt;

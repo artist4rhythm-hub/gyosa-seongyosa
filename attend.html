@@ -116,6 +116,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
 <script src="org-bar.js"></script>
 <script type="module" src="badges.js"></script>
@@ -287,6 +288,22 @@ onAuthStateChanged(auth, async (user) => {
     await loadAttendConfig();
     if(canSetup()) $I('tb-set').style.display='';
     await loadTypes();
+    // ⏱ 타임머신 연결 — 설정을 저장하기 직전 상태가 자동 보관된다
+    if(window.TM) TM.init({
+      page:'attend', pageLabel:'출석부', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU.uid, name:CU.name||''}),
+      canRestore:()=>canSetup(),
+      targets:[
+        {col:'attendTypes', scope:{}, label:'출결 항목 (전체 묶음)'},
+        {col:'attendConfig', docId:'gradeAssign', label:'학년별 담당 선생님'},
+        {col:'terms', scope:{}, label:'학기 일정 (전체 묶음)'},
+      ],
+      onRestored: async ()=>{
+        await loadAttendConfig(); await loadTypes(); await loadTerms();
+        if($I('c-set') && $I('c-set').style.display!=='none') renderSet();
+      }
+    });
     await loadTerms();
     await loadHolidays();
     await loadClasses();
@@ -1694,6 +1711,7 @@ function moveType(i, dir){
 window.moveType = moveType;
 async function saveTypeOrder(){
   try {
+    await TM.snapBundle('attendTypes',{},'항목 순서 변경');
     for(let i=0;i<TYPES.length;i++){
       TYPES[i].order = i+1;
       await updateDoc(doc(db,'attendTypes',TYPES[i].id), {order:i+1});
@@ -1762,6 +1780,7 @@ async function toggleGA(key, uid){
   GRADE_ASSIGN[key] = cur.includes(uid) ? cur.filter(u=>u!==uid) : [...cur, uid];
   if(!GRADE_ASSIGN[key].length) delete GRADE_ASSIGN[key];
   try {
+    await TM.snapDoc('attendConfig','gradeAssign','학년담당 변경');
     await setDoc(doc(db,'attendConfig','gradeAssign'), {
       v: GRADE_ASSIGN, updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name||''
     });
@@ -1826,6 +1845,7 @@ async function saveType(editId){
   const isPresent = $I('t-present').value==='yes';
   if(!name) return toast('항목 이름을 입력하세요.','err');
   try {
+    await TM.snapBundle('attendTypes',{}, editId?`항목 수정: ${name}`:`항목 추가: ${name}`);
     if(editId){
       await updateDoc(doc(db,'attendTypes',editId), {name, color, isPresent});
       logActivity('수정','출석항목',`${name}`);
@@ -1847,6 +1867,7 @@ async function delType(id){
   const t = TYPES.find(x=>x.id===id);
   if(!confirm(`"${t?.name}" 항목을 삭제할까요?\n이미 이 항목으로 기록된 출결이 있다면 통계에 영향이 있을 수 있습니다.`)) return;
   try {
+    await TM.snapBundle('attendTypes',{},`항목 삭제: ${t?.name||''}`);
     await deleteDoc(doc(db,'attendTypes',id));
     logActivity('삭제','출석항목',`${t?.name||''}`);
     toast('삭제되었습니다.');
@@ -1897,6 +1918,7 @@ async function saveTerm(editId){
   if(!start || !end) return toast('개학일과 종업일을 입력하세요.','err');
   if(start > end) return toast('종업일이 개학일보다 빠릅니다.','err');
   const data = {year, org, term, start, end};
+  await TM.snapBundle('terms',{}, editId?'학기 수정':'학기 추가');
   try {
     if(editId){
       await updateDoc(doc(db,'terms',editId), data);
@@ -1922,6 +1944,7 @@ async function delTerm(id){
   const t = TERMS.find(x=>x.id===id);
   if(!confirm(`${t?.year}년 ${ORGS[t?.org]} ${TERM_NAMES[t?.term]} 학기를 삭제할까요?`)) return;
   try {
+    await TM.snapBundle('terms',{},`학기 삭제: ${t?.year||''}년`);
     await deleteDoc(doc(db,'terms',id));
     logActivity('삭제','학기일정',`${t?.year} ${ORGS[t?.org]} ${TERM_NAMES[t?.term]}`);
     toast('삭제되었습니다.');

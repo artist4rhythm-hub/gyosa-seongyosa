@@ -95,6 +95,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
@@ -120,7 +121,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -256,6 +257,17 @@ onAuthStateChanged(auth, async (user) => {
 
     await loadClassEditors();
     await loadDeptsCfg();
+    // ⏱ 타임머신 — 이번 학년도(내 기관) 반 편성 전체를 묶음으로 보관·복원
+    if(window.TM) TM.init({
+      page:'class', pageLabel:'반편성', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU.uid, name:CU.name||''}),
+      canRestore:()=>isAdmin(),
+      targets:[
+        {col:'classes', scope:()=>({year:curYear, org__in:myOrgs()}), label:'반 편성 (올해 전체)'},
+      ],
+      onRestored: async ()=>{ await loadClasses(); renderClasses(); }
+    });
     await loadStudents();
     await loadStaff();
     window.hideLoading && window.hideLoading();
@@ -445,6 +457,7 @@ function renderGradeBox(org, selGrade){
 window.renderGradeBox = renderGradeBox;
 
 async function saveClass(editId){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, editId?'반 수정':'반 만들기');
   const name = $I('c-name').value.trim();
   const org = $I('c-org').value;
   if(!name) return toast('반 이름을 입력하세요.','err');
@@ -479,6 +492,7 @@ async function saveClass(editId){
 window.saveClass = saveClass;
 
 async function deleteClass(id){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '반 삭제 전');
   const c = CLASSES.find(x=>x.id===id);
   if(!confirm(`"${c?.name}" 반을 삭제할까요?\n(학생 정보는 삭제되지 않고 반 배정만 해제됩니다)`)) return;
   try {
@@ -589,6 +603,7 @@ function filterAddList(){
 window.filterAddList = filterAddList;
 
 async function addCheckedStudents(classId){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '학생 배정 전');
   const c = CLASSES.find(x=>x.id===classId); if(!c) return;
   const ids = Array.from(document.querySelectorAll('.add-chk:checked')).map(c=>c.value);
   if(!ids.length) return toast('학생을 선택하세요.','err');
@@ -648,6 +663,7 @@ function applyGradeBulk(){
 window.applyGradeBulk = applyGradeBulk;
 
 async function saveGrades(classId){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '학년 저장 전');
   const c = CLASSES.find(x=>x.id===classId); if(!c) return;
   const grades = {};
   document.querySelectorAll('.grade-sel').forEach(sel=>{
@@ -758,6 +774,7 @@ function parseClassXlsx(rows){
 }
 
 async function confirmClassXlsx(){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '엑셀 일괄 편성 전');
   const assign = window.__clsAssign; if(!assign) return;
   toast('편성 중...');
   let cnt=0;
@@ -779,6 +796,7 @@ async function confirmClassXlsx(){
 window.confirmClassXlsx = confirmClassXlsx;
 
 async function removeStudent(classId, studentId){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '학생 제외 전');
   const c = CLASSES.find(x=>x.id===classId); if(!c) return;
   try {
     const studs = (c.students||[]).filter(x=>x!==studentId);
@@ -816,6 +834,7 @@ window.openPromote = openPromote;
 
 async function doPromote(prevYear){
   try {
+    await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, `진급 복제 전 (${prevYear}→${curYear})`);
     toast('복제 중...');
     const snap = await getDocs(collection(db,'classes'));
     const allowed = myOrgs();
