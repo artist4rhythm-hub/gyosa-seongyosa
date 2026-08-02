@@ -3095,7 +3095,13 @@ async function renderPay(){
       r.cnt++;
     });
   });
-  const studs = [...stuMap.values()].sort((a,b)=> (a.grade-b.grade) || (a.className||'').localeCompare(b.className||'') || (a.name||'').localeCompare(b.name||''));
+  /* '1학년'·'7세' 같은 문자 학년도 숫자로 바꿔 정렬한다.
+     (예전 a.grade-b.grade는 문자끼리 빼서 NaN → 정렬이 아예 안 되던 버그) */
+  const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
+  const studs = [...stuMap.values()].sort((a,b)=>
+    gradeNum(a.grade)-gradeNum(b.grade)
+    || (a.className||'').localeCompare(b.className||'','ko')
+    || (a.name||'').localeCompare(b.name||'','ko'));
 
   if(!paySem){
     box.innerHTML = `<div class="acard"><h3 class="actitle">💰 입금·환급 관리</h3>${orgTabs}<p class="empty">등록된 학기가 없습니다.</p></div>`;
@@ -3156,11 +3162,21 @@ async function renderPay(){
 
     <div class="acard">
       ${studs.length===0 ? '<p class="empty">이 학기에 청구·반환 내역이 있는 학생이 없습니다.</p>' :
-      Object.keys(byGrade).map(g=>`
+      Object.keys(byGrade).sort((a,b)=>{
+        const ma = Math.min(...byGrade[a].map(s=>gradeNum(s.grade)));
+        const mb = Math.min(...byGrade[b].map(s=>gradeNum(s.grade)));
+        return ma-mb || a.localeCompare(b,'ko');
+      }).map(g=>{
+        // 반 이름에 학년이 없으면 옆에 작게 붙여준다 (예: 닛시반 · 7세)
+        const gs = byGrade[g].map(s=>s.grade).filter(Boolean);
+        const rep = gs.sort((x,y)=>gs.filter(v=>v===y).length-gs.filter(v=>v===x).length)[0]||'';
+        const showRep = rep && !g.includes(rep);
+        return `
         <div style="margin-bottom:18px">
-          <div style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:8px;padding-bottom:5px;border-bottom:2px solid var(--gp)">${esc(g)}</div>
+          <div class="pay-grp-title" style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:8px;padding-bottom:5px;border-bottom:2px solid var(--gp)">${esc(g)}${showRep?`<span style="font-weight:600;color:var(--tl);font-size:12px"> · ${esc(rep)}</span>`:''}</div>
           <div style="overflow-x:auto">
             <table class="pay-table">
+              <colgroup><col class="pc-nm"><col class="pc-amt"><col class="pc-dep"><col class="pc-ref"></colgroup>
               <thead><tr>
                 <th style="text-align:left">이름</th>
                 <th style="text-align:right">순 청구액</th>
@@ -3172,7 +3188,7 @@ async function renderPay(){
               </tbody>
             </table>
           </div>
-        </div>`).join('')}
+        </div>`; }).join('')}
     </div>
 
     <div class="acard" style="position:sticky;bottom:0;display:flex;align-items:center;gap:12px;box-shadow:0 -4px 12px rgba(0,0,0,.06)">
@@ -3180,10 +3196,15 @@ async function renderPay(){
       <span id="pay-note" style="font-size:12.5px;color:var(--tl)">변경 후 저장을 눌러 주세요.</span>
     </div>
     <style>
-      .pay-table{width:100%;border-collapse:collapse;font-size:13px}
+      /* 모든 반이 같은 열 너비를 쓰도록 고정 — 반마다 표 간격이 달라 보이던 문제 해결 */
+      .pay-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;min-width:880px}
+      .pay-table col.pc-nm{width:13%}
+      .pay-table col.pc-amt{width:15%}
+      .pay-table col.pc-dep{width:36%}
+      .pay-table col.pc-ref{width:36%}
       .pay-table th{padding:7px 9px;background:var(--iv);color:var(--ts);font-size:12px;white-space:nowrap}
       .pay-table td{padding:6px 9px;border-bottom:1px solid var(--ivd);vertical-align:middle}
-      .pay-name{font-weight:700;color:var(--gd);white-space:nowrap}
+      .pay-name{font-weight:700;color:var(--gd);word-break:keep-all}
       .pay-amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
       .pay-chk-wrap{display:flex;align-items:center;gap:6px;justify-content:center;flex-wrap:wrap}
       .pay-chk{width:22px;height:22px;border-radius:6px;border:2px solid var(--ivd);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:13px;background:var(--wh);flex:none}
