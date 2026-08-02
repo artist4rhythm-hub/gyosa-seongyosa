@@ -95,6 +95,12 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 
 /* 탭 */
 .tb{background:var(--wh);border-bottom:1px solid var(--ivd);display:flex;padding:0 16px;gap:4px;overflow-x:auto;}
+/* 관리자 4묶음 탭 */
+.admgrp-bar{display:flex;gap:7px;padding:12px 16px 2px;background:var(--wh);flex-wrap:wrap}
+.admgrp{font-family:inherit;font-size:13.5px;font-weight:800;padding:9px 16px;border-radius:10px;
+  border:1.5px solid var(--ivd);background:var(--wh);color:var(--ts);cursor:pointer;transition:all .12s}
+.admgrp.active{background:var(--gd);border-color:var(--gd);color:#fff}
+.admgrp:hover:not(.active){border-color:var(--gm);color:var(--gm)}
 .tbtn{padding:14px 18px;background:none;border:none;border-bottom:3px solid transparent;font-size:14px;font-weight:600;color:var(--tl);cursor:pointer;white-space:nowrap;transition:all .2s;}
 .tbtn.active{color:var(--gd);border-bottom-color:var(--gold);}
 
@@ -288,12 +294,19 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div id="mwrap2"></div>
   </div>
   <div id="c-adm" style="display:none;flex-direction:column;flex:1">
-    <!-- 관리자 하위 탭 바 -->
-    <div class="subtb">
+    <!-- 관리자 탭 — 4묶음 + 하위 탭 -->
+    <div class="admgrp-bar">
+      <button class="admgrp active" id="ag-acct" onclick="showAdmGroup('acct')">👤 계정·권한</button>
+      <button class="admgrp" id="ag-org" onclick="showAdmGroup('org')" style="display:none">🗂 인사·조직</button>
+      <button class="admgrp" id="ag-work" onclick="showAdmGroup('work')">⏰ 출근부</button>
+      <button class="admgrp" id="ag-sec" onclick="showAdmGroup('sec')" style="display:none">🛡️ 보안·기록</button>
+    </div>
+    <div class="subtb" id="adm-subbar">
       <button class="subtbtn active" id="sa-sys" onclick="showAdmTab('sys')">🏢 통합관리</button>
-      <button class="subtbtn" id="sa-att" onclick="showAdmTab('att')">📋 출근부 설정</button>
-      <button class="subtbtn" id="sa-hr" onclick="showAdmTab('hr')" style="display:none">📇 인사정보</button>
       <button class="subtbtn" id="sa-acc" onclick="showAdmTab('acc')" style="display:none">🔐 접근 권한</button>
+      <button class="subtbtn" id="sa-hr" onclick="showAdmTab('hr')" style="display:none">📇 인사정보</button>
+      <button class="subtbtn" id="sa-org" onclick="showAdmTab('org')" style="display:none">🏷 부서·새 학년도</button>
+      <button class="subtbtn" id="sa-att" onclick="showAdmTab('att')" style="display:none">📋 출근부 설정</button>
       <button class="subtbtn" id="sa-sec" onclick="showAdmTab('sec')" style="display:none">🛡️ 접속·보안</button>
       <button class="subtbtn" id="sa-log" onclick="showAdmTab('log')" style="display:none">🔐 로그인 기록</button>
       <button class="subtbtn" id="sa-act" onclick="showAdmTab('act')" style="display:none">📜 활동 로그</button>
@@ -305,6 +318,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div id="ca-sec" class="tc" style="display:none"></div>
     <div id="ca-log" class="tc" style="display:none"></div>
     <div id="ca-act" class="tc" style="display:none"></div>
+    <div id="ca-org" class="tc" style="display:none"></div>
   </div>
 </div>
 
@@ -1203,12 +1217,8 @@ async function showMain(){
   // 통계 하위탭은 관리자에게만 표시
   $I('st-stat').style.display=isAdmin?'':'none';
   $I('t-adm').style.display=isAdmin?'flex':'none';
-  // 로그인 기록은 슈퍼관리자만
-  const hrTab = $I('sa-hr'); if(hrTab) hrTab.style.display = ['super','org_admin'].includes(CU.role) ? '' : 'none';
-  const accTab = $I('sa-acc'); if(accTab) accTab.style.display = CU.role==='super' ? '' : 'none';
-  const secTab = $I('sa-sec'); if(secTab) secTab.style.display = CU.role==='super' ? '' : 'none';
-  const logTab = $I('sa-log'); if(logTab) logTab.style.display = CU.role==='super' ? '' : 'none';
-  const actTab = $I('sa-act'); if(actTab) actTab.style.display = CU.role==='super' ? '' : 'none';
+  // 관리자 탭 4묶음: 역할별 표시는 refreshAdmBars()가 한 곳에서 관리
+  refreshAdmBars();
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
   await reloadStaffCache();
   updateNoticeDot();
@@ -2136,10 +2146,47 @@ function renderStat(){
 
 // ── 통계 탭 끝 ───────────────────────────────
 
+/* ── 관리자 탭 4묶음 구조 ──
+   묶음(그룹)을 먼저 고르고, 그 안의 하위 탭을 고른다.
+   화면(판)과 렌더 함수는 그대로 두고 탭 바만 두 줄로 정리한 것이다. */
+const ADM_TABS = {
+  sys:{grp:'acct', roles:['super','org_admin','tab_admin']},   // 통합관리
+  acc:{grp:'acct', roles:['super']},                            // 접근 권한
+  hr: {grp:'org',  roles:['super','org_admin']},                // 인사정보
+  org:{grp:'org',  roles:['super','org_admin']},                // 부서·새 학년도
+  att:{grp:'work', roles:['super','org_admin','tab_admin']},    // 출근부 설정
+  sec:{grp:'sec',  roles:['super']},
+  log:{grp:'sec',  roles:['super']},
+  act:{grp:'sec',  roles:['super']},
+};
+let ADM_GRP = 'acct';
+function admTabAllowed(k){ return CU && ADM_TABS[k] && ADM_TABS[k].roles.includes(CU.role); }
+function refreshAdmBars(){
+  ['acct','org','work','sec'].forEach(g=>{
+    const any = Object.keys(ADM_TABS).some(k=>ADM_TABS[k].grp===g && admTabAllowed(k));
+    const b = $I('ag-'+g);
+    if(b){ b.style.display = any ? '' : 'none'; b.classList.toggle('active', g===ADM_GRP); }
+  });
+  Object.keys(ADM_TABS).forEach(k=>{
+    const b = $I('sa-'+k); if(!b) return;
+    b.style.display = (ADM_TABS[k].grp===ADM_GRP && admTabAllowed(k)) ? '' : 'none';
+  });
+}
+function showAdmGroup(g){
+  ADM_GRP = g;
+  refreshAdmBars();
+  const first = Object.keys(ADM_TABS).find(k=>ADM_TABS[k].grp===g && admTabAllowed(k));
+  if(first) showAdmTab(first);
+}
+window.showAdmGroup = showAdmGroup;
+
 function showAdmTab(sub){
-  document.querySelectorAll('#c-adm .subtbtn').forEach(b=>b.classList.remove('active'));
+  if(!admTabAllowed(sub)) return;
+  ADM_GRP = ADM_TABS[sub].grp;   // 다른 곳에서 바로 불려도 묶음이 따라온다
+  refreshAdmBars();
+  document.querySelectorAll('#adm-subbar .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act','ca-org'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
@@ -2148,6 +2195,7 @@ function showAdmTab(sub){
   if(sub==='sec') renderSecurity();
   if(sub==='log') renderLoginLog();
   if(sub==='act') renderActivityLog();
+  if(sub==='org') renderAdmOrg();
 }
 
 // ══════════ 관리자 > 인사정보 현황 ══════════
@@ -3501,30 +3549,6 @@ window.clearSession = clearSession;
 function renderAdmSys(){
   const isOA=['super','org_admin'].includes(CU.role), isSU=CU.role==='super';
   $I('ca-sys').innerHTML=`
-  <style>
-    .dept-org{margin-bottom:14px}
-    .dept-org:last-child{margin-bottom:0}
-    .dept-orgname{font-size:13px;font-weight:800;color:var(--gd);margin-bottom:7px}
-    .dept-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
-    .dept-chip{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--wh);padding:6px 8px 6px 12px;font-size:13px}
-    .dept-chip b{font-weight:800;color:var(--gd)}
-    .dept-chip i{font-style:normal;font-size:10.5px;color:var(--tl)}
-    .dept-chip button{border:none;background:transparent;cursor:pointer;font-size:12px;padding:2px 3px;border-radius:5px;color:var(--ts);font-family:inherit}
-    .dept-chip button:hover{background:var(--iv)}
-    .dept-add{display:flex;gap:6px;align-items:center}
-    .ny-prog{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-    .ny-prog .bar{flex:1;height:9px;border-radius:100px;background:var(--ivd);overflow:hidden}
-    .ny-prog .bar i{display:block;height:100%;background:var(--gm);border-radius:100px;transition:width .25s}
-    .ny-prog b{font-size:12.5px;color:var(--gm);white-space:nowrap}
-    .ny-step{display:flex;align-items:flex-start;gap:10px;padding:11px 4px;border-bottom:1px solid var(--ivd)}
-    .ny-step:last-child{border-bottom:none}
-    .ny-step input{width:19px;height:19px;margin-top:1px;accent-color:var(--gm);cursor:pointer}
-    .ny-step .ny-body{flex:1;min-width:0}
-    .ny-step .ny-body b{display:block;font-size:13.5px;color:var(--gd)}
-    .ny-step.done .ny-body b{color:var(--tl);text-decoration:line-through}
-    .ny-step .ny-body span{display:block;font-size:12px;color:var(--ts);line-height:1.55;margin-top:2px}
-    .ny-step.done .ny-body span{color:var(--tl)}
-  </style>
   <div class="asc">
     ${isOA?`
     <div class="acard">
@@ -3568,24 +3592,7 @@ function renderAdmSys(){
       <button class="bp" onclick="createAcc()">계정 발급</button>
     </div>`:'' }
 
-    ${isSU?`
-    <div class="acard">
-      <h3 class="actitle">🏷 부서 관리</h3>
-      <p class="adesc">기관별 부서 목록을 여기 한 곳에서 관리합니다. 바꾸면 <b>계정 발급 · 교직원 수정 · 명부 · 반 편성</b>의 부서 선택지에 모두 적용됩니다.
-        <span style="color:var(--tl)">이름을 바꾸면 그 부서로 등록된 교직원과 반의 부서도 함께 새 이름으로 바뀝니다. 사용 중인 부서는 지울 수 없어요.</span></p>
-      <div id="dept-mgr"><p class="empty" style="font-size:13px">불러오는 중…</p></div>
-    </div>`:''}
 
-    ${isOA?`
-    <div class="acard">
-      <h3 class="actitle">🎒 새 학년도 준비 도우미</h3>
-      <p class="adesc">신학기에 챙길 일을 순서대로 안내합니다. 끝낸 단계는 체크해두면 저장되어 언제 다시 열어도 이어집니다.</p>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-        <label style="font-size:13px;font-weight:700;color:var(--ts)">준비할 학년도</label>
-        <select id="ny-year" onchange="changeNyYear()" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv);font-family:inherit;font-weight:600"></select>
-      </div>
-      <div id="ny-steps"></div>
-    </div>`:''}
 
     <div class="acard">
       <h3 class="actitle">👥 전체 교직원 목록</h3>
@@ -3598,9 +3605,60 @@ function renderAdmSys(){
     </div>
   </div>`;
   if(isOA) updDept();
+  loadStaff();
+}
+
+
+// ── 관리자 > 인사·조직 > 부서·새 학년도 ─────────────────────
+function renderAdmOrg(){
+  const isOA=['super','org_admin'].includes(CU.role), isSU=CU.role==='super';
+  $I('ca-org').innerHTML=`
+  <style>
+    .dept-org{margin-bottom:14px}
+    .dept-org:last-child{margin-bottom:0}
+    .dept-orgname{font-size:13px;font-weight:800;color:var(--gd);margin-bottom:7px}
+    .dept-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+    .dept-chip{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--wh);padding:6px 8px 6px 12px;font-size:13px}
+    .dept-chip b{font-weight:800;color:var(--gd)}
+    .dept-chip i{font-style:normal;font-size:10.5px;color:var(--tl)}
+    .dept-chip button{border:none;background:transparent;cursor:pointer;font-size:12px;padding:2px 3px;border-radius:5px;color:var(--ts);font-family:inherit}
+    .dept-chip button:hover{background:var(--iv)}
+    .dept-add{display:flex;gap:6px;align-items:center}
+    .ny-prog{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .ny-prog .bar{flex:1;height:9px;border-radius:100px;background:var(--ivd);overflow:hidden}
+    .ny-prog .bar i{display:block;height:100%;background:var(--gm);border-radius:100px;transition:width .25s}
+    .ny-prog b{font-size:12.5px;color:var(--gm);white-space:nowrap}
+    .ny-step{display:flex;align-items:flex-start;gap:10px;padding:11px 4px;border-bottom:1px solid var(--ivd)}
+    .ny-step:last-child{border-bottom:none}
+    .ny-step input{width:19px;height:19px;margin-top:1px;accent-color:var(--gm);cursor:pointer}
+    .ny-step .ny-body{flex:1;min-width:0}
+    .ny-step .ny-body b{display:block;font-size:13.5px;color:var(--gd)}
+    .ny-step.done .ny-body b{color:var(--tl);text-decoration:line-through}
+    .ny-step .ny-body span{display:block;font-size:12px;color:var(--ts);line-height:1.55;margin-top:2px}
+    .ny-step.done .ny-body span{color:var(--tl)}
+  </style>
+  <div class="asc">
+    ${isSU?`
+    <div class="acard">
+      <h3 class="actitle">🏷 부서 관리</h3>
+      <p class="adesc">기관별 부서 목록을 여기 한 곳에서 관리합니다. 바꾸면 <b>계정 발급 · 교직원 수정 · 명부 · 반 편성</b>의 부서 선택지에 모두 적용됩니다.
+        <span style="color:var(--tl)">이름을 바꾸면 그 부서로 등록된 교직원과 반의 부서도 함께 새 이름으로 바뀝니다. 사용 중인 부서는 지울 수 없어요.</span></p>
+      <div id="dept-mgr"><p class="empty" style="font-size:13px">불러오는 중…</p></div>
+    </div>`:''}
+    ${isOA?`
+    <div class="acard">
+      <h3 class="actitle">🎒 새 학년도 준비 도우미</h3>
+      <p class="adesc">신학기에 챙길 일을 순서대로 안내합니다. 끝낸 단계는 체크해두면 저장되어 언제 다시 열어도 이어집니다.</p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+        <label style="font-size:13px;font-weight:700;color:var(--ts)">준비할 학년도</label>
+        <select id="ny-year" onchange="changeNyYear()" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv);font-family:inherit;font-weight:600"></select>
+      </div>
+      <div id="ny-steps"></div>
+    </div>`:''}
+    ${!isSU&&!isOA?`<div class="acard"><p class="empty">권한이 없습니다.</p></div>`:''}
+  </div>`;
   if(isSU) renderDeptMgr();
   if(isOA) initNewYear();
-  loadStaff();
 }
 
 // ── 관리자 > 출근부 설정 ─────────────────────
