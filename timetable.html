@@ -29,6 +29,7 @@
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
@@ -3403,7 +3404,7 @@ setupTabs();
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, getDocs, collection, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, addDoc, deleteDoc, getDocs, collection, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -3422,13 +3423,31 @@ let CU = null;
 let saveTimer = null;
 
 // 클라우드 동기화: 현재 목록을 통째로 timetables/main 문서에 저장
+window.__ttTmInit = function(){
+  if(window.TM && !window.TM._cfg) window.TM.init({
+    page:'timetable', pageLabel:'시간표 틀', db,
+    F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+    me:()=>({uid:CU?.uid, name:CU?.name||''}),
+    canRestore:()=>!!CU,
+    targets:[
+      {col:'timetables', docId:'main',       label:'저장된 시간표 틀 (전체 목록)'},
+      {col:'timetables', docId:'planAccess', label:'열람 권한'},
+    ],
+    onRestored: async ()=>{
+      if(window.toast) window.toast('되돌렸습니다 — 새로고침하면 목록에 반영됩니다.','ok');
+      else alert('되돌렸습니다 — 새로고침하면 목록에 반영됩니다.');
+    }
+  });
+};
 window.ttSyncToCloud = function(){
+  window.__ttTmInit();
   if(!CU) return;
   // 너무 잦은 저장 방지 (디바운스)
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async ()=>{
     try {
       const list = window.ttGetSaved ? window.ttGetSaved() : [];
+      await window.TM.snapDoc('timetables','main','자동 저장 전 (작업 중)',{minGapSec:600});
       await setDoc(doc(db,'timetables','main'), {
         list, updatedAt: Timestamp.now(), updatedBy: CU.name||''
       });
@@ -3449,6 +3468,7 @@ onAuthStateChanged(auth, async (user)=>{
     if(snap.exists()){
       CU = { uid:user.uid, ...snap.data() };
       window.CU = CU;   // 다른 스크립트 블록(초기화 권한 확인 등)에서 참조
+      window.__ttTmInit && window.__ttTmInit();   // ⏱ 타임머신 패널 즉시 준비
       try {
         localStorage.setItem('gyosa_role', CU.role||'teacher');
         localStorage.setItem('gyosa_uid', CU.uid);
@@ -3535,6 +3555,8 @@ window.openTtPermDlg = async function(ttId){
     else { item.savedByUid=''; item.savedByName=''; }
     // 클라우드 반영
     try {
+      window.__ttTmInit && window.__ttTmInit();
+      await window.TM.snapDoc('timetables','main','틀 담당자 변경 전');
       await setDoc(doc(db,'timetables','main'), {list: saved, updatedAt: Timestamp.now(), updatedBy: CU?.name||''});
       dlg.close(); dlg.remove();
       if(window.renderStore) window.renderStore();
@@ -3582,6 +3604,8 @@ async function openPlanAccessDlg(){
   dlg.querySelector('#paSave').onclick=async()=>{
     const uids = [...dlg.querySelectorAll('input[type=checkbox]:checked:not(:disabled)')].map(c=>c.value);
     try {
+      window.__ttTmInit && window.__ttTmInit();
+      await window.TM.snapDoc('timetables','planAccess','열람 권한 변경 전');
       await setDoc(doc(db,'timetables','planAccess'), {uids, updatedAt:Timestamp.now(), updatedBy:CU.name||''});
       if(window.__setPlanAccess) window.__setPlanAccess(uids, CU);
       dlg.close(); dlg.remove();

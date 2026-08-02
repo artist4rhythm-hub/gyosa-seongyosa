@@ -133,11 +133,16 @@ const TM = {
       : col + '|' + JSON.stringify(docIdOrScope||{});
   },
 
-  /* 문서 하나 — 저장 «직전»에 부른다. DB에서 지금 상태를 읽어 보관한다. */
-  async snapDoc(col, docId, label){
+  /* 문서 하나 — 저장 «직전»에 부른다. DB에서 지금 상태를 읽어 보관한다.
+     opt.minGapSec: 자동 저장처럼 잦은 저장은 이 간격 안에서는 한 번만 보관 */
+  async snapDoc(col, docId, label, opt){
     const c = this._cfg; if(!c) return;
     const F = c.F;
     try {
+      if(opt && opt.minGapSec){
+        const prev = await this.list(this._key(col, docId));
+        if(prev[0] && (Date.now()/1000 - (prev[0].at?.seconds||0)) < opt.minGapSec) return;
+      }
       const g = await F.getDoc(F.doc(c.db, col, docId));
       if(!g.exists()) return;   // 처음 만드는 문서면 보관할 이전이 없다
       await this._store({

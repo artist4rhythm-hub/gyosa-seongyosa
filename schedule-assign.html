@@ -1460,6 +1460,7 @@ window.toggleInputOpen = async function(){
     ? '선생님들의 수업 가능 시간 입력을 열까요?\n열면 각자 자기 가능 시간을 입력·수정할 수 있습니다.'
     : '수업 가능 시간 입력을 닫을까요?\n닫으면 선생님들은 보기만 되고 입력·수정이 막힙니다.\n(시간표 담당자는 계속 고칠 수 있어요)')) return;
   try {
+    await window.TM.snapDoc('timetableConfig','inputOpen','입력 개방 변경 전');
     await setDoc(doc(db,'timetableConfig','inputOpen'), {
       open: next,
       updatedByUid: CU?.uid||'', updatedByName: CU?.name||'',
@@ -1719,6 +1720,27 @@ async function loadTeachers(){  const snap = await getDocs(collection(db,'staff'
   });
 
   await loadAssignStaff();
+    // ⏱ 타임머신 — 버전이 없는 설정 문서들을 저장 직전에 자동 보관
+    // (시간표 세트 본체는 자체 v1·v2… 버전 기록이 이미 있어 중복 보관하지 않는다)
+    if(window.TM) window.TM.init({
+      page:'schedule', pageLabel:'시간표 배치', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU?.uid, name:CU?.name||''}),
+      canRestore:()=>!!CAN_EDIT,
+      targets:[
+        {col:'timetableRooms',  docId:'main',       label:'강의실 목록·평면도'},
+        {col:'timetables',      docId:'gradeDept',  label:'학년·부서 매핑'},
+        {col:'timetables',      docId:'assignStaff',label:'배치 담당 선생님'},
+        {col:'timetableConfig', docId:'inputOpen',  label:'가능 시간 입력 개방'},
+        {col:'teacherAvailability', scope:{}, label:'교사 가능 시간 (전체 묶음)'},
+      ],
+      onRestored: async ()=>{
+        try { await loadRooms(); } catch(e){}
+        try { await loadGradeDept(); } catch(e){}
+        try { await loadAssignStaff(); } catch(e){}
+        if(window.toast) toast('되돌렸습니다 — 화면에 바로 반영됩니다.','ok');
+      }
+    });
   renderTeacherList();
 }
 
@@ -1744,6 +1766,7 @@ async function saveAssignStaff(){
   if(!guardSave('편성 대상', (ASSIGN_UIDS||[]).length)) return;
   if(window.touched) touched();
   try {
+    await window.TM.snapDoc('timetables','assignStaff','배치 담당 변경 전');
     await setDoc(doc(db,'timetables','assignStaff'), {
       uids: ASSIGN_UIDS, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
     });
@@ -2523,6 +2546,7 @@ async function saveRooms(silent){
     const light = FLOORS.map(f => ({
       id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!f.image
     }));
+    await window.TM.snapDoc('timetableRooms','main','강의실 저장 전');
     await setDoc(doc(db,'timetableRooms','main'), {
       floors: light, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
     });
@@ -2826,6 +2850,7 @@ async function saveGradeDept(){
   if(!CAN_EDIT) return;
   if(window.touched) touched();
   try {
+    await window.TM.snapDoc('timetables','gradeDept','학년·부서 매핑 저장 전');
     await setDoc(doc(db,'timetables','gradeDept'), {
       map: GRADE_DEPT, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
     });
@@ -3175,6 +3200,7 @@ function plainToAvail(plain){
 //  · merge 로 저장해 문서의 다른 내용(메모 등)을 지우지 않는다
 //  · 세트에 가능시간이 없으면 아예 건드리지 않는다 (예전 세트를 불러와도 지워지지 않게)
 async function saveAllAvailability(){
+  await window.TM.snapBundle('teacherAvailability', {}, '가능 시간 일괄 저장 전');
   const keys = Object.keys(AVAIL||{});
   if(!keys.length) return;
   for(const uid of keys){
@@ -6242,6 +6268,7 @@ window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.re
 </script>
 <script src="loading.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
 <div id="printArea"></div>
 </body>
