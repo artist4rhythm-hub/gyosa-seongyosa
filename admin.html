@@ -235,6 +235,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
 <script src="timemachine.js"></script>
+<script src="holidays-kr.js"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="badges.js"></script>
 </head>
@@ -968,6 +969,7 @@ async function addWP() {
   const name=$I('wp-n').value.trim()||(type==='vacation'?vac:'근무기간');
   if(!s||!e) return toast('시작일과 종료일을 입력하세요.','err');
   if(s>e) return toast('종료일이 시작일보다 빠릅니다.','err');
+  await window.TM.snapBundle('workPeriods', {}, `기간 등록: ${name}`);
   await addDoc(collection(db,'workPeriods'),{org,s,e,wknd,name,type,vac,createdAt:Timestamp.now()});
   toast(type==='vacation'?'방학기간이 등록되었습니다.':'근무기간이 등록되었습니다.','ok');
   $I('wp-s').value='';$I('wp-e').value='';$I('wp-n').value='';
@@ -1000,6 +1002,7 @@ window.loadWPList = loadWPList;
 
 async function delWP(id) {
   if(!confirm('삭제할까요?')) return;
+  await window.TM.snapBundle('workPeriods', {}, '기간 삭제 전');
   await deleteDoc(doc(db,'workPeriods',id));
   toast('삭제되었습니다.');
   await loadWPList();
@@ -1010,6 +1013,7 @@ window.delWP = delWP;
 async function addHol() {
   const date=$I('hd').value, name=$I('hn2').value.trim(), org=$I('ho').value;
   if(!date||!name) return toast('날짜와 이름을 입력하세요.','err');
+  await window.TM.snapBundle('holidays', {}, `휴일 등록: ${name}`);
   await addDoc(collection(db,'holidays'),{date,name,org,createdAt:Timestamp.now()});
   toast('등록되었습니다.','ok');
   $I('hd').value='';$I('hn2').value='';
@@ -1032,8 +1036,32 @@ async function loadHolList() {
 }
 window.loadHolList = loadHolList;
 
+/* 📅 그 해 법정 공휴일을 원장에 일괄 등록 — 이미 있는 날짜는 건너뛴다 */
+async function bulkAddKrHolidays(){
+  const y = Number($I('krh-year')?.value || TODAY.getFullYear());
+  const map = window.KRHOL ? window.KRHOL.getMap(y) : {};
+  const total = Object.keys(map).length;
+  if(!total || !window.KRHOL.has(y)){ toast(`${y}년 공휴일 자료가 아직 준비되지 않았습니다.`,'err'); return; }
+  if(!confirm(`${y}년 법정 공휴일 ${total}일을 «전체 기관» 휴일로 한 번에 담을까요?\n(학사일정 달력·출석부·출근부에 모두 반영됩니다. 이미 등록된 날짜는 건너뜁니다)`)) return;
+  try {
+    await window.TM.snapBundle('holidays', {}, `${y}년 법정 공휴일 일괄 담기 전`);
+    const snap = await getDocs(collection(db,'holidays'));
+    const have = new Set(); snap.forEach(d=>have.add(d.data().date));
+    let add=0, skip=0;
+    for(const [date, name] of Object.entries(map)){
+      if(have.has(date)){ skip++; continue; }
+      await addDoc(collection(db,'holidays'), {date, name, org:'all', src:'kr', createdAt:Timestamp.now()});
+      add++;
+    }
+    toast(`${y}년 공휴일 ${add}일을 담았습니다${skip?` · ${skip}일은 이미 있어 건너뜀`:''}`,'ok');
+    await loadHolList();
+  } catch(e){ toast('담기 실패: '+(e.message||''),'err'); }
+}
+window.bulkAddKrHolidays = bulkAddKrHolidays;
+
 async function delHol(id) {
   if(!confirm('삭제할까요?')) return;
+  await window.TM.snapBundle('holidays', {}, '휴일 삭제 전');
   await deleteDoc(doc(db,'holidays',id));
   toast('삭제되었습니다.');
   await loadHolList();
@@ -1239,6 +1267,8 @@ async function showMain(){
       {col:'adminConfig',     docId:'depts',    label:'부서 목록'},
       {col:'workConfig',      docId:'att',      label:'출근부 설정'},
       {col:'securityConfig',  docId:'main',     label:'접속·보안 설정'},
+      {col:'holidays',        scope:{},         label:'쉬는 날 원장 (공휴일·휴무)'},
+      {col:'workPeriods',     scope:{},         label:'근무·방학 기간'},
     ],
     onRestored: async ()=>{
       await loadDeptsCfg();
@@ -3768,6 +3798,14 @@ async function renderAdmAtt(){
         </div>
       </div>
       <button class="bp" onclick="addHol()">등록</button>
+      <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap;padding:10px 12px;background:var(--gp);border-radius:10px">
+        <span style="font-size:13px;font-weight:800;color:var(--gd)">📅 법정 공휴일</span>
+        <select id="krh-year" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;font-family:inherit;background:var(--wh)">
+          ${(window.KRHOL?window.KRHOL.years():[]).map(y=>`<option value="${y}" ${y===TODAY.getFullYear()?'selected':''}>${y}년</option>`).join('')}
+        </select>
+        <button class="bs" onclick="bulkAddKrHolidays()">한 번에 담기</button>
+        <span style="font-size:12px;color:var(--tl)">설·추석·대체공휴일까지 자동으로. 이미 있는 날짜는 건너뜁니다.</span>
+      </div>
       <div id="hlist" class="hlist"></div>
     </div>
 

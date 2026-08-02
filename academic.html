@@ -503,33 +503,11 @@ function toast(msg, kind){
 }
 
 /* ═══════════════════════════════════════════════
-   공휴일 (holidays-kr.js 내장 — 서버 없이 작동)
+   공휴일 — 공용 holidays-kr.js 사용
+   (관리자 «법정 공휴일 한 번에 담기» 버튼과 같은 자료라 항상 일치)
    ═══════════════════════════════════════════════ */
-const FIXED_HOLIDAYS = [
-  { m:1,d:1,name:'새해 첫날' },{ m:3,d:1,name:'삼일절' },{ m:5,d:5,name:'어린이날' },
-  { m:6,d:6,name:'현충일' },{ m:8,d:15,name:'광복절' },{ m:10,d:3,name:'개천절' },
-  { m:10,d:9,name:'한글날' },{ m:12,d:25,name:'성탄절' },
-];
-const LUNAR_HOLIDAYS = {
-  2026:[{date:'2026-02-16',name:'설날 연휴'},{date:'2026-02-17',name:'설날'},{date:'2026-02-18',name:'설날 연휴'},
-        {date:'2026-05-24',name:'부처님오신날'},{date:'2026-09-24',name:'추석 연휴'},{date:'2026-09-25',name:'추석'},{date:'2026-09-26',name:'추석 연휴'}],
-  2027:[{date:'2027-02-06',name:'설날 연휴'},{date:'2027-02-07',name:'설날'},{date:'2027-02-08',name:'설날 연휴'},
-        {date:'2027-05-13',name:'부처님오신날'},{date:'2027-09-14',name:'추석 연휴'},{date:'2027-09-15',name:'추석'},{date:'2027-09-16',name:'추석 연휴'}],
-  2028:[{date:'2028-01-26',name:'설날 연휴'},{date:'2028-01-27',name:'설날'},{date:'2028-01-28',name:'설날 연휴'},
-        {date:'2028-05-02',name:'부처님오신날'},{date:'2028-10-02',name:'추석 연휴'},{date:'2028-10-03',name:'추석'},{date:'2028-10-04',name:'추석 연휴'}],
-};
-const SUBSTITUTE_HOLIDAYS = {
-  2026:[{date:'2026-03-02',name:'삼일절 대체휴일'},{date:'2026-05-25',name:'대체공휴일'},{date:'2026-08-17',name:'광복절 대체휴일'}],
-};
-function ymd(y,m,d){ return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
-function getHolidaysKR(year){
-  const map={};
-  FIXED_HOLIDAYS.forEach(h=>{ map[ymd(year,h.m,h.d)]=h.name; });
-  (LUNAR_HOLIDAYS[year]||[]).forEach(h=>{ map[h.date]=h.name; });
-  (SUBSTITUTE_HOLIDAYS[year]||[]).forEach(h=>{ map[h.date]=h.name; });
-  return map;
-}
-function hasHolidayData(year){ return !!LUNAR_HOLIDAYS[year]; }
+function getHolidaysKR(year){ return (window.KRHOL && window.KRHOL.getMap(year)) || {}; }
+function hasHolidayData(year){ return !!(window.KRHOL && window.KRHOL.has(year)); }
 
 /* ═══════════════════════════════════════════════
    분류 · 시간대 · 대상
@@ -720,7 +698,24 @@ function canEditCal(cal){
 /* 어느 캘린더든 하나라도 고칠 수 있으면 편집 탭이 보인다 */
 function canEditAny(){ return CAL_KEYS.some(canEditCal); }
 
-function refreshCanEdit(){ CAN_EDIT = canEditCal(ORG); }
+function refreshCanEdit(){
+  CAN_EDIT = canEditCal(ORG);
+  // ⏱ 타임머신 — 로그인 뒤 한 번만 연결
+  if(window.TM && !window.__acadTmDone && CU){
+    window.__acadTmDone = true;
+    window.TM.init({
+      page:'academic', pageLabel:'학사일정', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU?.uid, name:CU?.name||''}),
+      canRestore:()=>CAN_EDIT || ['super','org_admin'].includes(CU?.role),
+      targets:[
+        {col:'academicEvents', scope:()=>({year:curYear}), label:'학사일정 행사 (올해 전체)'},
+        {col:'holidays', scope:{}, label:'쉬는 날 원장 (공휴일·휴무)'},
+      ],
+      onRestored: async ()=>{ await loadEvents(curYear); render(); }
+    });
+  }
+}
 function needEdit(){
   if(ORG === ORG_ALL){
     toast('두 기관을 겹쳐 보는 중에는 고칠 수 없습니다. 기관을 하나 골라주세요.','err');
@@ -1419,6 +1414,14 @@ window.openEventDlg = function(id, ds, slot){
         }).join('')}
       </div>
 
+      <label id="ev-wp-row" style="display:none;align-items:center;gap:8px;margin:10px 0 2px;font-size:13px;font-weight:600;color:var(--gd);cursor:pointer">
+        <input type="checkbox" id="ev-wp" style="width:17px;height:17px">
+        출근부 <b>방학기간</b>으로도 등록 <span style="font-weight:400;color:var(--tl)">(평일이 자동 정기휴가로)</span>
+      </label>
+      <div id="ev-closed-note" style="display:none;margin:10px 0 2px;padding:8px 11px;background:var(--gp);border-radius:8px;font-size:12px;color:var(--gm);line-height:1.5">
+        🔗 휴교·휴일은 저장하면 <b>출석부·출근부의 쉬는 날</b>에도 자동으로 함께 등록돼요. (지우면 함께 지워집니다)
+      </div>
+
       <label class="fld-label">색 <span style="font-weight:400;color:var(--tl)">(비우면 분류 색)</span></label>
       <div class="col-dots" id="ev-colors">
         ${EV_COLORS.map(c=>`<span class="col-dot ${dlgColor===c?'on':''}" style="background:${c}"
@@ -1445,6 +1448,8 @@ window.openEventDlg = function(id, ds, slot){
     </div>`;
   document.body.appendChild(ov);
   renderTargetPicker();
+  const wp = $I('ev-wp'); if(wp) wp.checked = !!(e && (e.wpIds||[]).length);
+  updateCatExtras();
 };
 window.closeEventDlg = function(){ $I('ev-mod')?.remove(); };
 
@@ -1460,7 +1465,15 @@ window.pickCat = function(k){
     b.classList.toggle('on', on);
     b.style.background = on ? CATEGORIES[b.dataset.cat].color : '';
   });
+  updateCatExtras();
 };
+/* 분류에 따라 방학 체크박스·휴교 안내를 보인다 */
+function updateCatExtras(){
+  const cat = document.querySelector('#ev-cat .chip.on')?.dataset.cat;
+  const wr = $I('ev-wp-row'), cn = $I('ev-closed-note');
+  if(wr) wr.style.display = cat==='break' ? 'flex' : 'none';
+  if(cn) cn.style.display = cat==='closed' ? '' : 'none';
+}
 window.pickColor = function(c){
   dlgColor = c;
   document.querySelectorAll('#ev-colors .col-dot').forEach(d=>
@@ -1500,6 +1513,49 @@ function renderTargetPicker(){
 }
 window.pickOrg = function(k){ curOrg = k; renderTargetPicker(); };
 
+/* ═══ 🔗 쉬는 날 원장 동기화 ═══
+   «휴교·휴일» 행사 → holidays (날짜별) · «방학»+체크 → workPeriods (기간)
+   행사에 연결 id(holidayIds·wpIds)를 함께 저장해 수정·이동·삭제 때 따라간다. */
+function eventDays(s, e, weekdays){
+  const out = []; const d = new Date(s+'T00:00:00'); const end = new Date(e+'T00:00:00');
+  let n = 0;
+  while(d <= end && n < 93){   // 안전 상한: 한 행사 최대 93일
+    const ds = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    if(!weekdays || !weekdays.length || weekdays.includes(d.getDay())) out.push(ds);
+    d.setDate(d.getDate()+1); n++;
+  }
+  return out;
+}
+async function clearEventLinks(ev){
+  for(const hid of (ev.holidayIds||[])){ try{ await deleteDoc(doc(db,'holidays',hid)); }catch(e){} }
+  for(const wid of (ev.wpIds||[])){ try{ await deleteDoc(doc(db,'workPeriods',wid)); }catch(e){} }
+}
+async function buildEventLinks(ev, wantWp){
+  const out = { holidayIds: [], wpIds: [] };
+  if(ev.category === 'closed'){
+    const days = eventDays(ev.startDate, ev.endDate, ev.weekdays);
+    for(const date of days){
+      const r = await addDoc(collection(db,'holidays'), {
+        date, name: ev.title, org: ev.org==='all' ? 'all' : ev.org,
+        src:'academic', createdAt: Timestamp.now()
+      });
+      out.holidayIds.push(r.id);
+    }
+  }
+  if(ev.category === 'break' && wantWp){
+    const wOrgs = ev.org==='all' ? ['daniel','jihyebit'] : [ev.org];
+    for(const o of wOrgs){
+      const r = await addDoc(collection(db,'workPeriods'), {
+        org:o, s: ev.startDate, e: ev.endDate, wknd:false,
+        name: ev.title, type:'vacation', vac: ev.title,
+        src:'academic', createdAt: Timestamp.now()
+      });
+      out.wpIds.push(r.id);
+    }
+  }
+  return out;
+}
+
 window.saveEvent = async function(){
   if(!needEdit()) return;
   const title = $I('ev-title').value.trim();
@@ -1530,7 +1586,25 @@ window.saveEvent = async function(){
     updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
   };
 
+  const prev = editingEventId ? EVENTS.find(x=>x.id===editingEventId) : null;
+  const wantWp = cat==='break' && !!$I('ev-wp')?.checked;
+  const syncTouched = cat==='closed' || wantWp || !!(prev && ((prev.holidayIds||[]).length || (prev.wpIds||[]).length));
+
   try {
+    // ⏱ 저장 직전 보관 (원장까지 바뀌는 저장이면 원장도 함께)
+    if(window.TM){
+      await window.TM.snapBundle('academicEvents', {year:curYear}, prev?`행사 수정: ${title}`:`행사 추가: ${title}`);
+      if(syncTouched){
+        await window.TM.snapBundle('holidays', {}, `학사일정 연동 전: ${title}`);
+        if(wantWp || (prev&&(prev.wpIds||[]).length)) await window.TM.snapBundle('workPeriods', {}, `학사일정 연동 전: ${title}`);
+      }
+    }
+    // 🔗 이전 연결 정리 → 새 연결 생성
+    if(prev) await clearEventLinks(prev);
+    const links = syncTouched ? await buildEventLinks(data, wantWp) : {holidayIds:[], wpIds:[]};
+    data.holidayIds = links.holidayIds;
+    data.wpIds = links.wpIds;
+
     if(editingEventId){
       await updateDoc(doc(db,'academicEvents', editingEventId), data);
     } else {
@@ -1540,7 +1614,8 @@ window.saveEvent = async function(){
     }
     await loadEvents(curYear);
     closeEventDlg(); render();
-    toast('저장했습니다 ✓','ok');
+    toast(cat==='closed' ? '저장했습니다 ✓ 쉬는 날에도 함께 등록됐어요' :
+          wantWp ? '저장했습니다 ✓ 출근부 방학기간에도 등록됐어요' : '저장했습니다 ✓','ok');
   } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
 };
 
@@ -1549,6 +1624,14 @@ window.delEvent = async function(id){
   const e = EVENTS.find(x=>x.id===id); if(!e) return;
   if(!confirm(`"${e.title}"을(를) 지울까요?\n되돌릴 수 없습니다.`)) return;
   try {
+    if(window.TM){
+      await window.TM.snapBundle('academicEvents', {year:curYear}, `행사 삭제: ${e.title}`);
+      if((e.holidayIds||[]).length || (e.wpIds||[]).length){
+        await window.TM.snapBundle('holidays', {}, `연동 해제 전: ${e.title}`);
+        if((e.wpIds||[]).length) await window.TM.snapBundle('workPeriods', {}, `연동 해제 전: ${e.title}`);
+      }
+    }
+    await clearEventLinks(e);   // 🔗 연결된 쉬는 날·방학기간도 함께 정리
     await deleteDoc(doc(db,'academicEvents', id));
     await loadEvents(curYear);
     closeEventDlg(); render();
@@ -1817,9 +1900,22 @@ window.onWeekDrop = async function(ev){
   const ns = shift(e.startDate, delta), ne = shift(e.endDate, delta);
 
   try {
+    // 🔗 연결된 쉬는 날·방학기간이 있으면 새 날짜로 따라간다
+    const hasLinks = (e.holidayIds||[]).length || (e.wpIds||[]).length || e.category==='closed';
+    if(window.TM && hasLinks){
+      await window.TM.snapBundle('holidays', {}, `행사 이동 전: ${e.title}`);
+      if((e.wpIds||[]).length) await window.TM.snapBundle('workPeriods', {}, `행사 이동 전: ${e.title}`);
+    }
+    let linkPatch = {};
+    if(hasLinks){
+      await clearEventLinks(e);
+      const links = await buildEventLinks({...e, startDate:ns, endDate:ne}, (e.wpIds||[]).length>0);
+      linkPatch = { holidayIds: links.holidayIds, wpIds: links.wpIds };
+    }
     await updateDoc(doc(db,'academicEvents', e.id), {
       startDate: ns, endDate: ne,
       year: Number(ns.slice(0,4)),
+      ...linkPatch,
       updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
     });
     await loadEvents(curYear);
@@ -2475,6 +2571,8 @@ onAuthStateChanged(auth, async user => {
 <script src="org-bar.js"></script>
 <script src="loading.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
+<script src="holidays-kr.js"></script>
 <script src="sidebar.js"></script>
 </body>
 </html>

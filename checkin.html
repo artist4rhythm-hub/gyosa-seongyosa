@@ -228,6 +228,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="badges.js"></script>
 </head>
@@ -421,6 +422,22 @@ onAuthStateChanged(auth, async (user) => {
         return;
       }
       CU = { uid: user.uid, ...data };
+      // ⏱ 타임머신 — 쉬는 날 원장·근무 기간을 저장 직전에 자동 보관
+      if(window.TM) window.TM.init({
+        page:'checkin', pageLabel:'출근부', db,
+        F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+        me:()=>({uid:CU?.uid, name:CU?.name||''}),
+        canRestore:()=>['super','org_admin','tab_admin'].includes(CU?.role),
+        targets:[
+          {col:'holidays',    scope:{}, label:'쉬는 날 원장 (공휴일·휴무)'},
+          {col:'workPeriods', scope:{}, label:'근무·방학 기간'},
+        ],
+        onRestored: async ()=>{
+          try { window.loadWPList && await loadWPList(); } catch(e){}
+          try { window.loadHolList && await loadHolList(); } catch(e){}
+          if(typeof window.toast==='function') window.toast('되돌렸습니다 — 목록에 바로 반영됩니다.','ok');
+        }
+      });
       try {
         localStorage.setItem('gyosa_role', CU.role||'teacher');
         localStorage.setItem('gyosa_pagedeny', JSON.stringify(CU.pageDeny||[]));
@@ -865,6 +882,7 @@ async function addWP() {
   const name=$I('wp-n').value.trim()||(type==='vacation'?vac:'근무기간');
   if(!s||!e) return toast('시작일과 종료일을 입력하세요.','err');
   if(s>e) return toast('종료일이 시작일보다 빠릅니다.','err');
+  await window.TM.snapBundle('workPeriods', {}, `기간 등록: ${name}`);
   await addDoc(collection(db,'workPeriods'),{org,s,e,wknd,name,type,vac,createdAt:Timestamp.now()});
   toast(type==='vacation'?'방학기간이 등록되었습니다.':'근무기간이 등록되었습니다.','ok');
   $I('wp-s').value='';$I('wp-e').value='';$I('wp-n').value='';
@@ -897,6 +915,7 @@ window.loadWPList = loadWPList;
 
 async function delWP(id) {
   if(!confirm('삭제할까요?')) return;
+  await window.TM.snapBundle('workPeriods', {}, '기간 삭제 전');
   await deleteDoc(doc(db,'workPeriods',id));
   toast('삭제되었습니다.');
   await loadWPList();
@@ -907,6 +926,7 @@ window.delWP = delWP;
 async function addHol() {
   const date=$I('hd').value, name=$I('hn2').value.trim(), org=$I('ho').value;
   if(!date||!name) return toast('날짜와 이름을 입력하세요.','err');
+  await window.TM.snapBundle('holidays', {}, `휴일 등록: ${name}`);
   await addDoc(collection(db,'holidays'),{date,name,org,createdAt:Timestamp.now()});
   toast('등록되었습니다.','ok');
   $I('hd').value='';$I('hn2').value='';
@@ -931,6 +951,7 @@ window.loadHolList = loadHolList;
 
 async function delHol(id) {
   if(!confirm('삭제할까요?')) return;
+  await window.TM.snapBundle('holidays', {}, '휴일 삭제 전');
   await deleteDoc(doc(db,'holidays',id));
   toast('삭제되었습니다.');
   await loadHolList();
