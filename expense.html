@@ -3117,9 +3117,17 @@ async function renderPay(){
     else if(netv < 0){ needRefund++; if(p.refund && p.refund.checked) doneRefund++; }
   });
 
-  // 학년별 묶기
+  // 학년별 묶기 — 반이 아니라 «학년» 단위로 나눈다.
+  // (로이반에 2·3학년, 샬롬반에 4·5학년이 섞여 있어도 각 학년 섹션으로 갈라진다)
+  const gradeLabel = g => {
+    const t = String(g||'').trim();
+    return /^\d+$/.test(t) ? `${t}학년` : t;   // '3' → '3학년', '7세'·'1학년'은 그대로
+  };
   const byGrade = {};
-  studs.forEach(s=>{ const g = s.className||`${s.grade}학년`; (byGrade[g]=byGrade[g]||[]).push(s); });
+  studs.forEach(s=>{
+    const g = gradeLabel(s.grade) || s.className || '학년 미지정';
+    (byGrade[g]=byGrade[g]||[]).push(s);
+  });
 
   box.innerHTML = `
     <div class="acard">
@@ -3162,18 +3170,10 @@ async function renderPay(){
 
     <div class="acard">
       ${studs.length===0 ? '<p class="empty">이 학기에 청구·반환 내역이 있는 학생이 없습니다.</p>' :
-      Object.keys(byGrade).sort((a,b)=>{
-        const ma = Math.min(...byGrade[a].map(s=>gradeNum(s.grade)));
-        const mb = Math.min(...byGrade[b].map(s=>gradeNum(s.grade)));
-        return ma-mb || a.localeCompare(b,'ko');
-      }).map(g=>{
-        // 반 이름에 학년이 없으면 옆에 작게 붙여준다 (예: 닛시반 · 7세)
-        const gs = byGrade[g].map(s=>s.grade).filter(Boolean);
-        const rep = gs.sort((x,y)=>gs.filter(v=>v===y).length-gs.filter(v=>v===x).length)[0]||'';
-        const showRep = rep && !g.includes(rep);
+      Object.keys(byGrade).sort((a,b)=> gradeNum(a)-gradeNum(b) || a.localeCompare(b,'ko')).map(g=>{
         return `
         <div style="margin-bottom:18px">
-          <div class="pay-grp-title" style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:8px;padding-bottom:5px;border-bottom:2px solid var(--gp)">${esc(g)}${showRep?`<span style="font-weight:600;color:var(--tl);font-size:12px"> · ${esc(rep)}</span>`:''}</div>
+          <div class="pay-grp-title" style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:8px;padding-bottom:5px;border-bottom:2px solid var(--gp)">${esc(g)}<span style="font-weight:600;color:var(--tl);font-size:12px"> · ${byGrade[g].length}명</span></div>
           <div style="overflow-x:auto">
             <table class="pay-table">
               <colgroup><col class="pc-nm"><col class="pc-amt"><col class="pc-dep"><col class="pc-ref"></colgroup>
@@ -3277,7 +3277,7 @@ function payRow(s){
   if(netv === 0){ netCell = `<span style="color:var(--tl)">₩0 · 정산 불필요</span>`; }
 
   return `<tr>
-    <td class="pay-name">${esc(s.name)}${studentStatusTag(s.id)}</td>
+    <td class="pay-name">${esc(s.name)}${studentStatusTag(s.id)}${s.className?`<div style="font-size:10.5px;color:var(--tl);font-weight:600;margin-top:1px">${esc(s.className)}</div>`:''}</td>
     <td class="pay-amt">${netCell}</td>
     <td style="border-left:2px solid var(--ivd)">${depCell}</td>
     <td style="border-left:2px solid var(--ivd)">${refCell}</td>
