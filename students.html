@@ -113,6 +113,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
+<script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
 <script src="org-bar.js"></script>
 <script type="module" src="badges.js"></script>
@@ -247,6 +248,17 @@ onAuthStateChanged(auth, async (user) => {
     await loadStudentEditors();
     window.setLoadStep && window.setLoadStep('학생 명단 불러오는 중…', 35);
     await loadStudents();
+    // ⏱ 타임머신 — 학생 명부 전체를 묶음으로 보관·복원
+    if(window.TM) window.TM.init({
+      page:'students', pageLabel:'학생관리', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU.uid, name:CU.name||''}),
+      canRestore:()=>isAdmin(),
+      targets:[
+        {col:'students', scope:()=>({org__in:myOrgs()}), label:'학생 명부 (내 기관 전체)'},
+      ],
+      onRestored: async ()=>{ await loadStudents(); renderList(); }
+    });
     window.setLoadStep && window.setLoadStep('반 편성 불러오는 중…', 75);
     await loadClasses();
     window.hideLoading && window.hideLoading();
@@ -1270,6 +1282,7 @@ window.isOnLeave = isOnLeave;
 
 // ── 학번 일괄 재배정 (출생연도 기준) ──
 async function reassignStudentNos(){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, '학번 일괄 재배정 전');
   const noBirth = STUDENTS.filter(s=>!s.birth);
   let msg = '모든 학생의 학번을 출생연도 기준으로 다시 매깁니다.\n\n규칙: 기관별 + 출생연도별로 묶고, 등록순으로 번호 부여 (예: 2018-01)\n\n기존 학번은 모두 바뀝니다. 계속할까요?';
   if(noBirth.length) msg = `⚠️ 생년월일이 없는 학생이 ${noBirth.length}명 있습니다. 이 학생들은 재배정에서 제외됩니다.\n(${noBirth.slice(0,5).map(s=>s.name).join(', ')}${noBirth.length>5?' 외':''})\n\n` + msg;
@@ -1418,6 +1431,7 @@ window.closeMod = closeMod;
 
 // ── 학생 저장 ──
 async function saveStudent(editId){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, editId?'학생 정보 수정':'학생 추가');
   const name = $I('f-name').value.trim();
   const org = $I('f-org').value;
   const birth = $I('f-birth').value;
@@ -1487,6 +1501,7 @@ window.saveStudent = saveStudent;
 
 // ── 학생 삭제 ──
 async function deleteStudent(id){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, '학생 삭제 전');
   if(!confirm('정말 이 학생을 삭제할까요?\n출석·성적 등 연결된 데이터가 있으면 문제가 될 수 있습니다.\n(자퇴/졸업은 삭제 대신 재적상태 변경을 권장합니다)')) return;
   try {
     const s = STUDENTS.find(x=>x.id===id);
@@ -1693,6 +1708,7 @@ function openSiblingPicker(id){
 window.openSiblingPicker = openSiblingPicker;
 
 async function linkSibling(id, sibId){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, '형제 연결 전');
   try {
     const a = STUDENTS.find(x=>x.id===id), b = STUDENTS.find(x=>x.id===sibId);
     const aSibs = Array.from(new Set([...(a.siblings||[]), sibId]));
@@ -1862,6 +1878,7 @@ function parseAndPreview(rows){
 
 // 일괄 등록 실행
 async function confirmBulkRegister(){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, '엑셀 일괄 등록 전');
   const parsed = window.__bulkParsed || [];
   if(!parsed.length) return;
   $I('mwrap').innerHTML = `<div class="mov"><div class="mbk"></div><div class="mbox" style="text-align:center">
