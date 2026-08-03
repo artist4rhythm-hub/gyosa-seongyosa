@@ -1181,7 +1181,7 @@
       <label class="fld-label" id="ld-name-label">과목명</label>
       <input type="text" id="ld-subject" class="fld-input" placeholder="예: 수학, 국어, 성경">
 
-      <label class="fld-label">듣는 학년 <span style="font-weight:400;color:var(--tl)">(여러 학년 선택 = 합반)</span></label>
+      <label class="fld-label" id="ld-grades-label">듣는 학년 <span style="font-weight:400;color:var(--tl)">(여러 학년 선택 = 합반)</span></label>
       <div id="ld-grades" class="grade-chips"></div>
 
       <div class="ld-classonly">
@@ -3113,8 +3113,14 @@ async function writeSet(setId, name, note, silent){
   }
 }
 
-/* 스냅샷 하나를 화면과 작업본에 적용한다 (세트 불러오기 · 버전 되돌리기 공용) */
-async function applySetSnapshot(snap){
+/* 스냅샷 하나를 화면과 작업본에 적용한다 (세트 불러오기 · 버전 되돌리기 공용)
+   onStep(문구, 퍼센트) 를 주면 지금 무엇을 하는지 단계별로 알려준다 */
+async function applySetSnapshot(snap, onStep){
+  const step = (m, p)=>{ try { onStep && onStep(m, p); } catch(e){} };
+  const breathe = ()=> new Promise(r=>setTimeout(r, 0));   // 화면이 문구를 그릴 틈
+
+  step(`화면에 펼치는 중 — 수업 ${(snap.lessons||[]).length}개`, 28); await breathe();
+  if(snap.frameId && (FRAMES||[]).some(f=>f.id===snap.frameId)) pgFrameId = snap.frameId;   // 저장하던 그 틀로
   ASSIGN_UIDS = (snap.assignStaff||[]).filter(u=>TEACHERS.some(t=>t.uid===u));
   const _av = plainToAvail(snap.availability);
   if(Object.keys(_av).length) AVAIL = _av;   // 스냅샷에 들어 있을 때만 바꾼다
@@ -3122,18 +3128,36 @@ async function applySetSnapshot(snap){
   PLACE2 = JSON.parse(JSON.stringify(snap.place2||{}));
   GRADE_DEPT = JSON.parse(JSON.stringify(snap.gradeDept||{}));
   FLOORS = (snap.floors||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage:!!f.hasImage, image:'' }));
-  // 층 사진은 층별 문서에서 다시 붙인다
-  for(const f of FLOORS){ if(f.hasImage) f.image = await loadFloorImage(f.id); }
+
+  // 층 사진은 층별 문서에서 다시 붙인다 — 몇 장째인지 보여준다
+  const withImg = FLOORS.filter(f=>f.hasImage);
+  let gi = 0;
+  for(const f of FLOORS){
+    if(!f.hasImage) continue;
+    gi++;
+    step(`평면도 사진 받는 중 (${gi}/${withImg.length})`, 30 + Math.round(15 * gi / withImg.length)); await breathe();
+    f.image = await loadFloorImage(f.id);
+  }
   curFloorId = FLOORS.length ? FLOORS[0].id : null;
 
-  // 현재 작업본으로도 저장해 다른 화면과 어긋나지 않게 한다
+  // 현재 작업본으로도 저장해 다른 화면과 어긋나지 않게 한다 — 6단계
+  let placedN = 0;
+  Object.values(PLACE2||{}).forEach(bg=>Object.values(bg||{}).forEach(bd=>
+    Object.values(bd||{}).forEach(l=>{ placedN += (l||[]).length; })));
+  step('작업본 저장 1/6 — 배치 담당', 50); await breathe();
   await saveAssignStaff();
+  step(`작업본 저장 2/6 — 수업 가능 시간 (선생님 ${Object.keys(AVAIL||{}).length}분)`, 58); await breathe();
   await saveAllAvailability();
+  step(`작업본 저장 3/6 — 교실 배치 (${FLOORS.length}층)`, 70); await breathe();
   await saveRooms(true);
+  step(`작업본 저장 4/6 — 수업 ${LESSONS.length}개`, 78); await breathe();
   await saveLessons(true);
+  step(`작업본 저장 5/6 — 배치 ${placedN}칸`, 86); await breathe();
   await savePlace2(true);
+  step('작업본 저장 6/6 — 학년·부서', 93); await breathe();
   await saveGradeDept();
 
+  step('마무리 정리 중', 97); await breathe();
   try { cleanGhostPlacements(); } catch(e){}
 }
 
@@ -3150,19 +3174,36 @@ window.loadSet = async function(id){
     (nowAv ? `※ 지금 수업 가능 시간을 정해둔 선생님이 ${nowAv}분 있습니다.\n` +
              `   이 세트에 가능 시간이 들어 있으면 그것으로 바뀝니다.\n\n` : '\n') +
     `계속할까요?`)) return;
-  window.showLoading && window.showLoading('불러오는 중…');
+  // 무엇을 얼마나 가져오는지 그대로 보여준다 — 색인의 요약 수치 + 경과 시간
+  const _c = s.counts || {};
+  const _t0 = Date.now();
+  let _msg = `세트 본문을 받는 중 — 수업 ${_c.lessons||0}개 · 배치 ${_c.placed||0}칸 분량`;
+  let _pct = 8;
+  const _paint = ()=>{
+    const sec = ((Date.now()-_t0)/1000).toFixed(1);
+    if(window.setLoadStep) window.setLoadStep(`${_msg} · ${sec}초`, _pct);
+    else if(window.showLoading) window.showLoading(`${_msg} · ${sec}초`);
+  };
+  const _tick = setInterval(_paint, 300); _paint();
   _applyingSet = true;
   try {
     const d = await getDoc(doc(db,'timetableSets',id));
     if(!d.exists()) throw new Error('세트를 찾을 수 없습니다');
-    await applySetSnapshot(d.data().snapshot || {});
+    const _snap = d.data().snapshot || {};
+    const _kb = Math.max(1, Math.round(JSON.stringify(_snap).length/1024));
+    _msg = `받았어요 (약 ${_kb.toLocaleString()}KB)`; _pct = 22; _paint();
+    await applySetSnapshot(_snap, (m,p)=>{ _msg = m; if(p) _pct = p; _paint(); });
+    _msg = '완료'; _pct = 100; _paint();
+    clearInterval(_tick);
     curSetId = id; curSetName = d.data().name || '';
     _applyingSet = false;
     window.hideLoading && window.hideLoading();
+    void 0;
     toast(`"${curSetName}" 불러왔습니다 ✓`,'ok');
     renderSetBar();
     showTab('avail');
   } catch(e){
+    clearInterval(_tick);
     _applyingSet = false;
     window.hideLoading && window.hideLoading();
     toast('불러오기 실패: '+(e.message||''),'err');
@@ -3333,12 +3374,21 @@ window.restoreVersion = async function(setId, verId, verNo){
   if(!needEdit()) return;
   const s = SETS.find(x=>x.id===setId); if(!s) return;
   if(!confirm(`v${verNo} 버전으로 되돌릴까요?\n\n지금 화면의 내용이 그 버전으로 바뀝니다.\n(바뀐 내용을 남기려면 되돌리기 전에 💾 버전 저장을 먼저 눌러두세요)`)) return;
-  window.showLoading && window.showLoading(`v${verNo} 버전으로 되돌리는 중…`);
+  const _t0 = Date.now();
+  let _msg = `v${verNo} 버전 본문을 받는 중`;
+  let _pct = 8;
+  const _paint = ()=>{
+    const sec = ((Date.now()-_t0)/1000).toFixed(1);
+    if(window.setLoadStep) window.setLoadStep(`${_msg} · ${sec}초`, _pct);
+    else if(window.showLoading) window.showLoading(`${_msg} · ${sec}초`);
+  };
+  const _tick = setInterval(_paint, 300); _paint();
   _applyingSet = true;
   try {
     const d = await getDoc(doc(db,'timetableSetVersions', verId));
     if(!d.exists()) throw new Error('버전을 찾을 수 없습니다');
-    await applySetSnapshot(d.data().snapshot || {});
+    await applySetSnapshot(d.data().snapshot || {}, (m,p)=>{ _msg = m; if(p) _pct = p; _paint(); });
+    clearInterval(_tick);
     curSetId = setId; curSetName = s.name;
     _applyingSet = false;
     window.hideLoading && window.hideLoading();
@@ -3347,6 +3397,7 @@ window.restoreVersion = async function(setId, verId, verNo){
     renderSetBar();
     showTab('avail');
   } catch(e){
+    clearInterval(_tick);
     _applyingSet = false;
     window.hideLoading && window.hideLoading();
     toast('되돌리기 실패: '+(e.message||''),'err');
@@ -4938,6 +4989,9 @@ function applyDlgKind(rest){
   document.querySelectorAll('#lesson-dlg .ld-classonly')
     .forEach(el=> el.style.display = rest ? 'none' : '');
   const nm = $I('ld-name-label'); if(nm) nm.textContent = rest ? '이름' : '과목명';
+  const gl = $I('ld-grades-label'); if(gl) gl.innerHTML = rest
+    ? '적용 학년 <span style="font-weight:400;color:var(--tl)">(여러 학년 선택 = 한 번에 함께 배치)</span>'
+    : '듣는 학년 <span style="font-weight:400;color:var(--tl)">(여러 학년 선택 = 합반)</span>';
   const hl = $I('ld-hours-label'); if(hl) hl.innerHTML = rest
     ? '주당 개수 <span style="font-weight:400;color:var(--tl)">(몇 번 놓을지)</span>' : '주당 시수';
   const cl = $I('ld-color-label'); if(cl) cl.innerHTML = rest
@@ -5565,7 +5619,8 @@ function renderPlace2(){
     loadPlace2().then(()=>{ if(Object.keys(PLACE2||{}).length) renderPlace2(); }).catch(()=>{});
   }
 
-  // 틀 선택기
+  // 틀 선택기 — 처음이면 첫 틀을 자동 선택
+  if(!pgFrameId && FRAMES.length) pgFrameId = FRAMES[0].id;
   const frameOpts = FRAMES.map(f=>`<option value="${f.id}" ${f.id===pgFrameId?'selected':''}>${esc(f.name)}</option>`).join('');
   const grades = gradesInUse().filter(g=> LESSONS.some(l=>(l.grades||[]).includes(g)));
   if(!pgGrade && grades.length) pgGrade = grades[0];
@@ -5800,10 +5855,13 @@ function drawPlaceBoard(){
       data-lesson="${c.lessonId}" data-idx="${c.cardIdx}"
       data-dur="${c.durMin}" style="--lc:${lessonColor(c.lesson)};--lc-bg:${tintOf(lessonColor(c.lesson),.14)}"
       title="${esc(c.lesson.subject)} · ${c.durMin}분${c.size>1?` · ${c.size}연강`:''}${
-        sh && !isRest?`\n🤝 ${esc((c.lesson.grades||[]).join(', '))} 합반`:''}${
+        sh ? (isRest ? `\n🕐 ${esc((c.lesson.grades||[]).join(', '))} 함께 배치`
+                     : `\n🤝 ${esc((c.lesson.grades||[]).join(', '))} 합반`) : ''}${
         isRest?'' : `\n👤 ${esc(names.join(', ')||'담당 없음')}${room?`\n🚪 ${esc(room)}`:''}`}">
       <b>${esc(c.lesson.subject)}</b>
-      ${sh && !isRest?`<span class="tc-sh">🤝 ${esc(shTxt)} 합반</span>`:''}
+      ${sh ? (isRest
+          ? `<span class="tc-sh">🕐 ${esc(shTxt)} 함께</span>`
+          : `<span class="tc-sh">🤝 ${esc(shTxt)} 합반</span>`) : ''}
       ${isRest?'':`<span class="tc-who ${names.length?'':'none'}">👤 ${esc(who)}</span>`}
       <span class="tc-dur">${c.durMin}분${c.size>1?` · ${c.size}연강`:''}${(!isRest&&room)?` · ${esc(room)}`:''}</span>
     </div>`;
@@ -6204,7 +6262,9 @@ function bindPlaceDrag(startMin){
       startMin:min, durMin:d.durMin, roomId:'' };
     const probs = checkPlacement(pgGrade, day, item, baseId);
     if(probs.length) toast('⚠ ' + probs[0].msg, 'err');
-    else if(n > 1) toast(`합반 수업이라 ${n}개 학년에 함께 놓았습니다`,'ok');
+    else if(n > 1) toast(isRestLesson(lsn)
+      ? `쉬는 시간을 ${n}개 학년에 함께 놓았습니다`
+      : `합반 수업이라 ${n}개 학년에 함께 놓았습니다`,'ok');
   };
 }
 
