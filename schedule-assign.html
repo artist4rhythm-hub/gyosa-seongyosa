@@ -362,6 +362,9 @@
     background:var(--lc-bg,#fff);border:1px solid var(--ivd,#E3E1DA);border-left:4px solid var(--lc,#7FB5A0);
     cursor:grab;user-select:none}
   .pg-tray-card:active{cursor:grabbing}
+  .pg-zfine{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding-left:8px;
+    border-left:1px solid var(--ivd,#E3E1DA)}
+  .pg-zpct{font-size:11.5px;font-weight:800;color:var(--gm,#2C6E54);min-width:42px;text-align:center}
   .pg-tray-card b{font-size:12.5px;font-weight:800;color:var(--gd,#1E3932);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .pg-tray-card span{font-size:10.5px;color:var(--ts,#5A6560);
@@ -1289,14 +1292,24 @@ function noteCount(kind, n){ _lastCount[kind] = n; }
 let PLACE2 = {};
 let pgFrameId = '';      // 지금 배치 중인 시간표 틀
 let pgGrade   = '';      // 지금 배치 중인 학년
-let PX_PER_MIN = 1.15;   // 1분당 세로 픽셀 (아래 버튼으로 조절)
-const ZOOM_STEPS = [0.75, 0.95, 1.15, 1.45, 1.8];
+let PX_PER_MIN = 2.1;    // 1분당 세로 픽셀 (아래 버튼·−/+로 조절)
+// 예전의 «보통»(1.15)이 이제 «아주 작게» — 카드를 끌어다 놓기 훨씬 넉넉하게
+const ZOOM_STEPS = [1.15, 1.6, 2.1, 2.7, 3.4];
 const ZOOM_NAMES = ['아주 작게','작게','보통','크게','아주 크게'];
-try { const z = parseFloat(localStorage.getItem('sa_pg_zoom')); if(z && ZOOM_STEPS.includes(z)) PX_PER_MIN = z; } catch(e){}
+const ZOOM_MIN = 0.8, ZOOM_MAX = 4.5, ZOOM_BASE = 1.15;   // %는 옛 보통(1.15)을 100으로
+try {
+  const z = parseFloat(localStorage.getItem('sa_pg_zoom'));
+  if(z && z >= ZOOM_MIN && z <= ZOOM_MAX) PX_PER_MIN = z;
+} catch(e){}
 window.setPgZoom = function(v){
-  PX_PER_MIN = Number(v) || 1.15;
+  const z = Number(v);
+  PX_PER_MIN = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, isNaN(z) ? 2.1 : z));
   try { localStorage.setItem('sa_pg_zoom', String(PX_PER_MIN)); } catch(e){}
   renderPlace2();
+};
+/* −/+ 로 7%씩 미세 조정 — 단계 사이 어중간한 밀도도 내 손에 맞게 */
+window.nudgePgZoom = function(dir){
+  setPgZoom(PX_PER_MIN * (dir > 0 ? 1.07 : 1/1.07));
 };
 const SNAP_MIN   = 5;    // 5분 단위로 붙는다
 
@@ -5873,7 +5886,12 @@ function drawPlaceBoard(){
   DAYS.forEach(dy=> placeList(pgGrade,dy).forEach(c=>{ allProbs += checkPlacement(pgGrade,dy,c,c.id).length; }));
 
   const zoomBtns = ZOOM_STEPS.map((z,i)=>
-    `<button class="pg-zbtn ${Math.abs(z-PX_PER_MIN)<0.01?'on':''}" onclick="setPgZoom(${z})">${ZOOM_NAMES[i]}</button>`).join('');
+    `<button class="pg-zbtn ${Math.abs(z-PX_PER_MIN)<0.01?'on':''}" onclick="setPgZoom(${z})">${ZOOM_NAMES[i]}</button>`).join('')
+    + `<span class="pg-zfine">
+        <button class="pg-zbtn" onclick="nudgePgZoom(-1)" title="7% 촘촘하게">−</button>
+        <b class="pg-zpct" title="세로 간격 — 옛 보통을 100%로 봅니다">${Math.round(PX_PER_MIN/ZOOM_BASE*100)}%</b>
+        <button class="pg-zbtn" onclick="nudgePgZoom(1)" title="7% 넉넉하게">＋</button>
+      </span>`;
 
   body.innerHTML = `
     <div class="pg-wrap">
