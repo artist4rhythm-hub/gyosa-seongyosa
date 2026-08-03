@@ -708,10 +708,21 @@ function renderView(){
   }
   if(bar) bar.style.display='flex';
 
+  // 본문을 아직 못 받았으면 여기서 한 번 더 받아온다 (어느 경로로 들어와도 비지 않게)
+  if(CUR && !CUR.snapshot && CUR.hasData && !CUR.__loading){
+    CUR.__loading = true;
+    box.innerHTML = `<div class="empty"><div class="ico">⏳</div>
+      <div class="t1">시간표를 받는 중…</div></div>`;
+    ensurePubData(CUR).then(()=>{ CUR.__loading = false; renderView(); });
+    return;
+  }
+
   const all = collect();
   if(!all.length){
+    const noBody = CUR && !CUR.snapshot && CUR.hasData;
     box.innerHTML = `<div class="empty"><div class="ico">🧩</div>
-      <div class="t1">이 시간표에는 배치된 수업이 없습니다</div></div>`;
+      <div class="t1">${noBody ? '시간표 내용을 불러오지 못했습니다' : '이 시간표에는 배치된 수업이 없습니다'}</div>
+      ${noBody ? '<div>새로고침해도 같으면 관리자에게 <b>보안 규칙 게시</b>를 확인해 달라고 알려주세요.</div>' : ''}</div>`;
     return;
   }
 
@@ -1240,7 +1251,12 @@ window.onPickPublished = function(){
   const id = $I('vw-pub')?.value;
   CUR = PUBS.find(p=>p.id===id) || null;
   vwTarget = '';
-  renderPubSelect(); renderView();
+  renderPubSelect();
+  // 본문(무거움)은 고를 때 그 하나만 받는다 — 없으면 화면이 비어 보이므로 꼭 기다린다
+  if(CUR && !CUR.snapshot && CUR.hasData){
+    window.showLoading && window.showLoading('시간표를 받는 중…');
+    ensurePubData(CUR).then(()=>{ window.hideLoading && window.hideLoading(); renderView(); });
+  } else renderView();
 };
 
 /* ═══ 인쇄 — 고른 것만, 한 장에 하나씩 ═══ */

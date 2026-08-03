@@ -785,6 +785,8 @@ let CAL_FLOW = false;       // 연속 보기 — 이번 달 + 다음 달을 이�
 try { CAL_FLOW = localStorage.getItem('ac_flow') === '1'; } catch(e){}
 let CAL_EVEN = false;       // 칸 높이 — false: 내용에 맞춰 · true: 모든 주 같은 높이
 try { CAL_EVEN = localStorage.getItem('ac_even') === '1'; } catch(e){}
+let FLOW_MONTHS = 2;        // 연속 보기에서 지금까지 펼친 달 수 (아래로 내리면 늘어난다)
+window.__flowMonths = ()=>FLOW_MONTHS;   // 점검용
 const ZOOM_STEPS = [55,65,75,85,100,115,130,150,175,200];
 try { const z = parseInt(localStorage.getItem('ac_zoom')); if(z) CAL_ZOOM = z; } catch(e){}
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
@@ -1149,11 +1151,30 @@ function weekBars(days, slot){
       bars.push({ ev:e, start:i, span });
     });
   });
-  // 정해둔 순서 → 시작이 이른 것 → 긴 것 차례로.
-  // 먼저 자리를 잡은 것이 위층에 놓이므로, 순서가 곧 위아래가 된다.
-  bars.sort((a,b)=> ordOf(a.ev)-ordOf(b.ev) || a.start-b.start || b.span-a.span);
+  /* 같은 주에서는 «낮은 학년 → 높은 학년» 차례로 위아래를 맞춘다.
+     · 여러 학년이 함께하는 행사(예: 1~4·6~8학년 사후 활동)는 그 학년들의
+       줄을 통째로 차지하도록 위층에 먼저 놓는다.
+     · 그래서 같은 학년의 일정은 주 안에서 같은 가로줄에 놓인다. */
+  const gOrder = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+  const gradesOfEv = e => (!e.scope || e.scope==='all') ? []
+    : (e.scope==='grade' ? expandTargets(e.targets||[], e.org)
+       : (e.targets||[]).flatMap(d=>gradesOfDept(d, e.org)));
+  const lowOf = b => {
+    const gs = gradesOfEv(b.ev).map(g=>gOrder.indexOf(g)).filter(i=>i>=0);
+    return gs.length ? Math.min(...gs) : -1;      // 전체 대상은 맨 위
+  };
+  const widthOf = b => {
+    const gs = gradesOfEv(b.ev).map(g=>gOrder.indexOf(g)).filter(i=>i>=0);
+    return gs.length ? (Math.max(...gs) - Math.min(...gs) + 1) : 99;   // 전체는 가장 넓게
+  };
+  bars.forEach(b=>{ b._low = lowOf(b); b._w = widthOf(b); });
 
-  // 겹치지 않게 층(줄)을 나눈다
+  // 전체 대상 → 넓은 학년 묶음 → 낮은 학년 → 정해둔 순서 → 시작 이른 것
+  bars.sort((a,b)=>
+    (a._low - b._low) || (b._w - a._w) ||
+    (ordOf(a.ev)-ordOf(b.ev)) || (a.start-b.start) || (b.span-a.span));
+
+  // 겹치지 않게 층(줄)을 나눈다 — 위에서부터 빈 자리를 찾는다
   const lanes = [];
   bars.forEach(b=>{
     let li = lanes.findIndex(lane => lane.every(x => b.start >= x.start+x.span || x.start >= b.start+b.span));
@@ -1260,18 +1281,22 @@ function render(){
     const next = (mm===12) ? {y:yy+1, m:1} : {y:yy, m:mm+1};
     const prevDays = daysInMonth(prev.y, prev.m);
     const out = [];
-    for(let i=firstDow; i>0; i--) out.push({ d:prevDays-i+1, y:prev.y, m:prev.m, out:true });
+    // 연속 보기에서는 달과 달 사이를 비워 둔다 (같은 날짜가 두 번 나오지 않게)
+    for(let i=firstDow; i>0; i--) out.push(CAL_FLOW ? null : { d:prevDays-i+1, y:prev.y, m:prev.m, out:true });
     for(let d=1; d<=nDays; d++) out.push({ d, y:yy, m:mm, out:false });
     let nd = 1;
-    while(out.length % 7 !== 0) out.push({ d:nd++, y:next.y, m:next.m, out:true });
+    while(out.length % 7 !== 0) out.push(CAL_FLOW ? null : { d:nd++, y:next.y, m:next.m, out:true });
     return out;
   }
 
-  // 연속 보기면 이번 달 + 다음 달을 이어 붙인다
+  // 연속 보기면 여러 달을 이어 붙인다 (아래로 내리면 계속 늘어난다)
   const months = [{y, m}];
   if(CAL_FLOW){
-    const nx = (m===12) ? {y:y+1, m:1} : {y, m:m+1};
-    months.push(nx);
+    let cy = y, cm = m;
+    for(let k=1; k<FLOW_MONTHS; k++){
+      cm++; if(cm>12){ cm=1; cy++; }
+      months.push({ y:cy, m:cm });
+    }
   }
   const cells = [];
   months.forEach((mo, mi)=>{
@@ -1282,8 +1307,8 @@ function render(){
   const dividers = {};
   const flat = [];
   cells.forEach(c=>{
-    if(c.divider){ dividers[flat.length] = c.divider; return; }
-    flat.push(c);
+    if(c && c.divider){ dividers[flat.length] = c.divider; return; }
+    flat.push(c);   // null이면 빈 칸 (연속 보기의 달 경계)
   });
   const weeks = [];
   for(let i=0;i<flat.length;i+=7) weeks.push(flat.slice(i,i+7));
@@ -1426,6 +1451,7 @@ function render(){
   html += '</div>';
   $I('cal-mount').innerHTML = html;
   evenWeekHeights();
+  watchFlowScroll();
   renderLegend();
   renderGradeFilter();
   renderGradeLegend();
@@ -1457,6 +1483,7 @@ function evenWeekHeights(){
 window.setEven = function(on){
   CAL_EVEN = !!on;
   try { localStorage.setItem('ac_even', CAL_EVEN?'1':'0'); } catch(e){}
+  renderViewBar();
   render();
 };
 
@@ -2446,7 +2473,7 @@ function renderViewBar(){
     </span>
     <span class="vw-flow">
       <button class="vw-fb ${CAL_FLOW?'':'on'}" onclick="setFlow(false)" title="한 달씩 봅니다">📅 월별</button>
-      <button class="vw-fb ${CAL_FLOW?'on':''}" onclick="setFlow(true)" title="이번 달과 다음 달을 이어서 봅니다">📜 연속</button>
+      <button class="vw-fb ${CAL_FLOW?'on':''}" onclick="setFlow(true)" title="달을 이어서 계속 봅니다 — 아래로 내리면 다음 달이 이어집니다">📜 연속</button>
     </span>
     <span class="vw-flow">
       <button class="vw-fb ${CAL_EVEN?'':'on'}" onclick="setEven(false)" title="빈 주는 낮게, 바쁜 주는 높게">↕ 자동</button>
@@ -2571,9 +2598,35 @@ window.goMonthOf = function(ds){
 
 window.setFlow = function(on){
   CAL_FLOW = !!on;
+  FLOW_MONTHS = 2;   // 다시 두 달부터 시작
   try { localStorage.setItem('ac_flow', CAL_FLOW?'1':'0'); } catch(e){}
+  renderViewBar();   // 고른 버튼에 색이 들어오도록 줄을 다시 그린다
   render();
 };
+
+/* 연속 보기 — 바닥 가까이 내려오면 다음 달을 이어 붙인다 */
+let _flowBusy = false;
+function watchFlowScroll(){
+  if(window.__flowWatch) return;
+  window.__flowWatch = true;
+  window.addEventListener('scroll', ()=>{
+    if(!CAL_FLOW || curTab==='cdays' || _flowBusy) return;
+    if(FLOW_MONTHS >= 14) return;      // 한 해 넘게는 늘리지 않는다
+    const mount = $I('cal-mount'); if(!mount) return;
+    const bottom = mount.getBoundingClientRect().bottom;
+    if(bottom < window.innerHeight + 400){
+      _flowBusy = true;
+      FLOW_MONTHS++;
+      // 새로 붙는 달의 행사도 필요하면 받아온다
+      const last = new Date(curYear, curMonth - 1 + FLOW_MONTHS - 1, 1);
+      const need = last.getFullYear();
+      (need !== curYear ? loadEvents(need) : Promise.resolve()).then(()=>{
+        render();
+        setTimeout(()=>{ _flowBusy = false; }, 250);
+      });
+    }
+  }, { passive:true });
+}
 
 /* 학년 색 범례 — 무슨 색이 몇 학년인지 */
 function renderGradeLegend(){

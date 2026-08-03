@@ -513,7 +513,7 @@ function injectSidebarCSS(){
 .tb-t{font-size:13.5px;font-weight:600;color:var(--ink-3, var(--tl));white-space:nowrap;}
 .tb-t.on{font-weight:700;color:var(--ink);}
 .tb-t.go{cursor:pointer;}
-.tb-t.go:hover{color:var(--gm);text-decoration:underline;text-underline-offset:3px;}
+.tb-t.go:hover{color:var(--gm);}
 @media(max-width:900px){
   /* 좁으면 마지막 두 개만 남긴다 */
   #tb-tail .tb-t:not(:nth-last-child(-n+3)){display:none;}
