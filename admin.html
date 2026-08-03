@@ -1012,9 +1012,10 @@ window.delWP = delWP;
 // ── 공휴일 (Firebase) ────────────────────────
 async function addHol() {
   const date=$I('hd').value, name=$I('hn2').value.trim(), org=$I('ho').value;
+  const who=($I('hw')&&$I('hw').value)||'all';
   if(!date||!name) return toast('날짜와 이름을 입력하세요.','err');
   await window.TM.snapBundle('holidays', {}, `휴일 등록: ${name}`);
-  await addDoc(collection(db,'holidays'),{date,name,org,createdAt:Timestamp.now()});
+  await addDoc(collection(db,'holidays'),{date,name,org,who,createdAt:Timestamp.now()});
   toast('등록되었습니다.','ok');
   $I('hd').value='';$I('hn2').value='';
   await loadHolList();
@@ -1026,15 +1027,41 @@ async function loadHolList() {
   const snap=await getDocs(collection(db,'holidays'));
   const hols=[]; snap.forEach(d=>hols.push({id:d.id,...d.data()}));
   hols.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  el.innerHTML=hols.length?hols.map(h=>`
+  const WHO_LABEL = { all:'모두', school:'학교 휴교', staff:'교사만' };
+  const WHO_CSS = { all:'background:#FEE2E2;color:#B91C1C', school:'background:#FFEDD5;color:#C2410C',
+                    staff:'background:#DBEAFE;color:#1D4ED8' };
+  el.innerHTML=hols.length?hols.map(h=>{
+    const w = h.who || 'all';
+    return `
     <div class="hitem">
       <span class="hdate">${h.date}</span>
       <span class="hname flex1">${h.name}</span>
+      <span style="font-size:11px;font-weight:800;border-radius:5px;padding:2px 7px;${WHO_CSS[w]||WHO_CSS.all}">${WHO_LABEL[w]||'모두'}</span>
       <span class="horg" style="color:var(--tl);font-size:12px">${h.org==='all'?'전체':ORGS[h.org]||h.org}</span>
       <button class="bx" onclick="delHol('${h.id}')">✕</button>
-    </div>`).join(''):'<p class="empty">등록된 휴일이 없습니다.</p>';
+    </div>`;}).join(''):'<p class="empty">등록된 휴일이 없습니다.</p>';
 }
 window.loadHolList = loadHolList;
+
+/* 🧹 예전에 등록한 «교사 휴가·연수»를 찾아 who:'staff' 로 옮긴다
+   (학부모 달력에서 숨기기 위함 — 되돌리려면 ⏱ 타임머신에서 복원) */
+async function fixStaffHolidays(){
+  const RE = /(휴가|연수|워크숍|워크샵|수련회|교사\s*휴무|교직원\s*휴무|정기휴무)/;
+  try {
+    const snap = await getDocs(collection(db,'holidays'));
+    const hits = [];
+    snap.forEach(d=>{ const v=d.data();
+      if((v.who||'all')==='all' && v.src!=='kr' && RE.test(v.name||'')) hits.push({id:d.id, name:v.name}); });
+    if(!hits.length){ toast('옮길 만한 교사 휴무가 없습니다.','ok'); return; }
+    const names = hits.slice(0,6).map(h=>h.name).join(', ');
+    if(!confirm(`${hits.length}건을 «교사만»으로 바꿀까요?\n\n${names}${hits.length>6?` 외 ${hits.length-6}건`:''}\n\n바꾸면 학부모 달력에서는 보이지 않게 됩니다.`)) return;
+    await window.TM.snapBundle('holidays', {}, '교사 휴무 일괄 정리 전');
+    for(const x of hits) await setDoc(doc(db,'holidays',x.id), {who:'staff'}, {merge:true});
+    toast(`${hits.length}건을 «교사만»으로 바꿨습니다 ✓`,'ok');
+    await loadHolList();
+  } catch(e){ toast('정리 실패: '+(e.message||''),'err'); }
+}
+window.fixStaffHolidays = fixStaffHolidays;
 
 /* 📅 그 해 법정 공휴일을 원장에 일괄 등록 — 이미 있는 날짜는 건너뛴다 */
 async function bulkAddKrHolidays(){
@@ -1050,7 +1077,7 @@ async function bulkAddKrHolidays(){
     let add=0, skip=0;
     for(const [date, name] of Object.entries(map)){
       if(have.has(date)){ skip++; continue; }
-      await addDoc(collection(db,'holidays'), {date, name, org:'all', src:'kr', createdAt:Timestamp.now()});
+      await addDoc(collection(db,'holidays'), {date, name, org:'all', who:'all', src:'kr', createdAt:Timestamp.now()});
       add++;
     }
     toast(`${y}년 공휴일 ${add}일을 담았습니다${skip?` · ${skip}일은 이미 있어 건너뜀`:''}`,'ok');
@@ -3796,7 +3823,19 @@ async function renderAdmAtt(){
             ${orgOptionsHTML(false)}
           </select>
         </div>
+        <div class="fgrp"><label>누구의 쉬는 날</label>
+          <select id="hw">
+            <option value="all">모두 (법정 공휴일 등)</option>
+            <option value="school">학교 휴교 (학생 수업 없음)</option>
+            <option value="staff">교사만 (정기휴가·연수)</option>
+          </select>
+        </div>
       </div>
+      <p style="font-size:11.5px;color:var(--tl);margin:2px 0 8px;line-height:1.6">
+        · <b>모두</b> — 학생·학부모·교사 모두 쉬는 날 (달력에 빨간 날)<br>
+        · <b>학교 휴교</b> — 학생 수업이 없는 날 (재량휴업·태풍 등)<br>
+        · <b>교사만</b> — 선생님 휴무. <b>학부모 달력에는 보이지 않습니다</b>
+      </p>
       <button class="bp" onclick="addHol()">등록</button>
       <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap;padding:10px 12px;background:var(--gp);border-radius:10px">
         <span style="font-size:13px;font-weight:800;color:var(--gd)">📅 법정 공휴일</span>
@@ -3805,6 +3844,11 @@ async function renderAdmAtt(){
         </select>
         <button class="bs" onclick="bulkAddKrHolidays()">한 번에 담기</button>
         <span style="font-size:12px;color:var(--tl)">설·추석·대체공휴일까지 자동으로. 이미 있는 날짜는 건너뜁니다.</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin:12px 0;flex-wrap:wrap;padding:10px 12px;background:var(--iv);border-radius:10px">
+        <span style="font-size:13px;font-weight:800;color:var(--gd)">🧹 교사 휴무 정리</span>
+        <button class="bs" onclick="fixStaffHolidays()">휴가·연수 자동 찾아 «교사만»으로</button>
+        <span style="font-size:12px;color:var(--tl)">예전에 등록해 둔 «정기 휴가·연수»를 학부모 달력에서 숨깁니다.</span>
       </div>
       <div id="hlist" class="hlist"></div>
     </div>

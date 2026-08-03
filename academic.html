@@ -131,6 +131,26 @@
   .cwb.normal{ background:rgba(22,163,74,.05); }
   .cw-nm{ margin-left:auto; font-size:9px; font-weight:800; color:#16A34A;
     background:rgba(22,163,74,.12); border-radius:4px; padding:1px 5px; line-height:1.4; }
+  .cw-nm.part{ color:#3F6212; background:rgba(101,163,13,.14); }
+  /* 지난달·다음달 날짜 — 맥락만 보이게 흐리게 */
+  .cwb.outmonth{ background:var(--iv); }
+  .cw-n.out{ opacity:.42; }
+  .cw-n.out:hover{ opacity:.7; cursor:pointer; }
+  /* 연속 보기 달 구분선 */
+  .cal-div{ display:flex; align-items:center; gap:10px; padding:10px 12px 6px; }
+  .cal-div span{ font-size:12.5px; font-weight:800; color:var(--gd);
+    background:var(--gp); border-radius:20px; padding:3px 12px; }
+  .cal-div::after{ content:''; flex:1; height:1px; background:var(--ivd); }
+  /* 보기 전환 */
+  .vw-flow{ display:inline-flex; gap:3px; margin-left:6px; }
+  .vw-fb{ font-family:inherit; font-size:11.5px; font-weight:700; padding:5px 9px;
+    border:1.5px solid var(--ivd); background:var(--wh); color:var(--ts);
+    border-radius:7px; cursor:pointer; }
+  .vw-fb.on{ background:var(--gd); border-color:var(--gd); color:#fff; }
+  /* 🧑‍🏫 교사만 쉬는 날 — 학부모 화면에는 아예 나오지 않는다 */
+  .cwb.staffoff{ background:rgba(37,99,235,.055); }
+  .cw-n.stf b{ color:#1D4ED8; }
+  .cw-hn.stf{ color:#1D4ED8; }
 
   /* 가로로 이어지는 행사 띠 */
   /* 행사 띠 — 글자가 길면 줄을 바꿔 내려가고, 그만큼 칸이 넓어진다 */
@@ -721,6 +741,8 @@ let SHOW_ALL_CAL = true;    // 기관 캘린더를 볼 때 «DA 전체»도 함�
 try { SHOW_ALL_CAL = localStorage.getItem('ac_showall') !== 'off'; } catch(e){}
 let DRAG_ON = false;        // 끌어서 옮기기 (실수 방지를 위해 켤 때만 동작)
 let CAL_ZOOM = 100;         // 달력 크기 (%)
+let CAL_FLOW = false;       // 연속 보기 — 이번 달 + 다음 달을 이어서 본다
+try { CAL_FLOW = localStorage.getItem('ac_flow') === '1'; } catch(e){}
 const ZOOM_STEPS = [55,65,75,85,100,115,130,150,175,200];
 try { const z = parseInt(localStorage.getItem('ac_zoom')); if(z) CAL_ZOOM = z; } catch(e){}
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
@@ -851,14 +873,27 @@ async function loadLedgerHolidays(){
     });
   } catch(e){ LEDGER_HOL = []; }
 }
-/* 지금 보는 기관에 해당하는 수동 휴일 {날짜:이름} */
+/* 지금 보는 기관에 해당하는 수동 휴일 {날짜:{name,who}}
+   who — all: 모두 쉬는 날 · school: 학교 휴교 · staff: 교사만 쉬는 날
+   학부모용 보기에서는 «교사만»을 아예 감춘다. */
 function ledgerHolMap(){
   const base = (ORG === ORG_ALL) ? null : ORG;   // 두 기관 겹쳐보기면 전부
   const map = {};
   LEDGER_HOL.forEach(v=>{
     if(base && !(v.org==='all' || v.org===base)) return;
-    if(v.date) map[v.date] = v.name || '휴일';
+    if(!v.date) return;
+    const who = v.who || 'all';
+    if(who === 'staff' && curView === 'parent') return;   // 학부모에게는 보이지 않는다
+    map[v.date] = { name: v.name || '휴일', who };
   });
+  return map;
+}
+/* 날짜별 휴일 정보 — 법정 공휴일(모두)과 원장 휴일을 합친다 */
+function holInfoMap(year){
+  const map = {};
+  const kr = getHolidaysKR(year);
+  Object.entries(kr).forEach(([ds,name])=>{ map[ds] = { name, who:'all' }; });
+  Object.entries(ledgerHolMap()).forEach(([ds,v])=>{ map[ds] = v; });
   return map;
 }
 
@@ -922,12 +957,27 @@ function eventsOn(ds){
 function evHitsGrade(e, grade){
   if(!grade) return true;
   if(!e.scope || e.scope==='all') return true;
-  if(e.scope==='grade') return (e.targets||[]).includes(grade);
+  if(e.scope==='grade') return expandTargets(e.targets||[], e.org).includes(grade);
   if(e.scope==='dept'){
     const d = deptOfGrade(grade);
     return d ? (e.targets||[]).includes(d) : true;
   }
   return true;
+}
+/* 부서 → 그 부서의 학년들 */
+function gradesOfDept(dept, org){
+  const list = (org && org!=='all') ? (GRADE_ORDER[org]||[])
+    : [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+  return list.filter(g=> deptOfGrade(g) === dept);
+}
+/* 대상 목록에 부서 이름이 섞여 있으면 학년으로 풀어서 돌려준다 (예전 자료 호환) */
+function expandTargets(list, org){
+  const out = [];
+  (list||[]).forEach(v=>{
+    if(String(v).includes('학년') || /세$/.test(String(v))) out.push(v);
+    else gradesOfDept(v, org).forEach(g=>out.push(g));   // 부서 → 학년들
+  });
+  return [...new Set(out)];
 }
 /* 학년 → 부서 이름 (초등부·중등부·고등부) */
 function deptOfGrade(grade){
@@ -950,6 +1000,42 @@ function isNormalClassDay(ds, dayInfo){
   // 수업을 막는 행사가 하나라도 있으면 «정상 수업»이 아니다
   return !hit.some(e => noClassEvent(e));
 }
+/* 그날 «어느 학년이 수업하는가» — 전체/일부/없음을 가린다
+   교사만 쉬는 날(staff)은 학생 수업과 무관하므로 수업이 있는 날로 본다 */
+function classDayInfo(ds, dayInfo){
+  const dow = new Date(ds+'T00:00:00').getDay();
+  if(dow===0 || dow===6) return { kind:'none' };
+  if(dayInfo && dayInfo.holName && dayInfo.holWho !== 'staff') return { kind:'none' };
+  if(breakOf(ds)) return { kind:'none' };
+  if(!termOf(ds)) return { kind:'none' };
+  const org = (ORG===ORG_ALL) ? 'daniel' : ORG;
+  const all = GRADE_ORDER[org] || [];
+  if(!all.length) return { kind:'none' };
+  const evs = eventsOn(ds).filter(e=>noClassEvent(e));
+  const on = all.filter(g=> !evs.some(e=> evHitsGrade(e, g)));
+  if(!on.length) return { kind:'none' };
+  if(on.length === all.length) return { kind:'all', grades:on };
+  return { kind:'some', grades:on };
+}
+/* 우측 위 배지 — 전 학년이면 «수업», 일부면 «일부 수업»(어느 학년인지 툴팁) */
+function classBadge(x){
+  const ci = x.classInfo || { kind:'none' };
+  if(ci.kind === 'none') return '';
+  if(GRADE_FILTER){
+    // 학년을 골랐으면 그 학년 기준으로 딱 떨어지게
+    return (ci.grades||[]).includes(GRADE_FILTER)
+      ? `<span class="cw-nm" title="${esc(GRADE_FILTER)} — 이날은 수업이 있습니다">수업</span>` : '';
+  }
+  if(ci.kind === 'all') return `<span class="cw-nm" title="모든 학년 정상 수업">수업</span>`;
+  const runs = gradeRuns(ci.grades||[]);
+  const txt = runs.map(r=> r.n>=3 ? `${gradeNum(r.start)}~${gradeNum(r.end)}학년`
+    : Array.from({length:r.n},(_,k)=>{
+        const order=[...(GRADE_ORDER.daniel||[]),...(GRADE_ORDER.jihyebit||[])];
+        return order[r.endIdx-r.n+1+k];
+      }).join('·')).join(', ');
+  return `<span class="cw-nm part" title="${esc(txt)} 수업 — 학년을 고르면 또렷하게 볼 수 있어요">일부 수업</span>`;
+}
+
 /* 이 행사가 «이날 수업 없음»인가 — 담당이 정한 값, 없으면 분류로 판단 */
 function noClassEvent(e){
   if(e.noClass === true) return true;
@@ -959,7 +1045,16 @@ function noClassEvent(e){
 
 function targetLabel(e){
   if(!e.scope || e.scope==='all') return '';
-  return '〈'+(e.targets||[]).join('·')+'〉';
+  const list = (e.scope==='grade') ? expandTargets(e.targets||[], e.org) : (e.targets||[]);
+  if(e.scope==='grade'){
+    const runs = gradeRuns(list);
+    return '〈' + runs.map(r=> r.n>=3 ? `${gradeNum(r.start)}~${gradeNum(r.end)}학년`
+      : Array.from({length:r.n},(_,k)=>{
+          const order=[...(GRADE_ORDER.daniel||[]),...(GRADE_ORDER.jihyebit||[])];
+          return order[r.endIdx-r.n+1+k];
+        }).join('·')).join(' · ') + '〉';
+  }
+  return '〈'+list.join('·')+'〉';
 }
 function evColor(e){
   const th = COLOR_THEMES[COLOR_THEME];
@@ -1055,7 +1150,7 @@ function rangeBadge(r){
 }
 function targetDots(e){
   if(!e.scope || e.scope==='all') return '';
-  const list = e.targets||[];
+  const list = (e.scope==='grade') ? expandTargets(e.targets||[], e.org) : (e.targets||[]);
   if(e.scope==='dept') return `<span class="ev-tgt">${esc('〈'+list.join('·')+'〉')}</span>`;
   // 학년 3개 이상이 이어지면 범위로 묶어 한 줄에 담는다
   const runs = gradeRuns(list);
@@ -1102,16 +1197,45 @@ function render(){
   $I('ym-sub').textContent = `${ORG===ORG_ALL?'두 기관':(ORGS[ORG]||'')} · ${curView==='teacher'?'교사용':'학부모용'}`;
   document.body.classList.toggle('can-edit', CAN_EDIT && curTab==='edit');
 
-  const holidays = Object.assign({}, getHolidaysKR(y), ledgerHolMap());   // 법정 + 수동 등록 휴일
-  const nDays = daysInMonth(y,m);
-  const firstDow = dowOf(y,m,1);
+  // 앞뒤 달·연속 보기에서 다른 해 날짜도 나오므로 인접 연도까지 함께 담는다
+  const holidays = Object.assign({}, holInfoMap(y-1), holInfoMap(y), holInfoMap(y+1));
 
+  /* 한 달치 칸 만들기 — 앞뒤 빈자리는 지난달·다음달 날짜로 채워 흐리게 보여준다
+     (연속 보기에서는 이 묶음을 여러 달 이어 붙인다) */
+  function monthCells(yy, mm){
+    const nDays = daysInMonth(yy,mm);
+    const firstDow = dowOf(yy,mm,1);
+    const prev = (mm===1) ? {y:yy-1, m:12} : {y:yy, m:mm-1};
+    const next = (mm===12) ? {y:yy+1, m:1} : {y:yy, m:mm+1};
+    const prevDays = daysInMonth(prev.y, prev.m);
+    const out = [];
+    for(let i=firstDow; i>0; i--) out.push({ d:prevDays-i+1, y:prev.y, m:prev.m, out:true });
+    for(let d=1; d<=nDays; d++) out.push({ d, y:yy, m:mm, out:false });
+    let nd = 1;
+    while(out.length % 7 !== 0) out.push({ d:nd++, y:next.y, m:next.m, out:true });
+    return out;
+  }
+
+  // 연속 보기면 이번 달 + 다음 달을 이어 붙인다
+  const months = [{y, m}];
+  if(CAL_FLOW){
+    const nx = (m===12) ? {y:y+1, m:1} : {y, m:m+1};
+    months.push(nx);
+  }
   const cells = [];
-  for(let i=0;i<firstDow;i++) cells.push(null);
-  for(let d=1; d<=nDays; d++) cells.push(d);
-  while(cells.length % 7 !== 0) cells.push(null);
+  months.forEach((mo, mi)=>{
+    if(mi>0) cells.push({ divider:`${mo.y}년 ${mo.m}월` });
+    monthCells(mo.y, mo.m).forEach(c=>cells.push(c));
+  });
+  // 구분선은 주 경계에 오도록 따로 담아둔다
+  const dividers = {};
+  const flat = [];
+  cells.forEach(c=>{
+    if(c.divider){ dividers[flat.length] = c.divider; return; }
+    flat.push(c);
+  });
   const weeks = [];
-  for(let i=0;i<cells.length;i+=7) weeks.push(cells.slice(i,i+7));
+  for(let i=0;i<flat.length;i+=7) weeks.push(flat.slice(i,i+7));
 
   /* 주차는 학기·방학마다 새로 센다.
      개학일이 든 주가 «2학기 1주차», 가정학습의 달이 시작된 주가 «가정학습의 달 1주차». */
@@ -1164,15 +1288,23 @@ function render(){
     + DOW.map((w,i)=>`<div class="ch-d ${i===0?'sun':i===6?'sat':''}">${w}</div>`).join('')
     + '</div></div>';
 
-  weeks.forEach(week=>{
+  weeks.forEach((week, wi)=>{
+    const dv = dividers[wi*7];
+    if(dv) html += `<div class="cal-div"><span>${esc(dv)}</span></div>`;
     // 이 주의 날짜 정보를 미리 만든다
-    const days = week.map((d,i)=>{
-      if(!d) return null;
-      const ds = dateStr(y,m,d);
+    const days = week.map((c,i)=>{
+      if(!c) return null;
+      const d = c.d;
+      const ds = dateStr(c.y, c.m, d);
       const closedName = closedOn(ds);
-      const info = { d, ds, dow:i, holName: holidays[ds] || closedName, closedName,
-               isToday: ds === todayStr() };
+      const hi = holidays[ds];   // {name, who} · 없으면 undefined
+      const info = { d, ds, dow:i,
+        holName: (hi && hi.name) || closedName,
+        holWho: hi ? hi.who : (closedName ? 'school' : ''),
+        closedName, isToday: ds === todayStr() };
+      info.out = !!c.out;   // 이 달 바깥(지난달·다음달) 날짜 — 흐리게
       info.normal = isNormalClassDay(ds, info);   // ✅ 정상 수업인 날
+      info.classInfo = classDayInfo(ds, info);    // 어느 학년이 수업하는가
       return info;
     });
 
@@ -1194,7 +1326,8 @@ function render(){
     html += '<div class="cw-bg">' + days.map((x,i)=>{
       let c = 'cwb';
       if(!x) c += ' empty';
-      else if(x.holName) c += ' holiday';
+      else if(x.holName) c += (x.holWho==='staff' ? ' staffoff' : ' holiday');
+      if(x && x.out) c += ' outmonth';
       else if(i===0) c += ' sunday';
       else if(i===6) c += ' saturday';
       if(x && x.isToday) c += ' today';
@@ -1205,11 +1338,14 @@ function render(){
     // 날짜 줄
     html += '<div class="cw-nums">' + days.map((x,i)=>{
       if(!x) return '<div class="cw-n"></div>';
-      const dcls = (x.holName ? 'hol' : (i===0 ? 'sun' : i===6 ? 'sat' : '')) + (x.isToday?' today':'');
-      return `<div class="cw-n ${dcls}" onclick="addOn('${x.ds}','am',event)">
+      const dcls = (x.holName ? (x.holWho==='staff' ? 'stf' : 'hol')
+                    : (i===0 ? 'sun' : i===6 ? 'sat' : '')) + (x.isToday?' today':'');
+      return `<div class="cw-n ${dcls}${x.out?' out':''}" onclick="${
+        x.out?`goMonthOf('${x.ds}')`:`addOn('${x.ds}','am',event)`}">
         <b>${x.d}</b>${x.isToday?'<span class="cw-td">오늘</span>':''}${
-        x.holName?`<span class="cw-hn">${esc(x.holName)}</span>`:''}${
-        x.normal?`<span class="cw-nm" title="${GRADE_FILTER?esc(GRADE_FILTER)+' — ':''}이날은 수업이 있습니다">수업</span>`:''}</div>`;
+        x.holName?`<span class="cw-hn ${x.holWho==='staff'?'stf':''}">${
+          x.holWho==='staff'?'🧑‍🏫 ':''}${esc(x.holName)}</span>`:''}${
+        classBadge(x)}</div>`;
     }).join('') + '</div>';
 
     // 종일 · 오전 · 오후 띠
@@ -1509,7 +1645,10 @@ window.openEventDlg = function(id, ds, slot){
   if(event) event.stopPropagation();
   const e = id ? EVENTS.find(x=>x.id===id) : null;
   editingEventId = e ? e.id : null;
-  dlgTargets = new Set(e ? (e.targets||[]) : []);
+  // 예전에 부서와 학년이 섞여 저장된 자료는 학년으로 풀어서 보여준다
+  dlgTargets = new Set(e
+    ? ((e.scope==='grade') ? expandTargets(e.targets||[], e.org) : (e.targets||[]))
+    : []);
   dlgWeekdays = new Set(e ? (e.weekdays||[]) : []);
   dlgScope = e ? (e.scope||'all') : 'all';
   dlgColor = e ? (e.color||'') : '';
@@ -1679,8 +1818,14 @@ window.toggleDow = function(i){
   document.querySelectorAll('#ev-dow .chip')[i].classList.toggle('on', dlgWeekdays.has(i));
 };
 window.setScope = function(s){
+  const before = dlgScope;
   dlgScope = s;
   if(s==='all') dlgTargets.clear();
+  // 종류가 바뀌면 이전 종류의 값은 정리한다 (부서와 학년이 섞여 저장되던 문제)
+  else if(before !== s){
+    if(s==='grade') dlgTargets = new Set(expandTargets([...dlgTargets], dlgOrg));
+    else dlgTargets = new Set([...dlgTargets].filter(v=>DEPTS.includes(v)));
+  }
   document.querySelectorAll('.mbox .chips .chip').forEach(()=>{});
   const wrap = $I('ev-mod');
   wrap.querySelectorAll('.chips')[2].querySelectorAll('.chip').forEach(b=>
@@ -1698,9 +1843,31 @@ function renderTargetPicker(){
     : (dlgOrg==='all'
         ? [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])]
         : (GRADE_ORDER[dlgOrg] || GRADE_ORDER.daniel || []));
-  box.innerHTML = `<div class="chips">${list.map(v=>
+  // 학년별일 때는 «부서 한 번에» 버튼을 위에 — 누르면 그 부서 학년이 모두 켜진다
+  let head = '';
+  if(dlgScope==='grade'){
+    const depts = [...new Set(list.map(g=>deptOfGrade(g)).filter(Boolean))];
+    head = `<div class="chips" style="margin-bottom:6px">
+      <span style="font-size:11.5px;font-weight:800;color:var(--tl);align-self:center;margin-right:2px">부서 한 번에</span>
+      ${depts.map(d=>{
+        const gs = gradesOfDept(d, dlgOrg);
+        const on = gs.length && gs.every(g=>dlgTargets.has(g));
+        return `<button type="button" class="chip ${on?'on':''}" onclick="toggleDeptGrades('${esc(d)}')">${esc(d)}</button>`;
+      }).join('')}
+      <button type="button" class="chip" onclick="clearTargets()">모두 지우기</button>
+    </div>`;
+  }
+  box.innerHTML = head + `<div class="chips">${list.map(v=>
     `<button type="button" class="chip ${dlgTargets.has(v)?'on':''}" onclick="toggleTarget('${esc(v)}')">${esc(v)}</button>`).join('')}</div>`;
 }
+/* 부서 버튼 — 그 부서 학년을 한 번에 켜고 끈다 (부서 이름 자체는 저장하지 않는다) */
+window.toggleDeptGrades = function(dept){
+  const gs = gradesOfDept(dept, dlgOrg);
+  const allOn = gs.length && gs.every(g=>dlgTargets.has(g));
+  gs.forEach(g=> allOn ? dlgTargets.delete(g) : dlgTargets.add(g));
+  renderTargetPicker();
+};
+window.clearTargets = function(){ dlgTargets.clear(); renderTargetPicker(); };
 window.pickOrg = function(k){ curOrg = k; renderTargetPicker(); };
 
 /* ═══ 🔗 쉬는 날 원장 동기화 ═══
@@ -1727,7 +1894,7 @@ async function buildEventLinks(ev, wantWp){
     for(const date of days){
       const r = await addDoc(collection(db,'holidays'), {
         date, name: ev.title, org: ev.org==='all' ? 'all' : ev.org,
-        src:'academic', createdAt: Timestamp.now()
+        who:'school', src:'academic', createdAt: Timestamp.now()
       });
       out.holidayIds.push(r.id);
     }
@@ -1766,7 +1933,9 @@ window.saveEvent = async function(){
     timeOfDay: slot,
     weekdays: [...dlgWeekdays].sort(),
     scope: dlgScope,
-    targets: dlgScope==='all' ? [] : [...dlgTargets],
+    // 학년별이면 부서 이름은 학년으로 풀어서 저장 (부서·학년이 섞여 저장되던 문제 방지)
+    targets: dlgScope==='all' ? []
+      : (dlgScope==='grade' ? expandTargets([...dlgTargets], dlgOrg) : [...dlgTargets]),
     org: dlgOrg,                    // 이 행사가 속한 캘린더
     category: cat,
     color: dlgColor || '',
@@ -2212,6 +2381,10 @@ function renderViewBar(){
           title="${v.label}"><span class="vw-sw">${sw}</span>${v.label}</button>`;
       }).join('')}
     </span>
+    <span class="vw-flow">
+      <button class="vw-fb ${CAL_FLOW?'':'on'}" onclick="setFlow(false)" title="한 달씩 봅니다">📅 월별</button>
+      <button class="vw-fb ${CAL_FLOW?'on':''}" onclick="setFlow(true)" title="이번 달과 다음 달을 이어서 봅니다">📜 연속</button>
+    </span>
     <span class="vw-zoom">
       <span class="vw-lab">크기</span>
       <button class="vw-zb" onclick="stepZoom(-1)" ${i===0?'disabled':''}>−</button>
@@ -2240,6 +2413,19 @@ function renderGradeFilter(){
 window.setGradeFilter = function(g){
   GRADE_FILTER = (GRADE_FILTER===g) ? '' : g;
   try { localStorage.setItem('ac_gfilter', GRADE_FILTER); } catch(e){}
+  render();
+};
+
+/* 지난달·다음달 날짜를 누르면 그 달로 옮겨 간다 */
+window.goMonthOf = function(ds){
+  const [yy,mm] = ds.split('-').map(Number);
+  curYear = yy; curMonth = mm;
+  loadEvents(curYear).then(()=>render());
+};
+
+window.setFlow = function(on){
+  CAL_FLOW = !!on;
+  try { localStorage.setItem('ac_flow', CAL_FLOW?'1':'0'); } catch(e){}
   render();
 };
 
