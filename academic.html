@@ -74,7 +74,7 @@
   .cw-wk .wk-none{ font-size:13px; color:var(--tl); opacity:.5; }
   .ch-wk{ width:78px; }
 
-  .cw-body{ flex:1; position:relative; min-height:96px; display:flex; flex-direction:column;
+  .cw-body{ flex:1; position:relative; min-height:74px; display:flex; flex-direction:column;
     min-width:0; }
 
   /* 바탕 — 주말·공휴일 칠 */
@@ -147,6 +147,36 @@
     border:1.5px solid var(--ivd); background:var(--wh); color:var(--ts);
     border-radius:7px; cursor:pointer; }
   .vw-fb.on{ background:var(--gd); border-color:var(--gd); color:#fff; }
+  /* 📋 수업일 표 */
+  .cd-wrap{ background:var(--wh); border:1px solid var(--ivd); border-radius:12px; overflow:hidden; }
+  .cd-top{ display:flex; align-items:center; gap:10px; padding:11px 14px;
+    border-bottom:1px solid var(--ivd); background:var(--iv); flex-wrap:wrap; }
+  .cd-top b{ font-size:14px; color:var(--gd); }
+  .cd-note{ font-size:11.5px; color:var(--tl); }
+  .cd-scroll{ overflow-x:auto; }
+  .cd-t{ border-collapse:collapse; width:100%; }
+  .cd-t th, .cd-t td{ border:1px solid var(--ivd); text-align:center; }
+  .cd-t th.cd-g{ position:sticky; left:0; z-index:2; background:var(--wh);
+    min-width:78px; padding:5px 8px; text-align:left; font-size:12px; font-weight:800; color:var(--gd);
+    white-space:nowrap; }
+  .cd-t tr.on th.cd-g{ background:var(--gp); }
+  .gb-dot{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+  .cd-t th.cd-d{ padding:3px 0; min-width:24px; background:var(--wh); }
+  .cd-t th.cd-d b{ display:block; font-size:11px; color:var(--ts); }
+  .cd-t th.cd-d span{ display:block; font-size:9px; color:var(--tl); }
+  .cd-t th.cd-d.sun b, .cd-t th.cd-d.sun span{ color:#DC2626; }
+  .cd-t th.cd-d.sat b, .cd-t th.cd-d.sat span{ color:#2563EB; }
+  .cd-t th.cd-d.off{ background:var(--iv); }
+  .cd-c{ font-size:11px; padding:4px 0; cursor:default; }
+  .cd-c.o{ color:#16A34A; background:rgba(22,163,74,.06); font-weight:800; }
+  .cd-c.x{ color:#DC2626; background:rgba(220,38,38,.07); font-weight:800; }
+  .cd-c.off{ color:var(--ivd); background:var(--iv); }
+  .cd-sum{ min-width:52px; font-size:11px; color:var(--ts); background:var(--iv); white-space:nowrap; padding:0 6px; }
+  .cd-sum b{ font-size:12.5px; color:var(--gd); }
+  .cd-sumbar{ display:flex; gap:16px; flex-wrap:wrap; padding:10px 14px;
+    border-top:1px solid var(--ivd); background:var(--iv); font-size:12px; color:var(--ts); }
+  .cd-sumbar b{ color:var(--gd); font-size:13px; }
+  @media print{ .cd-wrap{ border:none } .cd-top button{ display:none } }
   /* 🧑‍🏫 교사만 쉬는 날 — 학부모 화면에는 아예 나오지 않는다 */
   .cwb.staffoff{ background:rgba(37,99,235,.055); }
   .cw-n.stf b{ color:#1D4ED8; }
@@ -378,6 +408,15 @@
   .gb-tri{width:22px;height:22px;flex:none;display:inline-block;vertical-align:middle}
   .gb-tri.wide{width:36px}
   .gb.rng{min-width:26px;padding:0 4px;font-size:9px;letter-spacing:-.02em}
+  /* 🎚 학년 게이지 */
+  .gg{ display:inline-flex; align-items:center; gap:4px; flex:none; }
+  .gg-b{ display:inline-flex; gap:1px; padding:2px; background:rgba(255,255,255,.28);
+    border-radius:4px; }
+  .gg-c{ width:4px; height:11px; border-radius:1.5px; background:rgba(255,255,255,.34); }
+  .gg-c.on{ box-shadow:0 0 0 .5px rgba(0,0,0,.12) inset; }
+  .gg-c.edge{ margin-left:3px; }
+  .gg b{ font-size:9.5px; font-weight:800; color:#fff; letter-spacing:-.02em;
+    text-shadow:0 1px 2px rgba(0,0,0,.25); }
   /* 배지가 많아도 띠가 부풀지 않게 — 한 줄로 흐르고 넘치면 살짝 줄인다 */
   .ev-bar .ev-dots{flex:0 1 auto;flex-wrap:nowrap;overflow:hidden;max-width:100%}
   .gl-i .gb-tri{width:20px;height:20px}
@@ -482,6 +521,7 @@
     </div>
 
     <div id="cal-mount"></div>
+    <div id="cd-mount" style="display:none"></div>
     <div class="ac-legend" id="legend"></div>
     <div id="grade-legend"></div>
 
@@ -743,6 +783,8 @@ let DRAG_ON = false;        // 끌어서 옮기기 (실수 방지를 위해 켤 
 let CAL_ZOOM = 100;         // 달력 크기 (%)
 let CAL_FLOW = false;       // 연속 보기 — 이번 달 + 다음 달을 이어서 본다
 try { CAL_FLOW = localStorage.getItem('ac_flow') === '1'; } catch(e){}
+let CAL_EVEN = false;       // 칸 높이 — false: 내용에 맞춰 · true: 모든 주 같은 높이
+try { CAL_EVEN = localStorage.getItem('ac_even') === '1'; } catch(e){}
 const ZOOM_STEPS = [55,65,75,85,100,115,130,150,175,200];
 try { const z = parseInt(localStorage.getItem('ac_zoom')); if(z) CAL_ZOOM = z; } catch(e){}
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
@@ -1148,18 +1190,27 @@ function rangeBadge(r){
   return `<i class="gb rng" title="${esc(label)}"
     style="background:${c};color:${onColor(c)};box-shadow:0 0 0 1.2px rgba(255,255,255,.8)">${esc(txt)}</i>`;
 }
+/* 🎚 학년 게이지 — 학년 수만큼 칸을 그리고 해당 학년만 색칠한다.
+   폭이 항상 같아 띠가 부풀지 않고, 앞쪽·뒤쪽 패턴만 봐도 초등·고등이 읽힌다. */
+function gradeGauge(list, org){
+  const all = (org && org!=='all') ? (GRADE_ORDER[org]||[])
+    : (GRADE_ORDER.daniel||[]);
+  if(!all.length) return '';
+  const on = new Set(list||[]);
+  const cells = all.map((g,i)=>{
+    const hit = on.has(g);
+    const edge = (i>0 && deptOfGrade(g) !== deptOfGrade(all[i-1])) ? ' edge' : '';
+    return `<i class="gg-c${hit?' on':''}${edge}" style="${hit?`background:${gradeColor(g)}`:''}"></i>`;
+  }).join('');
+  const runs = gradeRuns([...on]);
+  const label = runs.map(r=> r.n>=2 ? `${gradeNum(r.start)}~${gradeNum(r.end)}` : gradeNum(r.start)).join(', ');
+  return `<span class="gg" title="${esc([...on].join(' · '))}"><span class="gg-b">${cells}</span><b>${esc(label)}</b></span>`;
+}
 function targetDots(e){
   if(!e.scope || e.scope==='all') return '';
   const list = (e.scope==='grade') ? expandTargets(e.targets||[], e.org) : (e.targets||[]);
   if(e.scope==='dept') return `<span class="ev-tgt">${esc('〈'+list.join('·')+'〉')}</span>`;
-  // 학년 3개 이상이 이어지면 범위로 묶어 한 줄에 담는다
-  const runs = gradeRuns(list);
-  const html = runs.map(r=> r.n >= 3 ? rangeBadge(r)
-    : Array.from({length:r.n}, (_,k)=>{
-        const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
-        return gradeBadge(order[r.endIdx - r.n + 1 + k]);
-      }).join('')).join('');
-  return `<span class="ev-dots">${html}</span>`;
+  return gradeGauge(list, e.org);
 }
 
 /* 두 기관을 겹쳐 볼 때 어느 기관 것인지 표시 */
@@ -1386,16 +1437,28 @@ function render(){
 
 /* 주마다 내용이 달라 높이가 들쭉날쭉해지므로,
    가장 높은 주에 맞춰 모두 같은 두께로 만든다. */
+/* 주(週) 높이
+   · 자동(기본) — 내용에 맞춰. 빈 주는 낮고 바쁜 주만 높다.
+   · 균등 — 모든 주를 가장 높은 주에 맞춘다.
+   확대·축소(%)가 바뀌면 값이 어긋나므로 그릴 때마다 다시 잰다. */
 function evenWeekHeights(){
   const rows = [...document.querySelectorAll('#cal-mount .cal-week')];
   if(!rows.length) return;
   rows.forEach(r=>{ r.style.minHeight = ''; });
+  if(!CAL_EVEN) return;                     // 자동이면 브라우저에 맡긴다
   requestAnimationFrame(()=>{
-    let max = 0;
-    rows.forEach(r=>{ max = Math.max(max, r.offsetHeight); });
-    if(max > 0) rows.forEach(r=>{ r.style.minHeight = max + 'px'; });
+    requestAnimationFrame(()=>{             // 확대·축소가 적용된 뒤에 잰다
+      let max = 0;
+      rows.forEach(r=>{ max = Math.max(max, r.offsetHeight); });
+      if(max > 0) rows.forEach(r=>{ r.style.minHeight = max + 'px'; });
+    });
   });
 }
+window.setEven = function(on){
+  CAL_EVEN = !!on;
+  try { localStorage.setItem('ac_even', CAL_EVEN?'1':'0'); } catch(e){}
+  render();
+};
 
 function evChip(e){
   return `<div class="ev-chip" data-ev="${e.id}" style="background:${evColor(e)}"
@@ -2025,7 +2088,7 @@ window.moveMonth = function(delta){
   curMonth += delta;
   if(curMonth>12){ curMonth=1; curYear++; onPickYear(curYear); return; }
   if(curMonth<1){ curMonth=12; curYear--; onPickYear(curYear); return; }
-  render();
+  refreshCurTab();   // 달력이든 수업일 표든 지금 보는 것을 다시 그린다
 };
 function todayStr(){
   const t = new Date();
@@ -2385,6 +2448,10 @@ function renderViewBar(){
       <button class="vw-fb ${CAL_FLOW?'':'on'}" onclick="setFlow(false)" title="한 달씩 봅니다">📅 월별</button>
       <button class="vw-fb ${CAL_FLOW?'on':''}" onclick="setFlow(true)" title="이번 달과 다음 달을 이어서 봅니다">📜 연속</button>
     </span>
+    <span class="vw-flow">
+      <button class="vw-fb ${CAL_EVEN?'':'on'}" onclick="setEven(false)" title="빈 주는 낮게, 바쁜 주는 높게">↕ 자동</button>
+      <button class="vw-fb ${CAL_EVEN?'on':''}" onclick="setEven(true)" title="모든 주를 같은 높이로">≡ 균등</button>
+    </span>
     <span class="vw-zoom">
       <span class="vw-lab">크기</span>
       <button class="vw-zb" onclick="stepZoom(-1)" ${i===0?'disabled':''}>−</button>
@@ -2392,6 +2459,83 @@ function renderViewBar(){
       <button class="vw-zb" onclick="stepZoom(1)" ${i===ZOOM_STEPS.length-1?'disabled':''}>＋</button>
       <button class="vw-zfit" onclick="fitZoom()" title="한 달이 화면에 다 들어오게">⤢ 한 화면</button>
     </span>`;
+}
+
+/* ═══════════════════════════════════════════════
+   📋 수업일 표 — 학년별로 «이날 수업하나»를 한 장에
+   가로: 날짜 · 세로: 학년 · ● 수업 · ✕ 수업 없음 · 회색 주말·휴일
+   ═══════════════════════════════════════════════ */
+function renderClassDays(){
+  const box = $I('cd-mount'); if(!box) return;
+  const y = curYear, m = curMonth;
+  const org = (ORG===ORG_ALL) ? (myOrgs()[0]||'daniel') : ORG;
+  const grades = GRADE_ORDER[org] || [];
+  const nDays = daysInMonth(y,m);
+  const holidays = Object.assign({}, holInfoMap(y-1), holInfoMap(y), holInfoMap(y+1));
+  const DOWN = ['일','월','화','수','목','금','토'];
+
+  // 날짜별 상태를 미리 계산
+  const cols = [];
+  for(let d=1; d<=nDays; d++){
+    const ds = dateStr(y,m,d);
+    const dow = new Date(ds+'T00:00:00').getDay();
+    const hi = holidays[ds];
+    const closedName = closedOn(ds);
+    const holName = (hi && hi.name) || closedName;
+    const holWho = hi ? hi.who : (closedName ? 'school' : '');
+    // 학부모용에서는 «교사만» 쉬는 날을 없는 것으로 본다
+    const isHol = !!holName && !(holWho==='staff');
+    const off = (dow===0 || dow===6 || isHol || breakOf(ds) || !termOf(ds));
+    const evs = eventsOn(ds).filter(e=>noClassEvent(e));
+    cols.push({ d, ds, dow, off, holName: isHol?holName:'', evs });
+  }
+  const cellOf = (g, c) => {
+    if(c.off) return { k:'off', why:c.holName || (c.dow===0||c.dow===6 ? '주말' : (breakOf(c.ds)? (breakOf(c.ds).name||'방학') : '학기 아님')) };
+    const hit = c.evs.find(e=>evHitsGrade(e, g));
+    return hit ? { k:'x', why:hit.title } : { k:'o', why:'정상 수업' };
+  };
+
+  const head = `<tr><th class="cd-g">학년</th>${cols.map(c=>
+    `<th class="cd-d ${c.dow===0?'sun':c.dow===6?'sat':''} ${c.off?'off':''}">
+      <b>${c.d}</b><span>${DOWN[c.dow]}</span></th>`).join('')}<th class="cd-sum">수업일</th></tr>`;
+
+  const rows = grades.map(g=>{
+    let n = 0;
+    const tds = cols.map(c=>{
+      const cell = cellOf(g, c);
+      if(cell.k==='o') n++;
+      const mark = cell.k==='o' ? '●' : (cell.k==='x' ? '✕' : '·');
+      return `<td class="cd-c ${cell.k}" title="${esc(`${m}/${c.d} — ${cell.why}`)}">${mark}</td>`;
+    }).join('');
+    return `<tr class="${GRADE_FILTER===g?'on':''}">
+      <th class="cd-g"><i class="gb-dot" style="background:${gradeColor(g)}"></i>${esc(g)}</th>
+      ${tds}<td class="cd-sum"><b>${n}</b>일</td></tr>`;
+  }).join('');
+
+  // 요약 — 전 학년 공통 수업일 / 학년마다 다른 날
+  const common = cols.filter(c=>!c.off && grades.every(g=>cellOf(g,c).k==='o')).length;
+  const partial = cols.filter(c=>{
+    if(c.off) return false;
+    const ks = grades.map(g=>cellOf(g,c).k);
+    return ks.includes('o') && ks.includes('x');
+  }).length;
+  const noneAll = cols.filter(c=>!c.off && grades.every(g=>cellOf(g,c).k==='x')).length;
+
+  box.innerHTML = `
+    <div class="cd-wrap">
+      <div class="cd-top">
+        <b>📋 ${y}년 ${m}월 수업일</b>
+        <span class="cd-note">● 수업 · ✕ 수업 없음 · · 주말·휴일</span>
+        <button class="btn btn-sm" onclick="window.print()" style="margin-left:auto">🖨 인쇄</button>
+      </div>
+      <div class="cd-scroll"><table class="cd-t">${head}${rows}</table></div>
+      <div class="cd-sumbar">
+        <span>전 학년 공통 수업일 <b>${common}일</b></span>
+        <span>학년마다 다른 날 <b>${partial}일</b></span>
+        <span>전 학년 수업 없음 <b>${noneAll}일</b></span>
+        <span class="cd-note">칸에 마우스를 올리면 이유가 보여요</span>
+      </div>
+    </div>`;
 }
 
 /* 🎯 학년 고르기 — 고른 학년의 일정만 또렷하게, 나머지는 흐리게.
@@ -2413,10 +2557,12 @@ function renderGradeFilter(){
 window.setGradeFilter = function(g){
   GRADE_FILTER = (GRADE_FILTER===g) ? '' : g;
   try { localStorage.setItem('ac_gfilter', GRADE_FILTER); } catch(e){}
-  render();
+  refreshCurTab();
 };
 
 /* 지난달·다음달 날짜를 누르면 그 달로 옮겨 간다 */
+window.refreshCurTab = function(){ if(curTab==='cdays') renderClassDays(); else render(); };
+
 window.goMonthOf = function(ds){
   const [yy,mm] = ds.split('-').map(Number);
   curYear = yy; curMonth = mm;
@@ -2454,8 +2600,13 @@ window.showAcTab = function(t){
   document.body.classList.toggle('set-mode', t === 'set');
   const ed = $I('edit-hint'); if(ed) ed.style.display = t==='edit' ? '' : 'none';
   closeEvInfo();
+  // 수업일 표는 달력 대신 자기 판을 쓴다
+  const calBox = $I('cal-mount'), cdBox = $I('cd-mount');
+  if(calBox) calBox.style.display = (t==='cdays') ? 'none' : '';
+  if(cdBox)  cdBox.style.display  = (t==='cdays') ? '' : 'none';
+  ['legend','grade-legend'].forEach(id=>{ const el=$I(id); if(el) el.style.display = (t==='cdays')?'none':''; });
   renderViewBar();
-  render();
+  if(t==='cdays') renderClassDays(); else render();
   renderSharePanel();
   renderIcsPanel();
 };
@@ -2468,6 +2619,8 @@ function renderTabs(){
       <span class="tab-ic">📅</span>학사일정</button>
     ${canEditAny()?`<button class="tab-main ${curTab==='edit'?'on':''}" data-tab="edit" onclick="showAcTab('edit')">
       <span class="tab-ic">✏️</span>일정 편집</button>
+    <button class="tab-main ${curTab==='cdays'?'on':''}" data-tab="cdays" onclick="showAcTab('cdays')">
+      <span class="tab-ic">📋</span>수업일</button>
     <button class="tab-main ${curTab==='set'?'on':''}" data-tab="set" onclick="showAcTab('set')">
       <span class="tab-ic">⚙️</span>설정</button>`:''}`;
 }
