@@ -461,6 +461,14 @@
       <div id="share-list"></div>
     </div>
 
+    <!-- 설정: 구글 캘린더 구독 -->
+    <div class="panel" id="ics-panel" style="display:none">
+      <div class="ptitle">📡 구글 캘린더 구독 (자동 연동)</div>
+      <div class="pdesc">한 번 연결해 두면 학사일정을 고칠 때마다 <b>구글 캘린더가 알아서 따라옵니다</b>
+        (구글이 몇 시간 간격으로 새로 읽어가요). 선생님·학부모 누구나 같은 주소를 자기 휴대폰 캘린더에 넣을 수 있어요.</div>
+      <div id="ics-body"></div>
+    </div>
+
     <!-- 수퍼관리자: 담당자 지정 -->
     <div class="panel" id="editor-panel" style="display:none">
       <div class="ptitle">🔑 학사일정 담당자</div>
@@ -782,12 +790,35 @@ async function saveYear(){
 
 let ALL_EVENTS = [];
 
+let LEDGER_HOL = [];   // 관리자·출근부에서 수동 등록한 쉬는 날 (원장)
+async function loadLedgerHolidays(){
+  try {
+    const snap = await getDocs(collection(db,'holidays'));
+    LEDGER_HOL = [];
+    snap.forEach(d=>{ const v=d.data();
+      // 법정(kr)은 내장 자료로 이미 표시, 학사일정 연동(academic)은 행사로 이미 표시 — 순수 수동분만
+      if(v.src!=='kr' && v.src!=='academic') LEDGER_HOL.push(v);
+    });
+  } catch(e){ LEDGER_HOL = []; }
+}
+/* 지금 보는 기관에 해당하는 수동 휴일 {날짜:이름} */
+function ledgerHolMap(){
+  const base = (ORG === ORG_ALL) ? null : ORG;   // 두 기관 겹쳐보기면 전부
+  const map = {};
+  LEDGER_HOL.forEach(v=>{
+    if(base && !(v.org==='all' || v.org===base)) return;
+    if(v.date) map[v.date] = v.name || '휴일';
+  });
+  return map;
+}
+
 async function loadEvents(year){
   ALL_EVENTS = [];
   try {
     const snap = await getDocs(query(collection(db,'academicEvents'), where('year','==',Number(year))));
     ALL_EVENTS = snap.docs.map(d=>({ id:d.id, ...d.data() }));
   } catch(e){}
+  await loadLedgerHolidays();   // 원장도 함께 새로고침
   applyEventScope();
 }
 
@@ -950,7 +981,7 @@ function render(){
   $I('ym-sub').textContent = `${ORG===ORG_ALL?'두 기관':(ORGS[ORG]||'')} · ${curView==='teacher'?'교사용':'학부모용'}`;
   document.body.classList.toggle('can-edit', CAN_EDIT && curTab==='edit');
 
-  const holidays = getHolidaysKR(y);
+  const holidays = Object.assign({}, getHolidaysKR(y), ledgerHolMap());   // 법정 + 수동 등록 휴일
   const nDays = daysInMonth(y,m);
   const firstDow = dowOf(y,m,1);
 
@@ -2058,6 +2089,7 @@ window.showAcTab = function(t){
   renderViewBar();
   render();
   renderSharePanel();
+  renderIcsPanel();
 };
 
 function renderTabs(){
@@ -2115,6 +2147,107 @@ window.openClosedDlg = function(){
      academicConfig/share      = { parent:{id,name}, teacher:{id,name} }
      sharedAcademic/{id}       = { audience, name, active, snapshot, updatedAt }
    ═══════════════════════════════════════════════ */
+/* ═══ 📡 구글 캘린더 구독 (ICS) ═══
+   academicConfig/ics = { url }  · 함수 주소는 관리자가 한 번 저장해 두면 된다 */
+let ICS_CFG = null;
+async function loadIcsCfg(){
+  if(ICS_CFG !== null) return;
+  try { const g = await getDoc(doc(db,'academicConfig','ics')); ICS_CFG = g.exists() ? (g.data()||{}) : {}; }
+  catch(e){ ICS_CFG = {}; }
+}
+function icsSubUrl(cal, aud){
+  const base = (ICS_CFG?.url||'').trim();
+  if(!base) return '';
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}cal=${cal}&aud=${aud}`;
+}
+async function renderIcsPanel(){
+  const p = $I('ics-panel'); if(!p) return;
+  if(!canEditAny() || curTab !== 'set'){ p.style.display='none'; return; }
+  p.style.display='';
+  await loadIcsCfg();
+  const url = (ICS_CFG?.url||'').trim();
+  const row = (label, cal, aud) => {
+    const u = icsSubUrl(cal, aud);
+    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px;flex-wrap:wrap">
+      <span style="flex:none;width:130px;font-size:12.5px;font-weight:700;color:var(--gd)">${label}</span>
+      <input readonly value="${esc(u)}" onclick="this.select()" style="flex:1;min-width:200px;height:32px;border:1px solid var(--ivd);border-radius:7px;padding:0 8px;font-size:11.5px;background:var(--iv);font-family:inherit">
+      <button class="btn btn-sm" onclick="copyIcsUrl('${cal}','${aud}')">복사</button>
+    </div>`;
+  };
+  $I('ics-body').innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <span style="flex:none;font-size:13px;font-weight:700;color:var(--ts)">연동 주소</span>
+      <input id="ics-url" value="${esc(url)}" placeholder="구글 클라우드에 만든 함수 주소를 붙여넣기 (한 번만)"
+        style="flex:1;min-width:220px;height:36px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:12.5px;font-family:inherit">
+      <button class="btn btn-sm btn-p" onclick="saveIcsUrl()">저장</button>
+    </div>
+    ${url ? `
+      <div style="margin-bottom:6px;font-size:12px;color:var(--tl)">아래 주소를 복사해 구글 캘린더 <b>설정 → 캘린더 추가 → URL로 추가</b>에 붙여넣으세요.</div>
+      ${row('👩‍🏫 교사용 · 전체','all','teacher')}
+      ${row('👨‍👩‍👧 학부모용 · 전체','all','parent')}
+      ${row('🏫 다니엘 아마츠','daniel','teacher')}
+      ${row('🌱 지혜빛 선교원','jihyebit','teacher')}
+    ` : `
+      <div style="padding:10px 12px;background:var(--iv);border-radius:8px;font-size:12.5px;color:var(--ts);line-height:1.6">
+        아직 연동 주소가 없어요. 구글 클라우드에서 함수를 만든 뒤 (안내를 따라 5분) 그 주소를 위에 저장하면
+        교사용·학부모용·기관별 <b>구독 주소</b>가 여기에 나타납니다.
+      </div>
+    `}
+    <div style="margin-top:10px">
+      <button class="btn btn-sm" onclick="downloadIcs()">📥 지금 일정을 ICS 파일로 내려받기</button>
+      <span style="font-size:11.5px;color:var(--tl)">— 함수 없이 수동으로 구글 캘린더에 가져오기 할 때·연동 확인용</span>
+    </div>`;
+}
+window.saveIcsUrl = async function(){
+  if(!needEdit()) return;
+  const url = $I('ics-url').value.trim();
+  try {
+    await setDoc(doc(db,'academicConfig','ics'), {url, updatedByUid:CU?.uid||'', updatedByName:CU?.name||'', updatedAt:Timestamp.now()});
+    ICS_CFG = {url};
+    toast('저장했습니다 ✓','ok');
+    renderIcsPanel();
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+};
+window.copyIcsUrl = async function(cal, aud){
+  const u = icsSubUrl(cal, aud);
+  try { await navigator.clipboard.writeText(u); toast('주소를 복사했습니다 ✓','ok'); }
+  catch(e){ toast('복사가 막혔어요 — 칸을 눌러 직접 복사해 주세요.','err'); }
+};
+
+/* ICS 만들기 — 함수(index.js)와 같은 규칙 */
+function icsEsc(s){ return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/[,;]/g, m=>'\\'+m); }
+function icsDate(d){ return String(d||'').replace(/-/g,''); }
+function icsNextDay(d){ const t=new Date(d+'T00:00:00'); t.setDate(t.getDate()+1);
+  return `${t.getFullYear()}${String(t.getMonth()+1).padStart(2,'0')}${String(t.getDate()).padStart(2,'0')}`; }
+window.downloadIcs = function(){
+  const L = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//gyosa-seongyosa//academic//KR','CALSCALE:GREGORIAN','METHOD:PUBLISH',
+             'X-WR-CALNAME:'+icsEsc(`${ORGS[ORG]||'학사일정'} 학사일정 ${curYear}`),'X-WR-TIMEZONE:Asia/Seoul'];
+  const stamp = new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
+  ALL_EVENTS.forEach(e=>{
+    if(!e.startDate || !e.endDate) return;
+    L.push('BEGIN:VEVENT','UID:ev-'+e.id+'@daniel-amatz','DTSTAMP:'+stamp,
+      'DTSTART;VALUE=DATE:'+icsDate(e.startDate),'DTEND;VALUE=DATE:'+icsNextDay(e.endDate),
+      'SUMMARY:'+icsEsc(e.title+(e.subtitle?' — '+e.subtitle:'')));
+    if(e.memo) L.push('DESCRIPTION:'+icsEsc(e.memo));
+    L.push('END:VEVENT');
+  });
+  LEDGER_HOL.forEach((v,i)=>{
+    if(!v.date) return;
+    L.push('BEGIN:VEVENT','UID:hol-m'+i+'@daniel-amatz','DTSTAMP:'+stamp,
+      'DTSTART;VALUE=DATE:'+icsDate(v.date),'DTEND;VALUE=DATE:'+icsNextDay(v.date),
+      'SUMMARY:'+icsEsc('🔴 '+(v.name||'휴일')),'END:VEVENT');
+  });
+  L.push('END:VCALENDAR');
+  const blob = new Blob([L.join('\r\n')+'\r\n'], {type:'text/calendar;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `학사일정_${curYear}.ics`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  toast('ICS 파일을 내려받았습니다 ✓','ok');
+};
+
 let SHARES = { parent:null, teacher:null };
 
 async function loadShares(){
