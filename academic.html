@@ -113,10 +113,24 @@
   .cw-sec.am, .cw-sec.pm{ border-top:1px dashed var(--ivd); min-height:34px; }
   .cw-lab{ position:absolute; left:3px; top:1px; font-size:8px; font-weight:700;
     color:var(--tl); opacity:.5; pointer-events:none; z-index:2; }
-  .cw-lanes{ display:flex; flex-direction:column; gap:3px; padding:3px 0; }
+  /* 레인 묶음은 클릭을 통과시키고, 실제 띠만 클릭을 받는다 (빈 곳은 아래 판이 받음) */
+  .cw-lanes{ display:flex; flex-direction:column; gap:3px; padding:3px 0; position:relative; z-index:1;
+    pointer-events:none; }
   .cw-lane{ display:grid; grid-template-columns:repeat(7,1fr); gap:0;
     align-items:stretch; min-height:0; }
   .cw-lane.empty{ min-height:14px; }
+  /* 칸 아무 데나 눌러 넣기 — 띠 아래에 깔린 투명 판 */
+  .cw-hit{ position:absolute; inset:0; display:grid; grid-template-columns:repeat(7,1fr); z-index:0; }
+  .cw-hit i{ display:block; pointer-events:auto; }
+  /* 띠가 없는 빈 레인은 클릭을 통과시켜 아래 판이 받게 한다 */
+  .cw-lane, .cw-lane.empty{ pointer-events:none; }
+  .cw-lane > *{ pointer-events:auto; }
+  body.edit-mode.can-edit .cw-hit i{ cursor:cell; }
+  body.edit-mode.can-edit .cw-hit i:hover{ background:rgba(0,112,74,.06); }
+  /* ✅ 정상 수업인 날 */
+  .cwb.normal{ background:rgba(22,163,74,.05); }
+  .cw-nm{ margin-left:auto; font-size:9px; font-weight:800; color:#16A34A;
+    background:rgba(22,163,74,.12); border-radius:4px; padding:1px 5px; line-height:1.4; }
 
   /* 가로로 이어지는 행사 띠 */
   /* 행사 띠 — 글자가 길면 줄을 바꿔 내려가고, 그만큼 칸이 넓어진다 */
@@ -125,6 +139,22 @@
     display:flex; align-items:center; justify-content:flex-start; gap:3px;
     flex-wrap:wrap; min-width:0; transition:filter .1s; }
   .ev-bar:hover{ filter:brightness(1.07); }
+  .ev-bar.dim{ opacity:.24; filter:grayscale(.6); }
+  .ev-bar.dim:hover{ opacity:.55; }
+  /* 🎯 학년 고르기 줄 */
+  .gf-bar{ display:flex; align-items:center; gap:4px; flex-wrap:wrap;
+    padding:7px 10px; margin:0 0 8px; background:var(--iv); border-radius:10px; }
+  .gf-lab{ font-size:12px; font-weight:800; color:var(--gd); margin-right:2px; }
+  .gf-c{ min-width:26px; height:26px; padding:0 6px; border-radius:7px; cursor:pointer;
+    border:1.5px solid var(--ivd); background:var(--wh); font-family:inherit;
+    font-size:11.5px; font-weight:800; color:var(--ts); line-height:1; }
+  .gf-c:hover{ border-color:var(--gm); }
+  .gf-c.on{ background:var(--gc, var(--gd)); border-color:var(--gc, var(--gd)); color:#fff; }
+  .gf-note{ font-size:11px; color:var(--tl); margin-left:6px; }
+  /* 🎨 색 고르기 — 분류 계열 + 그 밖의 색 */
+  .cp-row{ display:flex; align-items:flex-start; gap:8px; margin-bottom:6px; }
+  .cp-lab{ flex:none; width:74px; font-size:11px; font-weight:800; color:var(--ts); padding-top:5px; }
+  .cp-row .col-dots{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
   .ev-bar .eb-t{ white-space:normal; overflow-wrap:anywhere; word-break:keep-all; min-width:0; }
   .ev-bar .eb-s{ font-size:9px; font-weight:600; opacity:.9;
     white-space:normal; overflow-wrap:anywhere; word-break:keep-all; }
@@ -326,6 +356,10 @@
   .gb.circle{border-radius:100px}
   .gb.square{border-radius:3px}
   .gb-tri{width:22px;height:22px;flex:none;display:inline-block;vertical-align:middle}
+  .gb-tri.wide{width:36px}
+  .gb.rng{min-width:26px;padding:0 4px;font-size:9px;letter-spacing:-.02em}
+  /* 배지가 많아도 띠가 부풀지 않게 — 한 줄로 흐르고 넘치면 살짝 줄인다 */
+  .ev-bar .ev-dots{flex:0 1 auto;flex-wrap:nowrap;overflow:hidden;max-width:100%}
   .gl-i .gb-tri{width:20px;height:20px}
   .gl-i .gb{min-width:15px;height:15px;font-size:9px}
   .evi-g .gb-tri{width:19px;height:19px}
@@ -420,6 +454,7 @@
     </div>
 
     <div class="vw-bar" id="vw-bar"></div>
+    <div class="gf-bar" id="gf-bar"></div>
     <div id="edit-hint" style="display:none">
       <div class="ed-hint">✏️ <b>편집 중</b> — 달력의 <b>오전·오후 칸을 누르면</b> 그 날짜로 행사를 넣을 수 있어요.
         이미 있는 행사를 누르면 고치기 창이 열립니다.<br>
@@ -561,9 +596,22 @@ window.setColorTheme = function(t){
 };
 const EV_COLORS = ['#8B5CF6','#3B82F6','#0D9488','#16A34A','#F97316','#E11D48','#6B7280','#B5A642'];
 
+/* 🎨 분류마다 쓰기 좋은 색 — 같은 «행사»라도 체육대회·발표회·캠프를 색으로 나눌 수 있게
+   각 줄은 [연함 → 진함] 순서. 분류를 고르면 그 계열이 먼저 보이고, 아래에 전체 색도 함께 나온다. */
+const CAT_PALETTE = {
+  event:   ['#C4B5FD','#A78BFA','#8B5CF6','#7C3AED','#6D28D9','#F0ABFC','#D946EF','#A21CAF'],
+  program: ['#93C5FD','#60A5FA','#3B82F6','#2563EB','#1D4ED8','#67E8F9','#06B6D4','#0E7490'],
+  break:   ['#FDBA74','#FB923C','#F97316','#EA580C','#C2410C','#FCD34D','#F59E0B','#B45309'],
+  exam:    ['#86EFAC','#4ADE80','#16A34A','#15803D','#166534','#A3E635','#65A30D','#3F6212'],
+  worship: ['#5EEAD4','#2DD4BF','#0D9488','#0F766E','#115E59','#7DD3FC','#0284C7','#075985'],
+  admin:   ['#D1D5DB','#9CA3AF','#6B7280','#4B5563','#374151','#D6D3D1','#A8A29E','#57534E'],
+  closed:  ['#FCA5A5','#F87171','#EF4444','#DC2626','#B91C1C','#FDA4AF','#F43F5E','#9F1239'],
+};
+function catPalette(cat){ return CAT_PALETTE[cat] || CAT_PALETTE.event; }
+
 /* 🌈 학년 배지 — 색은 무지개, 모양은 부서
      색: 1 빨강 · 2·3 주황 · 4·5 노랑 · 6·7 초록 · 8·9 파랑 · 10·11 남색 · 12 보라
-     모양: 초등(1~6) 동그라미 · 중등(7~9) 네모 · 고등(10~12) 별
+     모양: 초등(1~6) 동그라미 · 중등(7~9) 네모 · 고등(10~12) 오각형
    같은 색이라도 모양이 달라 6학년과 7학년이 헷갈리지 않는다. */
 const GRADE_COLORS = {
   '1학년':'#D63A3F',                        // 빨강
@@ -589,7 +637,7 @@ function gradeShape(g){
   const s = String(g||'');
   if(!s.includes('학년')) return 'circle';
   const n = parseInt(gradeNum(g), 10) || 0;
-  if(n >= 10) return 'tri';      // 고등 — 삼각형
+  if(n >= 10) return 'tri';      // 고등 — 오각형
   if(n >= 7)  return 'square';   // 중등 — 네모
   return 'circle';               // 초등 — 동그라미
 }
@@ -609,12 +657,12 @@ function gradeBadge(g, forLegend){
   const c = gradeColor(g), n = gradeNum(g), sh = gradeShape(g);
   const ring = forLegend ? 'none' : '1.2px';
   if(sh === 'tri'){
-    // 삼각형은 아래쪽이 넓다 — 숫자를 조금 내려 두 자리도 또렷하게
+    // 오각형(집 모양) — 가운데가 넓어 10·11·12처럼 두 자리도 한가운데 또렷하게 들어간다
     return `<svg class="gb-tri" viewBox="0 0 24 24" role="img" aria-label="${esc(g)}"><title>${esc(g)}</title>
-      <path d="M12 2.2 L22.4 20.8 L1.6 20.8 Z" fill="${c}"
+      <path d="M12 1.6 L22.4 9.4 L18.4 22 L5.6 22 L1.6 9.4 Z" fill="${c}"
         stroke="#fff" stroke-width="${forLegend?0:1.4}" stroke-linejoin="round"/>
-      <text x="12" y="16.4" text-anchor="middle" dominant-baseline="central"
-        font-size="9.6" font-weight="800" fill="${onColor(c)}">${esc(n)}</text></svg>`;
+      <text x="12" y="13.6" text-anchor="middle" dominant-baseline="central"
+        font-size="9.8" font-weight="800" fill="${onColor(c)}">${esc(n)}</text></svg>`;
   }
   return `<i class="gb ${sh}" title="${esc(g)}"
     style="background:${c};color:${onColor(c)};box-shadow:${ring==='none'?'none':`0 0 0 ${ring} rgba(255,255,255,.8)`}">${esc(n)}</i>`;
@@ -666,6 +714,8 @@ let EVENTS = [];
 let curYear = new Date().getFullYear();
 let curMonth = new Date().getMonth()+1;
 let curView = 'teacher';
+let GRADE_FILTER = '';      // '' = 전체 학년 · '3학년' 처럼 고르면 그 학년만
+try { GRADE_FILTER = localStorage.getItem('ac_gfilter') || ''; } catch(e){}
 let curTab = 'view';        // 'view' 보기 · 'edit' 편집
 let SHOW_ALL_CAL = true;    // 기관 캘린더를 볼 때 «DA 전체»도 함께 보여줄지
 try { SHOW_ALL_CAL = localStorage.getItem('ac_showall') !== 'off'; } catch(e){}
@@ -868,6 +918,45 @@ function eventsOn(ds){
   });
 }
 
+/* 이 행사가 그 학년에 걸리나 — 전체 대상이면 언제나 참 */
+function evHitsGrade(e, grade){
+  if(!grade) return true;
+  if(!e.scope || e.scope==='all') return true;
+  if(e.scope==='grade') return (e.targets||[]).includes(grade);
+  if(e.scope==='dept'){
+    const d = deptOfGrade(grade);
+    return d ? (e.targets||[]).includes(d) : true;
+  }
+  return true;
+}
+/* 학년 → 부서 이름 (초등부·중등부·고등부) */
+function deptOfGrade(grade){
+  const n = parseInt(gradeNum(grade),10) || 0;
+  if(!String(grade||'').includes('학년')) return DEPTS.find(d=>/유아|유치/.test(d)) || '';
+  if(n >= 10) return DEPTS.find(d=>d.includes('고')) || '고등부';
+  if(n >= 7)  return DEPTS.find(d=>d.includes('중')) || '중등부';
+  return DEPTS.find(d=>d.includes('초')) || '초등부';
+}
+
+/* ✅ 그날 그 학년이 «정상 수업»인가
+   평일 + 공휴일·휴교 아님 + 방학 아님 + 수업을 막는 행사 없음 */
+function isNormalClassDay(ds, dayInfo){
+  const dow = new Date(ds+'T00:00:00').getDay();
+  if(dow===0 || dow===6) return false;              // 주말
+  if(dayInfo && dayInfo.holName) return false;      // 공휴일·휴교
+  if(breakOf(ds)) return false;                     // 방학
+  if(!termOf(ds)) return false;                     // 학기 중이 아님
+  const hit = eventsOn(ds).filter(e=> evHitsGrade(e, GRADE_FILTER));
+  // 수업을 막는 행사가 하나라도 있으면 «정상 수업»이 아니다
+  return !hit.some(e => noClassEvent(e));
+}
+/* 이 행사가 «이날 수업 없음»인가 — 담당이 정한 값, 없으면 분류로 판단 */
+function noClassEvent(e){
+  if(e.noClass === true) return true;
+  if(e.noClass === false) return false;
+  return e.category==='closed' || e.category==='break';   // 기본: 휴교·방학만 수업 없음
+}
+
 function targetLabel(e){
   if(!e.scope || e.scope==='all') return '';
   return '〈'+(e.targets||[]).join('·')+'〉';
@@ -938,13 +1027,44 @@ function weekBars(days, slot){
   return lanes;
 }
 
-/* 대상 학년을 색 점으로 — 이름을 다 적으면 칸이 꽉 차서 뭉개진다 */
+/* 대상 학년을 색 점으로 — 이름을 다 적으면 칸이 꽉 차서 뭉개진다
+   학년이 많으면 배지가 줄바꿈되어 칸이 부풀므로, 이어지는 학년은 «7~12» 처럼 한 덩이로 묶는다 */
+function gradeRuns(list){
+  const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+  const sorted = (list||[]).slice().sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+  const runs = [];
+  sorted.forEach(g=>{
+    const i = order.indexOf(g);
+    const last = runs[runs.length-1];
+    if(last && i === last.endIdx + 1){   // 모양이 달라도 이어지면 한 덩이로 (7~12)
+      last.end = g; last.endIdx = i; last.n++;
+    } else {
+      runs.push({ start:g, end:g, endIdx:i, n:1 });
+    }
+  });
+  return runs;
+}
+/* 묶음 배지 — 「7~12」 처럼 한 칸에 (모양·색은 시작 학년 기준) */
+function rangeBadge(r){
+  // 여러 학년을 아우르므로 모양 대신 «넓은 알약»으로 — 시작 학년 색을 쓴다
+  const c = gradeColor(r.start);
+  const txt = `${gradeNum(r.start)}~${gradeNum(r.end)}`;
+  const label = `${r.start}~${r.end}`;
+  return `<i class="gb rng" title="${esc(label)}"
+    style="background:${c};color:${onColor(c)};box-shadow:0 0 0 1.2px rgba(255,255,255,.8)">${esc(txt)}</i>`;
+}
 function targetDots(e){
   if(!e.scope || e.scope==='all') return '';
   const list = e.targets||[];
   if(e.scope==='dept') return `<span class="ev-tgt">${esc('〈'+list.join('·')+'〉')}</span>`;
-  // 학년은 배지(모양+색+숫자)로 — 이름을 다 적으면 칸이 뭉개진다
-  return `<span class="ev-dots">${list.map(g=>gradeBadge(g)).join('')}</span>`;
+  // 학년 3개 이상이 이어지면 범위로 묶어 한 줄에 담는다
+  const runs = gradeRuns(list);
+  const html = runs.map(r=> r.n >= 3 ? rangeBadge(r)
+    : Array.from({length:r.n}, (_,k)=>{
+        const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+        return gradeBadge(order[r.endIdx - r.n + 1 + k]);
+      }).join('')).join('');
+  return `<span class="ev-dots">${html}</span>`;
 }
 
 /* 두 기관을 겹쳐 볼 때 어느 기관 것인지 표시 */
@@ -966,7 +1086,8 @@ function barHTML(b, days){
   const e = b.ev;
   const canDrag = DRAG_ON && CAN_EDIT && canEditCal(calOf(e));
   const fromDs = (days && days[b.start]) ? days[b.start].ds : '';
-  const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'');
+  const dim = (GRADE_FILTER && !evHitsGrade(e, GRADE_FILTER)) ? ' dim' : '';
+  const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'') + dim;
   return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}" data-lane="${b.lane==null?0:b.lane}"
     ${canDrag?`draggable="true" ondragstart="onBarDrag(event,'${e.id}','${fromDs}')"`:''}
     style="grid-column:${b.start+1} / span ${b.span};background:${evColor(e)}"
@@ -1049,8 +1170,10 @@ function render(){
       if(!d) return null;
       const ds = dateStr(y,m,d);
       const closedName = closedOn(ds);
-      return { d, ds, dow:i, holName: holidays[ds] || closedName, closedName,
+      const info = { d, ds, dow:i, holName: holidays[ds] || closedName, closedName,
                isToday: ds === todayStr() };
+      info.normal = isNormalClassDay(ds, info);   // ✅ 정상 수업인 날
+      return info;
     });
 
     const firstValid = days.find(x=>x);
@@ -1075,6 +1198,7 @@ function render(){
       else if(i===0) c += ' sunday';
       else if(i===6) c += ' saturday';
       if(x && x.isToday) c += ' today';
+      if(x && x.normal) c += ' normal';
       return `<div class="${c}"${x?` data-ds="${x.ds}"`:''}></div>`;
     }).join('') + '</div>';
 
@@ -1084,7 +1208,8 @@ function render(){
       const dcls = (x.holName ? 'hol' : (i===0 ? 'sun' : i===6 ? 'sat' : '')) + (x.isToday?' today':'');
       return `<div class="cw-n ${dcls}" onclick="addOn('${x.ds}','am',event)">
         <b>${x.d}</b>${x.isToday?'<span class="cw-td">오늘</span>':''}${
-        x.holName?`<span class="cw-hn">${esc(x.holName)}</span>`:''}</div>`;
+        x.holName?`<span class="cw-hn">${esc(x.holName)}</span>`:''}${
+        x.normal?`<span class="cw-nm" title="${GRADE_FILTER?esc(GRADE_FILTER)+' — ':''}이날은 수업이 있습니다">수업</span>`:''}</div>`;
     }).join('') + '</div>';
 
     // 종일 · 오전 · 오후 띠
@@ -1093,6 +1218,10 @@ function render(){
       if(slot==='allday' && !lanes.length) return;      // 종일은 있을 때만 자리를 쓴다
       html += `<div class="cw-sec ${slot}">`;
       if(label) html += `<span class="cw-lab">${label}</span>`;
+      // 빈 곳 아무 데나 눌러도 그 날짜·시간대로 행사를 넣을 수 있게 (칸마다 투명한 판)
+      html += '<div class="cw-hit">' + days.map(x=>
+        x ? `<i onclick="addOn('${x.ds}','${slot==='allday'?'am':slot}',event)"></i>` : '<i></i>'
+      ).join('') + '</div>';
       html += '<div class="cw-lanes">';
       if(lanes.length){
         lanes.forEach(lane=>{
@@ -1111,6 +1240,7 @@ function render(){
   $I('cal-mount').innerHTML = html;
   evenWeekHeights();
   renderLegend();
+  renderGradeFilter();
   renderGradeLegend();
   applyZoom();
   renderTermPanel();
@@ -1449,16 +1579,16 @@ window.openEventDlg = function(id, ds, slot){
         <input type="checkbox" id="ev-wp" style="width:17px;height:17px">
         출근부 <b>방학기간</b>으로도 등록 <span style="font-weight:400;color:var(--tl)">(평일이 자동 정기휴가로)</span>
       </label>
+      <label id="ev-nc-row" style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;font-size:13px;font-weight:600;color:var(--gd);cursor:pointer">
+        <input type="checkbox" id="ev-nc" style="width:17px;height:17px">
+        이날은 <b>수업 없음</b> <span style="font-weight:400;color:var(--tl)">(체크하면 달력의 초록 «수업» 표시가 사라져요)</span>
+      </label>
       <div id="ev-closed-note" style="display:none;margin:10px 0 2px;padding:8px 11px;background:var(--gp);border-radius:8px;font-size:12px;color:var(--gm);line-height:1.5">
         🔗 휴교·휴일은 저장하면 <b>출석부·출근부의 쉬는 날</b>에도 자동으로 함께 등록돼요. (지우면 함께 지워집니다)
       </div>
 
-      <label class="fld-label">색 <span style="font-weight:400;color:var(--tl)">(비우면 분류 색)</span></label>
-      <div class="col-dots" id="ev-colors">
-        ${EV_COLORS.map(c=>`<span class="col-dot ${dlgColor===c?'on':''}" style="background:${c}"
-          onclick="pickColor('${c}')"></span>`).join('')}
-        <button type="button" class="btn btn-sm" onclick="pickColor('')">기본</button>
-      </div>
+      <label class="fld-label">색 <span style="font-weight:400;color:var(--tl)">(비우면 분류 색 · 같은 분류 안에서도 골라 구분할 수 있어요)</span></label>
+      <div id="ev-colors">${colorPickerHTML()}</div>
 
       <label class="fld-label">공개 대상</label>
       <div class="chips" id="ev-aud">
@@ -1480,6 +1610,7 @@ window.openEventDlg = function(id, ds, slot){
   document.body.appendChild(ov);
   renderTargetPicker();
   const wp = $I('ev-wp'); if(wp) wp.checked = !!(e && (e.wpIds||[]).length);
+  const nc = $I('ev-nc'); if(nc) nc.checked = e ? noClassEvent(e) : false;
   updateCatExtras();
 };
 window.closeEventDlg = function(){ $I('ev-mod')?.remove(); };
@@ -1490,6 +1621,29 @@ window.pickSlot = function(k){
 window.pickAud = function(k){
   document.querySelectorAll('#ev-aud .chip').forEach(b=>b.classList.toggle('on', b.dataset.aud===k));
 };
+/* 색 고르기 판 — 지금 고른 분류의 계열을 위에, 그 밖의 색을 아래에 */
+function colorPickerHTML(){
+  const cat = document.querySelector('#ev-cat .chip.on')?.dataset.cat || 'event';
+  const mine = catPalette(cat);
+  const others = Object.entries(CAT_PALETTE)
+    .filter(([k])=>k!==cat).map(([,v])=>v[2]);   // 다른 분류는 대표색 하나씩
+  const dot = c => `<span class="col-dot ${dlgColor===c?'on':''}" style="background:${c}"
+    title="${c}" onclick="pickColor('${c}')"></span>`;
+  return `
+    <div class="cp-row">
+      <span class="cp-lab">${esc((CATEGORIES[cat]||CATEGORIES.event).label)} 계열</span>
+      <span class="col-dots">${mine.map(dot).join('')}</span>
+    </div>
+    <div class="cp-row">
+      <span class="cp-lab">그 밖의 색</span>
+      <span class="col-dots">${others.map(dot).join('')}
+        <button type="button" class="btn btn-sm" onclick="pickColor('')">기본</button></span>
+    </div>`;
+}
+function refreshColorPicker(){
+  const box = $I('ev-colors'); if(box) box.innerHTML = colorPickerHTML();
+}
+
 window.pickCat = function(k){
   document.querySelectorAll('#ev-cat .chip').forEach(b=>{
     const on = b.dataset.cat===k;
@@ -1497,13 +1651,18 @@ window.pickCat = function(k){
     b.style.background = on ? CATEGORIES[b.dataset.cat].color : '';
   });
   updateCatExtras();
+  refreshColorPicker();   // 분류를 바꾸면 그 계열 색을 먼저 보여준다
 };
 /* 분류에 따라 방학 체크박스·휴교 안내를 보인다 */
 function updateCatExtras(){
   const cat = document.querySelector('#ev-cat .chip.on')?.dataset.cat;
-  const wr = $I('ev-wp-row'), cn = $I('ev-closed-note');
+  const wr = $I('ev-wp-row'), cn = $I('ev-closed-note'), nr = $I('ev-nc-row'), nc = $I('ev-nc');
   if(wr) wr.style.display = cat==='break' ? 'flex' : 'none';
   if(cn) cn.style.display = cat==='closed' ? '' : 'none';
+  // 휴교·방학은 당연히 수업이 없으므로 물어보지 않는다
+  const auto = (cat==='closed' || cat==='break');
+  if(nr) nr.style.display = auto ? 'none' : 'flex';
+  if(auto && nc) nc.checked = true;
 }
 window.pickColor = function(c){
   dlgColor = c;
@@ -1611,6 +1770,7 @@ window.saveEvent = async function(){
     org: dlgOrg,                    // 이 행사가 속한 캘린더
     category: cat,
     color: dlgColor || '',
+    noClass: (cat==='closed' || cat==='break') ? true : !!$I('ev-nc')?.checked,   // 이날 수업 없음
     audience: aud,
     memo: $I('ev-memo').value.trim(),
     order: editingEventId ? ordOf(EVENTS.find(x=>x.id===editingEventId)) : 500,
@@ -2061,6 +2221,28 @@ function renderViewBar(){
     </span>`;
 }
 
+/* 🎯 학년 고르기 — 고른 학년의 일정만 또렷하게, 나머지는 흐리게.
+   «정상 수업» 표시도 그 학년 기준으로 다시 판단한다. */
+function renderGradeFilter(){
+  const bar = $I('gf-bar'); if(!bar) return;
+  const org = (ORG===ORG_ALL) ? 'daniel' : ORG;
+  const order = GRADE_ORDER[org] || [];
+  if(!order.length){ bar.innerHTML=''; return; }
+  bar.innerHTML = `
+    <span class="gf-lab">🎯 학년</span>
+    <button class="gf-c ${GRADE_FILTER?'':'on'}" onclick="setGradeFilter('')">전체</button>
+    ${order.map(g=>`<button class="gf-c ${GRADE_FILTER===g?'on':''}" onclick="setGradeFilter('${esc(g)}')"
+      style="--gc:${gradeColor(g)}">${esc(gradeNum(g))}</button>`).join('')}
+    <span class="gf-note">${GRADE_FILTER
+      ? `<b>${esc(GRADE_FILTER)}</b> 일정만 또렷하게 — 초록 «수업»은 이 학년이 수업하는 날이에요`
+      : '학년을 고르면 그 학년 일정만 또렷하게 볼 수 있어요'}</span>`;
+}
+window.setGradeFilter = function(g){
+  GRADE_FILTER = (GRADE_FILTER===g) ? '' : g;
+  try { localStorage.setItem('ac_gfilter', GRADE_FILTER); } catch(e){}
+  render();
+};
+
 /* 학년 색 범례 — 무슨 색이 몇 학년인지 */
 function renderGradeLegend(){
   const box = $I('grade-legend'); if(!box) return;
@@ -2071,7 +2253,7 @@ function renderGradeLegend(){
   const list = [...used].sort((a,b)=> order.indexOf(a) - order.indexOf(b));
   box.innerHTML = `<div class="gl-wrap"><span class="gl-t">🌈 학년</span>
     ${list.map(g=>`<span class="gl-i">${gradeBadge(g, true)}${esc(g)}</span>`).join('')}
-    <span class="gl-note">초등 ● · 중등 ■ · 고등 ▲ — 행사를 누르면 자세히 볼 수 있어요</span></div>`;
+    <span class="gl-note">초등 ● · 중등 ■ · 고등 ⬟ — 행사를 누르면 자세히 볼 수 있어요</span></div>`;
 }
 
 /* ═══════════════════════════════════════════════
