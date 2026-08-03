@@ -1630,7 +1630,8 @@ onAuthStateChanged(auth, async user => {
     await loadTeachers();
     await loadFrames();
     await loadRooms();
-    await loadSets();
+    // 저장 목록(색인)은 부팅을 막지 않는다 — 도착하면 화면을 갱신
+    loadSets().then(()=>{ try { renderSets(); renderSetBar(); } catch(e){} });
     await loadGradeDept();
     renderSetBar();
     renderAvailGate();
@@ -3370,6 +3371,7 @@ window.deleteSet = async function(id){
   if(!confirm(`"${s.name}"을(를) 지울까요?\n\n되돌릴 수 없습니다.`)) return;
   try {
     await deleteDoc(doc(db,'timetableSets',id));
+    try { await deleteDoc(doc(db,'timetableSetIndex',id)); } catch(e){}
     // 딸린 버전들도 정리 (실패해도 무시)
     try {
       const vs = await getDocs(query(collection(db,'timetableSetVersions'), where('setId','==',id)));
@@ -3466,8 +3468,11 @@ function renderSets(){
         <br>· 평면도 사진은 층마다 따로 보관되어 세트끼리 함께 씁니다.</span>
       </div>
       ${SETS.length ? `<div class="set-list">${rows}</div>`
-        : `<div class="empty"><div class="ico">💾</div><div class="t1">아직 저장된 시간표 배정이 없습니다</div>
-             <div>설정을 마친 뒤 <b>지금 내용을 새로 저장</b>을 눌러보세요.</div></div>`}
+        : (!setsLoaded
+          ? `<div class="empty"><div class="ico">⏳</div><div class="t1">저장 목록을 불러오는 중…</div>
+             <div>잠시만요 — 색인만 받아서 금방 떠요.</div></div>`
+          : `<div class="empty"><div class="ico">💾</div><div class="t1">아직 저장된 시간표 배정이 없습니다</div>
+             <div>설정을 마친 뒤 <b>지금 내용을 새로 저장</b>을 눌러보세요.</div></div>`)}
     </div>`;
 }
 

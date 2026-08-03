@@ -870,6 +870,18 @@ async function loadActivePublished(){
   } catch(e){ PUBS = []; }
 }
 
+/* 게시본 본문(무거움)은 볼 때 그 하나만 받는다.
+   · 새 방식: 메타(가벼움) + timetablePublishedData/{id}에 본문
+   · 옛 게시본: 메타 안에 snapshot이 통째로 있어 그대로 쓴다 */
+async function ensurePubData(p){
+  if(!p || p.snapshot) return;
+  if(!p.hasData) return;   // 본문이 따로 없는 옛 형식인데 snapshot도 없으면 빈 게시본
+  try {
+    const g = await getDoc(doc(db,'timetablePublishedData', p.id));
+    p.snapshot = g.exists() ? (g.data().snapshot || null) : null;
+  } catch(e){ p.snapshot = null; }
+}
+
 /* 화면을 띄운 뒤, 지난 게시본·저장 배정·공유 상태를 뒤에서 채운다 */
 let _restLoaded = false;
 let _restDone = false;     // 뒤에서 채우는 일이 끝났는지 (끝나기 전엔 «불러오는 중»으로 알린다)
@@ -924,6 +936,13 @@ window.retryRest = async function(){
 async function loadSets(){
   // 실패를 조용히 삼키면 «저장된 배정이 없습니다»로 보여 오해하게 된다.
   // 못 받았으면 위로 알려서 «다시 불러오기»를 띄운다.
+  // 목록은 가벼운 색인으로 (세트 본문은 게시 버튼을 눌렀을 때 그 하나만 새로 받는다)
+  const idx = await getDocs(collection(db,'timetableSetIndex'));
+  if(!idx.empty){
+    SETS = idx.docs.map(d=>({ id:d.id, ...d.data() }))
+      .sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
+    return;
+  }
   const snap = await getDocs(collection(db,'timetableSets'));
   SETS = snap.docs.map(d=>({ id:d.id, ...d.data() }))
     .sort((a,b)=>(b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
@@ -997,40 +1016,74 @@ window.doPublish = async function(){
   if(title===null) return;
   if(!title.trim()){ toast('이름을 적어 주세요.','err'); return; }
 
-  const snap = s.snapshot || {};
-  const place2 = snap.place2 || {};
-  const frameId = Object.keys(place2)[0] || '';
+  // 목록은 색인(가벼움)이라 본문이 없다 — 게시 직전에 그 세트 하나만 새로 받는다
+  // (다른 창에서 방금 저장했어도 «지금 저장돼 있는 그대로» 나간다)
+  window.showLoading && window.showLoading('저장된 배정을 새로 읽는 중…');
+  let snap = {};
+  try {
+    const fresh = await getDoc(doc(db,'timetableSets', setId));
+    if(!fresh.exists()) throw new Error('세트를 찾을 수 없습니다');
+    snap = fresh.data().snapshot || {};
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('세트를 읽지 못했습니다: '+(e.message||''),'err');
+    return;
+  }
+
+  const place2All = snap.place2 || {};
+  // 어느 틀을 게시하나 — 세트가 기억하는 «작업하던 틀»을 그대로.
+  // (옛 세트는 frameId가 없어, 배치가 가장 많은 틀을 고른다 — 예전엔 아무 틀이나 잡혀 엉뚱한 게 게시되던 문제)
+  const cnt = fid => { let n=0; Object.values(place2All[fid]||{}).forEach(bd=>Object.values(bd||{}).forEach(l=>{ n+=(l||[]).length; })); return n; };
+  const frameId = (snap.frameId && place2All[snap.frameId] !== undefined ? snap.frameId : '')
+    || Object.keys(place2All).sort((a,b)=>cnt(b)-cnt(a))[0] || snap.frameId || '';
+  const place2 = frameId ? { [frameId]: place2All[frameId] || {} } : {};
   let placed = 0;
   Object.values(place2).forEach(byGrade=>Object.values(byGrade||{}).forEach(byDay=>
     Object.values(byDay||{}).forEach(list=>{ placed += (list||[]).length; })));
 
+  // 틀 모습도 세트에 담긴 «저장 시점의 틀»을 우선 (나중에 틀을 고쳐도 게시본은 안 변함)
+  const savedFrames = Array.isArray(snap.frames) && snap.frames.length ? snap.frames : FRAMES_CACHE;
+  const frames = frameId ? savedFrames.filter(f=>f.id===frameId) : savedFrames;
+
+  // 교사 이름표는 이 게시본에 실제로 나오는 선생님만 담는다 (문서 다이어트)
+  const usedUids = new Set();
+  (snap.lessons||[]).forEach(l=>(l.teacherUids||[]).forEach(u=>usedUids.add(u)));
+  const teachers = (TEACHERS_CACHE||[]).filter(t=>usedUids.has(t.uid));
+
+  const snapshot = {
+    frameId,
+    frames: frames.length ? frames : savedFrames,
+    floors: snap.floors || [],
+    lessons: snap.lessons || [],
+    place2,
+    gradeDept: snap.gradeDept || {},
+    teachers,
+  };
+
   try {
+    window.showLoading && window.showLoading('게시하는 중…');
     // 지금 게시된 것을 내린다 (한 번에 하나만 앞에 세운다)
     for(const p of PUBS.filter(x=>x.active)){
       await updateDoc(doc(db,'timetablePublished',p.id), { active:false });
     }
-    await addDoc(collection(db,'timetablePublished'), {
+    // 메타(가벼움)와 본문(무거움)을 나눠 담는다 — 목록·부팅이 빨라진다
+    const ref = await addDoc(collection(db,'timetablePublished'), {
       title: title.trim(),
       org: CU.org || '',
       active: true,
+      hasData: true,
       publishedAt: Timestamp.now(),
       publishedByUid: CU.uid,
       publishedByName: CU.name || '',
       counts: { placed, lessons:(snap.lessons||[]).length },
-      snapshot: {
-        frameId,
-        frames: FRAMES_CACHE,
-        floors: snap.floors || [],
-        lessons: snap.lessons || [],
-        place2,
-        gradeDept: snap.gradeDept || {},
-        teachers: TEACHERS_CACHE,
-      }
     });
+    await setDoc(doc(db,'timetablePublishedData', ref.id), { snapshot });
     await loadPublished();
     CUR = PUBS.find(p=>p.active) || pubsForView()[0] || null;
+    if(CUR && !CUR.snapshot) CUR.snapshot = snapshot;   // 방금 게시한 본문 — 다시 받을 필요 없다
     await syncShare();   // 공유 링크가 켜져 있으면 그 문서도 최신으로
     renderPubPanel(); renderPubSelect(); renderView();
+    window.hideLoading && window.hideLoading();
     toast('게시했습니다 ✓');
   } catch(e){ toast('게시 실패: '+(e.message||''),'err'); }
 };
@@ -1041,6 +1094,7 @@ window.unpublish = async function(id){
     await updateDoc(doc(db,'timetablePublished',id), { active:false });
     await loadPublished();
     CUR = PUBS.find(p=>p.active) || pubsForView()[0] || null;
+    await ensurePubData(CUR);
     await syncShare();   // 공유 링크에는 "게시 없음"으로 반영
     renderPubPanel(); renderPubSelect(); renderView();
     toast('내렸습니다');
@@ -1122,6 +1176,10 @@ function renderPubList(){
 window.viewPub = function(id){
   const p = PUBS.find(x=>x.id===id); if(!p) return;
   CUR = p; vwTarget = '';
+  if(p && !p.snapshot && p.hasData){
+    window.showLoading && window.showLoading('그 게시본을 받는 중…');
+    ensurePubData(p).then(()=>{ window.hideLoading && window.hideLoading(); renderView(); });
+  }
   renderPubSelect(); renderView();
   $I('vw-pub')?.scrollIntoView({ behavior:'smooth', block:'center' });
   toast(`"${p.title||''}"을(를) 띄웠습니다`,'ok');
@@ -1582,11 +1640,13 @@ onAuthStateChanged(auth, async user => {
     $I('gate').style.display='none';
     $I('ms').style.display='block';
 
-    // 시간표 한 장이 통째로 담겨 있어 받는 데 시간이 걸린다 — 어디까지 왔는지 보여준다
-    window.setLoadStep && window.setLoadStep('시간표를 받는 중…', 35);
-
+    window.setLoadStep && window.setLoadStep('게시 목록을 확인하는 중…', 40);
     await loadActivePublished();
     CUR = PUBS.find(p=>p.active) || null;
+
+    // 시간표 본문(무거움)은 지금 볼 그 하나만 받는다 — 단계가 실제 진행을 따라간다
+    window.setLoadStep && window.setLoadStep('시간표 본문을 받는 중…', 60);
+    await ensurePubData(CUR);
 
     try { const k = localStorage.getItem('tf_kind'); if(k) vwKind = k; } catch(e){}
     ['mine','grade','teacher','room'].forEach(x=>{
