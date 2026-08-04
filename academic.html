@@ -999,7 +999,10 @@ async function saveYear(){
 let ALL_EVENTS = [];
 
 let LEDGER_HOL = [];   // 관리자·출근부에서 수동 등록한 쉬는 날 (원장)
+let SHARE_HOL_READY = false;
 async function loadLedgerHolidays(){
+  // 공유 링크로 들어온 화면은 저장해 둔 목록을 쓴다 (원장을 직접 읽을 수 없다)
+  if(SHARE_MODE){ if(SHARE_HOL_READY) return; LEDGER_HOL = LEDGER_HOL || []; return; }
   try {
     const snap = await getDocs(collection(db,'holidays'));
     LEDGER_HOL = [];
@@ -3124,11 +3127,21 @@ async function buildSnapshot(audience){
     const es = await getDocs(collection(db,'academicEvents'));
     events = es.docs.map(d=>({ id:d.id, ...d.data() }));
   } catch(e){}
+  // 쉬는 날 원장도 함께 담는다 — 링크로 들어온 사람은 원장을 직접 읽을 수 없기 때문
+  let holidays = [];
+  try {
+    const hs = await getDocs(collection(db,'holidays'));
+    hs.forEach(d=>{ const v = d.data();
+      if(v.src === 'academic') return;               // 휴교 행사로 이미 들어감
+      if(audience === 'parent' && (v.who||'all') === 'staff') return;   // 교사 휴무는 학부모에게 감춘다
+      holidays.push({ date:v.date, name:v.name, org:v.org||'all', who:v.who||'all' });
+    });
+  } catch(e){}
   if(audience === 'parent'){
     events = events.filter(e => (e.audience||'both') !== 'teacher');
     events = events.map(e => { const { memo, ...rest } = e; return rest; });   // 교사 메모는 뺀다
   }
-  return { years, events, depts: DEPTS.slice() };
+  return { years, events, depts: DEPTS.slice(), holidays };
 }
 
 async function pushShare(kind){
@@ -3444,6 +3457,8 @@ async function startShareView(){
     ALL_YEARS  = snap.years  || [];
     ALL_EVENTS = snap.events || [];
     DEPTS = snap.depts || ['초등부','중등부','고등부'];
+    LEDGER_HOL = snap.holidays || [];   // 공휴일·휴무 — 처음 그릴 때부터 보이도록 미리 채운다
+    SHARE_HOL_READY = true;
     curView = (d.audience === 'parent') ? 'parent' : 'teacher';
     CAN_EDIT = false;
 
