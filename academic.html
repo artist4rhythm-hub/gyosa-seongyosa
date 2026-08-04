@@ -150,29 +150,35 @@
     border-radius:7px; cursor:pointer; }
   .vw-fb.on{ background:var(--gd); border-color:var(--gd); color:#fff; }
   /* 📋 주 아래에 펼쳐지는 학년별 수업일 표 */
-  .cw-cd{ display:none; grid-column:1 / -1; border-top:1px dashed var(--ivd); background:var(--iv); }
+  .cw-cd{ display:none; grid-column:1 / -1; background:var(--iv); }
   .cw-cd.open{ display:block; }
-  .wcd-in{ padding:8px 10px 10px; }
-  .wcd-t{ font-size:11.5px; font-weight:800; color:var(--gd); margin-bottom:6px; }
+  .wcd-in{ padding:0; }
+  .wcd-t{ font-size:11.5px; font-weight:800; color:var(--gd); padding:7px 10px 6px; }
   .wcd-t span{ font-weight:400; color:var(--tl); margin-left:6px; }
-  .wcd-scroll{ overflow-x:auto; }
-  .wcd{ border-collapse:collapse; width:100%; background:var(--wh); }
-  .wcd th, .wcd td{ border:1px solid var(--ivd); text-align:center; }
-  .wcd th.wcd-g{ min-width:74px; padding:3px 7px; text-align:left; font-size:11px;
-    font-weight:800; color:var(--gd); white-space:nowrap; background:var(--wh); }
-  .wcd tr.on th.wcd-g{ background:var(--gp); }
-  .wcd th.wcd-d{ padding:2px 0; }
-  .wcd th.wcd-d b{ display:block; font-size:10.5px; color:var(--ts); }
-  .wcd th.wcd-d span{ display:block; font-size:9px; color:var(--tl); }
-  .wcd th.wcd-d.sun b, .wcd th.wcd-d.sun span{ color:#DC2626; }
-  .wcd th.wcd-d.sat b, .wcd th.wcd-d.sat span{ color:#2563EB; }
-  .wcd th.wcd-d.off{ background:var(--iv); }
-  .wcd-c{ font-size:11px; padding:3px 0; }
+  /* 달력과 같은 격자 — 왼쪽 주차 칸 폭(78px) + 7일 등분 */
+  .wcd{ display:grid; grid-template-columns:78px repeat(7, 1fr); background:var(--wh);
+    border-top:1px solid var(--ivd); }
+  .wcd-r{ display:contents; }
+  .wcd-lb, .wcd-d, .wcd-c{ border-right:1px solid var(--ivd); border-bottom:1px solid var(--ivd);
+    min-width:0; }
+  .wcd-lb{ display:flex; align-items:center; gap:5px; padding:2px 8px;
+    font-size:11px; font-weight:800; color:var(--gd); white-space:nowrap;
+    background:var(--gp); border-right:1px solid var(--ivd); }
+  .wcd-lb span{ font-weight:400; color:var(--tl); }
+  .wcd-n{ margin-left:auto; font-size:11px; color:var(--gm); }
+  .wcd-r.on .wcd-lb{ background:var(--gd); color:#fff; }
+  .wcd-r.on .wcd-n{ color:#fff; }
+  .wcd-d{ text-align:center; padding:2px 0; background:var(--wh); }
+  .wcd-d b{ display:block; font-size:10.5px; color:var(--ts); }
+  .wcd-d span{ display:block; font-size:9px; color:var(--tl); }
+  .wcd-d.sun b, .wcd-d.sun span{ color:#DC2626; }
+  .wcd-d.sat b, .wcd-d.sat span{ color:#2563EB; }
+  .wcd-d.off{ background:var(--iv); }
+  .wcd-c{ text-align:center; font-size:11px; padding:3px 0; line-height:1.35; }
   .wcd-c.o{ color:#16A34A; background:rgba(22,163,74,.06); font-weight:800; }
   .wcd-c.x{ color:#DC2626; background:rgba(220,38,38,.07); font-weight:800; }
   .wcd-c.off{ color:var(--ivd); background:var(--iv); }
-  .wcd-s{ min-width:34px; font-size:11px; background:var(--iv); color:var(--ts); }
-  .wcd-s b{ font-size:12px; color:var(--gd); }
+  .wcd-lb:last-child, .wcd-d:last-child, .wcd-c:last-child{ border-right:none; }
   /* 주차 칸의 📋 버튼 */
   .cw-cdb{ margin-top:5px; border:1px solid var(--ivd); background:var(--wh); color:var(--tl);
     border-radius:6px; font-size:11px; line-height:1; padding:3px 6px; cursor:pointer; font-family:inherit; }
@@ -2560,26 +2566,31 @@ function weekClassTable(days){
     const hit = c.evs.find(e=>evHitsGrade(e, g));
     return hit ? { k:'x', why:hit.title } : { k:'o', why:'정상 수업' };
   };
-  const head = `<tr><th class="wcd-g">학년</th>${cols.map(c=>
-    c ? `<th class="wcd-d ${c.dow===0?'sun':c.dow===6?'sat':''} ${c.off?'off':''}">
-      <b>${c.d}</b><span>${DOWN[c.dow]}</span></th>` : '<th class="wcd-d off"></th>').join('')}
-    <th class="wcd-s">수업</th></tr>`;
+  // 달력과 똑같은 격자(주차 칸 + 7일)로 그린다 — 세로줄이 위 달력과 정확히 맞도록
+  const head = `<div class="wcd-r wcd-head">
+    <div class="wcd-lb">학년 <span>· 수업일</span></div>
+    ${cols.map(c=> c
+      ? `<div class="wcd-d ${c.dow===0?'sun':c.dow===6?'sat':''} ${c.off?'off':''}">
+          <b>${c.d}</b><span>${DOWN[c.dow]}</span></div>`
+      : '<div class="wcd-d off"></div>').join('')}
+  </div>`;
   const rows = grades.map(g=>{
     let n = 0;
-    const tds = cols.map(c=>{
-      if(!c) return '<td class="wcd-c off"></td>';
+    const cells = cols.map(c=>{
+      if(!c) return '<div class="wcd-c off"></div>';
       const cell = cellOf(g,c);
       if(cell.k==='o') n++;
       const mark = cell.k==='o' ? '●' : (cell.k==='x' ? '✕' : '·');
-      return `<td class="wcd-c ${cell.k}" title="${esc(`${c.ds.slice(5)} — ${cell.why}`)}">${mark}</td>`;
+      return `<div class="wcd-c ${cell.k}" title="${esc(`${c.ds.slice(5)} — ${cell.why}`)}">${mark}</div>`;
     }).join('');
-    return `<tr class="${GRADE_FILTER===g?'on':''}">
-      <th class="wcd-g"><i class="gb-dot" style="background:${gradeColor(g)}"></i>${esc(g)}</th>
-      ${tds}<td class="wcd-s"><b>${n}</b></td></tr>`;
+    return `<div class="wcd-r ${GRADE_FILTER===g?'on':''}">
+      <div class="wcd-lb"><i class="gb-dot" style="background:${gradeColor(g)}"></i>${esc(g)}
+        <b class="wcd-n">${n}</b></div>
+      ${cells}</div>`;
   }).join('');
   return `<div class="wcd-in">
     <div class="wcd-t">📋 이 주 학년별 수업일 <span>● 수업 · ✕ 수업 없음 · · 주말·휴일 — 칸에 마우스를 올리면 이유가 보여요</span></div>
-    <div class="wcd-scroll"><table class="wcd">${head}${rows}</table></div>
+    <div class="wcd">${head}${rows}</div>
   </div>`;
 }
 
