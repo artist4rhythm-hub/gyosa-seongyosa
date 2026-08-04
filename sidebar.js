@@ -613,3 +613,102 @@ function guardPage(user, key){
   return true;
 }
 window.guardPage = guardPage;
+
+// ── 모달 상단 닫기 버튼 자동 추가 (애플식) ──
+(function(){
+  function addCloseX(mbox){
+    if(mbox.querySelector('.ui-close-x')) return; // 이미 있음
+    const btn = document.createElement('button');
+    btn.className = 'ui-close-x';
+    btn.innerHTML = '✕';
+    btn.setAttribute('aria-label','닫기');
+    btn.onclick = function(e){
+      e.stopPropagation();
+      // 우선 closeMod() 시도, 없으면 오버레이 제거
+      if(typeof window.closeMod === 'function'){ window.closeMod(); return; }
+      const ov = mbox.closest('.mov, .modal, .overlay');
+      if(ov) ov.remove(); else mbox.remove();
+    };
+    mbox.appendChild(btn);
+  }
+  /* ── ✋ 팝업 옮기기 ──
+     팝업의 빈 곳(글자·버튼이 아닌 자리)을 끌면 창을 옮길 수 있다.
+     뒤에 있는 달력·시간표를 보면서 이야기할 때 편하다.
+     · 옮긴 자리는 그 팝업이 닫힐 때까지만 유지된다
+     · 버튼·입력칸·링크를 누른 것이면 옮기지 않는다 */
+  function makeDraggable(mbox){
+    if(mbox.__dragOn) return;
+    mbox.__dragOn = true;
+    mbox.classList.add('ui-movable');
+
+    let sx=0, sy=0, ox=0, oy=0, moving=false;
+    const NO_DRAG = 'button, a, input, textarea, select, label, .chip, .gchip, [onclick], [contenteditable]';
+
+    const down = (e)=>{
+      const t = e.target;
+      if(t.closest && t.closest(NO_DRAG)) return;      // 누르는 것이면 옮기지 않는다
+      const p = e.touches ? e.touches[0] : e;
+      const r = mbox.getBoundingClientRect();
+      // 처음 잡는 순간, 지금 보이는 자리에 그대로 고정시킨다
+      if(!mbox.__placed){
+        mbox.style.position = 'fixed';
+        mbox.style.margin = '0';
+        mbox.style.left = r.left + 'px';
+        mbox.style.top  = r.top  + 'px';
+        mbox.style.width = r.width + 'px';
+        mbox.__placed = true;
+      }
+      sx = p.clientX; sy = p.clientY;
+      ox = parseFloat(mbox.style.left) || r.left;
+      oy = parseFloat(mbox.style.top)  || r.top;
+      moving = true;
+      mbox.classList.add('ui-moving');
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+      document.addEventListener('touchmove', move, {passive:false});
+      document.addEventListener('touchend', up);
+      e.preventDefault();
+    };
+    const move = (e)=>{
+      if(!moving) return;
+      const p = e.touches ? e.touches[0] : e;
+      let nx = ox + (p.clientX - sx);
+      let ny = oy + (p.clientY - sy);
+      // 화면 밖으로 완전히 나가지 않게 살짝 잡아 둔다
+      const r = mbox.getBoundingClientRect();
+      nx = Math.max(12 - r.width + 90, Math.min(window.innerWidth - 90, nx));
+      ny = Math.max(6, Math.min(window.innerHeight - 60, ny));
+      mbox.style.left = nx + 'px';
+      mbox.style.top  = ny + 'px';
+      if(e.cancelable) e.preventDefault();
+    };
+    const up = ()=>{
+      moving = false;
+      mbox.classList.remove('ui-moving');
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.removeEventListener('touchmove', move);
+      document.removeEventListener('touchend', up);
+    };
+    mbox.addEventListener('mousedown', down);
+    mbox.addEventListener('touchstart', down, {passive:false});
+  }
+
+  function scan(root){
+    if(!root || !root.querySelectorAll) return;
+    if(root.classList && root.classList.contains('mbox')){ addCloseX(root); makeDraggable(root); }
+    root.querySelectorAll && root.querySelectorAll('.mbox').forEach(el=>{ addCloseX(el); makeDraggable(el); });
+  }
+  const obs = new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(n=>{ if(n.nodeType===1) scan(n); }));
+  });
+  if(document.body){
+    obs.observe(document.body, {childList:true, subtree:true});
+    scan(document.body);
+  } else {
+    document.addEventListener('DOMContentLoaded', ()=>{
+      obs.observe(document.body, {childList:true, subtree:true});
+      scan(document.body);
+    });
+  }
+})();

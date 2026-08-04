@@ -1293,7 +1293,21 @@ function weekBars(days, slot){
     if(gIndex[k] === undefined){ gIndex[k] = groups.length; groups.push({ key:k, low:b._low, w:b._w, items:[] }); }
     groups[gIndex[k]].items.push(b);
   });
-  groups.sort((a,b)=> (a.low - b.low) || (b.w - a.w));
+  /* 줄 순서
+     ① 여러 학년대로 «나뉜» 묶음(예: 1~4·6~8학년)을 위로 —
+        아래 줄들과 학년이 겹쳐 어긋나 보이는 걸 막는다
+     ② 그다음은 낮은 학년부터, 길게 이어지는 묶음일수록 아래로 */
+  const gOrderAll = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+  groups.forEach(gp=>{
+    const gs = (gp.key === '__all') ? [] : gp.key.split('|');
+    gp.runs = gs.length ? gradeRuns(gs).length : 0;      // 몇 덩이로 나뉘나
+    gp.maxSpan = Math.max(...gp.items.map(b=>b.span));   // 가장 길게 가는 띠
+  });
+  groups.sort((a,b)=>
+    (b.runs - a.runs) ||          // 나뉜 묶음이 위
+    (a.low - b.low) ||            // 낮은 학년이 위
+    (a.maxSpan - b.maxSpan) ||    // 짧은 것이 위 · 길게 가는 것이 아래
+    (b.w - a.w));
 
   const lanes = [];
   groups.forEach(gp=>{
