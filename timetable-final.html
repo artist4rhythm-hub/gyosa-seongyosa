@@ -122,6 +122,15 @@
   .tv-sheet{background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);border-radius:12px;padding:18px;overflow-x:auto}
   .tv-head{margin-bottom:14px;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
   .tv-title{font-size:19px;font-weight:800;color:var(--gd,#1E3932);letter-spacing:-.02em;margin-bottom:2px}
+  .tv-sum{ font-size:12px; color:var(--ts,#5A6560); margin-top:5px; display:flex;
+    align-items:center; gap:6px; flex-wrap:wrap; }
+  .tv-sum b{ color:var(--gd,#1E3932); font-size:12.5px; }
+  .tv-sd{ color:var(--tl,#93A09A); }
+  .tv-sc-wrap{ display:flex; gap:4px; flex-wrap:wrap; }
+  .tv-sc{ font-size:11px; background:var(--iv,#F7F6F2); border:1px solid var(--ivd,#E3E1DA);
+    border-radius:100px; padding:2px 9px; color:var(--ts,#5A6560); }
+  .tv-sc b{ font-weight:800; }
+  .tv-sc.more{ background:transparent; border-style:dashed; }
   .tv-meta{font-size:12px;color:var(--tl,#93A09A)}
   .tv-zoom{margin-left:auto;display:flex;align-items:center;gap:5px;flex-wrap:wrap;
     font-size:11px;color:var(--tl,#93A09A)}
@@ -614,6 +623,30 @@ function matchOf(it, kind, target){
 }
 
 /* 시간표 한 장을 그린다 (화면·인쇄 같은 코드) */
+/* 📊 실제 놓인 카드로 셈한다 — 틀이 아니라 «배치된 수업» 기준
+   · 쉬는 시간·점심은 수업 시간에서 뺀다
+   · 과목마다 몇 시간인지도 함께 (많으면 위에서 몇 개만) */
+function sumLine(mine){
+  const cls = (mine||[]).filter(it=> !isRestLesson(it.lesson));
+  if(!cls.length) return '<div class="tv-sum">놓인 수업이 없습니다</div>';
+  const min = cls.reduce((n,it)=> n + (it.endMin - it.startMin), 0);
+  const H = Math.floor(min/60), M = min%60;
+  const by = {};
+  cls.forEach(it=>{ const k = it.lesson.subject || '수업';
+    by[k] = (by[k]||0) + (it.endMin - it.startMin); });
+  const top = Object.entries(by).sort((a,b)=>b[1]-a[1]);
+  const chips = top.slice(0,6).map(([k,v])=>{
+    const t = v>=60 ? `${Math.floor(v/60)}시간${v%60?` ${v%60}분`:''}` : `${v}분`;
+    return `<span class="tv-sc">${esc(k)} <b>${t}</b></span>`;
+  }).join('');
+  const restN = (mine||[]).length - cls.length;
+  return `<div class="tv-sum">
+      <b>수업 ${cls.length}칸</b> · 주 ${H}시간${M?` ${M}분`:''}
+      <span class="tv-sd">· 과목 ${top.length}개${restN?` · 쉬는 시간 ${restN}칸 별도`:''}</span>
+      <span class="tv-sc-wrap">${chips}${top.length>6?`<span class="tv-sc more">외 ${top.length-6}과목</span>`:''}</span>
+    </div>`;
+}
+
 function sheetHTML(kind, target, label, opt){
   const all = collect();
   const mine = all.filter(it=>matchOf(it, kind, target));
@@ -677,7 +710,8 @@ function sheetHTML(kind, target, label, opt){
       <div class="tv-head">
         <div>
           <div class="tv-title">${esc(label)} 시간표</div>
-          <div class="tv-meta">${esc(CUR.title||'')} · ${kindLabel} · 주 ${mine.length}시간 · ${hm(s0)}~${hm(e0)}</div>
+          <div class="tv-meta">${esc(CUR.title||'')} · ${kindLabel} · ${hm(s0)}~${hm(e0)}</div>
+          ${sumLine(mine)}
         </div>
         ${opt&&opt.noZoom ? '' : `<div class="tv-zoom">
           <span>세로 크기</span>
@@ -862,6 +896,32 @@ function renderShareBox(){
     </div>`;
 }
 
+/* 시간표 메뉴로 들어오면 «게시된 시간표»가 먼저 보인다.
+   틀·배정 화면은 «⚙ 시간표 설정»을 눌렀을 때만 나온다 (설정을 켜면 이 기기에 기억). */
+let TT_SETUP = false;
+try { TT_SETUP = localStorage.getItem('tt_setup') === '1'; } catch(e){}
+if(location.search.includes('setup=1')) TT_SETUP = true;
+window.setTtSetup = function(on){
+  TT_SETUP = !!on;
+  try { localStorage.setItem('tt_setup', TT_SETUP?'1':'0'); } catch(e){}
+  renderTopTabs();
+  renderPubPanel();
+  if(TT_SETUP) toast('시간표 틀·배정 화면이 열렸어요','ok');
+};
+let CAN_PUBLISH = false;
+function renderTopTabs(){
+  const box = $I('topTabs'); if(!box) return;
+  box.innerHTML = TT_SETUP
+    ? `<a href="timetable.html" class="tab-main"><span class="tab-ic">📐</span>시간표 틀</a>
+       <a href="schedule-assign.html" class="tab-main"><span class="tab-ic">🗓️</span>시간표 배정</a>
+       <a href="timetable-final.html" class="tab-main on"><span class="tab-ic">✅</span>완성 시간표</a>
+       <button class="tab-main" onclick="setTtSetup(false)" title="게시된 시간표만 보기">
+         <span class="tab-ic">👀</span>보기로 돌아가기</button>`
+    : `<a href="timetable-final.html" class="tab-main on"><span class="tab-ic">✅</span>게시된 시간표</a>
+       ${CAN_PUBLISH ? `<button class="tab-main" onclick="setTtSetup(true)"
+         title="시간표 틀·배정 화면을 엽니다"><span class="tab-ic">⚙️</span>시간표 설정</button>` : ''}`;
+}
+
 async function loadPublished(){
   try {
     const snap = await getDocs(collection(db,'timetablePublished'));
@@ -961,7 +1021,8 @@ async function loadSets(){
 
 function renderPubPanel(){
   const panel = $I('pub-panel');
-  if(!canPublish()){ if(panel) panel.style.display='none'; return; }
+  // 게시하는 자리는 «시간표 설정»을 켰을 때만 (평소엔 보기 화면만 깔끔하게)
+  if(!canPublish() || !TT_SETUP){ if(panel) panel.style.display='none'; return; }
   if(panel) panel.style.display='';
   renderShareBox();
   renderPubList();
@@ -1286,7 +1347,8 @@ window.openPrint = function(){
       <div class="pr-act">
         <span class="pr-n" id="pr-n"></span>
         <button class="btn" onclick="closePrint()">취소</button>
-        <button class="btn" onclick="doExport('img')">🖼 이미지 저장</button>
+        <button class="btn" onclick="doExport('img')">🖼 이미지 · A4</button>
+        <button class="btn" onclick="doExport('imgfull')" title="글자가 다 보이도록 넉넉하게 — 화면으로 보거나 크게 인쇄할 때">🖼 이미지 · 꽉 찬</button>
         <button class="btn" onclick="doExport('pdf')">📄 PDF 저장</button>
         <button class="btn btn-p" onclick="doPrint()">🖨 인쇄</button>
       </div>
@@ -1405,11 +1467,15 @@ const needPDF = ()=> loadScriptOnce(
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
   ()=>!!(window.jspdf && window.jspdf.jsPDF));
 
-/* 한 장을 A4 세로 상자에 그려 캔버스로 뜬다 */
-async function renderPageCanvas(page){
+/* 한 장을 캔버스로 뜬다
+   · A4(기본) — 종이 한 장에 맞춰 반듯하게
+   · 꽉 찬(full) — 높이를 내용에 맞춰 늘리고 글자를 키워 다 보이게 */
+async function renderPageCanvas(page, full){
   // 화면 밖에 실제 크기로 붙여야 html2canvas가 제대로 뜬다 (display:none이면 안 됨)
   const holder = document.createElement('div');
-  holder.style.cssText = `position:fixed;left:-12000px;top:0;width:${EXP_W}px;height:${EXP_H}px;`
+  const W = full ? 1400 : EXP_W;
+  holder.style.cssText = `position:fixed;left:-12000px;top:0;width:${W}px;`
+    + (full ? '' : `height:${EXP_H}px;`)
     + 'background:#ffffff;z-index:-1;overflow:hidden;padding:26px 24px;box-sizing:border-box;'
     + 'display:flex;flex-direction:column;';
   holder.innerHTML = page.html;
@@ -1420,13 +1486,25 @@ async function renderPageCanvas(page){
     sheet.style.overflow='visible'; sheet.style.background='#ffffff'; }
   const board = holder.querySelector('.tv-board');
   if(board){ board.style.minWidth='0'; board.style.width='100%'; }
+  if(full){
+    // 글자를 키우고 칸도 넉넉히 — 이름·시각이 잘리지 않게
+    holder.style.fontSize = '15px';
+    if(board){
+      board.style.setProperty('--tvf', 1.35);
+      board.querySelectorAll('.tv-card').forEach(c=>{ c.style.overflow='visible'; });
+    }
+    holder.querySelectorAll('.tv-card b, .tv-card .tvc-t, .tv-card span').forEach(el=>{
+      el.style.whiteSpace = 'normal'; el.style.overflow = 'visible'; el.style.textOverflow = 'clip';
+    });
+  }
   document.body.appendChild(holder);
   try {
-    await new Promise(r=>setTimeout(r, 60));   // 글꼴·배치 정리 시간
-    const canvas = await window.html2canvas(holder, {
-      scale: EXP_SCALE, backgroundColor:'#ffffff', useCORS:true, logging:false,
-      width: EXP_W, height: EXP_H, windowWidth: EXP_W
-    });
+    await new Promise(r=>setTimeout(r, 80));   // 글꼴·배치 정리 시간
+    const opts = { scale: full ? 2 : EXP_SCALE, backgroundColor:'#ffffff', useCORS:true, logging:false,
+      width: W, windowWidth: W };
+    if(!full){ opts.height = EXP_H; }
+    else { opts.height = Math.max(holder.scrollHeight, holder.offsetHeight); }
+    const canvas = await window.html2canvas(holder, opts);
     return canvas;
   } finally { holder.remove(); }
 }
@@ -1444,7 +1522,8 @@ window.doExport = async function(mode){
   const pages = buildExportPages();
   if(!pages.length){ toast('내보낼 내용이 없습니다.','err'); return; }
 
-  const cap = mode==='pdf' ? 'PDF를 만드는 중…' : '이미지를 만드는 중…';
+  const cap = mode==='pdf' ? 'PDF를 만드는 중…'
+    : (mode==='imgfull' ? '꽉 찬 이미지를 만드는 중…' : '이미지를 만드는 중…');
   window.showLoading ? window.showLoading(cap) : toast(cap);
   try {
     await needH2C();
@@ -1459,7 +1538,7 @@ window.doExport = async function(mode){
     for(let i=0;i<pages.length;i++){
       window.setLoadStep && window.setLoadStep(
         `${pages[i].label} (${i+1}/${pages.length})`, Math.round((i)/pages.length*100));
-      const canvas = await renderPageCanvas(pages[i]);
+      const canvas = await renderPageCanvas(pages[i], mode==='imgfull');
       if(mode==='pdf'){
         if(i>0) pdf.addPage('a4','p');
         // 캔버스가 A4 비율 그대로라 종이에 꽉 채워도 눌리지 않는다
@@ -1646,11 +1725,9 @@ onAuthStateChanged(auth, async user => {
     window.ORGS = ORGS;
     if(window.renderShell) renderShell('timetable', CU);
 
-    // 위 탭
-    $I('topTabs').innerHTML = `
-      <a href="timetable.html" class="tab-main"><span class="tab-ic">📐</span>시간표 틀</a>
-      <a href="schedule-assign.html" class="tab-main"><span class="tab-ic">🗓️</span>시간표 배정</a>
-      <a href="timetable-final.html" class="tab-main on"><span class="tab-ic">✅</span>완성 시간표</a>`;
+    // 위 탭 — 평소엔 «게시된 시간표»만, 설정을 켜면 틀·배정도 나온다
+    CAN_PUBLISH = canPublish();
+    renderTopTabs();
     if(window.setCrumb) setCrumb(['완성 시간표']);
 
     $I('gate').style.display='none';

@@ -2927,11 +2927,28 @@ function renderTabs(){
   tb.innerHTML = `
     <button class="tab-main ${curTab==='view'?'on':''}" data-tab="view" onclick="showAcTab('view')">
       <span class="tab-ic">📅</span>학사일정</button>
-    ${canEditAny()?`<button class="tab-main ${curTab==='edit'?'on':''}" data-tab="edit" onclick="showAcTab('edit')">
-      <span class="tab-ic">✏️</span>일정 편집</button>
-    <button class="tab-main ${curTab==='set'?'on':''}" data-tab="set" onclick="showAcTab('set')">
-      <span class="tab-ic">⚙️</span>설정</button>`:''}`;
+    ${canEditAny() ? (AC_EDITMODE
+      ? `<button class="tab-main ${curTab==='edit'?'on':''}" data-tab="edit" onclick="showAcTab('edit')">
+           <span class="tab-ic">✏️</span>일정 편집</button>
+         <button class="tab-main ${curTab==='set'?'on':''}" data-tab="set" onclick="showAcTab('set')">
+           <span class="tab-ic">⚙️</span>설정</button>
+         <button class="tab-main" onclick="setAcEditMode(false)" title="보기 화면만 남깁니다">
+           <span class="tab-ic">👀</span>보기로 돌아가기</button>`
+      : `<button class="tab-main" onclick="setAcEditMode(true)" title="일정을 고치고 설정하는 화면을 엽니다">
+           <span class="tab-ic">✏️</span>학사일정 편집하기</button>`) : ''}`;
 }
+
+/* 학사일정 메뉴로 들어오면 «달력 보기»가 먼저.
+   고치는 화면은 «✏️ 학사일정 편집하기»를 눌렀을 때만 나온다. */
+let AC_EDITMODE = false;
+try { AC_EDITMODE = localStorage.getItem('ac_editmode') === '1'; } catch(e){}
+window.setAcEditMode = function(on){
+  AC_EDITMODE = !!on;
+  try { localStorage.setItem('ac_editmode', AC_EDITMODE?'1':'0'); } catch(e){}
+  if(!AC_EDITMODE && curTab !== 'view') showAcTab('view');   // 편집을 끄면 보기 화면으로
+  renderTabs();
+  if(AC_EDITMODE) toast('편집 화면이 열렸어요 — 달력을 눌러 일정을 넣을 수 있습니다','ok');
+};
 
 /* ═══════════════════════════════════════════════
    🚫 휴교 · 임시 휴일
