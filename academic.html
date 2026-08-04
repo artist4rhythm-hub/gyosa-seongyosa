@@ -59,8 +59,10 @@
   .ch-d{ padding:11px 6px; text-align:center; font-size:14px; font-weight:800; color:#fff; }
   .ch-d.sun{ color:#FFB4A8; } .ch-d.sat{ color:#A8C8FF; }
 
-  .cal-week{ display:flex; border-bottom:1px solid var(--ivd); align-items:stretch; }
-  .cw-wk{ width:78px; flex:none; padding:8px 5px; text-align:center; font-size:9.5px;
+  /* 주 = [주차칸 + 본문] 한 줄, 그 아래에 수업일 표가 펼쳐진다 */
+  .cal-week{ display:grid; grid-template-columns:78px 1fr; border-bottom:1px solid var(--ivd);
+    align-items:stretch; }
+  .cw-wk{ width:auto; flex:none; padding:8px 5px; text-align:center; font-size:9.5px;
     font-weight:700; color:var(--ts); background:var(--gp); border-right:1px solid var(--ivd);
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:1px; line-height:1.25; }
@@ -147,6 +149,36 @@
     border:1.5px solid var(--ivd); background:var(--wh); color:var(--ts);
     border-radius:7px; cursor:pointer; }
   .vw-fb.on{ background:var(--gd); border-color:var(--gd); color:#fff; }
+  /* 📋 주 아래에 펼쳐지는 학년별 수업일 표 */
+  .cw-cd{ display:none; grid-column:1 / -1; border-top:1px dashed var(--ivd); background:var(--iv); }
+  .cw-cd.open{ display:block; }
+  .wcd-in{ padding:8px 10px 10px; }
+  .wcd-t{ font-size:11.5px; font-weight:800; color:var(--gd); margin-bottom:6px; }
+  .wcd-t span{ font-weight:400; color:var(--tl); margin-left:6px; }
+  .wcd-scroll{ overflow-x:auto; }
+  .wcd{ border-collapse:collapse; width:100%; background:var(--wh); }
+  .wcd th, .wcd td{ border:1px solid var(--ivd); text-align:center; }
+  .wcd th.wcd-g{ min-width:74px; padding:3px 7px; text-align:left; font-size:11px;
+    font-weight:800; color:var(--gd); white-space:nowrap; background:var(--wh); }
+  .wcd tr.on th.wcd-g{ background:var(--gp); }
+  .wcd th.wcd-d{ padding:2px 0; }
+  .wcd th.wcd-d b{ display:block; font-size:10.5px; color:var(--ts); }
+  .wcd th.wcd-d span{ display:block; font-size:9px; color:var(--tl); }
+  .wcd th.wcd-d.sun b, .wcd th.wcd-d.sun span{ color:#DC2626; }
+  .wcd th.wcd-d.sat b, .wcd th.wcd-d.sat span{ color:#2563EB; }
+  .wcd th.wcd-d.off{ background:var(--iv); }
+  .wcd-c{ font-size:11px; padding:3px 0; }
+  .wcd-c.o{ color:#16A34A; background:rgba(22,163,74,.06); font-weight:800; }
+  .wcd-c.x{ color:#DC2626; background:rgba(220,38,38,.07); font-weight:800; }
+  .wcd-c.off{ color:var(--ivd); background:var(--iv); }
+  .wcd-s{ min-width:34px; font-size:11px; background:var(--iv); color:var(--ts); }
+  .wcd-s b{ font-size:12px; color:var(--gd); }
+  /* 주차 칸의 📋 버튼 */
+  .cw-cdb{ margin-top:5px; border:1px solid var(--ivd); background:var(--wh); color:var(--tl);
+    border-radius:6px; font-size:11px; line-height:1; padding:3px 6px; cursor:pointer; font-family:inherit; }
+  .cw-cdb:hover{ border-color:var(--gm); color:var(--gm); }
+  .cw-cdb.on{ background:var(--gd); border-color:var(--gd); color:#fff; }
+
   /* 📋 수업일 표 */
   .cd-wrap{ background:var(--wh); border:1px solid var(--ivd); border-radius:12px; overflow:hidden; }
   .cd-top{ display:flex; align-items:center; gap:10px; padding:11px 14px;
@@ -786,6 +818,8 @@ try { CAL_FLOW = localStorage.getItem('ac_flow') === '1'; } catch(e){}
 let CAL_EVEN = false;       // 칸 높이 — false: 내용에 맞춰 · true: 모든 주 같은 높이
 try { CAL_EVEN = localStorage.getItem('ac_even') === '1'; } catch(e){}
 let FLOW_MONTHS = 2;        // 연속 보기에서 지금까지 펼친 달 수 (아래로 내리면 늘어난다)
+let CD_OPEN = new Set();    // 📋 수업일 표를 펼쳐 둔 주 (그 주 첫 날짜로 기억)
+let CD_ALL = false;         // 모든 주를 한 번에 펼쳤나
 window.__flowMonths = ()=>FLOW_MONTHS;   // 점검용
 const ZOOM_STEPS = [55,65,75,85,100,115,130,150,175,200];
 try { const z = parseInt(localStorage.getItem('ac_zoom')); if(z) CAL_ZOOM = z; } catch(e){}
@@ -1388,11 +1422,16 @@ function render(){
     const wl = firstValid ? weekLabelFor(days) : { name:'', num:'' };
 
     html += '<div class="cal-week">';
+    const _wkKey = firstValid ? firstValid.ds : '';
+    const _cdOn = _wkKey && (CD_ALL || CD_OPEN.has(_wkKey));
+    const cdBtn = _wkKey
+      ? `<button class="cw-cdb ${_cdOn?'on':''}" onclick="toggleWeekCd('${_wkKey}')"
+           title="이 주의 학년별 수업일 보기">📋</button>` : '';
     html += wl.name
       ? `<div class="cw-wk ${wl.kind==='break'?'break':'term'}">
            ${wrapName(wl.name).map(s=>`<span class="wk-nm">${esc(s)}</span>`).join('')}
-           <span class="wknum">${wl.num}</span><span>주차</span></div>`
-      : `<div class="cw-wk none"><span class="wk-none">—</span></div>`;
+           <span class="wknum">${wl.num}</span><span>주차</span>${cdBtn}</div>`
+      : `<div class="cw-wk none"><span class="wk-none">—</span>${cdBtn}</div>`;
 
     const dsList = days.map(x=>x?x.ds:'').join(',');
     html += `<div class="cw-body" data-days="${dsList}"
@@ -1445,7 +1484,16 @@ function render(){
       html += '</div></div>';
     });
 
-    html += '</div></div>';   // cw-body, cal-week
+    html += '</div>';   // cw-body
+
+    // 📋 그 주 수업일 표 — 주차 옆 버튼으로 접었다 펼친다
+    const wkKey = firstValid ? firstValid.ds : '';
+    if(wkKey){
+      const open = CD_ALL || CD_OPEN.has(wkKey);
+      html += `<div class="cw-cd ${open?'open':''}" data-wk="${wkKey}">
+        ${open ? weekClassTable(days) : ''}</div>`;
+    }
+    html += '</div>';   // cal-week
   });
 
   html += '</div>';
@@ -2479,6 +2527,10 @@ function renderViewBar(){
       <button class="vw-fb ${CAL_EVEN?'':'on'}" onclick="setEven(false)" title="빈 주는 낮게, 바쁜 주는 높게">↕ 자동</button>
       <button class="vw-fb ${CAL_EVEN?'on':''}" onclick="setEven(true)" title="모든 주를 같은 높이로">≡ 균등</button>
     </span>
+    <span class="vw-flow">
+      <button class="vw-fb ${(CD_ALL||CD_OPEN.size)?'on':''}" onclick="toggleAllCd()"
+        title="주마다 학년별 수업일 표를 함께 봅니다">📋 수업일 ${(CD_ALL||CD_OPEN.size)?'닫기':'열기'}</button>
+    </span>
     <span class="vw-zoom">
       <span class="vw-lab">크기</span>
       <button class="vw-zb" onclick="stepZoom(-1)" ${i===0?'disabled':''}>−</button>
@@ -2487,6 +2539,73 @@ function renderViewBar(){
       <button class="vw-zfit" onclick="fitZoom()" title="한 달이 화면에 다 들어오게">⤢ 한 화면</button>
     </span>`;
 }
+
+/* 📋 한 주치 학년별 수업일 표 — 달력 바로 아래에 펼쳐진다 */
+function weekClassTable(days){
+  const org = (ORG===ORG_ALL) ? (myOrgs()[0]||'daniel') : ORG;
+  const grades = GRADE_ORDER[org] || [];
+  if(!grades.length) return '';
+  const DOWN = ['일','월','화','수','목','금','토'];
+  const cols = days.map(x=>{
+    if(!x) return null;
+    const dow = new Date(x.ds+'T00:00:00').getDay();
+    const isHol = !!x.holName && x.holWho !== 'staff';   // 교사만 쉬는 날은 학생 수업일
+    const off = (dow===0 || dow===6 || isHol || breakOf(x.ds) || !termOf(x.ds));
+    return { ds:x.ds, d:x.d, dow, off, holName:isHol?x.holName:'',
+             evs: eventsOn(x.ds).filter(e=>noClassEvent(e)) };
+  });
+  const cellOf = (g,c) => {
+    if(c.off) return { k:'off', why:c.holName || (c.dow===0||c.dow===6 ? '주말'
+      : (breakOf(c.ds) ? (breakOf(c.ds).name||'방학') : '학기 아님')) };
+    const hit = c.evs.find(e=>evHitsGrade(e, g));
+    return hit ? { k:'x', why:hit.title } : { k:'o', why:'정상 수업' };
+  };
+  const head = `<tr><th class="wcd-g">학년</th>${cols.map(c=>
+    c ? `<th class="wcd-d ${c.dow===0?'sun':c.dow===6?'sat':''} ${c.off?'off':''}">
+      <b>${c.d}</b><span>${DOWN[c.dow]}</span></th>` : '<th class="wcd-d off"></th>').join('')}
+    <th class="wcd-s">수업</th></tr>`;
+  const rows = grades.map(g=>{
+    let n = 0;
+    const tds = cols.map(c=>{
+      if(!c) return '<td class="wcd-c off"></td>';
+      const cell = cellOf(g,c);
+      if(cell.k==='o') n++;
+      const mark = cell.k==='o' ? '●' : (cell.k==='x' ? '✕' : '·');
+      return `<td class="wcd-c ${cell.k}" title="${esc(`${c.ds.slice(5)} — ${cell.why}`)}">${mark}</td>`;
+    }).join('');
+    return `<tr class="${GRADE_FILTER===g?'on':''}">
+      <th class="wcd-g"><i class="gb-dot" style="background:${gradeColor(g)}"></i>${esc(g)}</th>
+      ${tds}<td class="wcd-s"><b>${n}</b></td></tr>`;
+  }).join('');
+  return `<div class="wcd-in">
+    <div class="wcd-t">📋 이 주 학년별 수업일 <span>● 수업 · ✕ 수업 없음 · · 주말·휴일 — 칸에 마우스를 올리면 이유가 보여요</span></div>
+    <div class="wcd-scroll"><table class="wcd">${head}${rows}</table></div>
+  </div>`;
+}
+
+/* 한 주만 펼치고 접기 — 다시 그리지 않고 그 자리만 바꾼다 */
+window.toggleWeekCd = function(wk){
+  const on = CD_OPEN.has(wk) || CD_ALL;
+  if(CD_ALL){                      // 모두 펼친 상태에서 하나를 접으면, 나머지는 그대로 둔다
+    CD_ALL = false;
+    document.querySelectorAll('#cal-mount .cw-cd').forEach(el=>{
+      if(el.dataset.wk !== wk) CD_OPEN.add(el.dataset.wk);
+    });
+  }
+  if(on) CD_OPEN.delete(wk); else CD_OPEN.add(wk);
+  renderViewBar();
+  render();
+};
+
+/* 모든 주를 한꺼번에 펼치고 접기
+   — 하나라도 펼쳐져 있으면 «닫기», 모두 닫혀 있으면 «열기» */
+window.toggleAllCd = function(){
+  const anyOpen = CD_ALL || CD_OPEN.size > 0;
+  CD_ALL = !anyOpen;
+  CD_OPEN.clear();
+  renderViewBar();
+  render();
+};
 
 /* ═══════════════════════════════════════════════
    📋 수업일 표 — 학년별로 «이날 수업하나»를 한 장에
@@ -2672,8 +2791,6 @@ function renderTabs(){
       <span class="tab-ic">📅</span>학사일정</button>
     ${canEditAny()?`<button class="tab-main ${curTab==='edit'?'on':''}" data-tab="edit" onclick="showAcTab('edit')">
       <span class="tab-ic">✏️</span>일정 편집</button>
-    <button class="tab-main ${curTab==='cdays'?'on':''}" data-tab="cdays" onclick="showAcTab('cdays')">
-      <span class="tab-ic">📋</span>수업일</button>
     <button class="tab-main ${curTab==='set'?'on':''}" data-tab="set" onclick="showAcTab('set')">
       <span class="tab-ic">⚙️</span>설정</button>`:''}`;
 }
