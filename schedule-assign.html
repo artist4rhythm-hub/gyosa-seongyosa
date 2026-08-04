@@ -362,6 +362,29 @@
     background:var(--lc-bg,#fff);border:1px solid var(--ivd,#E3E1DA);border-left:4px solid var(--lc,#7FB5A0);
     cursor:grab;user-select:none}
   .pg-tray-card:active{cursor:grabbing}
+  /* 🅰️🅱️ 학년 나누기 */
+  .gt-wrap{ border:1px solid var(--ivd,#E3E1DA); border-radius:11px; padding:11px 13px; margin-bottom:14px;
+    background:var(--iv,#F7F6F2); }
+  .gt-t1{ font-size:13px; font-weight:800; color:var(--gd,#1E3932); margin-bottom:8px; }
+  .gt-t1 span{ font-weight:400; font-size:11.5px; color:var(--tl,#8A9490); }
+  .gt-list{ display:flex; flex-direction:column; gap:4px; }
+  .gt-list.fold{ display:none; }
+  .gt-row{ display:flex; align-items:center; gap:9px; padding:5px 9px; background:var(--wh,#fff);
+    border:1px solid var(--ivd,#E3E1DA); border-radius:8px; flex-wrap:wrap; }
+  .gt-row.on{ border-color:var(--gm,#2C6E54); }
+  .gt-g{ font-size:12.5px; font-weight:800; color:var(--gd,#1E3932); min-width:56px; }
+  .gt-none{ font-size:11.5px; color:var(--tl,#8A9490); }
+  .gt-tags{ display:flex; gap:4px; flex-wrap:wrap; }
+  .gt-t{ font-size:11px; font-weight:800; color:#fff; background:var(--gm,#2C6E54);
+    border-radius:5px; padding:2px 7px; }
+  .gt-btns{ margin-left:auto; display:flex; gap:5px; }
+  .gt-more{ margin-top:8px; }
+  /* 나뉜 학년 칩 묶음 */
+  .gsplit{ display:inline-flex; align-items:center; gap:3px; padding:2px 6px 2px 8px;
+    border:1px dashed var(--ivd,#E3E1DA); border-radius:9px; margin:0 3px 4px 0; }
+  .gsplit b{ font-size:11.5px; font-weight:800; color:var(--ts,#5A6560); margin-right:2px; }
+  .gchip.sm{ font-size:11px; padding:3px 8px; }
+  .gchip.sm.all{ border-style:dashed; }
   .pg-zfine{display:inline-flex;align-items:center;gap:4px;margin-left:8px;padding-left:8px;
     border-left:1px solid var(--ivd,#E3E1DA)}
   .pg-zpct{font-size:11.5px;font-weight:800;color:var(--gm,#2C6E54);min-width:42px;text-align:center}
@@ -1314,6 +1337,30 @@ window.nudgePgZoom = function(dir){
 const SNAP_MIN   = 5;    // 5분 단위로 붙는다
 
 let GRADE_DEPT = {};
+/* 🅰️🅱️ 학년 나누기(타입) — { '10학년':['A','B'] } 처럼 적어 두면
+   그 학년은 «10학년 A»·«10학년 B» 두 학년처럼 따로 시간표를 짤 수 있다.
+   수업 정의의 학년 고르기, 배치 탭, 부서 이어붙이기 모두 나뉜 학년으로 다룬다. */
+let GRADE_TYPES = {};
+const typesOf = g => (GRADE_TYPES[g]||[]).filter(Boolean);
+/* 기본 학년 → 실제로 쓰는 학년 목록 ( 타입이 있으면 «10학년 A», 없으면 그대로 ) */
+function splitGrade(g){
+  const ts = typesOf(g);
+  return ts.length ? ts.map(t=>`${g} ${t}`) : [g];
+}
+/* 나뉜 학년 → 원래 학년 ( «10학년 B» → «10학년» ) */
+function baseGrade(g){
+  const s = String(g||'');
+  const i = s.lastIndexOf(' ');
+  if(i > 0){
+    const head = s.slice(0,i), tail = s.slice(i+1);
+    if(typesOf(head).includes(tail)) return head;
+  }
+  return s;
+}
+/* 기관의 학년 목록을 타입까지 펼쳐서 */
+function gradeListOf(org){
+  return (GRADE_ORDER[org] || []).flatMap(splitGrade);
+}
 let SETS = [];           // 저장된 세트 목록
 let curSetId = null;     // 지금 불러와 쓰고 있는 세트
 let curSetName = '';
@@ -1645,6 +1692,7 @@ onAuthStateChanged(auth, async user => {
     await loadRooms();
     // 저장 목록(색인)은 부팅을 막지 않는다 — 도착하면 화면을 갱신
     loadSets().then(()=>{ try { renderSets(); renderSetBar(); } catch(e){} });
+    await loadGradeTypes();
     await loadGradeDept();
     renderSetBar();
     renderAvailGate();
@@ -2853,6 +2901,22 @@ window.addEventListener('beforeunload', e=>{
      { "틀ID": { "3학년": "부서ID", ... } }
    ═══════════════════════════════════════════ */
 
+async function loadGradeTypes(){
+  try {
+    const s = await getDoc(doc(db,'timetables','gradeTypes'));
+    GRADE_TYPES = (s.exists() && s.data().map) ? s.data().map : {};
+  } catch(e){ GRADE_TYPES = {}; }
+}
+async function saveGradeTypes(){
+  if(!needEdit()) return;
+  try {
+    await window.TM?.snapDoc('timetables','gradeTypes','학년 나누기 변경');
+    await setDoc(doc(db,'timetables','gradeTypes'), {
+      map: GRADE_TYPES, updatedAt: Timestamp.now(), updatedByName: CU?.name||''
+    });
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}
+
 async function loadGradeDept(){
   try {
     const s = await getDoc(doc(db,'timetables','gradeDept'));
@@ -2894,7 +2958,7 @@ function josaRo(word){
 function gradesInUse(){
   const set = new Set();
   LESSONS.forEach(l=> (l.grades||[]).forEach(g=>set.add(g)));
-  const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+  const order = [...gradeListOf('daniel'), ...gradeListOf('jihyebit')];
   return [...set].sort((a,b)=>{
     const ia = order.indexOf(a), ib = order.indexOf(b);
     return (ia<0?99:ia) - (ib<0?99:ib) || String(a).localeCompare(String(b),'ko');
@@ -2932,7 +2996,7 @@ function renderGradeDept(){
   }
 
   if(!gdFrameId){
-    box.innerHTML = `<div class="empty"><div class="ico">🏷️</div>
+    box.innerHTML = gradeTypePanelHTML() + `<div class="empty"><div class="ico">🏷️</div>
       <div class="t1">시간표 틀을 먼저 고르세요</div>
       <div>고른 틀의 부서에 학년을 이어 붙입니다.</div></div>`;
     return;
@@ -2941,14 +3005,15 @@ function renderGradeDept(){
   const f = FRAMES.find(x=>x.id===gdFrameId);
   const depts = (f && f.snapshot && f.snapshot.departments) || [];
   if(!depts.length){
-    box.innerHTML = `<div class="empty"><div class="t1">이 틀에는 부서가 없습니다</div>
+    box.innerHTML = gradeTypePanelHTML() + `<div class="empty"><div class="t1">이 틀에는 부서가 없습니다</div>
       <div>시간표 틀에서 부서를 먼저 만들어 주세요.</div></div>`;
     return;
   }
 
   const grades = gradesInUse();
+  const typeBox = gradeTypePanelHTML();
   if(!grades.length){
-    box.innerHTML = `<div class="empty"><div class="ico">📚</div>
+    box.innerHTML = typeBox + `<div class="empty"><div class="ico">📚</div>
       <div class="t1">아직 수업이 없습니다</div>
       <div>수업 정의에서 과목을 만들면 그 학년들이 여기 나옵니다.</div></div>`;
     return;
@@ -2968,13 +3033,108 @@ function renderGradeDept(){
   }).join('');
 
   const done = grades.filter(g=>deptOfGrade(gdFrameId,g)).length;
-  box.innerHTML = `
+  box.innerHTML = typeBox + `
     <div class="gd-sum">${grades.length}개 학년 중 <b>${done}개</b> 배정됨
       ${CAN_EDIT?'':'<span class="ro-note" style="margin-left:8px">👀 보기 전용</span>'}</div>
     <div class="gd-list">${rows}</div>
     ${CAN_EDIT?`<div class="gd-quick">
       ${depts.map(d=>`<button class="rm-modebtn" onclick="assignRestTo('${d.id}')">남은 학년을 ${esc(d.name)}${josaRo(d.name)}</button>`).join('')}
     </div>`:''}`;
+}
+
+/* 🅰️🅱️ 학년 나누기 판 — 한 학년을 A·B처럼 나눠 각각 시간표를 짤 수 있다 */
+function gradeTypePanelHTML(){
+  const org = (typeof lessonOrg!=='undefined' && lessonOrg) ? lessonOrg : 'daniel';
+  const base = GRADE_ORDER[org] || [];
+  const rows = base.map(g=>{
+    const ts = typesOf(g);
+    return `<div class="gt-row ${ts.length?'on':''}">
+      <span class="gt-g">${esc(g)}</span>
+      ${ts.length
+        ? `<span class="gt-tags">${ts.map(t=>`<span class="gt-t">${esc(g)} ${esc(t)}</span>`).join('')}</span>`
+        : `<span class="gt-none">나누지 않음</span>`}
+      ${CAN_EDIT ? `<span class="gt-btns">
+          <button class="rm-modebtn" onclick="setGradeTypes('${esc(g)}')">${ts.length?'고치기':'나누기'}</button>
+          ${ts.length?`<button class="rm-modebtn" onclick="clearGradeTypes('${esc(g)}')">되돌리기</button>`:''}
+        </span>` : ''}
+    </div>`;
+  }).join('');
+  const usedN = base.filter(g=>typesOf(g).length).length;
+  return `
+    <div class="gt-wrap">
+      <div class="gt-t1">🅰️🅱️ 학년 나누기 <span>— 한 학년을 A·B처럼 나눠 <b>따로 시간표</b>를 짤 수 있어요.
+        나누면 수업 정의·배치·합반 고르기에 «10학년 A», «10학년 B»로 각각 나옵니다.</span></div>
+      <div class="gt-list ${usedN?'':'fold'}">${rows}</div>
+      <div class="gt-more"><button class="rm-modebtn"
+        onclick="this.closest('.gt-wrap').querySelector('.gt-list').classList.toggle('fold')">학년 목록 열기·닫기 ▾</button></div>
+    </div>`;
+}
+window.setGradeTypes = async function(g){
+  if(!needEdit()) return;
+  const now = typesOf(g).join(', ');
+  const v = prompt(`«${g}»을(를) 어떻게 나눌까요?\n\n쉼표로 구분해 적어주세요. 예: A, B\n(비우고 확인하면 나누지 않습니다)`, now || 'A, B');
+  if(v === null) return;
+  const list = v.split(',').map(s=>s.trim()).filter(Boolean);
+  const before = typesOf(g);
+  if(!list.length){ await clearGradeTypes(g, true); return; }
+  // 이름이 바뀐 타입에 맞춰 이미 만든 수업·배치도 함께 옮긴다
+  const renames = {};
+  before.forEach((t,i)=>{ if(list[i] && list[i]!==t) renames[`${g} ${t}`] = `${g} ${list[i]}`; });
+  GRADE_TYPES[g] = list;
+  await saveGradeTypes();
+  if(Object.keys(renames).length) await renameGradeEverywhere(renames);
+  // 나누기 전에 «10학년»으로 만들어 둔 수업이 있으면 첫 타입으로 옮겨 준다
+  if(!before.length){
+    const moved = {}; moved[g] = `${g} ${list[0]}`;
+    await renameGradeEverywhere(moved);
+  }
+  renderGradeDept(); renderLessons();
+  toast(`${g} → ${list.map(t=>g+' '+t).join(' · ')} 로 나눴습니다`,'ok');
+};
+window.clearGradeTypes = async function(g, silent){
+  if(!needEdit()) return;
+  const ts = typesOf(g);
+  if(!ts.length) return;
+  if(!silent && !confirm(`«${g}» 나누기를 되돌릴까요?\n\n${ts.map(t=>g+' '+t).join(' · ')} 의 수업·배치가 모두 «${g}» 하나로 합쳐집니다.`)) return;
+  const back = {};
+  ts.forEach(t=>{ back[`${g} ${t}`] = g; });
+  delete GRADE_TYPES[g];
+  await saveGradeTypes();
+  await renameGradeEverywhere(back);
+  renderGradeDept(); renderLessons();
+  toast(`«${g}» 하나로 합쳤습니다`,'ok');
+};
+/* 학년 이름이 바뀌면 수업·배치·부서 매핑을 모두 따라 옮긴다 */
+async function renameGradeEverywhere(map){
+  let touched = false;
+  (LESSONS||[]).forEach(l=>{
+    const gs = (l.grades||[]).map(x=> map[x] || x);
+    if(JSON.stringify(gs) !== JSON.stringify(l.grades||[])){ l.grades = [...new Set(gs)]; touched = true; }
+  });
+  Object.keys(PLACE2||{}).forEach(fid=>{
+    const byGrade = PLACE2[fid] || {};
+    Object.keys(map).forEach(from=>{
+      if(byGrade[from]){
+        const to = map[from];
+        byGrade[to] = byGrade[to] || {};
+        Object.keys(byGrade[from]).forEach(day=>{
+          byGrade[to][day] = [...(byGrade[to][day]||[]), ...(byGrade[from][day]||[])];
+        });
+        delete byGrade[from]; touched = true;
+      }
+    });
+  });
+  Object.keys(GRADE_DEPT||{}).forEach(fid=>{
+    const m = GRADE_DEPT[fid] || {};
+    Object.keys(map).forEach(from=>{
+      if(m[from]){ m[map[from]] = m[map[from]] || m[from]; delete m[from]; touched = true; }
+    });
+  });
+  if(touched){
+    await saveLessons(true);
+    await savePlace2(true);
+    await saveGradeDept();
+  }
 }
 
 window.renderGradeDept = renderGradeDept;
@@ -3001,19 +3161,25 @@ window.assignRestTo = async function(deptId){
 
 async function loadSets(){
   try {
+    // ① 가벼운 색인부터 (세트 본문 없이 이름·요약만이라 눈 깜짝할 새 온다)
+    const idxSnap = await getDocs(collection(db,'timetableSetIndex'));
+    if(!idxSnap.empty){
+      const out = [];
+      idxSnap.forEach(d=>out.push({ id:d.id, ...d.data() }));
+      out.sort((a,b)=>(b.updatedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.createdAt?.seconds||0));
+      SETS = out; setsLoaded = true; return;
+    }
+    // ② 색인이 아직 없으면 — 한 번만 옛 방식으로 읽고, 다음부터 즉시 뜨게 색인을 만들어 둔다
     const snap = await getDocs(collection(db,'timetableSets'));
     const out = [];
-    snap.forEach(d=>{
+    for(const d of snap.docs){
       const v = d.data();
-      out.push({ id:d.id, name:v.name||'(이름 없음)', org:v.org||'',
-        createdByUid:v.createdByUid||'', createdByName:v.createdByName||'',
-        createdAt:v.createdAt||null, updatedAt:v.updatedAt||null,
-        updatedByName:v.updatedByName||'', note:v.note||'',
-        counts:v.counts||null, lastVer:Number(v.lastVer||0) });
-    });
+      out.push({ id:d.id, ...setMetaOf(d.id, v) });
+      try { await setDoc(doc(db,'timetableSetIndex', d.id), setMetaOf(d.id, v)); } catch(e){}
+    }
     out.sort((a,b)=>(b.updatedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.createdAt?.seconds||0));
-    SETS = out;
-  } catch(e){ SETS = []; }
+    SETS = out; setsLoaded = true;
+  } catch(e){ SETS = []; setsLoaded = true; }
 }
 
 // 이 세트를 고칠 수 있는 사람인가 (만든 사람 · 수퍼관리자)
@@ -3025,13 +3191,18 @@ function canEditSet(s){
 // 지금 화면의 모든 설정을 하나로 모은다
 function collectSetSnapshot(){
   return {
+    // 어느 틀에서 작업했는지와 그 틀의 모습까지 함께 담는다
+    // → 게시할 때 «저장한 그 틀·그 배치»가 그대로 나간다
+    frameId: pgFrameId || (FRAMES[0] && FRAMES[0].id) || '',
+    frames: JSON.parse(JSON.stringify(FRAMES || [])),
     assignStaff: ASSIGN_UIDS.slice(),
     availability: availToPlain(),           // Set 은 그대로 저장되지 않으므로 배열로 바꾼다
     // 사진은 빼고 층 구성과 교실 도형만 (사진은 층별 문서에 그대로 있다)
     floors: (FLOORS||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!f.image })),
     lessons: JSON.parse(JSON.stringify(LESSONS || [])),
     place2: JSON.parse(JSON.stringify(PLACE2 || {})),          // 시각 기반 배치
-    gradeDept: JSON.parse(JSON.stringify(GRADE_DEPT || {}))    // 학년별 부서
+    gradeDept: JSON.parse(JSON.stringify(GRADE_DEPT || {})),   // 학년별 부서
+    gradeTypes: JSON.parse(JSON.stringify(GRADE_TYPES || {}))  // 🅰️🅱️ 학년 나누기
   };
 }
 
@@ -3069,6 +3240,19 @@ window.overwriteSet = async function(){
   await writeSet(s.id, s.name, s.note||'');
 };
 
+let setsLoaded = false;   // 목록을 아직 받는 중인지 — 화면에 «불러오는 중»을 구분해 보여준다
+/* 목록용 가벼운 색인 — 세트 본문(무거움)을 안 받아도 목록이 바로 뜬다 */
+function setMetaOf(id, v){
+  return { name:v.name||'(이름 없음)', org:v.org||'',
+    createdByUid:v.createdByUid||'', createdByName:v.createdByName||'',
+    createdAt:v.createdAt||null, updatedAt:v.updatedAt||null,
+    updatedByName:v.updatedByName||'', note:v.note||'',
+    counts:v.counts||null, lastVer:Number(v.lastVer||0) };
+}
+async function writeSetIndex(id, v){
+  try { await setDoc(doc(db,'timetableSetIndex', id), setMetaOf(id, v)); } catch(e){}
+}
+
 async function writeSet(setId, name, note, silent){
   if(!dataReady || loadFailed){
     toast('불러오기가 끝나지 않아 저장하지 않았습니다. 새로고침해 주세요.','err');
@@ -3098,6 +3282,7 @@ async function writeSet(setId, name, note, silent){
     }
 
     await setDoc(doc(db,'timetableSets', id), base, { merge: !!setId });
+    await writeSetIndex(id, { ...(SETS.find(x=>x.id===id)||{}), ...base });
 
     if(!silent && newVer){
       try {
@@ -3140,6 +3325,7 @@ async function applySetSnapshot(snap, onStep){
   LESSONS = JSON.parse(JSON.stringify(snap.lessons||[]));
   PLACE2 = JSON.parse(JSON.stringify(snap.place2||{}));
   GRADE_DEPT = JSON.parse(JSON.stringify(snap.gradeDept||{}));
+  if(snap.gradeTypes) GRADE_TYPES = JSON.parse(JSON.stringify(snap.gradeTypes));
   FLOORS = (snap.floors||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage:!!f.hasImage, image:'' }));
 
   // 층 사진은 층별 문서에서 다시 붙인다 — 몇 장째인지 보여준다
@@ -3169,6 +3355,7 @@ async function applySetSnapshot(snap, onStep){
   await savePlace2(true);
   step('작업본 저장 6/6 — 학년·부서', 93); await breathe();
   await saveGradeDept();
+  if(snap.gradeTypes) await saveGradeTypes();
 
   step('마무리 정리 중', 97); await breathe();
   try { cleanGhostPlacements(); } catch(e){}
@@ -3291,13 +3478,15 @@ window.duplicateSet = async function(id){
     if(!d.exists()) throw new Error('원본을 찾을 수 없습니다');
     const v = d.data();
     const nid = 'ts_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    await setDoc(doc(db,'timetableSets', nid), {
+    const dupBase = {
       name: name.trim(), note: v.note||'', org: v.org||'',
       snapshot: v.snapshot||{}, counts: v.counts||null,
       createdAt: Timestamp.now(), createdByUid: CU?.uid||'', createdByName: CU?.name||'',
       updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'', updatedByName: CU?.name||'',
       copiedFrom: id, copiedFromName: v.name||''
-    });
+    };
+    await setDoc(doc(db,'timetableSets', nid), dupBase);
+    await writeSetIndex(nid, dupBase);
     await loadSets();
     window.hideLoading && window.hideLoading();
     toast(`"${name.trim()}"로 복제했습니다 ✓`,'ok');
@@ -3318,6 +3507,9 @@ window.renameSet = async function(id){
     await setDoc(doc(db,'timetableSets',id), {
       name: name.trim(), updatedAt: Timestamp.now(), updatedByName: CU?.name||''
     }, { merge:true });
+    try { await setDoc(doc(db,'timetableSetIndex',id), {
+      name: name.trim(), updatedAt: Timestamp.now(), updatedByName: CU?.name||''
+    }, { merge:true }); } catch(e){}
     if(curSetId===id) curSetName = name.trim();
     await loadSets(); renderSets(); renderSetBar();
     toast('이름을 바꿨습니다 ✓','ok');
@@ -4749,7 +4941,7 @@ function renderLessons(){
   empty.style.display='none'; list.style.display='block';
 
   // 학년별로 묶기
-  const order = GRADE_ORDER[lessonOrg] || [];
+  const order = gradeListOf(lessonOrg);   // 나뉜 학년(10학년 A·B)까지 펼쳐서
   const byGrade = {};
   mine.forEach(l=>{
     (l.grades||[]).forEach(g=>{ (byGrade[g]=byGrade[g]||[]).push(l); });
@@ -4931,10 +5123,9 @@ window.openLessonDlg = function(id, kind){
   dlgGrades = new Set(l ? (l.grades||[]) : []);
   dlgTeachers = new Set(l ? (l.teacherUids||[]) : []);
 
-  // 학년 칩
-  const order = GRADE_ORDER[lessonOrg] || [];
-  $I('ld-grades').innerHTML = order.map(g=>
-    `<span class="gchip ${dlgGrades.has(g)?'on':''}" onclick="toggleDlgGrade('${g}')">${esc(g)}</span>`).join('');
+  // 학년 칩 — 나뉜 학년(10학년 A·B)은 각각 고를 수 있다
+  $I('ld-grades').innerHTML = gradeChipsHTML();
+
   /* 담당 선생님 — 기관을 가리지 않고 모두 보여준다.
      교장·교감처럼 여러 기관을 겸하시거나, 다른 기관 선생님이 협력 수업에 들어가는 일이 있어
      소속으로 걸러 버리면 정작 필요한 분이 목록에 안 나온다.
@@ -4982,14 +5173,34 @@ window.openLessonDlg = function(id, kind){
   $I('lesson-dlg').style.display = 'flex';
 };
 window.closeLessonDlg = function(){ $I('lesson-dlg').style.display='none'; editingLessonId=null; };
+/* 나뉜 학년을 한꺼번에 켜고 끈다 */
+window.toggleDlgGradeAll = function(g){
+  const parts = splitGrade(g);
+  const allOn = parts.every(p=>dlgGrades.has(p));
+  parts.forEach(p=> allOn ? dlgGrades.delete(p) : dlgGrades.add(p));
+  refreshDlgGrades();
+};
 window.toggleDlgGrade = function(g){ if(dlgGrades.has(g)) dlgGrades.delete(g); else dlgGrades.add(g);
   openLessonDlgRefreshChips(); };
 window.toggleDlgTeacher = function(uid){ if(dlgTeachers.has(uid)) dlgTeachers.delete(uid); else dlgTeachers.add(uid);
   openLessonDlgRefreshChips(); };
+function gradeChipsHTML(){
+  return (GRADE_ORDER[lessonOrg]||[]).map(g=>{
+    const parts = splitGrade(g);
+    if(parts.length === 1)
+      return `<span class="gchip ${dlgGrades.has(g)?'on':''}" onclick="toggleDlgGrade('${g}')">${esc(g)}</span>`;
+    const allOn = parts.every(p=>dlgGrades.has(p));
+    return `<span class="gsplit">
+      <b>${esc(g)}</b>
+      ${parts.map(p=>`<span class="gchip sm ${dlgGrades.has(p)?'on':''}"
+        onclick="toggleDlgGrade('${esc(p)}')">${esc(p.slice(g.length+1))}</span>`).join('')}
+      <span class="gchip sm all ${allOn?'on':''}" onclick="toggleDlgGradeAll('${esc(g)}')">둘 다</span>
+    </span>`;
+  }).join('');
+}
+function refreshDlgGrades(){ const b=$I('ld-grades'); if(b) b.innerHTML = gradeChipsHTML(); }
 function openLessonDlgRefreshChips(){
-  const order = GRADE_ORDER[lessonOrg] || [];
-  $I('ld-grades').innerHTML = order.map(g=>
-    `<span class="gchip ${dlgGrades.has(g)?'on':''}" onclick="toggleDlgGrade('${g}')">${esc(g)}</span>`).join('');
+  $I('ld-grades').innerHTML = gradeChipsHTML();
   const orgTeachers = lessonTeacherPool().filter(t=> teacherInOrg(t, lessonOrg));
   $I('ld-teachers').innerHTML = orgTeachers.map(t=>`<span class="tchip ${dlgTeachers.has(t.uid)?'on':''}" onclick="toggleDlgTeacher('${t.uid}')">
       <span class="tc-dot" style="background:${t.color}"></span>${esc(t.name)}</span>`).join('');
