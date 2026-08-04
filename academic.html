@@ -535,7 +535,7 @@
 
   /* ── 🔎 행사 자세히 보기 ── */
   .evi-x{position:absolute;top:12px;right:12px;width:28px;height:28px;border-radius:50%;
-    border:none;background:rgba(0,0,0,.06);color:#555;font-size:15px;line-height:1;cursor:pointer}
+    border:none;background:rgba(0,0,0,.06);color:#555;font-size:15px;line-height:1;cursor:pointer;flex:0 0 auto;align-self:flex-start;display:inline-flex;align-items:center;justify-content:center;padding:0;box-sizing:border-box;min-width:28px;max-width:28px;}
   .evi-x:hover{background:rgba(0,0,0,.12)}
   .evi-head{display:flex;align-items:center;gap:11px;margin-bottom:12px;padding-right:26px}
   .evi-bar{width:5px;align-self:stretch;min-height:32px;border-radius:100px;background:var(--ec,#8B5CF6);flex:none}
@@ -549,6 +549,13 @@
   .evi-k{color:var(--tl,#93A09A);flex:none;min-width:58px}
   .evi-v{color:var(--ink,#1F2320);font-weight:700;overflow-wrap:anywhere}
   .evi-gr{display:flex;gap:5px;flex-wrap:wrap}
+  /* 대상 학년 — 부서별로 한 줄씩 */
+  .evi-gr2{display:flex;flex-direction:column;gap:6px}
+  .evi-gd{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .evi-gd > b{font-size:11px;font-weight:800;color:var(--gm,#2C6E54);
+    background:var(--gp,#E8F3EF);border-radius:6px;padding:2px 8px;flex:none}
+  .evi-gl{display:inline-flex;gap:3px;flex-wrap:wrap}
+  .evi-gd > i{font-style:normal;font-size:11px;color:var(--tl,#93A09A)}
   .evi-g{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;
     background:var(--iv,#F2F0EB);border-radius:6px;padding:2px 8px 2px 5px;color:var(--ts,#5A6560)}
   .evi-listt{font-size:12px;font-weight:800;color:var(--gd,#1E3932);margin:14px 0 6px}
@@ -2321,12 +2328,35 @@ window.openEvInfo = function(id){
 
   const cat = CATEGORIES[e.category] || CATEGORIES.event;
   const org = e.org || 'daniel';
+  /* 고른 순서가 아니라 «부서 → 학년 차례»로 가지런히 보여준다 */
   const tgtHTML = (!e.scope || e.scope==='all')
     ? '<span class="evi-v">전체</span>'
     : (e.scope==='dept'
         ? `<span class="evi-v">${esc((e.targets||[]).join(', '))}</span>`
-        : `<span class="evi-v evi-gr">${(e.targets||[]).map(g=>
-            `<span class="evi-g">${gradeBadge(g, true)}${esc(g)}</span>`).join('')}</span>`);
+        : (()=>{
+            const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+            const list = expandTargets(e.targets||[], e.org)
+              .slice().sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+            // 부서별로 묶는다 (초등부 1~4학년 / 중등부 7·8학년 …)
+            const groups = [];
+            list.forEach(g=>{
+              const d = deptOfGrade(g) || '기타';
+              const last = groups[groups.length-1];
+              if(last && last.dept === d) last.items.push(g);
+              else groups.push({ dept:d, items:[g] });
+            });
+            return `<span class="evi-v evi-gr2">${groups.map(gp=>{
+              const runs = gradeRuns(gp.items);
+              const range = runs.map(r=> r.n>=2 ? `${gradeNum(r.start)}~${gradeNum(r.end)}학년`
+                : r.start).join(', ');
+              return `<span class="evi-gd">
+                <b>${esc(gp.dept)}</b>
+                <span class="evi-gl">${gp.items.map(g=>
+                  `<span class="evi-g">${gradeBadge(g, true)}${esc(gradeNum(g))}</span>`).join('')}</span>
+                <i>${esc(range)}</i>
+              </span>`;
+            }).join('')}</span>`;
+          })());
 
   closeEvInfo();
   const ov = document.createElement('div');
