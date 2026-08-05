@@ -178,7 +178,22 @@
   @media (max-width:640px){
     .vs-lab{ width:100%; }
     .vs-hint{ width:100%; }
-    /* 📱 폰 — 좁은 칸에서 글자가 한 글자씩 세로로 쪼개지지 않게 */
+    /* 📱 폰 — 글자는 한 줄로, 칸 밖으로 흘러 넘치게 (세로로 쪼개지지 않도록)
+       · 색 상자는 그 날짜 칸에만 · 글자만 옆으로 이어진다
+       · 오른쪽 끝(금·토)은 글자가 왼쪽으로 흘러 화면 안에 들어온다 */
+    .cw-lane{ overflow:visible; }
+    .cw-sec{ overflow:visible; }
+    .ev-bar{ overflow:visible; white-space:nowrap; flex-wrap:nowrap; position:relative; }
+    .ev-bar .eb-t{ white-space:nowrap; overflow:visible !important;
+      text-overflow:clip !important; max-width:none !important;
+      flex:0 0 auto !important; min-width:max-content; }
+    .ev-bar.flow-right{ justify-content:flex-start; }
+    .ev-bar.flow-left{ justify-content:flex-end; direction:rtl; }
+    .ev-bar.flow-left > *{ direction:ltr; }
+    /* 글자가 옆 칸 위로 흘러도 읽히도록 살짝 그림자 */
+    .ev-bar .eb-t{ text-shadow:0 1px 2px rgba(0,0,0,.28); }
+    .ev-bar .eb-s, .ev-bar .gg{ display:none; }   /* 폰에서는 부제·게이지 생략 */
+
     .cw-nm, .cw-hn{ white-space:nowrap; }
     .cw-nm{ font-size:8.5px; padding:1px 3px; }
     .cw-hn{ font-size:8.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
@@ -311,6 +326,28 @@
   .gf-c:hover{ border-color:var(--gm); }
   .gf-c.on{ background:var(--gc, var(--gd)); border-color:var(--gc, var(--gd)); color:#fff; }
   .gf-note{ font-size:11px; color:var(--tl); margin-left:6px; }
+  /* 📱 폰 아이콘 줄 */
+  .ph-bar{ display:none; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
+  .ph-b{ display:inline-flex; align-items:center; gap:4px; font-family:inherit;
+    font-size:11.5px; font-weight:700; padding:7px 10px; border-radius:9px;
+    border:1.5px solid var(--ivd); background:var(--wh); color:var(--ts); cursor:pointer; }
+  .ph-b span{ font-size:13px; }
+  .ph-b.on{ background:var(--gd); border-color:var(--gd); color:#fff; }
+  @media (max-width:640px){
+    .ph-bar{ display:flex; }
+    /* 아이콘으로 고른 줄만 펼친다 */
+    body.ph-mode #org-bar,
+    body.ph-mode .yr-bar,
+    body.ph-mode .vw-bar,
+    body.ph-mode .gf-bar,
+    body.ph-mode .ac-head .ac-toolbar{ display:none; }
+    body.ph-mode[data-ph-open="cal"]   #org-bar{ display:block; }
+    body.ph-mode[data-ph-open="year"]  .yr-bar{ display:flex; }
+    body.ph-mode[data-ph-open="view"]  .vw-bar{ display:flex; }
+    body.ph-mode[data-ph-open="grade"] .gf-bar{ display:flex; }
+    body.ph-mode .ac-head{ margin-bottom:6px; }
+    body.ph-mode .ac-title{ font-size:19px; }
+  }
   /* 🎨 색 고르기 — 분류 계열 + 그 밖의 색 */
   .cp-row{ display:flex; align-items:flex-start; gap:8px; margin-bottom:6px; }
   .cp-lab{ flex:none; width:74px; font-size:11px; font-weight:800; color:var(--ts); padding-top:5px; }
@@ -629,6 +666,7 @@
       <span id="yr-act" style="margin-left:auto;display:flex;gap:6px"></span>
     </div>
 
+    <div class="ph-bar" id="ph-bar"></div>
     <div class="vw-bar" id="vw-bar"></div>
     <div class="gf-bar" id="gf-bar"></div>
     <div id="edit-hint" style="display:none">
@@ -1421,7 +1459,9 @@ function barHTML(b, days){
   const canDrag = DRAG_ON && CAN_EDIT && canEditCal(calOf(e));
   const fromDs = (days && days[b.start]) ? days[b.start].ds : '';
   const dim = (GRADE_FILTER && !evHitsGrade(e, GRADE_FILTER)) ? ' dim' : '';
-  const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'') + dim;
+  // 폰에서는 글자를 한 줄로 흘려보낸다. 오른쪽 끝 칸이면 왼쪽으로 흐르게 (화면 밖으로 안 나가게)
+  const side = (b.start + b.span >= 6) ? ' flow-left' : ' flow-right';
+  const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'') + dim + side;
   return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}" data-lane="${b.lane==null?0:b.lane}"
     ${canDrag?`draggable="true" ondragstart="onBarDrag(event,'${e.id}','${fromDs}')"`:''}
     style="grid-column:${b.start+1} / span ${b.span};background:${evColor(e)}"
@@ -1632,6 +1672,7 @@ function render(){
   html += '</div>';
   $I('cal-mount').innerHTML = html;
   evenWeekHeights();
+  renderPhoneBar();
   watchFlowScroll();
   renderLegend();
   renderGradeFilter();
@@ -2913,6 +2954,32 @@ function renderGradeFilter(){
       ? `<b>${esc(GRADE_FILTER)}</b> 일정만 또렷하게 — 초록 «수업»은 이 학년이 수업하는 날이에요`
       : '학년을 고르면 그 학년 일정만 또렷하게 볼 수 있어요'}</span>`;
 }
+/* 📱 폰 세로 화면 — 위쪽 설정 줄이 화면을 다 먹지 않도록 아이콘 한 줄로 접는다.
+   아이콘을 누르면 그 줄만 펼쳐진다. */
+let PH_OPEN = '';   // '' | 'cal' | 'year' | 'view' | 'grade'
+window.togglePh = function(k){
+  PH_OPEN = (PH_OPEN === k) ? '' : k;
+  renderPhoneBar();
+};
+function renderPhoneBar(){
+  const bar = $I('ph-bar'); if(!bar) return;
+  if(!PHONE){ bar.style.display='none'; document.body.classList.remove('ph-mode'); return; }
+  bar.style.display='';
+  document.body.classList.add('ph-mode');
+  const items = [
+    { k:'cal',   ic:'📚', label:'캘린더' },
+    { k:'year',  ic:'🗓️', label:'학년도' },
+    { k:'view',  ic:'👀', label:'보기' },
+    { k:'grade', ic:'🎯', label: GRADE_FILTER ? esc(GRADE_FILTER) : '학년' },
+  ];
+  bar.innerHTML = items.map(i=>`
+    <button class="ph-b ${PH_OPEN===i.k?'on':''}" onclick="togglePh('${i.k}')">
+      <span>${i.ic}</span>${i.label}</button>`).join('')
+    + `<button class="ph-b" onclick="goToday()"><span>📍</span>오늘</button>`;
+  // 펼친 것만 보이게
+  document.body.dataset.phOpen = PH_OPEN;
+}
+
 window.setGradeFilter = function(g){
   GRADE_FILTER = (GRADE_FILTER===g) ? '' : g;
   try { localStorage.setItem('ac_gfilter', GRADE_FILTER); } catch(e){}
