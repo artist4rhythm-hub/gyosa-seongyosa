@@ -659,11 +659,24 @@
     color:var(--gm); cursor:pointer; line-height:1; }
   .mj-sel{ font-family:inherit; font-size:12.5px; font-weight:800; padding:6px 8px;
     border:1px solid var(--ivd); border-radius:8px; background:var(--wh); color:var(--gd); }
-  #ac-nowmonth{ position:fixed; top:64px; right:10px; z-index:120;
-    background:var(--gd); color:#fff; font-size:12px; font-weight:800;
-    padding:7px 12px; border-radius:100px; box-shadow:0 4px 16px rgba(0,0,0,.18);
-    cursor:pointer; opacity:0; pointer-events:none; transition:opacity .2s; }
-  #ac-nowmonth.on{ opacity:1; pointer-events:auto; }
+  /* 하단 플로팅 월 내비 — 지금 보는 달을 보여주고, ‹ › 로 한 달씩, 가운데를 누르면 바로 이동 */
+  #ac-mnav{ position:fixed; left:50%; transform:translateX(-50%); bottom:20px; z-index:120;
+    display:flex; align-items:center; gap:2px;
+    background:var(--gd); border-radius:100px; padding:5px 7px;
+    box-shadow:0 6px 22px rgba(0,0,0,.28);
+    opacity:0; pointer-events:none; transition:opacity .2s, bottom .2s; }
+  #ac-mnav.on{ opacity:1; pointer-events:auto; }
+  #ac-mnav .mn-b{ font-family:inherit; font-size:15px; font-weight:900; width:30px; height:30px;
+    border:none; border-radius:100px; background:transparent; color:rgba(255,255,255,.85);
+    cursor:pointer; line-height:1; }
+  #ac-mnav .mn-b:active{ background:rgba(255,255,255,.15); }
+  #mnav-sel{ font-family:inherit; font-size:12.5px; font-weight:800;
+    border:none; background:transparent; color:#fff; padding:4px 2px;
+    text-align:center; cursor:pointer; -webkit-appearance:none; appearance:none; }
+  #mnav-sel option{ color:var(--ink,#1F2320); }
+  @media (max-width:640px){
+    #ac-mnav{ bottom:calc(env(safe-area-inset-bottom, 0px) + 74px); }  /* 하단 탭 위 */
+  }
   @media (max-width:640px){
     .ac-mjump{ gap:4px; }
     .mj-b{ width:28px; height:28px; }
@@ -1849,15 +1862,16 @@ window.addEventListener('resize', ()=>{
    · 제목 오른쪽: ‹ 달 고르기 › — 고르면 그 달로 바로 이동
    · 아래로 내리면 오른쪽 위에 「지금 보는 달」 칩이 떠서 길을 잃지 않는다 */
 function fillMonthSel(){
-  const sel = $I('mj-sel'); if(!sel) return;
   const opts = [];
   // 지금 달을 가운데 두고 앞뒤 아홉 달씩
   for(let k=-9; k<=9; k++){
     const d = new Date(curYear, curMonth-1+k, 1);
     opts.push({ y:d.getFullYear(), m:d.getMonth()+1 });
   }
-  sel.innerHTML = opts.map(o=>
+  const html = opts.map(o=>
     `<option value="${o.y}-${o.m}" ${o.y===curYear&&o.m===curMonth?'selected':''}>${o.y}년 ${o.m}월</option>`).join('');
+  const sel = $I('mj-sel');    if(sel)  sel.innerHTML = html;
+  const nsel = $I('mnav-sel'); if(nsel) nsel.innerHTML = html;
 }
 window.jumpMonthSel = function(v){
   const [y,m] = String(v).split('-').map(Number); if(!y||!m) return;
@@ -1875,33 +1889,41 @@ async function jumpToMonth(y,m){
   const mount = $I('cal-mount');
   if(mount) window.scrollTo({ top: mount.getBoundingClientRect().top + window.scrollY - 70, behavior:'smooth' });
 }
-/* 지금 화면 맨 위에 보이는 주가 속한 달을 칩에 보여준다 */
-function ensureNowChip(){
-  if($I('ac-nowmonth')) return;
-  const c = document.createElement('button');
-  c.id = 'ac-nowmonth';
-  c.onclick = ()=>{ const s=$I('mj-sel'); if(s){ window.scrollTo({top:0,behavior:'smooth'}); } };
-  document.body.appendChild(c);
+/* 하단 플로팅 월 내비 — 지금 화면 맨 위에 보이는 주가 속한 달을 보여준다 */
+function ensureMNav(){
+  if($I('ac-mnav')) return;
+  const w = document.createElement('div');
+  w.id = 'ac-mnav';
+  w.innerHTML = `
+    <button class="mn-b" onclick="jumpMonthStep(-1)" aria-label="한 달 앞으로">‹</button>
+    <select id="mnav-sel" onchange="jumpMonthSel(this.value)" aria-label="달 고르기"></select>
+    <button class="mn-b" onclick="jumpMonthStep(1)" aria-label="한 달 뒤로">›</button>`;
+  document.body.appendChild(w);
+  fillMonthSel();   // 방금 생긴 셀렉트도 채운다
 }
 let _nmTimer = null;
 window.addEventListener('scroll', ()=>{
   if(_nmTimer) return;
   _nmTimer = setTimeout(()=>{
     _nmTimer = null;
-    ensureNowChip();
-    const chip = $I('ac-nowmonth'); if(!chip) return;
+    ensureMNav();
+    const nav = $I('ac-mnav'); if(!nav) return;
     const rows = document.querySelectorAll('#cal-mount .cal-week[data-ym]');
-    if(!rows.length){ chip.classList.remove('on'); return; }
+    if(!rows.length){ nav.classList.remove('on'); return; }
     let cur = null;
-    rows.forEach(r=>{ if(r.getBoundingClientRect().top <= 140) cur = r.dataset.ym; });
+    rows.forEach(r=>{ if(r.getBoundingClientRect().top <= 160) cur = r.dataset.ym; });
     if(!cur) cur = rows[0].dataset.ym;
-    const [y,m] = String(cur).split('-');
-    chip.textContent = `📅 ${y}년 ${m}월`;
+    const sel = $I('mnav-sel');
+    if(sel && cur){
+      const [y,m] = String(cur).split('-').map(Number);
+      const v = y + '-' + m;
+      if(sel.value !== v && sel.querySelector(`option[value="${v}"]`)) sel.value = v;
+    }
     // 달력 영역을 지나고 있을 때만 보여준다
     const mount = $I('cal-mount');
     const inCal = mount && mount.getBoundingClientRect().top < 60 &&
-                  mount.getBoundingClientRect().bottom > 200;
-    chip.classList.toggle('on', !!inCal);
+                  mount.getBoundingClientRect().bottom > 260;
+    nav.classList.toggle('on', !!inCal);
   }, 120);
 }, { passive:true });
 
