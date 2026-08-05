@@ -178,6 +178,31 @@
   @media (max-width:640px){
     .vs-lab{ width:100%; }
     .vs-hint{ width:100%; }
+    /* 📱 폰 — 좁은 칸에서 글자가 한 글자씩 세로로 쪼개지지 않게 */
+    .cw-nm, .cw-hn{ white-space:nowrap; }
+    .cw-nm{ font-size:8.5px; padding:1px 3px; }
+    .cw-hn{ font-size:8.5px; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+    .cw-n{ gap:3px; }
+    .cw-n b{ font-size:12px; }
+    .ev-bar{ font-size:9.5px; padding:2px 4px; }
+    .cw-wk{ width:56px; font-size:8.5px; }
+    .cal-week{ grid-template-columns:56px 1fr; }
+    /* 날짜 칸이 좁으면 «수업» 배지는 점으로만 (자리 차지 최소화) */
+    .cw-nm.dot{ font-size:0; width:7px; height:7px; border-radius:50%; padding:0;
+      background:#16A34A; }
+    .cw-nm.part.dot{ background:#84CC16; }
+    /* 고르는 줄 압축 */
+    .gf-bar{ padding:6px 8px; gap:3px; }
+    .gf-c{ min-width:24px; height:24px; font-size:11px; padding:0 5px; }
+    .gf-note{ display:none; }
+    .vw-bar{ gap:5px; }
+    .vw-gear, .vw-fb, .vw-drag{ padding:6px 9px; font-size:11.5px; }
+    .ac-viewtoggle button{ padding:6px 10px; font-size:11.5px; }
+    /* 주 아래 수업일 표 — 폰에서는 라벨 칸을 좁게 */
+    .wcd{ grid-template-columns:56px repeat(7,minmax(0,1fr)); }
+    .wcd-lb{ font-size:10px; padding:2px 5px; }
+    .wcd-n{ font-size:10px; }
+    .wcd-d b{ font-size:9.5px; } .wcd-d span{ font-size:8px; }
   }
   /* 📋 주 아래에 펼쳐지는 학년별 수업일 표 */
   .cw-cd{ display:none; grid-column:1 / -1; background:var(--iv); }
@@ -1164,22 +1189,25 @@ function classDayInfo(ds, dayInfo){
   return { kind:'some', grades:on };
 }
 /* 우측 위 배지 — 전 학년이면 «수업», 일부면 «일부 수업»(어느 학년인지 툴팁) */
+let PHONE = false;
+try { PHONE = matchMedia('(max-width:640px)').matches; } catch(e){}
 function classBadge(x){
   const ci = x.classInfo || { kind:'none' };
   if(ci.kind === 'none') return '';
+  const dot = PHONE ? ' dot' : '';
   if(GRADE_FILTER){
     // 학년을 골랐으면 그 학년 기준으로 딱 떨어지게
     return (ci.grades||[]).includes(GRADE_FILTER)
-      ? `<span class="cw-nm" title="${esc(GRADE_FILTER)} — 이날은 수업이 있습니다">수업</span>` : '';
+      ? `<span class="cw-nm${dot}" title="${esc(GRADE_FILTER)} — 이날은 수업이 있습니다">수업</span>` : '';
   }
-  if(ci.kind === 'all') return `<span class="cw-nm" title="모든 학년 정상 수업">수업</span>`;
+  if(ci.kind === 'all') return `<span class="cw-nm${dot}" title="모든 학년 정상 수업">수업</span>`;
   const runs = gradeRuns(ci.grades||[]);
   const txt = runs.map(r=> r.n>=3 ? `${gradeNum(r.start)}~${gradeNum(r.end)}학년`
     : Array.from({length:r.n},(_,k)=>{
         const order=[...(GRADE_ORDER.daniel||[]),...(GRADE_ORDER.jihyebit||[])];
         return order[r.endIdx-r.n+1+k];
       }).join('·')).join(', ');
-  return `<span class="cw-nm part" title="${esc(txt)} 수업 — 학년을 고르면 또렷하게 볼 수 있어요">일부 수업</span>`;
+  return `<span class="cw-nm part${dot}" title="${esc(txt)} 수업 — 학년을 고르면 또렷하게 볼 수 있어요">일부 수업</span>`;
 }
 
 /* 이 행사가 «이날 수업 없음»인가 — 담당이 정한 값, 없으면 분류로 판단 */
