@@ -287,6 +287,10 @@ function renderSidebar(){
     </nav>
 
     <div class="sb-foot">
+      <button class="sb-foot-tg" onclick="toggleSbFoot()">
+        <span>설정</span><i id="sb-foot-arrow">⌄</i>
+      </button>
+      <div class="sb-foot-body" id="sb-foot-body">
       <div class="fs-row">
         <span class="fs-lab">글자 크기</span>
         <div class="fs-pick">
@@ -305,9 +309,11 @@ function renderSidebar(){
           <div class="sb-mr">${sbOrgLabel()}</div>
         </div>
       </div>
+      </div>
     </div>`;
   // 버튼이 방금 그려졌으니 지금 고른 글자 크기를 표시해 준다
   if(window.applyFS) window.applyFS();
+  sbFootInit();
   // 열려 있는 탭을 경로에 잇는다
   setTimeout(()=>{ if(window.crumbFromTabs) crumbFromTabs(); }, 120);
 }
@@ -410,6 +416,31 @@ function renderMobileTabs(){
       <span class="mt-l">전체</span>
     </button>`;
 }
+
+/* ═══ 설정 접기 (글자 크기·화면 모드·내 정보) ═══
+   · 열림/닫힘을 기억한다 · 낮은 화면(폰 가로)은 처음에 접힌 채로 시작 */
+function sbFootInit(){
+  let open;
+  try { open = localStorage.getItem('sb_foot'); } catch(e){}
+  if(open === null || open === undefined){
+    open = (window.innerHeight < 560) ? '0' : '1';
+  }
+  applySbFoot(open === '1');
+}
+function applySbFoot(open){
+  const b = document.getElementById('sb-foot-body');
+  const a = document.getElementById('sb-foot-arrow');
+  if(b) b.style.display = open ? '' : 'none';
+  if(a) a.textContent = open ? '⌄' : '›';
+  document.getElementById('sb')?.classList.toggle('foot-closed', !open);
+}
+function toggleSbFoot(){
+  const b = document.getElementById('sb-foot-body');
+  const open = b && b.style.display === 'none';
+  applySbFoot(open);
+  try { localStorage.setItem('sb_foot', open ? '1' : '0'); } catch(e){}
+}
+window.toggleSbFoot = toggleSbFoot;
 
 /* ═══ 드로어(모바일) ═══ */
 function openDrawer(){
@@ -561,6 +592,31 @@ html[data-theme="dark"] .fs-pick button.on{color:#06130E;}
 /* ── 태블릿: 사이드바 좁게 ── */
 @media(max-width:1100px){
   :root{--sb-w:calc(190px * var(--zoom));}
+}
+
+/* 설정 접기 버튼 */
+.sb-foot-tg{display:flex;align-items:center;justify-content:space-between;width:100%;
+  border:none;background:none;color:rgba(255,255,255,.55);font-family:inherit;
+  font-size:11.5px;font-weight:800;letter-spacing:.04em;cursor:pointer;
+  padding:4px 2px 8px;}
+.sb-foot-tg i{font-style:normal;font-size:13px;opacity:.8;}
+
+/* ── 폰 가로(낮은 화면): 서랍 취급 + 세로 압축 ──
+   가로로 눕히면 폭이 768px를 넘어 데스크톱으로 오해받던 문제를 바로잡는다.
+   X 버튼이 안 먹히던 것도 이것 때문 — 이제 서랍이라 닫힌다. */
+@media (max-height:520px) and (max-width:1100px){
+  #sb{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);
+    transition:transform .22s ease;box-shadow:var(--shadow-md);
+    width:calc(250px * var(--zoom));max-width:60vw;overflow-y:auto;z-index:60;}
+  #app.drawer #sb{transform:translateX(0);}
+  #app.drawer #sb-scrim{display:block;position:fixed;inset:0;background:rgba(30,57,50,.45);z-index:55;}
+  .sb-close{display:block;}
+  .tb-menu{display:block;}
+  /* 세로 압축 — 위쪽 상표·검색, 아래 설정이 절반을 차지하지 않게 */
+  .sb-top{padding:7px 12px 5px;}
+  .sb-search{display:none;}
+  .sb-foot{padding-top:6px;padding-bottom:8px;}
+  .fs-row{margin-bottom:6px;}
 }
 
 /* ── 모바일/세로: 드로어 + 하단탭 ── */
