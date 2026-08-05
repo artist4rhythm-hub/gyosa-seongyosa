@@ -828,7 +828,7 @@ function catPalette(cat){ return CAT_PALETTE[cat] || CAT_PALETTE.event; }
 
 /* 🌈 학년 배지 — 색은 무지개, 모양은 부서
      색: 1 빨강 · 2·3 주황 · 4·5 노랑 · 6·7 초록 · 8·9 파랑 · 10·11 남색 · 12 보라
-     모양: 초등(1~6) 동그라미 · 중등(7~9) 네모 · 고등(10~12) 오각형
+     모양: 초등(1~5) 동그라미 · 중등(6~9) 네모 · 고등(10~12) 오각형
    같은 색이라도 모양이 달라 6학년과 7학년이 헷갈리지 않는다. */
 const GRADE_COLORS = {
   '1학년':'#D63A3F',                        // 빨강
@@ -854,8 +854,8 @@ function gradeShape(g){
   const s = String(g||'');
   if(!s.includes('학년')) return 'circle';
   const n = parseInt(gradeNum(g), 10) || 0;
-  if(n >= 10) return 'tri';      // 고등 — 오각형
-  if(n >= 7)  return 'square';   // 중등 — 네모
+  if(n >= 10) return 'tri';      // 고등 — 오각형 (10~12학년)
+  if(n >= 6)  return 'square';   // 중등 — 네모 (6~9학년)
   return 'circle';               // 초등 — 동그라미
 }
 
@@ -1209,7 +1209,7 @@ function deptOfGrade(grade){
   const n = parseInt(gradeNum(grade),10) || 0;
   if(!String(grade||'').includes('학년')) return DEPTS.find(d=>/유아|유치/.test(d)) || '';
   if(n >= 10) return DEPTS.find(d=>d.includes('고')) || '고등부';
-  if(n >= 7)  return DEPTS.find(d=>d.includes('중')) || '중등부';
+  if(n >= 6)  return DEPTS.find(d=>d.includes('중')) || '중등부';
   return DEPTS.find(d=>d.includes('초')) || '초등부';
 }
 
@@ -1457,10 +1457,9 @@ function targetDots(e){
 
 /* 두 기관을 겹쳐 볼 때 어느 기관 것인지 표시 */
 function orgMark(e){
-  const o = calOf(e);
-  // 겹쳐 볼 때, 그리고 기관 캘린더에 섞여 나오는 «DA 전체» 일정에 표시를 붙인다
-  if(ORG !== ORG_ALL && !(o === 'all' && ORG !== 'all')) return '';
-  return `<span class="ev-org ${o}" title="${esc((CALS[o]||{}).label||'')}"></span>`;
+  // 달력에서는 이름만 보이게 한다 (점은 눈에 걸리고 자리만 차지했다)
+  // 어느 기관 일정인지는 행사를 눌러 자세히 보면 알 수 있다
+  return '';
 }
 
 /* 칸의 행사를 눌렀을 때 — 보기 탭이면 상세 카드, 편집 탭이면 편집 창 */
@@ -1476,7 +1475,8 @@ function barHTML(b, days){
   const fromDs = (days && days[b.start]) ? days[b.start].ds : '';
   const dim = (GRADE_FILTER && !evHitsGrade(e, GRADE_FILTER)) ? ' dim' : '';
   // 폰에서는 글자를 한 줄로 흘려보낸다. 오른쪽 끝 칸이면 왼쪽으로 흐르게 (화면 밖으로 안 나가게)
-  const side = (b.start + b.span >= 6) ? ' flow-left' : ' flow-right';
+  // 끝나는 요일이 목요일(4) 이후면 글자를 왼쪽으로 흘린다 (화면 오른쪽 밖으로 안 나가게)
+  const side = (b.start + b.span - 1 >= 4) ? ' flow-left' : ' flow-right';
   const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'') + dim + side;
   return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}" data-lane="${b.lane==null?0:b.lane}"
     ${canDrag?`draggable="true" ondragstart="onBarDrag(event,'${e.id}','${fromDs}')"`:''}

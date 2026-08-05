@@ -148,8 +148,7 @@
     border-radius:7px; cursor:pointer; }
   .tv-ob.on{ background:var(--gd,#1E3932); border-color:var(--gd,#1E3932); color:#fff; }
   /* 하루씩 보기 — 한 열뿐이니 글자를 넉넉히 */
-  .tv-board.oneday .tv-c-top b{ font-size:calc(14px * var(--tvf,1)); }
-  .tv-board.oneday .tv-c-time{ font-size:calc(11.5px * var(--tvf,1)); }
+  .tv-board.oneday .tv-c-name{ font-size:calc(16px * var(--tvf,1)); }
   .tv-board.oneday .tv-c-who, .tv-board.oneday .tv-c-room{ font-size:calc(11px * var(--tvf,1)); }
   .tv-board.oneday .tv-card{ left:4px; right:4px; }
   .tv-days{ display:flex; gap:4px; margin-top:8px; }
@@ -158,12 +157,13 @@
     border-radius:9px; cursor:pointer; }
   .tv-db.on{ background:var(--gm,#2C6E54); border-color:var(--gm,#2C6E54); color:#fff; }
   /* 칸 내용 — 간략: 이름만 · 일반: 이름+시각 · 상세: 전부 */
-  .tv-board.slim .tv-c-time, .tv-board.slim .tv-c-sub, .tv-board.slim .tv-c-foot{ display:none; }
-  .tv-board.normal .tv-c-sub, .tv-board.normal .tv-c-foot{ display:none; }
-  .tv-board.slim .tv-c-top b{ -webkit-line-clamp:3; }
+  /* 칸 내용 — 간략: 과목명만 · 일반: +선생님 · 상세: +교실·학년 */
+  .tv-board.slim .tv-c-who, .tv-board.slim .tv-c-sub,
+  .tv-board.slim .tv-c-room, .tv-board.slim .tv-c-time{ display:none; }
+  .tv-board.normal .tv-c-sub, .tv-board.normal .tv-c-room, .tv-board.normal .tv-c-time{ display:none; }
+  .tv-board.full .tv-c-time{ display:none; }   /* 시각은 레일에 이미 있다 */
   /* 카드가 놓인 자리에서는 뒤에 깔린 «틀 블록 이름»이 비쳐 겹쳐 보이지 않게 한다 */
   .tv-card{ background-clip:padding-box; }
-  .tv-card .tv-c-top{ position:relative; z-index:1; }
   .tv-bg span{ opacity:.55; }
   .tv-board.slim .tv-bg.cls span{ display:none; }   /* 간략 보기에서는 배경 이름을 감춘다 */
   @media(max-width:640px){ .tv-sr-t{ display:none } .tv-sr-n{ width:78px } }
@@ -210,13 +210,10 @@
     .tv-card{ left:2px; right:2px; border-radius:8px; }
     /* 아주 짧은 칸(청소·종례 5분 등)도 이름은 보이게 — 최소 높이를 보장하고 한 줄로 */
     .tv-card.tiny, .tv-card.small{ min-height:15px; }
-    .tv-card.tiny .tv-c-top, .tv-card.small .tv-c-top{ padding:1px 5px; }
-    .tv-card.tiny .tv-c-top b, .tv-card.small .tv-c-top b{
-      font-size:calc(10px * var(--tvf,1)); -webkit-line-clamp:1; line-height:1.25;
+    .tv-card.tiny .tv-c-name, .tv-card.small .tv-c-name{
+      font-size:calc(11px * var(--tvf,1)); -webkit-line-clamp:1; line-height:1.25;
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tv-bg.tiny span{ display:none; }   /* 배경 쪽 짧은 라벨은 감춰 겹침 방지 */
-    .tv-c-top{ padding:3px 6px; }
-    .tv-c-top b{ font-size:calc(12.5px * var(--tvf,1)); }
     .tv-c-time{ font-size:calc(10px * var(--tvf,1)); }
     .tv-bg span{ font-size:9px; opacity:.42; }
     /* 시각 눈금·요일 머리글을 조금 줄여 칸을 넓게 */
@@ -263,37 +260,46 @@
   .tv-bg.tiny span{font-size:calc(7.5px * var(--tvf,1));padding:0 3px;line-height:1.1}
   /* 🎨 라이트 — 소프트 틴트: 테두리·그림자를 걷고 과목 색 하나로 차분하게 */
   .tv-card{position:absolute;left:3px;right:3px;box-sizing:border-box;overflow:hidden;
-    border-radius:9px;border:none;border-left:3px solid var(--lc,#7FB5A0);
+    border-radius:9px;border:none;
     background-color:var(--lc-bg,#F2F7F5);
-    display:flex;flex-direction:column;box-shadow:none}
-  .tv-c-top{flex:1;min-height:0;padding:3px 6px;overflow:hidden}
-  .tv-c-top b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
-    font-size:calc(11.5px * var(--tvf,1));font-weight:800;
-    color:var(--gd,#1E3932);line-height:1.3;overflow:hidden;
-    white-space:normal;overflow-wrap:anywhere;word-break:keep-all}
-  .tv-c-time i{font-style:normal;opacity:.72;margin-left:2px}
-  .tv-c-time{display:block;font-size:calc(9.5px * var(--tvf,1));color:var(--ts,#5A6560);
-    line-height:1.35;white-space:normal;overflow-wrap:anywhere}
-  .tv-c-sub{display:block;font-size:calc(9.5px * var(--tvf,1));color:var(--tl,#93A09A)}
-  /* 선생님 이름과 교실이 한 줄에 안 들어가면 서로 줄을 바꿔 내려간다.
-     (예전에는 한 줄에 밀어 넣느라 둘 다 "…"로 잘렸다) */
-  /* 아래 줄(선생님·교실)은 진한 띠 대신 옅은 글자로 — 요소를 줄여 정돈되게 */
-  .tv-c-foot{display:flex;align-items:center;gap:4px;row-gap:1px;flex-wrap:wrap;
-    background:transparent;padding:1px 7px 4px;flex:none;min-height:0;min-width:0}
-  /* 함께 들어가는 선생님이 여럿이면 두 줄까지 보여준다 */
-  .tv-c-who{font-size:calc(9.5px * var(--tvf,1));font-weight:700;color:var(--ts,#5A6560);
-    line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
-    overflow:hidden;word-break:keep-all;overflow-wrap:anywhere;min-width:0}
-  .tv-c-room{margin-left:auto;font-size:calc(9px * var(--tvf,1));font-weight:700;color:var(--tl,#93A09A);
-    flex:0 1 auto;min-width:0;max-width:100%;
-    background:rgba(0,0,0,.045);border-radius:4px;padding:0 5px;line-height:1.45;
-    white-space:normal;overflow-wrap:anywhere;word-break:keep-all}
-  .tv-card.mid .tv-c-top{padding:2px 6px}
-  .tv-card.mid .tv-c-top b{font-size:calc(11px * var(--tvf,1))}
-  .tv-card.mid .tv-c-time{font-size:calc(9px * var(--tvf,1))}
-  .tv-card.small{flex-direction:row;align-items:center;gap:6px;padding:0 6px}
-  .tv-card.small .tv-c-top{flex:1;padding:0;min-width:0}
-  .tv-card.small .tv-c-top b{font-size:calc(10.5px * var(--tvf,1));line-height:1.2}
+    display:flex;flex-direction:row;box-shadow:none}
+  /* 왼쪽 시각 레일 */
+  .tv-rail{flex:none;width:calc(46px * var(--tvf,1));max-width:34%;
+    background:var(--lc-rail, rgba(0,0,0,.055));
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+    padding:calc(4px * var(--tvf,1)) 0;gap:1px;min-width:0}
+  .tv-rail b{font-size:calc(11.5px * var(--tvf,1));font-weight:800;
+    color:var(--lc-ink,#14231D);line-height:1.15;white-space:nowrap}
+  .tv-rail i{font-style:normal;font-size:calc(9.5px * var(--tvf,1));
+    color:var(--ts,#6A7A73);opacity:.8;white-space:nowrap}
+  .tv-body{flex:1;min-width:0;position:relative;
+    padding:calc(5px * var(--tvf,1)) calc(8px * var(--tvf,1));
+    display:flex;flex-direction:column;gap:1px;overflow:hidden}
+  .tv-board:not(.oneday) .tv-card{flex-direction:row}
+  /* 과목명 — 카드에서 가장 또렷하게 (선생님·교실보다 확실히 크고 진하게) */
+  .tv-c-name{font-size:calc(14px * var(--tvf,1));font-weight:800;line-height:1.2;
+    color:var(--lc-ink,#16221C);
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+    word-break:keep-all;letter-spacing:-.01em}
+  .tv-c-who{font-size:calc(10px * var(--tvf,1));font-weight:600;
+    color:var(--ts,#5A6560);opacity:.8;
+    line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;word-break:keep-all;min-width:0;margin-top:1px}
+  .tv-c-sub{display:block;font-size:calc(9.5px * var(--tvf,1));
+    color:var(--tl,#93A09A)}
+  .tv-c-time{display:block;font-size:calc(9.5px * var(--tvf,1));
+    color:var(--tl,#93A09A);line-height:1.35}
+  /* 교실 — 오른쪽 위 배지 */
+  .tv-c-room{position:absolute;top:calc(3px * var(--tvf,1));right:calc(4px * var(--tvf,1));
+    font-size:calc(9px * var(--tvf,1));font-weight:700;
+    color:var(--ts,#5A6560);
+    background:rgba(255,255,255,.72);border-radius:5px;padding:0 5px;line-height:1.5;
+    max-width:52%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tv-card.big .tv-c-name{-webkit-line-clamp:3}
+  .tv-card.small .tv-rail, .tv-card.tiny .tv-rail{width:calc(34px * var(--tvf,1));padding:1px 0}
+  .tv-card.small .tv-rail i, .tv-card.tiny .tv-rail i{display:none}
+  .tv-card.small .tv-body, .tv-card.tiny .tv-body{padding:1px calc(6px * var(--tvf,1));justify-content:center}
+  .tv-card.small .tv-c-room, .tv-card.tiny .tv-c-room{display:none}
   /* 아주 납작한 카드는 가로로 놓이므로, 이름이 먼저 자리를 갖고 교실이 줄어든다 */
   .tv-card.small .tv-c-foot{background:transparent;padding:0 6px 0 0;flex:0 1 auto;
     max-width:62%;min-width:0;flex-wrap:nowrap}
@@ -305,37 +311,42 @@
      칸이 낮아 글자가 잘리므로 한 단계 더 작게, 한 줄로 눕혀서 담는다 */
   .tv-card.tiny{flex-direction:row;align-items:center;gap:4px;padding:0 4px;
     border-left-width:2.5px;border-radius:5px}
-  .tv-card.tiny .tv-c-top{flex:1;padding:0;min-width:0;display:flex;align-items:center;gap:3px}
-  .tv-card.tiny .tv-c-top b{font-size:calc(9px * var(--tvf,1));line-height:1.15;
     -webkit-line-clamp:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tv-card.tiny .tv-c-time{font-size:calc(8px * var(--tvf,1));line-height:1.15;
     white-space:nowrap;flex:none;opacity:.85}
   .tv-card.tiny .tv-c-time i{display:none}
   .tv-card.tiny .tv-c-sub{display:none}
 
-  /* 🌙 다크 — 컬러 헤더: 옅은 틴트는 어두운 바탕에서 흐려지므로 과목명을 색 머리띠에 얹는다 */
+  /* 🌙 다크 (I안) — 본문은 어둡고 차분하게, 색은 왼쪽 레일에 진하게 */
   html[data-theme="dark"] .tv-card{
-    background-color:var(--wh,#16211D);
-    border-left:none;border-radius:9px;
-    box-shadow:inset 0 0 0 1px rgba(255,255,255,.06);
+    background-color:#18231F;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.07);
   }
-  html[data-theme="dark"] .tv-c-top{
+  html[data-theme="dark"] .tv-rail{
     background:var(--lc,#2BAE7E);
-    border-radius:9px 9px 0 0;padding:3px 7px;flex:1;
   }
-  html[data-theme="dark"] .tv-c-top b{ color:#fff; }
-  html[data-theme="dark"] .tv-c-time{ color:rgba(255,255,255,.82); }
-  html[data-theme="dark"] .tv-c-sub{ color:rgba(255,255,255,.68); }
-  html[data-theme="dark"] .tv-c-foot{ background:transparent; padding:2px 7px 4px; }
-  html[data-theme="dark"] .tv-c-who{ color:var(--ts,#A9BDB4); }
-  html[data-theme="dark"] .tv-c-room{ color:var(--tl,#7E938B); background:rgba(255,255,255,.08); }
-  /* 납작한 카드는 머리띠가 어색하니 한 줄 그대로 */
-  html[data-theme="dark"] .tv-card.small .tv-c-top,
-  html[data-theme="dark"] .tv-card.tiny .tv-c-top{ background:transparent; border-radius:9px; }
-  html[data-theme="dark"] .tv-card.small .tv-c-top b,
-  html[data-theme="dark"] .tv-card.tiny .tv-c-top b{ color:var(--lc,#2BAE7E); }
-  html[data-theme="dark"] .tv-card.small,
-  html[data-theme="dark"] .tv-card.tiny{ border-left:3px solid var(--lc,#2BAE7E); }
+  html[data-theme="dark"] .tv-rail b{ color:#fff; }
+  html[data-theme="dark"] .tv-rail i{ color:rgba(255,255,255,.82); }
+  html[data-theme="dark"] .tv-c-name{ color:#EAF3EF; }
+  html[data-theme="dark"] .tv-c-who{ color:#9DB1A8; }
+  html[data-theme="dark"] .tv-c-sub,
+  html[data-theme="dark"] .tv-c-time{ color:#7E938B; }
+  html[data-theme="dark"] .tv-c-room{
+    background:rgba(255,255,255,.12); color:#C8D8D1;
+  }
+  /* 🌙 다크 + 좁은 5일 보기 (J안) — 레일 대신 위쪽 색 선으로 자리를 아낀다 */
+  html[data-theme="dark"] .tv-board:not(.oneday) .tv-card{
+    flex-direction:column; border-top:3px solid var(--lc,#2BAE7E);
+  }
+  html[data-theme="dark"] .tv-board:not(.oneday) .tv-rail{
+    display:flex; flex-direction:row; width:auto; max-width:none; background:transparent;
+    padding:1px 6px 0; gap:4px; justify-content:flex-start;
+  }
+  html[data-theme="dark"] .tv-board:not(.oneday) .tv-rail b{
+    color:#9DB1A8; font-size:calc(9.5px * var(--tvf,1)); font-weight:700;
+  }
+  html[data-theme="dark"] .tv-board:not(.oneday) .tv-rail i{ display:none; }
+  html[data-theme="dark"] .tv-board:not(.oneday) .tv-body{ padding-top:0; }
   .tv-card.tiny .tv-c-foot{background:transparent;padding:0;flex:0 1 auto;min-width:0;
     flex-wrap:nowrap;max-width:52%}
   .tv-card.tiny .tv-c-who{font-size:calc(8px * var(--tvf,1));line-height:1.15;color:var(--ts,#5A6560);
@@ -350,7 +361,7 @@
 
   /* ── 쉬는 시간 카드 — 회색으로 수업과 구분 ── */
   .tv-card.rest{ box-shadow:none; opacity:.97 }
-  .tv-card.rest .tv-c-top b{ font-weight:700 }
+  .tv-card.rest .tv-c-name{ font-weight:700; opacity:.85 }
   .tv-card.rest .tv-c-time{ opacity:.85 }
 
   /* ── 🔎 수업 카드 자세히 보기 ── */
@@ -580,6 +591,16 @@ const LESSON_COLORS = [
   '#9BAEDD','#DDA0BC','#93C7A3','#CFAF7E','#A9C8DE','#C9A0D0',
   '#8CC5B8','#E3B08A','#9FB3D9','#D3A5B8','#A6CBA0','#C7B78F'
 ];
+/* 과목 색을 글자용으로 어둡게 — 배경 위에서도 또렷하게 읽힌다 */
+function darkOf(hex){
+  try {
+    const c = String(hex||'').replace('#','');
+    const n = c.length===3 ? c.split('').map(x=>x+x).join('') : c;
+    const r = parseInt(n.slice(0,2),16), g = parseInt(n.slice(2,4),16), b = parseInt(n.slice(4,6),16);
+    const d = v => Math.round(v * .42);
+    return `rgb(${d(r)},${d(g)},${d(b)})`;
+  } catch(e){ return '#16221C'; }
+}
 function tintOf(hex, alpha){
   const c = String(hex||'#7FB5A0').replace('#','');
   const n = parseInt(c.length===3 ? c.split('').map(x=>x+x).join('') : c, 16);
@@ -877,16 +898,18 @@ function sheetHTML(kind, target, label, opt){
         data-day="${dy}" data-start="${it.startMin}" tabindex="0"
         onclick="openTvInfo('${esc(it.lesson.id||'')}','${dy}',${it.startMin})"
         style="top:${(it.startMin-s0)*TV_PPM}px;height:${px}px;
-               --lc:${lessonColor(it.lesson)};--lc-bg:${tintOf(lessonColor(it.lesson),.16)};--tb:${bar}">
-        <div class="tv-c-top">
-          <b>${esc(it.lesson.subject)}</b>
-          ${size!=='small' ? `<span class="tv-c-time">${hm(it.startMin)}~${hm(it.endMin)} <i>${dur}분</i></span>` : ''}
-          ${size==='big' && sub ? `<span class="tv-c-sub">${esc(sub)}</span>` : ''}
+               --lc:${lessonColor(it.lesson)};--lc-bg:${tintOf(lessonColor(it.lesson),.16)};
+               --lc-rail:${tintOf(lessonColor(it.lesson),.32)};--lc-ink:${darkOf(lessonColor(it.lesson))};--tb:${bar}">
+        <div class="tv-rail">
+          <b>${hm(it.startMin)}</b>${size!=='tiny' ? `<i>${dur}분</i>` : ''}
         </div>
-        ${isRestLesson(it.lesson) ? '' : `<div class="tv-c-foot">
-          <span class="tv-c-who">${esc(who)}</span>
-          ${room?`<span class="tv-c-room">${esc(room)}</span>`:''}
-        </div>`}
+        <div class="tv-body">
+          ${room && !isRestLesson(it.lesson) ? `<span class="tv-c-room">${esc(room)}</span>` : ''}
+          <b class="tv-c-name">${esc(it.lesson.subject)}</b>
+          ${size==='big' && sub ? `<span class="tv-c-sub">${esc(sub)}</span>` : ''}
+          ${isRestLesson(it.lesson) ? '' : `<span class="tv-c-who">${esc(who)}</span>`}
+          <span class="tv-c-time">${hm(it.startMin)}~${hm(it.endMin)}</span>
+        </div>
       </div>`;
     }).join('');
     return `<div class="tv-col" style="height:${H}px">${bg}${cards}</div>`;
