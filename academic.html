@@ -369,13 +369,6 @@
   .ev-bar .eb-s{ font-size:9px; font-weight:600; opacity:.9;
     white-space:normal; overflow-wrap:anywhere; word-break:keep-all; }
   .ev-bar.wide{ justify-content:center; text-align:center; }   /* 여러 날 이어지면 가운데 */
-  /* 📱 폰 — 위의 줄바꿈·가운데 정렬이 폰의 «한 줄 흘림» 규칙을 덮지 않게 다시 못박는다
-     · 목·금·토에 끝나는 행사는 글자가 왼쪽으로 흘러, 화면 오른쪽 밖(없는 공간)으로 나가지 않는다 */
-  @media (max-width:640px){
-    .ev-bar .eb-t{ white-space:nowrap; overflow-wrap:normal; min-width:max-content; }
-    .ev-bar.wide{ justify-content:flex-start; text-align:left; }
-    .ev-bar.wide.flow-left, .ev-bar.flow-left{ justify-content:flex-end; text-align:right; }
-  }
 
   /* 예전 이름도 살려둔다 (다른 곳에서 쓰는 곳이 있어) */
   .ev-chip{ font-size:10.5px; font-weight:700; line-height:1.25; padding:3px 6px;
@@ -653,6 +646,23 @@
     border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s}
   .toast.on{opacity:1}
   .toast.err{background:var(--danger,#C0392B)}
+
+  /* ═══ 🧭 행사 글자 방향 (확정 규칙 — 반드시 스타일 맨 끝에 둔다) ═══
+     화면이 좁아 글자가 한 줄로 흐를 때, 화면 밖으로 나가지 않게 방향을 정한다.
+     · flow-right : 왼쪽 끝 기준 → 오른쪽으로 (일·월·화)
+     · flow-center: 가운데 정렬 → 양쪽으로 고르게 (수)
+     · flow-left  : 오른쪽 끝 기준 → 왼쪽으로 (목·금·토)
+     tuneBarText()가 그린 뒤 실제 폭을 재서, 칸에 다 들어가면 가운데로 다듬는다 */
+  @media (max-width:640px){
+    .ev-bar{ overflow:visible; white-space:nowrap; flex-wrap:nowrap; }
+    .ev-bar .eb-t{ white-space:nowrap; overflow-wrap:normal; word-break:keep-all;
+      overflow:visible !important; text-overflow:clip !important;
+      max-width:none !important; flex:0 0 auto !important; min-width:max-content; }
+    .ev-bar.flow-right, .ev-bar.wide.flow-right{ justify-content:flex-start; text-align:left; direction:ltr; }
+    .ev-bar.flow-center, .ev-bar.wide.flow-center{ justify-content:center; text-align:center; direction:ltr; }
+    .ev-bar.flow-left, .ev-bar.wide.flow-left{ justify-content:flex-end; text-align:right; direction:rtl; }
+    .ev-bar.flow-left > *{ direction:ltr; }
+  }
 </style>
 </head>
 <body>
@@ -1530,11 +1540,15 @@ function barHTML(b, days){
   const canDrag = DRAG_ON && CAN_EDIT && canEditCal(calOf(e));
   const fromDs = (days && days[b.start]) ? days[b.start].ds : '';
   const dim = (GRADE_FILTER && !evHitsGrade(e, GRADE_FILTER)) ? ' dim' : '';
-  // 폰에서는 글자를 한 줄로 흘려보낸다. 오른쪽 끝 칸이면 왼쪽으로 흐르게 (화면 밖으로 안 나가게)
-  // 끝나는 요일이 목요일(4) 이후면 글자를 왼쪽으로 흘린다 (화면 오른쪽 밖으로 안 나가게)
-  const side = (b.start + b.span - 1 >= 4) ? ' flow-left' : ' flow-right';
+  // 📱 폰에서 글자가 한 줄로 흐를 때의 방향 — 끝나는 요일 기준
+  //  · 일·월·화(≤2): 왼쪽 끝에서 오른쪽으로
+  //  · 수(3): 가운데 정렬 — 길면 양쪽으로 고르게 나간다
+  //  · 목·금·토(≥4): 오른쪽 끝 기준 — 길면 왼쪽으로 나간다 (화면 밖으로 안 나가게)
+  //  그린 뒤 tuneBarText()가 실제 폭을 재서, 칸에 다 들어가는 글자는 가운데로 다듬는다
+  const endCol = b.start + b.span - 1;
+  const side = endCol >= 4 ? ' flow-left' : (endCol === 3 ? ' flow-center' : ' flow-right');
   const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'') + dim + side;
-  return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}" data-lane="${b.lane==null?0:b.lane}"
+  return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}" data-lane="${b.lane==null?0:b.lane}" data-endcol="${endCol}"
     ${canDrag?`draggable="true" ondragstart="onBarDrag(event,'${e.id}','${fromDs}')"`:''}
     style="grid-column:${b.start+1} / span ${b.span};background:${evColor(e)}"
     title="${esc(e.title)}${e.subtitle?' · '+esc(e.subtitle):''}${canDrag?'\n끌어서 날짜를 옮길 수 있어요':''}"
@@ -1711,9 +1725,8 @@ function render(){
       return `<div class="cw-n ${dcls}${x.out?' out':''}" onclick="${
         x.out?`goMonthOf('${x.ds}')`:`addOn('${x.ds}','am',event)`}">
         <b>${x.d}</b>${x.isToday?'<span class="cw-td">오늘</span>':''}${
-        x.holName && !(x.holCont && PHONE)
-          ? `<span class="cw-hn ${x.holWho==='staff'?'stf':''}">${
-              x.holWho==='staff'?'🧑‍🏫 ':''}${esc(x.holName)}</span>`
+        x.holName && !x.holCont
+          ? `<span class="cw-hn ${x.holWho==='staff'?'stf':''}">${esc(x.holName)}</span>`
           : ''}${
         classBadge(x)}</div>`;
     }).join('') + '</div>';
@@ -1760,10 +1773,34 @@ function render(){
   renderGradeFilter();
   renderGradeLegend();
   applyZoom();
+  tuneBarText();
   renderTermPanel();
   renderClosedPanel();
   renderEditorPanel();
 }
+
+/* 🧭 행사 글자 방향 다듬기 — 그린 뒤 실제 폭을 잰다
+   · 칸에 다 들어가는 글자 → 가운데 (보기에 가장 안정적)
+   · 넘치는 글자 → 끝나는 요일 기준으로: 일·월·화 오른쪽으로 · 수 양쪽으로 · 목·금·토 왼쪽으로 */
+function tuneBarText(){
+  let narrow = false;
+  try { narrow = matchMedia('(max-width:640px)').matches; } catch(e){}
+  if(!narrow) return;   // 넓은 화면은 줄바꿈으로 다 보이므로 손대지 않는다
+  document.querySelectorAll('#cal-mount .ev-bar').forEach(bar=>{
+    const t = bar.querySelector('.eb-t'); if(!t) return;
+    const end = Number(bar.dataset.endcol || 0);
+    const fits = t.getBoundingClientRect().width <= bar.getBoundingClientRect().width - 8;
+    bar.classList.remove('flow-left','flow-right','flow-center');
+    bar.classList.add(fits ? 'flow-center'
+      : end >= 4 ? 'flow-left' : end === 3 ? 'flow-center' : 'flow-right');
+  });
+}
+/* 창 크기가 바뀌면 다시 잰다 */
+let _tbtTimer = null;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_tbtTimer);
+  _tbtTimer = setTimeout(tuneBarText, 200);
+});
 
 /* 주마다 내용이 달라 높이가 들쭉날쭉해지므로,
    가장 높은 주에 맞춰 모두 같은 두께로 만든다. */
@@ -2778,6 +2815,7 @@ function applyZoom(force){
   box.style.setProperty('--acz', z);
   box.style.setProperty('--acf', CAL_FONT / 100);   // 글자만 따로
   box.classList.toggle('slim', CAL_SLIM);
+  try { tuneBarText(); } catch(e){}   // 폭이 달라졌으니 글자 방향도 다시 잰다
 }
 window.setCalFont = function(v){
   CAL_FONT = Math.max(70, Math.min(180, Number(v)||100));

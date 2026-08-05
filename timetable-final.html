@@ -312,7 +312,8 @@
     background:rgba(255,255,255,.72);border-radius:5px;padding:0 5px;line-height:1.5;
     max-width:52%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tv-card.big .tv-c-name{-webkit-line-clamp:3}
-  .tv-card.small .tv-rail, .tv-card.tiny .tv-rail{width:calc(34px * var(--tvf,1));padding:1px 0}
+  /* 레일 폭은 카드 크기와 상관없이 같게 — 한 열의 과목명 시작 위치가 나란해진다 */
+  .tv-card.small .tv-rail, .tv-card.tiny .tv-rail{padding:1px 0}
   .tv-card.small .tv-rail i, .tv-card.tiny .tv-rail i{display:none}
   .tv-card.small .tv-body, .tv-card.tiny .tv-body{padding:1px calc(6px * var(--tvf,1));justify-content:center}
   .tv-card.small .tv-c-room, .tv-card.tiny .tv-c-room{display:none}
@@ -490,6 +491,41 @@
   @media(max-width:640px){
     .tv-sheet{padding:12px}
     .vw-right{margin-left:0;width:100%}
+  }
+  /* ═══ 📱 폰 세로 모드 — 심플하게 ═══
+     · 보기·크기 설정은 ⚙ 버튼 뒤로 접는다 (요일 버튼은 항상 보인다)
+     · 좌우 여백을 최소로 줄여 시간표가 화면을 거의 꽉 채운다
+     · 보기 종류 칩은 한 줄에 옆으로 밀어 본다 */
+  .tv-setbtn{ display:none; }
+  .tv-set{ display:contents; }   /* 넓은 화면에서는 지금처럼 한 줄에 펼친다 */
+  @media (max-width:640px){
+    body #mn{ padding-left:4px; padding-right:4px; }
+    .panel{ padding:10px 8px; margin-bottom:8px; }
+    .ptitle{ font-size:13px; }
+    .pdesc{ font-size:11px; margin-bottom:8px; }
+    .tv-sheet{ padding:8px; border-radius:10px; }
+    .tv-head{ margin-bottom:8px; gap:8px; }
+    .tv-title{ font-size:16px; }
+    /* 보기 종류 칩 — 한 줄, 옆으로 스크롤 */
+    .vw-bar{ flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
+      padding:8px; gap:5px; scrollbar-width:none; }
+    .vw-bar::-webkit-scrollbar{ display:none; }
+    .vw-kb{ white-space:nowrap; flex:none; font-size:12px; padding:7px 10px; }
+    .vw-sel{ flex:none; min-width:110px; }
+    .vw-right{ flex:none; }
+    /* ⚙ 옵션 접기 */
+    .tv-setbtn{ display:inline-flex; align-items:center; gap:5px; font-family:inherit;
+      font-size:12px; font-weight:700; padding:7px 12px; border-radius:9px;
+      border:1px solid var(--ivd,#E3E1DA); background:var(--wh,#fff);
+      color:var(--ts,#5A6560); cursor:pointer; }
+    .tv-setbtn.on{ background:var(--gd,#1E3932); border-color:var(--gd,#1E3932); color:#fff; }
+    .tv-setbtn i{ font-style:normal; opacity:.7; }
+    .tv-set{ display:none; }
+    .tv-set.open{ display:flex; flex-direction:column; gap:9px; width:100%;
+      background:var(--iv,#F2F0EB); border:1px solid var(--ivd,#E3E1DA);
+      border-radius:11px; padding:10px; }
+    .tv-set.open .tv-zoom{ margin-left:0; flex-wrap:wrap; row-gap:6px; }
+    .tv-days{ width:100%; }
   }
 </style>
 </head>
@@ -776,6 +812,15 @@ window.setDense = function(v){
   renderView();
 };
 
+/* 📱 폰 — 보기·크기 설정을 ⚙ 버튼 뒤로 접는다 (기본은 접힘) */
+let TV_SET_OPEN = false;
+try { TV_SET_OPEN = localStorage.getItem('tf_setopen') === '1'; } catch(e){}
+window.toggleTvSet = function(){
+  TV_SET_OPEN = !TV_SET_OPEN;
+  try { localStorage.setItem('tf_setopen', TV_SET_OPEN?'1':'0'); } catch(e){}
+  renderView();
+};
+
 /* ═══ 📐 세로·글자 크기 — % 로 조절한다 ═══
    1분당 2.7px 을 세로 100% 로 본다. −/+ 는 10%씩. */
 const TV_BASE = 2.7;
@@ -1036,7 +1081,10 @@ function sheetHTML(kind, target, label, opt){
           <div class="tv-meta">${esc(CUR.title||'')} · ${kindLabel} · ${hm(s0)}~${hm(e0)}</div>
           ${sumLine(mine)}
         </div>
-        ${opt&&opt.noZoom ? '' : `<div class="tv-opts">
+        ${opt&&opt.noZoom ? '' : `<button class="tv-setbtn ${TV_SET_OPEN?'on':''}" onclick="toggleTvSet()"
+          title="보기·크기 설정을 펼치거나 접습니다">⚙ 보기 옵션 <i>${TV_SET_OPEN?'⌃':'⌄'}</i></button>
+        <div class="tv-set${TV_SET_OPEN?' open':''}">
+        <div class="tv-opts">
           <span class="tv-og">
             <span class="tv-ol">보기</span>
             <button class="tv-ob ${TV_ONEDAY?'':'on'}" onclick="setOneDay(false)" title="월~금을 한 화면에">5일</button>
@@ -1049,8 +1097,6 @@ function sheetHTML(kind, target, label, opt){
             <button class="tv-ob ${TV_DENSE==='full'?'on':''}" onclick="setDense('full')" title="선생님·교실까지 자세히">상세</button>
           </span>
         </div>
-        ${TV_ONEDAY ? `<div class="tv-days">${DAYS.map(d=>
-          `<button class="tv-db ${d===TV_DAY?'on':''}" onclick="setTvDay('${d}')">${d}</button>`).join('')}</div>` : ''}
         <div class="tv-zoom">
           <span class="tv-ol">세로</span>
           <button class="tv-zstep" onclick="stepTvZoom(-1)" ${tvPct<=40?'disabled':''} title="세로로 10% 줄이기">−</button>
@@ -1063,7 +1109,10 @@ function sheetHTML(kind, target, label, opt){
           <button class="tv-zval tv-zv-btn ${fontPct?'':'auto'}" onclick="autoTvFont()"
             title="누르면 자동(세로에 따라감)으로 돌아갑니다">${fontPct ? fontPct+'%' : '자동'}</button>
           <button class="tv-zstep" onclick="stepTvFont(1)" title="글자 10% 키우기">＋</button>
-        </div>`}
+        </div>
+        </div>
+        ${TV_ONEDAY ? `<div class="tv-days">${DAYS.map(d=>
+          `<button class="tv-db ${d===TV_DAY?'on':''}" onclick="setTvDay('${d}')">${d}</button>`).join('')}</div>` : ''}`}
       </div>
       <div class="tv-board ${TV_DENSE} ${TV_ONEDAY?'oneday':''}" style="--tvf:${f};--tvd:${showDays.length}">
         <div class="tv-hd"><div class="tv-hd-t"></div>${showDays.map(d=>`<div class="tv-hd-d">${d}</div>`).join('')}</div>
@@ -2051,9 +2100,10 @@ window.openTvInfo = function(lessonId, day, startMin){
 function openTvInfoRaw(lessonId, day, startMin){
   if(!lessonId) return;
   const all = (typeof collect === 'function') ? collect() : [];
-  const same = all.filter(it => (it.lesson && it.lesson.id) === lessonId);
+  // 수업 id가 숫자로 저장돼 있어도 찾아지도록 문자열로 맞춰 비교한다
+  const same = all.filter(it => String(it.lesson && it.lesson.id) === String(lessonId));
   const hit  = same.find(it => it.day===day && String(it.startMin)===String(startMin)) || same[0];
-  if(!hit) return;
+  if(!hit){ try { toast('이 카드의 수업 정보를 찾지 못했습니다','err'); } catch(e){} return; }
 
   const les = hit.lesson || {};
   // 같은 수업이 여러 학년에 함께 들어가면 한 번만 세도록 요일·시각으로 묶는다

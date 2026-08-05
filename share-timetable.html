@@ -114,7 +114,8 @@ body{margin:0;min-height:100vh;background:var(--iv);color:var(--ink);
     background:rgba(255,255,255,.72);border-radius:5px;padding:0 5px;line-height:1.5;
     max-width:52%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .tv-card.big .tv-c-name{-webkit-line-clamp:3}
-  .tv-card.small .tv-rail, .tv-card.tiny .tv-rail{width:calc(34px * var(--tvf,1));padding:1px 0}
+  /* 레일 폭은 카드 크기와 상관없이 같게 — 한 열의 과목명 시작 위치가 나란해진다 */
+  .tv-card.small .tv-rail, .tv-card.tiny .tv-rail{padding:1px 0}
   .tv-card.small .tv-rail i, .tv-card.tiny .tv-rail i{display:none}
   .tv-card.small .tv-body, .tv-card.tiny .tv-body{padding:1px calc(6px * var(--tvf,1));justify-content:center}
   .tv-card.small .tv-c-room, .tv-card.tiny .tv-c-room{display:none}
@@ -764,9 +765,10 @@ window.openTvInfo = function(lessonId, day, startMin){
 function openTvInfoRaw(lessonId, day, startMin){
   if(!lessonId) return;
   const all = (typeof collect === 'function') ? collect() : [];
-  const same = all.filter(it => (it.lesson && it.lesson.id) === lessonId);
+  // 수업 id가 숫자로 저장돼 있어도 찾아지도록 문자열로 맞춰 비교한다
+  const same = all.filter(it => String(it.lesson && it.lesson.id) === String(lessonId));
   const hit  = same.find(it => it.day===day && String(it.startMin)===String(startMin)) || same[0];
-  if(!hit) return;
+  if(!hit){ try { toast('이 카드의 수업 정보를 찾지 못했습니다','err'); } catch(e){} return; }
 
   const les = hit.lesson || {};
   // 같은 수업이 여러 학년에 함께 들어가면 한 번만 세도록 요일·시각으로 묶는다
