@@ -328,13 +328,18 @@
   .gf-c:hover{ border-color:var(--gm); }
   .gf-c.on{ background:var(--gc, var(--gd)); border-color:var(--gc, var(--gd)); color:#fff; }
   .gf-note{ font-size:11px; color:var(--tl); margin-left:6px; }
-  /* 📱 폰 아이콘 줄 */
-  .ph-bar{ display:none; gap:5px; flex-wrap:wrap; margin-bottom:8px; }
-  .ph-b{ display:inline-flex; align-items:center; gap:4px; font-family:inherit;
-    font-size:11.5px; font-weight:700; padding:7px 10px; border-radius:9px;
+  /* 📱 폰 아이콘 줄 — 글자 없이 아이콘만, 달력 폭에 맞춰 한 줄에 고르게 펼친다 */
+  .ph-bar{ display:none; gap:5px; margin-bottom:8px; }
+  .ph-b{ flex:1 1 0; min-width:0; position:relative; display:inline-flex;
+    align-items:center; justify-content:center; font-family:inherit;
+    padding:8px 0; border-radius:9px;
     border:1.5px solid var(--ivd); background:var(--wh); color:var(--ts); cursor:pointer; }
-  .ph-b span{ font-size:13px; }
+  .ph-b span{ font-size:16px; line-height:1; }
   .ph-b.on{ background:var(--gd); border-color:var(--gd); color:#fff; }
+  /* 학년을 골라둔 상태 표시 점 */
+  .ph-b .ph-dot{ position:absolute; top:4px; right:8px; width:7px; height:7px;
+    border-radius:50%; background:var(--gm,#00704A); box-shadow:0 0 0 1.5px var(--wh,#fff); }
+  .ph-b.on .ph-dot{ background:#fff; box-shadow:none; }
   @media (max-width:640px){
     .ph-bar{ display:flex; }
     /* 아이콘으로 고른 줄만 펼친다 */
@@ -349,6 +354,12 @@
     body.ph-mode[data-ph-open="grade"] .gf-bar{ display:flex; }
     body.ph-mode .ac-head{ margin-bottom:6px; }
     body.ph-mode .ac-title{ font-size:19px; }
+    /* 좌우 여백 최소화 — 달력이 화면을 거의 꽉 채운다 */
+    body #mn{ padding-left:4px; padding-right:4px; }
+    .ac-wrap{ padding:10px 2px 24px; }
+    .cal-week{ grid-template-columns:46px 1fr; }
+    .cw-wk{ padding:6px 2px; }
+    .ch-wk{ width:46px; padding:11px 2px; font-size:10.5px; }
   }
   /* 🎨 색 고르기 — 분류 계열 + 그 밖의 색 */
   .cp-row{ display:flex; align-items:flex-start; gap:8px; margin-bottom:6px; }
@@ -358,6 +369,13 @@
   .ev-bar .eb-s{ font-size:9px; font-weight:600; opacity:.9;
     white-space:normal; overflow-wrap:anywhere; word-break:keep-all; }
   .ev-bar.wide{ justify-content:center; text-align:center; }   /* 여러 날 이어지면 가운데 */
+  /* 📱 폰 — 위의 줄바꿈·가운데 정렬이 폰의 «한 줄 흘림» 규칙을 덮지 않게 다시 못박는다
+     · 목·금·토에 끝나는 행사는 글자가 왼쪽으로 흘러, 화면 오른쪽 밖(없는 공간)으로 나가지 않는다 */
+  @media (max-width:640px){
+    .ev-bar .eb-t{ white-space:nowrap; overflow-wrap:normal; min-width:max-content; }
+    .ev-bar.wide{ justify-content:flex-start; text-align:left; }
+    .ev-bar.wide.flow-left, .ev-bar.flow-left{ justify-content:flex-end; text-align:right; }
+  }
 
   /* 예전 이름도 살려둔다 (다른 곳에서 쓰는 곳이 있어) */
   .ev-chip{ font-size:10.5px; font-weight:700; line-height:1.25; padding:3px 6px;
@@ -2996,12 +3014,14 @@ function renderPhoneBar(){
     { k:'cal',   ic:'📚', label:'캘린더' },
     { k:'year',  ic:'🗓️', label:'학년도' },
     { k:'view',  ic:'👀', label:'보기' },
-    { k:'grade', ic:'🎯', label: GRADE_FILTER ? esc(GRADE_FILTER) : '학년' },
+    { k:'grade', ic:'🎯', label: GRADE_FILTER ? ('학년 · 지금 '+esc(GRADE_FILTER)) : '학년' },
   ];
+  // 아이콘만 남긴다 — 무엇인지는 길게 눌러(title) 알 수 있고, 학년 필터가 켜져 있으면 점으로 표시
   bar.innerHTML = items.map(i=>`
-    <button class="ph-b ${PH_OPEN===i.k?'on':''}" onclick="togglePh('${i.k}')">
-      <span>${i.ic}</span>${i.label}</button>`).join('')
-    + `<button class="ph-b" onclick="goToday()"><span>📍</span>오늘</button>`;
+    <button class="ph-b ${PH_OPEN===i.k?'on':''}" onclick="togglePh('${i.k}')"
+      title="${i.label}" aria-label="${i.label}">
+      <span>${i.ic}</span>${i.k==='grade' && GRADE_FILTER ? '<i class="ph-dot"></i>' : ''}</button>`).join('')
+    + `<button class="ph-b" onclick="goToday()" title="오늘" aria-label="오늘"><span>📍</span></button>`;
   // 펼친 것만 보이게
   document.body.dataset.phOpen = PH_OPEN;
 }
