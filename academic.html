@@ -190,8 +190,10 @@
     .ev-bar.flow-right{ justify-content:flex-start; }
     .ev-bar.flow-left{ justify-content:flex-end; direction:rtl; }
     .ev-bar.flow-left > *{ direction:ltr; }
-    /* 글자가 옆 칸 위로 흘러도 읽히도록 살짝 그림자 */
-    .ev-bar .eb-t{ text-shadow:0 1px 2px rgba(0,0,0,.28); }
+    /* 넘친 글자 뒤에 띠 색을 이어 깔아 또렷하게 (그림자만으로는 흐릿했다) */
+    .ev-bar .eb-t{ background:inherit; padding:1px 6px 1px 0; border-radius:0 6px 6px 0;
+      text-shadow:none; }
+    .ev-bar.flow-left .eb-t{ padding:1px 0 1px 6px; border-radius:6px 0 0 6px; }
     .ev-bar .eb-s, .ev-bar .gg{ display:none; }   /* 폰에서는 부제·게이지 생략 */
 
     .cw-nm, .cw-hn{ white-space:nowrap; }
@@ -1085,6 +1087,20 @@ async function loadLedgerHolidays(){
 /* 지금 보는 기관에 해당하는 수동 휴일 {날짜:{name,who}}
    who — all: 모두 쉬는 날 · school: 학교 휴교 · staff: 교사만 쉬는 날
    학부모용 보기에서는 «교사만»을 아예 감춘다. */
+/* 같은 이름이 이어지는 원장 휴일은 첫날에만 이름을 쓴다
+   (「풀타임 정기 휴가」가 날마다 반복돼 답답해 보이던 문제) */
+function holFirstDayMap(){
+  const map = ledgerHolMap();
+  const out = {};
+  Object.keys(map).sort().forEach(ds=>{
+    const prev = new Date(ds+'T00:00:00'); prev.setDate(prev.getDate()-1);
+    const pds = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}-${String(prev.getDate()).padStart(2,'0')}`;
+    const same = map[pds] && map[pds].name === map[ds].name;
+    out[ds] = { ...map[ds], cont: !!same };
+  });
+  return out;
+}
+
 function ledgerHolMap(){
   const base = (ORG === ORG_ALL) ? null : ORG;   // 두 기관 겹쳐보기면 전부
   const map = {};
@@ -1478,6 +1494,7 @@ function render(){
 
   // 앞뒤 달·연속 보기에서 다른 해 날짜도 나오므로 인접 연도까지 함께 담는다
   const holidays = Object.assign({}, holInfoMap(y-1), holInfoMap(y), holInfoMap(y+1));
+  const holCont = holFirstDayMap();   // 이어지는 휴일인지
 
   /* 한 달치 칸 만들기 — 앞뒤 빈자리는 지난달·다음달 날짜로 채워 흐리게 보여준다
      (연속 보기에서는 이 묶음을 여러 달 이어 붙인다) */
@@ -1526,7 +1543,13 @@ function render(){
      · 이름에 «/» 를 넣으면 그 자리에서 줄이 바뀐다 (예: 여름/가정학습의 달)
      · 없으면 띄어쓰기가 있을 때 첫 칸에서 한 번만 끊는다 */
   function wrapName(name){
-    const s = String(name||'').trim();
+    let s = String(name||'').trim();
+    // 폰에서는 주차 칸이 좁아 이름을 짧게 (여름 가정학습의 달 → 여름학습)
+    if(PHONE){
+      s = s.replace(/\s*가정학습의\s*달/, '학습').replace(/\s+/g,'');
+      if(s.length > 5) s = s.slice(0,5);
+      return [s];
+    }
     if(s.includes('/')) return s.split('/').map(x=>x.trim()).filter(Boolean);
     const i = s.indexOf(' ');
     if(i > 0 && s.length > 6) return [s.slice(0,i), s.slice(i+1)];
@@ -1581,7 +1604,8 @@ function render(){
       const ds = dateStr(c.y, c.m, d);
       const closedName = closedOn(ds);
       const hi = holidays[ds];   // {name, who} · 없으면 undefined
-      const info = { d, ds, dow:i,
+      const cont = holCont[ds] && holCont[ds].cont;
+      const info = { d, ds, dow:i, holCont: !!cont,
         holName: (hi && hi.name) || closedName,
         holWho: hi ? hi.who : (closedName ? 'school' : ''),
         closedName, isToday: ds === todayStr() };
@@ -1631,8 +1655,10 @@ function render(){
       return `<div class="cw-n ${dcls}${x.out?' out':''}" onclick="${
         x.out?`goMonthOf('${x.ds}')`:`addOn('${x.ds}','am',event)`}">
         <b>${x.d}</b>${x.isToday?'<span class="cw-td">오늘</span>':''}${
-        x.holName?`<span class="cw-hn ${x.holWho==='staff'?'stf':''}">${
-          x.holWho==='staff'?'🧑‍🏫 ':''}${esc(x.holName)}</span>`:''}${
+        x.holName && !(x.holCont && PHONE)
+          ? `<span class="cw-hn ${x.holWho==='staff'?'stf':''}">${
+              x.holWho==='staff'?'🧑‍🏫 ':''}${esc(x.holName)}</span>`
+          : ''}${
         classBadge(x)}</div>`;
     }).join('') + '</div>';
 

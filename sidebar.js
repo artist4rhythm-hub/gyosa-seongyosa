@@ -618,6 +618,8 @@ window.guardPage = guardPage;
 (function(){
   function addCloseX(mbox){
     if(mbox.querySelector('.ui-close-x')) return; // 이미 있음
+    // 페이지가 자기 닫기 버튼을 이미 넣었으면 또 붙이지 않는다 (두 개가 겹쳐 보이던 문제)
+    if(mbox.querySelector('[aria-label="닫기"], .evi-x, .tvi-x, .wg-x, .rp-x, .mclose, .m-x')) return;
     const btn = document.createElement('button');
     btn.className = 'ui-close-x';
     btn.innerHTML = '✕';
