@@ -241,6 +241,9 @@ body{margin:0;min-height:100vh;background:var(--iv);color:var(--ink);
   .tv-zstep:disabled{opacity:.35;cursor:not-allowed}
   .tv-zval{font-size:11.5px;font-weight:800;color:var(--ts,#5A6560);
     min-width:42px;text-align:center;flex:none}
+  .tv-zv-btn{border:1px dashed var(--ivd,#E3E1DA);border-radius:7px;background:var(--wh,#fff);
+    font-family:inherit;padding:5px 6px;cursor:pointer;min-width:44px}
+  .tv-zv-btn.auto{color:var(--tl,#93A09A);font-weight:700}
   .tv-zfit{font-family:inherit;font-size:11.5px;font-weight:700;padding:6px 11px;
     border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);
     color:var(--ts,#5A6560);cursor:pointer;white-space:nowrap;flex:none}
@@ -485,59 +488,54 @@ let vwKind = 'grade';    // grade | teacher | room (공개 페이지엔 '내 시
 let vwTarget = '';
 /* 세로 크기 — 촘촘하게 나눠 미세 조절이 되게 한다.
    2.7 을 100% 로 보고, 아래로는 폰 한 화면에 들어갈 만큼 작게까지 내려간다. */
-const TV_ZOOMS = [0.85, 1.0, 1.15, 1.3, 1.5, 1.7, 1.9, 2.1, 2.4, 2.7,
-                  3.0, 3.4, 3.8, 4.3, 4.8, 5.4];
-const TV_BASE = 2.7;
-/* 글자 배율 — 칸이 작아지면 글자도 함께 줄어든다 (너무 작아지지 않게 바닥을 둔다) */
+const TV_BASE = 2.7;                 // 세로 100% = 1분당 2.7px
+const PCT_MIN = 40, PCT_MAX = 300;   // 세로 40~300%
+/* 글자 자동 배율 — 칸이 작아지면 글자도 함께 줄어든다 (너무 작아지지 않게 바닥을 둔다) */
 function fontScaleOf(ppm){
   return Math.max(0.74, Math.min(1.72, 0.62 + (ppm / TV_BASE) * 0.46));
 }
-const TV_FONT = {};
-TV_ZOOMS.forEach(z=>{ TV_FONT[z] = fontScaleOf(z); });
 
-let tvZoom = 2.7;
-let tvFit = false;   // 한 화면 맞춤을 켜 두면 화면이 바뀔 때 다시 계산한다
+/* 💾 보기 설정 — 기기(폰·패드·컴퓨터)마다 따로 기억한다
+   폰에서 맞춰둔 크기와 컴퓨터에서 맞춰둔 크기가 서로를 덮지 않는다 */
+const DEV_CLASS = (w => w<=640 ? 'phone' : w<=1100 ? 'tablet' : 'desktop')
+  (Math.min(window.innerWidth||1e4, (screen && screen.width)||1e4));
+let tvPct = 100;     // 세로 크기 %
+let fontPct = 0;     // 글자 크기 % (0 = 자동 — 세로에 따라간다)
+let tvFit = false;   // ⤢ 한 화면 맞춤을 켜 두면 화면이 바뀔 때 다시 계산한다
 try {
-  const z = parseFloat(localStorage.getItem('stf_zoom'));
-  if(z && TV_ZOOMS.includes(z)) tvZoom = z;
-  tvFit = localStorage.getItem('stf_fit') === 'on';
-} catch(e){}
-
-function zoomPct(z){ return Math.round((z / TV_BASE) * 100); }
-
-window.setTvZoom = function(v){
-  tvZoom = Number(v) || TV_BASE;
-  tvFit = false;
-  try {
-    localStorage.setItem('stf_zoom', String(tvZoom));
-    localStorage.setItem('stf_fit', 'off');
-  } catch(e){}
-  renderView();
-};
-
-/* − / + 한 단계씩 */
-window.stepTvZoom = function(dir){
-  let i = TV_ZOOMS.findIndex(z=>Math.abs(z-tvZoom)<0.001);
-  if(i < 0){   // 맞춤으로 들어간 중간값이면 가장 가까운 단계에서 출발
-    i = TV_ZOOMS.reduce((best,z,k)=>
-      Math.abs(z-tvZoom) < Math.abs(TV_ZOOMS[best]-tvZoom) ? k : best, 0);
+  const saved = JSON.parse(localStorage.getItem('stf_vp_'+DEV_CLASS) || 'null');
+  if(saved){
+    tvPct = Number(saved.pct)||100; fontPct = Number(saved.font)||0; tvFit = !!saved.fit;
+  } else {
+    const z = parseFloat(localStorage.getItem('stf_zoom'));   // 예전 저장값 이어받기
+    if(z) tvPct = Math.round(z / TV_BASE * 10) * 10;
+    tvFit = localStorage.getItem('stf_fit') === 'on';
   }
-  const next = Math.max(0, Math.min(TV_ZOOMS.length-1, i + dir));
-  setTvZoom(TV_ZOOMS[next]);
+} catch(e){}
+const clampPct = v => Math.max(PCT_MIN, Math.min(PCT_MAX, Math.round(v)));
+const tvPPM = () => TV_BASE * tvPct / 100;
+function saveVP(){ try { localStorage.setItem('stf_vp_'+DEV_CLASS,
+  JSON.stringify({ pct:tvPct, font:fontPct, fit:tvFit })); } catch(e){} }
+
+/* − / + 10%씩 */
+window.stepTvZoom = function(dir){
+  tvFit = false;
+  tvPct = clampPct(Math.round((tvPct + dir*10)/10)*10);
+  saveVP(); renderView();
 };
+/* 글자 − / + 10%씩 — 자동 상태에서 누르면 지금 자동값에서 출발한다 */
+window.stepTvFont = function(dir){
+  const cur = fontPct || Math.round(fontScaleOf(tvPPM())*100);
+  fontPct = Math.max(60, Math.min(220, Math.round((cur + dir*10)/10)*10));
+  saveVP(); renderView();
+};
+window.autoTvFont = function(){ fontPct = 0; saveVP(); renderView(); };
 
 /* 📱 한 화면 맞춤 — 하루 길이를 화면 높이에 맞춰 배율을 계산한다 */
 window.fitTvZoom = function(){
-  if(tvFit){   // 다시 누르면 끄고 기본으로
-    tvFit = false;
-    try { localStorage.setItem('stf_fit','off'); } catch(e){}
-    renderView();
-    return;
-  }
-  tvFit = true;
-  try { localStorage.setItem('stf_fit','on'); } catch(e){}
-  applyFitZoom();
-  renderView();
+  tvFit = !tvFit;
+  if(tvFit) applyFitZoom();
+  saveVP(); renderView();
 };
 
 /* 지금 화면에서 하루가 다 보이도록 배율을 정한다 */
@@ -547,8 +545,7 @@ function applyFitZoom(){
   // 화면 높이에서 머리말·보기막대·머리글·여백을 뺀 만큼이 표가 쓸 수 있는 높이
   const used = 210;
   const avail = Math.max(240, window.innerHeight - used);
-  const z = avail / span;
-  tvZoom = Math.max(TV_ZOOMS[0], Math.min(TV_ZOOMS[TV_ZOOMS.length-1], Math.round(z*100)/100));
+  tvPct = clampPct(avail / span / TV_BASE * 100);
 }
 
 /* 지금 보고 있는 시간표의 하루 길이(분) */
@@ -603,9 +600,10 @@ function sheetHTML(kind, target, label, opt){
   const mine = all.filter(it=>matchOf(it, kind, target));
   if(!mine.length) return '';
 
-  const TV_PPM = (opt && opt.ppm) || tvZoom;
-  // 표에 없는 배율(인쇄용 자동 계산)이면 배율에 견주어 글자 크기를 잡는다
-  const f = TV_FONT[TV_PPM] || fontScaleOf(TV_PPM);
+  const TV_PPM = (opt && opt.ppm) || tvPPM();
+  // 화면: 글자 %를 정해뒀으면 그 값, 아니면 세로에 따라 자동 · 저장용(ppm 지정)은 자동
+  const f = (opt && opt.ppm) ? fontScaleOf(TV_PPM)
+          : (fontPct ? fontPct/100 : fontScaleOf(TV_PPM));
 
   let s0 = Math.min(...mine.map(x=>x.startMin));
   let e0 = Math.max(...mine.map(x=>x.endMin));
@@ -692,7 +690,6 @@ function renderView(){
   if(tvFit) applyFitZoom();   // 한 화면 맞춤이 켜져 있으면 지금 화면에 맞춰 다시 계산
 
   const kinds = [ ['grade','🎓 학년별'], ['teacher','🧑‍🏫 선생님별'], ['room','🏫 교실별'] ];
-  const iz = TV_ZOOMS.findIndex(z=>Math.abs(z-tvZoom)<0.001);
   bar.innerHTML = `
     ${kinds.map(([k,lb])=>`<button class="vw-k ${vwKind===k?'on':''}" onclick="setVwKind('${k}')">${lb}</button>`).join('')}
     <select class="vw-sel" onchange="setVwTarget(this.value)">
@@ -700,11 +697,16 @@ function renderView(){
     </select>
     <span class="tv-zoom" style="margin-left:auto">
       <span style="font-size:11px;color:var(--tl)">세로</span>
-      <button class="tv-zstep" onclick="stepTvZoom(-1)" ${iz===0?'disabled':''} title="세로로 줄이기">−</button>
-      <span class="tv-zval">${zoomPct(tvZoom)}%</span>
-      <button class="tv-zstep" onclick="stepTvZoom(1)" ${iz===TV_ZOOMS.length-1?'disabled':''} title="세로로 늘리기">＋</button>
+      <button class="tv-zstep" onclick="stepTvZoom(-1)" ${tvPct<=40?'disabled':''} title="세로로 10% 줄이기">−</button>
+      <span class="tv-zval">${tvPct}%</span>
+      <button class="tv-zstep" onclick="stepTvZoom(1)" ${tvPct>=300?'disabled':''} title="세로로 10% 늘리기">＋</button>
       <button class="tv-zfit ${tvFit?'on':''}" onclick="fitTvZoom()"
         title="하루가 한 화면에 다 들어오도록 맞춥니다">⤢ 한 화면</button>
+      <span style="font-size:11px;color:var(--tl);margin-left:8px">글자</span>
+      <button class="tv-zstep" onclick="stepTvFont(-1)" title="글자 10% 줄이기">−</button>
+      <button class="tv-zval tv-zv-btn ${fontPct?'':'auto'}" onclick="autoTvFont()"
+        title="누르면 자동(세로에 따라감)으로 돌아갑니다">${fontPct ? fontPct+'%' : '자동'}</button>
+      <button class="tv-zstep" onclick="stepTvFont(1)" title="글자 10% 키우기">＋</button>
     </span>`;
 
   const t = targets.find(x=>String(x.id)===String(vwTarget));
@@ -751,6 +753,15 @@ window.closeTvInfo = function(){
 };
 
 window.openTvInfo = function(lessonId, day, startMin){
+  /* 어디서든 문제가 나면 조용히 죽지 않고 화면에 알려준다 */
+  try { openTvInfoRaw(lessonId, day, startMin); }
+  catch(e){
+    console.error('openTvInfo', e);
+    try { toast('카드 상세를 여는 중 문제가 났어요: '+(e.message||e), 'err'); }
+    catch(_){ alert('카드 상세를 여는 중 문제가 났어요:\n'+(e.message||e)); }
+  }
+};
+function openTvInfoRaw(lessonId, day, startMin){
   if(!lessonId) return;
   const all = (typeof collect === 'function') ? collect() : [];
   const same = all.filter(it => (it.lesson && it.lesson.id) === lessonId);
@@ -847,7 +858,7 @@ window.openTvInfo = function(lessonId, day, startMin){
     </div>`;
   document.body.appendChild(ov);
   tvGlow(lessonId);
-};
+}
 
 /* 자세히 보기가 열려 있을 때 Esc 로 닫기 */
 document.addEventListener('keydown', e=>{
