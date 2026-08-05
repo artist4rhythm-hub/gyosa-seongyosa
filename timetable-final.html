@@ -252,6 +252,7 @@
     border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);
     color:var(--ts,#5A6560);cursor:pointer;white-space:nowrap;flex:none}
   .tv-zfit.on{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
+  .tv-zg{display:inline-flex;align-items:center;gap:4px;flex:none}
 
   .tv-board{border:1px solid var(--ivd,#E3E1DA);border-radius:11px;overflow:hidden;min-width:660px}
   .tv-hd{display:grid;grid-template-columns:58px repeat(var(--tvd,5),minmax(0,1fr));
@@ -508,13 +509,19 @@
     .tv-head{ margin-bottom:8px; gap:6px; }
     .tv-head > div:first-child{ width:100%; }   /* 제목·시수 줄은 한 줄 전체 */
     .tv-title{ font-size:16px; }
-    /* ① 보기 종류 — 5개 균등 폭 한 줄 */
+    /* ① 보기 종류 — 5개 균등 폭 한 줄 (글자가 이웃 버튼을 침범하지 않게) */
     .vw-bar{ flex-wrap:wrap; padding:8px; gap:4px; }
-    .vw-kb{ flex:1 1 0; min-width:0; white-space:nowrap; text-align:center;
-      font-size:11px; padding:8px 2px; }
+    .vw-kb{ flex:1 1 17%; min-width:0; overflow:hidden; text-overflow:ellipsis;
+      white-space:nowrap; text-align:center; font-size:10.5px; padding:8px 0;
+      letter-spacing:-.02em; }
     /* ② 대상 + 인쇄 — 그 아래 한 줄 */
-    .vw-sel{ flex:1 1 auto; min-width:0; }
-    .vw-right{ margin-left:0; flex:none; width:auto; }
+    .vw-sel{ flex:1 1 55%; min-width:0; }
+    .vw-right{ margin-left:0; flex:1 0 auto; width:auto; }
+    .vw-right .btn{ width:100%; }
+    /* 표 폭 — 하루씩은 화면에 딱 맞고, 5일은 표 안에서만 옆으로 스크롤 */
+    .tv-sheet{ overflow-x:visible; }
+    .tv-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .tv-board.oneday{ min-width:0; }
     /* ③ 「옵션」 토글 + 요일 — 한 줄 (요일 버튼이 남은 폭을 균등하게 나눈다) */
     .tv-setbtn{ display:inline-flex; align-items:center; gap:4px; flex:none;
       font-family:inherit; font-size:12px; font-weight:700; padding:8px 12px;
@@ -660,7 +667,10 @@ function darkOf(hex){
 function tintOf(hex, alpha){
   const c = String(hex||'#7FB5A0').replace('#','');
   const n = parseInt(c.length===3 ? c.split('').map(x=>x+x).join('') : c, 16);
-  return `rgba(${(n>>16)&255}, ${(n>>8)&255}, ${n&255}, ${alpha})`;
+  // 🩹 반투명(rgba) 대신 흰색과 섞은 «불투명» 색을 만든다
+  //    — 카드가 겹치거나 뒤에 틀 배경이 있어도 절대 비쳐 보이지 않는다
+  const mix = v => Math.round(255 - (255 - v) * alpha);
+  return `rgb(${mix((n>>16)&255)}, ${mix((n>>8)&255)}, ${mix(n&255)})`;
 }
 function lessonColor(l){
   if(!l) return LESSON_COLORS[0];
@@ -959,6 +969,42 @@ function matchOf(it, kind, target){
   return it.roomId === target;
 }
 
+
+/* ═══ 🧩 겹침 정리 ═══
+   같은 시간대에 카드가 두 장 이상 있을 때:
+   · 완전히 같은 수업·같은 시간이면 → 한 장으로 합친다 (중복 제거)
+   · 서로 다른 수업이 겹치면 → 달력처럼 옆으로 나란히 쪼갠다
+   예전에는 겹친 채로 포개져 글자가 뒤섞여 보였다 */
+function dedupeSlots(list){
+  const seen = new Set();
+  return list.filter(it=>{
+    const k = String(it.lesson && it.lesson.id)+'|'+it.startMin+'|'+it.endMin;
+    if(seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+}
+function layoutOverlaps(cards){
+  // cards: startMin 순 정렬 상태. 각 카드에 {col, cols}를 매긴다
+  const res = cards.map(()=>({ col:0, cols:1 }));
+  let cluster = [], colEnds = [], clusterEnd = -1;
+  const flush = ()=>{
+    const n = Math.max(1, colEnds.length);
+    cluster.forEach(i=>{ res[i].cols = n; });
+    cluster = []; colEnds = [];
+  };
+  cards.forEach((c,i)=>{
+    if(cluster.length && c.startMin >= clusterEnd) flush();
+    let col = colEnds.findIndex(e=>e <= c.startMin);
+    if(col < 0){ col = colEnds.length; colEnds.push(0); }
+    colEnds[col] = c.endMin;
+    res[i].col = col;
+    cluster.push(i);
+    clusterEnd = Math.max(clusterEnd, c.endMin);
+  });
+  flush();
+  return res;
+}
+
 /* 시간표 한 장을 그린다 (화면·인쇄 같은 코드) */
 /* 📊 실제 놓인 카드로 셈한다 — 틀이 아니라 «배치된 수업» 기준
    · 쉬는 시간·점심은 수업 시간에서 뺀다
@@ -1042,7 +1088,16 @@ function sheetHTML(kind, target, label, opt){
     const bg = (bgBlocks[dy]||[]).map(b=>`
       <div class="tv-bg ${b.isClass?'cls':'rest'} ${b.dur*TV_PPM < 15 ? 'tiny':''}"
         style="top:${(b.startMin-s0)*TV_PPM}px;height:${b.dur*TV_PPM}px"><span>${esc(b.name)}</span></div>`).join('');
-    const cards = mine.filter(it=>it.day===dy).map(it=>{
+    const dayList = dedupeSlots(
+      mine.filter(it=>it.day===dy)
+        .sort((a,b)=> a.startMin - b.startMin || (b.endMin-b.startMin) - (a.endMin-a.startMin)));
+    const lanes = layoutOverlaps(dayList);
+    const cards = dayList.map((it, _ci)=>{
+      const L = lanes[_ci] || { col:0, cols:1 };
+      // 겹치면 나란히 — 열을 cols 등분해 col번째 자리에 놓는다
+      const lane = L.cols > 1
+        ? `left:calc(${(L.col/L.cols*100).toFixed(3)}% + 2px);width:calc(${(100/L.cols).toFixed(3)}% - 4px);right:auto;`
+        : '';
       const dur = it.endMin - it.startMin, px = dur * TV_PPM;
       // 칸 높이에 따라 네 단계 — 좁을수록 글자를 줄여 잘리지 않게 한다
       const size = px >= 62*f ? 'big' : px >= 40*f ? 'mid' : px >= 22*f ? 'small' : 'tiny';
@@ -1054,7 +1109,7 @@ function sheetHTML(kind, target, label, opt){
       return `<div class="tv-card ${size} ${isRestLesson(it.lesson)?'rest':''}" data-lesson="${esc(it.lesson.id||'')}"
         data-day="${dy}" data-start="${it.startMin}" tabindex="0"
         onclick="openTvInfo('${esc(it.lesson.id||'')}','${dy}',${it.startMin})"
-        style="top:${(it.startMin-s0)*TV_PPM}px;height:${px}px;
+        style="top:${(it.startMin-s0)*TV_PPM}px;height:${px}px;${lane}
                --lc:${lessonColor(it.lesson)};--lc-bg:${tintOf(lessonColor(it.lesson),.16)};
                --lc-rail:${tintOf(lessonColor(it.lesson),.32)};--lc-ink:${darkOf(lessonColor(it.lesson))};--tb:${bar}">
         <div class="tv-rail">
@@ -1102,29 +1157,33 @@ function sheetHTML(kind, target, label, opt){
           </span>
         </div>
         <div class="tv-zoom">
-          <span class="tv-ol">세로</span>
-          <button class="tv-zstep" onclick="stepTvZoom(-1)" ${tvPct<=40?'disabled':''} title="세로로 10% 줄이기">−</button>
-          <span class="tv-zval">${tvPct}%</span>
-          <button class="tv-zstep" onclick="stepTvZoom(1)" ${tvPct>=300?'disabled':''} title="세로로 10% 늘리기">＋</button>
+          <span class="tv-zg">
+            <span class="tv-ol">세로</span>
+            <button class="tv-zstep" onclick="stepTvZoom(-1)" ${tvPct<=40?'disabled':''} title="세로로 10% 줄이기">−</button>
+            <span class="tv-zval">${tvPct}%</span>
+            <button class="tv-zstep" onclick="stepTvZoom(1)" ${tvPct>=300?'disabled':''} title="세로로 10% 늘리기">＋</button>
+          </span>
           <button class="tv-zfit ${tvFit?'on':''}" onclick="fitTvZoom()"
             title="하루가 한 화면에 다 들어오도록 맞춥니다">⤢ 한 화면</button>
-          <span class="tv-ol" style="margin-left:8px">글자</span>
-          <button class="tv-zstep" onclick="stepTvFont(-1)" title="글자 10% 줄이기">−</button>
-          <button class="tv-zval tv-zv-btn ${fontPct?'':'auto'}" onclick="autoTvFont()"
-            title="누르면 자동(세로에 따라감)으로 돌아갑니다">${fontPct ? fontPct+'%' : '자동'}</button>
-          <button class="tv-zstep" onclick="stepTvFont(1)" title="글자 10% 키우기">＋</button>
+          <span class="tv-zg">
+            <span class="tv-ol">글자</span>
+            <button class="tv-zstep" onclick="stepTvFont(-1)" title="글자 10% 줄이기">−</button>
+            <button class="tv-zval tv-zv-btn ${fontPct?'':'auto'}" onclick="autoTvFont()"
+              title="누르면 자동(세로에 따라감)으로 돌아갑니다">${fontPct ? fontPct+'%' : '자동'}</button>
+            <button class="tv-zstep" onclick="stepTvFont(1)" title="글자 10% 키우기">＋</button>
+          </span>
         </div>
         </div>
         ${TV_ONEDAY ? `<div class="tv-days">${DAYS.map(d=>
           `<button class="tv-db ${d===TV_DAY?'on':''}" onclick="setTvDay('${d}')">${d}</button>`).join('')}</div>` : ''}`}
       </div>
-      <div class="tv-board ${TV_DENSE} ${TV_ONEDAY?'oneday':''}" style="--tvf:${f};--tvd:${showDays.length}">
+      <div class="tv-scroll"><div class="tv-board ${TV_DENSE} ${TV_ONEDAY?'oneday':''}" style="--tvf:${f};--tvd:${showDays.length}">
         <div class="tv-hd"><div class="tv-hd-t"></div>${showDays.map(d=>`<div class="tv-hd-d">${d}</div>`).join('')}</div>
         <div class="tv-grid" style="height:${H}px">
           <div class="tv-times" style="height:${H}px">${ticks}</div>
           ${cols}
         </div>
-      </div>
+      </div></div>
     </div>`;
 }
 

@@ -714,3 +714,52 @@ window.guardPage = guardPage;
     });
   }
 })();
+
+/* ═══ 🔄 새 버전 자동 감지 ═══
+   GitHub에 새 파일을 올리면, 열려 있는 화면이 스스로 알아차린다.
+   · 5분마다 + 화면으로 돌아올 때, 지금 페이지의 ETag(파일 지문)를 서버에 물어본다
+   · 지문이 달라졌으면 = 새 버전 → 아래에 「새로 고침」 배너를 띄운다
+   · HEAD 요청이라 아주 가볍다 (본문은 받지 않는다) */
+(function(){
+  let tag = null;
+  let shown = false;
+
+  async function check(){
+    if(shown) return;
+    try {
+      const r = await fetch(location.pathname + '?v=' + Date.now(),
+        { method:'HEAD', cache:'no-store' });
+      if(!r.ok) return;
+      const t = r.headers.get('etag') || r.headers.get('last-modified');
+      if(!t) return;
+      if(tag === null){ tag = t; return; }   // 처음 값은 기준으로만 담아둔다
+      if(t !== tag){ tag = t; showBanner(); }
+    } catch(e){ /* 오프라인 등 — 조용히 넘어간다 */ }
+  }
+
+  function showBanner(){
+    if(document.getElementById('upd-bar')) return;
+    shown = true;
+    const b = document.createElement('div');
+    b.id = 'upd-bar';
+    b.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);'
+      + 'z-index:950;display:flex;align-items:center;gap:11px;'
+      + 'background:#1E3932;color:#fff;padding:11px 14px 11px 18px;border-radius:12px;'
+      + 'box-shadow:0 8px 30px rgba(0,0,0,.25);font-size:13px;font-weight:700;'
+      + 'font-family:inherit;max-width:92vw;';
+    b.innerHTML = '새 버전이 나왔어요'
+      + '<button onclick="location.reload()" style="font-family:inherit;font-size:12.5px;'
+      + 'font-weight:800;border:none;border-radius:8px;padding:7px 13px;cursor:pointer;'
+      + 'background:#fff;color:#1E3932;white-space:nowrap">새로 고침</button>'
+      + '<button onclick="this.parentNode.remove()" aria-label="닫기" style="border:none;'
+      + 'background:none;color:rgba(255,255,255,.6);font-size:15px;cursor:pointer;'
+      + 'padding:2px 4px;line-height:1">✕</button>';
+    document.body.appendChild(b);
+  }
+
+  setTimeout(check, 4000);                    // 열리고 4초 뒤 기준값을 잡는다
+  setInterval(check, 5 * 60 * 1000);          // 5분마다
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden) check();             // 다른 앱 갔다 돌아오면 바로
+  });
+})();
