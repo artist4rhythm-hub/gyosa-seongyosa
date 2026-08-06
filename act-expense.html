@@ -147,6 +147,7 @@
 <script src="loading.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
+<script src="timemachine.js"></script>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
@@ -201,6 +202,23 @@ const canAdmin = () => IS_SUPER || ACT_ADMIN;
 const canMgr = l => canAdmin() || ((l?.managers)||[]).includes(CU?.uid);
 const catsOf = l => (l && Array.isArray(l.cats) && l.cats.length) ? l.cats : CATS_DEF;
 
+/* 🔒 마감: 마감된 활동은 아무것도 고칠 수 없다 (담당자가 풀기 전까지) */
+const isLocked = () => !!(CUR && CUR.status === 'closed');
+function lockedToast(){
+  toast('마감된 활동입니다 — 담당자가 「마감 풀기」를 해야 고칠 수 있어요','err');
+}
+
+/* 📜 무엇을 했는지 기록해 둔다 (activityLogs — 관리자 감사용) */
+async function logAct(action, detail){
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      page:'actexp', ledgerId:CUR?.id||'', ledgerName:CUR?.name||'',
+      action, detail:detail||'',
+      byUid:CU?.uid||'', byName:CU?.name||'', at:Timestamp.now()
+    });
+  } catch(e){}
+}
+
 /* ═══ 시작 ═══ */
 onAuthStateChanged(auth, async user => {
   if(!user){
@@ -227,6 +245,20 @@ onAuthStateChanged(auth, async user => {
     } catch(e){}
 
     await loadLedgers();
+
+    // ⏱ 타임머신 — 지금 보는 활동의 참가자·지출을 통째로 보관/되돌리기
+    if(window.TM) TM.init({
+      page:'actexp', pageLabel:'활동 경비', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU.uid, name:CU.name||''}),
+      canRestore:()=>!!CUR && canMgr(CUR),
+      targets:[
+        {col:'actMembers',  scope:()=>({ledgerId:CUR?.id||'__none__'}), label:'참가자 · 회비 (지금 보는 활동)'},
+        {col:'actExpenses', scope:()=>({ledgerId:CUR?.id||'__none__'}), label:'지출 기록 (지금 보는 활동)'},
+      ],
+      onRestored: async ()=>{ if(CUR){ await reloadLedgerData(); await pushSums(); renderDetail(); } }
+    });
+
     $I('gate').style.display = 'none';
     $I('ms').style.display = 'flex';
     render();
@@ -252,7 +284,9 @@ function render(){
 
 /* ── 활동 목록 ── */
 function renderList(){
-  const rows = LEDGERS.map(l=>{
+  const shown = LEDGERS.filter(l=>!l.deleted);
+  const trashN = LEDGERS.filter(l=>l.deleted).length;
+  const rows = shown.map(l=>{
     const inc = l.incSum, exp = l.expSum;
     const has = (inc!=null || exp!=null);
     return `<tr style="cursor:pointer" onclick="openLedger('${l.id}')">
@@ -268,7 +302,10 @@ function renderList(){
   $I('view-list').innerHTML = `
     <div class="panel">
       <div class="ptitle">🏕 활동 경비
-        ${canAdmin() ? `<button class="btn" style="margin-left:auto" onclick="openLedgerForm()">＋ 새 활동 만들기</button>` : ''}
+        <span style="margin-left:auto;display:inline-flex;gap:7px">
+        ${IS_SUPER ? `<button class="btn gray" onclick="openTrash()">🗑 휴지통${trashN?` (${trashN})`:''}</button>` : ''}
+        ${canAdmin() ? `<button class="btn" onclick="openLedgerForm()">＋ 새 활동 만들기</button>` : ''}
+        </span>
       </div>
       <div class="pdesc">캠핑·비전트립 같은 특별활동의 회비 수입 · 지출 · 회계 보고를 활동마다 따로 정리합니다.
         활동을 누르면 들어갑니다.</div>
@@ -393,11 +430,11 @@ function renderMembers(){
       <div class="s">수입 (입금 완료분)<b>${fmt(incSum)}원</b></div>
       <div class="s">1인 회비<b>${fmt(CUR.fee)}원</b></div>
     </div>
-    ${mgr?`<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px" class="no-print">
+    ${mgr && !isLocked() ? `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px" class="no-print">
       <button class="btn line" onclick="openPickStudents()">학생 현황표에서 담기</button>
       <button class="btn line" onclick="openPickTeachers()">선생님 명단에서 담기</button>
       <button class="btn line" onclick="openExtraForm()">＋ 직접 입력</button>
-    </div>`:''}
+    </div>` : isLocked() ? `<div class="pdesc" style="margin-bottom:10px">🔒 마감된 활동 — 열람만 가능합니다</div>` : ''}
     <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px" class="no-print">${chips}</div>
     <div class="tblwrap"><table class="acttbl">
       <tr><th>이름</th><th class="c">구분</th><th class="c">학년</th><th class="c">반</th>
@@ -413,6 +450,7 @@ window.setMFilter = k => { MFILTER = k; renderDetail(); };
 
 window.editFee = async function(id){
   const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
+  if(isLocked()) return lockedToast();
   const v = prompt(`${m.name}의 개별 회비 (기본 ${fmt(CUR.fee)}원)`, m.fee);
   if(v===null) return;
   const fee = Math.max(0, Math.round(Number(String(v).replace(/[^0-9]/g,''))||0));
@@ -421,6 +459,7 @@ window.editFee = async function(id){
 };
 window.editMemo = async function(id){
   const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
+  if(isLocked()) return lockedToast();
   const v = prompt(`${m.name} 메모 (예: 1박만 참여 · 반액)`, m.memo||'');
   if(v===null) return;
   await updateDoc(doc(db,'actMembers',id), { memo:v.trim() });
@@ -428,6 +467,7 @@ window.editMemo = async function(id){
 };
 window.togglePaid = async function(id){
   const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
+  if(isLocked()) return lockedToast();
   if(m.paid){
     if(!confirm(`${m.name}의 입금 표시를 해제할까요?`)) return;
     await updateDoc(doc(db,'actMembers',id), { paid:false, paidDs:'' });
@@ -437,13 +477,16 @@ window.togglePaid = async function(id){
     await updateDoc(doc(db,'actMembers',id), { paid:true, paidDs:ds });
     m.paid=true; m.paidDs=ds;
   }
+  logAct(m.paid ? '입금 확인' : '입금 해제', `${m.name} ${fmt(m.fee)}원`);
   await pushSums(); renderDetail();
 };
 window.removeMember = async function(id){
   const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
+  if(isLocked()) return lockedToast();
   if(!confirm(`${m.name}을(를) 참가자에서 뺄까요?`)) return;
   await deleteDoc(doc(db,'actMembers',id));
   MEMBERS = MEMBERS.filter(x=>x.id!==id);
+  logAct('참가자 빼기', m.name||'');
   await pushSums(); renderDetail();
 };
 
@@ -469,6 +512,7 @@ function studentInfo(sid){
 
 window.openPickStudents = async function(){
   if(!canMgr(CUR)) return;
+  if(isLocked()) return lockedToast();
   toast('학생 현황표 여는 중…');
   await loadRoster();
   const added = new Set(MEMBERS.filter(m=>m.kind==='student').map(m=>m.studentId));
@@ -538,20 +582,56 @@ window.addPickedStudents = async function(){
       grade:info.grade, className:info.className, fee:Number(CUR.fee)||0, paid:false, paidDs:'', memo:'' });
   }
   sortMembers(); closeModal(); await pushSums();
+  logAct('학생 담기', `${ids.length}명`);
   toast(`${ids.length}명을 담았습니다`); renderDetail();
 };
 
 /* ── 담기: 선생님 ── */
 window.openPickTeachers = async function(){
   if(!canMgr(CUR)) return;
+  if(isLocked()) return lockedToast();
   await loadStaffList();
   const added = new Set(MEMBERS.filter(m=>m.kind==='teacher').map(m=>m.uid));
+
+  // 기관 → 부서로 묶고, 풀타임 먼저 · 협력 뒤 · 이름순
+  const ORG_L = { daniel:'🏫 다니엘 아마츠', jihyebit:'🌱 지혜빛 선교원' };
+  const isPartner = t => t.role === 'partner';
+  const groups = {};   // 'org|dept' → [staff]
+  STAFF.forEach(t=>{
+    const org = t.org === 'jihyebit' ? 'jihyebit' : 'daniel';
+    const dept = (t.dept && String(t.dept).trim()) || '부서 미지정';
+    const k = org + '|' + dept;
+    (groups[k] = groups[k] || []).push(t);
+  });
+  const orgOrder = ['daniel','jihyebit'];
+  let html = '';
+  orgOrder.forEach(org=>{
+    const keys = Object.keys(groups).filter(k=>k.startsWith(org+'|'))
+      .sort((a,b)=>a.split('|')[1].localeCompare(b.split('|')[1],'ko'));
+    if(!keys.length) return;
+    html += `<div style="font-size:12.5px;font-weight:900;color:var(--gd);margin:12px 0 7px">${ORG_L[org]}</div>`;
+    keys.forEach(k=>{
+      const dept = k.split('|')[1];
+      const arr = groups[k].sort((a,b)=>
+        (isPartner(a)?1:0)-(isPartner(b)?1:0) ||
+        String(a.name||'').localeCompare(String(b.name||''),'ko'));
+      html += `
+        <div class="pick-sec">
+          <div class="pick-h">${esc(dept)} <span class="cnt">${arr.length}명</span>
+            <button class="btn gray sm" style="margin-left:auto" onclick="pickAll(this,'${esc(k)}')">모두 선택</button></div>
+          <div class="pick-grid" data-g="${esc(k)}">
+            ${arr.map(t=>pickBox('tea', t.uid, t.name||'', isPartner(t)?'협력':'', added.has(t.uid))).join('')}
+          </div>
+        </div>`;
+    });
+  });
+
   openModal(`
     <div class="mtitle">🧑‍🏫 선생님 명단에서 담기</div>
-    <div class="pdesc" style="margin-bottom:11px">명단에 없는 보조 선생님은 닫고 「＋ 직접 입력」을 쓰세요.</div>
-    <div class="pick-grid">
-      ${STAFF.map(t=>pickBox('tea', t.uid, t.name||'', t.org==='jihyebit'?'지혜빛':'', added.has(t.uid))).join('')}
-    </div>
+    <div class="pdesc" style="margin-bottom:4px">기관 → 부서 순서로 정리했고, 부서마다 「모두 선택」으로
+      한 번에 담을 수 있어요. 협력 선생님은 이름 옆에 표시됩니다.
+      명단에 없는 보조 선생님은 닫고 「＋ 직접 입력」을 쓰세요.</div>
+    ${html}
     <div class="mfoot">
       <button class="btn gray" onclick="closeModal()">닫기</button>
       <button class="btn" onclick="addPickedTeachers()">선택한 선생님 담기</button>
@@ -571,12 +651,14 @@ window.addPickedTeachers = async function(){
       grade:'', className:'', fee:Number(CUR.fee)||0, paid:false, paidDs:'', memo:'' });
   }
   sortMembers(); closeModal(); await pushSums();
+  logAct('선생님 담기', `${ids.length}명`);
   toast('선생님을 담았습니다'); renderDetail();
 };
 
 /* ── 담기: 직접 입력 (보조 선생님 등) ── */
 window.openExtraForm = function(){
   if(!canMgr(CUR)) return;
+  if(isLocked()) return lockedToast();
   openModal(`
     <div class="mtitle">＋ 직접 입력</div>
     <div class="pdesc" style="margin-bottom:11px">명단에 없는 보조 선생님·외부 지원 인원을 넣습니다.</div>
@@ -602,7 +684,9 @@ window.addExtra = async function(){
     createdAt:Timestamp.now()
   });
   MEMBERS.push({ id:ref.id, ledgerId:CUR.id, kind, name, grade:'', className:'', fee, paid:false, paidDs:'', memo });
-  sortMembers(); closeModal(); await pushSums(); renderDetail();
+  sortMembers(); closeModal(); await pushSums();
+  logAct('직접 입력 담기', name);
+  renderDetail();
 };
 
 /* ═══ 🧾 지출 ═══
@@ -658,15 +742,17 @@ function renderExpenses(){
   const confSum = conf.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
   const pendSum = pend.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
 
+  const lock = isLocked();
   const row = (e, i, isConf) => {
     const mine = e.requesterUid === CU.uid;
-    const canEdit = mgr || (mine && e.status==='req');
+    const canEdit = !lock && (mgr || (mine && e.status==='req'));
+    const lines = (Array.isArray(e.items) && e.items.length)
+      ? e.items.map(r=>`<div style="font-size:11px;color:var(--ts)">· ${esc(r.name)} — ${fmt(r.price)}×${fmt(r.qty)} = <b>${fmt(r.sub)}</b>${r.note?` <span style="color:var(--tl)">(${esc(r.note)})</span>`:''}</div>`).join('')
+      : `<div style="font-size:11px;color:var(--ts)">${fmt(e.amount)}×${fmt(e.qty)}${esc(e.unit||'')}${e.note?` · ${esc(e.note)}`:''}</div>`;
     return `<tr>
       <td class="c">${isConf ? i+1 : '—'}</td>
       <td>${esc(e.cat||'')}</td>
-      <td><b>${esc(e.item||'')}</b>${e.detail?`<div style="font-size:11px;color:var(--ts)">${esc(e.detail)}</div>`:''}</td>
-      <td class="r">${fmt(e.amount)}</td>
-      <td class="c">${fmt(e.qty)}${esc(e.unit||'')}</td>
+      <td><b>${esc(e.item||'')}</b>${e.detail?`<div style="font-size:11px;color:var(--ts)">${esc(e.detail)}</div>`:''}${lines}</td>
       <td class="r"><b>${fmt(e.subtotal)}</b></td>
       <td class="c">${esc(e.requesterName||'')}</td>
       <td class="c" style="white-space:nowrap;font-size:11px;color:var(--ts)">${dtStr(e.createdAt)}</td>
@@ -683,7 +769,8 @@ function renderExpenses(){
         : e.status==='paid' ? `<span class="pill ok">✓ 입금 ${dtStr(e.paidAt).slice(0,5)}</span>`
         : `<span class="pill ok">직접 기록</span>`}</td>
       <td class="c no-print" style="white-space:nowrap">
-        ${mgr && e.status==='req' ? `<button class="btn sm" onclick="payExpense('${e.id}')">입금 ✓</button> ` : ''}
+        ${!lock && mgr && e.status==='req' ? `<button class="btn sm" onclick="payExpense('${e.id}')">입금 ✓</button> ` : ''}
+        ${!lock && mgr && e.status==='paid' ? `<button class="btn gray sm" onclick="unpayExpense('${e.id}')" title="신청자가 다시 고칠 수 있게 대기로 되돌립니다">↩ 대기로</button> ` : ''}
         ${canEdit ? `<button class="btn gray sm" onclick="openExpForm('${e.id}')">고치기</button>
           <button class="btn red sm" onclick="delExpense('${e.id}')">지우기</button>` : ''}
       </td>
@@ -696,20 +783,21 @@ function renderExpenses(){
       <div class="s">신청 대기<b>${fmt(pendSum)}원 · ${pend.length}건</b></div>
       <div class="s">잔액 (수입−확정 지출)<b>${fmt((Number(CUR.incSum)||0) - confSum)}원</b></div>
     </div>
-    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px" class="no-print">
+    ${lock ? `<div class="pdesc" style="margin-bottom:10px">🔒 마감된 활동 — 열람만 가능합니다</div>`
+      : `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px" class="no-print">
       <button class="btn line" onclick="openExpForm(null,'req')">＋ 지출 신청</button>
       ${mgr?`<button class="btn" onclick="openExpForm(null,'direct')">＋ 직접 기록 (담당자)</button>`:''}
-    </div>
+    </div>`}
     <div class="pdesc" style="margin-bottom:9px">쓴 돈을 신청하면 담당자가 입금해 주고 ✓ —
       그 순간 쪽지가 자동으로 갑니다. 대기 중인 신청은 회계 합계에 잡히지 않습니다.</div>
     <div class="tblwrap"><table class="acttbl" style="min-width:840px">
-      <tr><th class="c">NO</th><th>구분</th><th>품목 · 세부내용</th><th class="r">금액</th><th class="c">수량</th>
+      <tr><th class="c">NO</th><th>구분</th><th>품목 · 지출 줄</th>
         <th class="r">소계</th><th class="c">신청·담당</th><th class="c">신청 일시</th><th class="c">영수증</th><th class="c">상태</th><th class="c no-print"></th></tr>
       ${conf.map((e,i)=>row(e,i,true)).join('')}
-      ${conf.length?`<tr class="sumrow"><td colspan="5">확정 지출 합계 (${conf.length}건)</td>
+      ${conf.length?`<tr class="sumrow"><td colspan="3">확정 지출 합계 (${conf.length}건)</td>
         <td class="r">${fmt(confSum)}</td><td colspan="5"></td></tr>`:''}
       ${pend.map((e,i)=>row(e,i,false)).join('')}
-      ${!EXPENSES.length?`<tr><td colspan="11" style="text-align:center;color:var(--tl);padding:20px">
+      ${!EXPENSES.length?`<tr><td colspan="9" style="text-align:center;color:var(--tl);padding:20px">
         아직 지출 기록이 없습니다</td></tr>`:''}
     </table></div>
   </div>`;
@@ -717,6 +805,7 @@ function renderExpenses(){
 
 /* 지출 신청·직접 기록·고치기 (한 폼) */
 window.openExpForm = function(id, mode){
+  if(isLocked()) return lockedToast();
   const e = id ? EXPENSES.find(x=>x.id===id) : null;
   if(id && !e) return;
   const mgr = canMgr(CUR);
@@ -730,20 +819,16 @@ window.openExpForm = function(id, mode){
     <div class="fgrid">
       <div class="frow"><label class="flab">구분</label>
         <select class="fsel" id="ef-cat">${cats.map(c=>`<option ${e&&e.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
-      <div class="frow"><label class="flab">품목</label>
+      <div class="frow"><label class="flab">대표 이름 (비우면 첫 줄 품목으로)</label>
         <input class="fin" id="ef-item" placeholder="예: 5조 간식비" value="${e?esc(e.item):''}"></div>
     </div>
     <div class="frow"><label class="flab">세부내용 (계산 방법 등)</label>
       <input class="fin" id="ef-detail" placeholder="예: (109명×4식)+(106명×3식)" value="${e?esc(e.detail||''):''}"></div>
-    <div class="fgrid">
-      <div class="frow"><label class="flab">금액 (원)</label>
-        <input class="fin" id="ef-amount" type="number" value="${e?Number(e.amount)||0:''}" oninput="calcSub()"></div>
-      <div class="frow"><label class="flab">수량</label>
-        <input class="fin" id="ef-qty" type="number" value="${e?Number(e.qty)||1:1}" oninput="calcSub()"></div>
-      <div class="frow"><label class="flab">단위</label>
-        <input class="fin" id="ef-unit" value="${e?esc(e.unit||'식'):'식'}"></div>
+    <div class="frow"><label class="flab">지출 줄 (품목 · 단가 × 수량 · 비고 — 줄을 더할 수 있어요)</label>
+      <div id="ef-rows"></div>
+      <button type="button" class="btn line sm" style="margin-top:6px" onclick="addExpRow()">＋ 줄 더하기</button>
     </div>
-    <div class="frow"><label class="flab">소계</label>
+    <div class="frow"><label class="flab">합계</label>
       <input class="fin" id="ef-sub" readonly style="background:var(--iv);font-weight:900"></div>
     <div class="frow"><label class="flab">비고</label>
       <input class="fin" id="ef-note" placeholder="예: 선금 · 무선마이크" value="${e?esc(e.note||''):''}"></div>
@@ -759,12 +844,60 @@ window.openExpForm = function(id, mode){
       <button class="btn gray" onclick="closeModal()">닫기</button>
       <button class="btn" onclick="saveExpense('${id||''}','${m}')">${e?'저장':m==='direct'?'기록하기':'신청하기'}</button>
     </div>`);
-  calcSub();
+  initExpRows(e);
 };
-window.calcSub = function(){
-  const a = Number($I('ef-amount')?.value)||0, q = Number($I('ef-qty')?.value)||0;
-  if($I('ef-sub')) $I('ef-sub').value = fmt(a*q) + ' 원';
+
+/* ── 지출 줄 편집기 ── */
+function expRowHTML(r){
+  r = r || {};
+  return `<div class="ef-row" style="display:flex;gap:5px;margin-bottom:5px;align-items:center">
+    <input class="fin er-name" placeholder="품목" value="${esc(r.name||'')}" style="flex:2;min-width:0">
+    <input class="fin er-price" type="number" placeholder="단가" value="${r.price!=null?Number(r.price):''}"
+      oninput="recalcRows()" style="flex:1.2;min-width:0">
+    <input class="fin er-qty" type="number" placeholder="수량" value="${r.qty!=null?Number(r.qty):1}"
+      oninput="recalcRows()" style="flex:.8;min-width:0">
+    <span class="er-sub" style="flex:1.2;min-width:0;text-align:right;font-size:12px;font-weight:800;color:var(--gd)">0</span>
+    <input class="fin er-note" placeholder="비고" value="${esc(r.note||'')}" style="flex:1.4;min-width:0">
+    <button type="button" class="btn red sm" style="flex:none;padding:6px 8px"
+      onclick="this.closest('.ef-row').remove(); recalcRows()">✕</button>
+  </div>`;
+}
+function initExpRows(e){
+  const box = $I('ef-rows'); if(!box) return;
+  let rows = [];
+  if(e && Array.isArray(e.items) && e.items.length) rows = e.items;
+  else if(e) rows = [{ name:e.item||'', price:Number(e.amount)||0, qty:Number(e.qty)||1, note:e.note||'' }];
+  else rows = [{}];
+  box.innerHTML = rows.map(expRowHTML).join('');
+  recalcRows();
+}
+window.addExpRow = function(){
+  const box = $I('ef-rows'); if(!box) return;
+  box.insertAdjacentHTML('beforeend', expRowHTML({}));
+  recalcRows();
 };
+window.recalcRows = function(){
+  let sum = 0;
+  document.querySelectorAll('#ef-rows .ef-row').forEach(row=>{
+    const p = Number(row.querySelector('.er-price').value)||0;
+    const q = Number(row.querySelector('.er-qty').value)||0;
+    const s = p*q; sum += s;
+    row.querySelector('.er-sub').textContent = fmt(s);
+  });
+  if($I('ef-sub')) $I('ef-sub').value = fmt(sum) + ' 원';
+};
+function collectRows(){
+  const items = [];
+  document.querySelectorAll('#ef-rows .ef-row').forEach(row=>{
+    const name = (row.querySelector('.er-name').value||'').trim();
+    const price = Math.round(Number(row.querySelector('.er-price').value)||0);
+    const qty = Math.max(1, Math.round(Number(row.querySelector('.er-qty').value)||1));
+    const note = (row.querySelector('.er-note').value||'').trim();
+    if(!name && !price) return;   // 빈 줄은 건너뛴다
+    items.push({ name, price, qty, note, sub: price*qty });
+  });
+  return items;
+}
 
 /* 고치기 전 내용은 이전 기록 보관함(actRevisions)에 통째로 담는다 — 수행성 경비와 같은 기준 */
 async function snapshotExp(e, reason){
@@ -778,14 +911,16 @@ async function snapshotExp(e, reason){
 }
 
 window.saveExpense = async function(id, mode){
-  const cat = $I('ef-cat').value, item = ($I('ef-item').value||'').trim();
-  if(!item){ toast('품목을 넣어 주세요','err'); return; }
-  const amount = Math.round(Number($I('ef-amount').value)||0);
-  const qty = Math.max(1, Math.round(Number($I('ef-qty').value)||1));
-  const unit = ($I('ef-unit').value||'식').trim();
+  const cat = $I('ef-cat').value;
+  const headItem = ($I('ef-item').value||'').trim();
+  const items = collectRows();
+  if(!items.length){ toast('지출 줄을 한 줄 이상 넣어 주세요','err'); return; }
   const detail = ($I('ef-detail').value||'').trim();
   const note = ($I('ef-note').value||'').trim();
-  const subtotal = amount * qty;
+  const subtotal = items.reduce((n,r)=>n+r.sub, 0);
+  // 표·쪽지에 쓸 대표 이름: 품목칸 입력 > 첫 줄 이름 (+외 n)
+  const item = headItem || (items.length>1 ? `${items[0].name} 외 ${items.length-1}건` : items[0].name);
+  const amount = items[0].price, qty = items[0].qty, unit = '식';
 
   // 📷 영수증 사진: 새로 골랐으면 압축, 「떼기」면 비우기, 아니면 그대로
   let receiptImg;   // undefined = 손대지 않음
@@ -800,15 +935,16 @@ window.saveExpense = async function(id, mode){
   if(id){
     const e = EXPENSES.find(x=>x.id===id); if(!e) return;
     await snapshotExp(e, 'edit');
-    const upd = { cat, item, detail, amount, qty, unit, note, subtotal };
+    const upd = { cat, item, detail, amount, qty, unit, note, subtotal, items };
     if(receiptImg !== undefined) upd.receiptImg = receiptImg;
     await updateDoc(doc(db,'actExpenses',id), upd);
     Object.assign(e, upd);
+    logAct('지출 고침', `${item} ${fmt(subtotal)}원`);
     toast('고쳤습니다 — 이전 내용은 기록 보관함에 남았습니다');
   } else {
     const status = mode==='direct' ? 'direct' : 'req';
     const data = {
-      ledgerId:CUR.id, cat, item, detail, amount, qty, unit, note, subtotal,
+      ledgerId:CUR.id, cat, item, detail, amount, qty, unit, note, subtotal, items,
       receiptImg: receiptImg || '',
       requesterUid:CU.uid, requesterName:CU.name||'', status,
       createdAt:Timestamp.now(),
@@ -817,12 +953,14 @@ window.saveExpense = async function(id, mode){
     };
     const ref = await addDoc(collection(db,'actExpenses'), data);
     EXPENSES.push({ id:ref.id, ...data });
+    logAct(status==='direct' ? '지출 직접 기록' : '지출 신청', `${item} ${fmt(subtotal)}원`);
     toast(status==='direct' ? '기록했습니다' : '신청했습니다 — 담당자 입금 후 쪽지로 알려드려요');
   }
   sortExpenses(); closeModal(); await pushSums(); renderDetail();
 };
 
 window.payExpense = async function(id){
+  if(isLocked()) return lockedToast();
   const e = EXPENSES.find(x=>x.id===id);
   if(!e || !canMgr(CUR) || e.status!=='req') return;
   if(!confirm(`${e.requesterName}의 「${e.item}」 ${fmt(e.subtotal)}원 — 입금 완료로 표시할까요?\n(신청한 선생님께 쪽지가 갑니다)`)) return;
@@ -843,12 +981,14 @@ window.payExpense = async function(id){
       });
     } catch(err){ console.warn('message', err); }
   }
+  logAct('지출 입금 확인', `${e.item||''} ${fmt(e.subtotal)}원 → ${e.requesterName||''}`);
   sortExpenses(); await pushSums();
   toast('입금 완료 — 쪽지를 보냈고 회계 보고에 반영했습니다');
   renderDetail();
 };
 
 window.delExpense = async function(id){
+  if(isLocked()) return lockedToast();
   const e = EXPENSES.find(x=>x.id===id); if(!e) return;
   const mgr = canMgr(CUR);
   if(!(mgr || (e.requesterUid===CU.uid && e.status==='req'))){ toast('지울 권한이 없습니다','err'); return; }
@@ -856,7 +996,33 @@ window.delExpense = async function(id){
   await snapshotExp(e, 'delete');
   await deleteDoc(doc(db,'actExpenses',id));
   EXPENSES = EXPENSES.filter(x=>x.id!==id);
+  logAct('지출 지움', `${e.item||''} ${fmt(e.subtotal)}원 — 휴지통(이전 기록 보관함)에 남음`);
   await pushSums(); renderDetail();
+  toast('지웠습니다 — 휴지통에서 되돌릴 수 있어요');
+};
+
+/* ↩ 입금 완료를 대기로 — 신청자가 다시 고칠 수 있게 (담당자 허가) */
+window.unpayExpense = async function(id){
+  if(isLocked()) return lockedToast();
+  const e = EXPENSES.find(x=>x.id===id);
+  if(!e || !canMgr(CUR) || e.status!=='paid') return;
+  if(!confirm(`「${e.item}」을(를) 입금 대기로 되돌릴까요?\n신청자가 다시 고칠 수 있게 되고, 회계 합계에서 빠집니다.`)) return;
+  await updateDoc(doc(db,'actExpenses',id), { status:'req', paidAt:null, paidByUid:'', paidByName:'' });
+  e.status='req'; e.paidAt=null;
+  if(e.requesterUid && e.requesterUid !== CU.uid){
+    try {
+      await addDoc(collection(db,'messages'), {
+        fromUid:CU.uid, fromName:CU.name||'',
+        toUids:[e.requesterUid], toNames:[e.requesterName||''],
+        subject:`[활동 경비] ${CUR.name} · 수정 허용`,
+        body:`「${e.item}」 건이 입금 대기로 되돌려졌습니다.\n내용을 고친 뒤 담당자가 다시 입금 확인합니다.`,
+        readBy:[], createdAt:Timestamp.now()
+      });
+    } catch(err){}
+  }
+  logAct('입금 대기로 되돌림', `${e.item||''} ${fmt(e.subtotal)}원`);
+  sortExpenses(); await pushSums(); renderDetail();
+  toast('대기로 되돌렸습니다 — 신청자에게 쪽지를 보냈어요');
 };
 
 /* ═══ 📊 회계 보고 (자동 생성) ═══ */
@@ -949,6 +1115,13 @@ function renderReport(){
     </div>
     <div class="tblwrap" style="margin-top:12px"><table class="acttbl" style="min-width:0">
       <tr><th colspan="3">잔액 · 환급 정리</th></tr>
+      <tr><td colspan="3" style="background:var(--gp);font-size:11.5px;color:var(--gd);line-height:1.9">
+        <b>산출 과정</b><br>
+        ① 수입 ${fmt(incSum)} − 지출 ${fmt(expSum)} = <b>잔액 ${fmt(bal)}원</b><br>
+        ② 잔액 ${fmt(bal)} ÷ ${paidN}명 = ${paidN?fmt(Math.round(rawPer*100)/100):0}원
+           → ${RU>1?`${fmt(RU)}원 단위 절사 → `:''}<b>1인 ${fmt(per)}원</b><br>
+        ③ ${fmt(per)} × ${paidN}명 = <b>실제 환급 합계 ${fmt(per*paidN)}원</b>
+           · 단수 ${fmt(bal)} − ${fmt(per*paidN)} = <b>${fmt(rem)}원</b></td></tr>
       <tr><td>잔여 회비 전체 (수입 − 지출)</td><td class="r"><b>${fmt(bal)}</b></td><td></td></tr>
       <tr><td>1인당 잔여 회비 (${paidN}명)
           <select class="fsel no-print" style="width:auto;display:inline-block;margin-left:8px;
@@ -962,10 +1135,185 @@ function renderReport(){
         <td style="color:var(--ts);font-size:11.5px">학생 · 직접 추가 인원</td></tr>
       <tr><td>참여 선생님 ${teaN}명 환급</td><td class="r">${fmt(per*teaN)}</td>
         <td style="color:var(--ts);font-size:11.5px"></td></tr>
+      <tr class="sumrow"><td>실제 환급 합계 (${paidN}명 × ${fmt(per)}원)</td>
+        <td class="r">${fmt(per*paidN)}</td>
+        <td style="font-size:11.5px">단수 ${fmt(rem)}원 → 센터 입금 등으로 정리</td></tr>
     </table></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:13px;align-items:center" class="no-print">
+      ${canMgr(CUR) ? (
+        isLocked()
+          ? `<span class="pill red" style="font-size:11px">🔒 마감됨${CUR.closedDs?` · ${esc(CUR.closedDs)}`:''}</span>
+             <button class="btn gray" onclick="reopenLedger()">🔓 마감 풀기</button>`
+          : `<button class="btn" onclick="closeLedger()">🔒 회계 마감하기</button>`
+      ) : (isLocked() ? `<span class="pill red" style="font-size:11px">🔒 마감됨</span>` : '')}
+      ${canMgr(CUR) ? `<span style="margin-left:auto"></span>
+        ${CUR.shareId
+          ? `<button class="btn line" onclick="copyRepShare()">🔗 링크 복사</button>
+             <button class="btn gray" onclick="repShareOff()">공유 끄기</button>`
+          : `<button class="btn line" onclick="repShareOn()">🔗 공유 링크 만들기</button>`}` : ''}
+    </div>
+    ${CUR.shareId && canMgr(CUR) ? `<div class="pdesc" style="margin-top:6px">
+      공유 링크는 로그인 없이 이 보고서만 볼 수 있어요 — 보고서를 열 때마다 내용이 자동 갱신됩니다.</div>` : ''}
   </div>`;
+  // 공유가 켜져 있으면 최신 내용으로 조용히 갱신
+  if(CUR.shareId && canMgr(CUR)) syncRepShare();
 }
 window.setRndUnit = function(v){ window._rndUnit = Number(v)||1; renderDetail(); };
+
+/* ═══ 🔒 회계 마감 · 풀기 ═══ */
+window.closeLedger = async function(){
+  if(!canMgr(CUR) || isLocked()) return;
+  if(!confirm(`「${CUR.name}」 회계를 마감할까요?\n\n마감하면 참가자·지출·설정 모두 잠기고,\n보고서가 확정됩니다. (담당자만 다시 풀 수 있어요)`)) return;
+  if(!confirm('정말 마감합니다 — 진행할까요?')) return;
+  // ⏱ 마감 직전 상태를 타임머신에 통째로 보관
+  try {
+    if(window.TM){
+      await TM.snapBundle('actMembers', {ledgerId:CUR.id}, '회계 마감 직전 — 참가자');
+      await TM.snapBundle('actExpenses', {ledgerId:CUR.id}, '회계 마감 직전 — 지출');
+    }
+  } catch(e){}
+  const upd = { status:'closed', closedDs:todayDs(), closedByUid:CU.uid, closedByName:CU.name||'' };
+  await updateDoc(doc(db,'actLedgers',CUR.id), upd);
+  Object.assign(CUR, upd);
+  logAct('회계 마감', `잔액 ${fmt((Number(CUR.incSum)||0)-(Number(CUR.expSum)||0))}원으로 확정`);
+  toast('마감했습니다 — 이제 열람만 가능합니다');
+  renderDetail();
+};
+window.reopenLedger = async function(){
+  if(!canMgr(CUR) || !isLocked()) return;
+  if(!confirm(`「${CUR.name}」 마감을 풀까요?\n다시 고칠 수 있게 됩니다.`)) return;
+  const upd = { status:'settle' };
+  await updateDoc(doc(db,'actLedgers',CUR.id), upd);
+  Object.assign(CUR, upd);
+  logAct('마감 풀기', '');
+  toast('마감을 풀었습니다 — 정산 중 상태로 돌아갔어요');
+  renderDetail();
+};
+
+/* ═══ 🔗 회계 보고 공유 링크 (sharedSheets 재활용 — 링크를 아는 사람만 열람) ═══ */
+function buildReportShare(){
+  const paidM = MEMBERS.filter(m=>m.paid);
+  const paidN = paidM.length;
+  const incSum = paidM.reduce((n,m)=>n+(Number(m.fee)||0),0);
+  const conf = EXPENSES.filter(e=>e.status!=='req');
+  const expSum = conf.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+  const inc = [];
+  const gset = [...new Set(paidM.filter(m=>m.kind==='student').map(m=>m.grade||'학년 미지정'))]
+    .sort((a,b)=>gnum(a)-gnum(b));
+  gset.forEach(g=>{
+    const arr = paidM.filter(m=>m.kind==='student'&&(m.grade||'학년 미지정')===g);
+    const fees = [...new Set(arr.map(m=>Number(m.fee)||0))];
+    inc.push({ label:g, n:arr.length, fee:fees.length===1?fees[0]:null,
+      sum:arr.reduce((n,m)=>n+(Number(m.fee)||0),0) });
+  });
+  const tt = paidM.filter(m=>m.kind==='teacher');
+  if(tt.length) inc.push({ label:'선생님', n:tt.length,
+    fee:[...new Set(tt.map(m=>Number(m.fee)||0))].length===1?Number(tt[0].fee)||0:null,
+    sum:tt.reduce((n,m)=>n+(Number(m.fee)||0),0) });
+  const xx = paidM.filter(m=>m.kind==='extra');
+  if(xx.length) inc.push({ label:'직접 추가', n:xx.length, fee:null,
+    sum:xx.reduce((n,m)=>n+(Number(m.fee)||0),0) });
+  const byCat = {};
+  conf.forEach(e=>{ const c=e.cat||'기타'; byCat[c]=(byCat[c]||0)+(Number(e.subtotal)||0); });
+  const exp = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>({cat:c, sum:v}));
+  const RU = window._rndUnit || 1;
+  const per = paidN ? Math.floor((incSum-expSum)/paidN/RU)*RU : 0;
+  return {
+    type:'actReport', name:CUR.name||'', startDs:CUR.startDs||'', endDs:CUR.endDs||'',
+    closed: isLocked(), closedDs: CUR.closedDs||'',
+    paidN, waitN: MEMBERS.length - paidN, incSum, expSum, inc, exp,
+    per, rndUnit:RU,
+    memN: paidM.filter(m=>m.kind!=='teacher').length,
+    teaN: paidM.filter(m=>m.kind==='teacher').length,
+    byName: CU.name||'', updatedAt: Timestamp.now()
+  };
+}
+async function syncRepShare(){
+  if(!CUR || !CUR.shareId) return;
+  try { await setDoc(doc(db,'sharedSheets', CUR.shareId), buildReportShare()); } catch(e){}
+}
+function repShareURL(){
+  return location.href.replace(/[^/]*$/, '') + 'act-report-share.html?id=' + CUR.shareId;
+}
+window.repShareOn = async function(){
+  if(!canMgr(CUR)) return;
+  const id = 'ar_' + Array.from(crypto.getRandomValues(new Uint8Array(12)),
+    b=>'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
+  try {
+    await setDoc(doc(db,'sharedSheets', id), { ...buildReportShare() });
+    await updateDoc(doc(db,'actLedgers',CUR.id), { shareId:id });
+    CUR.shareId = id;
+    logAct('보고서 공유 켬', '');
+    renderDetail();
+    setTimeout(()=>copyRepShare(), 150);
+  } catch(e){ toast('공유 만들기 실패: '+(e.message||''),'err'); }
+};
+window.repShareOff = async function(){
+  if(!canMgr(CUR) || !CUR.shareId) return;
+  if(!confirm('공유를 끌까요?\n기존 링크는 더 이상 열리지 않습니다.')) return;
+  try { await deleteDoc(doc(db,'sharedSheets', CUR.shareId)); } catch(e){}
+  await updateDoc(doc(db,'actLedgers',CUR.id), { shareId:'' });
+  CUR.shareId = '';
+  logAct('보고서 공유 끔', '');
+  toast('공유를 껐습니다'); renderDetail();
+};
+window.copyRepShare = function(){
+  const url = repShareURL();
+  (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+    .then(()=>toast('공유 링크를 복사했습니다 ✓'))
+    .catch(()=>{ prompt('아래 링크를 복사하세요', url); });
+};
+
+/* ═══ 🗑 휴지통 — 지운 활동·지출을 수퍼가 되돌린다 ═══ */
+window.openTrash = async function(){
+  if(!IS_SUPER) return;
+  const deadLedgers = LEDGERS.filter(l=>l.deleted);
+  let revs = [];
+  try {
+    const snap = await getDocs(collection(db,'actRevisions'));
+    revs = snap.docs.map(d=>({ id:d.id, ...d.data() }))
+      .filter(r=>r.reason==='delete')
+      .sort((a,b)=>(b.at?.seconds||0)-(a.at?.seconds||0)).slice(0,30);
+  } catch(e){}
+  const lname = lid => (LEDGERS.find(l=>l.id===lid)||{}).name || '(지워진 활동)';
+  openModal(`
+    <div class="mtitle">🗑 휴지통 (수퍼관리자)</div>
+    <div class="pdesc" style="margin-bottom:11px">지운 것은 사라지지 않고 여기 보관됩니다 — 되돌리기를 누르면 복원돼요.</div>
+    <div style="font-size:12px;font-weight:900;color:var(--gd);margin-bottom:6px">지운 활동</div>
+    ${deadLedgers.length ? `<div class="tblwrap" style="margin-bottom:13px"><table class="acttbl" style="min-width:0">
+      ${deadLedgers.map(l=>`<tr><td><b>${esc(l.name)}</b></td>
+        <td class="c" style="font-size:11px;color:var(--ts)">${esc(l.deletedDs||'')} · ${esc(l.deletedByName||'')}</td>
+        <td class="c"><button class="btn sm" onclick="restoreLedger('${l.id}')">되돌리기</button></td></tr>`).join('')}
+    </table></div>` : `<div class="pdesc" style="margin-bottom:13px">없음</div>`}
+    <div style="font-size:12px;font-weight:900;color:var(--gd);margin-bottom:6px">지운 지출 (최근 30건)</div>
+    ${revs.length ? `<div class="tblwrap"><table class="acttbl" style="min-width:0">
+      ${revs.map(r=>`<tr><td style="font-size:11px;color:var(--ts)">${esc(lname(r.ledgerId))}</td>
+        <td><b>${esc(r.before?.item||'')}</b> <span style="font-size:11px;color:var(--ts)">${fmt(r.before?.subtotal)}원</span></td>
+        <td class="c" style="font-size:11px;color:var(--ts)">${dtStr(r.at)} · ${esc(r.byName||'')}</td>
+        <td class="c"><button class="btn sm" onclick="restoreExpense('${r.id}')">되돌리기</button></td></tr>`).join('')}
+    </table></div>` : `<div class="pdesc">없음</div>`}
+    <div class="mfoot"><button class="btn gray" onclick="closeModal()">닫기</button></div>`);
+};
+window.restoreLedger = async function(id){
+  if(!IS_SUPER) return;
+  const l = LEDGERS.find(x=>x.id===id); if(!l) return;
+  await updateDoc(doc(db,'actLedgers',id), { deleted:false, deletedDs:'', deletedByName:'' });
+  l.deleted = false;
+  CUR = null; logAct('활동 되돌림', l.name||'');
+  closeModal(); toast('활동을 되돌렸습니다'); render();
+};
+window.restoreExpense = async function(revId){
+  if(!IS_SUPER) return;
+  try {
+    const g = await getDoc(doc(db,'actRevisions',revId));
+    if(!g.exists()){ toast('보관 기록을 찾지 못했습니다','err'); return; }
+    const r = g.data(); const before = r.before || {};
+    await addDoc(collection(db,'actExpenses'), { ...before });
+    logAct('지출 되돌림', `${before.item||''} ${fmt(before.subtotal)}원`);
+    closeModal(); toast('지출을 되돌렸습니다');
+    if(CUR && CUR.id === r.ledgerId){ await reloadLedgerData(); await pushSums(); renderDetail(); }
+  } catch(e){ toast('되돌리기 실패: '+(e.message||''),'err'); }
+};
 window.printReport = function(){
   document.body.classList.add('pr');
   setTimeout(()=>{ window.print(); }, 60);
@@ -976,6 +1324,16 @@ window.addEventListener('afterprint', ()=>document.body.classList.remove('pr'));
 function renderSettings(){
   const mgr = canMgr(CUR);
   if(!mgr){ $I('tab-body').innerHTML=''; return; }
+  if(isLocked()){
+    $I('tab-body').innerHTML = `<div class="panel">
+      <div class="ptitle">⚙ 활동 설정</div>
+      <div class="pdesc" style="margin:10px 0">🔒 마감된 활동입니다 — 설정을 고치려면 먼저 마감을 풀어야 해요.</div>
+      <button class="btn gray" onclick="reopenLedger()">🔓 마감 풀기</button>
+      <div id="act-log-box" style="margin-top:16px"></div>
+    </div>`;
+    renderActLog();
+    return;
+  }
   $I('tab-body').innerHTML = `<div class="panel">
     <div class="ptitle">⚙ 활동 설정</div>
     <div class="fgrid" style="margin-top:10px">
@@ -1003,13 +1361,36 @@ function renderSettings(){
         <button class="btn gray sm" onclick="openMgrPick('sf')">담당자 고르기</button>
       </div></div>`:''}
     <div class="mfoot" style="justify-content:space-between">
-      ${canAdmin()?`<button class="btn red" onclick="delLedger()">활동 삭제</button>`:'<span></span>'}
+      ${canAdmin()?`<button class="btn red" onclick="delLedger()">🗑 휴지통에 담기</button>`:'<span></span>'}
       <button class="btn" onclick="saveSettings()">저장</button>
     </div>
+    <div id="act-log-box" style="margin-top:16px"></div>
   </div>`;
+  renderActLog();
+}
+
+/* 📜 이 활동의 최근 기록 (관리자 열람) */
+async function renderActLog(){
+  const box = $I('act-log-box'); if(!box) return;
+  if(!canAdmin()){ box.innerHTML=''; return; }
+  box.innerHTML = '<div class="pdesc">기록 불러오는 중…</div>';
+  try {
+    const snap = await getDocs(query(collection(db,'activityLogs'), where('ledgerId','==',CUR.id)));
+    const logs = snap.docs.map(d=>d.data())
+      .sort((a,b)=>(b.at?.seconds||0)-(a.at?.seconds||0)).slice(0,25);
+    box.innerHTML = `
+      <div style="font-size:12px;font-weight:900;color:var(--gd);margin-bottom:6px">📜 최근 기록 (관리자만 보임)</div>
+      ${logs.length ? `<div class="tblwrap"><table class="acttbl" style="min-width:0">
+        ${logs.map(g=>`<tr>
+          <td class="c" style="white-space:nowrap;font-size:11px;color:var(--ts)">${dtStr(g.at)}</td>
+          <td style="font-size:11.5px"><b>${esc(g.action||'')}</b>${g.detail?` — <span style="color:var(--ts)">${esc(g.detail)}</span>`:''}</td>
+          <td class="c" style="font-size:11px;color:var(--ts)">${esc(g.byName||'')}</td></tr>`).join('')}
+      </table></div>` : '<div class="pdesc">아직 기록이 없습니다</div>'}`;
+  } catch(e){ box.innerHTML = '<div class="pdesc">기록을 불러오지 못했습니다</div>'; }
 }
 window.saveSettings = async function(){
   if(!canMgr(CUR)) return;
+  if(isLocked()) return lockedToast();
   const name = ($I('sf-name').value||'').trim();
   if(!name){ toast('활동 이름을 넣어 주세요','err'); return; }
   const cats = ($I('sf-cats').value||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -1021,14 +1402,18 @@ window.saveSettings = async function(){
   if(window._pickedMgr){ upd.managers = window._pickedMgr.uids; upd.managerNames = window._pickedMgr.names; }
   await updateDoc(doc(db,'actLedgers',CUR.id), upd);
   Object.assign(CUR, upd); window._pickedMgr = null;
+  logAct('설정 저장', `${upd.name} · 회비 ${fmt(upd.fee)}원`);
   toast('저장했습니다'); renderDetail();
 };
 window.delLedger = async function(){
   if(!canAdmin()) return;
-  if(!confirm(`「${CUR.name}」 활동을 삭제할까요?\n참가자 · 지출 기록은 그대로 남지만 목록에서 사라집니다.`)) return;
-  if(!confirm('정말 삭제합니다. 되돌릴 수 없습니다.')) return;
-  await deleteDoc(doc(db,'actLedgers',CUR.id));
-  toast('삭제했습니다'); await backToList();
+  if(!confirm(`「${CUR.name}」 활동을 지울까요?\n\n완전히 사라지지 않고 🗑 휴지통에 보관되며,\n수퍼관리자가 언제든 되돌릴 수 있습니다.`)) return;
+  const upd = { deleted:true, deletedDs:todayDs(), deletedByName:CU.name||'' };
+  await updateDoc(doc(db,'actLedgers',CUR.id), upd);
+  Object.assign(CUR, upd);
+  logAct('활동 지움', `${CUR.name} → 휴지통`);
+  toast('휴지통에 담았습니다 — 수퍼관리자가 되돌릴 수 있어요');
+  await backToList();
 };
 
 /* ═══ 새 활동 만들기 · 담당자 고르기 ═══ */
@@ -1122,6 +1507,10 @@ window.saveLedger = async function(){
   };
   const ref = await addDoc(collection(db,'actLedgers'), data);
   LEDGERS.unshift({ id:ref.id, ...data });
+  try { await addDoc(collection(db,'activityLogs'), {
+    page:'actexp', ledgerId:ref.id, ledgerName:name,
+    action:'활동 만들기', detail:`회비 ${fmt(data.fee)}원`,
+    byUid:CU.uid, byName:CU.name||'', at:Timestamp.now() }); } catch(e){}
   window._pickedMgr = null; window._lfDraft = null;
   closeModal(); toast('활동을 만들었습니다 — 눌러서 들어가 보세요');
   render();

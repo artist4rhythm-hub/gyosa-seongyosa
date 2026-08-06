@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>회계 보고 · 활동 경비</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{ --gd:#1E3932; --gm:#00704A; --gp:#E8F3EF; --iv:#F2F0EB; --ivd:#E3E1DA;
+  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#fff; --red:#C0392B; }
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;background:var(--iv);
+  color:var(--tx);padding:18px 10px 60px}
+.wrap{max-width:860px;margin:0 auto}
+.head{background:var(--gd);color:#fff;border-radius:14px;padding:18px 18px;margin-bottom:13px}
+.head h1{font-size:18px;font-weight:900}
+.head .sub{font-size:12px;opacity:.85;margin-top:5px}
+.badge{display:inline-block;font-size:10.5px;font-weight:800;border-radius:100px;
+  padding:3px 10px;background:rgba(255,255,255,.18);margin-left:8px;vertical-align:2px}
+.badge.closed{background:#C0392B}
+.panel{background:var(--wh);border:1px solid var(--ivd);border-radius:13px;padding:14px;margin-bottom:12px}
+.pt{font-size:13.5px;font-weight:900;color:var(--gd);margin-bottom:9px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:var(--gd);color:#fff;font-weight:800;padding:7px 8px;text-align:left;font-size:11px;white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid var(--iv)}
+td.r,th.r{text-align:right}
+td.c,th.c{text-align:center}
+.sumrow td{background:var(--iv);font-weight:900}
+.two{display:flex;gap:12px;flex-wrap:wrap}
+.two>div{flex:1 1 320px}
+.pie{width:104px;height:104px;border-radius:50%;flex:none;border:6px solid var(--wh);
+  box-shadow:0 2px 10px rgba(0,0,0,.1)}
+.legend{font-size:11.5px;color:var(--ts);line-height:2}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend b{color:var(--tx)}
+.calc{background:var(--gp);border-radius:10px;padding:11px 13px;font-size:11.5px;
+  color:var(--gd);line-height:1.9;margin-bottom:10px}
+.foot{text-align:center;font-size:11px;color:var(--tl);margin-top:16px;line-height:1.8}
+#msg{text-align:center;padding:60px 20px;color:var(--ts);font-size:14px;font-weight:700}
+@media print{ body{background:#fff;padding:0} .panel{border:none} .head{border-radius:0} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="msg">보고서 불러오는 중…</div>
+  <div id="rep" style="display:none"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, doc, getDoc }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const db = getFirestore(initializeApp(firebaseConfig));
+
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const fmt = n => (Number(n)||0).toLocaleString('ko-KR');
+const sd = ds => ds ? String(ds).slice(5).replace('-','.') : '';
+const PAL = ['#2F5D4B','#7C8C43','#E0A93F','#C05B33','#5B7A99','#8B6FA8','#A8555E',
+  '#4E8577','#B08D3C','#6E6E6E'];
+
+async function main(){
+  const id = new URLSearchParams(location.search).get('id');
+  const msg = document.getElementById('msg');
+  if(!id){ msg.textContent = '잘못된 링크입니다.'; return; }
+  let d = null;
+  try {
+    const g = await getDoc(doc(db,'sharedSheets', id));
+    if(g.exists()) d = g.data();
+  } catch(e){}
+  if(!d || d.type !== 'actReport'){
+    msg.textContent = '보고서를 찾을 수 없습니다 — 공유가 꺼졌거나 링크가 바뀌었어요.';
+    return;
+  }
+  render(d);
+  msg.style.display = 'none';
+  document.getElementById('rep').style.display = '';
+}
+
+function render(d){
+  const bal = (d.incSum||0) - (d.expSum||0);
+  const per = d.per||0, paidN = d.paidN||0;
+  const rem = bal - per*paidN;
+  const rawPer = paidN ? bal/paidN : 0;
+
+  const incRows = (d.inc||[]).map(r=>`<tr>
+    <td style="font-weight:800;color:var(--gd)">${esc(r.label)}</td>
+    <td class="c">${r.n}</td>
+    <td class="r">${r.fee==null?'<span style="color:var(--tl)">개별</span>':fmt(r.fee)}</td>
+    <td class="r">${fmt(r.sum)}</td>
+    <td class="r" style="color:var(--ts)">${d.incSum?Math.round(r.sum/d.incSum*1000)/10:0}%</td></tr>`).join('');
+
+  const expRows = (d.exp||[]).map(r=>`<tr>
+    <td>${esc(r.cat)}</td>
+    <td class="r">${fmt(r.sum)}</td>
+    <td class="r">${paidN?fmt(Math.round(r.sum/paidN)):'—'}</td>
+    <td class="r" style="color:var(--ts)">${d.expSum?Math.round(r.sum/d.expSum*1000)/10:0}%</td></tr>`).join('');
+
+  let acc = 0;
+  const segs = (d.exp||[]).map((r,i)=>{
+    const p = d.expSum ? r.sum/d.expSum*100 : 0;
+    const s = `${PAL[i%PAL.length]} ${acc.toFixed(2)}% ${(acc+p).toFixed(2)}%`;
+    acc += p; return s;
+  });
+  const pieCSS = segs.length ? `background:conic-gradient(${segs.join(', ')})` : 'background:var(--iv)';
+  const legend = (d.exp||[]).map((r,i)=>
+    `<div><i style="background:${PAL[i%PAL.length]}"></i>${esc(r.cat)} <b>${d.expSum?Math.round(r.sum/d.expSum*100):0}%</b></div>`).join('');
+
+  const up = d.updatedAt && d.updatedAt.toDate ? d.updatedAt.toDate() : null;
+  const upStr = up ? `${up.getFullYear()}.${String(up.getMonth()+1).padStart(2,'0')}.${String(up.getDate()).padStart(2,'0')} ${String(up.getHours()).padStart(2,'0')}:${String(up.getMinutes()).padStart(2,'0')}` : '';
+
+  document.getElementById('rep').innerHTML = `
+  <div class="head">
+    <h1>📊 ${esc(d.name)} — 회계 보고
+      ${d.closed?`<span class="badge closed">🔒 마감${d.closedDs?` · ${esc(sd(d.closedDs))}`:''}</span>`:`<span class="badge">정산 중</span>`}</h1>
+    <div class="sub">${esc(sd(d.startDs))}${d.endDs?` ~ ${esc(sd(d.endDs))}`:''}
+      · 입금 완료 ${paidN}명${d.waitN?` (대기 ${d.waitN}명 미포함)`:''}</div>
+  </div>
+
+  <div class="two">
+    <div class="panel">
+      <div class="pt">수입 — 학년별 회비</div>
+      <table>
+        <tr><th>구분</th><th class="c">인원</th><th class="r">1인 회비</th><th class="r">소계</th><th class="r">비율</th></tr>
+        ${incRows}
+        <tr class="sumrow"><td>합계</td><td class="c">${paidN}</td><td></td>
+          <td class="r">${fmt(d.incSum)}</td><td class="r">100%</td></tr>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="pt">지출 — 용도별</div>
+      <table>
+        <tr><th>구분</th><th class="r">합계</th><th class="r">1인 비용</th><th class="r">비율</th></tr>
+        ${expRows}
+        <tr class="sumrow"><td>합계</td><td class="r">${fmt(d.expSum)}</td>
+          <td class="r">${paidN?fmt(Math.round((d.expSum||0)/paidN)):'—'}</td><td class="r">100%</td></tr>
+      </table>
+      ${(d.exp||[]).length?`<div style="display:flex;align-items:center;gap:15px;margin-top:10px;
+        background:var(--iv);border-radius:10px;padding:11px">
+        <div class="pie" style="${pieCSS}"></div>
+        <div class="legend">${legend}</div>
+      </div>`:''}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="pt">잔액 · 환급 정리</div>
+    <div class="calc">
+      <b>산출 과정</b><br>
+      ① 수입 ${fmt(d.incSum)} − 지출 ${fmt(d.expSum)} = <b>잔액 ${fmt(bal)}원</b><br>
+      ② 잔액 ${fmt(bal)} ÷ ${paidN}명 = ${paidN?fmt(Math.round(rawPer*100)/100):0}원
+        → ${d.rndUnit>1?`${fmt(d.rndUnit)}원 단위 절사 → `:''}<b>1인 ${fmt(per)}원</b><br>
+      ③ ${fmt(per)} × ${paidN}명 = <b>실제 환급 합계 ${fmt(per*paidN)}원</b>
+        · 단수 <b>${fmt(rem)}원</b></div>
+    <table>
+      <tr><td>잔여 회비 전체 (수입 − 지출)</td><td class="r"><b>${fmt(bal)}</b></td></tr>
+      <tr><td>1인당 환급액 (${paidN}명)</td><td class="r">${fmt(per)}</td></tr>
+      <tr><td>참여 멤버 ${d.memN||0}명 환급</td><td class="r">${fmt(per*(d.memN||0))}</td></tr>
+      <tr><td>참여 선생님 ${d.teaN||0}명 환급</td><td class="r">${fmt(per*(d.teaN||0))}</td></tr>
+      <tr class="sumrow"><td>실제 환급 합계 · 단수 ${fmt(rem)}원 별도 정리</td>
+        <td class="r">${fmt(per*paidN)}</td></tr>
+    </table>
+  </div>
+
+  <div class="foot">작성 ${esc(d.byName||'')}${upStr?` · 마지막 갱신 ${upStr}`:''}<br>
+    다니엘 아마츠 · 지혜빛 선교원 — 활동 경비 회계 보고</div>`;
+}
+main();
+</script>
+</body>
+</html>
