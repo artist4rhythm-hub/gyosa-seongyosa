@@ -3152,7 +3152,7 @@ async function renderPay(keepState){
 
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">💰 입금·환급 관리</h3>
+      <h3 class="actitle">💰 입금·환급 관리 <span style="font-size:10px;color:var(--tl);font-weight:700">v3</span></h3>
       <p class="adesc">학생별로 <b>입금·환급을 확인</b>하고 금액·날짜를 기록합니다. 아직 안 된 학생은 <b style="color:var(--warn)">⏳</b>로 표시됩니다.</p>
       ${orgTabs}
       <div class="fgrp" style="max-width:280px"><label>학기</label>
@@ -3228,6 +3228,7 @@ async function renderPay(keepState){
       .pay-name{font-weight:700;color:var(--gd);word-break:keep-all}
       .pay-amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
       .pay-chk-wrap{display:flex;align-items:center;gap:6px;justify-content:center;flex-wrap:wrap}
+      .pay-ck{width:20px;height:20px;flex:none;cursor:pointer;accent-color:var(--gm)}
       .pay-chk{width:22px;height:22px;border-radius:6px;border:2px solid var(--ivd);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:13px;background:var(--wh);flex:none}
       .pay-chk.on{background:var(--ok);border-color:var(--ok);color:#fff}
       .pay-chk.refund.on{background:var(--info);border-color:var(--info)}
@@ -3261,7 +3262,8 @@ function payRow(s){
     netCell = `<span style="color:var(--gm);font-weight:800">₩${won(absNet)}</span> <span class="pay-tag pay-tag-dep">입금</span>`;
     depCell = `
       <div class="pay-chk-wrap">
-        <span class="pay-chk ${dep.checked?'on':''}" onclick="togglePay('${s.id}','deposit')">${dep.checked?'✓':''}</span>
+        <input type="checkbox" class="pay-ck" ${dep.checked?'checked':''}
+          onchange="togglePay('${s.id}','deposit', this.checked)">
         <input type="number" class="pay-in" placeholder="${won(absNet)}" value="${dep.amount!=null?dep.amount:''}"
           oninput="setPayField('${s.id}','deposit','amount',this.value)" title="입금액 (비우면 순 청구액과 같음)">
         <input type="date" class="pay-in-date" value="${dep.date||''}" oninput="setPayField('${s.id}','deposit','date',this.value)">
@@ -3284,7 +3286,8 @@ function payRow(s){
     netCell = `<span style="color:var(--info);font-weight:800">₩${won(absNet)}</span> <span class="pay-tag pay-tag-ref">환급</span>`;
     refCell = `
       <div class="pay-chk-wrap">
-        <span class="pay-chk refund ${ref.checked?'on':''}" onclick="togglePay('${s.id}','refund')">${ref.checked?'✓':''}</span>
+        <input type="checkbox" class="pay-ck" ${ref.checked?'checked':''}
+          onchange="togglePay('${s.id}','refund', this.checked)">
         <input type="number" class="pay-in" placeholder="${won(absNet)}" value="${ref.amount!=null?ref.amount:''}"
           oninput="setPayField('${s.id}','refund','amount',this.value)" title="환급액 (비우면 순 환급액과 같음)">
         <input type="date" class="pay-in-date" value="${ref.date||''}" oninput="setPayField('${s.id}','refund','date',this.value)">
@@ -3310,15 +3313,20 @@ function ensurePay(sid, kind){
   if(!PAYMENTS[sid][kind]) PAYMENTS[sid][kind] = { checked:false, amount:null, date:'' };
   return PAYMENTS[sid][kind];
 }
-window.togglePay = function(sid, kind){
-  const rec = ensurePay(sid, kind);
-  rec.checked = !rec.checked;
-  // ✓ 체크하는 순간 날짜가 비어 있으면 오늘 날짜를 자동 기록
-  if(rec.checked && !rec.date) rec.date = todayYMD();
-  payDirty = true;
-  renderPay(true);   // 화면만 다시 그린다 (서버 자료를 새로 받지 않음 — 체크 유지)
-  const note = $I('pay-note');
-  if(note){ note.textContent='● 저장하지 않은 변경사항이 있습니다 — 「입금·환급 저장」을 눌러 주세요.'; note.style.color='var(--warn)'; }
+window.togglePay = function(sid, kind, val){
+  try {
+    const rec = ensurePay(sid, kind);
+    rec.checked = (val !== undefined) ? !!val : !rec.checked;
+    // ✓ 체크하는 순간 날짜가 비어 있으면 오늘 날짜를 자동 기록
+    if(rec.checked && !rec.date) rec.date = todayYMD();
+    payDirty = true;
+    renderPay(true);   // 화면만 다시 그린다 (서버 자료를 새로 받지 않음 — 체크 유지)
+    const note = $I('pay-note');
+    if(note){ note.textContent='● 저장하지 않은 변경사항이 있습니다 — 「입금·환급 저장」을 눌러 주세요.'; note.style.color='var(--warn)'; }
+  } catch(e){
+    console.error('togglePay', e);
+    toast('체크 처리 중 오류: ' + (e.message||e), 'err');
+  }
 };
 window.setPayField = function(sid, kind, field, val){
   const rec = ensurePay(sid, kind);
