@@ -613,6 +613,39 @@ window.addExtra = async function(){
    이전 내용을 actRevisions(이전 기록 보관함)에 통째로 담아둔다. */
 const confirmedExp = () => EXPENSES.filter(e=>e.status!=='req');
 const pendingExp   = () => EXPENSES.filter(e=>e.status==='req');
+/* 📷 영수증 사진 — 문서 안에 압축해 담는다 (900KB 넘으면 더 줄인다) */
+function shrinkImage(file){
+  return new Promise((resolve, reject)=>{
+    const rd = new FileReader();
+    rd.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w = img.width, hgt = img.height;
+        const MAX = 1100;
+        if(Math.max(w,hgt) > MAX){ const k = MAX/Math.max(w,hgt); w=Math.round(w*k); hgt=Math.round(hgt*k); }
+        const cv = document.createElement('canvas'); cv.width=w; cv.height=hgt;
+        cv.getContext('2d').drawImage(img,0,0,w,hgt);
+        let q = 0.72, out = cv.toDataURL('image/jpeg', q);
+        while(out.length > 900*1024 && q > 0.3){ q -= 0.12; out = cv.toDataURL('image/jpeg', q); }
+        if(out.length > 900*1024) reject(new Error('사진이 너무 큽니다'));
+        else resolve(out);
+      };
+      img.onerror = ()=>reject(new Error('사진을 읽지 못했습니다'));
+      img.src = rd.result;
+    };
+    rd.onerror = ()=>reject(new Error('사진을 읽지 못했습니다'));
+    rd.readAsDataURL(file);
+  });
+}
+window.openReceipt = function(id){
+  const e = EXPENSES.find(x=>x.id===id);
+  if(!e || !e.receiptImg){ toast('붙인 영수증 사진이 없습니다','err'); return; }
+  openModal(`
+    <div class="mtitle">📷 영수증 — ${esc(e.item||'')}</div>
+    <img src="${e.receiptImg}" style="width:100%;border-radius:10px;border:1px solid var(--ivd)">
+    <div class="mfoot"><button class="btn gray" onclick="closeModal()">닫기</button></div>`);
+};
+
 function tagOf(i){   // 영수증 글자표: A~Z, 그 다음 AA…
   let s=''; i=Number(i);
   do { s = String.fromCharCode(65 + (i % 26)) + s; i = Math.floor(i/26) - 1; } while(i >= 0);
@@ -637,7 +670,14 @@ function renderExpenses(){
       <td class="r"><b>${fmt(e.subtotal)}</b></td>
       <td class="c">${esc(e.requesterName||'')}</td>
       <td class="c" style="white-space:nowrap;font-size:11px;color:var(--ts)">${dtStr(e.createdAt)}</td>
-      <td class="c">${isConf?`<span class="pill gray">${tagOf(i)}</span>`:''}</td>
+      <td class="c">${
+        isConf
+          ? (e.receiptImg
+              ? `<span class="pill gray click" onclick="openReceipt('${e.id}')" title="영수증 사진 보기">${tagOf(i)} 📷</span>`
+              : `<span class="pill gray">${tagOf(i)}</span>`)
+          : (e.receiptImg
+              ? `<span class="pill gray click" onclick="openReceipt('${e.id}')" title="영수증 사진 보기">📷</span>` : '')
+      }</td>
       <td class="c" style="white-space:nowrap">${
         e.status==='req' ? `<span class="pill req">신청됨 · 입금 대기</span>`
         : e.status==='paid' ? `<span class="pill ok">✓ 입금 ${dtStr(e.paidAt).slice(0,5)}</span>`
@@ -707,6 +747,14 @@ window.openExpForm = function(id, mode){
       <input class="fin" id="ef-sub" readonly style="background:var(--iv);font-weight:900"></div>
     <div class="frow"><label class="flab">비고</label>
       <input class="fin" id="ef-note" placeholder="예: 선금 · 무선마이크" value="${e?esc(e.note||''):''}"></div>
+    <div class="frow"><label class="flab">📷 영수증 사진 (선택 · 자동으로 작게 압축됩니다)</label>
+      ${e && e.receiptImg ? `
+        <div style="display:flex;gap:9px;align-items:center;margin-bottom:6px">
+          <img src="${e.receiptImg}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--ivd)">
+          <label style="font-size:12px;color:var(--ts);display:flex;gap:5px;align-items:center">
+            <input type="checkbox" id="ef-photo-del"> 붙인 사진 떼기</label>
+        </div>` : ''}
+      <input class="fin" id="ef-photo" type="file" accept="image/*"></div>
     <div class="mfoot">
       <button class="btn gray" onclick="closeModal()">닫기</button>
       <button class="btn" onclick="saveExpense('${id||''}','${m}')">${e?'저장':m==='direct'?'기록하기':'신청하기'}</button>
@@ -739,10 +787,21 @@ window.saveExpense = async function(id, mode){
   const note = ($I('ef-note').value||'').trim();
   const subtotal = amount * qty;
 
+  // 📷 영수증 사진: 새로 골랐으면 압축, 「떼기」면 비우기, 아니면 그대로
+  let receiptImg;   // undefined = 손대지 않음
+  const pf = $I('ef-photo');
+  if(pf && pf.files && pf.files[0]){
+    try { toast('사진 줄이는 중…'); receiptImg = await shrinkImage(pf.files[0]); }
+    catch(err){ toast(err.message||'사진 처리 실패','err'); return; }
+  } else if($I('ef-photo-del') && $I('ef-photo-del').checked){
+    receiptImg = '';
+  }
+
   if(id){
     const e = EXPENSES.find(x=>x.id===id); if(!e) return;
     await snapshotExp(e, 'edit');
     const upd = { cat, item, detail, amount, qty, unit, note, subtotal };
+    if(receiptImg !== undefined) upd.receiptImg = receiptImg;
     await updateDoc(doc(db,'actExpenses',id), upd);
     Object.assign(e, upd);
     toast('고쳤습니다 — 이전 내용은 기록 보관함에 남았습니다');
@@ -750,6 +809,7 @@ window.saveExpense = async function(id, mode){
     const status = mode==='direct' ? 'direct' : 'req';
     const data = {
       ledgerId:CUR.id, cat, item, detail, amount, qty, unit, note, subtotal,
+      receiptImg: receiptImg || '',
       requesterUid:CU.uid, requesterName:CU.name||'', status,
       createdAt:Timestamp.now(),
       paidAt: status==='direct' ? Timestamp.now() : null,
@@ -849,10 +909,12 @@ function renderReport(){
   const legend = cats.map(([c,v],i)=>
     `<div><i style="background:${PAL[i%PAL.length]}"></i>${esc(c)} <b>${expSum?Math.round(v/expSum*100):0}%</b></div>`).join('');
 
-  /* 잔액 · 환급 */
+  /* 잔액 · 환급 — 단수 정리 도우미: 절사 단위를 고르면 지급액이 딱 떨어진다 */
   const bal = incSum - expSum;
-  const per = paidN ? Math.floor(bal/paidN) : 0;
-  const rem = bal - per*paidN;
+  const RU = window._rndUnit || 1;          // 1 · 10 · 100 · 1000원 단위 절사
+  const rawPer = paidN ? bal/paidN : 0;
+  const per = paidN ? Math.floor(rawPer / RU) * RU : 0;
+  const rem = bal - per*paidN;              // 단수 (개인 지급 후 남는 돈)
   const memN = paidM.filter(m=>m.kind!=='teacher').length;
   const teaN = paidM.filter(m=>m.kind==='teacher').length;
 
@@ -888,8 +950,14 @@ function renderReport(){
     <div class="tblwrap" style="margin-top:12px"><table class="acttbl" style="min-width:0">
       <tr><th colspan="3">잔액 · 환급 정리</th></tr>
       <tr><td>잔여 회비 전체 (수입 − 지출)</td><td class="r"><b>${fmt(bal)}</b></td><td></td></tr>
-      <tr><td>1인당 잔여 회비 (${paidN}명)</td><td class="r">${fmt(per)}</td>
-        <td style="color:var(--ts);font-size:11.5px">${rem?`단수 ${fmt(rem)}원 별도 정리`:''}</td></tr>
+      <tr><td>1인당 잔여 회비 (${paidN}명)
+          <select class="fsel no-print" style="width:auto;display:inline-block;margin-left:8px;
+            padding:3px 7px;font-size:11px" onchange="setRndUnit(this.value)">
+            ${[1,10,100,1000].map(u=>`<option value="${u}" ${RU===u?'selected':''}>${u===1?'그대로':fmt(u)+'원 단위 절사'}</option>`).join('')}
+          </select></td>
+        <td class="r">${fmt(per)}</td>
+        <td style="color:var(--ts);font-size:11.5px">${
+          paidN ? `1인 ${rawPer===per?'':fmt(Math.round(rawPer*100)/100)+' → '}${fmt(per)}원 지급${rem?` · 단수 ${fmt(rem)}원 센터 입금 등으로 정리`:' · 단수 없음 ✓'}` : ''}</td></tr>
       <tr><td>참여 멤버 ${memN}명 환급</td><td class="r">${fmt(per*memN)}</td>
         <td style="color:var(--ts);font-size:11.5px">학생 · 직접 추가 인원</td></tr>
       <tr><td>참여 선생님 ${teaN}명 환급</td><td class="r">${fmt(per*teaN)}</td>
@@ -897,6 +965,7 @@ function renderReport(){
     </table></div>
   </div>`;
 }
+window.setRndUnit = function(v){ window._rndUnit = Number(v)||1; renderDetail(); };
 window.printReport = function(){
   document.body.classList.add('pr');
   setTimeout(()=>{ window.print(); }, 60);
