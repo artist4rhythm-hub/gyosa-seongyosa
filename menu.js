@@ -69,6 +69,9 @@ const MENU = [
       { key:'expense', label:'수행성 경비', icon:'savings', href:'expense.html',
         desc:'경비 신청 · 취합 · 영수증',
         tabs:['경비 신청','신청 내역','취합','백업·정리'] },
+      { key:'actexp', label:'활동 경비', icon:'festival', href:'act-expense.html',
+        desc:'행사별 회비 · 지출 · 회계 보고',
+        tabs:['활동 목록','참가자·회비','지출','회계 보고'] },
     ]
   },
   {

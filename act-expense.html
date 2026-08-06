@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>활동 경비 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="theme.css">
+<style>
+:root{
+  --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
+  --iv:#F2F0EB; --ivd:#E3E1DA; --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#fff;
+  --amber:#B45309; --amberp:#FFF4E5; --red:#C0392B; --redp:#FDECEA;
+  --sh:0 2px 12px rgba(30,57,50,.08); --r:12px;
+}
+#gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--iv);z-index:100}
+#gate .gbox{text-align:center}
+#gate .gtitle{font-size:17px;font-weight:900;color:var(--gd);margin-bottom:8px}
+#gate .gsub{font-size:13px;color:var(--ts)}
+#gate .gbtn{display:inline-block;margin-top:14px;font-size:13px;font-weight:700;color:#fff;
+  background:var(--gd);border-radius:9px;padding:9px 18px;text-decoration:none}
+#ms{display:none;flex-direction:column;gap:12px}
+
+.panel{background:var(--wh);border:1px solid var(--ivd);border-radius:var(--r);padding:16px;box-shadow:var(--sh)}
+.ptitle{font-size:15px;font-weight:900;color:var(--gd);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pdesc{font-size:12px;color:var(--ts);margin-top:3px;line-height:1.6}
+
+.btn{font-family:inherit;font-size:12.5px;font-weight:800;padding:8px 14px;border-radius:9px;
+  border:1px solid var(--gm);background:var(--gm);color:#fff;cursor:pointer}
+.btn.line{background:var(--wh);color:var(--gm)}
+.btn.gray{background:var(--wh);border-color:var(--ivd);color:var(--ts)}
+.btn.red{background:var(--wh);border-color:var(--red);color:var(--red)}
+.btn.sm{font-size:11px;padding:6px 10px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+.chip{font-family:inherit;font-size:11px;font-weight:800;border:1px solid var(--ivd);
+  background:var(--wh);border-radius:100px;padding:5px 12px;color:var(--ts);cursor:pointer}
+.chip.on{background:var(--gd);border-color:var(--gd);color:#fff}
+
+.acttbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.acttbl th{background:var(--gd);color:#fff;font-weight:800;padding:8px 9px;text-align:left;font-size:11.5px;white-space:nowrap}
+.acttbl td{padding:8px 9px;border-bottom:1px solid var(--iv);vertical-align:middle}
+.acttbl tr:hover td{background:#FAFAF7}
+.acttbl td.r,.acttbl th.r{text-align:right}
+.acttbl td.c,.acttbl th.c{text-align:center}
+.acttbl .sumrow td{background:var(--iv);font-weight:900}
+.tblwrap{overflow-x:auto;border-radius:9px;border:1px solid var(--ivd)}
+.tblwrap .acttbl{min-width:640px}
+
+.pill{display:inline-block;font-size:10px;font-weight:800;border-radius:100px;padding:3px 9px;white-space:nowrap}
+.pill.ok{background:var(--gp);color:var(--gm)}
+.pill.req{background:var(--amberp);color:var(--amber)}
+.pill.gray{background:var(--iv);color:var(--ts)}
+.pill.red{background:var(--redp);color:var(--red)}
+.pill.click{cursor:pointer}
+
+.stat{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.stat .s{background:var(--iv);border-radius:10px;padding:9px 13px;font-size:11.5px;color:var(--ts)}
+.stat .s b{display:block;font-size:15px;font-weight:900;color:var(--gd);margin-top:1px}
+
+/* 상세 탭 */
+.dtabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:2px}
+.dtab{font-family:inherit;font-size:12.5px;font-weight:800;border:1px solid var(--ivd);
+  background:var(--wh);border-radius:9px;padding:8px 14px;color:var(--ts);cursor:pointer}
+.dtab.on{background:var(--gd);border-color:var(--gd);color:#fff}
+
+/* 모달 */
+.mbk{position:fixed;inset:0;background:rgba(20,35,30,.45);z-index:300;display:flex;
+  align-items:center;justify-content:center;padding:16px}
+.mbox{background:var(--wh);border-radius:15px;width:100%;max-width:560px;max-height:88vh;
+  overflow-y:auto;padding:19px 18px;box-shadow:0 18px 60px rgba(0,0,0,.3)}
+.mtitle{font-size:15px;font-weight:900;color:var(--gd);margin-bottom:12px}
+.frow{margin-bottom:11px}
+.flab{display:block;font-size:11.5px;font-weight:800;color:var(--ts);margin-bottom:5px}
+.fin,.fsel,.ftxt{font-family:inherit;font-size:13px;width:100%;border:1.5px solid var(--ivd);
+  border-radius:9px;padding:9px 11px;background:var(--wh);color:var(--tx)}
+.fin:focus,.fsel:focus,.ftxt:focus{outline:none;border-color:var(--gm)}
+.fgrid{display:flex;gap:9px}
+.fgrid .frow{flex:1}
+.mfoot{display:flex;gap:8px;justify-content:flex-end;margin-top:15px}
+
+/* 담기 모달 명단 */
+.pick-sec{margin-bottom:12px}
+.pick-h{font-size:12px;font-weight:900;color:var(--gd);background:var(--gp);border-radius:8px;
+  padding:6px 11px;margin-bottom:6px;display:flex;align-items:center;gap:8px;cursor:default}
+.pick-h .cnt{font-weight:700;color:var(--ts);font-size:11px}
+.pick-h.fold{cursor:pointer;background:var(--iv);color:var(--ts)}
+.pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:5px}
+.pick{display:flex;align-items:center;gap:7px;font-size:12px;border:1.5px solid var(--ivd);
+  border-radius:9px;padding:7px 9px;cursor:pointer;background:var(--wh)}
+.pick input{width:15px;height:15px;flex:none;cursor:pointer}
+.pick.on{border-color:var(--gm);background:var(--gp)}
+.pick.dis{opacity:.45;cursor:default}
+.pick small{color:var(--tl);font-size:10px;margin-left:auto}
+
+/* 보고서 */
+.rep2{display:flex;gap:13px;flex-wrap:wrap;align-items:flex-start}
+.rep2>div{flex:1 1 330px}
+.pie{width:104px;height:104px;border-radius:50%;flex:none;border:6px solid var(--wh);
+  box-shadow:0 2px 10px rgba(0,0,0,.1)}
+.legend{font-size:11.5px;color:var(--ts);line-height:2}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend b{color:var(--tx)}
+
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:900;
+  background:var(--gd);color:#fff;font-size:13px;font-weight:700;padding:11px 18px;
+  border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.on{opacity:1}
+.toast.err{background:var(--red)}
+
+@media (max-width:640px){
+  body #mn{padding-left:6px;padding-right:6px}
+  .panel{padding:11px 9px}
+  .btn{font-size:11.5px;padding:8px 11px}
+  .mbox{padding:15px 12px}
+}
+/* 인쇄: 보고서만 */
+@media print{
+  body.pr *{visibility:hidden}
+  body.pr #panel-rep, body.pr #panel-rep *{visibility:visible}
+  body.pr #panel-rep{position:absolute;left:0;top:0;width:100%;border:none;box-shadow:none}
+  body.pr .no-print{display:none !important}
+}
+</style>
+<script type="module" src="badges.js"></script>
+<script type="module" src="presence.js"></script>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gbox">
+    <div class="gtitle">🏕 활동 경비</div>
+    <div class="gsub" id="gate-msg">로그인 확인 중...</div>
+    <a class="gbtn" id="gate-btn" href="index.html" style="display:none">로그인 화면으로</a>
+  </div>
+</div>
+
+<div id="ms">
+  <div id="view-list"></div>
+  <div id="view-detail" style="display:none;flex-direction:column;gap:12px"></div>
+</div>
+
+<div id="modal-mount"></div>
+<div class="toast" id="toast"></div>
+
+<script src="loading.js"></script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
+  collection, getDocs, query, where, Timestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+/* ═══ 작은 도우미들 ═══ */
+const $I = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const fmt = n => (Number(n)||0).toLocaleString('ko-KR');
+const todayDs = () => { const d=new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const dtStr = ts => { if(!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return `${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+function toast(msg, kind){
+  const t = $I('toast'); t.textContent = msg;
+  t.classList.toggle('err', kind==='err'); t.classList.add('on');
+  clearTimeout(t._t); t._t = setTimeout(()=>t.classList.remove('on'), 2600);
+}
+window.toast = toast;
+
+/* ═══ 상태 ═══ */
+let CU = null;
+let IS_SUPER = false;
+let ACT_ADMIN = false;             // 활동 경비 총괄 담당자 (actConfig/editors)
+let LEDGERS = [];
+let CUR = null;                    // 열려 있는 활동
+let TAB = 'mem';                   // mem | exp | rep | set
+let MEMBERS = [], EXPENSES = [];
+let STUDENTS = null, CLASSES = null, STAFF = null;   // 담기 모달에서 처음 쓸 때 받아온다
+let MFILTER = 'all';               // 참가자 필터
+
+const CATS_DEF = ['식비','간식비','숙박비','교통비','활동비','소모품','기타'];
+const STATUS_L = { prep:'준비', run:'진행 중', settle:'정산 중', closed:'마감' };
+const canAdmin = () => IS_SUPER || ACT_ADMIN;
+const canMgr = l => canAdmin() || ((l?.managers)||[]).includes(CU?.uid);
+const catsOf = l => (l && Array.isArray(l.cats) && l.cats.length) ? l.cats : CATS_DEF;
+
+/* ═══ 시작 ═══ */
+onAuthStateChanged(auth, async user => {
+  if(!user){
+    $I('gate-msg').textContent = '로그인이 필요합니다.';
+    $I('gate-btn').style.display = 'inline-block';
+    return;
+  }
+  try {
+    const s = await getDoc(doc(db,'staff', user.uid));
+    if(!s.exists()){
+      $I('gate-msg').textContent = '교직원 계정이 아닙니다.';
+      $I('gate-btn').style.display = 'inline-block';
+      return;
+    }
+    CU = { uid:user.uid, ...s.data() };
+    IS_SUPER = CU.role === 'super';
+    if(window.renderShell) renderShell('actexp', CU);
+    if(window.setCrumb) setCrumb(['활동 경비']);
+
+    // 총괄 담당자인지 (없으면 조용히 넘어간다)
+    try {
+      const c = await getDoc(doc(db,'actConfig','editors'));
+      ACT_ADMIN = c.exists() && Array.isArray(c.data().uids) && c.data().uids.includes(CU.uid);
+    } catch(e){}
+
+    await loadLedgers();
+    $I('gate').style.display = 'none';
+    $I('ms').style.display = 'flex';
+    render();
+  } catch(e){
+    console.error(e);
+    $I('gate-msg').textContent = '불러오지 못했습니다: ' + (e.message||'');
+    $I('gate-btn').style.display = 'inline-block';
+  }
+});
+
+async function loadLedgers(){
+  const snap = await getDocs(collection(db,'actLedgers'));
+  LEDGERS = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+  LEDGERS.sort((a,b)=> String(b.startDs||'').localeCompare(String(a.startDs||'')));
+}
+
+/* ═══ 그리기 ═══ */
+function render(){
+  const list = $I('view-list'), det = $I('view-detail');
+  if(!CUR){ list.style.display=''; det.style.display='none'; renderList(); }
+  else { list.style.display='none'; det.style.display='flex'; renderDetail(); }
+}
+
+/* ── 활동 목록 ── */
+function renderList(){
+  const rows = LEDGERS.map(l=>{
+    const inc = l.incSum, exp = l.expSum;
+    const has = (inc!=null || exp!=null);
+    return `<tr style="cursor:pointer" onclick="openLedger('${l.id}')">
+      <td><b>${esc(l.name||'(이름 없음)')}</b></td>
+      <td class="c" style="white-space:nowrap">${esc(sd(l.startDs))}${l.endDs?` ~ ${esc(sd(l.endDs))}`:''}</td>
+      <td class="c">${esc((l.managerNames||[]).join(' · ')||'—')}</td>
+      <td class="r">${has?fmt(inc||0):'—'}</td>
+      <td class="r">${has?fmt(exp||0):'—'}</td>
+      <td class="r"><b>${has?fmt((inc||0)-(exp||0)):'—'}</b></td>
+      <td class="c">${statusPill(l.status)}</td>
+    </tr>`;
+  }).join('');
+  $I('view-list').innerHTML = `
+    <div class="panel">
+      <div class="ptitle">🏕 활동 경비
+        ${canAdmin() ? `<button class="btn" style="margin-left:auto" onclick="openLedgerForm()">＋ 새 활동 만들기</button>` : ''}
+      </div>
+      <div class="pdesc">캠핑·비전트립 같은 특별활동의 회비 수입 · 지출 · 회계 보고를 활동마다 따로 정리합니다.
+        활동을 누르면 들어갑니다.</div>
+      <div class="tblwrap" style="margin-top:11px">
+        <table class="acttbl">
+          <tr><th>활동 이름</th><th class="c">기간</th><th class="c">담당자</th>
+            <th class="r">수입</th><th class="r">지출</th><th class="r">잔액</th><th class="c">상태</th></tr>
+          ${rows || `<tr><td colspan="7" style="text-align:center;color:var(--tl);padding:22px">
+            아직 만든 활동이 없습니다${canAdmin()?' — 「새 활동 만들기」로 시작하세요':''}</td></tr>`}
+        </table>
+      </div>
+    </div>`;
+}
+const sd = ds => ds ? String(ds).slice(5).replace('-','.') : '';
+const statusPill = st => ({
+  prep:`<span class="pill gray">준비</span>`,
+  run:`<span class="pill ok">진행 중</span>`,
+  settle:`<span class="pill req">정산 중</span>`,
+  closed:`<span class="pill red">마감</span>`
+}[st] || `<span class="pill gray">준비</span>`);
+
+window.openLedger = async function(id){
+  const l = LEDGERS.find(x=>x.id===id); if(!l) return;
+  CUR = l; TAB = 'mem'; MFILTER = 'all';
+  await reloadLedgerData();
+  render();
+};
+async function reloadLedgerData(){
+  const [ms, es] = await Promise.all([
+    getDocs(query(collection(db,'actMembers'), where('ledgerId','==',CUR.id))),
+    getDocs(query(collection(db,'actExpenses'), where('ledgerId','==',CUR.id)))
+  ]);
+  MEMBERS = ms.docs.map(d=>({ id:d.id, ...d.data() }));
+  EXPENSES = es.docs.map(d=>({ id:d.id, ...d.data() }));
+  sortMembers(); sortExpenses();
+}
+function sortMembers(){
+  const ord = { student:0, teacher:1, extra:2 };
+  MEMBERS.sort((a,b)=> (ord[a.kind]-ord[b.kind]) || gnum(a.grade)-gnum(b.grade)
+    || String(a.name||'').localeCompare(String(b.name||''),'ko'));
+}
+const gnum = g => { const n = parseInt(String(g||'').replace(/[^0-9]/g,'')); return isNaN(n)?99:n; };
+function sortExpenses(){
+  EXPENSES.sort((a,b)=>{
+    const ka = a.status==='req' ? 1 : 0, kb = b.status==='req' ? 1 : 0;
+    if(ka!==kb) return ka-kb;                       // 확정 먼저, 신청 대기 뒤
+    const ta = (a.paidAt||a.createdAt), tb = (b.paidAt||b.createdAt);
+    return (ta?.seconds||0) - (tb?.seconds||0);
+  });
+}
+
+window.backToList = async function(){
+  CUR = null;
+  await loadLedgers();
+  render();
+};
+
+/* ═══ 활동 상세 ═══ */
+function renderDetail(){
+  const mgr = canMgr(CUR);
+  $I('view-detail').innerHTML = `
+    <div class="panel">
+      <div class="ptitle">
+        <button class="btn gray sm no-print" onclick="backToList()">‹ 목록</button>
+        🏕 ${esc(CUR.name)}
+        <span style="font-size:12px;font-weight:700;color:var(--ts)">${esc(sd(CUR.startDs))}${CUR.endDs?` ~ ${esc(sd(CUR.endDs))}`:''}</span>
+        ${statusPill(CUR.status)}
+        <span style="margin-left:auto;font-size:11.5px;color:var(--ts)">담당 ${esc((CUR.managerNames||[]).join(' · ')||'—')}</span>
+      </div>
+      <div class="dtabs no-print" style="margin-top:10px">
+        <button class="dtab ${TAB==='mem'?'on':''}" onclick="setTab('mem')">👥 참가자 · 회비</button>
+        <button class="dtab ${TAB==='exp'?'on':''}" onclick="setTab('exp')">🧾 지출</button>
+        <button class="dtab ${TAB==='rep'?'on':''}" onclick="setTab('rep')">📊 회계 보고</button>
+        ${mgr ? `<button class="dtab ${TAB==='set'?'on':''}" onclick="setTab('set')">⚙ 설정</button>` : ''}
+      </div>
+    </div>
+    <div id="tab-body"></div>`;
+  if(TAB==='mem') renderMembers();
+  else if(TAB==='exp') renderExpenses();
+  else if(TAB==='rep') renderReport();
+  else renderSettings();
+}
+window.setTab = t => { TAB = t; renderDetail(); };
+
+/* ── 👥 참가자 · 회비 ── */
+function renderMembers(){
+  const mgr = canMgr(CUR);
+  const paid = MEMBERS.filter(m=>m.paid);
+  const incSum = paid.reduce((n,m)=>n+(Number(m.fee)||0),0);
+  const grades = [...new Set(MEMBERS.filter(m=>m.kind==='student').map(m=>m.grade||'학년 미지정'))]
+    .sort((a,b)=>gnum(a)-gnum(b));
+  const chips = [
+    ['all','전체'], ...grades.map(g=>['g:'+g, g]), ['teacher','선생님'], ['extra','직접 추가']
+  ].map(([k,lb])=>`<button class="chip ${MFILTER===k?'on':''}" onclick="setMFilter('${esc(k)}')">${esc(lb)}</button>`).join('');
+
+  const list = MEMBERS.filter(m=>{
+    if(MFILTER==='all') return true;
+    if(MFILTER==='teacher') return m.kind==='teacher';
+    if(MFILTER==='extra') return m.kind==='extra';
+    if(MFILTER.startsWith('g:')) return m.kind==='student' && (m.grade||'학년 미지정')===MFILTER.slice(2);
+    return true;
+  });
+
+  const rows = list.map(m=>`<tr>
+    <td><b>${esc(m.name)}</b></td>
+    <td class="c">${m.kind==='student'?'학생':m.kind==='teacher'?'선생님':'직접 추가'}</td>
+    <td class="c">${esc(m.grade||'')}</td>
+    <td class="c">${esc(m.className||'')}</td>
+    <td class="r" ${mgr?`style="cursor:pointer" title="눌러서 개별 회비 고치기" onclick="editFee('${m.id}')"`:''}>${fmt(m.fee)}</td>
+    <td class="c">${m.paid
+      ? `<span class="pill ok ${mgr?'click':''}" ${mgr?`onclick="togglePaid('${m.id}')"`:''}>✓ ${esc(sd(m.paidDs)||'입금')}</span>`
+      : `<span class="pill req ${mgr?'click':''}" ${mgr?`onclick="togglePaid('${m.id}')"`:''}>대기</span>`}</td>
+    <td style="color:var(--ts);font-size:11.5px" ${mgr?`onclick="editMemo('${m.id}')" style="cursor:pointer;color:var(--ts);font-size:11.5px"`:''}>${esc(m.memo||'')}</td>
+    ${mgr?`<td class="c no-print"><button class="btn red sm" onclick="removeMember('${m.id}')">빼기</button></td>`:''}
+  </tr>`).join('');
+
+  $I('tab-body').innerHTML = `<div class="panel">
+    <div class="stat">
+      <div class="s">참가 인원<b>${MEMBERS.length}명</b></div>
+      <div class="s">입금 완료<b>${paid.length}명</b></div>
+      <div class="s">입금 대기<b>${MEMBERS.length-paid.length}명</b></div>
+      <div class="s">수입 (입금 완료분)<b>${fmt(incSum)}원</b></div>
+      <div class="s">1인 회비<b>${fmt(CUR.fee)}원</b></div>
+    </div>
+    ${mgr?`<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px" class="no-print">
+      <button class="btn line" onclick="openPickStudents()">학생 현황표에서 담기</button>
+      <button class="btn line" onclick="openPickTeachers()">선생님 명단에서 담기</button>
+      <button class="btn line" onclick="openExtraForm()">＋ 직접 입력</button>
+    </div>`:''}
+    <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px" class="no-print">${chips}</div>
+    <div class="tblwrap"><table class="acttbl">
+      <tr><th>이름</th><th class="c">구분</th><th class="c">학년</th><th class="c">반</th>
+        <th class="r">회비</th><th class="c">입금</th><th>메모</th>${mgr?'<th class="c no-print"></th>':''}</tr>
+      ${rows || `<tr><td colspan="8" style="text-align:center;color:var(--tl);padding:20px">
+        참가자가 없습니다${mgr?' — 위의 「담기」 버튼으로 불러오세요':''}</td></tr>`}
+      ${list.length?`<tr class="sumrow"><td colspan="4">보이는 ${list.length}명 · 입금 ${list.filter(m=>m.paid).length}명</td>
+        <td class="r">${fmt(list.filter(m=>m.paid).reduce((n,m)=>n+(Number(m.fee)||0),0))}</td><td colspan="3"></td></tr>`:''}
+    </table></div>
+  </div>`;
+}
+window.setMFilter = k => { MFILTER = k; renderDetail(); };
+
+window.editFee = async function(id){
+  const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
+  const v = prompt(`${m.name}의 개별 회비 (기본 ${fmt(CUR.fee)}원)`, m.fee);
+  if(v===null) return;
+  const fee = Math.max(0, Math.round(Number(String(v).replace(/[^0-9]/g,''))||0));
+  await updateDoc(doc(db,'actMembers',id), { fee });
+  m.fee = fee; await pushSums(); renderDetail();
+};
+window.editMemo = async function(id){
+  const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
+  const v = prompt(`${m.name} 메모 (예: 1박만 참여 · 반액)`, m.memo||'');
+  if(v===null) return;
+  await updateDoc(doc(db,'actMembers',id), { memo:v.trim() });
+  m.memo = v.trim(); renderDetail();
+};
+window.togglePaid = async function(id){
+  const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
+  if(m.paid){
+    if(!confirm(`${m.name}의 입금 표시를 해제할까요?`)) return;
+    await updateDoc(doc(db,'actMembers',id), { paid:false, paidDs:'' });
+    m.paid=false; m.paidDs='';
+  } else {
+    const ds = todayDs();
+    await updateDoc(doc(db,'actMembers',id), { paid:true, paidDs:ds });
+    m.paid=true; m.paidDs=ds;
+  }
+  await pushSums(); renderDetail();
+};
+window.removeMember = async function(id){
+  const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
+  if(!confirm(`${m.name}을(를) 참가자에서 뺄까요?`)) return;
+  await deleteDoc(doc(db,'actMembers',id));
+  MEMBERS = MEMBERS.filter(x=>x.id!==id);
+  await pushSums(); renderDetail();
+};
+
+/* ── 담기: 학생 현황표 ── */
+async function loadRoster(){
+  if(STUDENTS && CLASSES) return;
+  const [ss, cs] = await Promise.all([
+    getDocs(collection(db,'students')), getDocs(collection(db,'classes'))
+  ]);
+  STUDENTS = ss.docs.map(d=>({ id:d.id, ...d.data() }));
+  CLASSES = cs.docs.map(d=>({ id:d.id, ...d.data() }));
+}
+async function loadStaffList(){
+  if(STAFF) return;
+  const snap = await getDocs(collection(db,'staff'));
+  STAFF = snap.docs.map(d=>({ uid:d.id, ...d.data() }))
+    .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
+}
+function studentInfo(sid){
+  const c = (CLASSES||[]).find(cl=>Array.isArray(cl.students)&&cl.students.includes(sid));
+  return { grade:(c&&c.grade)||'', className:(c&&c.name)||'' };
+}
+
+window.openPickStudents = async function(){
+  if(!canMgr(CUR)) return;
+  toast('학생 현황표 여는 중…');
+  await loadRoster();
+  const added = new Set(MEMBERS.filter(m=>m.kind==='student').map(m=>m.studentId));
+  const act = STUDENTS.filter(s=>(s.status||'active')==='active');
+  const lv  = STUDENTS.filter(s=>(s.status||'active')==='leave');
+  const byG = {};
+  act.forEach(s=>{
+    const info = studentInfo(s.id);
+    const g = info.grade || '학년 미지정';
+    (byG[g] = byG[g] || []).push({ ...s, ...info });
+  });
+  const gs = Object.keys(byG).sort((a,b)=>gnum(a)-gnum(b));
+  gs.forEach(g=>byG[g].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko')));
+
+  const secHTML = gs.map(g=>`
+    <div class="pick-sec">
+      <div class="pick-h">${esc(g)} <span class="cnt">${byG[g].length}명</span>
+        <button class="btn gray sm" style="margin-left:auto" onclick="pickAll(this,'${esc(g)}')">모두 선택</button></div>
+      <div class="pick-grid" data-g="${esc(g)}">
+        ${byG[g].map(s=>pickBox('stu', s.id, s.name, s.className, added.has(s.id))).join('')}
+      </div>
+    </div>`).join('');
+  const lvHTML = lv.length ? `
+    <div class="pick-sec">
+      <div class="pick-h fold" onclick="const b=this.nextElementSibling;b.style.display=b.style.display==='none'?'':'none'">
+        ⏸ 휴학 중 ${lv.length}명 — 필요하면 펼쳐서 담기 ⌄</div>
+      <div class="pick-grid" style="display:none">
+        ${lv.map(s=>{ const i=studentInfo(s.id);
+          return pickBox('stu', s.id, s.name, i.className||'휴학', added.has(s.id)); }).join('')}
+      </div>
+    </div>` : '';
+
+  openModal(`
+    <div class="mtitle">👥 학생 현황표에서 담기</div>
+    <div class="pdesc" style="margin-bottom:11px">재학생만 보입니다 (퇴학 인원 제외 · 휴학은 아래 접힌 칸).
+      이미 담긴 학생은 흐리게 표시됩니다.</div>
+    ${secHTML}${lvHTML}
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="addPickedStudents()">선택한 학생 담기</button>
+    </div>`);
+};
+function pickBox(kind, id, name, sub, dis){
+  return `<label class="pick ${dis?'dis':''}">
+    <input type="checkbox" data-pick="${kind}" value="${esc(id)}" ${dis?'checked disabled':''}
+      onchange="this.closest('.pick').classList.toggle('on', this.checked)">
+    ${esc(name)}${sub?`<small>${esc(sub)}</small>`:''}</label>`;
+}
+window.pickAll = function(btn, g){
+  document.querySelectorAll(`.pick-grid[data-g="${CSS.escape(g)}"] input[data-pick]:not(:disabled)`)
+    .forEach(ch=>{ ch.checked = true; ch.closest('.pick').classList.add('on'); });
+};
+window.addPickedStudents = async function(){
+  const ids = [...document.querySelectorAll('input[data-pick="stu"]:checked:not(:disabled)')].map(i=>i.value);
+  if(!ids.length){ toast('담을 학생을 체크해 주세요','err'); return; }
+  toast(`${ids.length}명 담는 중…`);
+  for(const sid of ids){
+    const s = STUDENTS.find(x=>x.id===sid); if(!s) continue;
+    const info = studentInfo(sid);
+    const ref = await addDoc(collection(db,'actMembers'), {
+      ledgerId:CUR.id, kind:'student', studentId:sid, name:s.name||'',
+      grade:info.grade, className:info.className,
+      fee:Number(CUR.fee)||0, paid:false, paidDs:'', memo:'',
+      createdAt:Timestamp.now()
+    });
+    MEMBERS.push({ id:ref.id, ledgerId:CUR.id, kind:'student', studentId:sid, name:s.name||'',
+      grade:info.grade, className:info.className, fee:Number(CUR.fee)||0, paid:false, paidDs:'', memo:'' });
+  }
+  sortMembers(); closeModal(); await pushSums();
+  toast(`${ids.length}명을 담았습니다`); renderDetail();
+};
+
+/* ── 담기: 선생님 ── */
+window.openPickTeachers = async function(){
+  if(!canMgr(CUR)) return;
+  await loadStaffList();
+  const added = new Set(MEMBERS.filter(m=>m.kind==='teacher').map(m=>m.uid));
+  openModal(`
+    <div class="mtitle">🧑‍🏫 선생님 명단에서 담기</div>
+    <div class="pdesc" style="margin-bottom:11px">명단에 없는 보조 선생님은 닫고 「＋ 직접 입력」을 쓰세요.</div>
+    <div class="pick-grid">
+      ${STAFF.map(t=>pickBox('tea', t.uid, t.name||'', t.org==='jihyebit'?'지혜빛':'', added.has(t.uid))).join('')}
+    </div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="addPickedTeachers()">선택한 선생님 담기</button>
+    </div>`);
+};
+window.addPickedTeachers = async function(){
+  const ids = [...document.querySelectorAll('input[data-pick="tea"]:checked:not(:disabled)')].map(i=>i.value);
+  if(!ids.length){ toast('담을 선생님을 체크해 주세요','err'); return; }
+  for(const uid of ids){
+    const t = STAFF.find(x=>x.uid===uid); if(!t) continue;
+    const ref = await addDoc(collection(db,'actMembers'), {
+      ledgerId:CUR.id, kind:'teacher', uid, name:t.name||'',
+      grade:'', className:'', fee:Number(CUR.fee)||0, paid:false, paidDs:'', memo:'',
+      createdAt:Timestamp.now()
+    });
+    MEMBERS.push({ id:ref.id, ledgerId:CUR.id, kind:'teacher', uid, name:t.name||'',
+      grade:'', className:'', fee:Number(CUR.fee)||0, paid:false, paidDs:'', memo:'' });
+  }
+  sortMembers(); closeModal(); await pushSums();
+  toast('선생님을 담았습니다'); renderDetail();
+};
+
+/* ── 담기: 직접 입력 (보조 선생님 등) ── */
+window.openExtraForm = function(){
+  if(!canMgr(CUR)) return;
+  openModal(`
+    <div class="mtitle">＋ 직접 입력</div>
+    <div class="pdesc" style="margin-bottom:11px">명단에 없는 보조 선생님·외부 지원 인원을 넣습니다.</div>
+    <div class="frow"><label class="flab">이름</label><input class="fin" id="xf-name" placeholder="예: 홍길동 (보조)"></div>
+    <div class="fgrid">
+      <div class="frow"><label class="flab">구분</label>
+        <select class="fsel" id="xf-kind"><option value="extra">직접 추가</option><option value="teacher">선생님</option><option value="student">학생</option></select></div>
+      <div class="frow"><label class="flab">회비 (원)</label><input class="fin" id="xf-fee" type="number" value="${Number(CUR.fee)||0}"></div>
+    </div>
+    <div class="frow"><label class="flab">메모</label><input class="fin" id="xf-memo" placeholder="예: 보조 선생님 · 주말만 참여"></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="addExtra()">담기</button>
+    </div>`);
+};
+window.addExtra = async function(){
+  const name = ($I('xf-name').value||'').trim();
+  if(!name){ toast('이름을 넣어 주세요','err'); return; }
+  const kind = $I('xf-kind').value, fee = Math.max(0, Number($I('xf-fee').value)||0);
+  const memo = ($I('xf-memo').value||'').trim();
+  const ref = await addDoc(collection(db,'actMembers'), {
+    ledgerId:CUR.id, kind, name, grade:'', className:'', fee, paid:false, paidDs:'', memo,
+    createdAt:Timestamp.now()
+  });
+  MEMBERS.push({ id:ref.id, ledgerId:CUR.id, kind, name, grade:'', className:'', fee, paid:false, paidDs:'', memo });
+  sortMembers(); closeModal(); await pushSums(); renderDetail();
+};
+
+/* ═══ 🧾 지출 ═══
+   흐름: 선생님이 「지출 신청」(status:req) → 담당자가 「입금 ✓」(status:paid)
+        → 신청한 선생님에게 쪽지 자동 발송 → 회계 보고에 자동 반영
+   담당자 본인은 「직접 기록」(status:direct)으로 바로 확정.
+   고치기·지우기 전에는 기존 수행성 경비와 같은 기준으로
+   이전 내용을 actRevisions(이전 기록 보관함)에 통째로 담아둔다. */
+const confirmedExp = () => EXPENSES.filter(e=>e.status!=='req');
+const pendingExp   = () => EXPENSES.filter(e=>e.status==='req');
+function tagOf(i){   // 영수증 글자표: A~Z, 그 다음 AA…
+  let s=''; i=Number(i);
+  do { s = String.fromCharCode(65 + (i % 26)) + s; i = Math.floor(i/26) - 1; } while(i >= 0);
+  return s;
+}
+
+function renderExpenses(){
+  const mgr = canMgr(CUR);
+  const conf = confirmedExp(), pend = pendingExp();
+  const confSum = conf.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+  const pendSum = pend.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+
+  const row = (e, i, isConf) => {
+    const mine = e.requesterUid === CU.uid;
+    const canEdit = mgr || (mine && e.status==='req');
+    return `<tr>
+      <td class="c">${isConf ? i+1 : '—'}</td>
+      <td>${esc(e.cat||'')}</td>
+      <td><b>${esc(e.item||'')}</b>${e.detail?`<div style="font-size:11px;color:var(--ts)">${esc(e.detail)}</div>`:''}</td>
+      <td class="r">${fmt(e.amount)}</td>
+      <td class="c">${fmt(e.qty)}${esc(e.unit||'')}</td>
+      <td class="r"><b>${fmt(e.subtotal)}</b></td>
+      <td class="c">${esc(e.requesterName||'')}</td>
+      <td class="c" style="white-space:nowrap;font-size:11px;color:var(--ts)">${dtStr(e.createdAt)}</td>
+      <td class="c">${isConf?`<span class="pill gray">${tagOf(i)}</span>`:''}</td>
+      <td class="c" style="white-space:nowrap">${
+        e.status==='req' ? `<span class="pill req">신청됨 · 입금 대기</span>`
+        : e.status==='paid' ? `<span class="pill ok">✓ 입금 ${dtStr(e.paidAt).slice(0,5)}</span>`
+        : `<span class="pill ok">직접 기록</span>`}</td>
+      <td class="c no-print" style="white-space:nowrap">
+        ${mgr && e.status==='req' ? `<button class="btn sm" onclick="payExpense('${e.id}')">입금 ✓</button> ` : ''}
+        ${canEdit ? `<button class="btn gray sm" onclick="openExpForm('${e.id}')">고치기</button>
+          <button class="btn red sm" onclick="delExpense('${e.id}')">지우기</button>` : ''}
+      </td>
+    </tr>`;
+  };
+
+  $I('tab-body').innerHTML = `<div class="panel">
+    <div class="stat">
+      <div class="s">확정 지출<b>${fmt(confSum)}원 · ${conf.length}건</b></div>
+      <div class="s">신청 대기<b>${fmt(pendSum)}원 · ${pend.length}건</b></div>
+      <div class="s">잔액 (수입−확정 지출)<b>${fmt((Number(CUR.incSum)||0) - confSum)}원</b></div>
+    </div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px" class="no-print">
+      <button class="btn line" onclick="openExpForm(null,'req')">＋ 지출 신청</button>
+      ${mgr?`<button class="btn" onclick="openExpForm(null,'direct')">＋ 직접 기록 (담당자)</button>`:''}
+    </div>
+    <div class="pdesc" style="margin-bottom:9px">쓴 돈을 신청하면 담당자가 입금해 주고 ✓ —
+      그 순간 쪽지가 자동으로 갑니다. 대기 중인 신청은 회계 합계에 잡히지 않습니다.</div>
+    <div class="tblwrap"><table class="acttbl" style="min-width:840px">
+      <tr><th class="c">NO</th><th>구분</th><th>품목 · 세부내용</th><th class="r">금액</th><th class="c">수량</th>
+        <th class="r">소계</th><th class="c">신청·담당</th><th class="c">신청 일시</th><th class="c">영수증</th><th class="c">상태</th><th class="c no-print"></th></tr>
+      ${conf.map((e,i)=>row(e,i,true)).join('')}
+      ${conf.length?`<tr class="sumrow"><td colspan="5">확정 지출 합계 (${conf.length}건)</td>
+        <td class="r">${fmt(confSum)}</td><td colspan="5"></td></tr>`:''}
+      ${pend.map((e,i)=>row(e,i,false)).join('')}
+      ${!EXPENSES.length?`<tr><td colspan="11" style="text-align:center;color:var(--tl);padding:20px">
+        아직 지출 기록이 없습니다</td></tr>`:''}
+    </table></div>
+  </div>`;
+}
+
+/* 지출 신청·직접 기록·고치기 (한 폼) */
+window.openExpForm = function(id, mode){
+  const e = id ? EXPENSES.find(x=>x.id===id) : null;
+  if(id && !e) return;
+  const mgr = canMgr(CUR);
+  if(e && !(mgr || (e.requesterUid===CU.uid && e.status==='req'))){ toast('고칠 권한이 없습니다','err'); return; }
+  const cats = catsOf(CUR);
+  const m = mode || (e ? e.status : 'req');
+  openModal(`
+    <div class="mtitle">${e ? '✏️ 지출 고치기' : m==='direct' ? '＋ 직접 기록 (담당자)' : '＋ 지출 신청'}</div>
+    ${!e && m==='req' ? `<div class="pdesc" style="margin-bottom:11px">쓴 돈을 적어 신청하면
+      담당자가 입금 확인 후 ✓ — 쪽지로 알려드립니다.</div>` : ''}
+    <div class="fgrid">
+      <div class="frow"><label class="flab">구분</label>
+        <select class="fsel" id="ef-cat">${cats.map(c=>`<option ${e&&e.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+      <div class="frow"><label class="flab">품목</label>
+        <input class="fin" id="ef-item" placeholder="예: 5조 간식비" value="${e?esc(e.item):''}"></div>
+    </div>
+    <div class="frow"><label class="flab">세부내용 (계산 방법 등)</label>
+      <input class="fin" id="ef-detail" placeholder="예: (109명×4식)+(106명×3식)" value="${e?esc(e.detail||''):''}"></div>
+    <div class="fgrid">
+      <div class="frow"><label class="flab">금액 (원)</label>
+        <input class="fin" id="ef-amount" type="number" value="${e?Number(e.amount)||0:''}" oninput="calcSub()"></div>
+      <div class="frow"><label class="flab">수량</label>
+        <input class="fin" id="ef-qty" type="number" value="${e?Number(e.qty)||1:1}" oninput="calcSub()"></div>
+      <div class="frow"><label class="flab">단위</label>
+        <input class="fin" id="ef-unit" value="${e?esc(e.unit||'식'):'식'}"></div>
+    </div>
+    <div class="frow"><label class="flab">소계</label>
+      <input class="fin" id="ef-sub" readonly style="background:var(--iv);font-weight:900"></div>
+    <div class="frow"><label class="flab">비고</label>
+      <input class="fin" id="ef-note" placeholder="예: 선금 · 무선마이크" value="${e?esc(e.note||''):''}"></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="saveExpense('${id||''}','${m}')">${e?'저장':m==='direct'?'기록하기':'신청하기'}</button>
+    </div>`);
+  calcSub();
+};
+window.calcSub = function(){
+  const a = Number($I('ef-amount')?.value)||0, q = Number($I('ef-qty')?.value)||0;
+  if($I('ef-sub')) $I('ef-sub').value = fmt(a*q) + ' 원';
+};
+
+/* 고치기 전 내용은 이전 기록 보관함(actRevisions)에 통째로 담는다 — 수행성 경비와 같은 기준 */
+async function snapshotExp(e, reason){
+  try {
+    const before = {...e}; delete before.id;
+    await addDoc(collection(db,'actRevisions'), {
+      ledgerId:CUR.id, expenseId:e.id, reason,
+      before, byUid:CU.uid, byName:CU.name||'', at:Timestamp.now()
+    });
+  } catch(err){ console.warn('revision', err); }
+}
+
+window.saveExpense = async function(id, mode){
+  const cat = $I('ef-cat').value, item = ($I('ef-item').value||'').trim();
+  if(!item){ toast('품목을 넣어 주세요','err'); return; }
+  const amount = Math.round(Number($I('ef-amount').value)||0);
+  const qty = Math.max(1, Math.round(Number($I('ef-qty').value)||1));
+  const unit = ($I('ef-unit').value||'식').trim();
+  const detail = ($I('ef-detail').value||'').trim();
+  const note = ($I('ef-note').value||'').trim();
+  const subtotal = amount * qty;
+
+  if(id){
+    const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+    await snapshotExp(e, 'edit');
+    const upd = { cat, item, detail, amount, qty, unit, note, subtotal };
+    await updateDoc(doc(db,'actExpenses',id), upd);
+    Object.assign(e, upd);
+    toast('고쳤습니다 — 이전 내용은 기록 보관함에 남았습니다');
+  } else {
+    const status = mode==='direct' ? 'direct' : 'req';
+    const data = {
+      ledgerId:CUR.id, cat, item, detail, amount, qty, unit, note, subtotal,
+      requesterUid:CU.uid, requesterName:CU.name||'', status,
+      createdAt:Timestamp.now(),
+      paidAt: status==='direct' ? Timestamp.now() : null,
+      paidByUid: status==='direct' ? CU.uid : '', paidByName: status==='direct' ? (CU.name||'') : ''
+    };
+    const ref = await addDoc(collection(db,'actExpenses'), data);
+    EXPENSES.push({ id:ref.id, ...data });
+    toast(status==='direct' ? '기록했습니다' : '신청했습니다 — 담당자 입금 후 쪽지로 알려드려요');
+  }
+  sortExpenses(); closeModal(); await pushSums(); renderDetail();
+};
+
+window.payExpense = async function(id){
+  const e = EXPENSES.find(x=>x.id===id);
+  if(!e || !canMgr(CUR) || e.status!=='req') return;
+  if(!confirm(`${e.requesterName}의 「${e.item}」 ${fmt(e.subtotal)}원 — 입금 완료로 표시할까요?\n(신청한 선생님께 쪽지가 갑니다)`)) return;
+  const now = Timestamp.now();
+  await updateDoc(doc(db,'actExpenses',id), {
+    status:'paid', paidAt:now, paidByUid:CU.uid, paidByName:CU.name||''
+  });
+  e.status='paid'; e.paidAt=now;
+  // 📩 쪽지 자동 발송
+  if(e.requesterUid && e.requesterUid !== CU.uid){
+    try {
+      await addDoc(collection(db,'messages'), {
+        fromUid:CU.uid, fromName:CU.name||'',
+        toUids:[e.requesterUid], toNames:[e.requesterName||''],
+        subject:`[활동 경비] ${CUR.name} · 입금 완료`,
+        body:`신청하신 지출이 입금 처리되었습니다.\n\n· 활동: ${CUR.name}\n· 품목: ${e.item}\n· 금액: ${fmt(e.subtotal)}원\n· 처리: ${CU.name||''}\n\n회계 보고에 자동으로 반영되었습니다.`,
+        readBy:[], createdAt:Timestamp.now()
+      });
+    } catch(err){ console.warn('message', err); }
+  }
+  sortExpenses(); await pushSums();
+  toast('입금 완료 — 쪽지를 보냈고 회계 보고에 반영했습니다');
+  renderDetail();
+};
+
+window.delExpense = async function(id){
+  const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+  const mgr = canMgr(CUR);
+  if(!(mgr || (e.requesterUid===CU.uid && e.status==='req'))){ toast('지울 권한이 없습니다','err'); return; }
+  if(!confirm(`「${e.item}」 ${fmt(e.subtotal)}원을 지울까요?\n지우기 전 내용은 기록 보관함에 남습니다.`)) return;
+  await snapshotExp(e, 'delete');
+  await deleteDoc(doc(db,'actExpenses',id));
+  EXPENSES = EXPENSES.filter(x=>x.id!==id);
+  await pushSums(); renderDetail();
+};
+
+/* ═══ 📊 회계 보고 (자동 생성) ═══ */
+const PAL = ['#2F5D4B','#7C8C43','#E0A93F','#C05B33','#5B7A99','#8B6FA8','#A8555E',
+  '#4E8577','#B08D3C','#6E6E6E'];
+
+function renderReport(){
+  const paidM = MEMBERS.filter(m=>m.paid);
+  const paidN = paidM.length;
+  const incSum = paidM.reduce((n,m)=>n+(Number(m.fee)||0),0);
+  const conf = confirmedExp();
+  const expSum = conf.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+
+  /* 수입 — 학년별 (인원 칸 따로 · 1인 회비는 균일하면 금액, 아니면 「개별」) */
+  const groups = [];
+  const gset = [...new Set(paidM.filter(m=>m.kind==='student').map(m=>m.grade||'학년 미지정'))]
+    .sort((a,b)=>gnum(a)-gnum(b));
+  gset.forEach(g=>groups.push(['grade', g, paidM.filter(m=>m.kind==='student'&&(m.grade||'학년 미지정')===g)]));
+  const tt = paidM.filter(m=>m.kind==='teacher'); if(tt.length) groups.push(['t','선생님',tt]);
+  const xx = paidM.filter(m=>m.kind==='extra');   if(xx.length) groups.push(['x','직접 추가',xx]);
+
+  const waitN = MEMBERS.length - paidN;
+  const incRows = groups.map(([,lb,arr])=>{
+    const sum = arr.reduce((n,m)=>n+(Number(m.fee)||0),0);
+    const fees = [...new Set(arr.map(m=>Number(m.fee)||0))];
+    const feeCell = fees.length===1 ? fmt(fees[0]) : '<span style="color:var(--tl)">개별</span>';
+    return `<tr><td style="font-weight:800;color:var(--gd)">${esc(lb)}</td>
+      <td class="c">${arr.length}</td><td class="r">${feeCell}</td>
+      <td class="r">${fmt(sum)}</td>
+      <td class="r" style="color:var(--ts)">${incSum?Math.round(sum/incSum*1000)/10:0}%</td></tr>`;
+  }).join('');
+
+  /* 지출 — 용도별 (1인 비용은 제목 칸에, 셀엔 숫자만) */
+  const byCat = {};
+  conf.forEach(e=>{ const c = e.cat||'기타'; byCat[c]=(byCat[c]||0)+(Number(e.subtotal)||0); });
+  const cats = Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const expRows = cats.map(([c,v])=>`<tr><td>${esc(c)}</td>
+    <td class="r">${fmt(v)}</td>
+    <td class="r">${paidN?fmt(Math.round(v/paidN)):'—'}</td>
+    <td class="r" style="color:var(--ts)">${expSum?Math.round(v/expSum*1000)/10:0}%</td></tr>`).join('');
+
+  /* 파이 */
+  let acc = 0;
+  const segs = cats.map(([c,v],i)=>{
+    const p = expSum ? v/expSum*100 : 0;
+    const s = `${PAL[i%PAL.length]} ${acc.toFixed(2)}% ${(acc+p).toFixed(2)}%`;
+    acc += p; return s;
+  });
+  const pieCSS = segs.length ? `background:conic-gradient(${segs.join(', ')})` : 'background:var(--iv)';
+  const legend = cats.map(([c,v],i)=>
+    `<div><i style="background:${PAL[i%PAL.length]}"></i>${esc(c)} <b>${expSum?Math.round(v/expSum*100):0}%</b></div>`).join('');
+
+  /* 잔액 · 환급 */
+  const bal = incSum - expSum;
+  const per = paidN ? Math.floor(bal/paidN) : 0;
+  const rem = bal - per*paidN;
+  const memN = paidM.filter(m=>m.kind!=='teacher').length;
+  const teaN = paidM.filter(m=>m.kind==='teacher').length;
+
+  $I('tab-body').innerHTML = `<div class="panel" id="panel-rep">
+    <div class="ptitle">📊 ${esc(CUR.name)} — 회계 보고
+      <span style="font-size:11px;color:var(--tl);font-weight:700">지출 확정분 기준 · 자동 생성</span>
+      <button class="btn line sm no-print" style="margin-left:auto" onclick="printReport()">🖨 인쇄 · PDF</button>
+    </div>
+    <div class="rep2" style="margin-top:11px">
+      <div>
+        <div class="tblwrap"><table class="acttbl" style="min-width:0">
+          <tr><th>수입 — 학년별 회비</th><th class="c">인원</th><th class="r">1인 회비</th><th class="r">소계</th><th class="r">비율</th></tr>
+          ${incRows || '<tr><td colspan="5" style="text-align:center;color:var(--tl);padding:16px">입금 완료된 참가자가 없습니다</td></tr>'}
+          <tr class="sumrow"><td>합계</td><td class="c">${paidN}</td><td></td>
+            <td class="r">${fmt(incSum)}</td><td class="r">100%</td></tr>
+        </table></div>
+        ${waitN?`<div class="pdesc" style="margin-top:6px">입금 대기 ${waitN}명은 합계에 넣지 않았습니다</div>`:''}
+      </div>
+      <div>
+        <div class="tblwrap"><table class="acttbl" style="min-width:0">
+          <tr><th>지출 — 용도별</th><th class="r">합계</th><th class="r">1인 비용</th><th class="r">비율</th></tr>
+          ${expRows || '<tr><td colspan="4" style="text-align:center;color:var(--tl);padding:16px">확정된 지출이 없습니다</td></tr>'}
+          <tr class="sumrow"><td>합계</td><td class="r">${fmt(expSum)}</td>
+            <td class="r">${paidN?fmt(Math.round(expSum/paidN)):'—'}</td><td class="r">100%</td></tr>
+        </table></div>
+        ${cats.length?`<div style="display:flex;align-items:center;gap:15px;margin-top:10px;
+          background:var(--iv);border-radius:10px;padding:11px">
+          <div class="pie" style="${pieCSS}"></div>
+          <div class="legend">${legend}</div>
+        </div>`:''}
+      </div>
+    </div>
+    <div class="tblwrap" style="margin-top:12px"><table class="acttbl" style="min-width:0">
+      <tr><th colspan="3">잔액 · 환급 정리</th></tr>
+      <tr><td>잔여 회비 전체 (수입 − 지출)</td><td class="r"><b>${fmt(bal)}</b></td><td></td></tr>
+      <tr><td>1인당 잔여 회비 (${paidN}명)</td><td class="r">${fmt(per)}</td>
+        <td style="color:var(--ts);font-size:11.5px">${rem?`단수 ${fmt(rem)}원 별도 정리`:''}</td></tr>
+      <tr><td>참여 멤버 ${memN}명 환급</td><td class="r">${fmt(per*memN)}</td>
+        <td style="color:var(--ts);font-size:11.5px">학생 · 직접 추가 인원</td></tr>
+      <tr><td>참여 선생님 ${teaN}명 환급</td><td class="r">${fmt(per*teaN)}</td>
+        <td style="color:var(--ts);font-size:11.5px"></td></tr>
+    </table></div>
+  </div>`;
+}
+window.printReport = function(){
+  document.body.classList.add('pr');
+  setTimeout(()=>{ window.print(); }, 60);
+};
+window.addEventListener('afterprint', ()=>document.body.classList.remove('pr'));
+
+/* ═══ ⚙ 설정 ═══ */
+function renderSettings(){
+  const mgr = canMgr(CUR);
+  if(!mgr){ $I('tab-body').innerHTML=''; return; }
+  $I('tab-body').innerHTML = `<div class="panel">
+    <div class="ptitle">⚙ 활동 설정</div>
+    <div class="fgrid" style="margin-top:10px">
+      <div class="frow"><label class="flab">활동 이름</label>
+        <input class="fin" id="sf-name" value="${esc(CUR.name||'')}"></div>
+      <div class="frow"><label class="flab">상태</label>
+        <select class="fsel" id="sf-status">
+          ${Object.entries(STATUS_L).map(([k,v])=>`<option value="${k}" ${CUR.status===k?'selected':''}>${v}</option>`).join('')}
+        </select></div>
+    </div>
+    <div class="fgrid">
+      <div class="frow"><label class="flab">시작일</label>
+        <input class="fin" id="sf-start" type="date" value="${esc(CUR.startDs||'')}"></div>
+      <div class="frow"><label class="flab">종료일</label>
+        <input class="fin" id="sf-end" type="date" value="${esc(CUR.endDs||'')}"></div>
+      <div class="frow"><label class="flab">1인 회비 (원)</label>
+        <input class="fin" id="sf-fee" type="number" value="${Number(CUR.fee)||0}"></div>
+    </div>
+    <div class="frow"><label class="flab">지출 구분 (쉼표로 · 비우면 기본)</label>
+      <input class="fin" id="sf-cats" value="${esc((CUR.cats||[]).join(', '))}"
+        placeholder="${CATS_DEF.join(', ')}"></div>
+    ${canAdmin()?`<div class="frow"><label class="flab">담당자</label>
+      <div id="sf-mgr-box" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:12.5px;color:var(--ts)">${esc((CUR.managerNames||[]).join(' · ')||'없음')}</span>
+        <button class="btn gray sm" onclick="openMgrPick('sf')">담당자 고르기</button>
+      </div></div>`:''}
+    <div class="mfoot" style="justify-content:space-between">
+      ${canAdmin()?`<button class="btn red" onclick="delLedger()">활동 삭제</button>`:'<span></span>'}
+      <button class="btn" onclick="saveSettings()">저장</button>
+    </div>
+  </div>`;
+}
+window.saveSettings = async function(){
+  if(!canMgr(CUR)) return;
+  const name = ($I('sf-name').value||'').trim();
+  if(!name){ toast('활동 이름을 넣어 주세요','err'); return; }
+  const cats = ($I('sf-cats').value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const upd = {
+    name, status:$I('sf-status').value,
+    startDs:$I('sf-start').value||'', endDs:$I('sf-end').value||'',
+    fee:Math.max(0, Number($I('sf-fee').value)||0), cats
+  };
+  if(window._pickedMgr){ upd.managers = window._pickedMgr.uids; upd.managerNames = window._pickedMgr.names; }
+  await updateDoc(doc(db,'actLedgers',CUR.id), upd);
+  Object.assign(CUR, upd); window._pickedMgr = null;
+  toast('저장했습니다'); renderDetail();
+};
+window.delLedger = async function(){
+  if(!canAdmin()) return;
+  if(!confirm(`「${CUR.name}」 활동을 삭제할까요?\n참가자 · 지출 기록은 그대로 남지만 목록에서 사라집니다.`)) return;
+  if(!confirm('정말 삭제합니다. 되돌릴 수 없습니다.')) return;
+  await deleteDoc(doc(db,'actLedgers',CUR.id));
+  toast('삭제했습니다'); await backToList();
+};
+
+/* ═══ 새 활동 만들기 · 담당자 고르기 ═══ */
+window.openLedgerForm = async function(){
+  if(!canAdmin()) return;
+  window._pickedMgr = null;
+  openModal(`
+    <div class="mtitle">＋ 새 활동 만들기</div>
+    <div class="frow"><label class="flab">활동 이름</label>
+      <input class="fin" id="lf-name" placeholder="예: 2026 전체 캠핑"></div>
+    <div class="fgrid">
+      <div class="frow"><label class="flab">시작일</label><input class="fin" id="lf-start" type="date"></div>
+      <div class="frow"><label class="flab">종료일</label><input class="fin" id="lf-end" type="date"></div>
+    </div>
+    <div class="frow"><label class="flab">1인 회비 (원) — 학생·선생님 동일, 나중에 개별 조정 가능</label>
+      <input class="fin" id="lf-fee" type="number" placeholder="103000"></div>
+    <div class="frow"><label class="flab">담당자 (회계 관리)</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span id="lf-mgr-names" style="font-size:12.5px;color:var(--ts)">아직 없음</span>
+        <button class="btn gray sm" onclick="openMgrPick('lf')">담당자 고르기</button>
+      </div></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="saveLedger()">만들기</button>
+    </div>`);
+};
+window.openMgrPick = async function(back){
+  await loadStaffList();
+  const cur = new Set(window._pickedMgr ? window._pickedMgr.uids : (CUR&&back==='sf' ? (CUR.managers||[]) : []));
+  const saveBack = back==='lf' ? `openLedgerForm._restore()` : `renderDetail()`;
+  openModal(`
+    <div class="mtitle">담당자 고르기</div>
+    <div class="pick-grid">
+      ${STAFF.map(t=>`<label class="pick ${cur.has(t.uid)?'on':''}">
+        <input type="checkbox" data-pick="mgr" value="${esc(t.uid)}" data-name="${esc(t.name||'')}"
+          ${cur.has(t.uid)?'checked':''}
+          onchange="this.closest('.pick').classList.toggle('on', this.checked)">
+        ${esc(t.name||'')}</label>`).join('')}
+    </div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="applyMgrPick('${back}')">이대로 정하기</button>
+    </div>`);
+};
+window.applyMgrPick = function(back){
+  const picked = [...document.querySelectorAll('input[data-pick="mgr"]:checked')];
+  window._pickedMgr = { uids:picked.map(i=>i.value), names:picked.map(i=>i.dataset.name) };
+  closeModal();
+  if(back==='lf'){
+    window.openLedgerForm._reopen = true;
+    openLedgerFormAgain();
+  } else {
+    renderDetail();
+    toast('담당자를 골랐습니다 — 「저장」을 눌러야 반영됩니다');
+  }
+};
+function openLedgerFormAgain(){
+  const saved = window._lfDraft || {};
+  openLedgerForm();
+  // 담기 전에 적던 내용 복원
+  setTimeout(()=>{
+    if($I('lf-name')) $I('lf-name').value = saved.name||'';
+    if($I('lf-start')) $I('lf-start').value = saved.start||'';
+    if($I('lf-end')) $I('lf-end').value = saved.end||'';
+    if($I('lf-fee')) $I('lf-fee').value = saved.fee||'';
+    if($I('lf-mgr-names') && window._pickedMgr)
+      $I('lf-mgr-names').textContent = window._pickedMgr.names.join(' · ') || '아직 없음';
+  }, 0);
+}
+// 담당자 고르러 갈 때 적던 내용을 담아둔다
+document.addEventListener('click', e=>{
+  if(e.target && e.target.getAttribute && e.target.getAttribute('onclick')==="openMgrPick('lf')"){
+    window._lfDraft = {
+      name:$I('lf-name')?.value||'', start:$I('lf-start')?.value||'',
+      end:$I('lf-end')?.value||'', fee:$I('lf-fee')?.value||''
+    };
+  }
+}, true);
+
+window.saveLedger = async function(){
+  if(!canAdmin()) return;
+  const name = ($I('lf-name').value||'').trim();
+  if(!name){ toast('활동 이름을 넣어 주세요','err'); return; }
+  const data = {
+    name, startDs:$I('lf-start').value||'', endDs:$I('lf-end').value||'',
+    fee:Math.max(0, Number($I('lf-fee').value)||0),
+    managers:window._pickedMgr?window._pickedMgr.uids:[],
+    managerNames:window._pickedMgr?window._pickedMgr.names:[],
+    status:'prep', cats:[], incSum:0, expSum:0,
+    createdAt:Timestamp.now(), createdByUid:CU.uid, createdByName:CU.name||''
+  };
+  const ref = await addDoc(collection(db,'actLedgers'), data);
+  LEDGERS.unshift({ id:ref.id, ...data });
+  window._pickedMgr = null; window._lfDraft = null;
+  closeModal(); toast('활동을 만들었습니다 — 눌러서 들어가 보세요');
+  render();
+};
+
+/* ═══ 합계를 활동 문서에 담아둔다 (목록 화면용) ═══ */
+async function pushSums(){
+  if(!CUR) return;
+  const incSum = MEMBERS.filter(m=>m.paid).reduce((n,m)=>n+(Number(m.fee)||0),0);
+  const expSum = confirmedExp().reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+  CUR.incSum = incSum; CUR.expSum = expSum;
+  try { await updateDoc(doc(db,'actLedgers',CUR.id), { incSum, expSum }); } catch(e){}
+}
+
+/* ═══ 모달 ═══ */
+function openModal(html){
+  $I('modal-mount').innerHTML =
+    `<div class="mbk" onclick="if(event.target===this) closeModal()"><div class="mbox">${html}</div></div>`;
+}
+window.openModal = openModal;
+window.closeModal = function(){ $I('modal-mount').innerHTML = ''; };
+</script>
+</body>
+</html>
