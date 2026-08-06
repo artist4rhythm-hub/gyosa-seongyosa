@@ -3055,10 +3055,14 @@ let payDirty = false;
 
 function payDocId(){ return `${payOrg}_${paySem}`; }
 
-async function renderPay(){
+async function renderPay(keepState){
+  /* keepState=true — 체크 직후 화면만 다시 그린다.
+     (여기서 서버 자료를 새로 받으면 방금 체크한 것이 저장 전 상태로 덮여
+      «체크가 안 되는» 증상이 난다 — 그래서 화면 갱신과 자료 받기를 나눴다) */
   const box = $I('tab-pay');
   const orgs = myOrgs();
   if(!payOrg || !orgs.includes(payOrg)) payOrg = orgs[0];
+  if(!keepState){
   box.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
   window.showLoading && window.showLoading('입금·환급 자료를 불러오는 중…');
   try {
@@ -3075,6 +3079,7 @@ async function renderPay(){
     box.innerHTML = `<div class="acard"><p class="empty">불러올 수 없습니다: ${esc(e.message)}</p></div>`;
     return;
   } finally { window.hideLoading && window.hideLoading(); }
+  }
 
   // 학기 목록
   const semSet = new Set();
@@ -3083,15 +3088,17 @@ async function renderPay(){
   const sems = [...semSet].sort().reverse();
   if(!paySem || !sems.includes(paySem)) paySem = sems[0] || '';
 
-  // 저장된 입금/환급 상태 로드
-  PAYMENTS = {};
-  if(paySem){
-    try {
-      const pdoc = await getDoc(doc(db,'studentPayments', payDocId()));
-      if(pdoc.exists()) PAYMENTS = pdoc.data().students || {};
-    } catch(e){ PAYMENTS = {}; }
+  // 저장된 입금/환급 상태 로드 (체크 직후 갱신 때는 건너뛴다 — 체크 유지)
+  if(!keepState){
+    PAYMENTS = {};
+    if(paySem){
+      try {
+        const pdoc = await getDoc(doc(db,'studentPayments', payDocId()));
+        if(pdoc.exists()) PAYMENTS = pdoc.data().students || {};
+      } catch(e){ PAYMENTS = {}; }
+    }
+    payDirty = false;
   }
-  payDirty = false;
 
   const orgTabs = orgs.length>1 ? `
     <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -3306,10 +3313,12 @@ function ensurePay(sid, kind){
 window.togglePay = function(sid, kind){
   const rec = ensurePay(sid, kind);
   rec.checked = !rec.checked;
-  // 체크할 때 날짜 비어있으면 오늘로 자동
+  // ✓ 체크하는 순간 날짜가 비어 있으면 오늘 날짜를 자동 기록
   if(rec.checked && !rec.date) rec.date = todayYMD();
   payDirty = true;
-  renderPay();   // 다시 그려 ⏳ 표시 갱신
+  renderPay(true);   // 화면만 다시 그린다 (서버 자료를 새로 받지 않음 — 체크 유지)
+  const note = $I('pay-note');
+  if(note){ note.textContent='● 저장하지 않은 변경사항이 있습니다 — 「입금·환급 저장」을 눌러 주세요.'; note.style.color='var(--warn)'; }
 };
 window.setPayField = function(sid, kind, field, val){
   const rec = ensurePay(sid, kind);
