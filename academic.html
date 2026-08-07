@@ -256,6 +256,8 @@
   .wcd-c.x{ color:#DC2626; background:rgba(220,38,38,.07); font-weight:800; }
   .wcd-c.off{ color:var(--ivd); background:var(--iv); }
   .wcd-lb:last-child, .wcd-d:last-child, .wcd-c:last-child{ border-right:none; }
+  .tb-ledger{font-size:10px;font-weight:800;color:#1E5741;background:#E8F3EF;
+    border:1px solid #BFD9CD;border-radius:100px;padding:2px 8px;margin-left:6px;vertical-align:1px}
   /* 주차 칸의 📋 버튼 */
   .cw-cdb{ margin-top:5px; border:1px solid var(--ivd); background:var(--wh); color:var(--tl);
     border-radius:6px; font-size:11px; line-height:1; padding:3px 6px; cursor:pointer; font-family:inherit; }
@@ -786,7 +788,8 @@
           <button class="btn btn-sm" onclick="openTermDlg('break')">+ 방학 추가</button>
         </span>
       </div>
-      <div class="pdesc">학기와 방학 기간을 정해두면 달력 왼쪽에 <b>주차</b>와 <b>방학 이름</b>이 표시됩니다.</div>
+      <div class="pdesc">학기와 방학 기간을 정해두면 달력 왼쪽에 <b>주차</b>와 <b>방학 이름</b>이 표시됩니다.<br>
+        📖 <b>학기(«1학기»·«2학기»)는 출석부·경비와 한 원장을 공유</b>해요 — 여기서 고치든 출석부에서 고치든 서로 바로 반영되고, 주차는 이 원장 기준으로 계산됩니다. (기관마다 개학일이 달라도 각자 기준으로 셉니다)</div>
       <div class="tb-list" id="term-list"></div>
     </div>
 
@@ -1157,6 +1160,13 @@ function needEdit(){
 function yearDocId(year, org){ return `${org || ORG}_${year}`; }
 
 let ALL_YEARS = [];   // 모든 기관의 학년도 (원본)
+let LEDGER_TERMS = [];  // 📖 학기 원장 (terms 컬렉션) — 출석부·경비와 공유하는 단일 기준
+async function loadLedgerTerms(){
+  try {
+    const snap = await getDocs(collection(db,'terms'));
+    LEDGER_TERMS = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+  } catch(e){ LEDGER_TERMS = []; }
+}
 
 async function loadYears(){
   ALL_YEARS = [];
@@ -1164,6 +1174,7 @@ async function loadYears(){
     const snap = await getDocs(collection(db,'academicYears'));
     ALL_YEARS = snap.docs.map(d=>({ id:d.id, ...d.data() }));
   } catch(e){}
+  await loadLedgerTerms();
   applyYearScope();
 }
 
@@ -1185,6 +1196,13 @@ async function loadYear(year){
     YEAR_INFO = { year:hit.year, label:hit.label||`${year}학년도`,
       terms: hit.terms||[], breaks: hit.breaks||[] };
   }
+  // 📖 학기 원장(출석부와 공유)이 있으면 그것이 주차의 기준이 된다
+  const lt = LEDGER_TERMS
+    .filter(t => (t.org===base) && Number(t.year)===Number(year) && t.start && t.end)
+    .sort((a,b)=>(a.term||0)-(b.term||0))
+    .map(t => ({ id:'L:'+t.id, name:(t.term?`${t.term}학기`:(t.name||'학기')),
+      start:t.start, end:t.end, ledger:true, term:t.term }));
+  if(lt.length) YEAR_INFO.terms = lt;
 }
 
 async function saveYear(){
@@ -2099,7 +2117,7 @@ function renderTermPanel(){
   const rows = [];
   (YEAR_INFO.terms||[]).forEach((t,i)=>{
     rows.push(`<div class="tb-row">
-      <span class="tb-nm">📗 ${esc(t.name)}</span>
+      <span class="tb-nm">📗 ${esc(t.name)}${t.ledger?' <span class="tb-ledger" title="출석부·경비와 공유되는 학기 원장입니다 — 여기서 고치면 그쪽에도 바로 반영돼요">🔗 출석부 공유</span>':''}</span>
       <span class="tb-dt">${esc(t.start)} ~ ${esc(t.end)}</span>
       <span class="tb-act">
         <button class="btn btn-sm" onclick="openTermDlg('term',${i})">✏️ 고치기</button>
@@ -2178,6 +2196,43 @@ window.saveTerm = async function(kind, idx){
   if(start > end){ toast('시작일이 종료일보다 뒤입니다.','err'); return; }
 
   const key = kind==='term' ? 'terms' : 'breaks';
+
+  /* 📖 학기(«N학기» 이름)는 출석부와 공유하는 원장(terms 컬렉션)에 저장한다 */
+  const tmMatch = kind==='term' ? /^\s*(\d+)\s*학기\s*$/.exec(name) : null;
+  if(tmMatch){
+    const termNo = Number(tmMatch[1]);
+    const base = (ORG === ORG_ALL) ? (myOrgs()[0] || 'daniel') : ORG;
+    const editing = (idx!=null && YEAR_INFO.terms[idx]?.ledger)
+      ? LEDGER_TERMS.find(t=>'L:'+t.id === YEAR_INFO.terms[idx].id) : null;
+    const dup = LEDGER_TERMS.find(t=>t.org===base && Number(t.year)===Number(YEAR_INFO.year)
+      && Number(t.term)===termNo && (!editing || t.id!==editing.id));
+    try {
+      const data = { year:Number(YEAR_INFO.year), org:base, term:termNo, start, end };
+      if(editing){ await updateDoc(doc(db,'terms', editing.id), data); }
+      else if(dup){ await updateDoc(doc(db,'terms', dup.id), data); }
+      else { data.createdAt = Timestamp.now(); await addDoc(collection(db,'terms'), data); }
+      // 「다른 캘린더에도 함께」 고른 기관에도 원장으로
+      const picked = [...document.querySelectorAll('#tm-cals .chip.on')].map(b=>b.dataset.cal);
+      let alsoN = 0;
+      for(const o of picked){
+        if(o === base || o === ORG_ALL || !canEditCal(o)) continue;
+        const d2 = LEDGER_TERMS.find(t=>t.org===o && Number(t.year)===Number(YEAR_INFO.year) && Number(t.term)===termNo);
+        const data2 = { year:Number(YEAR_INFO.year), org:o, term:termNo, start, end };
+        try {
+          if(d2) await updateDoc(doc(db,'terms', d2.id), data2);
+          else { data2.createdAt = Timestamp.now(); await addDoc(collection(db,'terms'), data2); }
+          alsoN++;
+        } catch(e){}
+      }
+      await loadLedgerTerms();
+      await loadYear(YEAR_INFO.year);
+      closeTermDlg(); renderYearBar(); render();
+      toast(alsoN ? `학기를 저장했어요 ✓ (출석부와 공유) — 다른 기관 ${alsoN}곳에도 함께` 
+                  : '학기를 저장했어요 ✓ — 출석부·경비에도 바로 반영됩니다','ok');
+    } catch(e){ toast('학기 원장 저장 실패: '+(e.message||''),'err'); }
+    return;
+  }
+
   if(!Array.isArray(YEAR_INFO[key])) YEAR_INFO[key] = [];
   const item = { id: (idx!=null && YEAR_INFO[key][idx]?.id) || (kind[0]+Math.random().toString(36).slice(2,7)),
     name, start, end };
@@ -2219,6 +2274,17 @@ window.delTerm = async function(kind, idx){
   if(!needEdit()) return;
   const key = kind==='term' ? 'terms' : 'breaks';
   const it = YEAR_INFO[key][idx]; if(!it) return;
+  if(it.ledger){
+    if(!confirm(`"${it.name}"을(를) 지울까요?\n(출석부·경비의 학기 설정에서도 함께 사라집니다)`)) return;
+    try {
+      await deleteDoc(doc(db,'terms', it.id.slice(2)));
+      await loadLedgerTerms();
+      await loadYear(YEAR_INFO.year);
+      renderYearBar(); render();
+      toast('지웠습니다 — 출석부에도 반영됐어요','ok');
+    } catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
+    return;
+  }
   if(!confirm(`"${it.name}"을(를) 지울까요?`)) return;
   YEAR_INFO[key].splice(idx,1);
   await saveYear();
