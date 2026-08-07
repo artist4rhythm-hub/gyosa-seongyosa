@@ -100,7 +100,8 @@
 .sv-pal{background:var(--iv);border-radius:9px;padding:9px 10px}
 .sv-lb{font-size:11px;font-weight:800;color:var(--ts);white-space:nowrap}
 .sv-tin{width:62px;text-align:center;padding:6px 4px}
-.sv-sel{width:86px;flex:none;padding:6px 6px}
+select.sv-sel{width:96px;min-width:96px;flex:0 0 auto;padding:6px 6px;font-size:12.5px}
+.sv-top{margin-bottom:6px}
 .sv-durs{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .sv-dur{font-size:11px;font-weight:700;border:1px solid var(--ivd);background:var(--wh);color:var(--ts);
   border-radius:100px;padding:4px 9px;cursor:pointer;white-space:nowrap}
@@ -120,6 +121,7 @@
 .sv-tcttl{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sv-tcdur{font-size:10px;color:#405249;font-weight:800;background:rgba(255,255,255,.65);border-radius:100px;padding:2px 7px}
 .sv-tdel{cursor:pointer;color:var(--red);font-size:10px;font-weight:800}
+.sv-tdup{cursor:pointer;color:var(--gm);font-size:11px;font-weight:800}
 .sv-ghost{position:fixed;z-index:999;pointer-events:none;font-size:11.5px;font-weight:700;color:#243029;
   border:1px solid rgba(30,57,50,.25);border-radius:7px;padding:5px 9px;box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:.92}
 .sv-card-ed{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:var(--gp);
@@ -939,6 +941,7 @@ window.editBlock = function(i, useDraft){
     ${draftBar}
     ${inner}
     <div class="mfoot">
+      ${canOwn(CUR)?`<button class="btn gray sm" style="margin-right:auto" onclick="saveBlock().then(()=>openRevisions())" title="지금 내용을 저장하고 이전 판 목록을 엽니다">🕰 이전 판</button>`:''}
       <button class="btn gray" onclick="closeModal()">닫기 (임시 저장됨)</button>
       <button class="btn" onclick="saveBlock()">저장</button>
     </div>`, bb.type==='schedule' ? 'wide full' : true, true);
@@ -1272,6 +1275,7 @@ function edSchedule(b){
       <span id="sv-ew" style="font-weight:800;font-size:12px">1일</span>
       <button class="ed-mini" onclick="svSpan(1)">＋</button>
       <span id="sv-etm" style="font-size:11px;color:var(--ts)"></span>
+      <button class="ed-mini" onclick="svDup()" title="같은 카드를 보관함에 복제">⧉ 복제</button>
       <button class="ed-mini" onclick="svToTray(SVsel)" title="표에서 빼서 보관함으로 (우클릭과 같음)">📥 보관함으로</button>
       <button class="ed-mini" style="color:var(--red);border-color:var(--red)" onclick="svDel()">삭제</button>
     </div>
@@ -1354,6 +1358,7 @@ function svPaintTray(){
          <span class="sv-tcard" data-tid="${c.id}" style="background:${SCH_COLORS[c.c]||'#fff'}">
            <span class="sv-tcttl">${esc(c.t||'(제목 없음)')}</span>
            <span class="sv-tcdur">${fmt(c.dur)}</span>
+           <span class="sv-tdup" data-tdup="${c.id}" title="복제">⧉</span>
            <span class="sv-tdel" data-tdel="${c.id}">✕</span></span>`).join('')}</div>`
     : `<span class="sv-trayhint">🗂 카드 보관함 — 위에서 카드를 만들면 여기에 담겨요. 배치된 카드를 우클릭해도 여기로 돌아옵니다.</span>`;
 }
@@ -1408,6 +1413,45 @@ window.svSpan = function(dir){
 window.svDel = function(){
   SV.cards=SV.cards.filter(x=>x.id!==SVsel); SVsel=null; svPaint();
 };
+/* 복제: 배치된 카드 → 같은 내용의 새 카드를 보관함에 */
+/* 빈 곳 드래그 후 확인창 — 만들기 눌러야 실제 생성 */
+function svConfirmNew(c){
+  openModal2(`
+    <div class="mtitle">🪄 새 카드 만들기</div>
+    <div class="msub"><b>${esc(SV.days[c.d]?.label||'')}</b> · <b>${svM2T(c.s)} ~ ${svM2T(c.e)}</b>
+      (${c.e-c.s>=60?Math.floor((c.e-c.s)/60)+'시간'+((c.e-c.s)%60?' '+(c.e-c.s)%60+'분':''):(c.e-c.s)+'분'})
+      자리에 카드를 만들까요?</div>
+    <div class="frow"><label class="flab">카드 제목</label>
+      <input class="fin" id="cn-t" placeholder="예: 점심 (휴게소)"></div>
+    <div class="frow" style="margin-top:8px"><label class="flab">색</label>
+      <span class="sv-dots" style="flex-wrap:wrap">${SCH_COLORS.map((col,i)=>
+        `<span class="sv-dot${i===SVlastC?' on':''}" data-cn="${i}" style="background:${col||'#fff'}"></span>`).join('')}</span></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal2()">취소</button>
+      <button class="btn" id="cn-ok">만들기</button>
+    </div>`);
+  const box=$I('modal-mount2');
+  box.addEventListener('click', function pick(e){
+    const d=e.target.closest('[data-cn]');
+    if(d){ box.querySelectorAll('[data-cn]').forEach(x=>x.classList.remove('on')); d.classList.add('on'); }
+  });
+  setTimeout(()=>{ const i=$I('cn-t'); if(i) i.focus(); },30);
+  const make=()=>{
+    const col=Number(box.querySelector('[data-cn].on')?.dataset.cn)||0;
+    const nc={id:svRid(),d:c.d,w:1,s:c.s,e:c.e,t:$I('cn-t').value.trim(),c:col};
+    SVlastC=col;
+    SV.cards.push(nc); SVsel=nc.id;
+    closeModal2(); svPaint(); saveDraft();
+  };
+  $I('cn-ok').onclick=make;
+  $I('cn-t').addEventListener('keydown',e=>{ if(e.key==='Enter') make(); });
+}
+window.svDup = function(){
+  const c=SV.cards.find(x=>x.id===SVsel); if(!c) return;
+  SVtray.push({id:svRid(), t:c.t||'', dur:Math.max(5,c.e-c.s), c:c.c|0});
+  svPaintTray();
+  toast('보관함에 복제했어요 — 원하는 자리로 끌어다 놓으세요');
+};
 
 /* ── 포인터 드래그 (이동 · 길이 · 새로 그리기 · 대기 카드 배치) ── */
 function svInit(){
@@ -1440,6 +1484,9 @@ function svClick(e){
   if(du){ document.querySelectorAll('#sv-durs .sv-dur').forEach(x=>x.classList.remove('on')); du.classList.add('on'); $I('sv-cm').value=''; return; }
   const td=e.target.closest('[data-tdel]');
   if(td){ SVtray=SVtray.filter(x=>x.id!==td.dataset.tdel); svPaintTray(); return; }
+  const tp=e.target.closest('[data-tdup]');
+  if(tp){ const o=SVtray.find(x=>x.id===tp.dataset.tdup);
+    if(o){ SVtray.push({id:svRid(),t:o.t,dur:o.dur,c:o.c}); svPaintTray(); } return; }
 }
 function svXY(e){
   const r=$I('sv-cols').getBoundingClientRect();
@@ -1468,9 +1515,9 @@ function svDown(e){
     const p=svXY(e); if(!p.inside) return;
     const fine=e.ctrlKey||e.metaKey;
     const s=Math.max(SV.start,Math.min(SV.end-5,svSnap(p.min,fine)));
-    const c={id:svRid(),d:p.day,w:1,s,e:s+10,t:'',c:SVlastC};
-    SV.cards.push(c); SVsel=c.id;
-    SVdrag={mode:'draw',id:c.id,anchor:s};
+    const c={id:svRid(),d:p.day,w:1,s,e:s+10,t:'',c:SVlastC,_tmp:true};
+    SV.cards.push(c);
+    SVdrag={mode:'draw',id:c.id,anchor:s,did:false};
     svPaint(); e.preventDefault();
   }
 }
@@ -1494,6 +1541,7 @@ function svMove(e){
     let ne=svSnap(p.min,fine);
     c.e=Math.max(c.s+5,Math.min(SV.end,ne));
   } else if(SVdrag.mode==='draw'){
+    SVdrag.did=true;
     let v=svSnap(p.min,fine);
     c.s=Math.max(SV.start,Math.min(SVdrag.anchor,v));
     c.e=Math.min(SV.end,Math.max(SVdrag.anchor+5,v));
@@ -1534,19 +1582,22 @@ function svUp(e){
     Object.assign(cc, drag.orig);                      // 겹치면 원래 자리로
     toast('그 자리에 이미 카드가 있어요 — 원래 자리로 돌아갔어요.','err');
   }
-  else if(cc && drag.mode==='draw' && svOverlap(cc,cc.id)){
-    SV.cards=SV.cards.filter(x=>x.id!==cc.id); SVsel=null;   // 그리기 취소
-    toast('그 자리에 이미 카드가 있어요.','err');
+  else if(cc && drag.mode==='draw'){
+    SV.cards=SV.cards.filter(x=>x.id!==cc.id);              // 미리보기 제거
+    if(!drag.did){ svPaint(); return; }                     // 단순 클릭 = 아무 일 없음
+    if(svOverlap(cc,cc.id)){ toast('그 자리에 이미 카드가 있어요.','err'); svPaint(); return; }
+    svPaint();
+    svConfirmNew(cc);                                        // 물어보고 생성
+    return;
   }
   else if(drag.mode==='move'&&!drag.moved){ SVsel=drag.id; }   // 클릭 = 선택
-  else if(drag.mode==='draw'){ SVsel=drag.id; setTimeout(()=>{ const i=$I('sv-et'); if(i) i.focus(); },30); }
   svPaint();
 }
 
 function readSchedule(){
   return { ver:2, start:SV.start, end:SV.end,
     days:SV.days.map(d=>({label:(d.label||'').trim()})),
-    cards:SV.cards.map(c=>({id:c.id,d:c.d,w:c.w||1,s:c.s,e:c.e,t:(c.t||'').trim(),c:c.c|0}))
+    cards:SV.cards.filter(c=>!c._tmp).map(c=>({id:c.id,d:c.d,w:c.w||1,s:c.s,e:c.e,t:(c.t||'').trim(),c:c.c|0}))
       .filter(c=>c.e>c.s),
     note:$I('sch-note').value.trim() };
 }
@@ -1831,10 +1882,10 @@ window.saveBlock = async function(){
   if(data != null) b.data = data;
   await persistBlocks();
   clearDraft(EB);
-  /* 자동 버전 보관 — 10분에 한 번, 이전 판 목록에 쌓임 */
+  /* 자동 버전 보관 — 5분에 한 번, 이전 판 목록에 쌓임 */
   try {
     const k='famrev:'+CUR.id, last=Number(localStorage.getItem(k))||0;
-    if(Date.now()-last > 10*60*1000){
+    if(Date.now()-last > 5*60*1000){
       await addDoc(collection(db,'famRevisions'), {
         docId:CUR.id, title:CUR.title||'', blocksJson:JSON.stringify(CUR.blocks),
         at:Timestamp.now(), byUid:CU.uid, byName:CU.name||'', auto:true
@@ -2030,13 +2081,14 @@ window.openRevisions = async function(){
     const revs = snap.docs.map(d=>({ id:d.id, ...d.data() }))
       .sort((a,b)=>(b.at?.toMillis?.()||0)-(a.at?.toMillis?.()||0));
     const rows = revs.map(r=>`<tr>
-      <td>${dtStr(r.at)}</td><td>${esc(r.byName||'')}</td>
+      <td>${dtStr(r.at)} ${r.auto?'<span class="pill gray">자동</span>':'<span class="pill ok">발행</span>'}</td>
+      <td>${esc(r.byName||'')}</td>
       <td class="c"><button class="btn line sm" onclick="restoreRev('${r.id}')">이 판으로 복원</button></td>
     </tr>`).join('');
     openModal(`
       <div class="mtitle">🕰 이전 판 (발행·저장 시 자동 보관)</div>
       <div class="tblwrap"><table class="famtbl">
-        <tr><th>보관 시각</th><th>발행한 사람</th><th class="c"></th></tr>
+        <tr><th>보관 시각</th><th>저장한 사람</th><th class="c"></th></tr>
         ${rows || '<tr><td colspan="3" style="text-align:center;color:var(--tl);padding:20px">보관된 판이 없어요 — 처음 발행하면 생깁니다.</td></tr>'}
       </table></div>
       <div class="mfoot"><button class="btn gray" onclick="closeModal()">닫기</button></div>`, true);
