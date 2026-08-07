@@ -299,6 +299,19 @@ select.sv-sel{width:96px;min-width:96px;flex:0 0 auto;padding:6px 6px;font-size:
 /* 표지 편집창 미리보기 */
 .cv-pv{border:1.5px dashed var(--ivd);border-radius:12px;padding:10px;background:var(--iv);
   max-height:320px;overflow-y:auto;zoom:.62}
+/* 회계식 정렬 — ₩ 왼쪽 고정, 숫자 오른쪽 정렬(고정폭 숫자), 수량·단위 분리 */
+.rv-tb th.thr{text-align:right}
+.rv-tb td.num{padding-right:9px}
+.acc{display:flex;justify-content:space-between;align-items:baseline;gap:6px;min-width:88px}
+.acc i{font-style:normal;font-size:10px;color:var(--ts);font-weight:700}
+.acc b{font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:.2px}
+.accq{display:flex;justify-content:flex-end;align-items:baseline;gap:3px;min-width:52px}
+.accq b{font-variant-numeric:tabular-nums;font-weight:700}
+.accq i{font-style:normal;font-size:10px;color:var(--ts);width:26px;text-align:left}
+.sumrow .acc b,.hlrow .acc b{font-weight:900}
+/* 편집창 줄별 소계 */
+.ed-tbl td.bg-amt{text-align:right;font-size:12px;font-weight:800;color:var(--gm);
+  font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 8px;min-width:92px}
 /* ── 배정 빌더 (조·차량·숙소) ── */
 .ag-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .ag-sum{font-size:11.5px;font-weight:800;color:var(--gm);margin-left:auto}
@@ -1131,20 +1144,22 @@ function budgetCalc(d){
 function renderBudget(d){
   const { rows, total, ppl, per } = budgetCalc(d);
   if(!rows.length) return '';
+  const won = v=>`<span class="acc"><i>₩</i><b>${fmt(v)}</b></span>`;
+  const qtyC = (q,u)=>`<span class="accq"><b>${fmt(q)}</b><i>${esc(u||'')}</i></span>`;
   return `<div style="overflow-x:auto"><table class="rv-tb">
-    <tr><th>구분</th><th>항목</th><th style="text-align:right">단가</th>
-      <th style="text-align:center">수량</th><th style="text-align:right">금액</th><th>비고</th></tr>
+    <tr><th>구분</th><th>항목</th><th class="thr">단가</th>
+      <th class="thr">수량</th><th class="thr">금액</th><th>비고</th></tr>
     ${rows.map(r=>{
       const amt = (Number(r.price)||0)*(Number(r.qty)||0);
       return `<tr><td>${esc(r.cat||'')}</td><td>${esc(r.item||'')}</td>
-        <td style="text-align:right">₩ ${fmt(r.price)}</td>
-        <td style="text-align:center">${fmt(r.qty)}${esc(r.unit||'')}</td>
-        <td style="text-align:right">₩ ${fmt(amt)}</td><td>${esc(r.note||'')}</td></tr>`;
+        <td class="num">${won(r.price)}</td>
+        <td class="num">${qtyC(r.qty, r.unit)}</td>
+        <td class="num">${won(amt)}</td><td>${esc(r.note||'')}</td></tr>`;
     }).join('')}
     <tr class="sumrow"><td colspan="4">총계</td>
-      <td style="text-align:right">₩ ${fmt(total)}</td><td></td></tr>
+      <td class="num">${won(total)}</td><td></td></tr>
     ${ppl?`<tr class="hlrow"><td colspan="4">1인 회비 (${fmt(ppl)}명${Number(d.round)?' · '+fmt(d.round)+'원 단위 올림':''})</td>
-      <td style="text-align:right">₩ ${fmt(per)}</td><td></td></tr>`:''}
+      <td class="num">${won(per)}</td><td></td></tr>`:''}
   </table></div>
   ${d.account?`<div class="rv-note">💳 회비 입금 계좌: <b>${esc(d.account)}</b>${d.deadline?` · 납부 기한: <b>${esc(d.deadline)}</b>`:''}</div>`
     : d.deadline?`<div class="rv-note">납부 기한: <b>${esc(d.deadline)}</b></div>`:''}
@@ -1523,7 +1538,8 @@ function edBudget(b){
   return `
     <div class="ed-tblwrap"><table class="ed-tbl" id="bg-tbl">
       <tr><th style="min-width:78px">구분</th><th>항목</th><th style="min-width:88px">단가</th>
-        <th style="min-width:64px">수량</th><th style="min-width:56px">단위</th><th>비고</th><th style="width:96px"></th></tr>
+        <th style="min-width:64px">수량</th><th style="min-width:56px">단위</th>
+        <th style="min-width:96px;text-align:right">금액</th><th>비고</th><th style="width:96px"></th></tr>
       ${body}
     </table></div>
     <div style="margin-top:8px"><button class="ed-mini" onclick="bgAdd()">＋ 줄 추가</button></div>
@@ -1555,6 +1571,7 @@ function bgRow(r){
     <td><input type="number" value="${r.price||''}" oninput="budgetLive()" style="min-width:88px"></td>
     <td><input type="number" value="${r.qty||''}" oninput="budgetLive()" style="min-width:64px"></td>
     <td><input value="${esc(r.unit||'')}" placeholder="명·박·대" style="min-width:56px"></td>
+    <td class="bg-amt">${(Number(r.price)||0)*(Number(r.qty)||0)?`₩ ${fmt((Number(r.price)||0)*(Number(r.qty)||0))}`:''}</td>
     <td><input value="${esc(r.note||'')}"></td>
     <td style="white-space:nowrap">
       <button class="ed-mini" onclick="tbMoveRow(this,-1)">↑</button>
@@ -1567,6 +1584,14 @@ window.bgAdd = function(){
 };
 window.budgetLive = function(){
   const box = $I('bg-live'); if(!box) return;
+  // 각 줄 소계 (단가 × 수량)
+  const t = $I('bg-tbl');
+  if(t) [...t.rows].slice(1).forEach(tr=>{
+    const ins=[...tr.querySelectorAll('input')];
+    const amt=(Number(ins[2]?.value)||0)*(Number(ins[3]?.value)||0);
+    const cell=tr.querySelector('.bg-amt');
+    if(cell) cell.textContent = amt ? `₩ ${fmt(amt)}` : '';
+  });
   const d = readBudget();
   const { total, ppl, per } = budgetCalc(d);
   box.innerHTML = `총계 <b>₩ ${fmt(total)}</b>
