@@ -139,6 +139,19 @@
 .sv-ctt{font-size:10.5px;font-weight:700;color:#243029;text-align:center;line-height:1.25;word-break:keep-all;pointer-events:none}
 .sv-ctm{font-size:8.5px;color:#5A6560;font-weight:600;pointer-events:none}
 .sv-rz{position:absolute;left:0;right:0;bottom:0;height:7px;cursor:ns-resize}
+.draftbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:800;color:var(--amber);
+  background:var(--amberp);border:1px solid var(--amber);border-radius:9px;padding:8px 11px;margin-bottom:10px}
+.fnp-wrap{max-height:46vh;overflow-y:auto;display:flex;flex-direction:column;gap:9px;
+  border:1px solid var(--ivd);border-radius:9px;padding:10px}
+.fnp-grp{border-bottom:1px dashed var(--iv);padding-bottom:8px}
+.fnp-grp:last-child{border-bottom:none;padding-bottom:0}
+.fnp-gh{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:900;color:var(--gd);cursor:pointer;margin-bottom:5px}
+.fnp-cnt{font-size:10.5px;font-weight:700;color:var(--gm);background:var(--gp);border-radius:100px;padding:2px 8px}
+.fnp-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:3px 8px}
+.fnp-it{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--tx);cursor:pointer;white-space:nowrap}
+.fnp-gd{font-size:9px;font-weight:800;border-radius:6px;padding:1px 4px}
+.fnp-gd.m{background:var(--m-bg,#E6F0FB);color:var(--m-tx,#2B6CB0)}
+.fnp-gd.f{background:var(--f-bg,#FCE8F3);color:var(--f-tx,#D53F8C)}
 .sv-rz::after{content:'';position:absolute;left:50%;bottom:2px;transform:translateX(-50%);
   width:22px;height:3px;border-radius:2px;background:rgba(30,57,50,.25)}
 .rv-cover{border:2px solid var(--gd);border-radius:12px;padding:26px 18px;text-align:center}
@@ -263,6 +276,7 @@
 </div>
 
 <div id="modal-mount"></div>
+<div id="modal-mount2"></div>
 <div id="printArea"></div>
 <div class="toast" id="toast"></div>
 
@@ -887,29 +901,41 @@ function renderScheduleV2(d){
    블록 편집기
    ═══════════════════════════════════════════ */
 let EB = -1;   // 지금 편집 중인 블록 index
-window.editBlock = function(i){
+window.editBlock = function(i, useDraft){
   if(!canEdit(CUR)) return;
   EB = i;
   const b = CUR.blocks[i];
+  // 임시 저장 복원: useDraft(={t,title,data})가 오면 그 내용으로 화면을 채운다 (저장 전까지 원본은 그대로)
+  const bb = useDraft ? { ...b, title:useDraft.title||b.title, data:useDraft.data } : b;
+  const draft = !useDraft ? getDraft(i) : null;
+  const draftBar = draft ? `
+    <div class="draftbar">💾 저장하지 않은 입력이 있어요
+      <span style="color:var(--ts);font-weight:500">(${new Date(draft.t).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})})</span>
+      <button class="ed-mini" onclick="applyDraft(${i})">복원</button>
+      <button class="ed-mini" onclick="dropDraft(${i})">버리기</button>
+    </div>` : '';
   const inner =
-    b.type==='cover' ? edCover(b) :
-    b.type==='text' ? edText(b) :
-    b.type==='kv' ? edKv(b) :
-    b.type==='table' ? edTable(b) :
-    b.type==='budget' ? edBudget(b) :
-    b.type==='schedule' ? edSchedule(b) : '';
+    bb.type==='cover' ? edCover(bb) :
+    bb.type==='text' ? edText(bb) :
+    bb.type==='kv' ? edKv(bb) :
+    bb.type==='table' ? edTable(bb) :
+    bb.type==='budget' ? edBudget(bb) :
+    bb.type==='schedule' ? edSchedule(bb) : '';
   openModal(`
     <div class="mtitle">✏️ ${esc(b.title)}
-      <input class="fin" id="eb-title" value="${esc(b.title)}"
+      <input class="fin" id="eb-title" value="${esc(bb.title)}"
         style="display:inline-block;width:auto;min-width:170px;margin-left:8px;padding:6px 9px;font-size:12.5px">
+      <span id="draft-state" style="font-size:10.5px;font-weight:600;color:var(--tl);margin-left:auto"></span>
     </div>
+    ${draftBar}
     ${inner}
     <div class="mfoot">
-      <button class="btn gray" onclick="closeModal()">취소</button>
+      <button class="btn gray" onclick="closeModal()">닫기 (임시 저장됨)</button>
       <button class="btn" onclick="saveBlock()">저장</button>
-    </div>`, true);
-  if(b.type==='budget') budgetLive();
-  if(b.type==='schedule') svInit();
+    </div>`, true, true);
+  bindAutosave();
+  if(bb.type==='budget') budgetLive();
+  if(bb.type==='schedule') svInit();
 };
 
 /* — cover — */
@@ -951,6 +977,7 @@ function kvRow(r,i){
   return `<div class="ed-row" data-i="${i}">
     <input class="fin" style="width:130px;flex:none" placeholder="항목" value="${esc(r.k||'')}" data-f="k">
     <textarea class="ftxt" style="flex:1" rows="1" placeholder="내용" data-f="v">${esc(r.v||'')}</textarea>
+    <button class="ed-mini" onclick="kvSmart(this)" title="달력·교사·학생 선택 도우미">📎</button>
     <button class="ed-mini" onclick="edMove(this,-1)">↑</button>
     <button class="ed-mini" onclick="edMove(this,1)">↓</button>
     <button class="ed-mini" onclick="this.closest('.ed-row').remove()">✕</button>
@@ -1113,7 +1140,8 @@ function edBudget(b){
       <div class="frow"><label class="flab">회비 입금 계좌 (선택)</label>
         <input class="fin" id="bg-account" value="${esc(d.account||'')}" placeholder="예: 카카오뱅크 3333-.. 이현우"></div>
       <div class="frow"><label class="flab">납부 기한 (선택)</label>
-        <input class="fin" id="bg-deadline" value="${esc(d.deadline||'')}" placeholder="예: 2월 6일 (금)"></div>
+        <div style="display:flex;gap:6px"><input class="fin" id="bg-deadline" value="${esc(d.deadline||'')}" placeholder="예: 2월 6일 (금)" style="flex:1">
+        <button class="ed-mini" onclick="fnPickDate(v=>{$I('bg-deadline').value=v})" style="flex:none">📅</button></div></div>
     </div>
     <div class="frow"><label class="flab">덧붙임 (선택)</label>
       <input class="fin" id="bg-note" value="${esc(d.note||'')}"></div>
@@ -1468,36 +1496,297 @@ function readSchedule(){
     note:$I('sch-note').value.trim() };
 }
 
+
+/* ═══════════════════════════════════════════
+   ✨ 입력 도우미 — 달력 · 인솔교사 · 재학생 명단
+   ═══════════════════════════════════════════ */
+const KDAY = ['일','월','화','수','목','금','토'];
+function fnFmtRange(a,b){
+  const D1=new Date(a+'T00:00'), D2=new Date(b+'T00:00');
+  if(isNaN(D1)||isNaN(D2)) return '';
+  const w=d=>KDAY[d.getDay()];
+  const nights=Math.round((D2-D1)/86400000);
+  if(nights<0) return '';
+  const head=`${D1.getFullYear()}. ${D1.getMonth()+1}. ${D1.getDate()}. (${w(D1)})`;
+  if(nights===0) return `${head} / 당일`;
+  const sameY=D1.getFullYear()===D2.getFullYear();
+  const tail=`${sameY?'':D2.getFullYear()+'. '}${D2.getMonth()+1}. ${D2.getDate()}. (${w(D2)})`;
+  return `${head} ~ ${tail} / ${nights}박 ${nights+1}일`;
+}
+function fnFmtDate(a){
+  const D=new Date(a+'T00:00'); if(isNaN(D)) return '';
+  return `${D.getMonth()+1}월 ${D.getDate()}일 (${KDAY[D.getDay()]})`;
+}
+function fnFill(ta,v){
+  if(!ta||!v) return;
+  ta.value=v;
+  ta.dispatchEvent(new Event('input',{bubbles:true}));   // 자동 저장 트리거
+}
+
+/* 기간 선택 (일정) */
+window.fnPickRange = function(cb){
+  openModal2(`
+    <div class="mtitle">📅 기간 선택</div>
+    <div class="fgrid">
+      <div class="frow"><label class="flab">시작일</label><input class="fin" type="date" id="fp-s"></div>
+      <div class="frow"><label class="flab">끝일</label><input class="fin" type="date" id="fp-e"></div>
+    </div>
+    <div class="msub" id="fp-pv" style="margin-top:8px;font-weight:700;color:var(--gm)"></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal2()">취소</button>
+      <button class="btn" id="fp-ok">넣기</button>
+    </div>`);
+  const pv=()=>{ const v=fnFmtRange($I('fp-s').value,$I('fp-e').value);
+    $I('fp-pv').textContent=v?('→ '+v):'시작일과 끝일을 고르세요'; return v; };
+  $I('fp-s').onchange=()=>{ if(!$I('fp-e').value) $I('fp-e').value=$I('fp-s').value; pv(); };
+  $I('fp-e').onchange=pv; pv();
+  $I('fp-ok').onclick=()=>{ const v=pv(); if(!v){ toast('날짜를 확인해 주세요.','err'); return; } cb(v); closeModal2(); };
+};
+/* 하루 선택 (납부 기한 등) */
+window.fnPickDate = function(cb){
+  openModal2(`
+    <div class="mtitle">📅 날짜 선택</div>
+    <div class="frow"><label class="flab">날짜</label><input class="fin" type="date" id="fp-d"></div>
+    <div class="msub" id="fp-pv" style="margin-top:8px;font-weight:700;color:var(--gm)"></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal2()">취소</button>
+      <button class="btn" id="fp-ok">넣기</button>
+    </div>`);
+  const pv=()=>{ const v=fnFmtDate($I('fp-d').value);
+    $I('fp-pv').textContent=v?('→ '+v):''; return v; };
+  $I('fp-d').onchange=pv;
+  $I('fp-ok').onclick=()=>{ const v=pv(); if(!v){ toast('날짜를 골라 주세요.','err'); return; } cb(v); closeModal2(); };
+};
+
+/* 인솔교사 선택 — 부서별 그룹 + 추가 이름 직접 입력 */
+window.fnPickStaff = async function(cb, cur){
+  await loadStaffList();
+  const inOrg = t => (t.org===CUR.org) || (t.orgs||[]).includes(CUR.org) || t.role==='super';
+  const list = STAFF.filter(inOrg);
+  const groups = {};
+  list.forEach(t=>{ const d=(t.dept&&t.dept!=='전체')?t.dept:'기타·전체'; (groups[d]=groups[d]||[]).push(t); });
+  const gkeys = Object.keys(groups).sort((a,b)=>a.localeCompare(b,'ko'));
+  const already = new Set(String(cur||'').split(',').map(x=>x.trim()).filter(Boolean));
+  const html = gkeys.map(g=>`
+    <div class="fnp-grp">
+      <label class="fnp-gh"><input type="checkbox" data-gall="${esc(g)}"> ${esc(g)}
+        <span class="fnp-cnt">${groups[g].length}명</span></label>
+      <div class="fnp-list">${groups[g].map(t=>`
+        <label class="fnp-it"><input type="checkbox" data-g="${esc(g)}" value="${esc(t.name||'')}"
+          ${already.has(t.name)?'checked':''}> ${esc(t.name||'')}</label>`).join('')}</div>
+    </div>`).join('');
+  openModal2(`
+    <div class="mtitle">👩‍🏫 인솔교사 선택 <span class="fnp-cnt" id="fs-n"></span></div>
+    <div class="fnp-wrap">${html||'<div class="msub">이 기관에 등록된 교직원이 없어요.</div>'}</div>
+    <div class="frow" style="margin-top:10px"><label class="flab">추가 지원 선생님 (쉼표로 구분)</label>
+      <input class="fin" id="fs-extra" placeholder="예: 홍길동, 김사랑"></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal2()">취소</button>
+      <button class="btn" id="fs-ok">넣기</button>
+    </div>`);
+  const box=$I('modal-mount2');
+  const cnt=()=>{ const n=box.querySelectorAll('.fnp-it input:checked').length;
+    $I('fs-n').textContent=n?`${n}명 선택`:''; };
+  box.addEventListener('change', e=>{
+    if(e.target.dataset.gall!=null){
+      box.querySelectorAll(`.fnp-it input[data-g="${CSS.escape(e.target.dataset.gall)}"]`)
+        .forEach(c=>c.checked=e.target.checked);
+    }
+    cnt();
+  });
+  cnt();
+  $I('fs-ok').onclick=()=>{
+    const names=[...box.querySelectorAll('.fnp-it input:checked')].map(c=>c.value);
+    $I('fs-extra').value.split(',').map(x=>x.trim()).filter(Boolean).forEach(x=>names.push(x));
+    if(!names.length){ toast('한 명 이상 골라 주세요.','err'); return; }
+    cb([...new Set(names)].join(', '), names.length);
+    closeModal2();
+  };
+};
+
+/* 재학생 명단 선택 — 반별 그룹 · 현재 재학생 실시간 로드 */
+let FN_STUDENTS=null, FN_CLASSES=null;
+async function fnLoadRoster(){
+  if(FN_STUDENTS) return;
+  const [ss,cs]=await Promise.all([getDocs(collection(db,'students')),getDocs(collection(db,'classes'))]);
+  FN_STUDENTS=ss.docs.map(d=>({id:d.id,...d.data()}))
+    .filter(x=>x.org===CUR.org && (x.status||'active')==='active')
+    .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
+  FN_CLASSES=cs.docs.map(d=>({id:d.id,...d.data()})).filter(c=>c.org===CUR.org);
+}
+window.fnPickStudents = async function(cb){
+  toast('재학생 명단 불러오는 중…');
+  try { await fnLoadRoster(); } catch(e){ toast('명단 로드 실패: '+e.message,'err'); return; }
+  const cls=sid=>FN_CLASSES.find(c=>(c.students||[]).includes(sid))||null;
+  const groups={};
+  FN_STUDENTS.forEach(st=>{ const c=cls(st.id); const k=c?c.name:'반 미배정';
+    (groups[k]=groups[k]||{c,list:[]}).list.push(st); });
+  const gkeys=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'ko',{numeric:true}));
+  const html=gkeys.map(g=>{
+    const G=groups[g];
+    const tn=G.c?(STAFF||[]).find(t=>t.uid===G.c.teacherUid)?.name:'';
+    return `<div class="fnp-grp">
+      <label class="fnp-gh"><input type="checkbox" data-gall="${esc(g)}" checked> ${esc(g)}
+        <span class="fnp-cnt">${G.list.length}명${tn?' · 담임 '+esc(tn):''}</span></label>
+      <div class="fnp-list">${G.list.map(st=>`
+        <label class="fnp-it"><input type="checkbox" data-g="${esc(g)}" checked
+          data-gen="${st.gender||''}" value="${esc(st.name||'')}">
+          ${esc(st.name||'')}<span class="fnp-gd ${st.gender==='남'?'m':st.gender==='여'?'f':''}">${st.gender||''}</span></label>`).join('')}</div>
+    </div>`;}).join('');
+  openModal2(`
+    <div class="mtitle">👥 재학생 명단 선택 <span class="fnp-cnt" id="fu-n"></span></div>
+    <div class="msub">현재 재학생 기준이에요. 참가하지 않는 학생만 체크를 풀면 됩니다.</div>
+    <div class="fnp-wrap">${html||'<div class="msub">재학생이 없어요.</div>'}</div>
+    <label class="fnp-it" style="margin-top:8px"><input type="checkbox" id="fu-names"> 반별 이름도 함께 넣기</label>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal2()">취소</button>
+      <button class="btn" id="fu-ok">넣기</button>
+    </div>`);
+  const box=$I('modal-mount2');
+  const cnt=()=>{ const on=[...box.querySelectorAll('.fnp-it input[data-gen]:checked')];
+    const m=on.filter(c=>c.dataset.gen==='남').length, f=on.filter(c=>c.dataset.gen==='여').length;
+    $I('fu-n').textContent=`${on.length}명 (남 ${m} · 여 ${f})`; return {on,m,f}; };
+  box.addEventListener('change', e=>{
+    if(e.target.dataset.gall!=null){
+      box.querySelectorAll(`.fnp-it input[data-g="${CSS.escape(e.target.dataset.gall)}"]`)
+        .forEach(c=>c.checked=e.target.checked);
+    }
+    cnt();
+  });
+  cnt();
+  $I('fu-ok').onclick=()=>{
+    const {on,m,f}=cnt();
+    if(!on.length){ toast('한 명 이상 골라 주세요.','err'); return; }
+    let txt=`학생 ${on.length}명 (남 ${m} · 여 ${f})`;
+    // 인솔교사 행이 있으면 교사 수 자동 덧붙임
+    const trow=[...document.querySelectorAll('#kv-rows .ed-row')].find(r=>
+      /교사|인솔/.test(r.querySelector('[data-f="k"]')?.value||''));
+    const tv=trow?.querySelector('[data-f="v"]')?.value.trim();
+    if(tv) txt+=`, 교사 ${tv.split(',').filter(x=>x.trim()).length}명`;
+    if($I('fu-names').checked){
+      txt+='\n'+gkeys.map(g=>{
+        const names=[...box.querySelectorAll(`.fnp-it input[data-g="${CSS.escape(g)}"]:checked`)].map(c=>c.value);
+        return names.length?`· ${g}: ${names.join(', ')}`:'';
+      }).filter(Boolean).join('\n');
+    }
+    cb(txt); closeModal2();
+  };
+};
+
+/* 📎 스마트 버튼 — 항목 이름을 보고 알맞은 도우미를 연다 */
+window.kvSmart = function(btn){
+  const row=btn.closest('.ed-row');
+  const k=row.querySelector('[data-f="k"]').value;
+  const ta=row.querySelector('[data-f="v"]');
+  const put=v=>fnFill(ta,v);
+  if(/일정|기간/.test(k)) return fnPickRange(put);
+  if(/기한|날짜|일자/.test(k)) return fnPickDate(put);
+  if(/교사|인솔/.test(k)) return fnPickStaff(put, ta.value);
+  if(/인원|학생|명단/.test(k)) return fnPickStudents(put);
+  // 항목명으로 판단이 안 되면 고르게
+  openModal2(`
+    <div class="mtitle">📎 무엇을 넣을까요?</div>
+    <div style="display:flex;flex-direction:column;gap:7px">
+      <button class="btn line" id="ks-r">📅 기간 (몇박 며칠 자동 계산)</button>
+      <button class="btn line" id="ks-d">📅 하루 날짜</button>
+      <button class="btn line" id="ks-t">👩‍🏫 인솔교사 선택</button>
+      <button class="btn line" id="ks-s">👥 재학생 명단 선택</button>
+    </div>
+    <div class="mfoot"><button class="btn gray" onclick="closeModal2()">취소</button></div>`);
+  $I('ks-r').onclick=()=>{ closeModal2(); fnPickRange(put); };
+  $I('ks-d').onclick=()=>{ closeModal2(); fnPickDate(put); };
+  $I('ks-t').onclick=()=>{ closeModal2(); fnPickStaff(put, ta.value); };
+  $I('ks-s').onclick=()=>{ closeModal2(); fnPickStudents(put); };
+};
+
 /* — 저장 — */
+/* 어떤 블록이든 지금 편집창의 내용을 읽어온다 (저장·임시저장 공용) */
+function readBlockData(b){
+  try {
+    if(b.type === 'cover'){
+      if(!$I('cv-big')) return null;
+      return { big:$I('cv-big').value.trim(), sub:$I('cv-sub').value.trim(),
+        period:$I('cv-period').value.trim(), place:$I('cv-place').value.trim() };
+    }
+    if(b.type === 'text'){
+      if(!$I('tx-body')) return null;
+      return { body:$I('tx-body').value, red:$I('tx-red').value.trim() };
+    }
+    if(b.type === 'kv'){
+      if(!$I('kv-rows')) return null;
+      const rows = [...document.querySelectorAll('#kv-rows .ed-row')].map(r=>({
+        k:r.querySelector('[data-f="k"]').value.trim(),
+        v:r.querySelector('[data-f="v"]').value
+      })).filter(r=>r.k||r.v);
+      return { rows, note:$I('kv-note').value.trim() };
+    }
+    if(b.type === 'table'){
+      const t = $I('tb-tbl'); if(!t) return null;
+      const cols = [...t.rows[0].querySelectorAll('input')].map(i=>i.value.trim());
+      const rows = [...t.rows].slice(1).map(tr=>({
+        c:[...tr.querySelectorAll('input')].map(i=>i.value)
+      })).filter(r=>r.c.some(x=>x.trim()));
+      return { cols, rows, note:$I('tb-note').value.trim() };
+    }
+    if(b.type === 'budget'){ return $I('bg-people') ? readBudget() : null; }
+    if(b.type === 'schedule'){ return (SV && $I('sv-cols')) ? readSchedule() : null; }
+  } catch(e){ return null; }
+  return null;
+}
+
+/* ── 임시 저장 (자동) ── */
+const draftKey = i => `famdraft:${CUR?.id||'x'}:${i}`;
+function saveDraft(){
+  if(EB < 0 || !CUR || !CUR.blocks[EB] || !$I('eb-title')) return;
+  const data = readBlockData(CUR.blocks[EB]);
+  if(data == null) return;
+  try {
+    localStorage.setItem(draftKey(EB), JSON.stringify({
+      t: Date.now(), title: $I('eb-title').value.trim(), data }));
+    const el=$I('draft-state');
+    if(el) el.textContent='임시 저장됨 '+new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch(e){}
+}
+function getDraft(i){
+  try { const v=localStorage.getItem(draftKey(i)); return v?JSON.parse(v):null; } catch(e){ return null; }
+}
+function clearDraft(i){ try { localStorage.removeItem(draftKey(i)); } catch(e){} }
+let _draftTimer=null;
+function bindAutosave(){
+  if(window.__fnAutoBound) return;
+  window.__fnAutoBound = true;
+  const mount=$I('modal-mount');
+  const kick=()=>{ clearTimeout(_draftTimer); _draftTimer=setTimeout(saveDraft, 1200); };
+  mount.addEventListener('input', kick);
+  mount.addEventListener('change', kick);
+  mount.addEventListener('pointerup', ()=>{ if(EB>=0 && SV) kick(); });  // 시간 카드 드래그 후에도
+  setInterval(()=>{ if(EB>=0 && $I('eb-title')) saveDraft(); }, 20000);  // 20초 보험
+}
+window.applyDraft = function(i){
+  const d=getDraft(i); if(!d) return;
+  editBlock(i, d);
+};
+window.dropDraft = function(i){ clearDraft(i); editBlock(i); };
+
 window.saveBlock = async function(){
   const b = CUR.blocks[EB];
   if(!b) return closeModal();
   b.title = $I('eb-title').value.trim() || b.title;
-  if(b.type === 'cover'){
-    b.data = { big:$I('cv-big').value.trim(), sub:$I('cv-sub').value.trim(),
-      period:$I('cv-period').value.trim(), place:$I('cv-place').value.trim() };
-  }
-  else if(b.type === 'text'){
-    b.data = { body:$I('tx-body').value, red:$I('tx-red').value.trim() };
-  }
-  else if(b.type === 'kv'){
-    const rows = [...document.querySelectorAll('#kv-rows .ed-row')].map(r=>({
-      k:r.querySelector('[data-f="k"]').value.trim(),
-      v:r.querySelector('[data-f="v"]').value
-    })).filter(r=>r.k||r.v);
-    b.data = { rows, note:$I('kv-note').value.trim() };
-  }
-  else if(b.type === 'table'){
-    const t = $I('tb-tbl');
-    const cols = [...t.rows[0].querySelectorAll('input')].map(i=>i.value.trim());
-    const rows = [...t.rows].slice(1).map(tr=>({
-      c:[...tr.querySelectorAll('input')].map(i=>i.value)
-    })).filter(r=>r.c.some(x=>x.trim()));
-    b.data = { cols, rows, note:$I('tb-note').value.trim() };
-  }
-  else if(b.type === 'budget'){ b.data = readBudget(); }
-  else if(b.type === 'schedule'){ b.data = readSchedule(); }
+  const data = readBlockData(b);
+  if(data != null) b.data = data;
   await persistBlocks();
+  clearDraft(EB);
+  /* 자동 버전 보관 — 10분에 한 번, 이전 판 목록에 쌓임 */
+  try {
+    const k='famrev:'+CUR.id, last=Number(localStorage.getItem(k))||0;
+    if(Date.now()-last > 10*60*1000){
+      await addDoc(collection(db,'famRevisions'), {
+        docId:CUR.id, title:CUR.title||'', blocksJson:JSON.stringify(CUR.blocks),
+        at:Timestamp.now(), byUid:CU.uid, byName:CU.name||'', auto:true
+      });
+      localStorage.setItem(k, String(Date.now()));
+    }
+  } catch(e){}
   closeModal();
   renderEdit();
   toast('저장했어요');
@@ -1690,7 +1979,7 @@ window.openRevisions = async function(){
       <td class="c"><button class="btn line sm" onclick="restoreRev('${r.id}')">이 판으로 복원</button></td>
     </tr>`).join('');
     openModal(`
-      <div class="mtitle">🕰 이전 판 (발행할 때마다 보관)</div>
+      <div class="mtitle">🕰 이전 판 (발행·저장 시 자동 보관)</div>
       <div class="tblwrap"><table class="famtbl">
         <tr><th>보관 시각</th><th>발행한 사람</th><th class="c"></th></tr>
         ${rows || '<tr><td colspan="3" style="text-align:center;color:var(--tl);padding:20px">보관된 판이 없어요 — 처음 발행하면 생깁니다.</td></tr>'}
@@ -1747,11 +2036,17 @@ window.delDoc = async function(){
 };
 
 /* ═══ 모달 공용 ═══ */
-window.openModal = function(html, wide){
-  $I('modal-mount').innerHTML = `<div class="mbk" onclick="if(event.target===this)closeModal()">
+window.openModal = function(html, wide, lock){
+  $I('modal-mount').innerHTML = `<div class="mbk" onclick="if(event.target===this${lock?" && false":""})closeModal()">
     <div class="mbox ${wide?'wide':''}">${html}</div></div>`;
 };
 window.closeModal = function(){ $I('modal-mount').innerHTML = ''; };
+/* 2층 모달 — 편집창 위에 겹쳐 뜨는 보조 창 (달력·교사·학생 선택) */
+window.openModal2 = function(html){
+  $I('modal-mount2').innerHTML = `<div class="mbk" style="z-index:210" onclick="if(event.target===this)closeModal2()">
+    <div class="mbox">${html}</div></div>`;
+};
+window.closeModal2 = function(){ $I('modal-mount2').innerHTML = ''; };
 </script>
 </body>
 </html>
