@@ -1724,26 +1724,31 @@ window.fnPickStudents = async function(cb){
   toast('재학생 명단 불러오는 중…');
   try { await fnLoadRoster(); } catch(e){ toast('명단 로드 실패: '+e.message,'err'); return; }
   const cls=sid=>FN_CLASSES.find(c=>(c.students||[]).includes(sid))||null;
+  // 학년별 그룹 (반 문서의 grades[학생] → 없으면 반의 grade → 없으면 미지정)
+  const gradeOf=sid=>{ const c=cls(sid); if(!c) return '';
+    return (c.grades&&c.grades[sid])||c.grade||''; };
   const groups={};
-  FN_STUDENTS.forEach(st=>{ const c=cls(st.id); const k=c?c.name:'반 미배정';
-    (groups[k]=groups[k]||{c,list:[]}).list.push(st); });
-  const gkeys=Object.keys(groups).sort((a,b)=>a.localeCompare(b,'ko',{numeric:true}));
-  const html=gkeys.map(g=>{
-    const G=groups[g];
-    const tn=G.c?(STAFF||[]).find(t=>t.uid===G.c.teacherUid)?.name:'';
-    return `<div class="fnp-grp">
+  FN_STUDENTS.forEach(st=>{ const k=gradeOf(st.id)||'학년 미지정';
+    (groups[k]=groups[k]||[]).push(st); });
+  const gkeys=Object.keys(groups).sort((a,b)=>{
+    if(a==='학년 미지정') return 1; if(b==='학년 미지정') return -1;
+    return a.localeCompare(b,'ko',{numeric:true});
+  });
+  const html=gkeys.map(g=>`<div class="fnp-grp">
       <label class="fnp-gh"><input type="checkbox" data-gall="${esc(g)}" checked> ${esc(g)}
-        <span class="fnp-cnt">${G.list.length}명${tn?' · 담임 '+esc(tn):''}</span></label>
-      <div class="fnp-list">${G.list.map(st=>`
+        <span class="fnp-cnt">${groups[g].length}명</span></label>
+      <div class="fnp-list">${groups[g].map(st=>`
         <label class="fnp-it"><input type="checkbox" data-g="${esc(g)}" checked
           data-gen="${st.gender||''}" value="${esc(st.name||'')}">
           ${esc(st.name||'')}<span class="fnp-gd ${st.gender==='남'?'m':st.gender==='여'?'f':''}">${st.gender||''}</span></label>`).join('')}</div>
-    </div>`;}).join('');
+    </div>`).join('');
   openModal2(`
     <div class="mtitle">👥 재학생 명단 선택 <span class="fnp-cnt" id="fu-n"></span></div>
-    <div class="msub">현재 재학생 기준이에요. 참가하지 않는 학생만 체크를 풀면 됩니다.</div>
+    <div class="msub">현재 재학생 · 학년별 기준이에요. 참가하지 않는 학생만 체크를 풀면 됩니다.</div>
     <div class="fnp-wrap">${html||'<div class="msub">재학생이 없어요.</div>'}</div>
-    <label class="fnp-it" style="margin-top:8px"><input type="checkbox" id="fu-names"> 반별 이름도 함께 넣기</label>
+    <label class="fnp-it" style="margin-top:8px"><input type="checkbox" id="fu-tbl" checked>
+      📋 「참가 학생 명단」 표 블록을 통신문에 함께 넣기 (학년별 정리)</label>
+    <label class="fnp-it" style="margin-top:4px"><input type="checkbox" id="fu-names"> 인원 칸에 학년별 이름도 함께 넣기</label>
     <div class="mfoot">
       <button class="btn gray" onclick="closeModal2()">취소</button>
       <button class="btn" id="fu-ok">넣기</button>
@@ -1760,20 +1765,37 @@ window.fnPickStudents = async function(cb){
     cnt();
   });
   cnt();
-  $I('fu-ok').onclick=()=>{
+  const pick=g=>[...box.querySelectorAll(`.fnp-it input[data-g="${CSS.escape(g)}"]:checked`)];
+  $I('fu-ok').onclick=async ()=>{
     const {on,m,f}=cnt();
     if(!on.length){ toast('한 명 이상 골라 주세요.','err'); return; }
     let txt=`학생 ${on.length}명 (남 ${m} · 여 ${f})`;
-    // 인솔교사 행이 있으면 교사 수 자동 덧붙임
     const trow=[...document.querySelectorAll('#kv-rows .ed-row')].find(r=>
       /교사|인솔/.test(r.querySelector('[data-f="k"]')?.value||''));
     const tv=trow?.querySelector('[data-f="v"]')?.value.trim();
     if(tv) txt+=`, 교사 ${tv.split(',').filter(x=>x.trim()).length}명`;
     if($I('fu-names').checked){
       txt+='\n'+gkeys.map(g=>{
-        const names=[...box.querySelectorAll(`.fnp-it input[data-g="${CSS.escape(g)}"]:checked`)].map(c=>c.value);
+        const names=pick(g).map(c=>c.value);
         return names.length?`· ${g}: ${names.join(', ')}`:'';
       }).filter(Boolean).join('\n');
+    }
+    // 📋 「참가 학생 명단」 표 블록 자동 생성/갱신
+    if($I('fu-tbl').checked){
+      const rows=gkeys.map(g=>{
+        const sel=pick(g); if(!sel.length) return null;
+        const gm=sel.filter(c=>c.dataset.gen==='남').length;
+        const gf=sel.filter(c=>c.dataset.gen==='여').length;
+        return { c:[g, `${sel.length}명 (남 ${gm} · 여 ${gf})`, sel.map(c=>c.value).join(', ')] };
+      }).filter(Boolean);
+      rows.push({ c:['합계', `${on.length}명 (남 ${m} · 여 ${f})`, ''] });
+      const data={ cols:['학년','인원','명단'], rows, note:'' };
+      const ex=CUR.blocks.findIndex(b=>b.key==='fnRoster');
+      if(ex>=0){ CUR.blocks[ex].data=data; }
+      else CUR.blocks.splice(EB+1, 0,
+        { id:rid(8), key:'fnRoster', type:'table', title:'참가 학생 명단', pub:true, data });
+      try { await persistBlocks(); } catch(e){}
+      toast(ex>=0?'「참가 학생 명단」 표를 갱신했어요':'「참가 학생 명단」 표 블록을 넣었어요 — 저장 후 확인해 보세요');
     }
     cb(txt); closeModal2();
   };
@@ -2151,7 +2173,7 @@ window.openModal = function(html, wide, lock){
 window.closeModal = function(){ $I('modal-mount').innerHTML = ''; };
 /* 2층 모달 — 편집창 위에 겹쳐 뜨는 보조 창 (달력·교사·학생 선택) */
 window.openModal2 = function(html){
-  $I('modal-mount2').innerHTML = `<div class="mbk" style="z-index:210" onclick="if(event.target===this)closeModal2()">
+  $I('modal-mount2').innerHTML = `<div class="mbk" style="z-index:400" onclick="if(event.target===this)closeModal2()">
     <div class="mbox">${html}</div></div>`;
 };
 window.closeModal2 = function(){ $I('modal-mount2').innerHTML = ''; };
