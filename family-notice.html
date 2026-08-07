@@ -100,6 +100,7 @@
 .sv-pal{background:var(--iv);border-radius:9px;padding:9px 10px}
 .sv-lb{font-size:11px;font-weight:800;color:var(--ts);white-space:nowrap}
 .sv-tin{width:62px;text-align:center;padding:6px 4px}
+.sv-sel{width:86px;flex:none;padding:6px 6px}
 .sv-durs{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .sv-dur{font-size:11px;font-weight:700;border:1px solid var(--ivd);background:var(--wh);color:var(--ts);
   border-radius:100px;padding:4px 9px;cursor:pointer;white-space:nowrap}
@@ -107,12 +108,17 @@
 .sv-dots{display:flex;gap:4px}
 .sv-dot{width:17px;height:17px;border-radius:50%;border:1px solid var(--ivd);cursor:pointer;box-sizing:border-box}
 .sv-dot.on{border:2px solid var(--gm)}
-.sv-tray{display:flex;gap:6px;flex-wrap:wrap;min-height:34px;align-items:center;
-  border:1.5px dashed var(--ivd);border-radius:9px;padding:6px 9px;margin-bottom:8px}
+.sv-tray{display:flex;flex-direction:column;gap:6px;min-height:40px;justify-content:center;
+  border:1.5px dashed var(--ivd);border-radius:9px;padding:8px 10px;margin-bottom:8px;background:var(--iv)}
+.sv-trayhd{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:900;color:var(--gd);flex-wrap:wrap}
+.sv-traylist{display:flex;gap:7px;flex-wrap:wrap}
 .sv-trayhint{font-size:11px;color:var(--tl)}
-.sv-tcard{font-size:11.5px;font-weight:700;color:#243029;border:1px solid rgba(30,57,50,.18);border-radius:7px;
-  padding:5px 9px;cursor:grab;user-select:none;touch-action:none;display:inline-flex;align-items:center;gap:5px}
-.sv-tcard b{font-size:10px;color:#5A6560;font-weight:600}
+.sv-tcard{font-size:12px;font-weight:700;color:#243029;border:1px solid rgba(30,57,50,.2);border-radius:8px;
+  padding:7px 11px;cursor:grab;user-select:none;touch-action:none;display:inline-flex;align-items:center;gap:7px;
+  box-shadow:0 1px 4px rgba(30,57,50,.10)}
+.sv-tcard:active{cursor:grabbing}
+.sv-tcttl{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-tcdur{font-size:10px;color:#405249;font-weight:800;background:rgba(255,255,255,.65);border-radius:100px;padding:2px 7px}
 .sv-tdel{cursor:pointer;color:var(--red);font-size:10px;font-weight:800}
 .sv-ghost{position:fixed;z-index:999;pointer-events:none;font-size:11.5px;font-weight:700;color:#243029;
   border:1px solid rgba(30,57,50,.25);border-radius:7px;padding:5px 9px;box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:.92}
@@ -124,7 +130,7 @@
 .sv-dh{display:flex;align-items:center;gap:3px;padding:5px 5px;border-left:1px solid rgba(255,255,255,.18);box-sizing:border-box}
 .sv-dh input{flex:1;min-width:0;background:rgba(255,255,255,.12);border:none;border-radius:6px;
   color:#fff;font-size:11.5px;font-weight:700;text-align:center;padding:4px 3px;font-family:inherit;outline:none}
-.sv-scroll{max-height:56vh;overflow-y:auto}
+.sv-scroll{max-height:calc(95vh - 330px);min-height:340px;overflow-y:auto}
 .sv-bd{position:relative;display:flex}
 .sv-axis{flex:0 0 56px;position:relative;background:var(--iv);border-right:1px solid var(--ivd)}
 .sv-hl{position:absolute;right:6px;transform:translateY(-6px);font-size:9.5px;font-weight:800;color:var(--ts)}
@@ -136,6 +142,7 @@
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:1px 3px;
   box-sizing:border-box;user-select:none;touch-action:none;transition:box-shadow .1s}
 .sv-card.sel{box-shadow:0 0 0 2px var(--gm), 0 4px 12px rgba(0,0,0,.14);z-index:5}
+.sv-card.bad{box-shadow:0 0 0 2.5px var(--red), 0 4px 14px rgba(192,57,43,.35);background:var(--redp) !important;z-index:6}
 .sv-ctt{font-size:10.5px;font-weight:700;color:#243029;text-align:center;line-height:1.25;word-break:keep-all;pointer-events:none}
 .sv-ctm{font-size:8.5px;color:#5A6560;font-weight:600;pointer-events:none}
 .sv-rz{position:absolute;left:0;right:0;bottom:0;height:7px;cursor:ns-resize}
@@ -166,6 +173,7 @@
 .mbox{background:var(--wh);border-radius:15px;width:100%;max-width:600px;max-height:90vh;
   overflow-y:auto;padding:19px 18px;box-shadow:0 18px 60px rgba(0,0,0,.3)}
 .mbox.wide{max-width:860px}
+.mbox.full{max-width:97vw;width:97vw;height:95vh;max-height:95vh}
 .mtitle{font-size:15px;font-weight:900;color:var(--gd);margin-bottom:12px}
 .msub{font-size:11.5px;color:var(--ts);margin:-8px 0 12px;line-height:1.6}
 .frow{margin-bottom:11px}
@@ -336,7 +344,8 @@ const canOwn  = d => canFamAdmin() || (d && d.ownerUid === CU.uid);
 const canEdit = d => canOwn(d) || (d && Array.isArray(d.editors) && d.editors.includes(CU.uid));
 
 /* 스케줄 칸 색 팔레트 (0 = 없음) */
-const SCH_COLORS = ['', '#FDECEC', '#FFF4E0', '#FFF9D6', '#E6F3E6', '#E3EDF7', '#EFE6F5'];
+const SCH_COLORS = ['', '#FDECEC', '#FFF4E0', '#FFF9D6', '#E6F3E6', '#E3EDF7', '#EFE6F5',
+  '#FFE4EF', '#E0F7FA', '#F3E8FF', '#FFEFD9', '#DCFCE7', '#DBEAFE', '#FEF3C7', '#FDE2E4', '#E2E8F0', '#D1FAE5', '#EDE9FE'];
 
 /* 📜 활동 로그 */
 async function logAct(action, detail){
@@ -932,7 +941,7 @@ window.editBlock = function(i, useDraft){
     <div class="mfoot">
       <button class="btn gray" onclick="closeModal()">닫기 (임시 저장됨)</button>
       <button class="btn" onclick="saveBlock()">저장</button>
-    </div>`, true, true);
+    </div>`, bb.type==='schedule' ? 'wide full' : true, true);
   bindAutosave();
   if(bb.type==='budget') budgetLive();
   if(bb.type==='schedule') svInit();
@@ -1198,6 +1207,9 @@ const svT2M = s=>{ const m=/^(\d{1,2}):(\d{2})$/.exec(String(s||'').trim()); ret
 const svM2T = v=>Math.floor(v/60)+':'+String(v%60).padStart(2,'0');
 const svRid = ()=> 'c'+Math.random().toString(36).slice(2,9);
 const svSnap = (v,fine)=>{ const u=fine?5:10; return Math.round(v/u)*u; };
+const svTimeOpts=(from,to,cur)=>{ let h='';
+  for(let m=from;m<=to;m+=30) h+=`<option value="${m}"${m===cur?' selected':''}>${svM2T(m)}</option>`;
+  return h; };
 
 function svFromData(d){
   d = d||{};
@@ -1235,9 +1247,9 @@ function edSchedule(b){
       놓은 카드는 끌어서 옮기고, 아래 모서리로 길이를, 클릭해서 제목·색·가로 폭을 바꿔요.</div>
     <div class="sv-top">
       <span class="sv-lb">표 범위</span>
-      <input class="fin sv-tin" id="sv-st" value="${svM2T(SV.start)}">
+      <select class="fin sv-sel" id="sv-st">${svTimeOpts(0,1410,SV.start)}</select>
       <span style="color:var(--tl)">~</span>
-      <input class="fin sv-tin" id="sv-en" value="${svM2T(SV.end)}">
+      <select class="fin sv-sel" id="sv-en">${svTimeOpts(60,1440,SV.end)}</select>
       <button class="ed-mini" onclick="svRange()">적용</button>
       <span style="flex:1"></span>
       <button class="ed-mini" onclick="svAddDay()">＋ 요일 열 추가</button>
@@ -1260,6 +1272,7 @@ function edSchedule(b){
       <span id="sv-ew" style="font-weight:800;font-size:12px">1일</span>
       <button class="ed-mini" onclick="svSpan(1)">＋</button>
       <span id="sv-etm" style="font-size:11px;color:var(--ts)"></span>
+      <button class="ed-mini" onclick="svToTray(SVsel)" title="표에서 빼서 보관함으로 (우클릭과 같음)">📥 보관함으로</button>
       <button class="ed-mini" style="color:var(--red);border-color:var(--red)" onclick="svDel()">삭제</button>
     </div>
     <div class="sv-wrap">
@@ -1301,6 +1314,26 @@ function svPaint(){
   svPaintTray();
   svPaintCed();
 }
+/* 겹침 검사: 같은 요일 범위 + 시간 범위가 겹치는 다른 카드가 있는가 */
+function svOverlap(card, ignoreId){
+  const d1=card.d, w1=card.w||1;
+  return SV.cards.some(o=>{
+    if(o.id===ignoreId || o.id===card.id) return false;
+    const d2=o.d, w2=o.w||1;
+    const dayHit = d1 < d2+w2 && d2 < d1+w1;
+    const timeHit = card.s < o.e && o.s < card.e;
+    return dayHit && timeHit;
+  });
+}
+/* 배치된 카드를 보관함으로 회수 */
+function svToTray(id){
+  const c=SV.cards.find(x=>x.id===id); if(!c) return;
+  SVtray.push({id:svRid(), t:c.t||'', dur:Math.max(5,c.e-c.s), c:c.c|0});
+  SV.cards=SV.cards.filter(x=>x.id!==id);
+  if(SVsel===id) SVsel=null;
+  svPaint();
+  toast('카드를 보관함으로 옮겼어요');
+}
 function svCardHTML(c,n){
   const w=Math.max(1,Math.min(n-c.d,c.w||1));
   const top=(c.s-SV.start)*SV_PX, h=Math.max(7,(c.e-c.s)*SV_PX);
@@ -1313,11 +1346,16 @@ function svCardHTML(c,n){
 }
 function svPaintTray(){
   const tr = $I('sv-tray');
+  const fmt=m=>m>=60?(Math.floor(m/60)+'시간'+(m%60?' '+m%60+'분':'')):m+'분';
   tr.innerHTML = SVtray.length
-    ? SVtray.map(c=>`<span class="sv-tcard" data-tid="${c.id}" style="background:${SCH_COLORS[c.c]||'#fff'}">
-        ${esc(c.t||'(제목 없음)')} <b>${c.dur>=60?(Math.floor(c.dur/60)+'시간'+(c.dur%60?' '+c.dur%60+'분':'')):c.dur+'분'}</b>
-        <span class="sv-tdel" data-tdel="${c.id}">✕</span></span>`).join('')
-    : `<span class="sv-trayhint">만든 카드가 여기에 담겨요 — 표로 끌어다 놓으세요</span>`;
+    ? `<div class="sv-trayhd">🗂 카드 보관함 <span class="fnp-cnt">${SVtray.length}장</span>
+         <span class="sv-trayhint" style="margin-left:6px">표로 끌어다 놓으세요 · 배치된 카드는 우클릭하면 여기로 돌아와요</span></div>
+       <div class="sv-traylist">${SVtray.map(c=>`
+         <span class="sv-tcard" data-tid="${c.id}" style="background:${SCH_COLORS[c.c]||'#fff'}">
+           <span class="sv-tcttl">${esc(c.t||'(제목 없음)')}</span>
+           <span class="sv-tcdur">${fmt(c.dur)}</span>
+           <span class="sv-tdel" data-tdel="${c.id}">✕</span></span>`).join('')}</div>`
+    : `<span class="sv-trayhint">🗂 카드 보관함 — 위에서 카드를 만들면 여기에 담겨요. 배치된 카드를 우클릭해도 여기로 돌아옵니다.</span>`;
 }
 function svPaintCed(){
   const box=$I('sv-ced'); if(!box) return;
@@ -1344,8 +1382,8 @@ window.svMake = function(){
   svPaintTray();
 };
 window.svRange = function(){
-  const s=svT2M($I('sv-st').value), e=svT2M($I('sv-en').value);
-  if(s==null||e==null||e-s<60){ toast('범위는 H:MM 형식, 최소 1시간이어야 해요.','err'); return; }
+  const s=Number($I('sv-st').value), e=Number($I('sv-en').value);
+  if(!Number.isFinite(s)||!Number.isFinite(e)||e-s<60){ toast('범위는 최소 1시간이어야 해요.','err'); return; }
   SV.start=s; SV.end=e;
   SV.cards=SV.cards.filter(c=>c.e>s && c.s<e).map(c=>({...c,s:Math.max(s,c.s),e:Math.min(e,c.e)}));
   svPaint();
@@ -1383,6 +1421,11 @@ function svInit(){
       if(e.target.id==='sv-et'){ const c=SV.cards.find(x=>x.id===SVsel); if(c){ c.t=e.target.value; const el=document.querySelector(`.sv-card[data-id="${c.id}"] .sv-ctt`); if(el) el.textContent=c.t||'(제목 없음)'; } }
     });
     mount.addEventListener('pointerdown', svDown);
+    mount.addEventListener('contextmenu', e=>{
+      if(!SV || !$I('sv-cols')) return;
+      const el=e.target.closest('.sv-card');
+      if(el){ e.preventDefault(); svToTray(el.dataset.id); }
+    });
     window.addEventListener('pointermove', svMove);
     window.addEventListener('pointerup', svUp);
   }
@@ -1409,11 +1452,11 @@ function svDown(e){
   if(!SV || !$I('sv-cols')) return;
   const rz=e.target.closest('.sv-rz');
   if(rz){ const c=SV.cards.find(x=>x.id===rz.dataset.id); if(!c) return;
-    SVdrag={mode:'resize',id:c.id}; SVsel=c.id; e.preventDefault(); return; }
+    SVdrag={mode:'resize',id:c.id,orig:{d:c.d,w:c.w||1,s:c.s,e:c.e}}; SVsel=c.id; e.preventDefault(); return; }
   const el=e.target.closest('.sv-card');
   if(el){ const c=SV.cards.find(x=>x.id===el.dataset.id); if(!c) return;
     const p=svXY(e);
-    SVdrag={mode:'move',id:c.id,offMin:p.min-c.s,offDay:p.day-c.d,moved:false};
+    SVdrag={mode:'move',id:c.id,offMin:p.min-c.s,offDay:p.day-c.d,moved:false,orig:{d:c.d,w:c.w||1,s:c.s,e:c.e}};
     e.preventDefault(); return; }
   const tc=e.target.closest('.sv-tcard');
   if(tc && !e.target.closest('[data-tdel]')){
@@ -1460,6 +1503,7 @@ function svMove(e){
 }
 function svLive(c){
   const el=document.querySelector(`.sv-card[data-id="${c.id}"]`); if(!el) return;
+  el.classList.toggle('bad', svOverlap(c, c.id));
   const n=SV.days.length, w=Math.max(1,Math.min(n-c.d,c.w||1));
   el.style.left=`calc(${c.d/n*100}% + 1px)`;
   el.style.width=`calc(${w/n*100}% - 3px)`;
@@ -1479,11 +1523,22 @@ function svUp(e){
       const fine=e.ctrlKey||e.metaKey;
       let s=Math.max(SV.start,Math.min(SV.end-drag.tray.dur,svSnap(p.min,fine)));
       const c={id:svRid(),d:p.day,w:1,s,e:Math.min(SV.end,s+drag.tray.dur),t:drag.tray.t,c:drag.tray.c};
-      SV.cards.push(c); SVtray=SVtray.filter(x=>x.id!==drag.tray.id); SVsel=c.id;
+      if(svOverlap(c,null)){ toast('그 자리에 이미 카드가 있어요 — 빈 곳에 놓아 주세요.','err'); }
+      else { SV.cards.push(c); SVtray=SVtray.filter(x=>x.id!==drag.tray.id); SVsel=c.id; }
     }
     svPaint(); return;
   }
-  if(drag.mode==='move'&&!drag.moved){ SVsel=drag.id; }   // 클릭 = 선택
+  const cc=SV.cards.find(x=>x.id===drag.id);
+  if(cc && (drag.mode==='move'||drag.mode==='resize') && drag.moved!==false && svOverlap(cc,cc.id)){
+    if(drag.mode==='move'&&!drag.moved){ SVsel=drag.id; svPaint(); return; }
+    Object.assign(cc, drag.orig);                      // 겹치면 원래 자리로
+    toast('그 자리에 이미 카드가 있어요 — 원래 자리로 돌아갔어요.','err');
+  }
+  else if(cc && drag.mode==='draw' && svOverlap(cc,cc.id)){
+    SV.cards=SV.cards.filter(x=>x.id!==cc.id); SVsel=null;   // 그리기 취소
+    toast('그 자리에 이미 카드가 있어요.','err');
+  }
+  else if(drag.mode==='move'&&!drag.moved){ SVsel=drag.id; }   // 클릭 = 선택
   else if(drag.mode==='draw'){ SVsel=drag.id; setTimeout(()=>{ const i=$I('sv-et'); if(i) i.focus(); },30); }
   svPaint();
 }
@@ -2037,8 +2092,9 @@ window.delDoc = async function(){
 
 /* ═══ 모달 공용 ═══ */
 window.openModal = function(html, wide, lock){
+  const cls = wide===true ? 'wide' : (wide||'');
   $I('modal-mount').innerHTML = `<div class="mbk" onclick="if(event.target===this${lock?" && false":""})closeModal()">
-    <div class="mbox ${wide?'wide':''}">${html}</div></div>`;
+    <div class="mbox ${cls}">${html}</div></div>`;
 };
 window.closeModal = function(){ $I('modal-mount').innerHTML = ''; };
 /* 2층 모달 — 편집창 위에 겹쳐 뜨는 보조 창 (달력·교사·학생 선택) */
