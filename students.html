@@ -1107,7 +1107,15 @@ function exBuildHTML(){
     studs.forEach(s=>{ const c=studentClass(s.id); if(c){ const tn=classTeacherName(c); if(tn) tset.set(c.name+'|'+tn,{cls:c.name,t:tn}); } });
     const teachers=[...tset.values()];
     const tline = teachers.length ? teachers.map(x=> exGroupBy==='class'?x.t:`${x.cls} ${x.t}`).join(', ') : '미지정';
-    const names = studs.map(s=>`${esc(s.name)}<span class="gd ${s.gender==='남'?'m':'f'}">${s.gender||''}</span>`).join('<span class="sep">·</span>');
+    // 남 · 여 · 미지정으로 나눠 5명씩 격자로
+    const boys   = studs.filter(s=>s.gender==='남');
+    const girls  = studs.filter(s=>s.gender==='여');
+    const others = studs.filter(s=>s.gender!=='남' && s.gender!=='여');
+    const nameCell = (s,cls)=>`<span class="nm ${cls}${(s.status||'active')==='leave'?' leave':''}">${esc(s.name)}</span>`;
+    const sec = (list,tag,tcls,ncls)=> list.length
+      ? `<div class="ex-gsec"><span class="ex-gtag ${tcls}">${tag} ${list.length}</span><div class="ex-ngrid">${list.map(s=>nameCell(s,ncls)).join('')}</div></div>`
+      : '';
+    const names = sec(boys,'남','m','m') + sec(girls,'여','f','f') + sec(others,'?','n','');
     return `<tr>
       <td class="exg">${esc(g.label)}</td>
       <td class="exc">${studs.length}<span class="exmf">남${m}·여${f}</span></td>
@@ -1115,6 +1123,11 @@ function exBuildHTML(){
       <td class="exn">${names}</td>
     </tr>`;
   }).join('');
+
+  // 하단 기관명: 추출된 명단에 실제로 포함된 기관만 표시
+  const orgSet = [...new Set(list.map(s=>s.org).filter(Boolean))];
+  const orgLine = orgSet.length ? orgSet.map(o=>ORGS[o]||o).join(' · ')
+                : (ORGS[CU && CU.org] || '');
 
   return `<div class="ex-doc">
     <div class="ex-head">
@@ -1126,12 +1139,12 @@ function exBuildHTML(){
       <thead><tr><th style="width:90px">그룹</th><th style="width:76px">인원</th><th style="width:150px">담임</th><th>명단</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <div class="ex-foot">추출일 ${todayStr()} · 다니엘 아마츠 · 지혜빛</div>
+    <div class="ex-foot">추출일 ${todayStr()}${orgLine?' · '+esc(orgLine):''}</div>
   </div>`;
 }
 
 const EX_CSS = `
-.ex-doc{background:var(--wh);color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;width:960px;padding:34px;box-sizing:border-box;}
+.ex-doc{background:#FFFFFF;color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;width:960px;padding:34px;box-sizing:border-box;}
 .ex-head{text-align:center;margin-bottom:8px;}
 .ex-title{font-size:22px;font-weight:800;color:#1b4332;}
 .ex-sub{font-size:12.5px;color:#8ba396;margin-top:6px;}
@@ -1140,15 +1153,22 @@ const EX_CSS = `
 .ex-tbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
 .ex-tbl th,.ex-tbl td{border:1px solid #d9e2dd;padding:8px 9px;vertical-align:middle;word-break:break-word;}
 .ex-tbl thead th{background:#2d6a4f;color:#fff;font-weight:700;text-align:center;}
-.ex-tbl .exg{background:var(--gp);font-weight:800;color:#1b4332;text-align:center;}
-.ex-tbl .exc{text-align:center;font-weight:800;color:#8a6410;background:var(--gold-bg);}
+.ex-tbl .exg{background:#E8F3EF;font-weight:800;color:#1b4332;text-align:center;}
+.ex-tbl .exc{text-align:center;font-weight:800;color:#8a6410;background:#F7EFD8;}
 .ex-tbl .exc .exmf{display:block;font-size:9.5px;color:#96865a;font-weight:500;margin-top:2px;}
-.ex-tbl .ext{font-size:11px;color:#4a6357;text-align:center;background:var(--gp);}
-.ex-tbl .exn{line-height:1.9;}
-.ex-tbl .exn .gd{font-size:9px;margin-left:2px;padding:1px 4px;border-radius:6px;}
-.ex-tbl .exn .gd.m{background:var(--m-bg);color:var(--m-tx);}
-.ex-tbl .exn .gd.f{background:var(--f-bg);color:var(--f-tx);}
-.ex-tbl .exn .sep{color:#cfd8d3;margin:0 5px;}
+.ex-tbl .ext{font-size:11px;color:#4a6357;text-align:center;background:#E8F3EF;}
+.ex-tbl .exn{padding:6px 8px;}
+.ex-gsec{display:flex;align-items:flex-start;gap:7px;}
+.ex-gsec + .ex-gsec{margin-top:5px;padding-top:5px;border-top:1px dashed #e3ebe6;}
+.ex-gtag{flex:0 0 44px;text-align:center;font-size:10px;font-weight:800;border-radius:7px;padding:3px 0;margin-top:2px;}
+.ex-gtag.m{background:#E6F0FB;color:#2B6CB0;}
+.ex-gtag.f{background:#FCE8F3;color:#D53F8C;}
+.ex-gtag.n{background:#EEF0EE;color:#6b756f;}
+.ex-ngrid{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:3px 6px;}
+.ex-ngrid .nm{font-size:12px;font-weight:600;color:#243029;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:2px 4px;border-radius:5px;}
+.ex-ngrid .nm.m{background:#F3F8FD;}
+.ex-ngrid .nm.f{background:#FDF3F8;}
+.ex-ngrid .nm.leave{opacity:.5;text-decoration:line-through;}
 .ex-foot{text-align:center;font-size:10.5px;color:#a8b5ac;margin-top:14px;}
 `;
 
@@ -1161,7 +1181,7 @@ async function exImage(){
     holder.innerHTML=`<style>${EX_CSS}</style>`+exBuildHTML();
     document.body.appendChild(holder);
     const node=holder.querySelector('.ex-doc');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)'});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#FFFFFF'});
     document.body.removeChild(holder);
     const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`명단추출_${exGroupLabel()}_${todayStr()}.png`; a.click();
     window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
@@ -1178,7 +1198,7 @@ async function exPDF(){
     holder.innerHTML=`<style>${EX_CSS}</style>`+exBuildHTML();
     document.body.appendChild(holder);
     const node=holder.querySelector('.ex-doc');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'var(--wh)'});
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#FFFFFF'});
     document.body.removeChild(holder);
     const { jsPDF }=window.jspdf;
     const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
