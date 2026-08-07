@@ -252,6 +252,21 @@ select.sv-sel{width:96px;min-width:96px;flex:0 0 auto;padding:6px 6px;font-size:
 .cv-botanic .bt.tl{top:10px;left:14px}
 .cv-botanic .bt.br{bottom:10px;right:14px;transform:rotate(180deg)}
 .cv-botanic .cdeco{color:#B98A2F;font-size:13px;margin-bottom:10px}
+/* 시안 13 — 포스터: 배경 이미지 + 어두운 베일 */
+.rv-cover.cv-poster{border:none;border-radius:12px;overflow:hidden;position:relative;
+  background-size:cover;background-position:center;background-color:#1E3932;
+  padding:0;min-height:280px;display:flex;align-items:stretch;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact}
+.cv-poster .po-veil{position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,25,20,.25),rgba(10,25,20,.72))}
+.cv-poster .po-body{position:relative;flex:1;display:flex;flex-direction:column;justify-content:flex-end;
+  padding:40px 24px 30px}
+.cv-poster .cbig{color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.5)}
+.cv-poster .csub{color:rgba(255,255,255,.88)}
+.cv-poster .cmeta{color:rgba(255,255,255,.95)}
+.cv-poster .clogo{background:rgba(255,255,255,.92);border-radius:10px;padding:5px 9px;margin:0 auto 10px}
+/* 표지 편집창 미리보기 */
+.cv-pv{border:1.5px dashed var(--ivd);border-radius:12px;padding:10px;background:var(--iv);
+  max-height:320px;overflow-y:auto;zoom:.62}
 /* 표지 시안 고르기 카드 (편집기) */
 .cv-styles{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:7px}
 .cv-sty{border:1.5px solid var(--ivd);border-radius:10px;padding:9px 11px;cursor:pointer;
@@ -974,6 +989,17 @@ function renderBlock(b){
       <div class="cbig">${esc(d.big||'')}</div>
       ${d.sub?`<div class="csub">${esc(d.sub)}</div>`:''}
       <div class="cmeta">${meta}</div></div>`;
+    if(st==='poster'){
+      const bg = d.bgUrl ? `background-image:url('${esc(d.bgUrl)}')` : '';
+      return `<div class="rv-cover cv-poster" style="${bg}">
+      <div class="po-veil"></div>
+      <div class="po-body">
+        ${logo}
+        ${d.sub?`<div class="csub">${esc(d.sub)}</div>`:''}
+        <div class="cbig">${esc(d.big||'')}</div>
+        <div class="cmeta">${meta}</div>
+      </div></div>`;
+    }
     if(st==='botanic') return `<div class="rv-cover cv-botanic">
       <span class="bt tl">❦</span><span class="bt br">❦</span>
       ${logo}
@@ -1142,6 +1168,14 @@ window.editBlock = function(i, useDraft){
   bindAutosave();
   if(bb.type==='budget') budgetLive();
   if(bb.type==='schedule') svInit();
+  if(bb.type==='cover'){
+    setTimeout(cvPreview, 30);
+    if(!window.__cvPvBound){ window.__cvPvBound=true;
+      $I('modal-mount').addEventListener('input', e=>{
+        if(/^cv-/.test(e.target.id||'')) cvPreview();
+      });
+    }
+  }
 };
 
 /* — cover — */
@@ -1161,6 +1195,7 @@ function edCover(b){
     {k:'seal',     n:'인장',      desc:'기관 도장 워터마크'},
     {k:'outline',  n:'아웃라인',  desc:'큰 윤곽 글자 포인트'},
     {k:'botanic',  n:'보태닉',    desc:'잎 장식 · 따뜻한 크림'},
+    {k:'poster',   n:'포스터',    desc:'배경 이미지 (AI 그림 등)'},
   ];
   const lg = d.logo||'none';
   return `
@@ -1168,11 +1203,11 @@ function edCover(b){
       <div class="cv-styles">${styles.map(x=>`
         <label class="cv-sty${st===x.k?' on':''}">
           <input type="radio" name="cv-style" value="${x.k}" ${st===x.k?'checked':''}
-            onchange="document.querySelectorAll('.cv-sty').forEach(e=>e.classList.remove('on'));this.closest('.cv-sty').classList.add('on')">
+            onchange="document.querySelectorAll('.cv-sty').forEach(e=>e.classList.remove('on'));this.closest('.cv-sty').classList.add('on');$I('cv-bg-row').style.display=this.value==='poster'?'':'none';cvPreview()">
           <b>${x.n}</b><span>${x.desc}</span></label>`).join('')}</div></div>
     <div class="fgrid" style="margin-top:8px">
       <div class="frow"><label class="flab">기관 로고</label>
-        <select class="fsel" id="cv-logo" onchange="$I('cv-logourl-row').style.display=this.value==='url'?'':'none'">
+        <select class="fsel" id="cv-logo" onchange="$I('cv-logourl-row').style.display=this.value==='url'?'':'none';cvPreview()">
           <option value="none" ${lg==='none'?'selected':''}>없음</option>
           <option value="daniel" ${lg==='daniel'?'selected':''}>다니엘 아마츠 로고</option>
           <option value="jihyebit" ${lg==='jihyebit'?'selected':''}>지혜빛 선교원 로고</option>
@@ -1193,7 +1228,12 @@ function edCover(b){
       <div class="frow"><label class="flab">장소</label>
         <input class="fin" id="cv-place" value="${esc(d.place||'')}"></div>
     </div>
-    <div class="msub">시안과 로고는 저장하면 아래 미리보기와 인쇄·학부모 화면에 바로 적용돼요. 인쇄에서는 표지가 첫 장 전체를 차지합니다.</div>`;
+    <div class="frow" id="cv-bg-row" style="margin-top:8px;${(d.style==='poster')?'':'display:none'}">
+      <label class="flab">배경 이미지 주소 (포스터 시안 전용 — AI로 만든 그림 주소를 붙여넣으세요)</label>
+      <input class="fin" id="cv-bgurl" value="${esc(d.bgUrl||'')}" placeholder="https://…/poster.jpg"></div>
+    <div class="frow" style="margin-top:10px"><label class="flab">👁 미리보기 (입력하는 대로 바로 바뀌어요)</label>
+      <div id="cv-preview" class="cv-pv"></div></div>
+    <div class="msub">인쇄에서는 표지가 첫 장 전체를 차지합니다.</div>`;
 }
 /* — text — */
 function edText(b){
@@ -1859,7 +1899,97 @@ function fnFill(ta,v){
 }
 
 /* 기간 선택 (일정) */
-window.cvPickPeriod = function(){ fnPickRange(v=>fnFill($I('cv-period'), v)); };
+/* ═══ 기간 일괄 연동: 표지 · 일반 계획 · 시간 계획 ═══ */
+function fnParsePeriod(v){
+  const ds=[...String(v||'').matchAll(/(?:(\d{4})\.\s*)?(\d{1,2})\.\s*(\d{1,2})\.?/g)]
+    .map(m=>({y:m[1]?+m[1]:null,mo:+m[2],d:+m[3]}));
+  if(!ds.length) return null;
+  const y0=ds[0].y||new Date().getFullYear();
+  const A=new Date(y0,ds[0].mo-1,ds[0].d);
+  let B=A;
+  if(ds.length>1){
+    let y1=ds[1].y||y0;
+    B=new Date(y1,ds[1].mo-1,ds[1].d);
+    if(B<A && !ds[1].y) B=new Date(y0+1,ds[1].mo-1,ds[1].d);
+    if(B<A) B=A;
+  }
+  return [A,B];
+}
+/* 시간 계획의 요일 열을 기간에 맞춰 다시 짠다 (배치된 카드는 최대한 보존) */
+function fnSyncScheduleData(d, A, B){
+  const n = Math.min(14, Math.round((B-A)/86400000)+1);
+  const days=[];
+  for(let i=0;i<n;i++){
+    const t=new Date(A.getTime()+i*86400000);
+    days.push({label:`${t.getMonth()+1}월 ${t.getDate()}일 (${KDAY[t.getDay()]})`});
+  }
+  const cards=(d.cards||[]).filter(c=>c.d<n).map(c=>({...c, w:Math.min(c.w||1, n-c.d)}));
+  return {...d, days, cards};
+}
+/* 고른 기간을 어디까지 적용할지 물어보고 반영한다 */
+window.fnApplyPeriodAll = function(v, ta){
+  fnFill(ta, v);                                       // 지금 칸은 우선 채운다
+  const range=fnParsePeriod(v);
+  const targets=[];
+  const cov=CUR.blocks.find(b=>b.type==='cover');
+  if(cov) targets.push('표지');
+  const kvB=CUR.blocks.find(b=>b.type==='kv' && (b.data?.rows||[]).some(r=>/일정|기간/.test(r.k||'')));
+  if(kvB) targets.push('일반 계획');
+  const schB=CUR.blocks.find(b=>b.type==='schedule');
+  if(schB && range) targets.push('시간 계획 (요일 열 날짜)');
+  if(targets.length<=0){ return; }
+  openModal2(`
+    <div class="mtitle">🔄 기간 일괄 적용</div>
+    <div class="msub"><b style="color:var(--gm)">${esc(v)}</b><br>
+      이 기간을 아래에도 똑같이 적용할까요?<br>
+      <b>${targets.join(' · ')}</b></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal2()">이 칸만</button>
+      <button class="btn" id="pa-ok">모두 적용</button>
+    </div>`);
+  $I('pa-ok').onclick=async ()=>{
+    closeModal2();
+    try {
+      // ① 표지
+      if(cov){ cov.data={...(cov.data||{}), period:v};
+        const el=$I('cv-period'); if(el && el!==ta) el.value=v; }
+      // ② 일반 계획의 일정 줄
+      if(kvB){
+        kvB.data={...(kvB.data||{}), rows:(kvB.data.rows||[]).map(r=>
+          /일정|기간/.test(r.k||'') ? {...r, v} : r)};
+        const row=[...document.querySelectorAll('#kv-rows .ed-row')].find(r=>
+          /일정|기간/.test(r.querySelector('[data-f="k"]')?.value||''));
+        const el=row?.querySelector('[data-f="v"]');
+        if(el && el!==ta){ el.value=v; }
+      }
+      // ③ 시간 계획 요일 열
+      if(schB && range){
+        schB.data=fnSyncScheduleData(schB.data||{}, range[0], range[1]);
+        if(typeof SV!=='undefined' && SV && $I('sv-cols')){   // 편집기가 열려 있으면 화면도 갱신
+          const nd=fnSyncScheduleData({days:SV.days,cards:SV.cards}, range[0], range[1]);
+          SV.days=nd.days; SV.cards=nd.cards; svPaint();
+        }
+      }
+      await persistBlocks();
+      renderEdit();
+      toast('기간을 표지·일반 계획·시간 계획에 모두 적용했어요');
+    } catch(e){ toast('일괄 적용 실패: '+e.message,'err'); }
+  };
+};
+/* 표지 실시간 미리보기 */
+window.cvReadForm = function(){
+  return { big:$I('cv-big')?.value.trim()||'', sub:$I('cv-sub')?.value.trim()||'',
+    period:$I('cv-period')?.value.trim()||'', place:$I('cv-place')?.value.trim()||'',
+    style:(document.querySelector('input[name="cv-style"]:checked')?.value)||'classic',
+    logo:$I('cv-logo')?.value||'none', logoUrl:$I('cv-logourl')?.value.trim()||'',
+    bgUrl:$I('cv-bgurl')?.value.trim()||'' };
+};
+window.cvPreview = function(){
+  const box=$I('cv-preview'); if(!box) return;
+  const d=cvReadForm();
+  box.innerHTML = renderBlock({type:'cover', data:{...d, big:d.big||'(큰 제목)'}}) || '';
+};
+window.cvPickPeriod = function(){ fnPickRange(v=>fnApplyPeriodAll(v, $I('cv-period'))); };
 window.fnPickRange = function(cb){
   openModal2(`
     <div class="mtitle">📅 기간 선택</div>
@@ -2125,7 +2255,7 @@ window.kvSmart = function(btn){
   const k=row.querySelector('[data-f="k"]').value;
   const ta=row.querySelector('[data-f="v"]');
   const put=v=>fnFill(ta,v);
-  if(/일정|기간/.test(k)) return fnPickRange(put);
+  if(/일정|기간/.test(k)) return fnPickRange(v=>fnApplyPeriodAll(v, ta));
   if(/기한|날짜|일자/.test(k)) return fnPickDate(put);
   if(/교사|인솔/.test(k)) return fnPickStaff(put, ta.value);
   if(/인원|학생|명단/.test(k)) return fnPickStudents(put);
@@ -2151,10 +2281,7 @@ function readBlockData(b){
   try {
     if(b.type === 'cover'){
       if(!$I('cv-big')) return null;
-      return { big:$I('cv-big').value.trim(), sub:$I('cv-sub').value.trim(),
-        period:$I('cv-period').value.trim(), place:$I('cv-place').value.trim(),
-        style:(document.querySelector('input[name="cv-style"]:checked')?.value)||'classic',
-        logo:$I('cv-logo')?.value||'none', logoUrl:$I('cv-logourl')?.value.trim()||'' };
+      return cvReadForm();
     }
     if(b.type === 'text'){
       if(!$I('tx-body')) return null;
