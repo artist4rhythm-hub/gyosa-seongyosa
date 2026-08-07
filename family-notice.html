@@ -1543,10 +1543,11 @@ function edSchedule(b){
   return `
     <div class="msub">카드를 만들어 표에 끌어다 놓거나, 표의 빈 곳을 위아래로 드래그해 바로 만들 수 있어요.
       기본 <b>10분</b> 단위로 붙고, <b>Ctrl(⌘)</b>을 누른 채 움직이면 <b>5분</b> 단위로 세밀하게 놓입니다.
-      놓은 카드는 끌어서 옮기고, 아래 모서리로 길이를, 클릭해서 제목·색·가로 폭을 바꿔요.</div>
+      놓은 카드는 끌어서 옮기고, 아래 모서리로 길이를, 클릭해서 제목·색·가로 폭을 바꿔요.
+      요일 열은 <b>수동 관리</b>예요 — 머리글을 눌러 «사전 활동»·«9월 1일 (화)» 등 자유롭게 적고, ＋로 열을 더하세요. 기간 일괄 적용은 이 표의 열을 건드리지 않아요.</div>
     <div class="sv-top">
       <button class="ed-mini" style="border-color:var(--gm);color:var(--gm);font-weight:800"
-        onclick="fnPickRange(v=>fnApplyPeriodAll(v, null))" title="행사 기간을 고르면 요일 열이 날짜로 채워지고, 표지·일반 계획에도 함께 적용할 수 있어요">📅 행사 기간</button>
+        onclick="svFillDates()" title="1번째 열의 날짜를 고르면 지금 있는 열 개수와 카드는 그대로 두고, 열 이름만 그 날부터 순서대로 날짜로 채워요 — 사전·사후 활동 열도 안전합니다">📅 날짜 채우기</button>
       <span class="sv-lb">표 범위</span>
       <select class="fin sv-sel" id="sv-st">${svTimeOpts(0,1410,SV.start)}</select>
       <span style="color:var(--tl)">~</span>
@@ -1690,6 +1691,30 @@ window.svRange = function(){
   SV.start=s; SV.end=e;
   SV.cards=SV.cards.filter(c=>c.e>s && c.s<e).map(c=>({...c,s:Math.max(s,c.s),e:Math.min(e,c.e)}));
   svPaint();
+};
+/* 열 이름만 날짜로 채우기 — 열 수·카드는 절대 건드리지 않는다 */
+window.svFillDates = function(){
+  openModal2(`
+    <div class="mtitle">📅 날짜 채우기</div>
+    <div class="msub">1번째 열의 날짜를 고르면, <b>열 개수와 배치한 카드는 그대로 둔 채</b>
+      열 이름만 그 날부터 순서대로 채워요. (사전 활동일부터 시작해도 됩니다)<br>
+      각 열 이름은 머리글을 눌러 언제든 직접 고칠 수 있어요 — «사전 활동», «사후 모임»처럼요.</div>
+    <div class="frow"><label class="flab">1번째 열 날짜</label><input class="fin" type="date" id="sv-fd"></div>
+    <div class="mfoot">
+      <button class="btn gray" onclick="closeModal2()">취소</button>
+      <button class="btn" id="sv-fd-ok">채우기</button>
+    </div>`);
+  $I('sv-fd-ok').onclick=()=>{
+    const v=$I('sv-fd').value;
+    if(!v){ toast('날짜를 골라 주세요.','err'); return; }
+    const A=new Date(v+'T00:00');
+    SV.days=SV.days.map((d,i)=>{
+      const t=new Date(A.getTime()+i*86400000);
+      return {label:`${t.getMonth()+1}월 ${t.getDate()}일 (${KDAY[t.getDay()]})`};
+    });
+    closeModal2(); svPaint(); saveDraft();
+    toast('열 이름을 날짜로 채웠어요 — 카드는 그대로예요');
+  };
 };
 window.svAddDay = function(){ SV.days.push({label:(SV.days.length+1)+'일차'}); svPaint(); };
 window.svDelDay = function(ci){
@@ -1964,13 +1989,7 @@ window.fnApplyPeriodAll = function(v, ta){
   if(cov) targets.push('표지');
   const kvB=CUR.blocks.find(b=>b.type==='kv' && (b.data?.rows||[]).some(r=>/일정|기간/.test(r.k||'')));
   if(kvB) targets.push('일반 계획');
-  const schB=CUR.blocks.find(b=>b.type==='schedule');
-  if(schB && range) targets.push('시간 계획 (요일 열 날짜)');
-  // 시간 계획 편집기에서 불렀다면 (ta 없음) 요일 열은 바로 반영해 보여준다
-  if(!ta && schB && range && typeof SV!=='undefined' && SV && $I('sv-cols')){
-    const nd=fnSyncScheduleData({days:SV.days,cards:SV.cards}, range[0], range[1]);
-    SV.days=nd.days; SV.cards=nd.cards; svPaint();
-  }
+  // ※ 시간 계획의 요일 열은 사전·사후 활동 열이 있을 수 있어 자동으로 바꾸지 않는다 (수동 관리)
   if(targets.length<=0){ return; }
   openModal2(`
     <div class="mtitle">🔄 기간 일괄 적용</div>
@@ -1996,17 +2015,9 @@ window.fnApplyPeriodAll = function(v, ta){
         const el=row?.querySelector('[data-f="v"]');
         if(el && el!==ta){ el.value=v; }
       }
-      // ③ 시간 계획 요일 열
-      if(schB && range){
-        schB.data=fnSyncScheduleData(schB.data||{}, range[0], range[1]);
-        if(typeof SV!=='undefined' && SV && $I('sv-cols')){   // 편집기가 열려 있으면 화면도 갱신
-          const nd=fnSyncScheduleData({days:SV.days,cards:SV.cards}, range[0], range[1]);
-          SV.days=nd.days; SV.cards=nd.cards; svPaint();
-        }
-      }
       await persistBlocks();
       renderEdit();
-      toast('기간을 표지·일반 계획·시간 계획에 모두 적용했어요');
+      toast('기간을 표지·일반 계획에 적용했어요 — 시간 계획의 열은 그대로 두었습니다');
     } catch(e){ toast('일괄 적용 실패: '+e.message,'err'); }
   };
 };
