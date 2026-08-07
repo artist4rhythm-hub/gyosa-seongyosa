@@ -1584,7 +1584,7 @@ function edSchedule(b){
       <button class="ed-mini" onclick="svSpan(1)">＋</button>
       <span id="sv-etm" style="font-size:11px;color:var(--ts)"></span>
       <button class="ed-mini" onclick="svDup()" title="같은 카드를 보관함에 복제">⧉ 복제</button>
-      <button class="ed-mini" onclick="svToTray(SVsel)" title="표에서 빼서 보관함으로 (우클릭과 같음)">📥 보관함으로</button>
+      <button class="ed-mini" onclick="svToTraySel()" title="표에서 빼서 보관함으로 (우클릭과 같음)">📥 보관함으로</button>
       <button class="ed-mini" style="color:var(--red);border-color:var(--red)" onclick="svDel()">삭제</button>
     </div>
     <div class="sv-wrap">
@@ -1606,7 +1606,7 @@ function svPaint(){
   const hd = $I('sv-hd');
   hd.innerHTML = `<div class="sv-corner">시간</div>` + SV.days.map((dy,ci)=>
     `<div class="sv-dh" style="width:calc((100% - 56px)/${n})">
-      <input value="${esc(dy.label)}" data-day="${ci}" oninput="SV.days[${ci}].label=this.value">
+      <input value="${esc(dy.label)}" data-day="${ci}" oninput="svDayLabel(${ci}, this.value)">
       <button class="ed-mini" onclick="svDelDay(${ci})" title="이 열 빼기">✕</button></div>`).join('');
   const ax = $I('sv-axis'); let a='';
   for(let m=Math.ceil(SV.start/60)*60; m<=SV.end; m+=60)
@@ -1729,6 +1729,10 @@ window.svFillDates = function(){
   };
 };
 window.svAddDay = function(){ SV.days.push({label:(SV.days.length+1)+'일차'}); svPaint(); };
+/* 요일 열 이름 입력 — 인라인 핸들러(전역)에서 모듈 SV로 안전하게 반영 */
+window.svDayLabel = function(ci, v){
+  if(SV && SV.days && SV.days[ci]) SV.days[ci].label = v;
+};
 window.svDelDay = function(ci){
   if(SV.days.length<=1) return;
   SV.days.splice(ci,1);
@@ -1783,6 +1787,7 @@ function svConfirmNew(c){
   $I('cn-ok').onclick=make;
   $I('cn-t').addEventListener('keydown',e=>{ if(e.key==='Enter') make(); });
 }
+window.svToTraySel = function(){ if(SVsel) svToTray(SVsel); };
 window.svDup = function(){
   const c=SV.cards.find(x=>x.id===SVsel); if(!c) return;
   SVtray.push({id:svRid(), t:c.t||'', st:c.st||'', dur:Math.max(5,c.e-c.s), c:c.c|0});
