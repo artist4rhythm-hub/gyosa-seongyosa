@@ -3049,11 +3049,117 @@ window.setReportSem = setReportSem;
 // ═══════════════════════════════════════════
 // PAYMENTS[docId="org_semester"] = { [sid]: {deposit:{checked,amount,date}, refund:{checked,amount,date}} }
 let PAYMENTS = {};       // 현재 화면의 학생별 입금/환급 상태
+let PAY_STUDS = [];      // 현재 화면의 학생 목록 (담임 알림용)
 let PARENT_ACCOUNTS = {}; // 학부모가 입력한 환급 계좌 {학생ID: {bank,holder,account}}
 let payOrg = '', paySem = '';
 let payDirty = false;
 
 function payDocId(){ return `${payOrg}_${paySem}`; }
+
+
+/* ═══ 📨 담임에게 미처리 현황 보내기 ═══
+   미입금·미환급·계좌 미입력 학생을 반(담임)별로 묶어 쪽지로 보낸다 */
+function payPendingByTeacher(){
+  const groups = {};   // uid → {uid,name,items:[{s,type,amt,noAcct}]}
+  PAY_STUDS.forEach(st=>{
+    const p = PAYMENTS[st.id] || {};
+    const netv = st.charge - st.refund;
+    let item = null;
+    if(netv > 0 && !(p.deposit && p.deposit.checked))
+      item = { s:st, type:'미입금', amt:netv };
+    else if(netv < 0 && !(p.refund && p.refund.checked))
+      item = { s:st, type:'미환급', amt:-netv, noAcct: !PARENT_ACCOUNTS[st.id] };
+    if(!item) return;
+    const c = studentClass(st.id);
+    const t = c && STAFF.find(x=>x.uid===c.teacherUid);
+    const key = t ? t.uid : 'none';
+    if(!groups[key]) groups[key] = { uid:t?t.uid:'', name:t?t.name:'담임 미지정', cls:c?c.name:'', items:[] };
+    groups[key].items.push(item);
+  });
+  return groups;
+}
+window.openPendingNotice = function(){
+  const groups = payPendingByTeacher();
+  const keys = Object.keys(groups).sort((a,b)=> (a==='none')-(b==='none')
+    || groups[a].name.localeCompare(groups[b].name,'ko'));
+  const total = keys.reduce((n,k)=>n+groups[k].items.length,0);
+  const old = document.getElementById('pn-mod'); if(old) old.remove();
+  const mv = document.createElement('div');
+  mv.id = 'pn-mod';
+  mv.style.cssText = 'position:fixed;inset:0;z-index:600';
+  const line = it => `• ${esc(it.s.name)} (${esc(it.s.className||it.s.grade||'')}) — ${it.type} ₩${fmt(it.amt)}${it.noAcct?' · ⚠️ 환급 계좌 미입력':''}`;
+  mv.innerHTML = `<div class="mbk" onclick="document.getElementById('pn-mod').remove()"></div>
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(680px,94vw);
+      max-height:88vh;overflow-y:auto;background:var(--wh,#fff);border-radius:16px;padding:20px 19px;
+      box-shadow:0 18px 60px rgba(0,0,0,.3)">
+      <h3 class="actitle" style="margin-bottom:4px">📨 담임에게 미처리 현황 보내기</h3>
+      <p class="adesc" style="margin-bottom:12px">${ORGS[payOrg]||payOrg} · ${semKor(paySem)} — 미처리 <b>${total}명</b>.
+        보낼 담임을 고르고 「보내기」를 누르면 각 담임의 <b>쪽지함</b>으로 반 명단이 갑니다.
+        쪽지 내용은 그대로 학부모 단체방에 전달하기 좋게 작성돼요.</p>
+      ${total===0 ? '<p class="empty">🎉 미처리 학생이 없습니다 — 모두 완료됐어요!</p>' :
+        keys.map(k=>{
+          const g = groups[k];
+          const off = k==='none';
+          return `<div style="border:1.5px solid var(--ivd,#E2E8E4);border-radius:12px;padding:11px 13px;margin-bottom:9px${off?';background:var(--warn-bg,#FDF6EC)':''}">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:13.5px;color:var(--gd,#1E3932);cursor:pointer">
+              ${off?'<span>⚠️</span>':`<input type="checkbox" class="pn-t" value="${esc(k)}" checked style="width:16px;height:16px">`}
+              ${esc(g.name)}${g.cls?` <span style="font-weight:600;color:var(--ts,#5A6560);font-size:12px">· ${esc(g.cls)}</span>`:''}
+              <span style="margin-left:auto;font-size:11px;background:var(--gp,#E8F3EF);color:var(--gm,#1E7A4F);border-radius:100px;padding:2px 9px;font-weight:800">${g.items.length}명</span>
+            </label>
+            <div style="font-size:12px;color:var(--tx,#243029);line-height:1.9;margin:6px 0 0 24px">
+              ${g.items.map(line).join('<br>')}</div>
+            ${off?'<div style="font-size:11px;color:var(--warn,#B8860B);margin:6px 0 0 24px">반 편성에서 담임이 지정되지 않아 보낼 수 없어요 — 반편성 메뉴에서 담임을 지정해 주세요.</div>':''}
+          </div>`;
+        }).join('')}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button class="bm" onclick="document.getElementById('pn-mod').remove()">닫기</button>
+        ${total? `<button class="btn" id="pn-send" onclick="sendPendingNotices()">📨 선택한 담임에게 보내기</button>`:''}
+      </div>
+    </div>`;
+  document.body.appendChild(mv);
+  window.__pnGroups = groups;
+};
+window.sendPendingNotices = async function(){
+  const groups = window.__pnGroups || {};
+  const picked = [...document.querySelectorAll('.pn-t:checked')].map(c=>c.value)
+    .filter(k=>k!=='none' && groups[k] && groups[k].uid);
+  if(!picked.length){ toast('보낼 담임을 한 명 이상 골라 주세요.','err'); return; }
+  const btn = document.getElementById('pn-send');
+  if(btn){ btn.disabled = true; btn.textContent = '보내는 중…'; }
+  const semL = semKor(paySem);
+  let ok = 0;
+  for(const k of picked){
+    const g = groups[k];
+    const dep = g.items.filter(x=>x.type==='미입금');
+    const ref = g.items.filter(x=>x.type==='미환급');
+    const body =
+`[수행성 경비 미처리 안내] ${ORGS[payOrg]||payOrg} · ${semL}
+
+${g.name} 선생님 반에서 아직 처리되지 않은 학생 ${g.items.length}명입니다.
+${dep.length?`
+💰 미입금 ${dep.length}명
+${dep.map(it=>`• ${it.s.name} (${it.s.className||it.s.grade||''}) — ₩${fmt(it.amt)}`).join('\n')}`:''}${ref.length?`
+
+↩️ 미환급 ${ref.length}명
+${ref.map(it=>`• ${it.s.name} (${it.s.className||it.s.grade||''}) — ₩${fmt(it.amt)}${it.noAcct?' · ⚠️ 환급 계좌 미입력':''}`).join('\n')}`:''}
+
+학부모님께 다시 안내 부탁드립니다 🙏
+· 납부 금액 확인과 환급 계좌 입력은 아래 학부모 안내 링크에서 할 수 있어요.
+${PARENT_LINK_URL}`;
+    try {
+      await addDoc(collection(db,'messages'), {
+        category:'general',
+        fromUid:CU.uid, fromName:CU.name||'', fromOrg:CU.org||'',
+        toUids:[g.uid], toNames:[g.name],
+        subject:`[수행성 경비] ${semL} 미처리 학생 ${g.items.length}명 — 안내 부탁드려요`,
+        body, readBy:[], createdAt:Timestamp.now(),
+      });
+      ok++;
+    } catch(e){ toast(`${g.name} 발송 실패: ${e.message}`,'err'); }
+  }
+  const m = document.getElementById('pn-mod'); if(m) m.remove();
+  if(ok) toast(`담임 ${ok}명에게 미처리 현황 쪽지를 보냈습니다.`,'ok');
+};
 
 async function renderPay(keepState){
   /* keepState=true — 체크 직후 화면만 다시 그린다.
@@ -3123,6 +3229,7 @@ async function renderPay(keepState){
     gradeNum(a.grade)-gradeNum(b.grade)
     || (a.className||'').localeCompare(b.className||'','ko')
     || (a.name||'').localeCompare(b.name||'','ko'));
+  PAY_STUDS = studs;
 
   if(!paySem){
     box.innerHTML = `<div class="acard"><h3 class="actitle">💰 입금·환급 관리</h3>${orgTabs}<p class="empty">등록된 학기가 없습니다.</p></div>`;
@@ -3186,6 +3293,10 @@ async function renderPay(keepState){
           <div style="font-size:20px;font-weight:800;color:${needRefund===0?'var(--tl)':(doneRefund>=needRefund?'var(--ok)':'var(--gd)')}">${doneRefund} / ${needRefund}</div>
           <div style="font-size:11px;color:var(--tl)">${needRefund===0?'환급 대상 없음':(needRefund-doneRefund>0?`${needRefund-doneRefund}명 미환급`:'모두 완료 ✅')}</div>
         </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn" onclick="openPendingNotice()" style="font-size:13px">📨 담임에게 미처리 현황 보내기</button>
+        <span style="font-size:11.5px;color:var(--tl)">미입금·미환급·계좌 미입력 학생을 반별로 묶어 담임 선생님 쪽지함으로 보냅니다 — 보내기 전에 미리 보고 고를 수 있어요.</span>
       </div>
     </div>
 
