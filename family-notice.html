@@ -98,6 +98,8 @@
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:1px 3px;box-sizing:border-box}
 .rv-tg .tg-tt{font-size:10.5px;font-weight:700;color:#243029;text-align:center;line-height:1.3;word-break:keep-all}
 .rv-tg .tg-tm{font-size:8.5px;color:#5A6560;font-weight:600}
+.rv-tg .tg-tt{font-size:11px}
+.rv-tg .tg-st{font-size:9px;font-weight:600;color:#4a5651;line-height:1.2;text-align:center;word-break:keep-all}
 /* ── 시간 계획 v2: 편집 빌더 ── */
 .sv-top,.sv-pal{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px}
 .sv-pal{background:var(--iv);border-radius:9px;padding:9px 10px}
@@ -150,6 +152,10 @@ select.sv-sel{width:96px;min-width:96px;flex:0 0 auto;padding:6px 6px;font-size:
 .sv-card.bad{box-shadow:0 0 0 2.5px var(--red), 0 4px 14px rgba(192,57,43,.35);background:var(--redp) !important;z-index:6}
 .sv-ctt{font-size:10.5px;font-weight:700;color:#243029;text-align:center;line-height:1.25;word-break:keep-all;pointer-events:none}
 .sv-ctm{font-size:8.5px;color:#5A6560;font-weight:600;pointer-events:none}
+.sv-ctt{font-size:11px}
+.sv-cst{font-size:9px;font-weight:600;color:#4a5651;pointer-events:none;line-height:1.2;
+  text-align:center;word-break:keep-all}
+.sv-tcst{font-size:10px;font-weight:600;color:#5A6560}
 .sv-rz{position:absolute;left:0;right:0;bottom:0;height:7px;cursor:ns-resize}
 .draftbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;font-weight:800;color:var(--amber);
   background:var(--amberp);border:1px solid var(--amber);border-radius:9px;padding:8px 11px;margin-bottom:10px}
@@ -1141,7 +1147,8 @@ function renderScheduleV2(d){
     const showTime = h>=30;
     return `<div class="tg-card" style="left:${dd/n*100}%;width:${w/n*100}%;top:${top}px;height:${h}px;background:${bg}">
       ${showTime?`<span class="tg-tm">${m2t(s)}~${m2t(e)} · ${(e-s)>=60?Math.floor((e-s)/60)+'시간'+((e-s)%60?' '+((e-s)%60)+'분':''):(e-s)+'분'}</span>`:''}
-      <span class="tg-tt">${esc(c.t)}</span></div>`;
+      <span class="tg-tt">${esc(c.t)}</span>
+      ${(c.st&&h>=44)?`<span class="tg-st">${esc(c.st)}</span>`:''}</div>`;
   }).join('');
   return `<div style="overflow-x:auto"><div class="rv-tg" style="min-width:${120+n*110}px">
     <div class="tg-hd"><div class="tg-corner">시간</div>
@@ -1515,7 +1522,7 @@ function svFromData(d){
   if(d.ver===2 || Array.isArray(d.cards)){
     return { start:Number.isFinite(d.start)?d.start:420, end:Number.isFinite(d.end)?d.end:1440,
       days:(d.days&&d.days.length?d.days:[{label:'1일차'}]).map(x=>({label:x.label||''})),
-      cards:(d.cards||[]).map(c=>({id:c.id||svRid(),d:c.d|0,w:Math.max(1,c.w|0||1),s:c.s|0,e:c.e|0,t:c.t||'',c:c.c|0})),
+      cards:(d.cards||[]).map(c=>({id:c.id||svRid(),d:c.d|0,w:Math.max(1,c.w|0||1),s:c.s|0,e:c.e|0,t:c.t||'',st:c.st||'',c:c.c|0})),
       note:d.note||'' };
   }
   // ── 옛 형식(slots+cells) → 카드 자동 변환 ──
@@ -1557,7 +1564,8 @@ function edSchedule(b){
       <button class="ed-mini" onclick="svAddDay()">＋ 요일 열 추가</button>
     </div>
     <div class="sv-pal">
-      <input class="fin" id="sv-nt" placeholder="카드 제목 (예: 점심)" style="flex:1;min-width:120px">
+      <input class="fin" id="sv-nt" placeholder="메인 제목 (예: OT & 목사님 생애 1)" style="flex:1.3;min-width:120px">
+      <input class="fin" id="sv-nst" placeholder="부제목 (예: 염근목T)" style="flex:1;min-width:95px;font-size:11.5px">
       <span class="sv-durs" id="sv-durs">
         ${[10,30,60,90,120].map((m,i)=>`<span class="sv-dur${i===2?' on':''}" data-m="${m}">${m<60?m+'분':(m/60)+(m%60?'.5':'')+'시간'}</span>`).join('')}
         <input class="fin sv-tin" id="sv-cm" placeholder="분" style="width:52px" title="직접 입력(분)">
@@ -1567,7 +1575,8 @@ function edSchedule(b){
     </div>
     <div class="sv-tray" id="sv-tray"><span class="sv-trayhint">만든 카드가 여기에 담겨요 — 표로 끌어다 놓으세요</span></div>
     <div class="sv-card-ed" id="sv-ced" style="display:none">
-      <input class="fin" id="sv-et" placeholder="제목" style="flex:1;min-width:110px">
+      <input class="fin" id="sv-et" placeholder="메인 제목" style="flex:1.3;min-width:110px">
+      <input class="fin" id="sv-est" placeholder="부제목 (예: 염근목T)" style="flex:1;min-width:95px;font-size:11.5px">
       <span class="sv-dots" id="sv-edots"></span>
       <span class="sv-lb">가로 폭</span>
       <button class="ed-mini" onclick="svSpan(-1)">－</button>
@@ -1631,7 +1640,7 @@ function svOverlap(card, ignoreId){
 /* 배치된 카드를 보관함으로 회수 */
 function svToTray(id){
   const c=SV.cards.find(x=>x.id===id); if(!c) return;
-  SVtray.push({id:svRid(), t:c.t||'', dur:Math.max(5,c.e-c.s), c:c.c|0});
+  SVtray.push({id:svRid(), t:c.t||'', st:c.st||'', dur:Math.max(5,c.e-c.s), c:c.c|0});
   SV.cards=SV.cards.filter(x=>x.id!==id);
   if(SVsel===id) SVsel=null;
   svPaint();
@@ -1645,6 +1654,7 @@ function svCardHTML(c,n){
     style="left:calc(${c.d/n*100}% + 1px);width:calc(${w/n*100}% - 3px);top:${top}px;height:${h}px;background:${bg}">
     ${h>=34?`<span class="sv-ctm">${svM2T(c.s)}~${svM2T(c.e)} · ${svDur(c.e-c.s)}</span>`:''}
     <span class="sv-ctt">${esc(c.t||'(제목 없음)')}</span>
+    ${(c.st&&h>=46)?`<span class="sv-cst">${esc(c.st)}</span>`:''}
     <div class="sv-rz" data-id="${c.id}"></div></div>`;
 }
 function svPaintTray(){
@@ -1655,7 +1665,7 @@ function svPaintTray(){
          <span class="sv-trayhint" style="margin-left:6px">표로 끌어다 놓으세요 · 배치된 카드는 우클릭하면 여기로 돌아와요</span></div>
        <div class="sv-traylist">${SVtray.map(c=>`
          <span class="sv-tcard" data-tid="${c.id}" style="background:${SCH_COLORS[c.c]||'#fff'}">
-           <span class="sv-tcttl">${esc(c.t||'(제목 없음)')}</span>
+           <span class="sv-tcttl">${esc(c.t||'(제목 없음)')}${c.st?` <span class="sv-tcst">${esc(c.st)}</span>`:''}</span>
            <span class="sv-tcdur">${fmt(c.dur)}</span>
            <span class="sv-tdup" data-tdup="${c.id}" title="복제">⧉</span>
            <span class="sv-tdel" data-tdel="${c.id}">✕</span></span>`).join('')}</div>`
@@ -1667,6 +1677,7 @@ function svPaintCed(){
   if(!c){ box.style.display='none'; return; }
   box.style.display='flex';
   const ti=$I('sv-et'); if(document.activeElement!==ti) ti.value=c.t||'';
+  const si=$I('sv-est'); if(si && document.activeElement!==si) si.value=c.st||'';
   $I('sv-ew').textContent=(c.w||1)+'일';
   $I('sv-etm').textContent=svM2T(c.s)+' ~ '+svM2T(c.e)+' ('+svDur(c.e-c.s)+')';
   $I('sv-edots').innerHTML = SCH_COLORS.map((col,i)=>
@@ -1676,13 +1687,14 @@ function svPaintCed(){
 /* ── 팔레트 · 카드 만들기 ── */
 window.svMake = function(){
   const t=$I('sv-nt').value.trim();
+  const st=$I('sv-nst').value.trim();
   const cm=Number($I('sv-cm').value)||0;
   const on=document.querySelector('#sv-durs .sv-dur.on');
   const dur=Math.max(5, cm || (on?Number(on.dataset.m):60));
   const cdot=document.querySelector('#sv-ndots .sv-dot.on');
   const c=cdot?Number(cdot.dataset.c):SVlastC;
-  SVtray.push({id:svRid(),t,dur,c}); SVlastC=c;
-  $I('sv-nt').value=''; $I('sv-cm').value='';
+  SVtray.push({id:svRid(),t,st,dur,c}); SVlastC=c;
+  $I('sv-nt').value=''; $I('sv-nst').value=''; $I('sv-cm').value='';
   svPaintTray();
 };
 window.svRange = function(){
@@ -1744,8 +1756,10 @@ function svConfirmNew(c){
     <div class="msub"><b>${esc(SV.days[c.d]?.label||'')}</b> · <b>${svM2T(c.s)} ~ ${svM2T(c.e)}</b>
       (${c.e-c.s>=60?Math.floor((c.e-c.s)/60)+'시간'+((c.e-c.s)%60?' '+(c.e-c.s)%60+'분':''):(c.e-c.s)+'분'})
       자리에 카드를 만들까요?</div>
-    <div class="frow"><label class="flab">카드 제목</label>
-      <input class="fin" id="cn-t" placeholder="예: 점심 (휴게소)"></div>
+    <div class="frow"><label class="flab">메인 제목</label>
+      <input class="fin" id="cn-t" placeholder="예: OT & 목사님 생애 1"></div>
+    <div class="frow" style="margin-top:6px"><label class="flab">부제목 (선택)</label>
+      <input class="fin" id="cn-st" placeholder="예: 염근목T"></div>
     <div class="frow" style="margin-top:8px"><label class="flab">색</label>
       <span class="sv-dots" style="flex-wrap:wrap">${SCH_COLORS.map((col,i)=>
         `<span class="sv-dot${i===SVlastC?' on':''}" data-cn="${i}" style="background:${col||'#fff'}"></span>`).join('')}</span></div>
@@ -1761,7 +1775,7 @@ function svConfirmNew(c){
   setTimeout(()=>{ const i=$I('cn-t'); if(i) i.focus(); },30);
   const make=()=>{
     const col=Number(box.querySelector('[data-cn].on')?.dataset.cn)||0;
-    const nc={id:svRid(),d:c.d,w:1,s:c.s,e:c.e,t:$I('cn-t').value.trim(),c:col};
+    const nc={id:svRid(),d:c.d,w:1,s:c.s,e:c.e,t:$I('cn-t').value.trim(),st:$I('cn-st').value.trim(),c:col};
     SVlastC=col;
     SV.cards.push(nc); SVsel=nc.id;
     closeModal2(); svPaint(); saveDraft();
@@ -1771,7 +1785,7 @@ function svConfirmNew(c){
 }
 window.svDup = function(){
   const c=SV.cards.find(x=>x.id===SVsel); if(!c) return;
-  SVtray.push({id:svRid(), t:c.t||'', dur:Math.max(5,c.e-c.s), c:c.c|0});
+  SVtray.push({id:svRid(), t:c.t||'', st:c.st||'', dur:Math.max(5,c.e-c.s), c:c.c|0});
   svPaintTray();
   toast('보관함에 복제했어요 — 원하는 자리로 끌어다 놓으세요');
 };
@@ -1786,6 +1800,12 @@ function svInit(){
     mount.addEventListener('input', e=>{
       if(!$I('sv-cols')) return;
       if(e.target.id==='sv-et'){ const c=SV.cards.find(x=>x.id===SVsel); if(c){ c.t=e.target.value; const el=document.querySelector(`.sv-card[data-id="${c.id}"] .sv-ctt`); if(el) el.textContent=c.t||'(제목 없음)'; } }
+      if(e.target.id==='sv-est'){ const c=SV.cards.find(x=>x.id===SVsel); if(c){ c.st=e.target.value;
+        const card=document.querySelector(`.sv-card[data-id="${c.id}"]`);
+        let el=card?.querySelector('.sv-cst');
+        if(el){ if(c.st) el.textContent=c.st; else el.remove(); }
+        else if(card && c.st){ el=document.createElement('span'); el.className='sv-cst'; el.textContent=c.st;
+          card.insertBefore(el, card.querySelector('.sv-rz')); } } }
     });
     mount.addEventListener('pointerdown', svDown);
     mount.addEventListener('contextmenu', e=>{
@@ -1809,7 +1829,7 @@ function svClick(e){
   if(td){ SVtray=SVtray.filter(x=>x.id!==td.dataset.tdel); svPaintTray(); return; }
   const tp=e.target.closest('[data-tdup]');
   if(tp){ const o=SVtray.find(x=>x.id===tp.dataset.tdup);
-    if(o){ SVtray.push({id:svRid(),t:o.t,dur:o.dur,c:o.c}); svPaintTray(); } return; }
+    if(o){ SVtray.push({id:svRid(),t:o.t,st:o.st||'',dur:o.dur,c:o.c}); svPaintTray(); } return; }
 }
 function svXY(e){
   const r=$I('sv-cols').getBoundingClientRect();
@@ -1893,7 +1913,7 @@ function svUp(e){
     if(p.inside){
       const fine=e.ctrlKey||e.metaKey;
       let s=Math.max(SV.start,Math.min(SV.end-drag.tray.dur,svSnap(p.min,fine)));
-      const c={id:svRid(),d:p.day,w:1,s,e:Math.min(SV.end,s+drag.tray.dur),t:drag.tray.t,c:drag.tray.c};
+      const c={id:svRid(),d:p.day,w:1,s,e:Math.min(SV.end,s+drag.tray.dur),t:drag.tray.t,st:drag.tray.st||'',c:drag.tray.c};
       if(svOverlap(c,null)){ toast('그 자리에 이미 카드가 있어요 — 빈 곳에 놓아 주세요.','err'); }
       else { SV.cards.push(c); SVtray=SVtray.filter(x=>x.id!==drag.tray.id); SVsel=c.id; }
     }
@@ -1920,7 +1940,7 @@ function svUp(e){
 function readSchedule(){
   return { ver:2, start:SV.start, end:SV.end,
     days:SV.days.map(d=>({label:(d.label||'').trim()})),
-    cards:SV.cards.filter(c=>!c._tmp).map(c=>({id:c.id,d:c.d,w:c.w||1,s:c.s,e:c.e,t:(c.t||'').trim(),c:c.c|0}))
+    cards:SV.cards.filter(c=>!c._tmp).map(c=>({id:c.id,d:c.d,w:c.w||1,s:c.s,e:c.e,t:(c.t||'').trim(),st:(c.st||'').trim(),c:c.c|0}))
       .filter(c=>c.e>c.s),
     note:$I('sch-note').value.trim() };
 }
