@@ -84,6 +84,8 @@ const MENU = [
         badge:'message' },
       { key:'board', label:'게시판', icon:'push_pin', href:'board.html',
         desc:'글 · 댓글' },
+      { key:'family', label:'가정통신문', icon:'campaign', href:'family-notice.html',
+        desc:'통신문 작성 · 발행 · 학부모 공유' },
     ]
   },
   {
