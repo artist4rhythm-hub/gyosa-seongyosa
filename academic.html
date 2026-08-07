@@ -258,6 +258,14 @@
   .wcd-lb:last-child, .wcd-d:last-child, .wcd-c:last-child{ border-right:none; }
   .tb-ledger{font-size:10px;font-weight:800;color:#1E5741;background:#E8F3EF;
     border:1px solid #BFD9CD;border-radius:100px;padding:2px 8px;margin-left:6px;vertical-align:1px}
+  .eb-org{display:inline-flex;align-items:center;font-size:8.5px;font-weight:900;color:#fff;
+    border-radius:5px;padding:1px 4px;margin-right:4px;line-height:1.3;flex:0 0 auto;
+    letter-spacing:.3px;vertical-align:1px}
+  /* 함께 보기 — 기관별 주차 두 줄 */
+  .wk-multi{display:flex;flex-direction:column;gap:3px;align-items:center}
+  .wk-multi .wm{display:flex;align-items:baseline;gap:3px;font-size:10.5px;font-weight:800;line-height:1.2}
+  .wk-multi .wm b{font-size:8.5px;font-weight:900;color:#fff;border-radius:4px;padding:1px 4px;align-self:center}
+  .wk-multi .wm .wknum{font-size:14px}
   /* 주차 칸의 📋 버튼 */
   .cw-cdb{ margin-top:5px; border:1px solid var(--ivd); background:var(--wh); color:var(--tl);
     border-radius:6px; font-size:11px; line-height:1; padding:3px 6px; cursor:pointer; font-family:inherit; }
@@ -1026,6 +1034,7 @@ let CU = null;                 // 지금 로그인한 사람
 let CAN_EDIT = false;          // 학사일정을 고칠 수 있는가
 let YEARS = [];                // 만들어 둔 학년도 목록
 let YEAR_INFO = { year:0, label:'', terms:[], breaks:[] };
+let YEAR_MULTI = null;   // 모두 보기: [{org,terms,breaks}] — 기관별 주차 계산용
 let EVENTS = [];
 let curYear = new Date().getFullYear();
 let curMonth = new Date().getMonth()+1;
@@ -1197,12 +1206,28 @@ async function loadYear(year){
       terms: hit.terms||[], breaks: hit.breaks||[] };
   }
   // 📖 학기 원장(출석부와 공유)이 있으면 그것이 주차의 기준이 된다
-  const lt = LEDGER_TERMS
-    .filter(t => (t.org===base) && Number(t.year)===Number(year) && t.start && t.end)
+  const lt = ledgerTermsFor(base, year);
+  if(lt.length) YEAR_INFO.terms = lt;
+  // 「모두 보기」— 기관별 주차를 따로 계산하기 위한 자료
+  YEAR_MULTI = null;
+  if(ORG === ORG_ALL){
+    YEAR_MULTI = myOrgs().map(o=>{
+      const h = ALL_YEARS.find(y=> y.id === yearDocId(year, o))
+             || (o==='daniel' ? ALL_YEARS.find(y=> y.id === String(year) && !y.org) : null);
+      const lo = ledgerTermsFor(o, year);
+      return { org:o,
+        terms: lo.length ? lo : (h?.terms||[]),
+        breaks: h?.breaks||[] };
+    }).filter(x=>x.terms.length || x.breaks.length);
+    if(YEAR_MULTI.length < 2) YEAR_MULTI = null;   // 한 기관뿐이면 기존 방식
+  }
+}
+function ledgerTermsFor(org, year){
+  return LEDGER_TERMS
+    .filter(t => (t.org===org) && Number(t.year)===Number(year) && t.start && t.end)
     .sort((a,b)=>(a.term||0)-(b.term||0))
     .map(t => ({ id:'L:'+t.id, name:(t.term?`${t.term}학기`:(t.name||'학기')),
       start:t.start, end:t.end, ledger:true, term:t.term }));
-  if(lt.length) YEAR_INFO.terms = lt;
 }
 
 async function saveYear(){
@@ -1612,9 +1637,12 @@ function targetDots(e){
 
 /* 두 기관을 겹쳐 볼 때 어느 기관 것인지 표시 */
 function orgMark(e){
-  // 달력에서는 이름만 보이게 한다 (점은 눈에 걸리고 자리만 차지했다)
-  // 어느 기관 일정인지는 행사를 눌러 자세히 보면 알 수 있다
-  return '';
+  // 「모두 보기」에서만 — 어느 기관 일정인지 작은 태그로 구분한다
+  if(ORG !== ORG_ALL) return '';
+  const o = calOf(e);
+  const T = { all:{t:'전체',c:'#00704A'}, daniel:{t:'DA',c:'#2FB344'}, jihyebit:{t:'지혜',c:'#8E4EC6'} };
+  const m = T[o]; if(!m) return '';
+  return `<span class="eb-org" style="background:${m.c}">${m.t}</span>`;
 }
 
 /* 칸의 행사를 눌렀을 때 — 보기 탭이면 상세 카드, 편집 탭이면 편집 창 */
@@ -1723,13 +1751,12 @@ function render(){
 
   /* 그 주에 «가장 여러 날» 걸쳐 있는 학기·방학으로 정한다.
      개학일이 수요일이어도 그 주가 1주차가 되도록. 날수가 같으면 학기가 이긴다. */
-  function weekLabelFor(weekDays){
+  function labelFromSpans(terms, breaks, weekDays){
     const spans = [
-      ...(YEAR_INFO.terms||[]).map(t=>({ ...t, kind:'term' })),
-      ...(YEAR_INFO.breaks||[]).map(b=>({ ...b, kind:'break' })),
+      ...(terms||[]).map(t=>({ ...t, kind:'term' })),
+      ...(breaks||[]).map(b=>({ ...b, kind:'break' })),
     ].filter(s=>s.start && s.end);
     if(!spans.length) return { name:'', num:'' };
-
     let best = null, bestN = 0;
     spans.forEach(s=>{
       let n = 0;
@@ -1739,10 +1766,28 @@ function render(){
       }
     });
     if(!best || !bestN) return { name:'', num:'' };
-
     const anyDay = weekDays.find(x=>x);
     const n = Math.floor((sunOf(anyDay.ds) - sunOf(best.start)) / (7*86400000)) + 1;
     return { name: best.name, num: n > 0 ? n : 1, kind: best.kind };
+  }
+  function weekLabelFor(weekDays){
+    // 「모두 보기」— 두 기관 개학일이 달라도 각자 기준으로 두 줄 표시
+    if(YEAR_MULTI){
+      const T = { daniel:{t:'DA',c:'#2FB344'}, jihyebit:{t:'지혜',c:'#8E4EC6'} };
+      const multi = YEAR_MULTI.map(m=>{
+        const r = labelFromSpans(m.terms, m.breaks, weekDays);
+        return r.name ? { ...r, tag:(T[m.org]?.t||m.org), color:(T[m.org]?.c||'#888') } : null;
+      }).filter(Boolean);
+      if(multi.length >= 2){
+        // 두 기관의 이름·주차가 완전히 같으면 한 줄로 합친다
+        const same = multi.every(x=>x.name===multi[0].name && x.num===multi[0].num);
+        if(same) return multi[0];
+        return { multi };
+      }
+      if(multi.length === 1) return multi[0];
+      return { name:'', num:'' };
+    }
+    return labelFromSpans(YEAR_INFO.terms, YEAR_INFO.breaks, weekDays);
   }
 
   const DOW = ['일','월','화','수','목','금','토'];
@@ -1784,7 +1829,12 @@ function render(){
     const cdBtn = _wkKey
       ? `<button class="cw-cdb ${_cdOn?'on':''}" onclick="toggleWeekCd('${_wkKey}')"
            title="이 주의 학년별 수업일 보기">📋</button>` : '';
-    html += wl.name
+    html += wl.multi
+      ? `<div class="cw-wk term"><div class="wk-multi">
+           ${wl.multi.map(m=>`<span class="wm"><b style="background:${m.color}">${esc(m.tag)}</b>
+             ${esc(PHONE ? wrapName(m.name)[0] : m.name)} <span class="wknum">${m.num}</span>주차</span>`).join('')}
+         </div>${cdBtn}</div>`
+      : wl.name
       ? `<div class="cw-wk ${wl.kind==='break'?'break':'term'}">
            ${wrapName(wl.name).map(s=>`<span class="wk-nm">${esc(s)}</span>`).join('')}
            <span class="wknum">${wl.num}</span><span>주차</span>${cdBtn}</div>`
@@ -3662,7 +3712,13 @@ async function buildSnapshot(audience){
     events = events.filter(e => (e.audience||'both') !== 'teacher');
     events = events.map(e => { const { memo, ...rest } = e; return rest; });   // 교사 메모는 뺀다
   }
-  return { years, events, depts: DEPTS.slice(), holidays };
+  // 📖 학기 원장 — 링크로 들어온 사람은 원장을 직접 읽을 수 없어 스냅샷에 담는다 (주차 계산용)
+  let terms = [];
+  try {
+    const ts = await getDocs(collection(db,'terms'));
+    terms = ts.docs.map(d=>({ id:d.id, ...d.data() }));
+  } catch(e){}
+  return { years, events, depts: DEPTS.slice(), holidays, terms };
 }
 
 async function pushShare(kind){
@@ -3980,6 +4036,7 @@ async function startShareView(){
     DEPTS = snap.depts || ['초등부','중등부','고등부'];
     LEDGER_HOL = snap.holidays || [];   // 공휴일·휴무 — 처음 그릴 때부터 보이도록 미리 채운다
     SHARE_HOL_READY = true;
+    LEDGER_TERMS = snap.terms || [];    // 📖 학기 원장 — 게시 화면에서도 주차가 나오도록
     curView = (d.audience === 'parent') ? 'parent' : 'teacher';
     CAN_EDIT = false;
 
