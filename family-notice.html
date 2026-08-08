@@ -526,12 +526,16 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 /* ═══ 인쇄 ═══ */
 #printArea{display:none}
 @media print{
+  /* 종이 여백을 0으로 — 브라우저가 여백에 찍는 날짜·제목·주소·쪽수가 사라진다.
+     본문 여백은 printArea 패딩으로 직접 준다 */
+  @page{ size:A4; margin:0 }
   body.pr *{visibility:hidden}
   body.pr #printArea, body.pr #printArea *{visibility:visible}
-  body.pr #printArea{display:block;position:absolute;left:0;top:0;width:100%;background:#fff}
+  body.pr #printArea{display:block;position:absolute;left:0;top:0;width:100%;background:#fff;
+    padding:13mm 12mm;box-sizing:border-box}
   #printArea .pblk{page-break-inside:avoid;margin-bottom:18px}
   #printArea .pcover{page-break-after:always;display:flex;flex-direction:column;
-    justify-content:center;min-height:92vh}
+    justify-content:center;min-height:calc(100vh - 26mm)}
   #printArea .pcover .rv-cover{width:100%;box-sizing:border-box;min-height:88vh;
     display:flex;flex-direction:column;justify-content:center;
     -webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -619,7 +623,8 @@ let CU = null;
 let IS_SUPER = false;
 let FAM_ADMIN = false;           // 총괄 담당자 (famConfig/editors)
 let DOCS = [];
-let CUR = null;                  // 지금 열려 있는 통신문 {id, ...data, blocks:[]}
+let CUR = null;
+let DOC_EDIT = false;   // 문서 화면: 기본은 보기(게시) 모드, 「수정하기」로 편집 진입                  // 지금 열려 있는 통신문 {id, ...data, blocks:[]}
 let STAFF = null;
 let STUDENTS = null, CLASSES = null;
 
@@ -912,6 +917,7 @@ window.saveFamAdmins = async function(){
    편집 화면
    ═══════════════════════════════════════════ */
 window.openDoc = async function(id){
+  DOC_EDIT = false;   // 문서는 항상 보기(게시) 화면부터
   const d = DOCS.find(x=>x.id===id);
   if(!d) return;
   CUR = { ...d, blocks: parseBlocks(d) };
@@ -934,7 +940,8 @@ function renderEdit(){
   const st = !pub ? '<span class="pill gray">작성 중</span>'
     : stale ? '<span class="pill req">재발행 필요</span>'
     : '<span class="pill ok">발행됨</span>';
-  const editable = canEdit(CUR);
+  const mayEdit = canEdit(CUR);
+  const editable = mayEdit && DOC_EDIT;
 
   const blocksHtml = CUR.blocks.length
     ? CUR.blocks.map((b,i)=>blockCard(b,i,editable)).join('')
@@ -956,22 +963,33 @@ function renderEdit(){
         · 협력 담당자: ${(CUR.editorNames||[]).map(esc).join(', ')||'없음'}
         · 마지막 수정: ${dtStr(CUR.updatedAt)} ${CUR.updatedBy?`(${esc(CUR.updatedBy)})`:''}</div>
       <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:11px">
-        ${canOwn(CUR)?`<button class="btn line sm" onclick="openMgrModal()">👥 담당자</button>`:''}
-        ${canOwn(CUR)?`<button class="btn sm" onclick="openPublishModal()">🔗 발행</button>`:''}
-        <button class="btn gray sm" onclick="openPrintModal()">🖨 인쇄</button>
-        ${canOwn(CUR)?`<button class="btn gray sm" onclick="openRevisions()">🕰 이전 판</button>`:''}
-        ${canFamAdmin()?`<button class="btn gray sm" onclick="dupDoc()">⧉ 복제</button>`:''}
-        ${canOwn(CUR)?`<button class="btn red sm" onclick="delDoc()">🗑 삭제</button>`:''}
-        ${pub&&CUR.shareId?`<button class="btn gray sm" onclick="copyLink()">📎 링크 복사</button>`:''}
+        ${!DOC_EDIT ? `
+          ${mayEdit?`<button class="btn sm" onclick="setDocEdit(true)">✏️ 수정하기</button>`:''}
+          ${canOwn(CUR)?`<button class="btn line sm" onclick="openPublishModal()">🔗 발행</button>`:''}
+          <button class="btn gray sm" onclick="openPrintModal()">🖨 인쇄</button>
+          ${pub&&CUR.shareId?`<button class="btn gray sm" onclick="copyLink()">📎 공유 링크 복사</button>`:''}
+        ` : `
+          <button class="btn sm" onclick="setDocEdit(false)">👁 보기로 돌아가기</button>
+          ${canOwn(CUR)?`<button class="btn line sm" onclick="openMgrModal()">👥 담당자</button>`:''}
+          ${canOwn(CUR)?`<button class="btn line sm" onclick="openPublishModal()">🔗 발행</button>`:''}
+          <button class="btn gray sm" onclick="openPrintModal()">🖨 인쇄</button>
+          ${canOwn(CUR)?`<button class="btn gray sm" onclick="openRevisions()">🕰 이전 판</button>`:''}
+          ${canFamAdmin()?`<button class="btn gray sm" onclick="dupDoc()">⧉ 복제</button>`:''}
+          ${canOwn(CUR)?`<button class="btn red sm" onclick="delDoc()">🗑 삭제</button>`:''}
+          ${pub&&CUR.shareId?`<button class="btn gray sm" onclick="copyLink()">📎 공유 링크 복사</button>`:''}
+        `}
       </div>
-      ${!editable?`<div class="pdesc" style="margin-top:8px;color:var(--amber)">
+      ${(!mayEdit)?`<div class="pdesc" style="margin-top:8px;color:var(--amber)">
         열람만 가능해요 — 입력하려면 담당자 지정이 필요합니다.</div>`:''}
+      ${(!DOC_EDIT && mayEdit)?`<div class="pdesc" style="margin-top:8px">
+        지금은 <b>게시된 모습 그대로</b> 보는 화면이에요 — 고치려면 「✏️ 수정하기」를 눌러주세요.</div>`:''}
     </div>
     ${blocksHtml}
     ${editable?`<div style="text-align:center;padding:4px 0 12px">
       <button class="btn" onclick="openLibrary()">＋ 블록 추가</button></div>`:''}
   `;
 }
+window.setDocEdit = function(on){ DOC_EDIT = !!on; renderEdit(); };
 window.saveTitle = async function(el){
   const t = el.textContent.trim();
   if(!t || t === CUR.title) { el.textContent = CUR.title; return; }
