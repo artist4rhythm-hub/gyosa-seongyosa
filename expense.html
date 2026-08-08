@@ -3079,6 +3079,7 @@ function payPendingByTeacher(){
   return groups;
 }
 window.openPendingNotice = function(){
+  if(!isExpManager(payOrg)){ toast('수행성 경비 관리자만 쓸 수 있는 기능이에요.','err'); return; }
   const groups = payPendingByTeacher();
   const keys = Object.keys(groups).sort((a,b)=> (a==='none')-(b==='none')
     || groups[a].name.localeCompare(groups[b].name,'ko'));
@@ -3354,10 +3355,11 @@ async function renderPay(keepState){
           <div style="font-size:11px;color:var(--tl)">${needRefund===0?'환급 대상 없음':(needRefund-doneRefund>0?`${needRefund-doneRefund}명 미환급`:'모두 완료 ✅')}</div>
         </div>
       </div>
+      ${isExpManager(payOrg) ? `
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button class="btn" onclick="openPendingNotice()" style="font-size:13px">📨 담임에게 미처리 현황 보내기</button>
         <span style="font-size:11.5px;color:var(--tl)">미입금·미환급·계좌 미입력 학생을 반별로 묶어 담임 선생님 쪽지함으로 보냅니다 — 보내기 전에 미리 보고 고를 수 있어요.</span>
-      </div>
+      </div>` : ''}
     </div>
 
     <div class="acard">
@@ -3383,13 +3385,20 @@ async function renderPay(keepState){
         </div>`; }).join('')}
     </div>
 
+    ${isExpManager(payOrg) ? `
     <div class="acard" style="position:sticky;bottom:0;display:flex;align-items:center;gap:12px;box-shadow:0 -4px 12px rgba(0,0,0,.06)">
       <button class="bp" onclick="savePayments()">💾 입금·환급 저장</button>
       <span id="pay-note" style="font-size:12.5px;color:var(--tl)">변경 후 저장을 눌러 주세요.</span>
-    </div>
+    </div>` : `
+    <div class="acard" style="display:flex;align-items:center;gap:10px;background:var(--iv)">
+      <span style="font-size:16px">👀</span>
+      <span style="font-size:12.5px;color:var(--ts);font-weight:700">현황 보기 전용입니다 — 입금·환급 체크는 <b>수행성 경비 관리자</b>만 할 수 있어요. 수정이 필요하면 경비 관리자에게 요청해 주세요.</span>
+    </div>`}
     <style>
       /* 모든 반이 같은 열 너비를 쓰도록 고정 — 반마다 표 간격이 달라 보이던 문제 해결 */
       .pay-table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;min-width:880px}
+      .pay-ro{gap:8px}
+      .pay-ro-meta{font-size:11.5px;color:var(--ts);font-weight:700;font-variant-numeric:tabular-nums}
       .pay-table col.pc-nm{width:13%}
       .pay-table col.pc-amt{width:15%}
       .pay-table col.pc-dep{width:36%}
@@ -3425,13 +3434,14 @@ function payRow(s){
   const p = PAYMENTS[s.id] || {};
   const netv = s.charge - s.refund;   // 순액
   const absNet = Math.abs(netv);
+  const canPay = isExpManager(payOrg);   // 🔒 수행성 경비 관리자만 입력, 나머지는 현황 보기
 
   // 입금 칸 (순액 + 일 때만 입력, 아니면 회색 -)
   let depCell, netCell;
   if(netv > 0){
     const dep = p.deposit || {};
     netCell = `<span style="color:var(--gm);font-weight:800">₩${won(absNet)}</span> <span class="pay-tag pay-tag-dep">입금</span>`;
-    depCell = `
+    depCell = canPay ? `
       <div class="pay-chk-wrap">
         <input type="checkbox" class="pay-ck" ${dep.checked?'checked':''}
           onchange="togglePay('${s.id}','deposit', this.checked)">
@@ -3439,6 +3449,11 @@ function payRow(s){
           oninput="setPayField('${s.id}','deposit','amount',this.value)" title="입금액 (비우면 순 청구액과 같음)">
         <input type="date" class="pay-in-date" value="${dep.date||''}" oninput="setPayField('${s.id}','deposit','date',this.value)">
         ${dep.checked?'<span class="pay-done">✅ 완료</span>':'<span class="pay-pending">⏳ 미입금</span>'}
+      </div>` : `
+      <div class="pay-chk-wrap pay-ro">
+        ${dep.checked
+          ? `<span class="pay-done">✅ 완료</span><span class="pay-ro-meta">₩${won(dep.amount!=null&&dep.amount!==''?dep.amount:absNet)}${dep.date?' · '+esc(dep.date):''}</span>`
+          : '<span class="pay-pending">⏳ 미입금</span>'}
       </div>`;
   } else {
     depCell = `<div class="pay-cell-none">-</div>`;
@@ -3455,7 +3470,7 @@ function payRow(s){
            <button class="pay-acct-copy" onclick="copyPayAcct('${esc(acc.account||'')}',event)" title="계좌번호 복사">복사</button></div>`
       : `<div class="pay-acct pay-acct-none">계좌 미입력 (학부모 안내 링크에서 입력 요청)</div>`;
     netCell = `<span style="color:var(--info);font-weight:800">₩${won(absNet)}</span> <span class="pay-tag pay-tag-ref">환급</span>`;
-    refCell = `
+    refCell = canPay ? `
       <div class="pay-chk-wrap">
         <input type="checkbox" class="pay-ck" ${ref.checked?'checked':''}
           onchange="togglePay('${s.id}','refund', this.checked)">
@@ -3464,7 +3479,12 @@ function payRow(s){
         <input type="date" class="pay-in-date" value="${ref.date||''}" oninput="setPayField('${s.id}','refund','date',this.value)">
         ${ref.checked?'<span class="pay-done">✅ 완료</span>':'<span class="pay-pending">⏳ 미환급</span>'}
       </div>
-      ${accHtml}`;
+      ${accHtml}` : `
+      <div class="pay-chk-wrap pay-ro">
+        ${ref.checked
+          ? `<span class="pay-done">✅ 완료</span><span class="pay-ro-meta">₩${won(ref.amount!=null&&ref.amount!==''?ref.amount:absNet)}${ref.date?' · '+esc(ref.date):''}</span>`
+          : `<span class="pay-pending">⏳ 미환급</span>${(!acc||!(acc.account||acc.bank))?'<span class="pay-ro-meta" style="color:var(--warn)">계좌 미입력</span>':''}`}
+      </div>`;
   } else {
     refCell = `<div class="pay-cell-none">-</div>`;
   }
@@ -3485,6 +3505,7 @@ function ensurePay(sid, kind){
   return PAYMENTS[sid][kind];
 }
 window.togglePay = function(sid, kind, val){
+  if(!isExpManager(payOrg)){ toast('수행성 경비 관리자만 입금·환급을 체크할 수 있어요.','err'); renderPay(true); return; }
   try {
     const rec = ensurePay(sid, kind);
     rec.checked = (val !== undefined) ? !!val : !rec.checked;
@@ -3500,6 +3521,7 @@ window.togglePay = function(sid, kind, val){
   }
 };
 window.setPayField = function(sid, kind, field, val){
+  if(!isExpManager(payOrg)) return;
   const rec = ensurePay(sid, kind);
   if(field==='amount') rec.amount = val===''? null : Number(val);
   else rec[field] = val;
@@ -3507,6 +3529,7 @@ window.setPayField = function(sid, kind, field, val){
   const note = $I('pay-note'); if(note){ note.textContent='● 저장하지 않은 변경사항이 있습니다.'; note.style.color='var(--warn)'; }
 };
 async function savePayments(){
+  if(!isExpManager(payOrg)){ toast('수행성 경비 관리자만 저장할 수 있어요.','err'); return; }
   if(!paySem){ toast('학기가 없습니다.','err'); return; }
   if(!isExpManager(payOrg) && CU.role!=='super'){ toast('경비 관리자만 저장할 수 있습니다.','err'); return; }
   try {
