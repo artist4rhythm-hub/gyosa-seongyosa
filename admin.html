@@ -675,6 +675,7 @@ async function saveEditStaff(uid) {
   }
 
   const birth = $I('es-birth')?.value || '';
+  const gender = $I('es-gender')?.value || '';
   // 인사정보
   const phone    = ($I('es-phone')?.value    || '').trim();
   const address  = ($I('es-addr')?.value     || '').trim();
@@ -688,13 +689,13 @@ async function saveEditStaff(uid) {
   // 변경 항목 기록 (활동 로그 — 수퍼관리자 열람)
   const beforeS = STAFF_CACHE[uid] || {};
   const diffs = [];
-  const FMAP = {name:'이름',org:'기관',dept:'부서',role:'권한',acStatus:'상태',birth:'생년월일',phone:'휴대폰',address:'주소',hireDate:'입사일',leaveDate:'퇴직일',position:'직책',staffType:'구분',workType:'근무형태',duty:'담당',note:'비고'};
-  const newVals = {name, org, dept, role, acStatus, birth, phone, address, hireDate, leaveDate, position, staffType, workType, duty, note};
+  const FMAP = {name:'이름',org:'기관',dept:'부서',role:'권한',acStatus:'상태',birth:'생년월일',gender:'성별',phone:'휴대폰',address:'주소',hireDate:'입사일',leaveDate:'퇴직일',position:'직책',staffType:'구분',workType:'근무형태',duty:'담당',note:'비고'};
+  const newVals = {name, org, dept, role, acStatus, birth, gender, phone, address, hireDate, leaveDate, position, staffType, workType, duty, note};
   Object.entries(newVals).forEach(([k,v])=>{
     if((beforeS[k]||'') !== (v||'')) diffs.push(`${FMAP[k]}: "${beforeS[k]||'(없음)'}" → "${v||'(삭제)'}"`);
   });
   await updateDoc(doc(db, 'staff', uid), {
-    name, org, orgs, dept, role, acStatus, birth,
+    name, org, orgs, dept, role, acStatus, birth, gender,
     phone, address, hireDate, leaveDate, position, staffType, workType, duty, note
   });
   if(diffs.length && window.logActivity) logActivity('수정','교직원 정보', name, diffs.join(' / '));
@@ -4401,8 +4402,16 @@ function openEditStaff(uid, name, org, dept, role){
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
           <div class="fgrp"><label>이름</label>
             <input id="es-name" type="text" value="${name}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
-          <div class="fgrp"><label>생일 (선택)</label>
-            <input id="es-birth" type="date" value="${cur.birth||''}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+          <div style="display:grid;grid-template-columns:1fr 130px;gap:10px">
+            <div class="fgrp"><label>생일 (선택)</label>
+              <input id="es-birth" type="date" value="${cur.birth||''}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none"></div>
+            <div class="fgrp"><label>성별</label>
+              <select id="es-gender" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
+                <option value=""${!(cur.gender)?' selected':''}>미정</option>
+                <option value="남"${cur.gender==='남'?' selected':''}>남</option>
+                <option value="여"${cur.gender==='여'?' selected':''}>여</option>
+              </select></div>
+          </div>
           <div class="fgrp"><label>권한</label>
             <select id="es-role" onchange="updEditOrgMode()" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none">
               <option value="teacher"${role==='teacher'?' selected':''}>풀타임 교사</option>

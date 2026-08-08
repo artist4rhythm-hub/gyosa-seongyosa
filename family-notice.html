@@ -2813,7 +2813,7 @@ async function agInit(){
   AG = { kind:seed.kind||'team', units,
     pool: all.filter(x=>!used.has(x.id)), sel:null,
     teachers: tnames.map(n=>{ const t=STAFF?.find(x=>x.name===n);
-      return { n, g:t?.gender||'' }; }) };
+      return { n, g:t?.gender||'', uid:t?.uid||'' }; }) };
   if(!rosterIds.length) toast('먼저 일반 계획의 👥 도우미로 「참가 학생 명단」을 만들어 주세요.','err');
   agPaint();
 }
@@ -2825,10 +2825,29 @@ const agChip = (st,from)=>`<button class="ag-stu${AG.selSet&&AG.selSet.has(st.id
       ${st.g?`<b>${esc(String(st.g).replace('학년',''))}학년</b>`:''}</span>
     ${from!=='pool'?`<i onclick="event.stopPropagation();agOut('${from}','${st.id}')">✕</i>`:''}</button>`;
 /* 🎩 선생님 카드 — 끌어서 조·차량·호실에 담당으로 배치 */
-const agTchCard = (t, from)=>`<button class="ag-tch" data-tname="${esc(t.n)}" data-tfrom="${esc(from||'')}">
+const agTchCard = (t, from)=>{
+  const canGd = CU && (CU.role==='super'||CU.role==='org_admin') && t.uid;
+  return `<button class="ag-tch" data-tname="${esc(t.n)}" data-tfrom="${esc(from||'')}">
     <span class="n">${esc(t.n)}</span>
-    <span class="meta"><span class="fnp-gd ${t.g==='남'?'m':t.g==='여'?'f':'n'}">${t.g||'?'}</span><b>교사</b></span>
+    <span class="meta"><span class="fnp-gd ${t.g==='남'?'m':t.g==='여'?'f':'n'} ${canGd?'gd-edit':''}"
+      data-guid="${esc(t.uid)}" data-gname="${esc(t.n)}"
+      title="${canGd?'누르면 남 → 여 → 미정 순으로 바뀌고 명부에 저장돼요':''}">${t.g||'?'}</span><b>교사</b></span>
     ${from?`<i onclick="event.stopPropagation();agTeacherTo('${esc(t.n)}', null)">✕</i>`:''}</button>`;
+};
+/* 배정 화면에서 선생님 성별 칩 클릭 → 지정·명부 저장 */
+document.addEventListener('click', async e=>{
+  const chip=e.target.closest('.ag-tch .fnp-gd.gd-edit'); if(!chip) return;
+  e.preventDefault(); e.stopPropagation();
+  const uid=chip.dataset.guid, name=chip.dataset.gname;
+  const st=STAFF?.find(x=>x.uid===uid);
+  const cur=st?.gender||'';
+  const next = cur==='남' ? '여' : cur==='여' ? '' : '남';
+  if(st) st.gender=next;
+  (AG?.teachers||[]).forEach(t=>{ if(t.n===name) t.g=next; });
+  agPaint();
+  try { await setDoc(doc(db,'staff',uid), { gender: next }, { merge:true }); }
+  catch(err){ toast('성별 저장 실패: '+err.message,'err'); }
+}, true);   // 캡처 단계 — 드래그 시작보다 먼저 잡는다
 function agUnitTch(u){
   const names=String(u.tN||'').split(',').map(x=>x.trim()).filter(Boolean);
   return names.map(n=>{
@@ -2994,7 +3013,7 @@ window.agDrop = function(uid){ agMoveSelTo(uid, null); };
     .forEach(el=>el.classList.remove('dropover'));
   document.addEventListener('pointerdown', e=>{
     const chip=e.target.closest('.ag-stu,.ag-tch');
-    if(!chip || !chip.closest('.ag-wrap') || e.target.closest('i')) return;
+    if(!chip || !chip.closest('.ag-wrap') || e.target.closest('i') || e.target.closest('.gd-edit')) return;
     if(chip.classList.contains('ag-tch'))
       dr={ tname:chip.dataset.tname, x:e.clientX, y:e.clientY, moved:false };
     else
