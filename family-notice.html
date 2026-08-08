@@ -406,6 +406,13 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 .ag-stu b,.ag-tch b{font-size:10px;font-weight:900;color:var(--ts);background:var(--iv);border-radius:6px;padding:2px 6px}
 .ag-stu i,.ag-tch i{font-style:normal;position:absolute;top:3px;right:5px;font-size:12px;color:var(--red);font-weight:900}
 .ag-tch{border-color:#D9B871;background:#FDFAF2}
+.ag-drvbar{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ag-drvlb{font-size:12.5px;font-weight:800;color:var(--gd);background:var(--gp);border-radius:100px;padding:5px 12px}
+.ag-drvlb b{color:var(--gm)}
+.ag-drv{position:absolute;top:3px;left:5px;font-size:13px;cursor:pointer;opacity:.35;filter:grayscale(1)}
+.ag-drv:hover{opacity:.8;filter:none}
+.ag-drv.on{opacity:1;filter:none}
+.ag-tch.drv{border-color:var(--gm);background:var(--gp);box-shadow:0 0 0 2px var(--gm)}
 .ag-tch .n{color:#7a5a14}
 .ag-tch b{background:#F4E9CC;color:#8a6410}
 .ag-stu.sel{border-color:var(--gm);background:var(--gp);box-shadow:0 0 0 2.5px var(--gm)}
@@ -1325,7 +1332,7 @@ function renderAssign(d){
     core=`<div style="overflow-x:auto"><table class="rv-ag">
       <tr><th class="lb"></th>${units.map(u=>`<th>${esc(u.name||'차량')}${u.cap?` <small>${u.cap}인승</small>`:''}</th>`).join('')}</tr>
       <tr><td class="lb">운전자</td>${units.map(u=>`<td class="c">${esc(u.drvN||'')}</td>`).join('')}</tr>
-      <tr><td class="lb">교사</td>${units.map(u=>`<td class="c">${esc(u.tN||'')}</td>`).join('')}</tr>
+      <tr><td class="lb">교사</td>${units.map(u=>`<td class="c">${esc(String(u.tN||'').split(',').map(x=>x.trim()).filter(n=>n&&n!==u.drvN).join(', '))}</td>`).join('')}</tr>
       <tr><td class="lb">학생 <small>${units.reduce((a,u)=>a+u.students.length,0)}명</small></td>
         ${units.map(u=>`<td class="stu">${u.students.map(nm).join('<br>')||''}</td>`).join('')}</tr>
     </table></div>`;
@@ -2832,7 +2839,12 @@ const agChip = (st,from)=>`<button class="ag-stu${AG.selSet&&AG.selSet.has(st.id
 /* 🎩 선생님 카드 — 끌어서 조·차량·호실에 담당으로 배치 */
 const agTchCard = (t, from)=>{
   const canGd = CU && (CU.role==='super'||CU.role==='org_admin') && t.uid;
-  return `<button class="ag-tch" data-tname="${esc(t.n)}" data-tfrom="${esc(from||'')}">
+  const u = from ? AG.units.find(x=>x.id===from) : null;
+  const isDrv = u && AG.kind==='vehicle' && u.drvN===t.n;
+  const drvBtn = (u && AG.kind==='vehicle')
+    ? `<span class="ag-drv${isDrv?' on':''}" title="${isDrv?'운전자 해제':'운전자로 지정'}"
+        onclick="event.stopPropagation();agSetDriver('${esc(from)}','${esc(t.n)}')">🚗</span>` : '';
+  return `<button class="ag-tch${isDrv?' drv':''}" data-tname="${esc(t.n)}" data-tfrom="${esc(from||'')}">${drvBtn}
     <span class="n">${esc(t.n)}</span>
     <span class="meta"><span class="fnp-gd ${t.g==='남'?'m':t.g==='여'?'f':'n'} ${canGd?'gd-edit':''}"
       data-guid="${esc(t.uid)}" data-gname="${esc(t.n)}"
@@ -2865,10 +2877,16 @@ function agAssignedTch(){
   AG.units.forEach(u=>String(u.tN||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(n=>set.add(n)));
   return set;
 }
+window.agSetDriver = function(uid, name){
+  const u = AG.units.find(x=>x.id===uid); if(!u) return;
+  u.drvN = (u.drvN===name) ? '' : name;
+  agPaint(); saveDraft();
+};
 window.agTeacherTo = function(name, uid){
   AG.units.forEach(u=>{
     const arr=String(u.tN||'').split(',').map(x=>x.trim()).filter(Boolean).filter(n=>n!==name);
     u.tN=arr.join(', ');
+    if(u.drvN===name) u.drvN='';                     // 운전자였다면 함께 해제
   });
   if(uid){
     const u=AG.units.find(x=>x.id===uid); if(!u) return;
@@ -2877,9 +2895,9 @@ window.agTeacherTo = function(name, uid){
   }
   agPaint(); saveDraft();
 };
-function agCap(u){  // 차량: 운전자·교사 포함 사용 인원
-  const t = (u.tN||'').split(',').filter(x=>x.trim()).length;
-  return (u.drvN?1:0) + t + u.students.length;
+function agCap(u){  // 차량: 운전자·교사 포함 사용 인원 (운전자가 교사 카드로 배치돼 있으면 중복 합산 안 함)
+  const list = String(u.tN||'').split(',').map(x=>x.trim()).filter(Boolean);
+  return list.length + u.students.length + (u.drvN && !list.includes(u.drvN) ? 1 : 0);
 }
 function agPaint(){
   if(!AG) return;
@@ -2927,11 +2945,13 @@ function agPaint(){
     let head='', warnRoom='';
     if(AG.kind==='vehicle'){
       const used=agCap(u), over=u.cap&&used>u.cap;
-      head=`<div class="ag-uh2 ag-tus">
-        <button class="ed-mini" onclick="agDriver('${u.id}')">🚗 ${u.drvN?esc(u.drvN):'운전자'}</button>
+      head=`<div class="ag-drvbar">${u.drvN
+          ? `<span class="ag-drvlb">🚗 운전자: <b>${esc(u.drvN)}</b></span>`
+          : '<span class="ag-hint">배치된 교사 카드의 🚗를 눌러 운전자를 정하세요</span>'}
+        <span class="ag-gauge${over?' over':''}" style="margin-left:auto">${used}/${u.cap||'?'}명</span></div>
+      <div class="ag-uh2 ag-tus">
         ${agUnitTch(u)}
-        <button class="ed-mini" onclick="agTeachers('${u.id}')" title="목록에서 고르기">👩‍🏫</button>
-        <span class="ag-gauge${over?' over':''}">${used}/${u.cap||'?'}명</span></div>`;
+        <button class="ed-mini" onclick="agTeachers('${u.id}')" title="목록에서 고르기">👩‍🏫</button></div>`;
     } else if(AG.kind==='lodging'){
       if(u.gender) u.students.forEach(x=>{ x._warn = x.x && x.x!==u.gender; });
       warnRoom = u.gender && u.students.some(x=>x._warn) ? ' ⚠️' : '';
