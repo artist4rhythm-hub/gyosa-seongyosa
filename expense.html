@@ -3109,9 +3109,13 @@ window.openPendingNotice = function(){
             <div style="font-size:12px;color:var(--tx,#243029);line-height:1.9;margin:6px 0 0 24px">
               ${g.items.map(line).join('<br>')}</div>
             ${off?'<div style="font-size:11px;color:var(--warn,#B8860B);margin:6px 0 0 24px">반 편성에서 담임이 지정되지 않아 보낼 수 없어요 — 반편성 메뉴에서 담임을 지정해 주세요.</div>':''}
+            ${!off?`<details style="margin:7px 0 0 24px"><summary style="font-size:11.5px;font-weight:800;color:var(--gm,#1E7A4F);cursor:pointer">✉️ 실제로 나가는 쪽지 내용 미리보기</summary>
+              <pre style="font-family:inherit;font-size:11.5px;line-height:1.75;background:var(--iv,#F4F6F4);border-radius:9px;padding:10px 12px;margin-top:6px;white-space:pre-wrap;color:var(--tx,#243029)">${esc(buildNoticeBody(g))}</pre></details>`:''}
           </div>`;
         }).join('')}
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+        ${total? `<button class="bm" onclick="copyPendingList()" style="margin-right:auto">📋 명단 복사</button>
+        <button class="bm" onclick="printPendingList()">🖨 미처리 명단 인쇄</button>`:''}
         <button class="bm" onclick="document.getElementById('pn-mod').remove()">닫기</button>
         ${total? `<button class="btn" id="pn-send" onclick="sendPendingNotices()">📨 선택한 담임에게 보내기</button>`:''}
       </div>
@@ -3119,21 +3123,11 @@ window.openPendingNotice = function(){
   document.body.appendChild(mv);
   window.__pnGroups = groups;
 };
-window.sendPendingNotices = async function(){
-  const groups = window.__pnGroups || {};
-  const picked = [...document.querySelectorAll('.pn-t:checked')].map(c=>c.value)
-    .filter(k=>k!=='none' && groups[k] && groups[k].uid);
-  if(!picked.length){ toast('보낼 담임을 한 명 이상 골라 주세요.','err'); return; }
-  const btn = document.getElementById('pn-send');
-  if(btn){ btn.disabled = true; btn.textContent = '보내는 중…'; }
+function buildNoticeBody(g){
   const semL = semKor(paySem);
-  let ok = 0;
-  for(const k of picked){
-    const g = groups[k];
-    const dep = g.items.filter(x=>x.type==='미입금');
-    const ref = g.items.filter(x=>x.type==='미환급');
-    const body =
-`[수행성 경비 미처리 안내] ${ORGS[payOrg]||payOrg} · ${semL}
+  const dep = g.items.filter(x=>x.type==='미입금');
+  const ref = g.items.filter(x=>x.type==='미환급');
+  return `[수행성 경비 미처리 안내] ${ORGS[payOrg]||payOrg} · ${semL}
 
 ${g.name} 선생님 반에서 아직 처리되지 않은 학생 ${g.items.length}명입니다.
 ${dep.length?`
@@ -3146,6 +3140,72 @@ ${ref.map(it=>`• ${it.s.name} (${it.s.className||it.s.grade||''}) — ₩${fmt
 학부모님께 다시 안내 부탁드립니다 🙏
 · 납부 금액 확인과 환급 계좌 입력은 아래 학부모 안내 링크에서 할 수 있어요.
 ${PARENT_LINK_URL}`;
+}
+/* 미처리 명단 — 텍스트 복사 (단체방·문서 붙여넣기용) */
+window.copyPendingList = function(){
+  const groups = window.__pnGroups || {};
+  const keys = Object.keys(groups).sort((a,b)=>(a==='none')-(b==='none')||groups[a].name.localeCompare(groups[b].name,'ko'));
+  const txt = `[수행성 경비 미처리 명단] ${ORGS[payOrg]||payOrg} · ${semKor(paySem)} · ${new Date().toISOString().slice(0,10)}\n\n`
+    + keys.map(k=>{ const g=groups[k];
+        return `▶ ${g.name}${g.cls?` (${g.cls})`:''} — ${g.items.length}명\n`
+          + g.items.map(it=>`  • ${it.s.name} (${it.s.className||it.s.grade||''}) — ${it.type} ₩${fmt(it.amt)}${it.noAcct?' · 환급 계좌 미입력':''}`).join('\n');
+      }).join('\n\n');
+  const done = ()=>toast('명단을 복사했어요 — 붙여넣기 하세요.','ok');
+  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done).catch(()=>fallback());
+  else fallback();
+  function fallback(){ const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove(); done(); }
+};
+/* 미처리 명단 — 인쇄용 새 창 (PDF 저장 가능) */
+window.printPendingList = function(){
+  const groups = window.__pnGroups || {};
+  const keys = Object.keys(groups).sort((a,b)=>(a==='none')-(b==='none')||groups[a].name.localeCompare(groups[b].name,'ko'));
+  const rows = keys.flatMap(k=>{ const g=groups[k];
+    return g.items.map((it,i)=>`<tr>
+      ${i===0?`<td rowspan="${g.items.length}" class="t">${esc(g.name)}${g.cls?`<br><small>${esc(g.cls)}</small>`:''}</td>`:''}
+      <td>${esc(it.s.className||it.s.grade||'')}</td><td class="nm">${esc(it.s.name)}</td>
+      <td class="c ${it.type==='미입금'?'dep':'ref'}">${it.type}</td>
+      <td class="r">₩ ${fmt(it.amt)}</td>
+      <td class="c">${it.type==='미환급'?(it.noAcct?'⚠️ 미입력':'입력됨'):'—'}</td></tr>`);
+  }).join('');
+  const total = keys.reduce((n,k)=>n+groups[k].items.length,0);
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>수행성 경비 미처리 명단</title><style>
+    body{font-family:'Apple SD Gothic Neo','Noto Sans KR',sans-serif;padding:34px;color:#1a1a1a}
+    h1{font-size:21px;color:#1E3932;border-bottom:3px solid #1E3932;padding-bottom:9px}
+    h1 small{font-size:13px;color:#B98A2F;font-weight:800;margin-left:10px}
+    .meta{font-size:12px;color:#5A6560;margin:8px 0 16px}
+    table{width:100%;border-collapse:collapse;font-size:12.5px}
+    th{background:#1E3932;color:#fff;padding:8px 6px;font-size:12px}
+    td{border:1px solid #D9E2DD;padding:7px 8px;vertical-align:middle}
+    td.t{background:#EEF6F2;font-weight:800;color:#1E3932;text-align:center}
+    td.t small{font-weight:600;color:#5A6560}
+    td.nm{font-weight:700}.c{text-align:center}.r{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+    .dep{color:#1E7A4F;font-weight:800}.ref{color:#2E6FD8;font-weight:800}
+    .ft{margin-top:14px;font-size:11px;color:#93A09A;text-align:right}
+    @media print{ body{padding:10mm} }
+  </style></head><body>
+    <h1>수행성 경비 미처리 명단<small>${esc(ORGS[payOrg]||payOrg)} · ${esc(semKor(paySem))}</small></h1>
+    <div class="meta">총 <b>${total}명</b> · 추출일 ${new Date().toISOString().slice(0,10)} · 담임별 정리 — 처리 완료 시 체크해 주세요 ☑</div>
+    <table><tr><th style="width:110px">담임</th><th style="width:80px">반</th><th style="width:90px">이름</th>
+      <th style="width:70px">구분</th><th style="width:100px">금액</th><th style="width:100px">환급 계좌</th></tr>${rows}</table>
+    <div class="ft">교사 선교사 · 수행성 경비</div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),200);<\/script>
+  </body></html>`);
+  w.document.close();
+};
+window.sendPendingNotices = async function(){
+  const groups = window.__pnGroups || {};
+  const picked = [...document.querySelectorAll('.pn-t:checked')].map(c=>c.value)
+    .filter(k=>k!=='none' && groups[k] && groups[k].uid);
+  if(!picked.length){ toast('보낼 담임을 한 명 이상 골라 주세요.','err'); return; }
+  const btn = document.getElementById('pn-send');
+  if(btn){ btn.disabled = true; btn.textContent = '보내는 중…'; }
+  let ok = 0;
+  const semL = semKor(paySem);
+  for(const k of picked){
+    const g = groups[k];
+    const body = buildNoticeBody(g);
     try {
       await addDoc(collection(db,'messages'), {
         category:'general',
