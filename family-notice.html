@@ -362,6 +362,23 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 .m-cards .mc-l b{color:var(--gd);font-weight:800}
 .m-cards .mc-tel{display:inline-block;font-size:12.5px;font-weight:800;color:var(--gm);text-decoration:none;
   border:1px solid var(--gl);background:var(--gp);border-radius:8px;padding:4px 10px;margin-top:6px}
+/* 💳 계좌 복사 버튼 */
+.kv-copy{margin-left:6px;font-size:10.5px;font-weight:800;color:var(--gm);background:var(--gp);
+  border:1px solid var(--gl);border-radius:7px;padding:2px 8px;cursor:pointer;vertical-align:1px;
+  font-family:inherit;white-space:nowrap}
+.kv-copy.ok{color:#fff;background:var(--gm);border-color:var(--gm)}
+/* 💰 예산 표: 글자 단위 쪼개짐 방지 + 좁은 화면에서 숫자 열 압축 */
+.rv-tb.rv-bg td{overflow-wrap:normal}
+.rv-tb.rv-bg td.mg{word-break:keep-all;min-width:3.2em}
+@media (max-width:640px){
+  .rv-tb.rv-bg{font-size:11px}
+  .rv-tb.rv-bg th,.rv-tb.rv-bg td{padding:6px 4px}
+  .rv-tb.rv-bg .acc{min-width:0;gap:2px;justify-content:flex-end}
+  .rv-tb.rv-bg .acc i{font-size:9px}
+  .rv-tb.rv-bg .accq{min-width:0;gap:2px;white-space:nowrap}
+  .rv-tb.rv-bg .accq i{width:auto;font-size:9px}
+  .rv-tb.rv-bg .sub-lb{white-space:nowrap}
+}
 @media (max-width:640px){
   .tbwrap.has-malt>.rv-tbwrap{display:none}
   .tbwrap.has-malt>.m-alt{display:block}
@@ -369,7 +386,7 @@ tr.bg-subrow .bg-amt{color:#8a6410}
   .rv-kv th{max-width:32vw;white-space:normal;word-break:keep-all}
 }
 @media print{
-  .m-alt, .m-hint{display:none !important}
+  .m-alt, .m-hint, .kv-copy{display:none !important}
   .tbwrap.has-malt>.rv-tbwrap{display:block !important}
 }
 .acc{display:flex;justify-content:space-between;align-items:baseline;gap:6px;min-width:88px}
@@ -1121,6 +1138,26 @@ window.addBlock = async function(key){
 /* ═══════════════════════════════════════════
    블록 렌더링 (미리보기 · 인쇄 공용)
    ═══════════════════════════════════════════ */
+/* 💳 계좌 줄이면 번호 복사 버튼을 붙인다 (라벨에 「계좌」 + 값에 숫자 7자리 이상) */
+function acctCopyBtn(label, val){
+  if(!/계좌/.test(String(label||''))) return '';
+  const m=String(val||'').match(/\d[\d\s-]{5,}\d/);
+  if(!m) return '';
+  const digits=m[0].replace(/\D/g,'');
+  if(digits.length<7) return '';
+  return ` <button type="button" class="kv-copy" data-acct="${digits}">📋 복사</button>`;
+}
+document.addEventListener('click', async e=>{
+  const b=e.target.closest('.kv-copy'); if(!b) return;
+  const t=b.dataset.acct||'';
+  try{ await navigator.clipboard.writeText(t); }
+  catch(_){ const ta=document.createElement('textarea'); ta.value=t;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+  if(b.dataset.o==null) b.dataset.o=b.textContent;
+  b.textContent='복사됨 ✓'; b.classList.add('ok');
+  setTimeout(()=>{ b.textContent=b.dataset.o; b.classList.remove('ok'); },1600);
+});
+
 function renderBlock(b){
   const d = b.data || {};
   if(b.type === 'cover'){
@@ -1239,7 +1276,7 @@ function renderBlock(b){
     const rows = (d.rows||[]).filter(r=>r.k||r.v);
     if(!rows.length) return '';
     return `<table class="rv-kv">${rows.map(r=>
-      `<tr><th>${esc(r.k)}</th><td>${esc(r.v)}</td></tr>`).join('')}</table>
+      `<tr><th>${esc(r.k)}</th><td>${esc(r.v)}${acctCopyBtn(r.k, r.v)}</td></tr>`).join('')}</table>
       ${d.note?`<div class="rv-note">${esc(d.note)}</div>`:''}`;
   }
   if(b.type === 'table'){
@@ -1321,7 +1358,7 @@ function renderBudget(d){
   if(!rows.length) return '';
   const won = v=>`<span class="acc"><i>₩</i><b>${fmt(v)}</b></span>`;
   const qtyC = (q,u)=>`<span class="accq"><b>${fmt(q)}</b><i>${esc(u||'')}</i></span>`;
-  return `<div style="overflow-x:auto"><table class="rv-tb">
+  return `<div style="overflow-x:auto"><table class="rv-tb rv-bg">
     <tr><th>구분</th><th>항목</th><th class="thr">단가</th>
       <th class="thr">수량</th><th class="thr">금액</th><th>비고</th></tr>
     ${(()=>{
@@ -1356,7 +1393,7 @@ function renderBudget(d){
     ${ppl?`<tr class="hlrow"><td colspan="4">1인 회비 (${fmt(ppl)}명${Number(d.round)?' · '+fmt(d.round)+'원 단위 올림':''})</td>
       <td class="num">${won(per)}</td><td></td></tr>`:''}
   </table></div>
-  ${d.account?`<div class="rv-note">💳 회비 입금 계좌: <b>${esc(d.account)}</b>${d.deadline?` · 납부 기한: <b>${esc(d.deadline)}</b>`:''}</div>`
+  ${d.account?`<div class="rv-note">💳 회비 입금 계좌: <b>${esc(d.account)}</b>${acctCopyBtn('계좌', d.account)}${d.deadline?` · 납부 기한: <b>${esc(d.deadline)}</b>`:''}</div>`
     : d.deadline?`<div class="rv-note">납부 기한: <b>${esc(d.deadline)}</b></div>`:''}
   ${d.note?`<div class="rv-note">${esc(d.note)}</div>`:''}`;
 }
@@ -2604,7 +2641,7 @@ window.fnPickStaff = async function(cb, cur, opt){
     return `<div class="fnp-grp${other?' fnp-coop':''}">
       <label class="fnp-gh"><input type="checkbox" data-gall="${esc(g)}"> ${esc(g)}
         <span class="fnp-cnt">${G.list.length}명</span>${other?'<span class="fnp-coopbadge">협력</span>':''}</label>
-      <div class="fnp-list">${G.list.map(t=>`
+      <div class="fnp-list">${[...G.list].sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko')).map(t=>`
         <label class="fnp-it" data-tuid="${esc(t.uid)}"><input type="checkbox" data-g="${esc(g)}" value="${esc(t.name||'')}"
           ${already.has(t.name)?'checked':''}> ${esc(t.name||'')}${gchip(t)}</label>`).join('')}</div>
     </div>`;}).join('');
@@ -2662,7 +2699,7 @@ window.fnPickStaff = async function(cb, cur, opt){
     const extra=$I('fs-extra').value.split(',').map(x=>x.trim()).filter(Boolean);
     extra.forEach(x=>names.push(x));
     if(!names.length){ toast('한 명 이상 골라 주세요.','err'); return; }
-    let out=[...new Set(names)].join(', ');
+    let out=[...new Set(names)].sort((a,b)=>a.localeCompare(b,'ko')).join(', '); // ㄱㄴㄷ 순
     if($I('fs-gd').checked && on.length){
       out += ` (남 ${m} · 여 ${f}${u?` · 미정 ${u}`:''}${extra.length?` · 추가 ${extra.length}`:''})`;
     }
