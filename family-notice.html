@@ -312,6 +312,14 @@ select.sv-sel{width:96px;min-width:96px;flex:0 0 auto;padding:6px 6px;font-size:
 .bg-drag:active{cursor:grabbing}
 tr.bg-dragging{opacity:.55;outline:2px dashed var(--gm)}
 .bg-same{font-size:11px;color:var(--tl);font-weight:700}
+.tb-cell{position:relative}
+.tb-cell input{padding-right:22px}
+.tb-mg{position:absolute;right:3px;top:50%;transform:translateY(-50%);width:17px;height:17px;
+  border:1px solid var(--ivd);border-radius:5px;background:var(--wh);color:var(--tl);
+  font-size:9px;font-weight:900;cursor:pointer;line-height:1;padding:0}
+.tb-mg:hover{border-color:var(--gm);color:var(--gm)}
+.tb-mg.on{background:var(--gp);border-color:var(--gm);color:var(--gm)}
+.tb-merged{background:var(--iv)}
 .bg-mg.on{background:var(--gp);border-color:var(--gm);color:var(--gm)}
 tr.bg-subrow td{background:#F4F1E4}
 .bg-sublb{font-weight:900;color:#8a6410}
@@ -1149,9 +1157,20 @@ function renderBlock(b){
   if(b.type === 'table'){
     const cols = d.cols||[], rows = (d.rows||[]).filter(r=>(r.c||[]).some(x=>x));
     if(!rows.length) return '';
+    const MG='⤴';
+    // 셀에 ⤴ 표시가 있으면 위 칸과 세로 병합 — 열마다 따로 이어진다
+    const span=(ri,ci)=>{ let n=1;
+      while(rows[ri+n] && (rows[ri+n].c||[])[ci]===MG) n++;
+      return n; };
+    const body=rows.map((r,ri)=>`<tr>${cols.map((_,ci)=>{
+      const v=(r.c||[])[ci]||'';
+      if(v===MG) return '';                                  // 위 칸이 rowspan으로 덮는다
+      const n=span(ri,ci);
+      return `<td${n>1?` rowspan="${n}" class="mg"`:''}>${esc(v)}</td>`;
+    }).join('')}</tr>`).join('');
     return `<div style="overflow-x:auto"><table class="rv-tb">
       <tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
-      ${rows.map(r=>`<tr>${cols.map((_,ci)=>`<td>${esc((r.c||[])[ci]||'')}</td>`).join('')}</tr>`).join('')}
+      ${body}
     </table></div>
     ${d.note?`<div class="rv-note">${esc(d.note)}</div>`:''}`;
   }
@@ -1463,18 +1482,14 @@ function edTable(b){
   const cols = d.cols&&d.cols.length?d.cols:['',''];
   const rows = d.rows&&d.rows.length?d.rows:[{c:cols.map(()=> '')}];
   const p = presetFind(b.key);
-  const head = `<tr>${cols.map((c,ci)=>
+  const head = `<tr><th style="width:24px"></th>${cols.map((c,ci)=>
     `<th><input value="${esc(c)}" data-col="${ci}"></th>`).join('')}
-    <th style="width:96px"></th></tr>`;
-  const body = rows.map(r=>`<tr>
-    ${cols.map((_,ci)=>`<td><input value="${esc((r.c||[])[ci]||'')}"></td>`).join('')}
-    <td style="white-space:nowrap">
-      <button class="ed-mini" onclick="tbMoveRow(this,-1)">↑</button>
-      <button class="ed-mini" onclick="tbMoveRow(this,1)">↓</button>
-      <button class="ed-mini" onclick="this.closest('tr').remove()">✕</button></td>
-  </tr>`).join('');
+    <th style="width:74px"></th></tr>`;
+  const body = rows.map(r=>tbRowHTML(r, cols.length)).join('');
   return `
-    <div class="msub">첫 줄이 표 머리(열 이름)입니다. 열을 더하거나 뺄 수 있어요.</div>
+    <div class="msub">첫 줄이 표 머리(열 이름)입니다. ⠿를 끌면 줄 순서가 바뀌고, ⧉는 줄 복사예요.
+      칸 안의 <b>⤴</b>를 누르면 그 칸이 <b>«위와 같음(병합)»</b>이 되어 발행 표에서 위 칸과 세로로 합쳐집니다 —
+      구분만 병합하고 품목은 나누는 식으로 칸마다 따로 정할 수 있어요.</div>
     <div class="ed-tblwrap"><table class="ed-tbl" id="tb-tbl">${head}${body}</table></div>
     <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
       <button class="ed-mini" onclick="tbAddRow()">＋ 줄 추가</button>
@@ -1486,9 +1501,75 @@ function edTable(b){
     <div class="frow" style="margin-top:10px"><label class="flab">덧붙임 (선택)</label>
       <input class="fin" id="tb-note" value="${esc(d.note||'')}"></div>`;
 }
+const TB_MERGE = '⤴';   // 셀 값이 이 표시면 «위 칸과 병합»
+function tbRowHTML(r, n){
+  return `<tr data-kind="trow">
+    <td class="bg-drag" title="끌어서 순서 바꾸기">⠿</td>
+    ${[...Array(n)].map((_,ci)=>{
+      const v=(r.c||[])[ci]||'';
+      const mg = v===TB_MERGE;
+      return `<td class="tb-cell${mg?' tb-merged':''}">
+        <input value="${mg?'':esc(v)}" style="${mg?'display:none':''}">
+        ${mg?'<span class="bg-same">〃 위와 병합</span>':''}
+        <button class="tb-mg${mg?' on':''}" onclick="tbToggleMerge(this)" title="위 칸과 병합/해제">⤴</button></td>`;
+    }).join('')}
+    <td style="white-space:nowrap">
+      <button class="ed-mini" onclick="tbDupRow(this)" title="이 줄 복사">⧉</button>
+      <button class="ed-mini" onclick="this.closest('tr').remove()">✕</button></td>
+  </tr>`;
+}
+window.tbToggleMerge = function(btn){
+  const td = btn.closest('td'); const tr = td.closest('tr');
+  const inp = td.querySelector('input');
+  const on = !td.classList.contains('tb-merged');
+  if(on){
+    // 첫 데이터 줄은 병합 불가
+    let p=tr.previousElementSibling;
+    if(!p || !p.dataset.kind){ toast('첫 줄은 병합할 수 없어요.','err'); return; }
+    td.classList.add('tb-merged'); btn.classList.add('on');
+    inp.dataset.keep = inp.value;             // 해제 시 복원용
+    inp.value=''; inp.style.display='none';
+    if(!td.querySelector('.bg-same')){
+      const sp=document.createElement('span'); sp.className='bg-same'; sp.textContent='〃 위와 병합';
+      td.insertBefore(sp, btn);
+    }
+  } else {
+    td.classList.remove('tb-merged'); btn.classList.remove('on');
+    inp.style.display=''; inp.value = inp.dataset.keep||'';
+    td.querySelector('.bg-same')?.remove();
+  }
+};
+window.tbDupRow = function(btn){
+  const tr = btn.closest('tr');
+  const vals = [...tr.querySelectorAll('td.tb-cell')].map(td=>
+    td.classList.contains('tb-merged') ? TB_MERGE : (td.querySelector('input')?.value||''));
+  tr.insertAdjacentHTML('afterend', tbRowHTML({c:vals}, vals.length));
+};
+/* 자유 표 줄 드래그 — 예산 표와 같은 방식 */
+document.addEventListener('pointerdown', e=>{
+  const h=e.target.closest('#tb-tbl .bg-drag'); if(!h) return;
+  const tr=h.closest('tr'); e.preventDefault();
+  window.__tbDrag={tr}; tr.classList.add('bg-dragging');
+  document.body.style.userSelect='none';
+});
+document.addEventListener('pointermove', e=>{
+  const d=window.__tbDrag; if(!d) return;
+  const el=document.elementFromPoint(e.clientX,e.clientY);
+  const over=el && el.closest('#tb-tbl tr[data-kind]');
+  if(!over || over===d.tr) return;
+  const r=over.getBoundingClientRect();
+  if(e.clientY < r.top + r.height/2) over.parentNode.insertBefore(d.tr, over);
+  else over.parentNode.insertBefore(d.tr, over.nextSibling);
+});
+document.addEventListener('pointerup', ()=>{
+  const d=window.__tbDrag; if(!d) return;
+  d.tr.classList.remove('bg-dragging');
+  document.body.style.userSelect='';
+  window.__tbDrag=null;
+});
 function tbColCount(){
   const t = $I('tb-tbl');
-  return t.rows[0].cells.length - 1;
+  return t.rows[0].cells.length - 2;   // 앞 ⠿ 열 + 뒤 버튼 열 제외
 }
 window.tbMoveRow = function(btn, dir){
   const tr = btn.closest('tr');
@@ -1498,31 +1579,15 @@ window.tbMoveRow = function(btn, dir){
   else tr.parentNode.insertBefore(sib, tr);
 };
 window.tbAddRow = function(){
-  const t = $I('tb-tbl'), n = tbColCount();
-  const tr = document.createElement('tr');
-  tr.innerHTML = `${Array.from({length:n},()=>'<td><input value=""></td>').join('')}
-    <td style="white-space:nowrap">
-      <button class="ed-mini" onclick="tbMoveRow(this,-1)">↑</button>
-      <button class="ed-mini" onclick="tbMoveRow(this,1)">↓</button>
-      <button class="ed-mini" onclick="this.closest('tr').remove()">✕</button></td>`;
-  t.appendChild(tr);
+  const n = tbColCount();
+  $I('tb-tbl').insertAdjacentHTML('beforeend', tbRowHTML({c:[...Array(n)].map(()=> '')}, n));
 };
 window.tbAddCol = function(){
   const t = $I('tb-tbl');
-  [...t.rows].forEach((tr,ri)=>{
-    const cell = tr.insertCell(tr.cells.length-1);
-    if(ri===0){ cell.outerHTML = `<th><input value=""></th>`;
-      // insertCell 은 td 를 만들기 때문에 th 로 바꾼 뒤 위치 다시 잡기
-      const th = tr.cells[tr.cells.length-2];
-    } else cell.innerHTML = `<input value="">`;
-  });
-  // 머리줄 th 보정
-  const hr = t.rows[0];
-  [...hr.cells].forEach((c,ci)=>{
-    if(ci < hr.cells.length-1 && c.tagName==='TD'){
-      const th = document.createElement('th');
-      th.innerHTML = c.innerHTML; hr.replaceChild(th, c);
-    }
+  t.rows[0].cells[t.rows[0].cells.length-1].insertAdjacentHTML('beforebegin','<th><input value=""></th>');
+  [...t.rows].slice(1).forEach(tr=>{
+    tr.cells[tr.cells.length-1].insertAdjacentHTML('beforebegin',
+      `<td class="tb-cell"><input value=""><button class="tb-mg" onclick="tbToggleMerge(this)" title="위 칸과 병합/해제">⤴</button></td>`);
   });
 };
 window.tbDelCol = function(){
@@ -1568,12 +1633,7 @@ window.tbRosterImport = async function(){
     gs.forEach(g=>{
       byG[g].sort((a,b)=>String(a).localeCompare(String(b),'ko'));
       const vals = [g, byG[g].join(', '), byG[g].length+'명'];
-      const tr = t.insertRow();
-      tr.innerHTML = `${Array.from({length:n},(_,ci)=>`<td><input value="${esc(vals[ci]||'')}"></td>`).join('')}
-        <td style="white-space:nowrap">
-          <button class="ed-mini" onclick="tbMoveRow(this,-1)">↑</button>
-          <button class="ed-mini" onclick="tbMoveRow(this,1)">↓</button>
-          <button class="ed-mini" onclick="this.closest('tr').remove()">✕</button></td>`;
+      t.insertAdjacentHTML('beforeend', tbRowHTML({c:[...Array(n)].map((_,ci)=>vals[ci]||'')}, n));
     });
     toast(`학년별 ${gs.length}줄을 채웠어요`);
   } catch(e){ toast('명부 불러오기 실패: '+e.message,'err'); }
@@ -3010,7 +3070,8 @@ function readBlockData(b){
       const t = $I('tb-tbl'); if(!t) return null;
       const cols = [...t.rows[0].querySelectorAll('input')].map(i=>i.value.trim());
       const rows = [...t.rows].slice(1).map(tr=>({
-        c:[...tr.querySelectorAll('input')].map(i=>i.value)
+        c:[...tr.querySelectorAll('td.tb-cell')].map(td=>
+          td.classList.contains('tb-merged') ? TB_MERGE : (td.querySelector('input')?.value||''))
       })).filter(r=>r.c.some(x=>x.trim()));
       return { cols, rows, note:$I('tb-note').value.trim() };
     }
