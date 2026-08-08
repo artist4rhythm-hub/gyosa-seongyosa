@@ -3118,7 +3118,7 @@ window.openPendingNotice = function(){
         ${total? `<button class="bm" onclick="copyPendingList()" style="margin-right:auto">📋 명단 복사</button>
         <button class="bm" onclick="printPendingList()">🖨 미처리 명단 인쇄</button>`:''}
         <button class="bm" onclick="document.getElementById('pn-mod').remove()">닫기</button>
-        ${total? `<button class="btn" id="pn-send" onclick="sendPendingNotices()">📨 선택한 담임에게 보내기</button>`:''}
+        ${total? `<button class="btn" id="pn-send" onclick="openPendingConfirm()">다음 → 보낼 쪽지 확인</button>`:''}
       </div>
     </div>`;
   document.body.appendChild(mv);
@@ -3195,12 +3195,41 @@ window.printPendingList = function(){
   </body></html>`);
   w.document.close();
 };
-window.sendPendingNotices = async function(){
+/* 2단계 — 발송 전 확인: 선택한 담임별로 나갈 쪽지 «전문»을 모두 펼쳐 보여준다 */
+window.openPendingConfirm = function(){
   const groups = window.__pnGroups || {};
   const picked = [...document.querySelectorAll('.pn-t:checked')].map(c=>c.value)
     .filter(k=>k!=='none' && groups[k] && groups[k].uid);
   if(!picked.length){ toast('보낼 담임을 한 명 이상 골라 주세요.','err'); return; }
-  const btn = document.getElementById('pn-send');
+  window.__pnPicked = picked;
+  const mod = document.getElementById('pn-mod'); if(mod) mod.remove();
+  const mv = document.createElement('div');
+  mv.id='pn-mod'; mv.style.cssText='position:fixed;inset:0;z-index:600';
+  mv.innerHTML = `<div class="mbk"></div>
+    <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(680px,94vw);
+      max-height:88vh;overflow-y:auto;background:var(--wh,#fff);border-radius:16px;padding:20px 19px;
+      box-shadow:0 18px 60px rgba(0,0,0,.3)">
+      <h3 class="actitle" style="margin-bottom:4px">✅ 발송 전 마지막 확인</h3>
+      <p class="adesc" style="margin-bottom:12px">아래 <b>${picked.length}명</b>의 담임 선생님 쪽지함으로 각각 이 내용이 갑니다.
+        내용을 훑어보시고, 이대로 좋으면 맨 아래 <b>발송</b>을 눌러 주세요. 아직 아무것도 발송되지 않았어요.</p>
+      ${picked.map(k=>{ const g=groups[k]; return `
+        <div style="border:1.5px solid var(--ivd,#E2E8E4);border-radius:12px;margin-bottom:10px;overflow:hidden">
+          <div style="background:var(--gp,#E8F3EF);padding:8px 12px;font-size:13px;font-weight:800;color:var(--gd,#1E3932)">
+            📨 받는 사람: ${esc(g.name)} 선생님 <span style="font-weight:600;color:var(--ts,#5A6560)">· 미처리 ${g.items.length}명</span></div>
+          <pre style="font-family:inherit;font-size:12px;line-height:1.8;padding:11px 13px;margin:0;white-space:pre-wrap;color:var(--tx,#243029)">${esc(buildNoticeBody(g))}</pre>
+        </div>`; }).join('')}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button class="bm" onclick="document.getElementById('pn-mod').remove();openPendingNotice()">← 돌아가서 고치기</button>
+        <button class="btn" id="pn-final" onclick="doSendPendingNotices()">📨 이대로 ${picked.length}명에게 발송</button>
+      </div>
+    </div>`;
+  document.body.appendChild(mv);
+};
+window.doSendPendingNotices = async function(){
+  const groups = window.__pnGroups || {};
+  const picked = window.__pnPicked || [];
+  if(!picked.length){ toast('보낼 담임이 없습니다.','err'); return; }
+  const btn = document.getElementById('pn-final');
   if(btn){ btn.disabled = true; btn.textContent = '보내는 중…'; }
   let ok = 0;
   const semL = semKor(paySem);
