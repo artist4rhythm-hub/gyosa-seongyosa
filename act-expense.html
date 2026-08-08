@@ -122,6 +122,9 @@
   body.pr #panel-rep{position:absolute;left:0;top:0;width:100%;border:none;box-shadow:none}
   body.pr .no-print{display:none !important}
 }
+.acttbl tr.selrow td{background:var(--gp) !important}
+.acttbl.gsum th{font-size:11px;padding:6px 4px}
+.acttbl.gsum td{font-size:12px;padding:6px 4px}
 </style>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
@@ -195,6 +198,7 @@ let TAB = 'mem';                   // mem | exp | rep | set
 let MEMBERS = [], EXPENSES = [];
 let STUDENTS = null, CLASSES = null, STAFF = null;   // 담기 모달에서 처음 쓸 때 받아온다
 let MFILTER = 'all';               // 참가자 필터
+let MSEL = new Set();              // 참가자 일괄 작업 선택
 
 const CATS_DEF = ['식비','간식비','숙박비','교통비','활동비','소모품','기타'];
 const STATUS_L = { prep:'준비', run:'진행 중', settle:'정산 중', closed:'마감' };
@@ -409,7 +413,9 @@ function renderMembers(){
     return true;
   });
 
-  const rows = list.map(m=>`<tr>
+  const rows = list.map(m=>`<tr class="${MSEL.has(m.id)?'selrow':''}">
+    ${mgr&&!isLocked()?`<td class="c no-print"><input type="checkbox" class="mselck" ${MSEL.has(m.id)?'checked':''}
+      onchange="mSelTgl('${m.id}', this.checked)" style="width:16px;height:16px"></td>`:''}
     <td><b>${esc(m.name)}</b></td>
     <td class="c">${m.kind==='student'?'학생':m.kind==='teacher'?'선생님':'직접 추가'}</td>
     <td class="c">${esc(m.grade||'')}</td>
@@ -430,16 +436,47 @@ function renderMembers(){
       <div class="s">수입 (입금 완료분)<b>${fmt(incSum)}원</b></div>
       <div class="s">1인 회비<b>${fmt(CUR.fee)}원</b></div>
     </div>
+    ${(()=>{ /* 📊 구분(학년·선생님)별 참가·입금 요약 */
+      if(!MEMBERS.length) return '';
+      const gs={};
+      MEMBERS.forEach(m=>{
+        const k = m.kind==='teacher'?'선생님':m.kind==='extra'?'직접 추가':(m.grade||'학년 미지정');
+        if(!gs[k]) gs[k]={n:0,p:0};
+        gs[k].n++; if(m.paid) gs[k].p++;
+      });
+      const ks=Object.keys(gs).sort((a,b)=>{
+        const sp=k=>k==='선생님'?90:k==='직접 추가'?91:k==='학년 미지정'?92:gnum(k);
+        return sp(a)-sp(b);
+      });
+      return `<div class="tblwrap" style="margin-bottom:10px"><table class="acttbl gsum">
+        <tr><th class="c">구분</th>${ks.map(k=>`<th class="c">${esc(k)}</th>`).join('')}<th class="c">합계</th></tr>
+        <tr><td class="c" style="font-weight:800">인원</td>${ks.map(k=>`<td class="c"><b>${gs[k].n}</b>명</td>`).join('')}
+          <td class="c"><b>${MEMBERS.length}</b>명</td></tr>
+        <tr><td class="c" style="font-weight:800">입금 / 대기</td>${ks.map(k=>`<td class="c">
+          <span style="color:var(--gm);font-weight:800">${gs[k].p}</span> / <span style="color:#B8860B;font-weight:800">${gs[k].n-gs[k].p}</span></td>`).join('')}
+          <td class="c"><span style="color:var(--gm);font-weight:800">${paid.length}</span> / <span style="color:#B8860B;font-weight:800">${MEMBERS.length-paid.length}</span></td></tr>
+      </table></div>`;
+    })()}
     ${mgr && !isLocked() ? `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px" class="no-print">
       <button class="btn line" onclick="openPickStudents()">학생 현황표에서 담기</button>
       <button class="btn line" onclick="openPickTeachers()">선생님 명단에서 담기</button>
       <button class="btn line" onclick="openExtraForm()">＋ 직접 입력</button>
+    </div>
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px;align-items:center;background:var(--iv);border-radius:11px;padding:8px 11px" class="no-print">
+      <span style="font-size:12px;font-weight:800;color:var(--gd)">☑ 선택 <b id="msel-n">${MSEL.size}</b>명</span>
+      <button class="btn sm" onclick="bulkPaid(true)">✓ 입금 완료</button>
+      <button class="btn gray sm" onclick="bulkPaid(false)">↺ 입금 해제</button>
+      <button class="btn gray sm" onclick="bulkFee()">₩ 회비 변경</button>
+      <button class="btn red sm" onclick="bulkRemove()">🗑 선택 빼기</button>
+      <span style="font-size:10.5px;color:var(--tl)">체크박스로 여러 명을 골라 한 번에 처리해요 · 회비를 설정에서 바꾸면 일괄 반영 여부를 물어봅니다</span>
     </div>` : isLocked() ? `<div class="pdesc" style="margin-bottom:10px">🔒 마감된 활동 — 열람만 가능합니다</div>` : ''}
     <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px" class="no-print">${chips}</div>
     <div class="tblwrap"><table class="acttbl">
-      <tr><th>이름</th><th class="c">구분</th><th class="c">학년</th><th class="c">반</th>
+      <tr>${mgr&&!isLocked()?`<th class="c no-print" style="width:34px"><input type="checkbox" id="msel-all"
+          onchange="mSelAll(this.checked)" title="보이는 인원 전체 선택" style="width:16px;height:16px"></th>`:''}
+        <th>이름</th><th class="c">구분</th><th class="c">학년</th><th class="c">반</th>
         <th class="r">회비</th><th class="c">입금</th><th>메모</th>${mgr?'<th class="c no-print"></th>':''}</tr>
-      ${rows || `<tr><td colspan="8" style="text-align:center;color:var(--tl);padding:20px">
+      ${rows || `<tr><td colspan="9" style="text-align:center;color:var(--tl);padding:20px">
         참가자가 없습니다${mgr?' — 위의 「담기」 버튼으로 불러오세요':''}</td></tr>`}
       ${list.length?`<tr class="sumrow"><td colspan="4">보이는 ${list.length}명 · 입금 ${list.filter(m=>m.paid).length}명</td>
         <td class="r">${fmt(list.filter(m=>m.paid).reduce((n,m)=>n+(Number(m.fee)||0),0))}</td><td colspan="3"></td></tr>`:''}
@@ -447,6 +484,66 @@ function renderMembers(){
   </div>`;
 }
 window.setMFilter = k => { MFILTER = k; renderDetail(); };
+window.mSelTgl = (id, on) => {
+  if(on) MSEL.add(id); else MSEL.delete(id);
+  const n=$I('msel-n'); if(n) n.textContent=MSEL.size;
+  const tr=document.querySelector(`.mselck[onchange*="${id}"]`)?.closest('tr');
+  if(tr) tr.classList.toggle('selrow', on);
+};
+window.mSelAll = (on) => {
+  // 지금 필터로 «보이는» 인원만 전체 선택/해제
+  const vis = MEMBERS.filter(m=>{
+    if(MFILTER==='all') return true;
+    if(MFILTER==='teacher') return m.kind==='teacher';
+    if(MFILTER==='extra') return m.kind==='extra';
+    if(MFILTER.startsWith('g:')) return m.kind==='student' && (m.grade||'학년 미지정')===MFILTER.slice(2);
+    return true;
+  }).map(m=>m.id);
+  vis.forEach(id=>{ if(on) MSEL.add(id); else MSEL.delete(id); });
+  renderDetail();
+};
+function mSelList(){ return MEMBERS.filter(m=>MSEL.has(m.id)); }
+window.bulkRemove = async function(){
+  if(!canMgr(CUR) || isLocked()) return;
+  const sel = mSelList();
+  if(!sel.length){ toast('먼저 체크박스로 뺄 인원을 골라 주세요.','err'); return; }
+  if(!confirm(`선택한 ${sel.length}명을 참가자에서 뺄까요?\n(입금 완료 ${sel.filter(m=>m.paid).length}명 포함)`)) return;
+  for(const m of sel){ try { await deleteDoc(doc(db,'actMembers', m.id)); } catch(e){} }
+  const ids=new Set(sel.map(m=>m.id));
+  MEMBERS = MEMBERS.filter(m=>!ids.has(m.id));
+  MSEL.clear();
+  logAct('참가자 일괄 빼기', `${sel.length}명 (${sel.slice(0,5).map(m=>m.name).join(', ')}${sel.length>5?' 외':''})`);
+  await pushSums(); renderDetail();
+  toast(`${sel.length}명을 뺐습니다.`,'ok');
+};
+window.bulkFee = async function(){
+  if(!canMgr(CUR) || isLocked()) return;
+  const sel = mSelList();
+  if(!sel.length){ toast('먼저 체크박스로 인원을 골라 주세요.','err'); return; }
+  const v = prompt(`선택한 ${sel.length}명의 회비를 얼마로 바꿀까요? (원)`, Number(CUR.fee)||0);
+  if(v===null) return;
+  const fee = Math.max(0, Math.round(Number(String(v).replace(/[^0-9]/g,''))||0));
+  for(const m of sel){ try { await updateDoc(doc(db,'actMembers', m.id), { fee }); m.fee=fee; } catch(e){} }
+  MSEL.clear();
+  logAct('회비 일괄 변경', `${sel.length}명 → ${fmt(fee)}원`);
+  await pushSums(); renderDetail();
+  toast(`${sel.length}명의 회비를 ${fmt(fee)}원으로 바꿨습니다.`,'ok');
+};
+window.bulkPaid = async function(on){
+  if(!canMgr(CUR) || isLocked()) return;
+  const sel = mSelList().filter(m=>!!m.paid !== !!on);
+  if(!sel.length){ toast(on?'선택한 인원이 이미 모두 입금 완료예요.':'선택한 인원이 모두 대기 상태예요.','err'); return; }
+  if(!on && !confirm(`선택한 ${sel.length}명의 입금 표시를 해제할까요?`)) return;
+  const ds = todayDs();
+  for(const m of sel){
+    try { await updateDoc(doc(db,'actMembers', m.id), { paid:!!on, paidDs:on?ds:'' });
+      m.paid=!!on; m.paidDs=on?ds:''; } catch(e){}
+  }
+  MSEL.clear();
+  logAct(on?'입금 일괄 확인':'입금 일괄 해제', `${sel.length}명`);
+  await pushSums(); renderDetail();
+  toast(`${sel.length}명 ${on?'입금 완료로 표시했습니다':'입금 표시를 해제했습니다'}.`,'ok');
+};
 
 window.editFee = async function(id){
   const m = MEMBERS.find(x=>x.id===id); if(!m || !canMgr(CUR)) return;
@@ -1400,9 +1497,28 @@ window.saveSettings = async function(){
     fee:Math.max(0, Number($I('sf-fee').value)||0), cats
   };
   if(window._pickedMgr){ upd.managers = window._pickedMgr.uids; upd.managerNames = window._pickedMgr.names; }
+  const feeChanged = Number(CUR.fee)!==Number(upd.fee);
   await updateDoc(doc(db,'actLedgers',CUR.id), upd);
   Object.assign(CUR, upd); window._pickedMgr = null;
   logAct('설정 저장', `${upd.name} · 회비 ${fmt(upd.fee)}원`);
+  // 💰 회비가 바뀌었으면 기존 참가자에게 일괄 반영할지 물어본다
+  if(feeChanged && MEMBERS.length){
+    const pend = MEMBERS.filter(m=>!m.paid && Number(m.fee)!==Number(upd.fee));
+    const done = MEMBERS.filter(m=> m.paid && Number(m.fee)!==Number(upd.fee));
+    if(pend.length || done.length){
+      let targets = [];
+      if(pend.length && confirm(`회비가 ${fmt(upd.fee)}원으로 바뀌었어요.
+입금 «대기» ${pend.length}명에게 새 회비를 적용할까요?`))
+        targets = targets.concat(pend);
+      if(done.length && confirm(`입금 «완료» ${done.length}명에게도 적용할까요?
+(이미 낸 금액과 달라질 수 있어 보통은 취소를 권해요)`))
+        targets = targets.concat(done);
+      for(const m of targets){
+        try { await updateDoc(doc(db,'actMembers', m.id), { fee:Number(upd.fee) }); m.fee=Number(upd.fee); } catch(e){}
+      }
+      if(targets.length){ logAct('회비 일괄 적용', `${targets.length}명 → ${fmt(upd.fee)}원`); await pushSums(); }
+    }
+  }
   toast('저장했습니다'); renderDetail();
 };
 window.delLedger = async function(){
