@@ -529,11 +529,12 @@ tr.bg-subrow .bg-amt{color:#8a6410}
   body.pr *{visibility:hidden}
   body.pr #printArea, body.pr #printArea *{visibility:visible}
   body.pr #printArea{display:block;position:absolute;left:0;top:0;width:100%;background:#fff;
-    padding:13mm 12mm;box-sizing:border-box}
-  #printArea .pblk{page-break-inside:avoid;margin-bottom:18px}
+    padding:0 12mm;box-sizing:border-box}
+  #printArea .pblk{page-break-inside:avoid;margin-bottom:7mm;border-top:9mm solid transparent}
+  #printArea .rv-tb tr,#printArea .rv-kv tr,#printArea .rv-ag tr,#printArea .rv-sch tr{page-break-inside:avoid}
   #printArea .pcover{page-break-after:always;display:flex;flex-direction:column;
-    justify-content:center;min-height:calc(100vh - 26mm)}
-  #printArea .pcover .rv-cover{width:100%;box-sizing:border-box;min-height:88vh;
+    justify-content:center;height:296mm;box-sizing:border-box;padding:12mm 0;margin:0;border-top:0}
+  #printArea .pcover .rv-cover{width:100%;box-sizing:border-box;min-height:100%;
     display:flex;flex-direction:column;justify-content:center;
     -webkit-print-color-adjust:exact;print-color-adjust:exact}
   #printArea .pcover .rv-cover.cv-band,#printArea .pcover .rv-cover.cv-duotone{justify-content:stretch}
@@ -568,12 +569,35 @@ body{background:var(--iv);}
 @media print{
   @page{ size:A4; margin:0 }
   body{background:#fff}
-  .sh-wrap{max-width:none;padding:13mm 12mm}
+  .sh-wrap{max-width:none;padding:0 12mm}
   .sh-print, .sh-back{display:none !important}
-  .blk{page-break-inside:avoid;box-shadow:none;border:none}
+  /* 첫 페이지 상단 여백 — 표지가 있으면 제목줄은 숨긴다 (표지에 이미 담겨 있음) */
+  .sh-top{padding-top:12mm;margin-bottom:8mm}
+  body.has-cover .sh-top{display:none}
+  /* 블록: 통째로 유지 + 투명 윗테두리 → 어느 페이지 맨 위에 와도 위 여백이 생긴다 */
+  .blk{page-break-inside:avoid;box-shadow:none;border:none;border-radius:0;
+    border-top:9mm solid transparent;margin:0 0 7mm}
   .blk .blkhead{border-bottom:2.5px solid var(--gd)}
-  .rv-cover{min-height:calc(100vh - 26mm);display:flex;flex-direction:column;justify-content:center;
-    page-break-after:always;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  /* 표 줄은 페이지 경계에서 중간에 잘리지 않게 */
+  .rv-tb tr,.rv-kv tr,.rv-ag tr,.rv-sch tr{page-break-inside:avoid}
+  /* 표지 = 정확히 한 장 (위아래 12mm 여백 포함, 다음 내용은 새 장부터) */
+  .blk-cover{page-break-after:always;page-break-inside:avoid;border:none;border-top:0;
+    margin:0;height:296mm;box-sizing:border-box;border-radius:0;box-shadow:none}
+  .blk-cover .blkbody{height:100%;box-sizing:border-box;padding:12mm 0 !important}
+  .blk-cover .rv-cover{height:100%;box-sizing:border-box;margin:0;
+    display:flex;flex-direction:column;justify-content:center;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .blk-cover .rv-cover.cv-band,.blk-cover .rv-cover.cv-duotone{justify-content:stretch}
+  .blk-cover .cv-band .cbody,.blk-cover .cv-duotone .cbody{flex:1;display:flex;flex-direction:column;justify-content:center}
+  .blk-cover .cv-elegant .cinner{flex:1;display:flex;flex-direction:column;justify-content:center}
+  .blk-cover .rv-cover.cv-ribbon{flex-direction:row}
+  .blk-cover .cv-ribbon .rb-body{display:flex;flex-direction:column;justify-content:center}
+  /* 인쇄 표지는 글씨를 종이 크기에 맞게 키운다 */
+  .blk-cover .cbig{font-size:42px;letter-spacing:4px;line-height:1.4}
+  .blk-cover .csub{font-size:17px;margin-top:14px}
+  .blk-cover .cmeta{font-size:14px;margin-top:26px;line-height:2.1}
+  .blk-cover .clogo{height:84px;max-width:260px;margin-bottom:22px}
+  .sh-wrap>.sh-meta{padding-bottom:12mm}
 }
 </style>
 </head>
@@ -910,7 +934,7 @@ function dstr(ts){
 function blockHTML(b){
   const body = renderBlock(b);
   if(!body) return '';
-  if(b.type === 'cover') return `<div class="blk" style="padding:0;overflow:hidden"><div class="blkbody" style="padding:0">${body}</div></div>`;
+  if(b.type === 'cover') return `<div class="blk blk-cover" style="padding:0;overflow:hidden"><div class="blkbody" style="padding:0">${body}</div></div>`;
   return `<div class="blk"><div class="blkhead">
     <span class="bico">${ICONS[b.key]||'📄'}</span><span class="bt">${esc(b.title||'')}</span></div>
     <div class="blkbody">${body}</div></div>`;
@@ -944,6 +968,8 @@ async function boot(){
       </div>
       ${blocks.map(blockHTML).join('')}
       <div class="sh-meta" style="text-align:center;margin-top:18px">${ORG_L[data.org]||''} · 가정통신문</div>`;
+    // 인쇄에서 표지가 있으면 제목줄을 숨기고 표지가 첫 장을 통째로 쓰게 한다
+    if(blocks.some(b=>b && b.type==='cover' && b.data && (b.data.big||b.data.period||b.data.place))) document.body.classList.add('has-cover');
   } catch(e){ V.innerHTML = `<div class="sh-empty">불러올 수 없습니다.<br><small>${esc(e.message)}</small></div>`; }
 }
 boot();

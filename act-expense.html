@@ -334,7 +334,7 @@ const statusPill = st => ({
 window.openLedger = async function(id){
   const l = LEDGERS.find(x=>x.id===id); if(!l) return;
   CUR = l; TAB = 'mem'; MFILTER = 'all';
-  await reloadLedgerData();
+  await Promise.all([ reloadLedgerData(), loadRoster(true) ]); // 학생 최신 상태도 함께 담아온다
   render();
 };
 async function reloadLedgerData(){
@@ -352,6 +352,23 @@ function sortMembers(){
     || String(a.name||'').localeCompare(String(b.name||''),'ko'));
 }
 const gnum = g => { const n = parseInt(String(g||'').replace(/[^0-9]/g,'')); return isNaN(n)?99:n; };
+
+/* ⏸ 활동 기간(fromDs~toDs)에 휴학과 겹치는지 — 출석부와 같은 기준(students.leaves) */
+function isOnLeaveDuring(st, fromDs, toDs){
+  if(!st) return false;
+  const from = fromDs || todayDs();
+  const to = toDs || from;
+  if(Array.isArray(st.leaves) && st.leaves.length){
+    return st.leaves.some(lv => lv.start && lv.end && lv.start <= to && from <= lv.end);
+  }
+  return (st.status || 'active') === 'leave'; // 기간 이력이 없는 옛 데이터는 상태로 판단
+}
+/* 담긴 참가자(actMembers)가 활동 기간에 휴학인지 */
+function isMemberOnLeave(m){
+  if(!CUR || m.kind !== 'student' || !Array.isArray(STUDENTS) || !STUDENTS) return false;
+  const st = STUDENTS.find(x => x.id === m.studentId);
+  return !!st && isOnLeaveDuring(st, CUR.startDs, CUR.endDs || CUR.startDs);
+}
 function sortExpenses(){
   EXPENSES.sort((a,b)=>{
     const ka = a.status==='req' ? 1 : 0, kb = b.status==='req' ? 1 : 0;
@@ -416,7 +433,7 @@ function renderMembers(){
   const rows = list.map(m=>`<tr class="${MSEL.has(m.id)?'selrow':''}">
     ${mgr&&!isLocked()?`<td class="c no-print"><input type="checkbox" class="mselck" ${MSEL.has(m.id)?'checked':''}
       onchange="mSelTgl('${m.id}', this.checked)" style="width:16px;height:16px"></td>`:''}
-    <td><b>${esc(m.name)}</b></td>
+    <td><b>${esc(m.name)}</b>${isMemberOnLeave(m)?' <span class="pill req" title="활동 기간에 휴학과 겹칩니다 — 확인 후 빼 주세요">⏸ 휴학</span>':''}</td>
     <td class="c">${m.kind==='student'?'학생':m.kind==='teacher'?'선생님':'직접 추가'}</td>
     <td class="c">${esc(m.grade||'')}</td>
     <td class="c">${esc(m.className||'')}</td>
@@ -588,8 +605,8 @@ window.removeMember = async function(id){
 };
 
 /* ── 담기: 학생 현황표 ── */
-async function loadRoster(){
-  if(STUDENTS && CLASSES) return;
+async function loadRoster(force){
+  if(!force && STUDENTS && CLASSES) return;
   const [ss, cs] = await Promise.all([
     getDocs(collection(db,'students')), getDocs(collection(db,'classes'))
   ]);
@@ -611,10 +628,15 @@ window.openPickStudents = async function(){
   if(!canMgr(CUR)) return;
   if(isLocked()) return lockedToast();
   toast('학생 현황표 여는 중…');
-  await loadRoster();
+  await loadRoster(true); // 열 때마다 최신 명단 (선교지 복귀 등 즉시 반영)
   const added = new Set(MEMBERS.filter(m=>m.kind==='student').map(m=>m.studentId));
-  const act = STUDENTS.filter(s=>(s.status||'active')==='active');
-  const lv  = STUDENTS.filter(s=>(s.status||'active')==='leave');
+  // 활동 기간(CUR.startDs~endDs)에 휴학과 겹치는 학생은 명단에서 아예 뺀다
+  // (휴학 상태여도 이력상 기간이 안 겹치면 — 예: 활동 전 복학 — 정상 표시)
+  const inLv = st => isOnLeaveDuring(st, CUR.startDs, CUR.endDs || CUR.startDs);
+  const pool = STUDENTS.filter(st => ['active','leave'].includes(st.status || 'active'));
+  const act = pool.filter(st => !inLv(st));
+  const excluded = pool.filter(inLv);
+  const lv = []; // 접힌 휴학 칸은 더 이상 쓰지 않는다 (아래 안내 문구로 대체)
   const byG = {};
   act.forEach(s=>{
     const info = studentInfo(s.id);
@@ -644,7 +666,8 @@ window.openPickStudents = async function(){
 
   openModal(`
     <div class="mtitle">👥 학생 현황표에서 담기</div>
-    <div class="pdesc" style="margin-bottom:11px">재학생만 보입니다 (퇴학 인원 제외 · 휴학은 아래 접힌 칸).
+    <div class="pdesc" style="margin-bottom:11px">활동 기간(${esc(sd(CUR.startDs))}${CUR.endDs?` ~ ${esc(sd(CUR.endDs))}`:''})에 재학 중인 학생만 보입니다.
+      ${excluded.length?`⏸ 기간에 휴학과 겹치는 <b>${excluded.length}명</b>(${excluded.slice(0,4).map(st=>esc(st.name)).join(', ')}${excluded.length>4?' 외':''})은 명단에서 뺐어요 — 학생관리에서 복학(휴학 기간 수정) 처리하면 바로 다시 보입니다.<br>`:''}
       이미 담긴 학생은 흐리게 표시됩니다.</div>
     ${secHTML}${lvHTML}
     <div class="mfoot">
