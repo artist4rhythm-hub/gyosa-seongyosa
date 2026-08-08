@@ -69,7 +69,7 @@
 .rv-t{white-space:pre-wrap;line-height:1.75;color:var(--tx)}
 .rv-red{white-space:pre-wrap;line-height:1.7;color:var(--red);font-size:12px;margin-top:8px}
 .rv-kv{width:100%;border-collapse:collapse;font-size:12.5px}
-.rv-kv th{width:118px;background:var(--iv);color:var(--gd);font-weight:900;text-align:left;
+.rv-kv th{width:1%;white-space:nowrap;background:var(--iv);color:var(--gd);font-weight:900;text-align:left;
   padding:8px 10px;border-bottom:2px solid var(--wh);font-size:12px;vertical-align:top}
 .rv-kv td{padding:8px 10px;border-bottom:1px solid var(--iv);white-space:pre-wrap;line-height:1.6}
 .rv-kv tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -334,6 +334,41 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 /* 회계식 정렬 — ₩ 왼쪽 고정, 숫자 오른쪽 정렬(고정폭 숫자), 수량·단위 분리 */
 .rv-tb th.thr{text-align:right}
 .rv-tb td.num{padding-right:9px}
+
+/* ═══ 📱 좁은 화면 표 개선 (발행 보기 전용 · 인쇄는 표 그대로) ═══ */
+/* ① 공통: 단어 단위 줄바꿈 — 「2학년」이 중간에 끊기지 않는다 */
+.rv-tb td, .rv-kv td, .rv-ag td, .rv-t, .rv-note, .rv-red{word-break:keep-all;overflow-wrap:anywhere}
+/* ② 명단 2단 · 연락처 카드 (좁은 화면에서만 표 대신 표시) */
+.m-alt{display:none}
+.m-hint{display:none;font-size:10.5px;color:var(--tl);margin-top:4px;text-align:right}
+.m-roster .mr-row{padding:9px 2px;border-bottom:1px solid var(--iv)}
+.m-roster .mr-row:nth-child(even){background:#F3F7F4}
+.m-roster .mr-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.m-roster .mr-g{font-size:12px;font-weight:900;color:#fff;background:var(--gm);border-radius:7px;padding:3px 9px;white-space:nowrap}
+.m-roster .mr-g.sum{background:var(--gd)}
+.m-roster .mr-c{font-size:11.5px;font-weight:800;color:var(--gd)}
+.m-roster .mr-n{font-size:12.5px;line-height:1.75;padding:0 2px;word-break:keep-all}
+.m-roster .mr-x{font-size:11.5px;color:var(--ts);margin-top:3px;word-break:keep-all}
+.m-cards{flex-direction:column;gap:8px}
+.m-cards .mc{border:1px solid var(--ivd);border-radius:11px;padding:10px 12px;background:#FDFDFB}
+.m-cards .mc+.mc{margin-top:8px}
+.m-cards .mc-t{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:3px}
+.m-cards .mc-name{font-size:13.5px;font-weight:900;color:var(--gd)}
+.m-cards .mc-role{font-size:10px;font-weight:800;color:var(--gm);background:var(--gp);border-radius:100px;padding:2px 8px}
+.m-cards .mc-l{font-size:12px;color:var(--ts);line-height:1.6;margin-top:2px;word-break:keep-all}
+.m-cards .mc-l b{color:var(--gd);font-weight:800}
+.m-cards .mc-tel{display:inline-block;font-size:12.5px;font-weight:800;color:var(--gm);text-decoration:none;
+  border:1px solid var(--gl);background:var(--gp);border-radius:8px;padding:4px 10px;margin-top:6px}
+@media (max-width:640px){
+  .tbwrap.has-malt>.rv-tbwrap{display:none}
+  .tbwrap.has-malt>.m-alt{display:block}
+  .m-hint{display:block}
+  .rv-kv th{max-width:32vw;white-space:normal;word-break:keep-all}
+}
+@media print{
+  .m-alt, .m-hint{display:none !important}
+  .tbwrap.has-malt>.rv-tbwrap{display:block !important}
+}
 .acc{display:flex;justify-content:space-between;align-items:baseline;gap:6px;min-width:88px}
 .acc i{font-style:normal;font-size:10px;color:var(--ts);font-weight:700}
 .acc b{font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:.2px}
@@ -910,10 +945,50 @@ function renderBlock(b){
       const n=span(ri,ci);
       return `<td${n>1?` rowspan="${n}" class="mg"`:''}>${esc(v)}</td>`;
     }).join('')}</tr>`).join('');
-    return `<div style="overflow-x:auto"><table class="rv-tb">
+    const nm = s=>String(s||'').replace(/\s+/g,'');
+    const oneLine = s=>esc(String(s||'').replace(/\s*\n\s*/g,' '));
+    // 📱 좁은 화면 대체 뷰 판별 — 병합(⤴)이 있으면 표 그대로 둔다
+    const hasMG = rows.some(r=>(r.c||[]).includes(MG));
+    const phoneIdx = cols.findIndex(c=>/연락처|전화/.test(nm(c)));
+    const isRoster = !hasMG && phoneIdx<0 && cols.length>=2 && cols.length<=4 &&
+      /학년|반$/.test(nm(cols[0])) && cols.some(c=>/명단|이름/.test(nm(c)));
+    const isCards  = !hasMG && phoneIdx>=0 && cols.length>=2;
+    let malt='';
+    if(isRoster){
+      // 명단표: 「학년 배지 + 인원」 한 줄 / 「이름들」 한 줄로 쌓는다
+      const cntIdx = cols.findIndex((c,i)=>i>0 && /인원|^명$/.test(nm(c)));
+      const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
+      malt = `<div class="m-alt m-roster">${rows.map(r=>{
+        const c=r.c||[]; const g=String(c[0]||''); const sum=/합계|총계/.test(nm(g));
+        const extra=cols.map((cl,i)=>(i===0||i===cntIdx||i===listIdx||!(c[i]))?'':
+          `<div class="mr-x"><b>${esc(cl)}</b> ${oneLine(c[i])}</div>`).join('');
+        return `<div class="mr-row"><div class="mr-h"><span class="mr-g${sum?' sum':''}">${oneLine(g)}</span>${
+          cntIdx>=0&&c[cntIdx]?`<span class="mr-c">${oneLine(c[cntIdx])}</span>`:''}</div>${
+          listIdx>=0&&c[listIdx]?`<div class="mr-n">${oneLine(c[listIdx])}</div>`:''}${extra}</div>`;
+      }).join('')}</div>`;
+    } else if(isCards){
+      // 연락처·병원 등: 카드 + 전화 바로 걸기
+      const ni=cols.findIndex(c=>/이름|성명|병원|기관|장소/.test(nm(c)));
+      const nameIdx=ni>=0?ni:0;
+      const roleIdx=cols.findIndex((c,i)=>i!==nameIdx && /구분|직책|역할/.test(nm(c)));
+      malt = `<div class="m-alt m-cards">${rows.map(r=>{
+        const c=r.c||[];
+        const phRaw=String(c[phoneIdx]||'');
+        const tel=(phRaw.match(/0\d{1,2}[- ]?\d{3,4}[- ]?\d{4}/)||[])[0]||'';
+        const lines=cols.map((cl,i)=>(i===nameIdx||i===roleIdx||i===phoneIdx||!(c[i]))?'':
+          `<div class="mc-l"><b>${esc(cl)}</b> ${oneLine(c[i])}</div>`).join('');
+        return `<div class="mc"><div class="mc-t"><span class="mc-name">${oneLine(c[nameIdx]||'')}</span>${
+          roleIdx>=0&&c[roleIdx]?`<span class="mc-role">${oneLine(c[roleIdx])}</span>`:''}</div>${lines}${
+          tel?`<a class="mc-tel" href="tel:${tel.replace(/[^0-9]/g,'')}">📞 ${esc(tel)}</a>`
+             :(phRaw?`<div class="mc-l">${oneLine(phRaw)}</div>`:'')}</div>`;
+      }).join('')}</div>`;
+    }
+    const hint = (!malt && cols.length>=5) ? `<div class="m-hint">↔ 표가 넓어요 — 옆으로 밀어 보세요</div>` : '';
+    return `<div class="tbwrap${malt?' has-malt':''}">
+      <div class="rv-tbwrap" style="overflow-x:auto"><table class="rv-tb">
       <tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
       ${body}
-    </table></div>
+    </table></div>${hint}${malt}</div>
     ${d.note?`<div class="rv-note">${esc(d.note)}</div>`:''}`;
   }
   if(b.type === 'budget') return renderBudget(d);
