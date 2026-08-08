@@ -363,6 +363,14 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 .ag-min{flex:1;min-width:90px;padding:5px 7px;font-size:11.5px}
 .ag-us{display:flex;flex-wrap:wrap;gap:4px;min-height:26px}
 .ag-hint{font-size:10.5px;color:var(--tl)}
+.ag-pgh{font-size:11px;font-weight:900;color:var(--gd);margin:7px 0 4px;display:flex;justify-content:space-between;align-items:baseline}
+.ag-pgh span{font-size:9.5px;font-weight:700;color:var(--tl)}
+.ag-pgrp{display:flex;flex-wrap:wrap;gap:4px}
+.ag-pool.dropover{border-color:var(--gm);background:var(--gp)}
+.ag-unit.dropover{border-color:var(--gm);box-shadow:0 0 0 2px var(--gm);background:var(--gp)}
+.ag-ghost{position:fixed;z-index:999;pointer-events:none;background:var(--gd);color:#fff;
+  font-size:12px;font-weight:800;border-radius:100px;padding:5px 13px;box-shadow:0 6px 18px rgba(0,0,0,.3)}
+.ag-stu{touch-action:none}
 .ag-stu{font-family:inherit;font-size:11.5px;font-weight:700;color:var(--tx);border:1px solid var(--ivd);
   border-radius:100px;background:var(--wh);padding:3px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
 .ag-stu b{font-size:9px;font-weight:800;color:var(--ts)}
@@ -621,9 +629,6 @@ const PRESETS = [
       type:'assign', pub:true, make:()=>({ kind:'vehicle', info:'', units:[], note:'' }) },
     { key:'roomAssign', icon:'🛏', label:'숙소 배정', desc:'숙소 정보 · 호실별 담당·성별·명단·비고',
       type:'assign', pub:true, make:()=>({ kind:'lodging', info:'', units:[], note:'' }) },
-    { key:'groups',  icon:'👥', label:'조 편성',     desc:'조 · 공간 · 관리교사 · 명단',
-      type:'table', pub:true, make:()=>({ cols:['조','공간','관리교사','명단'],
-        rows:[{c:['1조','','','']},{c:['2조','','','']}], note:'' }) },
     { key:'budget',  icon:'💰', label:'예산',        desc:'단가×수량 자동 합계 · 1인 회비 계산',
       type:'budget', pub:true, make:()=>({ rows:[
         {cat:'숙박비', item:'', price:0, qty:1, unit:'', note:''},
@@ -2626,9 +2631,10 @@ window.fnPickStaffEvent = async function(cb, cur, opt){
   }
   await loadStaffList();
   const already = new Set(String(cur||'').split(/[,(]/).map(x=>x.trim()).filter(Boolean));
+  const canGd = CU && (CU.role==='super' || CU.role==='org_admin');
   const items = names.map(n=>{
     const t = STAFF.find(x=>x.name===n);
-    return { n, g:t?.gender||'', extra:!t };
+    return { n, g:t?.gender||'', extra:!t, uid:t?.uid||'' };
   });
   openModal2(`
     <div class="mtitle">🎩 ${opt.single?'운전자 선택 (1명)':'담당 선생님 선택'} <span class="fnp-cnt" id="fe-n"></span></div>
@@ -2636,7 +2642,8 @@ window.fnPickStaffEvent = async function(cb, cur, opt){
     <div class="fnp-wrap"><div class="fnp-list" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
       ${items.map(it=>`<label class="fnp-it"><input type="${opt.single?'radio':'checkbox'}" name="fe-pick"
         value="${esc(it.n)}" data-gen="${esc(it.g)}" ${already.has(it.n)?'checked':''}>
-        ${esc(it.n)}<span class="fnp-gd ${it.g==='남'?'m':it.g==='여'?'f':'n'}">${it.g||'?'}</span>
+        ${esc(it.n)}<span class="fnp-gd ${it.g==='남'?'m':it.g==='여'?'f':'n'} ${(canGd&&it.uid)?'gd-edit':''}" data-guid="${esc(it.uid)}"
+          title="${(canGd&&it.uid)?'누르면 남 → 여 → 미정 순으로 바뀌고 명부에 저장돼요':''}">${it.g||'?'}</span>
         ${it.extra?'<span class="fnp-coopbadge">추가</span>':''}</label>`).join('')}
     </div></div>
     <div class="mfoot">
@@ -2653,6 +2660,19 @@ window.fnPickStaffEvent = async function(cb, cur, opt){
     $I('fe-n').textContent = on.length ? `${on.length}명 (남 ${m} · 여 ${f})` : '';
   };
   box.addEventListener('change', cnt); cnt();
+  box.addEventListener('click', async e=>{
+    const chip=e.target.closest('.fnp-gd.gd-edit'); if(!chip) return;
+    e.preventDefault();
+    const uid=chip.dataset.guid; const t=STAFF.find(x=>x.uid===uid); if(!t) return;
+    const next = t.gender==='남' ? '여' : t.gender==='여' ? '' : '남';
+    t.gender=next;
+    chip.className = `fnp-gd ${next==='남'?'m':next==='여'?'f':'n'} gd-edit`;
+    chip.textContent = next||'?';
+    const inp=chip.closest('.fnp-it').querySelector('input'); if(inp) inp.dataset.gen=next;
+    cnt();
+    try { await setDoc(doc(db,'staff',uid), { gender: next }, { merge:true }); }
+    catch(err){ toast('성별 저장 실패: '+err.message,'err'); }
+  });
   $I('fe-ok').onclick = ()=>{
     const on=[...box.querySelectorAll('input[name="fe-pick"]:checked')].map(c=>c.value);
     if(!on.length){ toast('한 명 이상 골라 주세요.','err'); return; }
@@ -2678,8 +2698,8 @@ function edAssign(b){
   const d = b.data||{}; const K = AG_KIND[d.kind]||AG_KIND.team;
   window.__agSeed = JSON.parse(JSON.stringify(d));
   return `
-    <div class="msub">참가 학생 명단을 기준으로 배정해요 — 왼쪽에서 학생을 <b>누르고</b>, 오른쪽 ${K.unit} 카드를 <b>누르면</b> 이동합니다.
-      배정된 학생의 ✕를 누르면 미배정으로 돌아와요. <b>1인 1${K.unit}</b>${d.kind==='vehicle'?' · <b>정원은 운전자·교사 포함</b>':''} 규칙이 자동으로 지켜집니다.</div>
+    <div class="msub">참가 학생 명단을 기준으로 배정해요 — 학생 카드를 <b>끌어서</b> ${K.unit} 카드에 놓으면 이동해요 (누르고 → 카드 누르기도 됩니다).
+      <b>⌘(맥)/Ctrl(윈도우)+클릭</b>으로 여러 명을 담아 <b>한 번에 끌어올 수</b> 있어요. 카드를 풀로 끌면 미배정으로 돌아옵니다. <b>1인 1${K.unit}</b>${d.kind==='vehicle'?' · <b>정원은 운전자·교사 포함</b>':''} 규칙이 자동으로 지켜집니다.</div>
     ${d.kind==='lodging'?`<div class="frow" style="margin-bottom:8px"><label class="flab">숙소 이름 · 간략 정보 (주소·연락처·체크인 등)</label>
       <textarea class="ftxt" id="ag-info" rows="2">${esc(d.info||'')}</textarea></div>`:''}
     <div class="ag-top">
@@ -2711,8 +2731,9 @@ async function agInit(){
   if(!rosterIds.length) toast('먼저 일반 계획의 👥 도우미로 「참가 학생 명단」을 만들어 주세요.','err');
   agPaint();
 }
-const agChip = (st,from)=>`<button class="ag-stu${AG.sel&&AG.sel.sid===st.id?' sel':''}${st._warn?' warn':''}"
-    onclick="agSel('${from}','${st.id}')">
+const agChip = (st,from)=>`<button class="ag-stu${AG.selSet&&AG.selSet.has(st.id)?' sel':''}${st._warn?' warn':''}"
+    data-sid="${esc(st.id)}" data-from="${esc(from)}"
+    onclick="agSel(event,'${from}','${st.id}')">
     ${esc(st.n)}<span class="fnp-gd ${st.x==='남'?'m':st.x==='여'?'f':''}">${st.x||''}</span>
     ${st.g?`<b>${esc(String(st.g).replace('학년',''))}</b>`:''}
     ${from!=='pool'?`<i onclick="event.stopPropagation();agOut('${from}','${st.id}')">✕</i>`:''}</button>`;
@@ -2729,9 +2750,24 @@ function agPaint(){
   const pm = AG.pool.filter(x=>x.x==='남').length, pf = AG.pool.filter(x=>x.x==='여').length;
   $I('ag-sum') && ($I('ag-sum').textContent =
     `배정 ${AG.units.reduce((a,u)=>a+u.students.length,0)}명 · 미배정 ${AG.pool.length}명 (남 ${pm}·여 ${pf})`);
-  $I('ag-pool') && ($I('ag-pool').innerHTML = pool.length
-    ? pool.map(st=>agChip(st,'pool')).join('')
-    : '<div class="empty" style="font-size:12px">모두 배정됐어요 🎉</div>');
+  if($I('ag-pool')){
+    const pg = {};
+    pool.forEach(st=>{ const k=st.g||'학년 미지정'; (pg[k]=pg[k]||[]).push(st); });
+    const pks = Object.keys(pg).sort((a,b)=>{
+      if(a==='학년 미지정') return 1; if(b==='학년 미지정') return -1;
+      return a.localeCompare(b,'ko',{numeric:true});
+    });
+    pks.forEach(k=>pg[k].sort((a,b)=>
+      (a.x==='남'?0:a.x==='여'?1:2)-(b.x==='남'?0:b.x==='여'?1:2)
+      || a.n.localeCompare(b.n,'ko')));
+    $I('ag-pool').innerHTML = pool.length
+      ? pks.map(k=>{
+          const m=pg[k].filter(x=>x.x==='남').length, f=pg[k].filter(x=>x.x==='여').length;
+          return `<div class="ag-pgh">${esc(k)} <span>${pg[k].length}명 · 남${m} 여${f}</span></div>
+            <div class="ag-pgrp">${pg[k].map(st=>agChip(st,'pool')).join('')}</div>`;
+        }).join('')
+      : '<div class="empty" style="font-size:12px">모두 배정됐어요 🎉</div>';
+  }
   const box = $I('ag-units'); if(!box) return;
   box.innerHTML = AG.units.map(u=>{
     const m=u.students.filter(x=>x.x==='남').length, f=u.students.filter(x=>x.x==='여').length;
@@ -2759,7 +2795,7 @@ function agPaint(){
     } else {
       head=`<div class="ag-uh2"><button class="ed-mini" onclick="agTeachers('${u.id}')">👩‍🏫 ${u.tN?esc(u.tN):'담당 선생님'}</button></div>`;
     }
-    return `<div class="ag-unit${AG.sel?' drop':''}" onclick="agDrop('${u.id}')">
+    return `<div class="ag-unit${(AG.selSet&&AG.selSet.size)?' drop':''}" data-uid="${u.id}" onclick="agDrop('${u.id}')">
       <div class="ag-uh">
         <input class="ag-uname" value="${esc(u.name||'')}" placeholder="${K.unit} 이름"
           onclick="event.stopPropagation()" oninput="agSet('${u.id}','name',this.value)">
@@ -2776,22 +2812,104 @@ function agPaint(){
     </div>`;
   }).join('') || `<div class="empty" style="font-size:12.5px">${K.addLabel} 버튼으로 시작하세요.</div>`;
 }
-window.agSel = function(from, sid){
-  if(AG.sel && AG.sel.sid===sid){ AG.sel=null; } else AG.sel={from, sid};
+window.agSel = function(ev, from, sid){
+  if(window.__agDragMoved){ window.__agDragMoved=false; return; }   // 드래그 직후의 클릭은 무시
+  if(!AG.selSet) AG.selSet = new Set();
+  if(ev && (ev.metaKey || ev.ctrlKey)){
+    if(AG.selSet.has(sid)) AG.selSet.delete(sid); else AG.selSet.add(sid);   // ⌘/Ctrl: 여러 명 담기
+  } else {
+    if(AG.selSet.size===1 && AG.selSet.has(sid)) AG.selSet.clear();
+    else { AG.selSet.clear(); AG.selSet.add(sid); }
+  }
+  AG.sel = AG.selSet.size ? {sid:[...AG.selSet][0]} : null;   // (하위 호환)
   agPaint();
 };
-window.agDrop = function(uid){
-  if(!AG.sel) return;
-  const u = AG.units.find(x=>x.id===uid); if(!u) return;
-  const src = AG.sel.from==='pool' ? AG.pool : (AG.units.find(x=>x.id===AG.sel.from)?.students||[]);
-  const i = src.findIndex(x=>x.id===AG.sel.sid); if(i<0){ AG.sel=null; agPaint(); return; }
-  const st = src[i];
-  if(AG.kind==='vehicle' && u.cap && agCap(u)+1 > u.cap){
-    toast(`정원 초과예요 — ${u.name||'이 차량'}은 ${u.cap}명(운전자·교사 포함)까지입니다.`,'err'); return;
+/* 선택된 학생들을 찾아 (풀·조 어디에 있든) 대상으로 옮긴다 — uid=null이면 미배정으로 */
+function agMoveSelTo(uid, dragSid){
+  if(!AG.selSet) AG.selSet = new Set();
+  if(dragSid && !AG.selSet.has(dragSid)){ AG.selSet.clear(); AG.selSet.add(dragSid); }
+  const sids=[...AG.selSet];
+  if(!sids.length) return false;
+  const target = uid ? AG.units.find(x=>x.id===uid) : null;
+  if(uid && !target) return false;
+  // 이미 대상 안에 있는 학생은 제외
+  const moving = sids.filter(sid=> uid
+    ? !(target.students.some(x=>x.id===sid))
+    : !(AG.pool.some(x=>x.id===sid)));
+  if(!moving.length){ AG.selSet.clear(); agPaint(); return false; }
+  if(AG.kind==='vehicle' && target && target.cap && agCap(target)+moving.length > target.cap){
+    toast(`정원 초과예요 — ${target.name||'이 차량'}은 ${target.cap}명(운전자·교사 포함)까지라 ${moving.length}명을 넣을 수 없어요.`,'err');
+    return false;
   }
-  src.splice(i,1); u.students.push(st); AG.sel=null;
+  const taken=[];
+  moving.forEach(sid=>{
+    let i=AG.pool.findIndex(x=>x.id===sid);
+    if(i>=0){ taken.push(AG.pool.splice(i,1)[0]); return; }
+    for(const u of AG.units){
+      i=u.students.findIndex(x=>x.id===sid);
+      if(i>=0){ taken.push(u.students.splice(i,1)[0]); return; }
+    }
+  });
+  taken.forEach(st=>{ st._warn=false;
+    if(target) target.students.push(st);
+    else AG.pool.push(st);
+  });
+  if(!target) AG.pool.sort((a,b)=>a.n.localeCompare(b.n,'ko'));
+  AG.selSet.clear(); AG.sel=null;
   agPaint(); saveDraft();
-};
+  return true;
+}
+window.agDrop = function(uid){ agMoveSelTo(uid, null); };
+/* ── 카드 드래그 앤 드롭 (다중 선택 함께 이동) ── */
+(function(){
+  let dr=null, ghost=null;
+  const clearHover=()=>document.querySelectorAll('.ag-unit.dropover,.ag-pool.dropover')
+    .forEach(el=>el.classList.remove('dropover'));
+  document.addEventListener('pointerdown', e=>{
+    const chip=e.target.closest('.ag-stu');
+    if(!chip || !chip.closest('.ag-wrap') || e.target.closest('i')) return;
+    dr={ sid:chip.dataset.sid, x:e.clientX, y:e.clientY, moved:false };
+  });
+  document.addEventListener('pointermove', e=>{
+    if(!dr) return;
+    if(!dr.moved){
+      if(Math.hypot(e.clientX-dr.x, e.clientY-dr.y) < 6) return;
+      dr.moved=true; window.__agDragMoved=true;
+      const n = (AG?.selSet?.has(dr.sid) && AG.selSet.size>1) ? AG.selSet.size : 1;
+      const st = [...(AG?.pool||[]), ...(AG?.units||[]).flatMap(u=>u.students)].find(x=>x.id===dr.sid);
+      ghost=document.createElement('div');
+      ghost.className='ag-ghost';
+      ghost.textContent = n>1 ? `${n}명 이동` : (st?st.n:'이동');
+      document.body.appendChild(ghost);
+      document.body.style.userSelect='none';
+    }
+    ghost.style.left=(e.clientX+12)+'px'; ghost.style.top=(e.clientY+10)+'px';
+    clearHover();
+    const el=document.elementFromPoint(e.clientX,e.clientY);
+    const unit=el && el.closest('.ag-unit');
+    const pool=el && el.closest('.ag-pool');
+    if(unit) unit.classList.add('dropover');
+    else if(pool) pool.classList.add('dropover');
+  });
+  document.addEventListener('pointerup', e=>{
+    if(!dr) return;
+    const wasDrag=dr.moved; const sid=dr.sid; dr=null;
+    if(ghost){ ghost.remove(); ghost=null; }
+    document.body.style.userSelect='';
+    clearHover();
+    if(!wasDrag) return;                             // 클릭은 agSel이 처리
+    const el=document.elementFromPoint(e.clientX,e.clientY);
+    const unit=el && el.closest('.ag-unit');
+    const pool=el && el.closest('.ag-pool');
+    if(unit){
+      // 카드의 unit id: agDrop onclick 속성에서 추출하는 대신 데이터로 — 렌더에 data-uid 추가됨
+      agMoveSelTo(unit.dataset.uid, sid);
+    } else if(pool){
+      agMoveSelTo(null, sid);                        // 풀로 끌면 미배정 복귀
+    }
+    setTimeout(()=>{ window.__agDragMoved=false; }, 50);
+  });
+})();
 window.agOut = function(uid, sid){
   const u = AG.units.find(x=>x.id===uid); if(!u) return;
   const i = u.students.findIndex(x=>x.id===sid); if(i<0) return;
