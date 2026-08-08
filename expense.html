@@ -3084,6 +3084,7 @@ function payPendingByTeacher(){
   return groups;
 }
 window.openPendingNotice = function(){
+  try {
   if(!isExpManager(payOrg)){ toast('수행성 경비 관리자만 쓸 수 있는 기능이에요.','err'); return; }
   const groups = payPendingByTeacher();
   const keys = Object.keys(groups)
@@ -3131,6 +3132,11 @@ window.openPendingNotice = function(){
     </div>`;
   document.body.appendChild(mv);
   window.__pnGroups = groups;
+  } catch(e){
+    console.error('[미처리 알림]', e);
+    toast('미처리 현황 창을 여는 중 문제가 났어요: '+e.message,'err');
+    alert('미처리 현황 창 오류:\n'+(e.stack||e.message||e));
+  }
 };
 function buildNoticeBody(g){
   const semL = semKor(paySem);
@@ -3156,6 +3162,11 @@ ${g.done.map(it=>`• ${it.s.name} (${it.type} 완료)`).join('\n')}`:''}
 ${PARENT_LINK_URL}`;
 }
 /* 미처리 명단 — 텍스트 복사 (단체방·문서 붙여넣기용) */
+/* 인라인 onclick이 확장 프로그램·환경 문제로 막혀도 동작하도록 위임으로 한 번 더 연결 */
+document.addEventListener('click', e=>{
+  const b = e.target.closest('[data-act="pending-notice"]');
+  if(b){ e.preventDefault(); try { window.openPendingNotice(); } catch(err){ alert('오류: '+err.message); } }
+});
 window.copyGradeSummary = function(){
   const txt = window.__gsumText||'';
   const done = ()=>toast('학년별 요약을 복사했어요 — 붙여넣기 하세요.','ok');
@@ -3407,7 +3418,7 @@ async function renderPay(keepState){
       </div>
       ${isExpManager(payOrg) ? `
       <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button class="btn" onclick="openPendingNotice()" style="font-size:13px">📨 담임에게 미처리 현황 보내기</button>
+        <button class="btn" data-act="pending-notice" onclick="openPendingNotice()" style="font-size:13px">📨 담임에게 미처리 현황 보내기</button>
         <span style="font-size:11.5px;color:var(--tl)">미입금·미환급·계좌 미입력 학생을 반별로 묶어 담임 선생님 쪽지함으로 보냅니다 — 보내기 전에 미리 보고 고를 수 있어요.</span>
       </div>` : ''}
     </div>
