@@ -3069,19 +3069,26 @@ function payPendingByTeacher(){
       item = { s:st, type:'미입금', amt:netv };
     else if(netv < 0 && !(p.refund && p.refund.checked))
       item = { s:st, type:'미환급', amt:-netv, noAcct: !PARENT_ACCOUNTS[st.id] };
-    if(!item) return;
+    let done = null;
+    if(!item){
+      if(netv > 0 && p.deposit && p.deposit.checked) done = { s:st, type:'입금' };
+      else if(netv < 0 && p.refund && p.refund.checked) done = { s:st, type:'환급' };
+      if(!done) return;                      // 정산 불필요(0원)는 제외
+    }
     const c = studentClass(st.id);
     const t = c && STAFF.find(x=>x.uid===c.teacherUid);
     const key = t ? t.uid : 'none';
-    if(!groups[key]) groups[key] = { uid:t?t.uid:'', name:t?t.name:'담임 미지정', cls:c?c.name:'', items:[] };
-    groups[key].items.push(item);
+    if(!groups[key]) groups[key] = { uid:t?t.uid:'', name:t?t.name:'담임 미지정', cls:c?c.name:'', items:[], done:[] };
+    if(item) groups[key].items.push(item); else groups[key].done.push(done);
   });
   return groups;
 }
 window.openPendingNotice = function(){
   if(!isExpManager(payOrg)){ toast('수행성 경비 관리자만 쓸 수 있는 기능이에요.','err'); return; }
   const groups = payPendingByTeacher();
-  const keys = Object.keys(groups).sort((a,b)=> (a==='none')-(b==='none')
+  const keys = Object.keys(groups)
+    .filter(k=>groups[k].items.length)                      // 발송 대상 = 미처리가 있는 반
+    .sort((a,b)=> (a==='none')-(b==='none')
     || groups[a].name.localeCompare(groups[b].name,'ko'));
   const total = keys.reduce((n,k)=>n+groups[k].items.length,0);
   const old = document.getElementById('pn-mod'); if(old) old.remove();
@@ -3105,7 +3112,8 @@ window.openPendingNotice = function(){
             <label style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:13.5px;color:var(--gd,#1E3932);cursor:pointer">
               ${off?'<span>⚠️</span>':`<input type="checkbox" class="pn-t" value="${esc(k)}" checked style="width:16px;height:16px">`}
               ${esc(g.name)}${g.cls?` <span style="font-weight:600;color:var(--ts,#5A6560);font-size:12px">· ${esc(g.cls)}</span>`:''}
-              <span style="margin-left:auto;font-size:11px;background:var(--gp,#E8F3EF);color:var(--gm,#1E7A4F);border-radius:100px;padding:2px 9px;font-weight:800">${g.items.length}명</span>
+              <span style="margin-left:auto;font-size:11px;background:#FDF6EC;color:#B8860B;border-radius:100px;padding:2px 9px;font-weight:800">미처리 ${g.items.length}</span>
+              <span style="font-size:11px;background:var(--gp,#E8F3EF);color:var(--gm,#1E7A4F);border-radius:100px;padding:2px 9px;font-weight:800">완료 ${(g.done||[]).length}</span>
             </label>
             <div style="font-size:12px;color:var(--tx,#243029);line-height:1.9;margin:6px 0 0 24px">
               ${g.items.map(line).join('<br>')}</div>
@@ -3138,11 +3146,24 @@ ${dep.map(it=>`• ${it.s.name} (${it.s.className||it.s.grade||''}) — ₩${fmt
 ↩️ 미환급 ${ref.length}명
 ${ref.map(it=>`• ${it.s.name} (${it.s.className||it.s.grade||''}) — ₩${fmt(it.amt)}${it.noAcct?' · ⚠️ 환급 계좌 미입력':''}`).join('\n')}`:''}
 
+${(g.done&&g.done.length)?`
+
+✅ 처리 완료 ${g.done.length}명
+${g.done.map(it=>`• ${it.s.name} (${it.type} 완료)`).join('\n')}`:''}
+
 학부모님께 다시 안내 부탁드립니다 🙏
 · 납부 금액 확인과 환급 계좌 입력은 아래 학부모 안내 링크에서 할 수 있어요.
 ${PARENT_LINK_URL}`;
 }
 /* 미처리 명단 — 텍스트 복사 (단체방·문서 붙여넣기용) */
+window.copyGradeSummary = function(){
+  const txt = window.__gsumText||'';
+  const done = ()=>toast('학년별 요약을 복사했어요 — 붙여넣기 하세요.','ok');
+  if(navigator.clipboard?.writeText) navigator.clipboard.writeText(txt).then(done).catch(()=>fb());
+  else fb();
+  function fb(){ const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove(); done(); }
+};
 window.copyPendingList = function(){
   const groups = window.__pnGroups || {};
   const keys = Object.keys(groups).sort((a,b)=>(a==='none')-(b==='none')||groups[a].name.localeCompare(groups[b].name,'ko'));
@@ -3390,6 +3411,36 @@ async function renderPay(keepState){
         <span style="font-size:11.5px;color:var(--tl)">미입금·미환급·계좌 미입력 학생을 반별로 묶어 담임 선생님 쪽지함으로 보냅니다 — 보내기 전에 미리 보고 고를 수 있어요.</span>
       </div>` : ''}
     </div>
+
+    ${(()=>{   /* 📋 학년별 미처리 요약 — «2학년 - 김선우, 박윤아» 형식 */
+      const gl = g => { const t=String(g||'').trim(); return /^\d+$/.test(t)?`${t}학년`:t; };
+      const gsum = {};
+      studs.forEach(st=>{
+        const p = PAYMENTS[st.id]||{};
+        const netv = st.charge - st.refund;
+        if(netv===0) return;
+        const key = gl(st.grade)||'학년 미지정';
+        if(!gsum[key]) gsum[key] = { pend:[], has:true };
+        if(netv>0 && !(p.deposit&&p.deposit.checked)) gsum[key].pend.push(st.name);
+        else if(netv<0 && !(p.refund&&p.refund.checked))
+          gsum[key].pend.push(st.name + (!PARENT_ACCOUNTS[st.id]?'(계좌 미입력)':''));
+      });
+      const gk = Object.keys(gsum).sort((a,b)=>
+        (parseInt(a)||99)-(parseInt(b)||99) || a.localeCompare(b,'ko'));
+      if(!gk.length) return '';
+      window.__gsumText = `[수행성 경비 처리 현황] ${ORGS[payOrg]||payOrg} · ${semKor(paySem)}\n`
+        + gk.map(k=>`${k} - ${gsum[k].pend.length?gsum[k].pend.join(', '):'완료'}`).join('\n');
+      return `<div class="acard">
+        <h3 class="actitle" style="display:flex;align-items:center;gap:10px">📋 학년별 미처리 요약
+          <button class="bm" style="font-size:11px;padding:4px 10px" onclick="copyGradeSummary()">📋 요약 복사</button>
+          <span style="font-size:11px;color:var(--tl);font-weight:600">복사해서 단체방 재공지에 붙여넣기 좋아요</span></h3>
+        <div style="line-height:2.1;font-size:13px">
+          ${gk.map(k=>`<div><b style="display:inline-block;min-width:64px;color:var(--gd)">${esc(k)}</b> —
+            ${gsum[k].pend.length
+              ? `<span style="color:#B8860B;font-weight:700">${esc(gsum[k].pend.join(', '))}</span>`
+              : '<span style="color:var(--ok);font-weight:800">완료 ✅</span>'}</div>`).join('')}
+        </div></div>`;
+    })()}
 
     <div class="acard">
       ${studs.length===0 ? '<p class="empty">이 학기에 청구·반환 내역이 있는 학생이 없습니다.</p>' :
