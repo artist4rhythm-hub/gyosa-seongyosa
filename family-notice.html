@@ -351,16 +351,21 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 .ag-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .ag-sum{font-size:11.5px;font-weight:800;color:var(--gm);margin-left:auto}
 .ag-wrap{display:flex;gap:14px;align-items:flex-start;min-height:300px}
-.ag-pool{flex:0 0 320px;border:1.5px dashed var(--ivd);border-radius:13px;padding:12px;background:var(--iv);
+.ag-pool{flex:0 0 344px;border:1.5px dashed var(--ivd);border-radius:13px;padding:12px;background:var(--iv);
   position:sticky;top:0;max-height:calc(95vh - 300px);overflow-y:auto}
 .ag-ph{font-size:12.5px;font-weight:900;color:var(--gd);margin-bottom:6px;display:flex;gap:6px;align-items:center}
-#ag-pool{display:flex;flex-wrap:wrap;gap:4px}
+#ag-pool{display:block}
+.ag-psum{font-size:11.5px;color:var(--ts);line-height:1.9;margin-bottom:9px;
+  background:var(--wh);border:1px solid var(--ivd);border-radius:10px;padding:7px 10px}
+.ag-psum b{color:var(--gd);font-weight:900}
+.ag-psum i{font-style:normal;font-size:10px;color:var(--tl)}
+.ag-psum .sep{margin:0 6px;color:var(--ivd)}
 .ag-units{flex:1;display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:13px;
   max-height:calc(95vh - 300px);overflow-y:auto;padding-right:2px}
 .ag-unit{border:2px solid var(--ivd);border-radius:14px;padding:13px 14px;background:var(--wh);min-height:280px;
   display:flex;flex-direction:column}
 .ag-unit .ag-us{flex:1}
-.ag-uh2.ag-tus{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px;align-items:stretch}
+.ag-uh2.ag-tus{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;align-items:stretch}
 .ag-uh2.ag-tus .ed-mini{min-height:68px;border-radius:12px;border-style:dashed}
 .ag-uh2.ag-tus .ag-gauge{align-self:center;justify-self:end;grid-column:-2/-1}
 .ag-unit.drop{cursor:copy;border-color:var(--gm);box-shadow:0 0 0 1px var(--gp)}
@@ -380,12 +385,12 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 .ag-caps b.on{background:var(--gm);border-color:var(--gm);color:#fff}
 .ag-gsel{width:64px;flex:none;padding:4px 5px;font-size:11.5px}
 .ag-min{flex:1;min-width:90px;padding:5px 7px;font-size:11.5px}
-.ag-us{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;
+.ag-us{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
   min-height:150px;padding-top:4px;align-content:start}
 .ag-hint{font-size:12px;color:var(--tl);padding:6px 0}
 .ag-pgh{font-size:13px;font-weight:900;color:var(--gd);margin:10px 0 6px;display:flex;justify-content:space-between;align-items:baseline}
 .ag-pgh span{font-size:10.5px;font-weight:700;color:var(--tl)}
-.ag-pgrp{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px}
+.ag-pgrp{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
 .ag-pool.dropover{border-color:var(--gm);background:var(--gp)}
 .ag-unit.dropover{border-color:var(--gm);box-shadow:0 0 0 2px var(--gm);background:var(--gp)}
 .ag-ghost{position:fixed;z-index:999;pointer-events:none;background:var(--gd);color:#fff;
@@ -2903,12 +2908,14 @@ function agPaint(){
     pks.forEach(k=>pg[k].sort((a,b)=>
       (a.x==='남'?0:a.x==='여'?1:2)-(b.x==='남'?0:b.x==='여'?1:2)
       || a.n.localeCompare(b.n,'ko')));
+    // 상단: 학년 요약 글 한 줄 · 아래: 카드만 (학년 순서대로 이어서, 3열 격자)
+    const sum = pks.map(k=>{
+      const m=pg[k].filter(x=>x.x==='남').length, f=pg[k].filter(x=>x.x==='여').length;
+      return `<b>${esc(String(k).replace('학년',''))}학년</b> ${pg[k].length}명<i>(남${m}·여${f})</i>`;
+    }).join('<span class="sep">·</span>');
+    const cards = pks.flatMap(k=>pg[k]).map(st=>agChip(st,'pool')).join('');
     $I('ag-pool').innerHTML = pool.length
-      ? pks.map(k=>{
-          const m=pg[k].filter(x=>x.x==='남').length, f=pg[k].filter(x=>x.x==='여').length;
-          return `<div class="ag-pgh">${esc(k)} <span>${pg[k].length}명 · 남${m} 여${f}</span></div>
-            <div class="ag-pgrp">${pg[k].map(st=>agChip(st,'pool')).join('')}</div>`;
-        }).join('')
+      ? `<div class="ag-psum">${sum}</div><div class="ag-pgrp">${cards}</div>`
       : '<div class="empty" style="font-size:12px">모두 배정됐어요 🎉</div>';
   }
   const box = $I('ag-units'); if(!box) return;
