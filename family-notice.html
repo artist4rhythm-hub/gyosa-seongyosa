@@ -299,6 +299,29 @@ select.sv-sel{width:96px;min-width:96px;flex:0 0 auto;padding:6px 6px;font-size:
 /* 표지 편집창 미리보기 */
 .cv-pv{border:1.5px dashed var(--ivd);border-radius:12px;padding:10px;background:var(--iv);
   max-height:320px;overflow-y:auto;zoom:.62}
+/* 예산 편집기 — 구분 관리·드래그·병합·소계 */
+.bg-cats{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:9px;
+  background:var(--iv);border-radius:10px;padding:7px 10px}
+.bg-cats-lb{font-size:11.5px;font-weight:900;color:var(--gd);margin-right:2px}
+.bg-cat-chip{font-size:11.5px;font-weight:800;color:var(--gm);background:var(--wh);
+  border:1px solid var(--ivd);border-radius:100px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px}
+.bg-cat-chip i{font-style:normal;font-size:9px;color:var(--tl);cursor:pointer;font-weight:900}
+.bg-cat-chip i:hover{color:var(--red)}
+.bg-catsel{min-width:86px;padding:6px 6px;font-size:12px}
+.bg-drag{cursor:grab;text-align:center;color:var(--tl);font-size:13px;user-select:none;touch-action:none;width:26px}
+.bg-drag:active{cursor:grabbing}
+tr.bg-dragging{opacity:.55;outline:2px dashed var(--gm)}
+.bg-same{font-size:11px;color:var(--tl);font-weight:700}
+.bg-mg.on{background:var(--gp);border-color:var(--gm);color:var(--gm)}
+tr.bg-subrow td{background:#F4F1E4}
+.bg-sublb{font-weight:900;color:#8a6410}
+.bg-subhint{font-size:10px;color:#b09a5e;text-align:right;padding-right:8px}
+tr.bg-subrow .bg-amt{color:#8a6410}
+/* 발행 표 — 병합·소계 */
+.rv-tb td.mg{vertical-align:middle;background:#FBFDFC}
+.rv-tb tr.subrow td{background:#F4F1E4;border-top:1.5px solid var(--gm)}
+.rv-tb .sub-lb{font-weight:900;color:#8a6410;text-align:right;padding-right:10px}
+.rv-tb tr.subrow .acc b{font-weight:900;color:#8a6410}
 /* 회계식 정렬 — ₩ 왼쪽 고정, 숫자 오른쪽 정렬(고정폭 숫자), 수량·단위 분리 */
 .rv-tb th.thr{text-align:right}
 .rv-tb td.num{padding-right:9px}
@@ -1133,8 +1156,8 @@ function renderBlock(b){
   return '';
 }
 function budgetCalc(d){
-  const rows = (d.rows||[]).filter(r=>r.item||r.cat||Number(r.price));
-  const total = rows.reduce((s,r)=>s+(Number(r.price)||0)*(Number(r.qty)||0),0);
+  const rows = (d.rows||[]).filter(r=>r.sub || r.item||r.cat||Number(r.price));
+  const total = rows.filter(r=>!r.sub).reduce((s,r)=>s+(Number(r.price)||0)*(Number(r.qty)||0),0);
   const ppl = Number(d.people)||0;
   let per = ppl ? total/ppl : 0;
   const ru = Number(d.round)||0;
@@ -1149,13 +1172,33 @@ function renderBudget(d){
   return `<div style="overflow-x:auto"><table class="rv-tb">
     <tr><th>구분</th><th>항목</th><th class="thr">단가</th>
       <th class="thr">수량</th><th class="thr">금액</th><th>비고</th></tr>
-    ${rows.map(r=>{
-      const amt = (Number(r.price)||0)*(Number(r.qty)||0);
-      return `<tr><td>${esc(r.cat||'')}</td><td>${esc(r.item||'')}</td>
-        <td class="num">${won(r.price)}</td>
-        <td class="num">${qtyC(r.qty, r.unit)}</td>
-        <td class="num">${won(amt)}</td><td>${esc(r.note||'')}</td></tr>`;
-    }).join('')}
+    ${(()=>{
+      // 연속으로 구분·항목이 같은 줄은 병합(rowspan) — 소계 줄이 나오면 묶음이 끊긴다
+      let html='', seg=0;
+      const catSpan=i=>{ let n=1;
+        for(let j=i+1;j<rows.length && !rows[j].sub && rows[j].cat===rows[i].cat;j++) n++;
+        return n; };
+      const itemSpan=i=>{ let n=1;
+        for(let j=i+1;j<rows.length && !rows[j].sub && rows[j].cat===rows[i].cat && rows[j].item===rows[i].item;j++) n++;
+        return n; };
+      for(let i=0;i<rows.length;i++){
+        const r=rows[i];
+        if(r.sub){
+          html+=`<tr class="subrow"><td colspan="2" class="sub-lb">∑ ${esc(r.label||'소계')}</td>
+            <td></td><td></td><td class="num">${won(seg)}</td><td></td></tr>`;
+          seg=0; continue;
+        }
+        const amt=(Number(r.price)||0)*(Number(r.qty)||0); seg+=amt;
+        const firstCat = i===0 || rows[i-1].sub || rows[i-1].cat!==r.cat;
+        const firstItem = firstCat || rows[i-1].item!==r.item;
+        html+=`<tr>${firstCat?`<td rowspan="${catSpan(i)}" class="mg">${esc(r.cat||'')}</td>`:''}
+          ${firstItem?`<td rowspan="${itemSpan(i)}" class="mg">${esc(r.item||'')}</td>`:''}
+          <td class="num">${won(r.price)}</td>
+          <td class="num">${qtyC(r.qty, r.unit)}</td>
+          <td class="num">${won(amt)}</td><td>${esc(r.note||'')}</td></tr>`;
+      }
+      return html;
+    })()}
     <tr class="sumrow"><td colspan="4">총계</td>
       <td class="num">${won(total)}</td><td></td></tr>
     ${ppl?`<tr class="hlrow"><td colspan="4">1인 회비 (${fmt(ppl)}명${Number(d.round)?' · '+fmt(d.round)+'원 단위 올림':''})</td>
@@ -1300,7 +1343,7 @@ window.editBlock = function(i, useDraft){
       <button class="btn" onclick="saveBlock()">저장</button>
     </div>`, (bb.type==='schedule'||bb.type==='assign') ? 'wide full' : true, true);
   bindAutosave();
-  if(bb.type==='budget') budgetLive();
+  if(bb.type==='budget'){ budgetLive(); bgPaintCats(); }
   if(bb.type==='schedule') svInit();
   if(bb.type==='assign') agInit();
   if(bb.type==='cover'){
@@ -1534,15 +1577,23 @@ window.tbRosterImport = async function(){
 function edBudget(b){
   const d = b.data||{};
   const rows = (d.rows&&d.rows.length?d.rows:[{cat:'',item:'',price:0,qty:1,unit:'',note:''}]);
+  // 구분 목록: 기본값 ∪ 저장된 목록 ∪ 기존 줄에서 쓰인 것
+  const DEF=['숙박비','식사비','활동비','교통비','간식비','준비물','예비비'];
+  BG_CATS=[...new Set([...(d.cats&&d.cats.length?d.cats:DEF), ...rows.map(r=>r.cat).filter(Boolean)])];
   const body = rows.map(r=>bgRow(r)).join('');
   return `
+    <div class="bg-cats" id="bg-cats"></div>
     <div class="ed-tblwrap"><table class="ed-tbl" id="bg-tbl">
-      <tr><th style="min-width:78px">구분</th><th>항목</th><th style="min-width:88px">단가</th>
+      <tr><th style="width:26px"></th><th style="min-width:86px">구분</th><th>항목</th><th style="min-width:88px">단가</th>
         <th style="min-width:64px">수량</th><th style="min-width:56px">단위</th>
-        <th style="min-width:96px;text-align:right">금액</th><th>비고</th><th style="width:96px"></th></tr>
+        <th style="min-width:96px;text-align:right">금액</th><th>비고</th><th style="width:74px"></th></tr>
       ${body}
     </table></div>
-    <div style="margin-top:8px"><button class="ed-mini" onclick="bgAdd()">＋ 줄 추가</button></div>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="ed-mini" onclick="bgAdd()">＋ 줄 추가</button>
+      <button class="ed-mini" onclick="bgAddSub()" style="border-color:var(--gm);color:var(--gm)">∑ 소계 줄 추가</button>
+      <span style="font-size:10.5px;color:var(--tl);align-self:center">⠿를 끌면 줄 순서가 바뀌어요 · ⤴는 위 줄과 구분·항목 병합 · 소계는 바로 위 묶음의 합계</span>
+    </div>
     <div class="fgrid" style="margin-top:11px">
       <div class="frow"><label class="flab">인원 (1인 회비 계산용)</label>
         <input class="fin" id="bg-people" type="number" value="${d.people||''}" oninput="budgetLive()"></div>
@@ -1564,48 +1615,167 @@ function edBudget(b){
       <input class="fin" id="bg-note" value="${esc(d.note||'')}"></div>
     <div class="calc-live" id="bg-live"></div>`;
 }
+let BG_CATS = [];
+/* 구분 관리 칩 — 만들기·지우기, 줄에서는 골라서 쓴다 */
+function bgPaintCats(){
+  const box=$I('bg-cats'); if(!box) return;
+  box.innerHTML = `<span class="bg-cats-lb">🏷 구분 관리</span>
+    ${BG_CATS.map(c=>`<span class="bg-cat-chip">${esc(c)}
+      <i onclick="bgDelCat('${esc(c)}')" title="목록에서 지우기 (이미 쓰인 줄은 그대로)">✕</i></span>`).join('')}
+    <input class="fin" id="bg-newcat" placeholder="새 구분" style="width:92px;padding:4px 8px;font-size:11.5px"
+      onkeydown="if(event.key==='Enter')bgAddCat()">
+    <button class="ed-mini" onclick="bgAddCat()">추가</button>`;
+}
+window.bgAddCat = function(){
+  const v=$I('bg-newcat').value.trim(); if(!v) return;
+  if(!BG_CATS.includes(v)) BG_CATS.push(v);
+  bgPaintCats(); bgRefreshSelects(); $I('bg-newcat').focus();
+};
+window.bgDelCat = function(c){
+  BG_CATS = BG_CATS.filter(x=>x!==c);
+  bgPaintCats(); bgRefreshSelects();
+};
+function bgCatSel(cur){
+  const opts = BG_CATS.map(c=>`<option value="${esc(c)}"${c===cur?' selected':''}>${esc(c)}</option>`).join('');
+  return `<select class="fsel bg-catsel" data-f="cat" onchange="budgetLive()">
+    <option value=""${!cur?' selected':''}>—</option>${opts}
+    ${cur&&!BG_CATS.includes(cur)?`<option value="${esc(cur)}" selected>${esc(cur)}</option>`:''}
+  </select>`;
+}
+function bgRefreshSelects(){
+  document.querySelectorAll('#bg-tbl .bg-catsel').forEach(sel=>{
+    const cur=sel.value;
+    sel.outerHTML = bgCatSel(cur);
+  });
+}
 function bgRow(r){
-  return `<tr>
-    <td><input value="${esc(r.cat||'')}" style="min-width:78px"></td>
-    <td><input value="${esc(r.item||'')}"></td>
-    <td><input type="number" value="${r.price||''}" oninput="budgetLive()" style="min-width:88px"></td>
-    <td><input type="number" value="${r.qty||''}" oninput="budgetLive()" style="min-width:64px"></td>
-    <td><input value="${esc(r.unit||'')}" placeholder="명·박·대" style="min-width:56px"></td>
-    <td class="bg-amt">${(Number(r.price)||0)*(Number(r.qty)||0)?`₩ ${fmt((Number(r.price)||0)*(Number(r.qty)||0))}`:''}</td>
-    <td><input value="${esc(r.note||'')}"></td>
+  if(r&&r.sub) return bgSubRow(r);
+  const m = r&&r.m;
+  const amt=(Number(r.price)||0)*(Number(r.qty)||0);
+  return `<tr data-kind="row" data-m="${m?1:0}">
+    <td class="bg-drag" title="끌어서 순서 바꾸기">⠿</td>
+    <td class="bg-cat">${m?`<span class="bg-same">〃 위와 같음</span><span style="display:none">${bgCatSel(r.cat||'')}</span>`:bgCatSel(r.cat||'')}</td>
+    <td class="bg-item">${m?`<span class="bg-same">〃</span><input data-f="item" value="${esc(r.item||'')}" style="display:none">`:`<input data-f="item" value="${esc(r.item||'')}">`}</td>
+    <td><input data-f="price" type="number" value="${r.price||''}" oninput="budgetLive()" style="min-width:88px"></td>
+    <td><input data-f="qty" type="number" value="${r.qty||''}" oninput="budgetLive()" style="min-width:64px"></td>
+    <td><input data-f="unit" value="${esc(r.unit||'')}" placeholder="명·박·대" style="min-width:56px"></td>
+    <td class="bg-amt">${amt?`₩ ${fmt(amt)}`:''}</td>
+    <td><input data-f="note" value="${esc(r.note||'')}"></td>
     <td style="white-space:nowrap">
-      <button class="ed-mini" onclick="tbMoveRow(this,-1)">↑</button>
-      <button class="ed-mini" onclick="tbMoveRow(this,1)">↓</button>
+      <button class="ed-mini bg-mg ${m?'on':''}" onclick="bgToggleMerge(this)" title="위 줄과 구분·항목 병합/해제">⤴</button>
       <button class="ed-mini" onclick="this.closest('tr').remove();budgetLive()">✕</button></td>
   </tr>`;
+}
+function bgSubRow(r){
+  return `<tr data-kind="sub" class="bg-subrow">
+    <td class="bg-drag" title="끌어서 순서 바꾸기">⠿</td>
+    <td colspan="2"><input data-f="label" value="${esc(r.label||'소계')}" class="bg-sublb"></td>
+    <td colspan="3" class="bg-subhint">↑ 바로 위 묶음의 합계</td>
+    <td class="bg-amt"></td><td></td>
+    <td><button class="ed-mini" onclick="this.closest('tr').remove();budgetLive()">✕</button></td>
+  </tr>`;
+}
+window.bgToggleMerge = function(btn){
+  const tr = btn.closest('tr');
+  const on = tr.dataset.m!=='1';
+  // 첫 데이터 줄은 병합 불가
+  const prev = tr.previousElementSibling;
+  if(on && (!prev || !prev.dataset.kind)){ toast('첫 줄은 병합할 수 없어요.','err'); return; }
+  tr.dataset.m = on?'1':'0';
+  btn.classList.toggle('on', on);
+  tr.querySelector('.bg-cat').innerHTML = on
+    ? `<span class="bg-same">〃 위와 같음</span><span style="display:none">${bgCatSel('')}</span>`
+    : bgCatSel(bgPrevCat(tr));
+  const it = tr.querySelector('.bg-item');
+  const itVal = it.querySelector('input')?.value||'';
+  it.innerHTML = on
+    ? `<span class="bg-same">〃</span><input data-f="item" value="${esc(itVal)}" style="display:none">`
+    : `<input data-f="item" value="${esc(itVal||bgPrevItem(tr))}">`;
+  budgetLive();
+};
+function bgPrevCat(tr){
+  let p=tr.previousElementSibling;
+  while(p){ if(p.dataset.kind==='row'){ const sel=p.querySelector('[data-f="cat"]'); if(sel) return sel.value; } p=p.previousElementSibling; }
+  return '';
+}
+function bgPrevItem(tr){
+  let p=tr.previousElementSibling;
+  while(p){ if(p.dataset.kind==='row'){ const i=p.querySelector('[data-f="item"]'); if(i) return i.value; } p=p.previousElementSibling; }
+  return '';
 }
 window.bgAdd = function(){
   $I('bg-tbl').insertAdjacentHTML('beforeend', bgRow({cat:'',item:'',price:'',qty:'',unit:'',note:''}));
 };
+window.bgAddSub = function(){
+  $I('bg-tbl').insertAdjacentHTML('beforeend', bgSubRow({label:'소계'}));
+  budgetLive();
+};
+/* ⠿ 줄 드래그 정렬 */
+(function(){
+  let drag=null;
+  document.addEventListener('pointerdown', e=>{
+    const h=e.target.closest('.bg-drag'); if(!h) return;
+    const tr=h.closest('tr'); const tbl=tr.closest('#bg-tbl'); if(!tbl) return;
+    e.preventDefault();
+    drag={tr}; tr.classList.add('bg-dragging');
+    document.body.style.userSelect='none';
+  });
+  document.addEventListener('pointermove', e=>{
+    if(!drag) return;
+    const el=document.elementFromPoint(e.clientX,e.clientY);
+    const over=el && el.closest('#bg-tbl tr[data-kind]');
+    if(!over || over===drag.tr) return;
+    const r=over.getBoundingClientRect();
+    if(e.clientY < r.top + r.height/2) over.parentNode.insertBefore(drag.tr, over);
+    else over.parentNode.insertBefore(drag.tr, over.nextSibling);
+  });
+  document.addEventListener('pointerup', ()=>{
+    if(!drag) return;
+    drag.tr.classList.remove('bg-dragging');
+    document.body.style.userSelect='';
+    drag=null; budgetLive();
+  });
+})();
 window.budgetLive = function(){
   const box = $I('bg-live'); if(!box) return;
-  // 각 줄 소계 (단가 × 수량)
-  const t = $I('bg-tbl');
-  if(t) [...t.rows].slice(1).forEach(tr=>{
-    const ins=[...tr.querySelectorAll('input')];
-    const amt=(Number(ins[2]?.value)||0)*(Number(ins[3]?.value)||0);
+  const t = $I('bg-tbl'); if(!t) return;
+  if(!$I('bg-cats')?.innerHTML) bgPaintCats();
+  let seg=0, total=0;
+  [...t.rows].slice(1).forEach(tr=>{
+    if(tr.dataset.kind==='sub'){
+      const cell=tr.querySelector('.bg-amt');
+      if(cell) cell.textContent = seg?`∑ ₩ ${fmt(seg)}`:'';
+      seg=0; return;
+    }
+    const p=Number(tr.querySelector('[data-f="price"]')?.value)||0;
+    const q=Number(tr.querySelector('[data-f="qty"]')?.value)||0;
+    const amt=p*q; seg+=amt; total+=amt;
     const cell=tr.querySelector('.bg-amt');
-    if(cell) cell.textContent = amt ? `₩ ${fmt(amt)}` : '';
+    if(cell) cell.textContent = amt?`₩ ${fmt(amt)}`:'';
   });
   const d = readBudget();
-  const { total, ppl, per } = budgetCalc(d);
-  box.innerHTML = `총계 <b>₩ ${fmt(total)}</b>
+  const { ppl, per } = budgetCalc(d);
+  box.innerHTML = `총 합계 <b>₩ ${fmt(total)}</b>
     ${ppl?` · 1인 회비 <b>₩ ${fmt(per)}</b> (${fmt(ppl)}명 기준${Number(d.round)?' · '+fmt(d.round)+'원 올림':''})`
       :' · 인원을 넣으면 1인 회비가 자동 계산돼요'}`;
+  try { saveDraft(); } catch(e){}
 };
 function readBudget(){
   const t = $I('bg-tbl');
+  let prevCat='', prevItem='';
   const rows = [...t.rows].slice(1).map(tr=>{
-    const v = [...tr.querySelectorAll('input')].map(i=>i.value);
-    return { cat:v[0]||'', item:v[1]||'', price:Number(v[2])||0, qty:Number(v[3])||0,
-      unit:v[4]||'', note:v[5]||'' };
-  }).filter(r=>r.cat||r.item||r.price);
-  return { rows,
+    if(tr.dataset.kind==='sub'){
+      return { sub:1, label: tr.querySelector('[data-f="label"]')?.value.trim()||'소계' };
+    }
+    const g=f=>tr.querySelector(`[data-f="${f}"]`)?.value||'';
+    const m = tr.dataset.m==='1';
+    const cat = m ? prevCat : g('cat');
+    const item = m ? (g('item')||prevItem) : g('item');
+    if(!m){ prevCat=cat; prevItem=item; } else { prevItem=item||prevItem; }
+    return { cat, item, m:m?1:0, price:Number(g('price'))||0, qty:Number(g('qty'))||0,
+      unit:g('unit'), note:g('note') };
+  }).filter(r=>r.sub || r.cat||r.item||r.price);
+  return { rows, cats:BG_CATS.slice(),
     people:Number($I('bg-people').value)||0,
     round:$I('bg-round').value,
     account:$I('bg-account').value.trim(),
@@ -2440,6 +2610,57 @@ window.fnPickStudents = async function(cb){
    👥🚌🛏 배정 빌더 — 조 편성 · 차량 배정 · 숙소 배정 (공용)
    규칙: 학생은 블록 안에서 1인 1곳 · 차량 정원은 운전자·교사 포함
    ═══════════════════════════════════════════ */
+/* 행사 참여 교사(일반 계획의 인솔교사 명단)만 보여주는 선택기 — 배정 빌더용 */
+function fnEventTeachers(){
+  const kvB = CUR.blocks.find(b=>b.type==='kv' && (b.data?.rows||[]).some(r=>/교사|인솔/.test(r.k||'')));
+  const row = kvB ? (kvB.data.rows||[]).find(r=>/교사|인솔/.test(r.k||'')) : null;
+  const v = String(row?.v||'').split('(')[0];          // "(남 2 · 여 5)" 꼬리 제거
+  return [...new Set(v.split(',').map(x=>x.trim()).filter(Boolean))];
+}
+window.fnPickStaffEvent = async function(cb, cur, opt){
+  opt = opt||{};
+  const names = fnEventTeachers();
+  if(!names.length){
+    toast('일반 계획의 인솔교사가 비어 있어 전체 목록을 엽니다 — 인솔교사를 먼저 정하는 걸 추천해요','err');
+    return fnPickStaff(cb, cur, opt);
+  }
+  await loadStaffList();
+  const already = new Set(String(cur||'').split(/[,(]/).map(x=>x.trim()).filter(Boolean));
+  const items = names.map(n=>{
+    const t = STAFF.find(x=>x.name===n);
+    return { n, g:t?.gender||'', extra:!t };
+  });
+  openModal2(`
+    <div class="mtitle">🎩 ${opt.single?'운전자 선택 (1명)':'담당 선생님 선택'} <span class="fnp-cnt" id="fe-n"></span></div>
+    <div class="msub">이 행사의 <b>인솔교사 ${names.length}명</b> 중에서만 골라요 — 참석하지 않는 선생님이 잘못 배정되는 걸 막아줍니다.</div>
+    <div class="fnp-wrap"><div class="fnp-list" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
+      ${items.map(it=>`<label class="fnp-it"><input type="${opt.single?'radio':'checkbox'}" name="fe-pick"
+        value="${esc(it.n)}" data-gen="${esc(it.g)}" ${already.has(it.n)?'checked':''}>
+        ${esc(it.n)}<span class="fnp-gd ${it.g==='남'?'m':it.g==='여'?'f':'n'}">${it.g||'?'}</span>
+        ${it.extra?'<span class="fnp-coopbadge">추가</span>':''}</label>`).join('')}
+    </div></div>
+    <div class="mfoot">
+      <button class="ed-mini" style="margin-right:auto" onclick="closeModal2();fnPickStaff(window.__feCb, window.__feCur, window.__feOpt)"
+        title="예외적으로 명단 밖 선생님이 필요할 때만">전체 교직원에서 고르기</button>
+      <button class="btn gray" onclick="closeModal2()">취소</button>
+      <button class="btn" id="fe-ok">넣기</button>
+    </div>`);
+  window.__feCb = cb; window.__feCur = cur; window.__feOpt = opt;   // 전체 목록 예외 경로용
+  const box = $I('modal-mount2');
+  const cnt = ()=>{
+    const on=[...box.querySelectorAll('input[name="fe-pick"]:checked')];
+    const m=on.filter(c=>c.dataset.gen==='남').length, f=on.filter(c=>c.dataset.gen==='여').length;
+    $I('fe-n').textContent = on.length ? `${on.length}명 (남 ${m} · 여 ${f})` : '';
+  };
+  box.addEventListener('change', cnt); cnt();
+  $I('fe-ok').onclick = ()=>{
+    const on=[...box.querySelectorAll('input[name="fe-pick"]:checked')].map(c=>c.value);
+    if(!on.length){ toast('한 명 이상 골라 주세요.','err'); return; }
+    cb(on.join(', '), on.length);
+    closeModal2();
+  };
+};
+
 let AG = null;           // {kind, info, units, pool, sel}
 const AG_KIND = {
   team:    { unit:'조',   icon:'👥', addLabel:'＋ 조 추가' },
@@ -2599,11 +2820,11 @@ window.agDelUnit = function(uid){
 };
 window.agTeachers = function(uid){
   const u = AG.units.find(x=>x.id===uid); if(!u) return;
-  fnPickStaff(v=>{ u.tN = v.split('(')[0].trim().replace(/,\s*$/,''); agPaint(); saveDraft(); }, u.tN);
+  fnPickStaffEvent(v=>{ u.tN = v.split('(')[0].trim().replace(/,\s*$/,''); agPaint(); saveDraft(); }, u.tN);
 };
 window.agDriver = function(uid){
   const u = AG.units.find(x=>x.id===uid); if(!u) return;
-  fnPickStaff(v=>{ u.drvN = v.split('(')[0].split(',')[0].trim(); agPaint(); saveDraft(); }, u.drvN, {single:true});
+  fnPickStaffEvent(v=>{ u.drvN = v.split('(')[0].split(',')[0].trim(); agPaint(); saveDraft(); }, u.drvN, {single:true});
 };
 /* ✨ 자동 배분 (조): 학년→성별 순 정렬 후 스네이크로 고르게 */
 window.agAutoAsk = function(){
