@@ -337,8 +337,9 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 
 /* ═══ 📱 좁은 화면 표 개선 (발행 보기 전용 · 인쇄는 표 그대로) ═══ */
 /* ① 공통: 단어 단위 줄바꿈 — 「2학년」이 중간에 끊기지 않는다 */
-.rv-tb td, .rv-kv td, .rv-ag td, .rv-t, .rv-note, .rv-red{word-break:keep-all;overflow-wrap:anywhere}
+.rv-tb td, .rv-kv td, .rv-ag td, .rv-t, .rv-note, .rv-red{word-break:keep-all;overflow-wrap:break-word}
 /* ② 명단 2단 · 연락처 카드 (좁은 화면에서만 표 대신 표시) */
+.rv-tb td.nwc{white-space:nowrap}
 .m-alt{display:none}
 .m-hint{display:none;font-size:10.5px;color:var(--tl);margin-top:4px;text-align:right}
 .m-roster .mr-row{padding:9px 2px;border-bottom:1px solid var(--iv)}
@@ -632,6 +633,8 @@ body{background:var(--iv);}
   .blk .blkhead{border-bottom:2.5px solid var(--gd)}
   /* 표 줄은 페이지 경계에서 중간에 잘리지 않게 */
   .rv-tb tr,.rv-kv tr,.rv-ag tr,.rv-sch tr{page-break-inside:avoid}
+  .rv-tb th,.rv-tb td{padding:8px 9px}
+  .rv-tb td:empty{min-width:42px}
   /* 표지 = 정확히 한 장 (위아래 12mm 여백 포함, 다음 내용은 새 장부터) */
   .blk-cover{page-break-after:always;page-break-inside:avoid;border:none;border-top:0;
     margin:0;height:296mm;box-sizing:border-box;border-radius:0;box-shadow:none}
@@ -846,6 +849,18 @@ document.addEventListener('click', async e=>{
   b.textContent='복사됨 ✓'; b.classList.add('ok');
   setTimeout(()=>{ b.textContent=b.dataset.o; b.classList.remove('ok'); },1600);
 });
+window.addEventListener('beforeprint', ()=>{
+  // ⏰ 시간계획이 한 장을 넘으면 그 표만 살짝 줄여 한 장에 맞춘다
+  document.querySelectorAll('.rv-tg').forEach(tg=>{
+    const bd = tg.querySelector('.tg-bd');
+    const h = (parseFloat(bd && bd.style.height) || 0) + 34;
+    const MAX = 950;
+    tg.style.zoom = h > MAX ? Math.max(.6, MAX/h).toFixed(3) : '';
+  });
+});
+window.addEventListener('afterprint', ()=>{
+  document.querySelectorAll('.rv-tg').forEach(tg=>{ tg.style.zoom=''; });
+});
 
 function renderBlock(b){
   const d = b.data || {};
@@ -976,12 +991,6 @@ function renderBlock(b){
     const span=(ri,ci)=>{ let n=1;
       while(rows[ri+n] && (rows[ri+n].c||[])[ci]===MG) n++;
       return n; };
-    const body=rows.map((r,ri)=>`<tr>${cols.map((_,ci)=>{
-      const v=(r.c||[])[ci]||'';
-      if(v===MG) return '';                                  // 위 칸이 rowspan으로 덮는다
-      const n=span(ri,ci);
-      return `<td${n>1?` rowspan="${n}" class="mg"`:''}>${esc(v)}</td>`;
-    }).join('')}</tr>`).join('');
     const nm = s=>String(s||'').replace(/\s+/g,'');
     const oneLine = s=>esc(String(s||'').replace(/\s*\n\s*/g,' '));
     // 📱 좁은 화면 대체 뷰 판별 — 병합(⤴)이 있으면 표 그대로 둔다
@@ -990,11 +999,20 @@ function renderBlock(b){
     const isRoster = !hasMG && phoneIdx<0 && cols.length>=2 && cols.length<=4 &&
       /학년|반$/.test(nm(cols[0])) && cols.some(c=>/명단|이름/.test(nm(c)));
     const isCards  = !hasMG && phoneIdx>=0 && cols.length>=2;
+    const cntIdx = cols.findIndex((c,i)=>i>0 && /인원|^명$/.test(nm(c)));
+    const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
+    // 명단표의 학년·인원 칸은 줄바꿈 없이 한 줄로 (화면·인쇄 공통)
+    const nw = new Set(isRoster ? [0, cntIdx].filter(i=>i>=0) : []);
+    const body=rows.map((r,ri)=>`<tr>${cols.map((_,ci)=>{
+      const v=(r.c||[])[ci]||'';
+      if(v===MG) return '';                                  // 위 칸이 rowspan으로 덮는다
+      const n=span(ri,ci);
+      const cls=[n>1?'mg':'', nw.has(ci)?'nwc':''].filter(Boolean).join(' ');
+      return `<td${n>1?` rowspan="${n}"`:''}${cls?` class="${cls}"`:''}>${esc(v)}</td>`;
+    }).join('')}</tr>`).join('');
     let malt='';
     if(isRoster){
       // 명단표: 「학년 배지 + 인원」 한 줄 / 「이름들」 한 줄로 쌓는다
-      const cntIdx = cols.findIndex((c,i)=>i>0 && /인원|^명$/.test(nm(c)));
-      const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
       malt = `<div class="m-alt m-roster">${rows.map(r=>{
         const c=r.c||[]; const g=String(c[0]||''); const sum=/합계|총계/.test(nm(g));
         const extra=cols.map((cl,i)=>(i===0||i===cntIdx||i===listIdx||!(c[i]))?'':
@@ -1076,7 +1094,7 @@ async function boot(){
         <span class="sh-title">${esc(data.title||'')}</span>
         <span class="sh-org">${ORG_L[data.org]||''}</span>
         <span class="sh-meta">발행 ${dstr(data.publishedAt)}</span>
-        <button class="btn sm sh-print" onclick="window.print()">🖨 인쇄 · PDF 저장</button>
+        
       </div>
       ${blocks.map(blockHTML).join('')}
       <div class="sh-meta" style="text-align:center;margin-top:18px">${ORG_L[data.org]||''} · 가정통신문</div>`;

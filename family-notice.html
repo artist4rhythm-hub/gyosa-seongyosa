@@ -340,8 +340,9 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 
 /* ═══ 📱 좁은 화면 표 개선 (발행 보기 전용 · 인쇄는 표 그대로) ═══ */
 /* ① 공통: 단어 단위 줄바꿈 — 「2학년」이 중간에 끊기지 않는다 */
-.rv-tb td, .rv-kv td, .rv-ag td, .rv-t, .rv-note, .rv-red{word-break:keep-all;overflow-wrap:anywhere}
+.rv-tb td, .rv-kv td, .rv-ag td, .rv-t, .rv-note, .rv-red{word-break:keep-all;overflow-wrap:break-word}
 /* ② 명단 2단 · 연락처 카드 (좁은 화면에서만 표 대신 표시) */
+.rv-tb td.nwc{white-space:nowrap}
 .m-alt{display:none}
 .m-hint{display:none;font-size:10.5px;color:var(--tl);margin-top:4px;text-align:right}
 .m-roster .mr-row{padding:9px 2px;border-bottom:1px solid var(--iv)}
@@ -589,6 +590,10 @@ tr.bg-subrow .bg-amt{color:#8a6410}
   #printArea .pblk{page-break-inside:avoid;margin-bottom:7mm;border-top:9mm solid transparent}
   /* 표 줄은 페이지 경계에서 중간에 잘리지 않게 */
   #printArea .rv-tb tr,#printArea .rv-kv tr,#printArea .rv-ag tr,#printArea .rv-sch tr{page-break-inside:avoid}
+  /* 표 칸 여유 + 명단 학년·인원 한 줄 + 빈 비고 칸 폭 */
+  #printArea .rv-tb th,#printArea .rv-tb td{padding:8px 9px}
+  #printArea .rv-tb td.nwc{white-space:nowrap}
+  #printArea .rv-tb td:empty{min-width:42px}
   #printArea .pcover{page-break-after:always;display:flex;flex-direction:column;
     justify-content:center;height:296mm;box-sizing:border-box;padding:12mm 0;margin:0;border-top:0}
   #printArea .pcover .rv-cover{width:100%;box-sizing:border-box;min-height:100%;
@@ -1287,12 +1292,6 @@ function renderBlock(b){
     const span=(ri,ci)=>{ let n=1;
       while(rows[ri+n] && (rows[ri+n].c||[])[ci]===MG) n++;
       return n; };
-    const body=rows.map((r,ri)=>`<tr>${cols.map((_,ci)=>{
-      const v=(r.c||[])[ci]||'';
-      if(v===MG) return '';                                  // 위 칸이 rowspan으로 덮는다
-      const n=span(ri,ci);
-      return `<td${n>1?` rowspan="${n}" class="mg"`:''}>${esc(v)}</td>`;
-    }).join('')}</tr>`).join('');
     const nm = s=>String(s||'').replace(/\s+/g,'');
     const oneLine = s=>esc(String(s||'').replace(/\s*\n\s*/g,' '));
     // 📱 좁은 화면 대체 뷰 판별 — 병합(⤴)이 있으면 표 그대로 둔다
@@ -1301,11 +1300,20 @@ function renderBlock(b){
     const isRoster = !hasMG && phoneIdx<0 && cols.length>=2 && cols.length<=4 &&
       /학년|반$/.test(nm(cols[0])) && cols.some(c=>/명단|이름/.test(nm(c)));
     const isCards  = !hasMG && phoneIdx>=0 && cols.length>=2;
+    const cntIdx = cols.findIndex((c,i)=>i>0 && /인원|^명$/.test(nm(c)));
+    const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
+    // 명단표의 학년·인원 칸은 줄바꿈 없이 한 줄로 (화면·인쇄 공통)
+    const nw = new Set(isRoster ? [0, cntIdx].filter(i=>i>=0) : []);
+    const body=rows.map((r,ri)=>`<tr>${cols.map((_,ci)=>{
+      const v=(r.c||[])[ci]||'';
+      if(v===MG) return '';                                  // 위 칸이 rowspan으로 덮는다
+      const n=span(ri,ci);
+      const cls=[n>1?'mg':'', nw.has(ci)?'nwc':''].filter(Boolean).join(' ');
+      return `<td${n>1?` rowspan="${n}"`:''}${cls?` class="${cls}"`:''}>${esc(v)}</td>`;
+    }).join('')}</tr>`).join('');
     let malt='';
     if(isRoster){
       // 명단표: 「학년 배지 + 인원」 한 줄 / 「이름들」 한 줄로 쌓는다
-      const cntIdx = cols.findIndex((c,i)=>i>0 && /인원|^명$/.test(nm(c)));
-      const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
       malt = `<div class="m-alt m-roster">${rows.map(r=>{
         const c=r.c||[]; const g=String(c[0]||''); const sum=/합계|총계/.test(nm(g));
         const extra=cols.map((cl,i)=>(i===0||i===cntIdx||i===listIdx||!(c[i]))?'':
@@ -3564,6 +3572,14 @@ window.doPrint = function(){
   html += `<div class="pfoot">${esc(ORG_L[CUR.org]||'')} · ${esc(CUR.title||'')}</div>`;
   $I('printArea').innerHTML = html;
   document.body.classList.add('pr');
+  // ⏰ 시간계획이 한 장을 넘으면 그 표만 살짝 줄여 한 장에 맞춘다
+  document.querySelectorAll('#printArea .rv-tg').forEach(tg=>{
+    const bd = tg.querySelector('.tg-bd');
+    const h = (parseFloat(bd && bd.style.height) || 0) + 34;   // 요일 머리줄 포함
+    const MAX = 950;                                            // 한 장에서 제목·여백을 뺀 높이(px)
+    tg.style.zoom = h > MAX ? Math.max(.6, MAX/h).toFixed(3) : '';
+  });
+
   setTimeout(()=>{
     window.print();
     setTimeout(()=>document.body.classList.remove('pr'), 400);
