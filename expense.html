@@ -2881,7 +2881,7 @@ async function renderReport(){
   list.forEach(e=>{
     const sum = effSum(e);
     if(e.mode==='refund') totalRefund += sum; else totalCharge += sum;
-    totalSchool += (e.schoolTotal||0);
+    totalSchool += (e.mode==='refund'?-1:1)*(e.schoolTotal||0);   // 학교 반환분이 생기면 자동 차감
   });
   const net = totalCharge - totalRefund;
 
@@ -4417,6 +4417,11 @@ function viewAllSheet(){
 }
 window.viewAllSheet = viewAllSheet;
 
+// 학교 청구분 금액 (반환 신청이면 「학교 반환분」으로 −) — 상세표·검산 공용
+function schoolAmtOf(e){
+  const v = (e.schoolTotal!=null ? e.schoolTotal : (e.per||0)*(e.schoolQty||0)) || 0;
+  return e.mode==='refund' ? -v : v;
+}
 // 전체 상세표 출력용 데이터 준비 (모든 학생 × 모든 항목, 학년 구분)
 function buildAllSheetData(){
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
@@ -4469,11 +4474,18 @@ function buildAllSheetHTML(){
   }).join('');
   const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
   const grand = students.reduce((tt,st)=>tt+items.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
+  // 학교 청구분 행 + 신청 총액 행 (학교분이 하나라도 있을 때만)
+  const hasSchool = items.some(e=>schoolAmtOf(e)!==0);
+  const schoolGrand = items.reduce((t,e)=>t+schoolAmtOf(e),0);
+  const schoolTds = items.map(e=>{ const v=schoolAmtOf(e); return `<td class="ft" style="color:#5A6560;font-weight:600">${v?`${v<0?'−':''}₩${won2(Math.abs(v))}`:'·'}</td>`; }).join('');
+  const totalTds = items.map(e=>{ const stu=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); const v=stu+schoolAmtOf(e); return `<td class="ft" style="font-weight:900">${v<0?'−':''}₩${won2(Math.abs(v))}</td>`; }).join('');
   return `<div class="sheet-doc land" style="width:${docW}px;padding:${pad}px">
     <div class="sheet-head"><div class="sh-title">${esc(ORGS[reportOrg]||reportOrg)} 수행성 경비 전체 취합</div><div class="sh-sub">${esc(semKor(reportSem))} · 전체 학년 · 학생 ${students.length}명 · 항목 ${items.length}개</div></div>
     <table class="sheet-tbl">${colgroup}<thead>${headRows}</thead><tbody>${bodyRows}</tbody>
-    <tfoot><tr><th class="nm" colspan="2">항목합계</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr></tfoot></table>
-    <div class="sheet-foot">※ 금액이 적힌 칸이 청구, 반환은 (−)로 표시됩니다.</div>
+    <tfoot><tr><th class="nm" colspan="2">${hasSchool?'학생 합계':'항목합계'}</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr>
+    ${hasSchool?`<tr><th class="nm" colspan="2">학교 청구분</th>${schoolTds}<td class="tot" style="color:#5A6560">${schoolGrand<0?'−':''}₩${won2(Math.abs(schoolGrand))}</td></tr>
+    <tr><th class="nm" colspan="2">신청 총액</th>${totalTds}<td class="tot">₩${won2(grand+schoolGrand)}</td></tr>`:''}</tfoot></table>
+    <div class="sheet-foot">※ 금액이 적힌 칸이 청구, 반환은 (−)로 표시됩니다.${hasSchool?' · 학교 청구분(교사 사용·학교 보관분)은 학생 합계와 별도이며, 신청 총액 = 학생 합계 + 학교 청구분입니다.':''}</div>
   </div>`;
 }
 
@@ -4663,12 +4675,24 @@ function renderAllSheet(){
     return headerTr + studentTrs;
   }).join('');
 
-  // 전체 항목 합계
+  // 전체 항목 합계 — 학생 합계 · 학교 청구분 · 신청 총액
+  const stuGrand = allStudents.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0);
+  const hasSchool = items.some(e=>schoolAmtOf(e)!==0);
+  const schoolGrand = items.reduce((t,e)=>t+schoolAmtOf(e),0);
+  const fcell=(html,extra)=>`<td style="padding:8px 10px;text-align:center;border-left:1px solid #d5e2db;${extra||''}">${html}</td>`;
   const footTr = `<tr style="background:var(--gp);color:#1b4332;font-weight:800">
-    <td style="padding:8px 10px;position:sticky;left:0;background:var(--gp);z-index:2;text-align:left">전체 합계</td>
-    ${items.map(e=>{ const t=allStudents.reduce((tt,s)=>tt+(amtOf(e,s.id)||0),0); return `<td style="padding:8px 10px;text-align:center;border-left:1px solid #d5e2db;color:#2f5c48">₩${won(Math.abs(t))}</td>`; }).join('')}
-    <td style="padding:8px 10px;text-align:center;border-left:2px solid #d5e2db;position:sticky;right:0;background:var(--gold-bg-2);color:#8a6410;font-weight:900">₩${won(allStudents.reduce((tt,s)=>tt+items.reduce((x,e)=>x+(amtOf(e,s.id)||0),0),0))}</td>
-  </tr>`;
+    <td style="padding:8px 10px;position:sticky;left:0;background:var(--gp);z-index:2;text-align:left">${hasSchool?'학생 합계':'전체 합계'}</td>
+    ${items.map(e=>{ const t=allStudents.reduce((tt,s)=>tt+(amtOf(e,s.id)||0),0); return fcell(`₩${won(Math.abs(t))}`,'color:#2f5c48'); }).join('')}
+    <td style="padding:8px 10px;text-align:center;border-left:2px solid #d5e2db;position:sticky;right:0;background:var(--gold-bg-2);color:#8a6410;font-weight:900">₩${won(stuGrand)}</td>
+  </tr>` + (hasSchool?`<tr style="background:var(--iv);color:#5A6560;font-weight:700">
+    <td style="padding:8px 10px;position:sticky;left:0;background:var(--iv);z-index:2;text-align:left">학교 청구분 <span style="font-size:10px;font-weight:400">(교사 사용·학교 보관)</span></td>
+    ${items.map(e=>{ const v=schoolAmtOf(e); return fcell(v?`${v<0?'−':''}₩${won(Math.abs(v))}`:'·'); }).join('')}
+    <td style="padding:8px 10px;text-align:center;border-left:2px solid #d5e2db;position:sticky;right:0;background:var(--iv);font-weight:800">${schoolGrand<0?'−':''}₩${won(Math.abs(schoolGrand))}</td>
+  </tr><tr style="background:var(--gold-bg);color:#8a6410;font-weight:900">
+    <td style="padding:8px 10px;position:sticky;left:0;background:var(--gold-bg);z-index:2;text-align:left">신청 총액</td>
+    ${items.map(e=>{ const stu=allStudents.reduce((tt,s)=>tt+(amtOf(e,s.id)||0),0); const v=stu+schoolAmtOf(e); return fcell(`${v<0?'−':''}₩${won(Math.abs(v))}`); }).join('')}
+    <td style="padding:8px 10px;text-align:center;border-left:2px solid #d5e2db;position:sticky;right:0;background:var(--gold-bg-2);font-weight:900">₩${won(stuGrand+schoolGrand)}</td>
+  </tr>`:'');
 
   box.innerHTML = `<table style="border-collapse:collapse;font-size:12px;min-width:100%">
     <thead style="position:sticky;top:0;z-index:4">${groupHeaderRow}${headRows}${receiptRow}</thead>

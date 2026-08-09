@@ -662,7 +662,7 @@ body{background:var(--iv);}
 </div>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, addDoc, collection, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
   authDomain: "daniel-amatz.firebaseapp.com",
@@ -861,6 +861,32 @@ window.addEventListener('beforeprint', ()=>{
 window.addEventListener('afterprint', ()=>{
   document.querySelectorAll('.rv-tg').forEach(tg=>{ tg.style.zoom=''; });
 });
+
+
+/* 📊 게시 링크 조회 기록 — 관리자(수퍼)만 열람. 실패해도 화면에 영향 없음 */
+async function logShareView(kind, shareId, title){
+  try{
+    let ip='';
+    try{
+      const ctl = new AbortController(); setTimeout(()=>ctl.abort(), 2500);
+      const r = await fetch('https://api.ipify.org?format=json', {signal:ctl.signal});
+      ip = (await r.json()).ip || '';
+    }catch(_){/* IP는 참고 정보 — 못 얻어도 기록은 남긴다 */}
+    const ua = navigator.userAgent || '';
+    const os = /iPhone|iPad|iPod/.test(ua)?'iOS' : /Android/.test(ua)?'Android'
+             : /Macintosh/.test(ua)?'Mac' : /Windows/.test(ua)?'Windows' : '기타';
+    const mob = /Mobi|Android|iPhone|iPad/.test(ua);
+    await addDoc(collection(db,'shareViewLogs'), {
+      kind, shareId: String(shareId||''), title: String(title||'').slice(0,80),
+      at: serverTimestamp(), ip,
+      device: os + (mob?' · 모바일':' · PC'),
+      ua: ua.slice(0,300),
+      lang: navigator.language || '',
+      scr: (screen&&screen.width) ? screen.width+'×'+screen.height : '',
+      ref: String(document.referrer||'').slice(0,200)
+    });
+  }catch(_){/* 조회 기록 실패는 무시 */}
+}
 
 function renderBlock(b){
   const d = b.data || {};
@@ -1074,6 +1100,7 @@ async function boot(){
     // 목록 (학부모 게시판)
     try {
       const ix = await getDoc(doc(db,'sharedFamily','_index'));
+      logShareView('family-list', '_index', '가정통신문 목록');   // 📊 조회 기록
       const items = ix.exists() && Array.isArray(ix.data().items) ? ix.data().items : [];
       V.innerHTML = `<div class="sh-top"><span class="sh-title">📨 가정통신문</span></div>` +
         (items.length ? items.map(it=>`<a class="sh-item" href="?id=${it.id}">
@@ -1089,6 +1116,7 @@ async function boot(){
     const data = d.data();
     const blocks = JSON.parse(data.blocksJson||'[]');
     document.title = (data.title||'가정통신문') + ' · 가정통신문';
+    logShareView('family', id, data.title);   // 📊 조회 기록
     V.innerHTML = `
       <div class="sh-top">
         <span class="sh-title">${esc(data.title||'')}</span>
