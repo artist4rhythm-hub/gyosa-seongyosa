@@ -154,6 +154,18 @@ const TM = {
 
   /* 컬렉션 묶음 — scope(필드 일치 조건)에 맞는 문서 전체를 통째로 보관.
      scope 예: {year:2026, org__in:['daniel']} · 빈 {}면 컬렉션 전체 */
+  /* 이미 화면에 있는 자료로 보관 — 서버를 다시 읽지 않아 저장이 즉시 끝난다 */
+  async snapData(col, scope, label, docs){
+    const c = this._cfg; if(!c) return;
+    try {
+      await this._store({
+        key: this._key(col, scope), col, bundle: true,
+        scope: JSON.stringify(scope||{}), label: label||'변경 전',
+        data: JSON.stringify(docs||[])
+      });
+    } catch(e){}
+  },
+
   async snapBundle(col, scope, label){
     const c = this._cfg; if(!c) return;
     const F = c.F;
