@@ -3617,6 +3617,11 @@ async function renderIcsPanel(){
     <div style="margin-top:10px">
       <button class="btn btn-sm" onclick="downloadIcs()">📥 지금 일정을 ICS 파일로 내려받기</button>
       <span style="font-size:11.5px;color:var(--tl)">— 함수 없이 수동으로 구글 캘린더에 가져오기 할 때·연동 확인용</span>
+    </div>
+    <div style="margin-top:8px">
+      <button class="btn btn-sm" onclick="document.getElementById('ics-file').click()">📤 구글 캘린더에서 가져오기 (.ics)</button>
+      <input type="file" id="ics-file" accept=".ics,text/calendar" style="display:none" onchange="importIcsFile(this)">
+      <span style="font-size:11.5px;color:var(--tl)">— 구글 캘린더 <b>설정 → 내보내기</b>로 받은 파일을 올리면, 이미 있는 일정은 건너뛰고 새 일정만 담아 옵니다.</span>
     </div>`;
 }
 window.saveIcsUrl = async function(){
@@ -3666,6 +3671,132 @@ window.downloadIcs = function(){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
   toast('ICS 파일을 내려받았습니다 ✓','ok');
+};
+
+/* ═══ 📤 구글 캘린더 .ics 가져오기 ═══
+   구글 캘린더 → 설정 → 내보내기로 받은 파일을 올리면
+   「제목+시작일이 같은 일정」과 「이전에 가져온 일정(UID)」은 건너뛰고 새 것만 담는다.
+   ※ 초기 이전(마이그레이션)용 — 그 뒤로는 학사일정에만 입력하면 구독으로 구글이 따라온다. */
+function icsUnesc(v){ return String(v||'').replace(/\\n/gi,'\n').replace(/\\([,;\\])/g,'$1'); }
+function parseIcsText(text){
+  // 긴 줄 접기 풀기 → VEVENT 단위로 읽기
+  const raw = String(text||'').replace(/\r\n[ \t]/g,'').replace(/\n[ \t]/g,'').split(/\r?\n/);
+  const evs=[]; let cur=null;
+  const dtOf = v => { const m=String(v||'').match(/(\d{4})(\d{2})(\d{2})(T(\d{2})(\d{2}))?/);
+    return m?{d:`${m[1]}-${m[2]}-${m[3]}`, hasTime:!!m[4], hm:m[4]?`${m[5]}${m[6]}`:''}:null; };
+  for(const line of raw){
+    if(line==='BEGIN:VEVENT'){ cur={}; continue; }
+    if(line==='END:VEVENT'){ if(cur) evs.push(cur); cur=null; continue; }
+    if(!cur) continue;
+    const i=line.indexOf(':'); if(i<0) continue;
+    const key=line.slice(0,i).split(';')[0].toUpperCase();
+    const val=line.slice(i+1);
+    if(key==='SUMMARY') cur.title=icsUnesc(val).trim();
+    else if(key==='DESCRIPTION') cur.memo=icsUnesc(val).trim();
+    else if(key==='UID') cur.uid=val.trim();
+    else if(key==='RRULE') cur.rrule=true;
+    else if(key==='DTSTART'){ const t=dtOf(val); if(t) cur.start=t.d; }
+    else if(key==='DTEND'){ const t=dtOf(val); if(t) cur.endRaw=t; }
+  }
+  // ICS의 종료일은 「끝난 다음 날」 — 하루 빼서 마지막 날로 맞춘다
+  const minus1=d=>{ const t=new Date(d+'T00:00:00'); t.setDate(t.getDate()-1);
+    return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; };
+  return evs.filter(e=>e.title&&e.start).map(e=>{
+    let end=e.start;
+    if(e.endRaw){
+      end=e.endRaw.d;
+      if(!e.endRaw.hasTime || e.endRaw.hm==='0000'){ if(end>e.start) end=minus1(end); }
+      if(end<e.start) end=e.start;
+    }
+    return { title:e.title, memo:e.memo||'', uid:e.uid||'', start:e.start, end, rrule:!!e.rrule };
+  });
+}
+let ICS_IMP=null;
+window.importIcsFile = async function(inp){
+  const f=inp.files&&inp.files[0]; inp.value='';
+  if(!f) return;
+  if(!needEdit()) return;
+  let text=''; try{ text=await f.text(); }catch(e){ toast('파일을 읽지 못했습니다.','err'); return; }
+  const list=parseIcsText(text);
+  if(!list.length){ toast('가져올 일정을 찾지 못했어요 — 구글 캘린더에서 내보낸 .ics 파일인지 확인해 주세요.','err'); return; }
+  // 기존 학사일정 전체를 새로 읽어 중복 판정 (제목+시작일 같음 · 같은 UID로 이미 가져옴)
+  const exist=[];
+  try{ const snap=await getDocs(collection(db,'academicEvents')); snap.forEach(d=>exist.push(d.data())); }
+  catch(e){ toast('기존 일정을 불러오지 못했습니다: '+(e.message||''),'err'); return; }
+  const keySet=new Set(exist.map(x=>`${x.title}||${x.startDate}`));
+  const uidSet=new Set(exist.map(x=>x.icsUid).filter(Boolean));
+  list.forEach(ev=>{ ev.dup = keySet.has(`${ev.title}||${ev.start}`) || (ev.uid&&uidSet.has(ev.uid)); });
+  list.sort((a,b)=>a.start.localeCompare(b.start));
+  ICS_IMP={list};
+  openIcsImportDlg(f.name);
+};
+function openIcsImportDlg(fname){
+  const list=ICS_IMP.list;
+  const dupN=list.filter(e=>e.dup).length, rrN=list.filter(e=>e.rrule&&!e.dup).length;
+  const newN=list.filter(e=>!e.dup&&!e.rrule).length;
+  const rows=list.map((e,i)=>{
+    const off=e.dup||e.rrule;
+    return `<label style="display:flex;gap:9px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid var(--iv);${off?'opacity:.55;':''}cursor:${off?'default':'pointer'}">
+      <input type="checkbox" data-i="${i}" ${off?'disabled':'checked'} style="margin-top:3px;flex:none">
+      <span style="flex:1;min-width:0">
+        <b style="font-size:13px">${esc(e.title)}</b>
+        ${e.dup?'<span style="font-size:10px;font-weight:800;color:var(--ts);background:var(--iv);border-radius:100px;padding:1px 8px;margin-left:6px">이미 있음 — 건너뜀</span>':''}
+        ${(!e.dup&&e.rrule)?'<span style="font-size:10px;font-weight:800;color:#B45309;background:#FFF4E5;border-radius:100px;padding:1px 8px;margin-left:6px">반복 일정 — 지원 안 함</span>':''}
+        <span style="display:block;font-size:11.5px;color:var(--ts);margin-top:1px">${esc(e.start)}${e.end!==e.start?` ~ ${esc(e.end)}`:''}${e.memo?` · ${esc(e.memo.slice(0,40))}${e.memo.length>40?'…':''}`:''}</span>
+      </span></label>`;
+  }).join('');
+  const CATL={event:'행사',program:'프로그램',worship:'예배·기도회',admin:'행정',break:'방학',exam:'시험',closed:'휴교·휴일'};
+  const chipRow=(id,map,onKey)=>`<div class="chips" id="${id}">${Object.entries(map).map(([k,l])=>
+    `<button type="button" class="chip ${k===onKey?'on':''}" data-k="${k}"
+      onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));this.classList.add('on')">${l}</button>`).join('')}</div>`;
+  const ov=document.createElement('div'); ov.className='mov'; ov.id='ics-imp-mod';
+  ov.innerHTML=`<div class="mbk" onclick="document.getElementById('ics-imp-mod').remove()"></div>
+    <div class="mbox" style="max-width:660px;width:94vw;max-height:90vh;display:flex;flex-direction:column">
+      <div class="mtitle">📤 구글 캘린더에서 가져오기</div>
+      <div class="msub">${esc(fname||'')} · ${list.length}건 발견 — 새 일정 <b>${newN}건</b>${dupN?` · 이미 있는 ${dupN}건은 자동으로 건너뜁니다`:''}${rrN?` · 반복 일정 ${rrN}건은 지원하지 않아요`:''}</div>
+      <label class="fld-label">어느 캘린더에 넣을까요?</label>
+      ${chipRow('icsimp-org', ORGS, 'all')}
+      <label class="fld-label" style="margin-top:8px">분류 (한꺼번에 적용 — 가져온 뒤 하나씩 고칠 수 있어요)</label>
+      ${chipRow('icsimp-cat', CATL, 'event')}
+      <div style="flex:1;overflow:auto;border:1px solid var(--ivd);border-radius:10px;min-height:120px;margin-top:10px">${rows}</div>
+      <div class="mact">
+        <button class="btn" onclick="document.getElementById('ics-imp-mod').remove()">닫기</button>
+        <button class="btn btn-p" id="icsimp-go" onclick="runIcsImport()">선택한 일정 가져오기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+window.runIcsImport = async function(){
+  const ov=$I('ics-imp-mod'); if(!ov||!ICS_IMP) return;
+  if(!needEdit()) return;
+  const org=ov.querySelector('#icsimp-org .chip.on')?.dataset.k||'all';
+  const cat=ov.querySelector('#icsimp-cat .chip.on')?.dataset.k||'event';
+  const picks=[...ov.querySelectorAll('input[type=checkbox]:checked')]
+    .map(c=>ICS_IMP.list[Number(c.dataset.i)]).filter(e=>e&&!e.dup&&!e.rrule);
+  if(!picks.length){ toast('가져올 일정을 골라 주세요.','err'); return; }
+  const btn=$I('icsimp-go'); btn.disabled=true; btn.textContent='가져오는 중…';
+  if(window.TM){ try{ await window.TM.snapBundle('academicEvents', {year:curYear}, `구글 캘린더 가져오기 ${picks.length}건`); }catch(_){} }
+  let ok=0, fail=0;
+  for(const e of picks){
+    try{
+      await addDoc(collection(db,'academicEvents'),{
+        year:Number(e.start.slice(0,4)),
+        title:e.title, subtitle:'',
+        startDate:e.start, endDate:e.end,
+        timeOfDay:'am', weekdays:[], scope:'all', targets:[],
+        org, category:cat, color:'',
+        noClass:(cat==='closed'||cat==='break'),
+        audience:'both', memo:e.memo||'',
+        icsUid:e.uid||'', importedFrom:'google-ics',
+        order:500,
+        updatedByUid:CU?.uid||'', updatedByName:CU?.name||'', updatedAt:Timestamp.now(),
+      });
+      ok++;
+    }catch(err){ fail++; }
+  }
+  ov.remove(); ICS_IMP=null;
+  toast(fail?`${ok}건 가져옴 · ${fail}건 실패`:`✅ ${ok}건을 학사일정에 담았습니다`, fail?'err':'ok');
+  try{ await loadEvents(curYear); render(); }catch(_){ location.reload(); }
 };
 
 let SHARES = { parent:null, teacher:null };
