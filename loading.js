@@ -128,6 +128,11 @@
     font-size:12px; color:rgba(212,233,226,.65); margin-top:-12px;
     min-height:16px; text-align:center; font-family:inherit; letter-spacing:.3px;
   }
+  .lo-det{
+    font-size:11px; color:rgba(212,233,226,.5); margin-top:-8px;
+    min-height:15px; max-width:280px; text-align:center; font-family:inherit;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
 
   /* 진행 바 */
   .lo-bar{
@@ -239,6 +244,7 @@
         <div class="lo-cap" id="lo-cap">불러오는 중…</div>
         <div class="lo-sub" id="lo-sub"></div>
         <div class="lo-bar indet" id="lo-bar"><div class="lo-fill" id="lo-fill"></div></div>
+        <div class="lo-det" id="lo-det"></div>
       </div>`;
     document.body.appendChild(ov);
   }
@@ -249,36 +255,164 @@
     return ov;
   }
 
+  /* ═══ 진행률 엔진 ═══
+     · 네트워크 요청(fetch/XHR)을 세어 «진짜 진행률»을 만든다
+     · 요청 사이 빈 시간에도 트리클(조금씩 전진)로 절대 멈춰 보이지 않는다
+     · 지금 받는 것의 이름을 아래 작은 줄에 보여준다 */
+  const NET = { total:0, done:0, active:new Map(), seq:0, shownAt:0, manual:null, timer:null, explicit:false };
+
+  function labelOf(url){
+    try{
+      const u = new URL(url, location.href);
+      const h = u.hostname, path = u.pathname;
+      if(h.includes('firestore.googleapis')) return '서버 자료';
+      if(h.includes('identitytoolkit') || h.includes('securetoken')) return '로그인 확인';
+      if(h.includes('gstatic') && path.includes('firebasejs')) return '프로그램 부품';
+      if(h.includes('fonts.')) return '글꼴';
+      if(h.includes('api.ipify')) return '';
+      const file = decodeURIComponent(path.split('/').pop() || '');
+      if(/\.(png|jpg|jpeg|webp|svg|ico)$/i.test(file)) return '그림 · ' + file;
+      if(/\.(js|css|json|woff2?)$/i.test(file)) return file;
+      return file || '';
+    }catch(_){ return ''; }
+  }
+  function netStart(url){
+    const id = ++NET.seq;
+    const lb = labelOf(url);
+    NET.total++; NET.active.set(id, lb);
+    paint();
+    return id;
+  }
+  function netEnd(id){
+    if(NET.active.has(id)){ NET.active.delete(id); NET.done++; paint(); }
+  }
+
+  /* fetch·XHR을 투명하게 감싼다 — 동작은 그대로, 세기만 한다 */
+  const _fetch = window.fetch;
+  window.fetch = function(input, init){
+    const url = (typeof input === 'string') ? input : (input && input.url) || '';
+    const id = netStart(url);
+    return _fetch.apply(this, arguments).then(
+      r => { netEnd(id); return r; },
+      e => { netEnd(id); throw e; }
+    );
+  };
+  const _open = XMLHttpRequest.prototype.open;
+  const _send = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(m, url){ this.__loUrl = url; return _open.apply(this, arguments); };
+  XMLHttpRequest.prototype.send = function(){
+    const id = netStart(this.__loUrl || '');
+    const end = () => netEnd(id);
+    this.addEventListener('loadend', end, { once:true });
+    return _send.apply(this, arguments);
+  };
+
+  /* 화면 그리기: 진짜 진행 + 트리클 */
+  function calcPct(){
+    const t = NET.shownAt ? (Date.now() - NET.shownAt) / 1000 : 0;
+    // 시간 트리클: 처음엔 빠르게, 갈수록 천천히 (로그형) — 최대 38%
+    const trickle = Math.min(38, 16 * Math.log2(1 + t * 1.6));
+    // 네트워크 진행: 끝낸 요청 비율 — 최대 58%
+    const netPart = NET.total ? (NET.done / NET.total) * 58 : 0;
+    let pct = Math.min(95, trickle + netPart);
+    // 페이지가 직접 정한 값이 있으면 그 아래로 내려가지 않는다
+    if(NET.manual != null) pct = Math.max(pct, Math.min(95, NET.manual));
+    return pct;
+  }
+  function paint(){
+    if(!ov || !ov.classList.contains('on')) return;
+    const fill = document.getElementById('lo-fill');
+    const bar  = document.getElementById('lo-bar');
+    const sub  = document.getElementById('lo-sub');
+    const det  = document.getElementById('lo-det');
+    const pct  = calcPct();
+    if(bar) bar.classList.remove('indet');
+    if(fill){
+      const cur = parseFloat(fill.style.width) || 0;
+      if(pct > cur) fill.style.width = pct.toFixed(1) + '%';   // 뒤로 가지 않는다
+    }
+    if(sub) sub.textContent = Math.round(Math.max(pct, parseFloat(fill?.style.width)||0)) + '%';
+    if(det){
+      if(NET.detailManual){ det.textContent = NET.detailManual; }   // 페이지가 정한 문구가 우선
+      else {
+        const labels = [...NET.active.values()].filter(Boolean);
+        const n = NET.active.size;
+        const t = NET.shownAt ? (Date.now() - NET.shownAt) / 1000 : 0;
+        if(labels.length) det.textContent = '받는 중 · ' + labels[labels.length-1] + (n>1 ? ` 외 ${n-1}개` : '');
+        else if(n) det.textContent = `받는 중 · ${n}개 요청`;
+        else if(t > 7) det.textContent = '네트워크가 느린 것 같아요 — 조금만 기다려 주세요…';
+        else det.textContent = '';
+      }
+    }
+  }
+  function startTicker(){
+    if(NET.timer) return;
+    NET.timer = setInterval(paint, 220);
+  }
+  function stopTicker(){
+    if(NET.timer){ clearInterval(NET.timer); NET.timer = null; }
+  }
+
   window.showLoading = function(caption){
     const o = ensure(); if(!o) return;
     const cap = document.getElementById('lo-cap');
     if(cap) cap.textContent = caption || '불러오는 중…';
-    const s = document.getElementById('lo-sub'); if(s) s.textContent = '';
-    const bar = document.getElementById('lo-bar');
+    const sEl = document.getElementById('lo-sub'); if(sEl) sEl.textContent = '0%';
+    const dEl = document.getElementById('lo-det'); if(dEl) dEl.textContent = '';
     const fill = document.getElementById('lo-fill');
-    if(bar) bar.classList.add('indet');
     if(fill) fill.style.width = '0%';
+    NET.shownAt = Date.now() || 1; NET.total = 0; NET.done = 0; NET.manual = null; NET.detailManual = '';
+    NET.explicit = true;
     o.classList.add('on');
+    startTicker(); paint();
   };
 
-  window.setLoadStep = function(caption, pct){
+  window.setLoadStep = function(caption, pct, detail){
     const o = ensure(); if(!o) return;
-    if(!o.classList.contains('on')) o.classList.add('on');
+    if(!o.classList.contains('on')){ window.showLoading(caption); }
     const cap = document.getElementById('lo-cap');
     if(cap && caption) cap.textContent = caption;
-    const bar = document.getElementById('lo-bar');
-    const fill = document.getElementById('lo-fill');
-    if(typeof pct === 'number' && !isNaN(pct)){
-      if(bar) bar.classList.remove('indet');
-      if(fill) fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
-      const s = document.getElementById('lo-sub');
-      if(s) s.textContent = Math.round(pct) + '%';
-    }
+    if(typeof pct === 'number' && !isNaN(pct)) NET.manual = pct;
+    if(detail != null){ NET.detailManual = String(detail); }
+    paint();
+  };
+
+  /* 아래 작은 줄만 바꾸고 싶을 때 — 예: setLoadDetail('학생 명단 12/47') */
+  window.setLoadDetail = function(text){
+    NET.detailManual = String(text || '');
+    const d = document.getElementById('lo-det'); if(d) d.textContent = NET.detailManual;
   };
 
   window.hideLoading = function(){
     if(ov) ov.classList.remove('on');
+    NET.shownAt = 0; NET.manual = null; NET.explicit = false; NET.detailManual = '';
+    stopTicker();
   };
+
+  /* 페이지가 처음 열릴 때부터 표시 — 스크립트·자료 받는 과정이 그대로 보인다 */
+  if(document.readyState === 'loading'){
+    const boot = () => {
+      if(NET.explicit) return;               // 페이지가 이미 직접 켰으면 그대로 둔다
+      const o = ensure(); if(!o) return;
+      const cap = document.getElementById('lo-cap');
+      if(cap) cap.textContent = '화면을 여는 중…';
+      NET.shownAt = Date.now() || 1;
+      o.classList.add('on');
+      startTicker(); paint();
+    };
+    if(document.body) boot();
+    else document.addEventListener('DOMContentLoaded', boot, { once:true });
+    /* 안전장치: 페이지가 hideLoading을 부르지 않는 화면(공유 보기 등)에서
+       요청이 다 끝나고 1.2초가 지나면 스스로 사라진다 */
+    const auto = setInterval(() => {
+      if(!ov || !ov.classList.contains('on')){ return; }
+      if(NET.explicit) return;               // 페이지가 관리 중이면 손대지 않는다
+      if(NET.active.size === 0 && document.readyState === 'complete'){
+        if(!NET.idleAt) NET.idleAt = Date.now();
+        if(Date.now() - NET.idleAt > 1200){ window.hideLoading(); clearInterval(auto); }
+      } else NET.idleAt = 0;
+    }, 400);
+  }
 
   /* 페이지 이동 시 자동 표시 */
   document.addEventListener('click', function(e){
