@@ -158,7 +158,13 @@ const TM = {
     const c = this._cfg; if(!c) return;
     const F = c.F;
     try {
-      const snap = await F.getDocs(F.collection(c.db, col));
+      // 등호 조건은 서버에서 거른다 — 컬렉션이 커져도 저장이 느려지지 않는다
+      let src = F.collection(c.db, col);
+      if(F.query && F.where && scope){
+        const eqs = Object.keys(scope).filter(k => !k.endsWith('__in'));
+        if(eqs.length) src = F.query(src, ...eqs.map(k => F.where(k, '==', scope[k])));
+      }
+      const snap = await F.getDocs(src);
       const docs = [];
       snap.forEach(d=>{
         const v = d.data();
