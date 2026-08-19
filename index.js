@@ -48,7 +48,9 @@ function fold(line){   // 긴 줄 접기 (규격상 한 줄 75바이트 제한)
 /* 행사 + 수동 휴일 → ICS 본문 */
 function buildIcs(events, holidays, opt){
   const cal = opt.cal || 'all', aud = opt.aud || 'teacher';
-  const okOrg = o => o === cal;   // 순수 분리 — 그 캘린더에 등록한 일정만 (섞지 않는다)
+  // 순수 분리 — 그 캘린더에 «넣기로 고른» 일정만 (복수 선택 orgs 지원, 옛 문서는 org 하나)
+  const orgsOf = e => (Array.isArray(e.orgs) && e.orgs.length) ? e.orgs : [e.org || 'daniel'];
+  const okOrg = o => o === cal;
   const okAud = a => aud === 'teacher' ? true : ((a || 'both') !== 'teacher');
   const L = [];
   L.push('BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//gyosa-seongyosa//academic//KR',
@@ -60,7 +62,7 @@ function buildIcs(events, holidays, opt){
 
   for(const e of events){
     if(!e.startDate || !e.endDate) continue;
-    if(!okOrg(e.org || 'daniel')) continue;
+    if(!orgsOf(e).includes(cal)) continue;
     if(!okAud(e.audience)) continue;
     L.push('BEGIN:VEVENT');
     L.push('UID:ev-' + e.id + '@daniel-amatz');

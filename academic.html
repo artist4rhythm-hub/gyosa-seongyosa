@@ -1017,6 +1017,11 @@ const ORGS = { all:'DA 전체', daniel:'다니엘 아마츠', jihyebit:'지혜�
 const ORG_ALL = '__all__';   // 세 캘린더를 겹쳐서 함께 보는 상태
 /* 예전에 'both' 로 넣어둔 일정은 «DA 전체»로 읽는다 */
 function calOf(e){ const o = (e && e.org) || 'daniel'; return o === 'both' ? 'all' : o; }
+/* 이 행사가 속한 캘린더 목록 — 복수 선택 지원 (옛 문서는 org 하나짜리) */
+function orgsOf(e){
+  if(e && Array.isArray(e.orgs) && e.orgs.length) return e.orgs;
+  return [calOf(e)];
+}
 const ORG_LABEL = o => o===ORG_ALL ? '모든 캘린더' : ((CALS[o]&&CALS[o].label) || o);
 
 /* 부서 — 시간표 틀에 정해둔 부서(초등부·중등부·고등부)를 그대로 가져온다 */
@@ -1320,12 +1325,12 @@ async function loadEvents(year){
 /* 지금 고른 기관의 행사만 보여준다 */
 function applyEventScope(){
   if(ORG === ORG_ALL){ EVENTS = ALL_EVENTS.slice(); return; }   // 세 캘린더 겹쳐보기
-  if(ORG === 'all'){ EVENTS = ALL_EVENTS.filter(e => calOf(e)==='all'); return; }
+  if(ORG === 'all'){ EVENTS = ALL_EVENTS.filter(e => orgsOf(e).includes('all')); return; }
   // 기관 캘린더를 볼 때 «DA 전체»(정기휴가·창립일 등)도 함께 보여줄지는 고를 수 있다
   EVENTS = ALL_EVENTS.filter(e => {
-    const o = calOf(e);
-    if(o === ORG) return true;
-    return o === 'all' && SHOW_ALL_CAL;
+    const os = orgsOf(e);
+    if(os.includes(ORG)) return true;
+    return os.includes('all') && SHOW_ALL_CAL;
   });
 }
 
@@ -1644,10 +1649,8 @@ function targetDots(e){
 function orgMark(e){
   // 「모두 보기」에서만 — 어느 기관 일정인지 작은 태그로 구분한다
   if(ORG !== ORG_ALL) return '';
-  const o = calOf(e);
   const T = { all:{t:'전체',c:'#00704A'}, daniel:{t:'DA',c:'#2FB344'}, jihyebit:{t:'지혜',c:'#8E4EC6'} };
-  const m = T[o]; if(!m) return '';
-  return `<span class="eb-org" style="background:${m.c}">${m.t}</span>`;
+  return orgsOf(e).map(o=>{ const m=T[o]; return m ? `<span class="eb-org" style="background:${m.c}">${m.t}</span>` : ''; }).join('');
 }
 
 /* 칸의 행사를 눌렀을 때 — 보기 탭이면 상세 카드, 편집 탭이면 편집 창 */
@@ -2355,12 +2358,21 @@ let dlgTargets = new Set();
 let dlgWeekdays = new Set();
 let dlgColor = '';
 let dlgScope = 'all';
-let dlgOrg = 'daniel';      // 이 행사가 어느 기관 것인지 ('both' = 두 기관 공통)
+let dlgOrg = 'daniel';               // 대표 캘린더 (학년 목록 등 내부 계산용)
+let dlgOrgs = new Set(['daniel']);   // ✅ 복수 선택 — 이 행사가 들어갈 캘린더들
 let editingEventId = null;
 
+function dlgOrgPrimary(){
+  // 학년·부서 목록 계산용 대표값: 전체 포함이거나 두 기관을 함께 고르면 «전체» 기준
+  if(dlgOrgs.has('all') || dlgOrgs.size > 1) return 'all';
+  return [...dlgOrgs][0] || 'daniel';
+}
 window.pickEvOrg = function(o){
-  dlgOrg = o;
-  document.querySelectorAll('#ev-org .chip').forEach(b=>b.classList.toggle('on', b.dataset.org===o));
+  // 누르면 켜고/끄고 — 최소 한 개는 남긴다
+  if(dlgOrgs.has(o)){ if(dlgOrgs.size > 1) dlgOrgs.delete(o); }
+  else dlgOrgs.add(o);
+  dlgOrg = dlgOrgPrimary();
+  document.querySelectorAll('#ev-org .chip').forEach(b=>b.classList.toggle('on', dlgOrgs.has(b.dataset.org)));
   dlgTargets.clear();
   renderTargetPicker();
 };
@@ -2393,7 +2405,10 @@ window.openEventDlg = function(id, ds, slot){
   dlgWeekdays = new Set(e ? (e.weekdays||[]) : []);
   dlgScope = e ? (e.scope||'all') : 'all';
   dlgColor = e ? (e.color||'') : '';
-  dlgOrg = e ? calOf(e) : (canEditCal(ORG) ? ORG : (CAL_KEYS.find(canEditCal) || 'daniel'));
+  dlgOrgs = new Set(e ? orgsOf(e).filter(k=>CAL_KEYS.includes(k))
+                      : [ (canEditCal(ORG) && ORG !== ORG_ALL) ? ORG : (CAL_KEYS.find(canEditCal) || 'daniel') ]);
+  if(!dlgOrgs.size) dlgOrgs = new Set(['daniel']);
+  dlgOrg = dlgOrgPrimary();
   curOrg = ORG;
 
   const ov = document.createElement('div');
@@ -2405,11 +2420,13 @@ window.openEventDlg = function(id, ds, slot){
 
       <label class="fld-label">어느 캘린더에 넣을까요?</label>
       <div class="chips" id="ev-org">
-        ${CAL_KEYS.filter(canEditCal).map(k=>`<button type="button" class="chip ${dlgOrg===k?'on':''}"
+        ${CAL_KEYS.filter(canEditCal).map(k=>`<button type="button" class="chip ${dlgOrgs.has(k)?'on':''}"
           data-org="${k}" onclick="pickEvOrg('${k}')">${esc(CALS[k].label)}</button>`).join('')}
       </div>
       <div style="font-size:11px;color:var(--tl,#93A09A);margin-top:5px;line-height:1.6">
-        정기 휴가·방학처럼 두 기관이 <b>똑같이 쉬는 일정</b>은 «DA 전체 일정»에 넣으면 양쪽 달력에 함께 나옵니다.</div>
+        <b>여러 개를 함께 고를 수 있어요</b> — 고른 캘린더마다 이 행사가 나옵니다.
+        예: 두 기관 공통 행사를 학부모에게도 보이려면 «다니엘»과 «지혜빛»을 함께 켜세요
+        («DA 전체»는 학부모 공유가 없는 내부 캘린더).</div>
 
       <label class="fld-label">제목</label>
       <input class="fld-input" id="ev-title" value="${esc(e?e.title:'')}" placeholder="예: 신년 수양회">
@@ -2677,7 +2694,8 @@ window.saveEvent = async function(){
     // 학년별이면 부서 이름은 학년으로 풀어서 저장 (부서·학년이 섞여 저장되던 문제 방지)
     targets: dlgScope==='all' ? []
       : (dlgScope==='grade' ? expandTargets([...dlgTargets], dlgOrg) : [...dlgTargets]),
-    org: dlgOrg,                    // 이 행사가 속한 캘린더
+    org: dlgOrgPrimary(),           // 대표 캘린더 (옛 화면·통계 호환용)
+    orgs: [...dlgOrgs],             // ✅ 이 행사가 들어갈 캘린더들 (복수)
     category: cat,
     color: dlgColor || '',
     noClass: (cat==='closed' || cat==='break') ? true : !!$I('ev-nc')?.checked,   // 이날 수업 없음
