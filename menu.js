@@ -93,6 +93,9 @@ const MENU = [
     icon: 'settings',
     admin: true,
     items: [
+      { key:'parentadm', label:'학부모 관리', icon:'family_restroom', href:'parent-admin.html',
+        desc:'학부모 사이트 — 가입 코드·게시판·바로가기 링크·연결 현황',
+        tabs:['가입 코드','바로가기 링크','게시판 관리','금칙어','연결 현황'], admin:true },
       { key:'adm', label:'관리자', icon:'admin_panel_settings', href:'admin.html',
         desc:'교직원 · 인사 · 보안 · 로그',
         tabs:['통합관리','접근 권한','인사정보','부서·새 학년도','출근부 설정','접속·보안','로그인 기록','활동 로그'], admin:true },
