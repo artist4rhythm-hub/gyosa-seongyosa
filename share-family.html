@@ -1101,7 +1101,13 @@ async function boot(){
     try {
       const ix = await getDoc(doc(db,'sharedFamily','_index'));
       logShareView('family-list', '_index', '가정통신문 목록');   // 📊 조회 기록
-      const items = ix.exists() && Array.isArray(ix.data().items) ? ix.data().items : [];
+      let items = ix.exists() && Array.isArray(ix.data().items) ? ix.data().items : [];
+      // 🏫 기관 전용 목록 — ?org=daniel|jihyebit 이 붙으면 그 기관 통신문만
+      const fOrg = new URLSearchParams(location.search).get('org');
+      if(fOrg==='daniel'||fOrg==='jihyebit'){
+        items = items.filter(it=>(it.org||'')===fOrg || (it.org||'')==='all');
+        document.title = '가정통신문 · ' + (ORG_L[fOrg]||'');
+      }
       V.innerHTML = `<div class="sh-top"><span class="sh-title">📨 가정통신문</span></div>` +
         (items.length ? items.map(it=>`<a class="sh-item" href="?id=${it.id}">
             <b>${esc(it.title||'제목 없음')}</b>
