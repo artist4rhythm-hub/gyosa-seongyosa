@@ -378,7 +378,8 @@
     st.style.display='block';
     st.innerHTML = retried
       ? '🔌 서버 응답이 없어요 — 네트워크(와이파이·데이터)를 확인해 주세요.<br>' +
-        '<button class="lo-retry" onclick="try{sessionStorage.removeItem(\'loRetried\')}catch(e){};location.reload()">🔄 다시 시도</button>'
+        '<button class="lo-retry" onclick="try{sessionStorage.removeItem(\'loRetried\')}catch(e){};location.reload()">🔄 다시 시도</button>' +
+        '<button class="lo-retry" onclick="window.__cleanReload()">🧹 임시 저장 비우고 다시 열기</button>'
       : '🔌 응답이 늦어지고 있어요 — 잠시 후 자동으로 다시 시도합니다.<br>' +
         '<button class="lo-retry" onclick="try{sessionStorage.setItem(\'loRetried\',\'1\')}catch(e){};location.reload()">지금 다시 시도</button>';
     if(!retried && now - NET.shownAt > 18000){
@@ -422,6 +423,22 @@
   window.setLoadDetail = function(text){
     NET.detailManual = String(text || '');
     const d = document.getElementById('lo-det'); if(d) d.textContent = NET.detailManual;
+  };
+
+  /* 🧹 임시 저장(서비스워커·캐시)이 꼬였을 때 — 비우고 새로 연다 */
+  window.__cleanReload = async function(){
+    try {
+      if(navigator.serviceWorker){
+        const rs = await navigator.serviceWorker.getRegistrations();
+        for(const r of rs) await r.unregister();
+      }
+      if(window.caches){
+        const ks = await caches.keys();
+        for(const k of ks) await caches.delete(k);
+      }
+      sessionStorage.removeItem('loRetried');
+    } catch(e){}
+    location.reload();
   };
 
   window.hideLoading = function(){

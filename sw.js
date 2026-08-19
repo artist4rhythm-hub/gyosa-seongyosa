@@ -5,7 +5,7 @@
 //   · 화면(HTML)     → 네트워크 우선 (no-cache: 바뀐 코드 즉시 반영) + 받으면 저장 → 실패(오프라인) 시 캐시
 //   · 그림·글꼴·JS·SDK → 캐시 우선, 뒤에서 조용히 갱신 (두 번째부터 즉시 뜬다)
 //   · Firestore 등 실시간 자료 → 손대지 않음 (항상 실서버)
-const CACHE = 'gyosa-v3';
+const CACHE = 'gyosa-v4';   // v4: 굳은 캐시 전부 정리 + 흰 화면 자가 복구
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
@@ -43,14 +43,32 @@ self.addEventListener('fetch', e => {
     e.respondWith((async () => {
       try {
         const res = await fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' });
-        if (res && res.ok) {
+        // 정상 문서만 저장 — 깨진 응답이 캐시에 굳는 것을 막는다
+        if (res && res.ok && !res.redirected && res.type === 'basic') {
           const c = await caches.open(CACHE);
           c.put(req, res.clone());
         }
         return res;
       } catch (_) {
         const hit = await caches.match(req);
-        return hit || Response.error();
+        if (hit) return hit;
+        // ⛑ 흰 화면 대신 — 스스로 고치는 안내 화면
+        return new Response(`<!DOCTYPE html><html lang="ko"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;background:#F2F0EB;
+  display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0">
+<div style="background:#fff;border-radius:16px;padding:28px 26px;max-width:340px;text-align:center;
+  box-shadow:0 4px 20px rgba(0,0,0,.08)">
+<div style="font-size:34px">🔌</div>
+<div style="font-weight:900;font-size:16px;margin:10px 0 6px;color:#0C2A44">페이지를 불러오지 못했어요</div>
+<div style="font-size:12.5px;color:#5A6560;line-height:1.7">네트워크가 잠시 막혔거나<br>임시 저장이 꼬였을 수 있어요.</div>
+<button onclick="location.reload()" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;
+  background:#0C2A44;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">🔄 다시 시도</button>
+<button onclick="(async()=>{try{const rs=await navigator.serviceWorker.getRegistrations();for(const r of rs)await r.unregister();
+  const ks=await caches.keys();for(const k of ks)await caches.delete(k);}catch(e){};location.reload()})()"
+  style="margin-top:8px;width:100%;padding:11px;border:1.5px solid #E3E1DA;border-radius:10px;background:#fff;
+  color:#5A6560;font-weight:700;font-size:12.5px;font-family:inherit;cursor:pointer">🧹 임시 저장 비우고 새로 열기</button>
+</div></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       }
     })());
     return;
