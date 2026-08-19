@@ -53,6 +53,7 @@ function buildIcs(events, holidays, opt){
   const L = [];
   L.push('BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//gyosa-seongyosa//academic//KR',
          'CALSCALE:GREGORIAN','METHOD:PUBLISH');
+  L.push('X-GYOSA-VER:2-pure-split');   // ← 이 줄이 보이면 «순수 분리» 새 버전이 살아있는 것
   L.push(fold('X-WR-CALNAME:' + icsEsc((CAL_NAME[cal] || cal) + ' 학사일정' + (aud === 'parent' ? ' (학부모)' : ''))));
   L.push('X-WR-TIMEZONE:Asia/Seoul');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
@@ -105,7 +106,7 @@ exports.academicIcs = async (req, res) => {
     const holidays = []; hSnap.forEach(x => holidays.push({ id: x.id, ...x.data() }));
 
     res.set('Content-Type', 'text/calendar; charset=utf-8');
-    res.set('Cache-Control', 'public, max-age=3600');
+    res.set('Cache-Control', 'public, max-age=600');   // 10분 — 구독에도 충분하고 확인도 빠르다
     res.status(200).send(buildIcs(events, holidays, { cal, aud }));
   } catch(e){
     res.status(500).send('오류: ' + (e.message || ''));
