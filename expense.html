@@ -685,6 +685,7 @@ function renderNew(){
       <div class="fgrp"><label>계좌번호 <span style="color:var(--tl);font-weight:400">(한 번 입력하면 다음부터 자동으로 채워집니다)</span></label><input type="text" id="ex-account" value="${esc(CU.bankAccount||'')}" placeholder="숫자만 입력"></div>
       <div class="frow">
         <div class="fgrp" id="wrap-schoolqty"><label>학교 청구분 수량 (교사 사용분·학교 보관분)</label><input type="number" id="ex-schoolqty" value="0" min="0" inputmode="numeric"></div>
+        <div class="fgrp" id="wrap-schoolamt" style="display:none"><label>학교 반환분 금액 (원) <span style="color:var(--tl);font-weight:400">— 학교 몫으로 돌려받는 금액 (없으면 0)</span></label><input type="number" id="ex-schoolamt" value="0" min="0" step="10" inputmode="numeric" placeholder="예: 3000"></div>
         <div class="fgrp"><label>학교 청구분 메모 (선택)</label><input type="text" id="ex-school" placeholder="예: 교사 시연용 1개, 잔여 2개 학교 보관"></div>
       </div>
       <div class="fgrp">
@@ -752,7 +753,7 @@ async function fillAutocomplete(){
 // 모드 전환 (입력값 유지)
 function setExpMode(m){
   const keep = {};
-  ['ex-date','ex-subject','ex-items','ex-detail','ex-bank','ex-holder','ex-account','ex-total','ex-schoolqty','ex-school','indiv-base'].forEach(id=>{
+  ['ex-date','ex-subject','ex-items','ex-detail','ex-bank','ex-holder','ex-account','ex-total','ex-schoolqty','ex-schoolamt','ex-school','indiv-base'].forEach(id=>{
     const el=$I(id); if(el) keep[id]=el.value;
   });
   expMode = m;
@@ -773,6 +774,7 @@ function applyModeUI(){
   const md=$I('mode-desc'); if(md) md.textContent = descs[expMode]||'';
   const wt=$I('wrap-total'); if(wt) wt.style.display = expMode==='equal'?'':'none';
   const wq=$I('wrap-schoolqty'); if(wq) wq.style.display = expMode==='equal'?'':'none';
+  const wa=$I('wrap-schoolamt'); if(wa) wa.style.display = expMode==='refund'?'':'none';
   const ib=$I('indiv-bar'); if(ib) ib.style.display = (expMode==='indiv'||expMode==='refund')?'':'none';
   const gb=$I('group-bar'); if(gb) gb.style.display = expMode==='group'?'':'none';
   if(expMode==='group') renderGroupBar();
@@ -1525,6 +1527,7 @@ async function editExpense(id){
   if($I('ex-detail')) $I('ex-detail').value = e.detail||'';
   if($I('ex-total')) $I('ex-total').value = (e.mode==='equal'||!e.mode) ? (e.total||'') : '';
   if($I('ex-schoolqty')) $I('ex-schoolqty').value = e.schoolQty||0;
+  if($I('ex-schoolamt')) $I('ex-schoolamt').value = (e.mode==='refund' ? (e.schoolTotal||0) : 0);
   if($I('ex-school')) $I('ex-school').value = e.schoolNote||'';
   if($I('ex-bank')) $I('ex-bank').value = e.bank||'';
   if($I('ex-holder')) $I('ex-holder').value = e.holder||'';
@@ -2177,6 +2180,7 @@ async function submitExpense(){
   const holder = $I('ex-holder')?.value.trim() || '';
   const account = $I('ex-account')?.value.trim() || '';
   const schoolNote = $I('ex-school')?.value.trim() || '';
+  const schoolRefundAmt = Math.max(0, parseInt($I('ex-schoolamt')?.value||'0',10) || 0);   // ↩️ 학교 반환분(반환 모드 전용)
   const ids = Array.from(checkedIds);
 
   if(!date){ toast('신청 날짜를 입력하세요.','err'); return; }
@@ -2283,6 +2287,7 @@ async function submitExpense(){
       rows:[
         {k:'대상 인원', v:`${ids.length}명`},
         {k:expMode==='refund'?'반환 합계':'청구 합계', v:`₩${won(sum)}`},
+        ...((expMode==='refund' && schoolRefundAmt)?[{k:'학교 반환분', v:`↩️ ₩${won(schoolRefundAmt)} <span style="color:var(--tl);font-size:11px">(학교 몫)</span>`}]:[]),
         {k:'', v:'<span style="color:var(--tl);font-size:11px">학생별 금액은 신청 내역 상세에서 확인</span>'}
       ],
       note: (receiptExempt && (existingReceipts.length+receipts.length)<1) ? `🧾 영수증 없음 · 사유: ${esc(receiptExemptReason)}` : ''
@@ -2290,7 +2295,7 @@ async function submitExpense(){
     record = {
       org: expOrg, mode: expMode, date, semester, teacher, subject, items, detail,
       total: sum, per: null, count: ids.length,
-      schoolQty: 0, schoolTotal: 0,
+      schoolQty: 0, schoolTotal: (expMode==='refund' ? schoolRefundAmt : 0),
       students, bank, holder, account, schoolNote,
       createdByUid: CU.uid, createdByName: CU.name||'',
       createdAt: Timestamp.now()
@@ -2553,7 +2558,7 @@ function viewExpense(id){
           ? `<div><b>방식</b> : ${e.mode==='refund'?'↩️ 개별 반환':'✏️ 개별 청구'}</div><div><b>합계</b> : <span style="color:${e.mode==='refund'?'#0d9488':'var(--gm)'};font-weight:700">₩${won(e.total)}</span> (${e.count}명, 학생별 금액은 아래 명단 참조)</div>`
           : `<div><b>청구 금액</b> : ₩${won(e.total)}</div><div><b>1인당 청구</b> : ₩${won(e.per)} × ${e.count}명 = ₩${won(e.per*e.count)}</div>`}
         ${e.bank||e.account?`<div><b>정산 계좌</b> : ${esc(e.bank||'')} ${esc(e.account||'')} (${esc(e.holder||'')})</div>`:''}
-        ${(e.schoolQty||e.schoolNote)?`<div><b>학교 청구분</b> : ${e.schoolQty?`${e.schoolQty}개분 ₩${won(e.schoolTotal!=null?e.schoolTotal:(e.per||0)*(e.schoolQty||0))}`:''}${e.schoolNote?` ${e.schoolQty?'— ':''}${esc(e.schoolNote)}`:''}</div>`:''}
+        ${(e.schoolQty||e.schoolTotal||e.schoolNote)?`<div><b>${e.mode==='refund'?'학교 반환분':'학교 청구분'}</b> : ${e.schoolQty?`${e.schoolQty}개분 ₩${won(e.schoolTotal!=null?e.schoolTotal:(e.per||0)*(e.schoolQty||0))}`:(e.schoolTotal?`↩️ ₩${won(e.schoolTotal)}`:'')}${e.schoolNote?` ${(e.schoolQty||e.schoolTotal)?'— ':''}${esc(e.schoolNote)}`:''}</div>`:''}
       </div>
       <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">청구 체크 현황 (${e.count}명 체크) <span style="font-size:12px;color:var(--tl);font-weight:400">— ✓ 파란색이 청구 대상, 회색은 미청구</span></div>
       ${clsHTML}
