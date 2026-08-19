@@ -4406,6 +4406,7 @@ function viewAllSheet(){
         <button class="subtbtn ${allSheetGroupBy==='none'?'on':''}" id="asg-none" onclick="setAllGroup('none')" style="padding:6px 14px">묶지 않음</button>
         <button class="subtbtn" id="asg-teacher" onclick="setAllGroup('teacher')" style="padding:6px 14px">선생님별</button>
         <button class="subtbtn" id="asg-subject" onclick="setAllGroup('subject')" style="padding:6px 14px">과목별</button>
+        <button class="subtbtn" id="asg-school" onclick="setAllGroup('school')" style="padding:6px 14px" title="학교 청구·반환이 있는 항목만 모아 봅니다">🏫 학교 청구분만</button>
         <span style="width:1px;height:22px;background:var(--ivd);margin:0 4px"></span>
         <button class="bm" onclick="printAllSheet()">🖨️ PDF</button>
         <button class="bm" onclick="imageAllSheet()">🖼️ 이미지</button>
@@ -4429,6 +4430,8 @@ function buildAllSheetData(){
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
   const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
   let list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
+  // 🏫 «학교 청구분만» 모드: 학교 청구·반환이 있는 항목만 모아 본다 (이미지·PDF 저장에도 그대로 반영)
+  if(allSheetGroupBy==='school') list = list.filter(e=>schoolAmtOf(e)!==0);
   const groupKey = e => allSheetGroupBy==='teacher' ? (e.teacher||'담당 미지정') : allSheetGroupBy==='subject' ? (e.subject||'과목 미지정') : null;
   if(allSheetGroupBy!=='none') list=[...list].sort((a,b)=>(groupKey(a)||'').localeCompare(groupKey(b)||'','ko')||(a.date||'').localeCompare(b.date||''));
   else list=[...list].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -4517,22 +4520,31 @@ async function printAllSheet(){
     holder.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
-    const node = holder.querySelector('.sheet-doc-multi') || holder.querySelector('.sheet-doc');
-    const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
-    document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
     const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), margin=8;
-    const iw=pw-margin*2, ih=canvas.height*iw/canvas.width;
-    const img=canvas.toDataURL('image/jpeg',0.92);
-    if(ih<=ph-margin*2){ pdf.addImage(img,'JPEG',margin,margin,iw,ih); }
-    else {
-      let remaining=canvas.height, pos=0; const pageH=Math.floor(canvas.width*(ph-margin*2)/iw);
-      while(remaining>0){ const sl=document.createElement('canvas'); sl.width=canvas.width; sl.height=Math.min(pageH,remaining);
-        sl.getContext('2d').drawImage(canvas,0,pos,canvas.width,sl.height,0,0,canvas.width,sl.height);
-        const sh=sl.height*iw/canvas.width; if(pos>0)pdf.addPage(); pdf.addImage(sl.toDataURL('image/jpeg',0.92),'JPEG',margin,margin,iw,sh);
-        remaining-=sl.height; pos+=sl.height; }
+    const iw=pw-margin*2;
+    // 장(sheet-doc)마다 «새 페이지»에서 시작 — 페이지 맨 위에 늘 제목이 온다
+    const docs=[...holder.querySelectorAll('.sheet-doc')];
+    let first=true;
+    for(let di=0; di<docs.length; di++){
+      window.setLoadDetail && window.setLoadDetail(`${di+1} / ${docs.length}장 만드는 중…`);
+      const canvas = await window.html2canvas(docs[di], {scale:2, backgroundColor:'#ffffff', useCORS:true});
+      const ih=canvas.height*iw/canvas.width;
+      if(ih<=ph-margin*2){
+        if(!first) pdf.addPage(); first=false;
+        pdf.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',margin,margin,iw,ih);
+      } else {
+        // 한 장이 A4 한 페이지보다 길면 그 장 안에서만 이어서 자른다
+        let remaining=canvas.height, pos=0; const pageH=Math.floor(canvas.width*(ph-margin*2)/iw);
+        while(remaining>0){ const sl=document.createElement('canvas'); sl.width=canvas.width; sl.height=Math.min(pageH,remaining);
+          sl.getContext('2d').drawImage(canvas,0,pos,canvas.width,sl.height,0,0,canvas.width,sl.height);
+          const sh=sl.height*iw/canvas.width; if(!first) pdf.addPage(); first=false;
+          pdf.addImage(sl.toDataURL('image/jpeg',0.92),'JPEG',margin,margin,iw,sh);
+          remaining-=sl.height; pos+=sl.height; }
+      }
     }
+    document.body.removeChild(holder);
     pdf.save(`수행성경비_전체취합_${semKor(reportSem)}.pdf`);
     window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
@@ -4549,11 +4561,20 @@ async function imageAllSheet(){
     holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}
 </style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
-    const node=holder.querySelector('.sheet-doc');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    // 장(sheet-doc)마다 따로 찍어 각각 저장 — 항목이 많아도 하나도 안 잘린다
+    const docs=[...holder.querySelectorAll('.sheet-doc')];
+    for(let i=0;i<docs.length;i++){
+      window.setLoadDetail && window.setLoadDetail(`${i+1} / ${docs.length}장 만드는 중…`);
+      const canvas=await window.html2canvas(docs[i],{scale:2,backgroundColor:'#ffffff',useCORS:true});
+      const a=document.createElement('a');
+      a.href=canvas.toDataURL('image/png');
+      a.download=`수행성경비_전체취합_${semKor(reportSem)}${docs.length>1?`_${i+1}of${docs.length}`:''}.png`;
+      a.click();
+      await new Promise(r=>setTimeout(r,350));   // 연속 다운로드가 씹히지 않게 잠깐씩
+    }
     document.body.removeChild(holder);
-    const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`수행성경비_전체취합_${semKor(reportSem)}.png`; a.click();
-    window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
+    window.hideLoading && window.hideLoading();
+    toast(docs.length>1?`이미지 ${docs.length}장을 저장했습니다.`:'이미지를 저장했습니다.','ok');
   } catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
 }
 window.imageAllSheet = imageAllSheet;
@@ -4564,7 +4585,7 @@ const ALLSHEET_CSS = `
 
 function setAllGroup(g){
   allSheetGroupBy = g;
-  ['none','teacher','subject'].forEach(k=>{ const b=$I('asg-'+k); if(b) b.classList.toggle('on', k===g); });
+  ['none','teacher','subject','school'].forEach(k=>{ const b=$I('asg-'+k); if(b) b.classList.toggle('on', k===g); });
   renderAllSheet();
 }
 window.setAllGroup = setAllGroup;
@@ -4582,6 +4603,8 @@ function renderAllSheet(){
   const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
 
   let list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
+  // 🏫 «학교 청구분만» 모드: 학교 청구·반환이 있는 항목만
+  if(allSheetGroupBy==='school') list = list.filter(e=>schoolAmtOf(e)!==0);
   // 항목 정렬/그룹
   const groupKey = e => allSheetGroupBy==='teacher' ? (e.teacher||'담당 미지정')
                       : allSheetGroupBy==='subject' ? (e.subject||'과목 미지정') : null;
