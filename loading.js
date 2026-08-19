@@ -128,6 +128,16 @@
     font-size:12px; color:rgba(212,233,226,.65); margin-top:-12px;
     min-height:16px; text-align:center; font-family:inherit; letter-spacing:.3px;
   }
+  .lo-stall{
+    margin-top:6px; font-size:11.5px; line-height:1.7; text-align:center;
+    color:#F7D9A8; background:rgba(180,120,40,.18); border:1px solid rgba(247,217,168,.35);
+    border-radius:10px; padding:9px 12px; max-width:300px; font-family:inherit;
+  }
+  .lo-retry{
+    margin-top:6px; background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.3);
+    color:#fff; border-radius:8px; padding:6px 14px; font-size:12px; font-weight:800;
+    cursor:pointer; font-family:inherit;
+  }
   .lo-det{
     font-size:11px; color:rgba(212,233,226,.5); margin-top:-8px;
     min-height:15px; max-width:280px; text-align:center; font-family:inherit;
@@ -245,6 +255,7 @@
         <div class="lo-sub" id="lo-sub"></div>
         <div class="lo-bar indet" id="lo-bar"><div class="lo-fill" id="lo-fill"></div></div>
         <div class="lo-det" id="lo-det"></div>
+        <div class="lo-stall" id="lo-stall" style="display:none"></div>
       </div>`;
     document.body.appendChild(ov);
   }
@@ -259,7 +270,8 @@
      · 네트워크 요청(fetch/XHR)을 세어 «진짜 진행률»을 만든다
      · 요청 사이 빈 시간에도 트리클(조금씩 전진)로 절대 멈춰 보이지 않는다
      · 지금 받는 것의 이름을 아래 작은 줄에 보여준다 */
-  const NET = { total:0, done:0, active:new Map(), seq:0, shownAt:0, manual:null, timer:null, explicit:false };
+  const NET = { total:0, done:0, active:new Map(), bg:new Set(), seq:0, shownAt:0,
+    manual:null, timer:null, explicit:false, lastProg:0, detailManual:'' };
 
   function labelOf(url){
     try{
@@ -278,13 +290,21 @@
   }
   function netStart(url){
     const id = ++NET.seq;
-    const lb = labelOf(url);
-    NET.total++; NET.active.set(id, lb);
+    NET.total++; NET.active.set(id, { lb: labelOf(url), t: Date.now() });
     paint();
     return id;
   }
   function netEnd(id){
-    if(NET.active.has(id)){ NET.active.delete(id); NET.done++; paint(); }
+    if(NET.bg.has(id)){ NET.bg.delete(id); return; }           // 배경(실시간 연결)은 세지 않는다
+    if(NET.active.has(id)){ NET.active.delete(id); NET.done++; NET.lastProg = Date.now(); paint(); }
+  }
+  /* 8초 넘게 열려 있는 요청(실시간 수신 연결 등)은 «배경»으로 —
+     진행률·완료 판정을 방해하지 않는다 */
+  function sweepLongLived(){
+    const now = Date.now();
+    for(const [id, v] of NET.active){
+      if(now - v.t > 8000){ NET.active.delete(id); NET.bg.add(id); NET.total = Math.max(NET.done, NET.total - 1); }
+    }
   }
 
   /* fetch·XHR을 투명하게 감싼다 — 동작은 그대로, 세기만 한다 */
@@ -335,7 +355,7 @@
     if(det){
       if(NET.detailManual){ det.textContent = NET.detailManual; }   // 페이지가 정한 문구가 우선
       else {
-        const labels = [...NET.active.values()].filter(Boolean);
+        const labels = [...NET.active.values()].map(v=>v.lb).filter(Boolean);
         const n = NET.active.size;
         const t = NET.shownAt ? (Date.now() - NET.shownAt) / 1000 : 0;
         if(labels.length) det.textContent = '받는 중 · ' + labels[labels.length-1] + (n>1 ? ` 외 ${n-1}개` : '');
@@ -345,9 +365,30 @@
       }
     }
   }
+  /* ⏱ 정지 감시 — 12초 넘게 진행이 없으면 알리고, 18초에 한 번 스스로 다시 시도한다 */
+  function checkStall(){
+    const st = document.getElementById('lo-stall'); if(!st) return;
+    if(!ov || !ov.classList.contains('on')){ st.style.display='none'; return; }
+    const now = Date.now();
+    const prog = Math.max(NET.lastProg||0, NET.shownAt||0);
+    const stalled = NET.shownAt && (now - NET.shownAt > 12000) && (now - prog > 6000);
+    if(!stalled){ st.style.display='none'; return; }
+    let retried = false;
+    try{ retried = sessionStorage.getItem('loRetried') === '1'; }catch(e){}
+    st.style.display='block';
+    st.innerHTML = retried
+      ? '🔌 서버 응답이 없어요 — 네트워크(와이파이·데이터)를 확인해 주세요.<br>' +
+        '<button class="lo-retry" onclick="try{sessionStorage.removeItem(\'loRetried\')}catch(e){};location.reload()">🔄 다시 시도</button>'
+      : '🔌 응답이 늦어지고 있어요 — 잠시 후 자동으로 다시 시도합니다.<br>' +
+        '<button class="lo-retry" onclick="try{sessionStorage.setItem(\'loRetried\',\'1\')}catch(e){};location.reload()">지금 다시 시도</button>';
+    if(!retried && now - NET.shownAt > 18000){
+      try{ sessionStorage.setItem('loRetried','1'); }catch(e){}
+      location.reload();
+    }
+  }
   function startTicker(){
     if(NET.timer) return;
-    NET.timer = setInterval(paint, 220);
+    NET.timer = setInterval(()=>{ sweepLongLived(); paint(); checkStall(); }, 220);
   }
   function stopTicker(){
     if(NET.timer){ clearInterval(NET.timer); NET.timer = null; }
@@ -384,6 +425,8 @@
   };
 
   window.hideLoading = function(){
+    try{ sessionStorage.removeItem('loRetried'); }catch(e){}   // 정상 로드 — 다음에 또 멈추면 다시 1회 자동 시도
+    const st = document.getElementById('lo-stall'); if(st) st.style.display='none';
     if(ov) ov.classList.remove('on');
     NET.shownAt = 0; NET.manual = null; NET.explicit = false; NET.detailManual = '';
     stopTicker();
