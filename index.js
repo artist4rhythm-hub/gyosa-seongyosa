@@ -5,7 +5,7 @@
    · 구글 클라우드 콘솔 > Cloud Run 함수 > 인라인 편집기에
      이 파일(index.js)과 package.json을 붙여넣어 배포합니다.
    · 주소 뒤에 붙이는 값:
-       ?cal=all|daniel|jihyebit   (어느 캘린더인지 · 기본 all)
+       ?cal=all|daniel|jihyebit   (어느 캘린더인지 · 그 캘린더에 등록한 일정만 나온다)
        &aud=teacher|parent        (학부모용은 교사 전용 일정 제외 · 기본 teacher)
        &key=…                     (아래 KEY를 정했을 때만)
    ═══════════════════════════════════════════════════════════════ */
@@ -48,7 +48,7 @@ function fold(line){   // 긴 줄 접기 (규격상 한 줄 75바이트 제한)
 /* 행사 + 수동 휴일 → ICS 본문 */
 function buildIcs(events, holidays, opt){
   const cal = opt.cal || 'all', aud = opt.aud || 'teacher';
-  const okOrg = o => cal === 'all' ? true : (o === 'all' || o === cal);
+  const okOrg = o => o === cal;   // 순수 분리 — 그 캘린더에 등록한 일정만 (섞지 않는다)
   const okAud = a => aud === 'teacher' ? true : ((a || 'both') !== 'teacher');
   const L = [];
   L.push('BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//gyosa-seongyosa//academic//KR',
