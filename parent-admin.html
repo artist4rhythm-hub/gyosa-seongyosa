@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>학부모 사이트 관리 · 교사 선교사</title>
+<script src="loading.js"></script>
+<style>
+:root{
+  --gd:#00704A; --gm:#0E8C5F; --gp:#E8F3EF; --gl:#C3E0D4;
+  --cream:#F2F0EB; --wh:#fff; --iv:#EDEBE4; --ivd:#E3E1DA;
+  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A;
+  --gold:#8A6410; --gold-bg:#F7EFD8; --danger:#C0392B; --danger-bg:#FDECEA;
+  --daniel:#0C2A44; --jihye:#5E4B8B;
+}
+*{box-sizing:border-box;margin:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+  background:var(--cream);color:var(--tx);font-size:14px}
+.top{background:var(--gd);color:#fff;padding:14px 18px;display:flex;align-items:center;gap:12px}
+.top a{color:#fff;text-decoration:none;font-size:18px}
+.top-t{font-weight:900;font-size:16px}
+.top-t small{font-weight:600;opacity:.75;margin-left:8px;font-size:11.5px}
+.wrap{max-width:900px;margin:18px auto 60px;padding:0 16px}
+.tabs{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.tab{padding:9px 16px;border-radius:100px;border:1.5px solid var(--ivd);background:var(--wh);
+  font-size:13px;font-weight:800;color:var(--ts);cursor:pointer;font-family:inherit}
+.tab.on{background:var(--gd);border-color:var(--gd);color:#fff}
+.card{background:var(--wh);border:1px solid var(--ivd);border-radius:14px;padding:18px;
+  box-shadow:0 1px 8px rgba(0,0,0,.04);margin-bottom:14px}
+.ct{font-size:14.5px;font-weight:900;color:var(--gd);margin-bottom:6px}
+.cd{font-size:12px;color:var(--ts);line-height:1.7;margin-bottom:12px;word-break:keep-all}
+.orgpick{display:flex;gap:7px;margin-bottom:14px}
+.orgbtn{padding:9px 16px;border-radius:10px;border:1.5px solid var(--ivd);background:var(--wh);
+  font-size:13px;font-weight:800;color:var(--ts);cursor:pointer;font-family:inherit}
+.orgbtn.on.o-daniel{background:var(--daniel);border-color:var(--daniel);color:#fff}
+.orgbtn.on.o-jihyebit{background:var(--jihye);border-color:var(--jihye);color:#fff}
+label.fl{display:block;font-size:12px;font-weight:800;color:var(--ts);margin:10px 0 5px}
+input[type=text],input[type=url],select,textarea{width:100%;border:1.5px solid var(--ivd);border-radius:10px;
+  padding:10px 12px;font-size:13.5px;font-family:inherit;outline:none;background:var(--wh)}
+input:focus,textarea:focus{border-color:var(--gm)}
+textarea{min-height:80px;resize:vertical;line-height:1.6}
+.btn{background:var(--gd);color:#fff;border:none;border-radius:10px;padding:10px 18px;
+  font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
+.btn.sub{background:var(--gp);color:var(--gd);border:1px solid var(--gl)}
+.btn.dg{background:var(--danger-bg);color:var(--danger);border:1px solid #F2C5BE}
+.btn:disabled{opacity:.5}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.msg{border-radius:10px;padding:9px 12px;font-size:12px;font-weight:700;margin-top:10px;display:none}
+.msg.ok{display:block;background:#DCFCE7;color:#16A34A}
+.msg.err{display:block;background:var(--danger-bg);color:var(--danger)}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{background:var(--gd);color:#fff;padding:8px 9px;text-align:left;font-weight:800}
+td{padding:8px 9px;border-bottom:1px solid var(--iv);vertical-align:top}
+.pill{display:inline-block;font-size:10px;font-weight:800;border-radius:100px;padding:2px 9px}
+.pill.d{background:#E3EDF6;color:var(--daniel)} .pill.j{background:#EDE7F8;color:var(--jihye)}
+.pill.on{background:#DCFCE7;color:#16A34A} .pill.off{background:var(--iv);color:var(--tl)}
+.pill.pin{background:var(--gold-bg);color:var(--gold)}
+.codecell{font-family:ui-monospace,Menlo,monospace;font-weight:800;font-size:13px;letter-spacing:.5px}
+.empty{text-align:center;padding:36px 0;color:var(--tl);font-size:13px;line-height:1.8}
+.gate{min-height:100vh;display:flex;align-items:center;justify-content:center}
+.gate .card{max-width:320px;text-align:center}
+@media print {
+  body *{visibility:hidden}
+  #print-area, #print-area *{visibility:visible}
+  #print-area{position:absolute;left:0;top:0;width:100%}
+}
+</style>
+</head>
+<body>
+<div class="gate" id="gate"><div class="card"><div class="ct">학부모 사이트 관리</div>
+  <div class="cd" id="gate-msg">로그인 확인 중…</div></div></div>
+
+<div id="app" style="display:none">
+<div class="top">
+  <a href="index.html">←</a>
+  <div class="top-t">👨‍👩‍👧 학부모 사이트 관리<small id="who"></small></div>
+</div>
+<div class="wrap">
+  <div class="orgpick" id="orgpick"></div>
+  <div class="tabs">
+    <button class="tab on" data-t="codes" onclick="pick('codes')">🎫 가입 코드</button>
+    <button class="tab" data-t="links" onclick="pick('links')">🔗 바로가기 링크</button>
+    <button class="tab" data-t="board" onclick="pick('board')">💬 게시판 관리</button>
+    <button class="tab" data-t="bad" onclick="pick('bad')">🚫 금칙어</button>
+    <button class="tab" data-t="conn" onclick="pick('conn')">👨‍👩‍👧 연결 현황</button>
+  </div>
+  <div id="pane"></div>
+</div>
+</div>
+<div id="print-area" style="display:none"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
+  collection, query, where, getDocs, Timestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
+});
+const auth = getAuth(app);
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+const $I = id => document.getElementById(id);
+const esc = t => String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const won = n => (n||0).toLocaleString('ko-KR');
+const fmt = ts => { if(!ts?.seconds) return '-'; const d=new Date(ts.seconds*1000); const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+
+const ORG_L = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const PARENT_URL = 'https://artist4rhythm-hub.github.io/daniel-parents';
+let CU=null, ORG='daniel', TAB='codes';
+let STUDENTS=[], LINKS=[], POSTS=[];
+
+window.pick = t => { TAB=t; document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); render(); };
+window.setOrg = o => { ORG=o; renderOrgPick(); render(); };
+function renderOrgPick(){
+  $I('orgpick').innerHTML = ['daniel','jihyebit'].map(o=>{
+    const can = CU.role==='super' || (CU.org===o);
+    return `<button class="orgbtn o-${o} ${o===ORG?'on':''}" ${can?`onclick="setOrg('${o}')"`:'disabled title="다른 기관은 수퍼관리자만"'}>${ORG_L[o]}</button>`;
+  }).join('');
+}
+
+/* ═══ 데이터 로드 ═══ */
+async function loadStudents(){
+  const snap = await getDocs(query(collection(db,'students'), where('org','==',ORG)));
+  STUDENTS = [];
+  snap.forEach(d=>{ const v=d.data(); if(v.status==='quit'||v.deleted) return; STUDENTS.push({id:d.id, ...v}); });
+  STUDENTS.sort((a,b)=>(String(a.grade)||'').localeCompare(String(b.grade)||'','ko') || (a.name||'').localeCompare(b.name||'','ko'));
+}
+async function loadLinks(){
+  const snap = await getDocs(query(collection(db,'parentLinks'), where('org','==',ORG)));
+  LINKS = []; snap.forEach(d=>LINKS.push({id:d.id, ...d.data()}));
+}
+async function loadPosts(scope, classKey){
+  const conds=[where('org','==',ORG)];
+  if(scope) conds.push(where('scope','==',scope));
+  const snap = await getDocs(query(collection(db,'parentPosts'), ...conds));
+  POSTS=[]; snap.forEach(d=>POSTS.push({id:d.id, ...d.data()}));
+  if(classKey) POSTS = POSTS.filter(p=>p.classKey===classKey);
+  POSTS.sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0) || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+}
+
+/* ═══ 🎫 가입 코드 (반 단위 일괄 발급 + 인쇄) ═══ */
+function genJoinCode(org){
+  const prefix = org==='daniel'?'DA': org==='jihyebit'?'JH':'ST';
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const pick = n => Array.from({length:n},()=>chars[Math.floor(Math.random()*chars.length)]).join('');
+  return `${prefix}-${pick(2)}-${pick(4)}`;
+}
+async function genUnique(org){
+  for(let i=0;i<8;i++){ const c=genJoinCode(org);
+    try{ const ex=await getDoc(doc(db,'joinCodes',c)); if(!ex.exists()) return c; }catch(e){ return c; } }
+  return genJoinCode(org)+Math.floor(Math.random()*9);
+}
+async function renderCodes(){
+  const pane=$I('pane');
+  pane.innerHTML='<div class="card"><div class="empty">학생 명단을 불러오는 중…</div></div>';
+  await loadStudents();
+  const classes=[...new Set(STUDENTS.map(s=>`${s.grade||'?'}||${s.className||'-'}`))];
+  const opts=classes.map(k=>{const [g,c]=k.split('||');return `<option value="${esc(k)}">${esc(g)} ${esc(c)}</option>`;}).join('');
+  pane.innerHTML=`<div class="card">
+    <div class="ct">🎫 가입 코드 — 반 단위 일괄 발급</div>
+    <div class="cd">학부모는 이 코드로 자녀를 연결합니다. <b>새로 발급하는 코드부터 학년·반 정보가 실려</b>
+      우리 반 게시판이 열립니다. 이미 코드가 있는 학생은 건너뛰고, 인쇄용 표로 한 번에 나눠줄 수 있어요.<br>
+      학부모 안내 주소: <b>${PARENT_URL}/login-${ORG==='jihyebit'?'jihyebit':'daniel'}.html</b></div>
+    <div class="row">
+      <select id="cls" style="width:auto;min-width:160px">${opts||'<option>학생 없음</option>'}</select>
+      <button class="btn" onclick="issueClass(false)">코드 없는 학생만 발급</button>
+      <button class="btn sub" onclick="issueClass(true)">전원 새 코드로 재발급</button>
+      <button class="btn sub" onclick="printCodes()">🖨 이 반 코드표 인쇄</button>
+    </div>
+    <div class="msg" id="code-msg"></div>
+    <div id="code-table" style="margin-top:14px;overflow-x:auto"></div>
+  </div>`;
+  renderCodeTable();
+}
+function pickedClass(){ const v=$I('cls')?.value||''; const [g,c]=v.split('||'); return {g,c}; }
+function classStudents(){ const {g,c}=pickedClass(); return STUDENTS.filter(s=>String(s.grade||'?')===g && String(s.className||'-')===c); }
+function renderCodeTable(){
+  const list=classStudents();
+  $I('code-table').innerHTML = list.length ? `<table>
+    <tr><th>이름</th><th>학년·반</th><th>가입 코드</th><th>학부모 연결</th></tr>
+    ${list.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.grade||'')} ${esc(s.className||'')}</td>
+      <td class="codecell">${esc(s.joinCode||'—')}</td>
+      <td>${LINKS.filter(l=>l.studentId===s.id && l.status==='active').length
+            ? `<span class="pill on">${LINKS.filter(l=>l.studentId===s.id&&l.status==='active').length}명 연결됨</span>`
+            : '<span class="pill off">아직</span>'}</td></tr>`).join('')}
+  </table>` : '<div class="empty">이 반에 학생이 없습니다.</div>';
+}
+window.issueClass = async function(force){
+  const list=classStudents();
+  const targets = force ? list : list.filter(s=>!s.joinCode);
+  const msg=$I('code-msg'); msg.className='msg';
+  if(!targets.length){ msg.className='msg ok'; msg.textContent='발급할 학생이 없어요 — 모두 코드가 있습니다. (재발급하려면 «전원 새 코드로»)'; return; }
+  if(force && !confirm(`${targets.length}명 전원에게 새 코드를 발급할까요?\n기존 코드는 쓸 수 없게 됩니다 — 이미 연결된 학부모는 그대로 유지돼요.`)) return;
+  window.showLoading && window.showLoading('가입 코드를 만드는 중…');
+  let ok=0;
+  for(const s of targets){
+    try{
+      if(force && s.joinCode){
+        try{ await updateDoc(doc(db,'joinCodes',s.joinCode), { active:false, revokedAt:Timestamp.now(), revokedBy:CU.name }); }catch(e){}
+      }
+      const code = await genUnique(ORG);
+      await setDoc(doc(db,'joinCodes',code), {
+        code, studentId:s.id, org:ORG, studentName:s.name||'',
+        grade:s.grade||'', className:s.className||'',
+        active:true, createdAt:Timestamp.now(), createdBy:CU.name||''
+      });
+      await updateDoc(doc(db,'students',s.id), { joinCode:code });
+      s.joinCode=code; ok++;
+      window.setLoadDetail && window.setLoadDetail(`${ok} / ${targets.length}명`);
+    }catch(e){}
+  }
+  window.hideLoading && window.hideLoading();
+  msg.className='msg ok'; msg.textContent=`✅ ${ok}명에게 발급했습니다 — «코드표 인쇄»로 나눠주세요.`;
+  renderCodeTable();
+};
+window.printCodes = function(){
+  const {g,c}=pickedClass(); const list=classStudents();
+  $I('print-area').style.display='block';
+  $I('print-area').innerHTML = `
+    <div style="font-family:inherit;padding:20px">
+    <h2 style="margin:0 0 4px">${esc(ORG_L[ORG])} 학부모 서비스 가입 안내 — ${esc(g)} ${esc(c)}</h2>
+    <p style="font-size:12px;color:#555;margin:0 0 14px">
+      ① 접속: <b>${PARENT_URL}/login-${ORG==='jihyebit'?'jihyebit':'daniel'}.html</b> ·
+      ② 이메일로 로그인 → ③ 자녀 이름과 아래 <b>가입 코드</b>를 입력하면 연결됩니다.</p>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <tr><th style="border:1px solid #999;padding:7px;background:#eee">학생</th>
+          <th style="border:1px solid #999;padding:7px;background:#eee">가입 코드</th></tr>
+      ${list.map(s=>`<tr><td style="border:1px solid #999;padding:7px">${esc(s.name)}</td>
+        <td style="border:1px solid #999;padding:7px;font-family:monospace;font-weight:800;letter-spacing:1px">${esc(s.joinCode||'미발급')}</td></tr>`).join('')}
+    </table>
+    <p style="font-size:11px;color:#777;margin-top:10px">※ 코드는 우리 자녀 연결에만 쓰이며, 다른 가정과 공유하지 마세요.</p></div>`;
+  window.print();
+  setTimeout(()=>{ $I('print-area').style.display='none'; }, 300);
+};
+
+/* ═══ 🔗 바로가기 링크 (parentConfig/links_{org}) ═══ */
+async function renderLinks(){
+  const pane=$I('pane');
+  pane.innerHTML='<div class="card"><div class="empty">불러오는 중…</div></div>';
+  let cur={};
+  try{ const s=await getDoc(doc(db,'parentConfig','links_'+ORG)); if(s.exists()) cur=s.data(); }catch(e){}
+  pane.innerHTML=`<div class="card">
+    <div class="ct">🔗 학부모 홈 바로가기 — ${ORG_L[ORG]}</div>
+    <div class="cd">학부모 홈의 「학사일정」「시간표」 단추를 여는 링크입니다. 비워두면 «준비 중»으로 보여요.<br>
+      · 학사일정: 학사일정 화면 → 설정 → <b>학부모용 게시 링크</b>를 복사해 붙여넣으세요.<br>
+      · 시간표: 완성 시간표 → <b>${ORG_L[ORG]} 공유 링크</b>를 복사해 붙여넣으세요.</div>
+    <label class="fl">📅 학사일정 (학부모용 링크)</label>
+    <input type="url" id="lk-academic" value="${esc(cur.academic||'')}" placeholder="https://…/academic.html?share=…">
+    <label class="fl">🗓 시간표 (공유 링크)</label>
+    <input type="url" id="lk-timetable" value="${esc(cur.timetable||'')}" placeholder="https://…/share-timetable.html?id=…">
+    <div class="row" style="margin-top:14px"><button class="btn" onclick="saveLinks()">저장</button></div>
+    <div class="msg" id="lk-msg"></div>
+  </div>`;
+}
+window.saveLinks = async function(){
+  const msg=$I('lk-msg'); msg.className='msg';
+  const academic=$I('lk-academic').value.trim(), timetable=$I('lk-timetable').value.trim();
+  const bad=[academic,timetable].find(v=>v && !/^https:\/\//.test(v));
+  if(bad){ msg.className='msg err'; msg.textContent='링크는 https:// 로 시작해야 해요.'; return; }
+  try{
+    await setDoc(doc(db,'parentConfig','links_'+ORG), { academic, timetable, updatedAt:Timestamp.now(), updatedBy:CU.name||'' });
+    msg.className='msg ok'; msg.textContent='✅ 저장했습니다 — 학부모 홈에 바로 반영돼요 (새로고침 시).';
+  }catch(e){ msg.className='msg err'; msg.textContent='저장 실패: '+(e.message||''); }
+};
+
+/* ═══ 💬 게시판 관리 ═══ */
+let B_SCOPE='org', B_CLASS='';
+async function renderBoard(){
+  const pane=$I('pane');
+  pane.innerHTML='<div class="card"><div class="empty">글을 불러오는 중…</div></div>';
+  await loadPosts(B_SCOPE, B_SCOPE==='class'?B_CLASS:'');
+  let classOpts='';
+  if(B_SCOPE==='class'){
+    if(!STUDENTS.length) await loadStudents();
+    const keys=[...new Set(STUDENTS.map(s=>s.className).filter(Boolean))];
+    if(!B_CLASS && keys.length) B_CLASS=keys[0];
+    classOpts=`<select id="b-class" style="width:auto" onchange="B_CLASS=this.value;renderBoard()">
+      ${keys.map(k=>`<option value="${esc(k)}" ${k===B_CLASS?'selected':''}>${esc(k)}</option>`).join('')}</select>`;
+    await loadPosts('class', B_CLASS);
+  }
+  pane.innerHTML=`<div class="card">
+    <div class="ct">💬 게시판 관리 — ${ORG_L[ORG]}</div>
+    <div class="cd">교사 공지는 <b>선생님 배지 + 📌 고정</b>으로 올라갑니다. 부적절한 글·댓글은 여기서 지울 수 있어요.</div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn ${B_SCOPE==='org'?'':'sub'}" onclick="B_SCOPE='org';renderBoard()">📢 전체</button>
+      <button class="btn ${B_SCOPE==='class'?'':'sub'}" onclick="B_SCOPE='class';renderBoard()">💬 반별</button>
+      ${B_SCOPE==='class'?classOpts:''}
+    </div>
+    <div style="border:1.5px dashed var(--ivd);border-radius:11px;padding:12px;margin-bottom:14px">
+      <label class="fl" style="margin-top:0">✍️ 교사 공지 쓰기 ${B_SCOPE==='class'?`(${esc(B_CLASS||'반 선택')})`:'(전체)'}</label>
+      <input type="text" id="np-title" placeholder="제목" maxlength="60">
+      <textarea id="np-body" placeholder="내용" maxlength="2000" style="margin-top:8px"></textarea>
+      <div class="row" style="margin-top:8px">
+        <label style="font-size:12px;color:var(--ts)"><input type="checkbox" id="np-pin" checked> 📌 위에 고정</label>
+        <button class="btn" onclick="staffPost()">공지 올리기</button>
+      </div>
+      <div class="msg" id="np-msg"></div>
+    </div>
+    <div id="post-list">${POSTS.length?POSTS.map(p=>`
+      <div style="border-bottom:1px solid var(--iv);padding:10px 2px">
+        <div class="row" style="gap:6px">
+          ${p.pinned?'<span class="pill pin">📌 고정</span>':''}
+          ${p.byStaff?'<span class="pill on">선생님</span>':''}
+          <b style="font-size:13.5px">${esc(p.title)}</b>
+          <span style="flex:1"></span>
+          <button class="btn sub" style="padding:5px 10px;font-size:11px" onclick="togglePin('${p.id}',${p.pinned?'false':'true'})">${p.pinned?'고정 해제':'📌 고정'}</button>
+          <button class="btn dg" style="padding:5px 10px;font-size:11px" onclick="delPost('${p.id}')">삭제</button>
+        </div>
+        <div style="font-size:11px;color:var(--tl);margin-top:2px">${esc(p.authorName||'')}${p.childLabel?` · ${esc(p.childLabel)} 학부모`:''} · ${fmt(p.createdAt)} · 💬 ${p.commentCount||0}</div>
+        <div style="font-size:12.5px;color:var(--ts);margin-top:4px;white-space:pre-wrap">${esc((p.body||'').slice(0,200))}${(p.body||'').length>200?'…':''}</div>
+      </div>`).join(''):'<div class="empty">아직 글이 없습니다.</div>'}</div>
+  </div>`;
+}
+window.staffPost = async function(){
+  const msg=$I('np-msg'); msg.className='msg';
+  const title=$I('np-title').value.trim(), body=$I('np-body').value.trim();
+  if(!title||!body){ msg.className='msg err'; msg.textContent='제목과 내용을 입력해 주세요.'; return; }
+  if(B_SCOPE==='class'&&!B_CLASS){ msg.className='msg err'; msg.textContent='반을 골라 주세요.'; return; }
+  try{
+    await addDoc(collection(db,'parentPosts'),{
+      org:ORG, scope:B_SCOPE, classKey:B_SCOPE==='class'?B_CLASS:'',
+      title, body, authorUid:CU.uid, authorName:CU.name||'선생님', childLabel:'',
+      pinned:$I('np-pin').checked, byStaff:true, commentCount:0, createdAt:Timestamp.now()
+    });
+    $I('np-title').value=''; $I('np-body').value='';
+    msg.className='msg ok'; msg.textContent='✅ 올렸습니다';
+    renderBoard();
+  }catch(e){ msg.className='msg err'; msg.textContent='실패: '+(e.message||''); }
+};
+window.togglePin = async function(id,on){
+  try{ await updateDoc(doc(db,'parentPosts',id),{pinned:on}); renderBoard(); }
+  catch(e){ alert('실패: '+(e.message||'')); }
+};
+window.delPost = async function(id){
+  if(!confirm('이 글을 지울까요? 댓글도 함께 정리됩니다.')) return;
+  try{
+    const cs=await getDocs(query(collection(db,'parentComments'),where('postId','==',id)));
+    for(const c of cs.docs){ try{ await deleteDoc(c.ref); }catch(e){} }
+    await deleteDoc(doc(db,'parentPosts',id));
+    renderBoard();
+  }catch(e){ alert('실패: '+(e.message||'')); }
+};
+
+/* ═══ 🚫 금칙어 ═══ */
+async function renderBad(){
+  const pane=$I('pane');
+  let words=[];
+  try{ const s=await getDoc(doc(db,'parentConfig','badwords')); if(s.exists()&&Array.isArray(s.data().words)) words=s.data().words; }catch(e){}
+  pane.innerHTML=`<div class="card">
+    <div class="ct">🚫 금칙어 관리 <span style="font-size:11px;font-weight:600;color:var(--tl)">(두 기관 공통)</span></div>
+    <div class="cd">기본 욕설·비방어는 이미 걸러지고, 여기에 학교가 추가로 막을 단어를 넣습니다.
+      한 줄에 하나씩 · 띄어쓰기·기호를 끼운 변형("바!보")도 자동으로 잡습니다.</div>
+    <textarea id="bw" style="min-height:140px" placeholder="예)&#10;바보&#10;멍청이">${esc(words.join('\n'))}</textarea>
+    <div class="row" style="margin-top:12px"><button class="btn" onclick="saveBad()">저장</button>
+      <span style="font-size:11.5px;color:var(--tl)">현재 추가 단어 ${words.length}개</span></div>
+    <div class="msg" id="bw-msg"></div>
+  </div>`;
+}
+window.saveBad = async function(){
+  const msg=$I('bw-msg'); msg.className='msg';
+  const words=[...new Set($I('bw').value.split('\n').map(w=>w.trim()).filter(w=>w && w.length<=20))];
+  try{
+    await setDoc(doc(db,'parentConfig','badwords'),{ words, updatedAt:Timestamp.now(), updatedBy:CU.name||'' });
+    msg.className='msg ok'; msg.textContent=`✅ ${words.length}개 단어를 저장했습니다 — 게시판에 바로 적용돼요.`;
+  }catch(e){ msg.className='msg err'; msg.textContent='실패: '+(e.message||''); }
+};
+
+/* ═══ 👨‍👩‍👧 연결 현황 ═══ */
+async function renderConn(){
+  const pane=$I('pane');
+  pane.innerHTML='<div class="card"><div class="empty">불러오는 중…</div></div>';
+  await Promise.all([loadStudents(), loadLinks()]);
+  const act=LINKS.filter(l=>l.status==='active');
+  const byStu={}; act.forEach(l=>{ (byStu[l.studentId]=byStu[l.studentId]||[]).push(l); });
+  const connected=STUDENTS.filter(s=>byStu[s.id]);
+  pane.innerHTML=`<div class="card">
+    <div class="ct">👨‍👩‍👧 연결 현황 — ${ORG_L[ORG]}</div>
+    <div class="cd">학생 ${STUDENTS.length}명 중 <b>${connected.length}명</b>에게 학부모가 연결되어 있어요 (연결 ${act.length}건).
+      잘못 연결된 것은 「끊기」로 정리할 수 있습니다 — 학부모는 새 코드로 다시 연결하면 돼요.</div>
+    <div style="overflow-x:auto"><table>
+      <tr><th>학생</th><th>학년·반</th><th>연결된 학부모</th><th>연결일</th><th></th></tr>
+      ${act.length?act.sort((a,b)=>(a.studentName||'').localeCompare(b.studentName||'','ko')).map(l=>`
+        <tr><td><b>${esc(l.studentName||'')}</b></td>
+          <td>${esc(l.grade||'')} ${esc(l.className||'')}${!l.className?' <span class="pill off" title="옛 코드로 연결됨 — 새 코드로 재연결하면 반별 게시판이 열려요">반 정보 없음</span>':''}</td>
+          <td style="font-size:11.5px">${esc(l.parentEmail||'')}</td>
+          <td style="font-size:11.5px;color:var(--ts)">${fmt(l.linkedAt)}</td>
+          <td><button class="btn dg" style="padding:5px 10px;font-size:11px" onclick="unlink('${l.id}','${esc(l.studentName||'')}')">끊기</button></td></tr>`).join('')
+        :'<tr><td colspan="5"><div class="empty">아직 연결된 학부모가 없습니다.<br>「가입 코드」 탭에서 코드표를 인쇄해 나눠주세요.</div></td></tr>'}
+    </table></div>
+  </div>`;
+}
+window.unlink = async function(id, name){
+  if(!confirm(`${name} 학생의 이 학부모 연결을 끊을까요?`)) return;
+  try{ await updateDoc(doc(db,'parentLinks',id),{status:'revoked', revokedAt:Timestamp.now(), revokedBy:CU.name||''}); renderConn(); }
+  catch(e){ alert('실패: '+(e.message||'')); }
+};
+
+/* ═══ 라우팅 ═══ */
+async function render(){
+  if(TAB==='codes'){ await loadLinks(); await renderCodes(); }
+  else if(TAB==='links') await renderLinks();
+  else if(TAB==='board') await renderBoard();
+  else if(TAB==='bad') await renderBad();
+  else if(TAB==='conn') await renderConn();
+}
+
+onAuthStateChanged(auth, async user => {
+  if(!user){ $I('gate-msg').textContent='로그인이 필요합니다 — 홈에서 로그인 후 다시 열어주세요.'; return; }
+  try{
+    const s = await getDoc(doc(db,'staff',user.uid));
+    if(!s.exists()){ $I('gate-msg').textContent='교직원 계정이 아닙니다.'; return; }
+    CU = { uid:user.uid, ...s.data() };
+    if(CU.role!=='super' && CU.role!=='org_admin'){
+      $I('gate-msg').textContent='수퍼관리자·기관관리자만 쓸 수 있는 화면입니다.'; return;
+    }
+    ORG = (CU.org==='jihyebit') ? 'jihyebit' : 'daniel';
+    $I('who').textContent = `${CU.name||''} · ${CU.role==='super'?'수퍼관리자':'기관관리자'}`;
+    $I('gate').style.display='none'; $I('app').style.display='';
+    renderOrgPick();
+    await render();
+    window.hideLoading && window.hideLoading();
+  }catch(e){ $I('gate-msg').textContent='불러오지 못했습니다: '+(e.message||''); }
+});
+</script>
+</body>
+</html>
