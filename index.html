@@ -225,6 +225,40 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 </style>
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
+<script>
+/* ⛑ 인라인 복구 감시 — 바깥 JS(캐시)가 깨져 화면이 영영 안 뜰 때를 위한 최후의 안전망.
+   이 코드는 index.html 안에 있어서 캐시가 어떻게 꼬여도 항상 실행된다. */
+(function(){
+  var t = setTimeout(function(){
+    if (window.__appAlive) return;
+    document.body.innerHTML =
+      '<div style="font-family:-apple-system,\'Apple SD Gothic Neo\',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F2F0EB;margin:0">' +
+      '<div style="background:#fff;border-radius:16px;padding:28px 26px;max-width:340px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.08)">' +
+      '<div style="font-size:34px">🧹</div>' +
+      '<div style="font-weight:900;font-size:16px;margin:10px 0 6px;color:#0C2A44">화면이 뜨지 못했어요</div>' +
+      '<div style="font-size:12.5px;color:#5A6560;line-height:1.7">이 기기의 임시 저장(캐시)이 꼬인 것 같아요.<br>아래 단추 한 번이면 비우고 새로 엽니다.</div>' +
+      '<button id="__fixBtn" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;background:#0C2A44;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">🧹 임시 저장 비우고 새로 열기</button>' +
+      '<button onclick="location.reload()" style="margin-top:8px;width:100%;padding:11px;border:1.5px solid #E3E1DA;border-radius:10px;background:#fff;color:#5A6560;font-weight:700;font-size:12.5px;font-family:inherit;cursor:pointer">🔄 그냥 다시 시도</button>' +
+      '</div></div>';
+    document.getElementById('__fixBtn').onclick = async function(){
+      this.textContent = '비우는 중…'; this.disabled = true;
+      try {
+        if (navigator.serviceWorker) {
+          var rs = await navigator.serviceWorker.getRegistrations();
+          for (var i=0;i<rs.length;i++) await rs[i].unregister();
+        }
+        if (window.caches) {
+          var ks = await caches.keys();
+          for (var j=0;j<ks.length;j++) await caches.delete(ks[j]);
+        }
+        try { sessionStorage.clear(); } catch(e){}
+      } catch(e){}
+      location.reload();
+    };
+  }, 15000);
+  window.__markAlive = function(){ window.__appAlive = true; clearTimeout(t); };
+})();
+</script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
@@ -402,6 +436,8 @@ window.showLoading && window.showLoading('로그인 확인 중…');
 let authResolved = false;
 
 onAuthStateChanged(auth, async (user) => {
+  window.__markAlive && window.__markAlive();   // ⛑ 코드가 여기까지 왔다 = 화면은 산다
+
   if (user) {
     const snap = await getDoc(doc(db, 'staff', user.uid));
     if (snap.exists()) {
