@@ -2966,10 +2966,12 @@ async function renderReport(){
         ${students.length?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bm" onclick="excelReport()">📊 엑셀 다운로드</button><button class="bm" onclick="viewReceiptCollection()">🧾 영수증 취합</button><button class="bp" style="padding:8px 16px" onclick="viewAllSheet()">📋 전체 상세표 보기</button></div>`:''}
       </div>
       ${students.length ? `<div id="rp-class-groups" style="margin-top:12px">${renderReportClassGroups(list, students)}</div>
-      <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px;padding-top:12px;border-top:2px solid var(--ivd);font-size:14px;font-weight:800">
+      <div style="display:flex;justify-content:flex-end;gap:16px;margin-top:14px;padding-top:12px;border-top:2px solid var(--ivd);font-size:14px;font-weight:800;flex-wrap:wrap">
         <span>총 청구 <b style="color:var(--gm)">₩${won(totalCharge)}</b></span>
         <span>총 반환 <b style="color:var(--info)">₩${won(totalRefund)}</b></span>
         <span>순 청구 <b style="color:var(--goldd)">₩${won(net)}</b></span>
+        ${totalSchool ? `<span style="border-left:2px solid var(--ivd);padding-left:16px">학교 청구 <b style="color:var(--ts)">₩${won(totalSchool)}</b></span>
+        <span>합산 요청액 <b style="color:var(--gd)">₩${won(net + totalSchool)}</b> <span style="font-size:11px;font-weight:600;color:var(--tl)">(학생 순청구＋학교)</span></span>` : ''}
       </div>` : '<p class="empty">이 학기에 취합할 신청 내역이 없습니다.</p>'}
     </div>
 
@@ -4082,7 +4084,7 @@ async function printSheet(mode){
     holder.style.cssText = 'position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
     document.body.appendChild(holder);
-    const node = holder.querySelector('.sheet-doc');
+    const node = holder.querySelector('.sheet-doc-multi') || holder.querySelector('.sheet-doc');
     const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({orientation: landscape?'landscape':'portrait', unit:'mm', format:'a4'});
@@ -4107,7 +4109,7 @@ async function imageSheet(){
     holder.style.cssText = 'position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     holder.innerHTML = `<style>${SHEET_CSS}</style>` + buildSheetHTML(landscape);
     document.body.appendChild(holder);
-    const node = holder.querySelector('.sheet-doc');
+    const node = holder.querySelector('.sheet-doc-multi') || holder.querySelector('.sheet-doc');
     const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const a = document.createElement('a');
@@ -4438,55 +4440,71 @@ function buildAllSheetData(){
 }
 
 // 전체 상세표 → 인쇄용 HTML (안내장 스타일, 학년 구분선)
+// 항목이 많으면 열을 여러 «장»으로 나눠 세로로 쌓는다 — 이미지·PDF에서 오른쪽이 잘리지 않는다
 function buildAllSheetHTML(){
   const { items, students, amtOf, gradeLabel } = buildAllSheetData();
-  if(!items.length || !students.length) return '';
   const won2 = n => (n||0).toLocaleString('ko-KR');
   const perLine = (e)=> e.mode==='refund'?`↩️ ₩${won2(Math.abs(e.per||0))}`:`₩${won2(e.per||0)}${e.mode==='equal'?'/인':''}`;
   const gradeW=56, nameW=64, totW=80, pad=30, maxInner=1063;
-  const availForItems = maxInner - gradeW - nameW - totW;
-  let itemColW = Math.max(64, Math.floor(availForItems / items.length));
-  const tableW = gradeW + nameW + itemColW*items.length + totW;
-  const innerW = Math.min(tableW, maxInner);
-  const docW = innerW + pad*2;
-  const colgroup = `<colgroup><col style="width:${gradeW}px"><col style="width:${nameW}px">${items.map(()=>`<col style="width:${itemColW}px">`).join('')}<col style="width:${totW}px"></colgroup>`;
-  const headRows = `
-    <tr><th class="nm hd">학년·반</th><th class="nm hd">이름</th>${items.map(e=>`<th class="ic subj"><span style="font-size:8.5px;opacity:.85;font-weight:600">${expenseSeqNo(e.id)}</span><br>${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}<th class="tot hd">개인<br>합계</th></tr>
-    <tr><td class="rl" colspan="2">담당</td>${items.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl" colspan="2">신청일</td>${items.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl" colspan="2">세부내용</td>${items.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}<td class="rl2"></td></tr>
-    <tr><td class="rl" colspan="2">1인당</td>${items.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}<td class="rl2"></td></tr>`;
+  const minColW = 64;
+  // 한 장에 들어갈 수 있는 항목 수 (최소 열폭 보장)
+  const perChunk = Math.max(1, Math.floor((maxInner - gradeW - nameW - totW) / minColW));
+  const chunks = [];
+  for(let i=0; i<items.length; i+=perChunk) chunks.push(items.slice(i, i+perChunk));
 
-  // 학년·반 그룹핑: 같은 (학년+반)은 rowspan으로 병합
+  // 학년·반 그룹핑 준비 (모든 장이 같은 줄 구성을 쓴다)
   const grpKey = st => `${gradeLabel(st.grade)}||${st.className||'-'}`;
   const grpLabel = st => `${gradeLabel(st.grade)}<br><span style="font-size:9px;font-weight:400;opacity:.8">${esc(st.className||'')}</span>`;
-  // 각 그룹의 학생 수 계산
   const groupCount = {};
   students.forEach(st=>{ const k=grpKey(st); groupCount[k]=(groupCount[k]||0)+1; });
-  let prevKey = null;
-  const bodyRows = students.map(st=>{
-    let sum=0;
-    const tds = items.map(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; }).join('');
-    const k = grpKey(st);
-    let grpCell = '';
-    if(k !== prevKey){ prevKey = k; grpCell = `<td class="grpcell" rowspan="${groupCount[k]}">${grpLabel(st)}</td>`; }
-    return `<tr>${grpCell}<td class="nm">${esc(st.name)}</td>${tds}<td class="tot">₩${won2(sum)}</td></tr>`;
-  }).join('');
-  const footTds = items.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
-  const grand = students.reduce((tt,st)=>tt+items.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
-  // 학교 청구분 행 + 신청 총액 행 (학교분이 하나라도 있을 때만)
+
   const hasSchool = items.some(e=>schoolAmtOf(e)!==0);
-  const schoolGrand = items.reduce((t,e)=>t+schoolAmtOf(e),0);
-  const schoolTds = items.map(e=>{ const v=schoolAmtOf(e); return `<td class="ft" style="color:#5A6560;font-weight:600">${v?`${v<0?'−':''}₩${won2(Math.abs(v))}`:'·'}</td>`; }).join('');
-  const totalTds = items.map(e=>{ const stu=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); const v=stu+schoolAmtOf(e); return `<td class="ft" style="font-weight:900">${v<0?'−':''}₩${won2(Math.abs(v))}</td>`; }).join('');
-  return `<div class="sheet-doc land" style="width:${docW}px;padding:${pad}px">
-    <div class="sheet-head"><div class="sh-title">${esc(ORGS[reportOrg]||reportOrg)} 수행성 경비 전체 취합</div><div class="sh-sub">${esc(semKor(reportSem))} · 전체 학년 · 학생 ${students.length}명 · 항목 ${items.length}개</div></div>
+  const grandAll = students.reduce((tt,st)=>tt+items.reduce((x,e)=>x+(amtOf(e,st.id)||0),0),0);
+  const schoolGrandAll = items.reduce((t,e)=>t+schoolAmtOf(e),0);
+
+  const blocks = chunks.map((part, ci)=>{
+    const last = ci === chunks.length-1;
+    const itemColW = Math.max(minColW, Math.floor((maxInner - gradeW - nameW - totW) / part.length));
+    const innerW = Math.min(gradeW + nameW + itemColW*part.length + totW, maxInner);
+    const docW = innerW + pad*2;
+    const colgroup = `<colgroup><col style="width:${gradeW}px"><col style="width:${nameW}px">${part.map(()=>`<col style="width:${itemColW}px">`).join('')}<col style="width:${totW}px"></colgroup>`;
+    const headRows = `
+    <tr><th class="nm hd">학년·반</th><th class="nm hd">이름</th>${part.map(e=>`<th class="ic subj"><span style="font-size:8.5px;opacity:.85;font-weight:600">${expenseSeqNo(e.id)}</span><br>${esc(e.subject)}${e.mode==='refund'?'<br>(반환)':''}</th>`).join('')}<th class="tot hd">개인<br>합계${chunks.length>1?`<br><span style="font-size:8px;font-weight:600;opacity:.8">${last?'(전체)':'(이 장)'}</span>`:''}</th></tr>
+    <tr><td class="rl" colspan="2">담당</td>${part.map(e=>`<td class="ic2">${esc(e.teacher||'-')}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr><td class="rl" colspan="2">신청일</td>${part.map(e=>`<td class="ic2">${esc(e.date||'-')}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr><td class="rl" colspan="2">세부내용</td>${part.map(e=>`<td class="ic2 det">${esc(e.items||'')}${e.detail?'<br>'+esc(e.detail):''}</td>`).join('')}<td class="rl2"></td></tr>
+    <tr><td class="rl" colspan="2">1인당</td>${part.map(e=>`<td class="ic2 per">${perLine(e)}</td>`).join('')}<td class="rl2"></td></tr>`;
+
+    let prevKey = null;
+    const bodyRows = students.map(st=>{
+      let sum=0;
+      const tds = part.map(e=>{ const a=amtOf(e,st.id); if(a!==null) sum+=a; if(a===null) return '<td class="x">·</td>'; const isRef=a<0; return `<td class="${isRef?'ref':'chg'}">${isRef?'−':''}₩${won2(Math.abs(a))}</td>`; }).join('');
+      // 개인 합계: 마지막 장은 «전체 합계», 중간 장은 그 장에 실린 항목만의 소계
+      const rowTot = last ? items.reduce((t,e)=>t+(amtOf(e,st.id)||0),0) : sum;
+      const k = grpKey(st);
+      let grpCell = '';
+      if(k !== prevKey){ prevKey = k; grpCell = `<td class="grpcell" rowspan="${groupCount[k]}">${grpLabel(st)}</td>`; }
+      return `<tr>${grpCell}<td class="nm">${esc(st.name)}</td>${tds}<td class="tot">₩${won2(rowTot)}</td></tr>`;
+    }).join('');
+
+    const footTds = part.map(e=>{ const t=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); return `<td class="ft">₩${won2(Math.abs(t))}</td>`; }).join('');
+    const schoolTds = part.map(e=>{ const v=schoolAmtOf(e); return `<td class="ft" style="color:#5A6560;font-weight:600">${v?`${v<0?'−':''}₩${won2(Math.abs(v))}`:'·'}</td>`; }).join('');
+    const totalTds = part.map(e=>{ const stu=students.reduce((tt,st)=>tt+(amtOf(e,st.id)||0),0); const v=stu+schoolAmtOf(e); return `<td class="ft" style="font-weight:900">${v<0?'−':''}₩${won2(Math.abs(v))}</td>`; }).join('');
+
+    const tfoot = `<tfoot><tr><th class="nm" colspan="2">${hasSchool?'학생 합계':'항목합계'}</th>${footTds}<td class="tot">${last?`₩${won2(grandAll)}`:''}</td></tr>
+    ${hasSchool?`<tr><th class="nm" colspan="2">학교 청구분</th>${schoolTds}<td class="tot" style="color:#5A6560">${last?`${schoolGrandAll<0?'−':''}₩${won2(Math.abs(schoolGrandAll))}`:''}</td></tr>
+    <tr><th class="nm" colspan="2">신청 총액</th>${totalTds}<td class="tot">${last?`₩${won2(grandAll+schoolGrandAll)}`:''}</td></tr>`:''}</tfoot>`;
+
+    const partLabel = chunks.length>1 ? ` · ${ci+1}/${chunks.length}장 (항목 ${ci*perChunk+1}–${ci*perChunk+part.length})` : '';
+    return `<div class="sheet-doc land" style="width:${docW}px;padding:${pad}px;${ci?'margin-top:18px;':''}box-sizing:content-box">
+    <div class="sheet-head"><div class="sh-title">${esc(ORGS[reportOrg]||reportOrg)} 수행성 경비 전체 취합</div><div class="sh-sub">${esc(semKor(reportSem))} · 전체 학년 · 학생 ${students.length}명 · 항목 ${items.length}개${partLabel}</div></div>
     <table class="sheet-tbl">${colgroup}<thead>${headRows}</thead><tbody>${bodyRows}</tbody>
-    <tfoot><tr><th class="nm" colspan="2">${hasSchool?'학생 합계':'항목합계'}</th>${footTds}<td class="tot">₩${won2(grand)}</td></tr>
-    ${hasSchool?`<tr><th class="nm" colspan="2">학교 청구분</th>${schoolTds}<td class="tot" style="color:#5A6560">${schoolGrand<0?'−':''}₩${won2(Math.abs(schoolGrand))}</td></tr>
-    <tr><th class="nm" colspan="2">신청 총액</th>${totalTds}<td class="tot">₩${won2(grand+schoolGrand)}</td></tr>`:''}</tfoot></table>
-    <div class="sheet-foot">※ 금액이 적힌 칸이 청구, 반환은 (−)로 표시됩니다.${hasSchool?' · 학교 청구분(교사 사용·학교 보관분)은 학생 합계와 별도이며, 신청 총액 = 학생 합계 + 학교 청구분입니다.':''}</div>
+    ${tfoot}</table>
+    <div class="sheet-foot">※ 금액이 적힌 칸이 청구, 반환은 (−)로 표시됩니다.${hasSchool?' · 학교 청구분(교사 사용·학교 보관분)은 학생 합계와 별도이며, 신청 총액 = 학생 합계 + 학교 청구분입니다.':''}${chunks.length>1?` · 항목이 많아 ${chunks.length}장으로 나눠 담았습니다 — «개인 합계(전체)»는 마지막 장에 있습니다.`:''}</div>
   </div>`;
+  });
+  // 여러 장을 하나의 문서로 감싼다 (이미지·PDF는 이 묶음을 통째로 찍는다)
+  return `<div class="sheet-doc-multi" style="display:inline-block;background:#fff">${blocks.join('')}</div>`;
 }
 
 async function printAllSheet(){
@@ -4499,7 +4517,7 @@ async function printAllSheet(){
     holder.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;--danger:#C0392B;--gold-bg:#F7EFD8;--gold-bg-2:#F0E4C4;--gd:#1E3932;--gm:#00704A;--ivd:#E3E1DA;--ts:#5A6560;--tl:#93A09A;--gl:#D4E9E2;--goldd:#8A6410;--goldp:#F7EFD8;';
     holder.innerHTML = `<style>${SHEET_CSS}${ALLSHEET_CSS}</style>` + buildAllSheetHTML();
     document.body.appendChild(holder);
-    const node = holder.querySelector('.sheet-doc');
+    const node = holder.querySelector('.sheet-doc-multi') || holder.querySelector('.sheet-doc');
     const canvas = await window.html2canvas(node, {scale:2, backgroundColor:'#ffffff', useCORS:true});
     document.body.removeChild(holder);
     const { jsPDF } = window.jspdf;
