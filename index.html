@@ -2705,7 +2705,13 @@ async function loadMyTimetable(){
   try {
     // ① 지금 쓰는 게시본 (메타만 — 가볍다)
     const metaSnap = await getDocs(query(collection(db,'timetablePublished'), where('active','==',true)));
-    let meta = null; metaSnap.forEach(d=>{ if(!meta) meta = { id:d.id, ...d.data() }; });
+    // 기관별로 하나씩 게시될 수 있다 — 내 기관 것을 먼저, 없으면 있는 것 아무거나
+    const myOrg = (window.CU?.org==='jihyebit') ? 'jihyebit' : 'daniel';
+    let meta = null, mine = null;
+    metaSnap.forEach(d=>{ const v = { id:d.id, ...d.data() };
+      if(!meta) meta = v;
+      if(!mine && ((v.org||'daniel') === myOrg)) mine = v; });
+    meta = mine || meta;
     if(!meta){ if(card) card.innerHTML=''; if(sumBox) sumBox.style.display='none'; return; }
 
     // ② 본문은 그 하나만
