@@ -260,7 +260,9 @@ function renderReport(){
         <select id="rp-term" onchange="loadReport()"><option value="1">1학기</option><option value="2">2학기</option></select></div>
       <div class="fgrp" style="margin-bottom:0;min-width:150px"><label>반</label>
         <select id="rp-class" onchange="loadReport()"></select></div>
-      <button class="bp" onclick="printReport()" style="margin-left:auto">🖨 개별표 인쇄</button>
+      <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <span id="rp-sticky-btn">${stickyBtnHTML('rp')}</span>
+        <button class="bp" onclick="printReport()">🖨 개별표 인쇄</button></span>
     </div>
   </div>
   <div id="rp-body"><div class="acard"><p class="empty">반을 선택하면 표가 나옵니다.</p></div></div>`;
@@ -320,7 +322,9 @@ function closureNote(term){
 }
 
 async function loadReport(){
-  fillReportClasses.lastOrg===$I('rp-org')?.value || fillReportClasses();
+  // 기관이 바뀐 경우에만 반 목록을 다시 만든다 — 안 그러면 반 선택이 매번 «전체»로 초기화되는 버그
+  const _org = $I('rp-org')?.value;
+  if(fillReportClasses._last !== _org){ fillReportClasses(); fillReportClasses._last = _org; }
   const body = $I('rp-body'); if(!body) return;
   const term = rpTerm();
   if(!term || !term.start || !term.end){
@@ -360,6 +364,7 @@ async function loadReport(){
       <h3 class="actitle" style="margin:0">${ORGS[org]||org} · ${term.year}년 ${TERM_NAMES[term.term]||term.term+'학기'}
         <span style="font-size:12px;color:var(--tl);font-weight:600">(${term.start} ~ ${term.end} · 수업일 ${schoolDays}일 · ${rows.length}명)</span></h3>
     </div>
+    <div class="${stickyOn()?'stickywrap':''}" style="overflow-x:auto">
     <table class="rpt-tbl" style="border-collapse:collapse;width:100%;font-size:12px;text-align:center">
       <thead>
         <tr style="background:var(--gd);color:#fff">
@@ -384,7 +389,16 @@ async function loadReport(){
         </tr>`).join('')}
       </tbody>
     </table>
-    <style>.rpt-tbl th,.rpt-tbl td{border:1px solid var(--ivd);padding:6px 5px}</style>
+    </div>
+    <style>
+      .rpt-tbl th,.rpt-tbl td{border:1px solid var(--ivd);padding:6px 5px}
+      .stickywrap .rpt-tbl thead tr:first-child th{position:sticky;top:0;z-index:3}
+      .stickywrap .rpt-tbl thead tr:nth-child(2) th{position:sticky;top:31px;z-index:3}
+      .stickywrap .rpt-tbl thead tr:first-child th{height:31px;box-sizing:border-box}
+      .stickywrap .rpt-tbl th:first-child,.stickywrap .rpt-tbl td:first-child{position:sticky;left:0;z-index:2;background:#fff}
+      .stickywrap .rpt-tbl thead th:first-child{z-index:4;background:var(--gd)}
+      .stickywrap .rpt-tbl tbody tr:nth-child(even) td:first-child{background:#FAFAF7}
+    </style>
     ${note?`<p style="font-size:11.5px;color:var(--ts);margin-top:10px;line-height:1.7"><b>*휴교 사유</b> — ${esc(note)}</p>`:''}
     <p style="font-size:11px;color:var(--tl);margin-top:6px">· 출석일수 = 수업일수 − 결석일수 (지각·조퇴·체험학습은 출석 인정) · 옛 «병결» 기록은 결석·질병으로 집계</p>
   </div>`;
@@ -2092,6 +2106,20 @@ async function loadGaStaff(){
   }
   renderGradeAssign();
 }
+/* 📌 머리줄 고정 — 긴 표에서 머리줄·이름 칸을 붙잡아 두기 (표 안 스크롤 모드)
+   끄면 원래처럼 페이지 전체 스크롤 (좁게 느껴질 땐 끄면 됨) — 선택은 이 기기에 기억 */
+function stickyOn(){ try { return localStorage.getItem('attendSticky')==='1'; } catch(e){ return false; } }
+window.toggleSticky = function(rerender){
+  try { localStorage.setItem('attendSticky', stickyOn()?'0':'1'); } catch(e){}
+  if(rerender==='ga') renderGradeAssign();
+  else if(rerender==='rp') loadReport();
+};
+function stickyBtnHTML(target){
+  return `<button class="bm" style="font-size:11px;padding:5px 11px;${stickyOn()?'background:var(--gp);color:var(--gd);font-weight:800':''}"
+    onclick="toggleSticky('${target}')" title="켜면 표 안에서 스크롤되고 머리줄·이름이 고정돼요 · 끄면 페이지 전체 스크롤">
+    📌 머리줄 고정 ${stickyOn()?'켬':'끔'}</button>`;
+}
+
 /* 담임(반 편성 기준)인 학년 — 자동 권한 표시용 */
 function homeroomGrades(uid, org){
   const set = new Set();
@@ -2124,8 +2152,9 @@ function renderGradeAssign(){
         const on = (GRADE_ASSIGN[key]||[]).includes(st.uid);
         const isHr = hr.has(g);
         if(on) cnt++;
-        return `<td style="text-align:center;cursor:pointer;${on?'background:var(--gp)':''}"
-          onclick="toggleGA('${key}','${st.uid}')" title="${esc(st.name)} · ${esc(g)}${isHr?' (담임 — 지정 없이도 기록 가능)':''}">
+        return `<td style="text-align:center;cursor:pointer;user-select:none;${on?'background:var(--gp)':''}"
+          onmousedown="gaDown(event,'${key}','${st.uid}')" onmouseenter="gaOver('${key}','${st.uid}')"
+          title="${esc(st.name)} · ${esc(g)}${isHr?' (담임 — 지정 없이도 기록 가능)':''}">
           ${on?'<span style="color:var(--gm);font-weight:900;font-size:15px">✓</span>'
               :(isHr?'<span style="color:#B8A24A;font-size:11px" title="담임 자동 권한">🏠</span>'
                     :'<span style="color:var(--ivd)">·</span>')}</td>`;
@@ -2136,34 +2165,71 @@ function renderGradeAssign(){
         ${cells}
         <td style="text-align:center;font-size:11px;color:${cnt?'var(--gm)':'var(--tl)'};font-weight:${cnt?'800':'400'}">${cnt||'·'}</td></tr>`;
     }).join('');
-    return `<div class="ga-org"><div class="ga-orgname">${ORGS[org]||org}
-        <span style="font-size:10.5px;font-weight:600;color:var(--tl)"> — 칸을 눌러 켜고 끕니다 · ✓ 지정됨 · 🏠 담임(자동 권한) · 관리자·수퍼는 전체 기록 가능</span></div>
-      <div style="overflow-x:auto"><table class="ga-mtx" style="border-collapse:collapse;width:100%;font-size:12.5px">
+    return `<div class="ga-org"><div class="ga-orgname" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${ORGS[org]||org}
+        <span style="font-size:10.5px;font-weight:600;color:var(--tl)"> — 칸을 눌러 켜고, <b>드래그하면 쭉</b> 켜고 끕니다 · ✓ 지정됨 · 🏠 담임(자동 권한) · 관리자·수퍼는 전체 기록 가능</span>
+        <span style="flex:1"></span>${stickyBtnHTML('ga')}</div>
+      <div class="ga-scroll ${stickyOn()?'stickywrap':''}" style="overflow-x:auto"><table class="ga-mtx" style="border-collapse:collapse;width:100%;font-size:12.5px">
         <thead style="background:var(--gp);color:var(--gd)">${head}</thead>
         <tbody>${rows}</tbody></table></div>
-      <style>.ga-mtx th,.ga-mtx td{padding:7px 6px;border-bottom:1px solid var(--iv)} .ga-mtx tbody tr:hover{background:#FAFAF7}</style>
+      <style>
+        .ga-mtx th,.ga-mtx td{padding:7px 6px;border-bottom:1px solid var(--iv)} .ga-mtx tbody tr:hover{background:#FAFAF7}
+        .stickywrap{max-height:70vh;overflow:auto;border:1px solid var(--iv);border-radius:10px}
+        .stickywrap thead th{position:sticky;top:0;z-index:3;background:var(--gp)}
+        .stickywrap th:first-child,.stickywrap td:first-child{position:sticky;left:0;z-index:2;background:#fff}
+        .stickywrap thead th:first-child{z-index:4;background:var(--gp)}
+        .stickywrap tbody tr:nth-child(even) td:first-child{background:#FAFAF7}
+      </style>
     </div>`;
   }).join('');
   box.innerHTML = html;
 }
-async function toggleGA(key, uid){
+/* 🖱 드래그로 쭉 체크 — 처음 누른 칸의 «반대 상태»를 지나가는 칸 전부에 적용, 놓으면 한 번에 저장 */
+let GA_DRAG = null;   // { on:true/false, changed:0, before:{} }
+function gaApply(key, uid, on){
   const cur = GRADE_ASSIGN[key]||[];
-  GRADE_ASSIGN[key] = cur.includes(uid) ? cur.filter(u=>u!==uid) : [...cur, uid];
+  const has = cur.includes(uid);
+  if(on===has) return false;
+  GRADE_ASSIGN[key] = on ? [...cur, uid] : cur.filter(u=>u!==uid);
   if(!GRADE_ASSIGN[key].length) delete GRADE_ASSIGN[key];
+  return true;
+}
+function gaRepaint(){
+  // 스크롤 위치를 지키면서 다시 그린다 (드래그 중에도 자연스럽게)
+  const sc = {};
+  document.querySelectorAll('.ga-scroll').forEach((el,i)=>sc[i]=el.scrollLeft);
+  renderGradeAssign();
+  document.querySelectorAll('.ga-scroll').forEach((el,i)=>{ if(sc[i]!=null) el.scrollLeft=sc[i]; });
+}
+window.gaDown = function(ev, key, uid){
+  ev.preventDefault();
+  const on = !(GRADE_ASSIGN[key]||[]).includes(uid);
+  GA_DRAG = { on, changed:0, before: JSON.parse(JSON.stringify(GRADE_ASSIGN)) };
+  if(gaApply(key, uid, on)) GA_DRAG.changed++;
+  gaRepaint();
+};
+window.gaOver = function(key, uid){
+  if(!GA_DRAG) return;
+  if(gaApply(key, uid, GA_DRAG.on)) { GA_DRAG.changed++; gaRepaint(); }
+};
+document.addEventListener('mouseup', async ()=>{
+  if(!GA_DRAG) return;
+  const d = GA_DRAG; GA_DRAG = null;
+  if(!d.changed) return;
   try {
     await TM.snapDoc('attendConfig','gradeAssign','학년담당 변경');
     await setDoc(doc(db,'attendConfig','gradeAssign'), {
       v: GRADE_ASSIGN, updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name||''
     });
-    renderGradeAssign();
-    const s = GA_STAFF && GA_STAFF.find(x=>x.uid===uid);
-    logActivity('권한','학년담당', `${s?.name||''} — ${key.replace('|',' ')} ${(GRADE_ASSIGN[key]||[]).includes(uid)?'지정':'해제'}`);
+    logActivity('권한','학년담당', `담당 지정 ${d.changed}칸 변경 (${d.on?'지정':'해제'})`);
+    if(d.changed>1) toast(`${d.changed}칸 ${d.on?'지정':'해제'} 저장 ✓`,'ok');
   } catch(e){
-    GRADE_ASSIGN[key] = cur;
-    toast('저장 실패: '+e.message,'err');
-    renderGradeAssign();
+    GRADE_ASSIGN = d.before;
+    toast('저장 실패 — 되돌렸습니다: '+(e.message||''),'err');
+    gaRepaint();
   }
-}
+});
+// (예전 단건 토글 — 다른 곳 호환용)
+async function toggleGA(key, uid){ window.gaDown({preventDefault(){}} , key, uid); document.dispatchEvent(new Event('mouseup')); }
 window.toggleGA = toggleGA;
 
 // 학기 목록 HTML
