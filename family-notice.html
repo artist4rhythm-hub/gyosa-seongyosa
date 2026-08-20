@@ -82,6 +82,17 @@
 /* 병합 표는 줄이 아니라 «묶음» 단위로 음영 — band가 있으면 줄무늬보다 우선 */
 .rv-tb tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rv-tb tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* 🧲 칸 이동 모드 */
+#tb-tbl.tb-move td.tb-cell{cursor:cell}
+#tb-tbl.tb-move td.tb-cell input{pointer-events:none}
+#tb-tbl td.tb-selcell{outline:2.5px solid var(--gm);outline-offset:-2.5px;background:#DCEFE6!important}
+#tb-movebar{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:99999;background:#1F2320;color:#fff;
+  border-radius:100px;padding:8px 12px;display:flex;gap:6px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.35);font-size:12px}
+#tb-movebar b{margin-right:2px}
+#tb-movebar button{border:none;border-radius:100px;padding:6px 11px;background:#3A423E;color:#fff;
+  font-family:inherit;font-size:12px;cursor:pointer;font-weight:700}
+#tb-movebar button:hover{background:#4A544F}
+#tb-movebar button.arm.on{background:var(--gm)}
 .rv-tb tr:hover td{background:#EAF2EC}
 .rv-tb th{background:var(--gd);color:#fff;font-weight:800;padding:7px 8px;text-align:left;font-size:11px;white-space:nowrap}
 .rv-tb td{padding:7px 8px;border-bottom:1px solid var(--iv);white-space:pre-wrap;line-height:1.55;vertical-align:top}
@@ -1679,6 +1690,7 @@ function edTable(b){
       <button class="ed-mini" onclick="tbAddCol()">＋ 열 추가</button>
       <button class="ed-mini" onclick="tbDelCol()">－ 마지막 열 빼기</button>
       <button class="ed-mini" style="border-color:var(--gm);color:var(--gm);font-weight:800" onclick="tbPasteOpen()">📋 한글·엑셀 표 붙여넣기</button>
+      <button class="ed-mini" id="tb-mode-btn" onclick="tbToggleMode()" title="칸을 드래그로 묶어 잡고 옮깁니다 — AI로 불러온 표의 어긋난 칸 바로잡기">🧲 칸 이동 모드</button>
       ${p?.rosterImport?`<button class="ed-mini" style="border-color:var(--gm);color:var(--gm)"
         onclick="tbRosterImport()">📋 학생 명부에서 불러오기</button>`:''}
     </div>
@@ -2082,6 +2094,7 @@ function tbRowHTML(r, n){
   </tr>`;
 }
 window.tbToggleMerge = function(btn){
+  if(typeof TB_MODE!=='undefined' && TB_MODE) return;   // 이동 모드에선 선택이 우선
   const td = btn.closest('td'); const tr = td.closest('tr');
   const inp = td.querySelector('input');
   const on = !td.classList.contains('tb-merged');
@@ -2108,6 +2121,111 @@ window.tbDupRow = function(btn){
     td.classList.contains('tb-merged') ? TB_MERGE : (td.querySelector('input')?.value||''));
   tr.insertAdjacentHTML('afterend', tbRowHTML({c:vals}, vals.length));
 };
+/* ══ 🧲 칸 이동 모드 — 칸을 드래그로 묶어(직사각형) 잡고, 화살표로 밀거나 다른 자리와 맞바꾼다
+   AI로 불러온 표에서 한두 칸 어긋난 것을 마우스만으로 바로잡는 용도 ══ */
+let TB_MODE=false, TB_SEL=null, TB_SELDRAG=false, TB_ARM=false;
+const tbRowsArr = () => [...($I('tb-tbl')?.querySelectorAll('tr[data-kind]')||[])];
+const tbCellAt = (r,c) => { const tr=tbRowsArr()[r]; return tr ? tr.querySelectorAll('td.tb-cell')[c]||null : null; };
+function tbGridSize(){ const rs=tbRowsArr(); return { R: rs.length, C: rs[0] ? rs[0].querySelectorAll('td.tb-cell').length : 0 }; }
+function tbPosOf(td){ const tr=td.closest('tr');
+  return { r: tbRowsArr().indexOf(tr), c: [...tr.querySelectorAll('td.tb-cell')].indexOf(td) }; }
+function tbCellVal(td){ return td.classList.contains('tb-merged') ? TB_MERGE : (td.querySelector('input')?.value||''); }
+function tbCellSet(td, v){
+  const inp = td.querySelector('input'); if(!inp) return;
+  const mg = v===TB_MERGE;
+  const btn = td.querySelector('.tb-mg');
+  td.classList.toggle('tb-merged', mg);
+  btn?.classList.toggle('on', mg);
+  let sp = td.querySelector('.bg-same');
+  if(mg){ inp.value=''; inp.style.display='none';
+    if(!sp){ sp=document.createElement('span'); sp.className='bg-same'; sp.textContent='〃 위와 병합'; td.insertBefore(sp, btn); } }
+  else { inp.style.display=''; inp.value=v; sp?.remove(); }
+}
+window.tbToggleMode = function(){
+  TB_MODE = !TB_MODE;
+  tbSelReset();
+  const t=$I('tb-tbl'); if(t) t.classList.toggle('tb-move', TB_MODE);
+  const b=$I('tb-mode-btn');
+  if(b){ b.style.background = TB_MODE?'var(--gd)':''; b.style.color = TB_MODE?'#fff':'';
+    b.textContent = TB_MODE ? '🧲 이동 모드 켬 — 끝나면 클릭' : '🧲 칸 이동 모드'; }
+  toast(TB_MODE ? '칸을 드래그해 뭉텅이로 잡고 → 화살표로 밀거나 «옮기기»로 이동하세요'
+                : '✍️ 입력 모드로 돌아왔어요','ok');
+};
+function tbSelReset(){ TB_SEL=null; TB_ARM=false;
+  document.querySelectorAll('.tb-selcell').forEach(e=>e.classList.remove('tb-selcell'));
+  const bar=$I('tb-movebar'); if(bar) bar.style.display='none'; }
+function tbSelRect(){ const s=TB_SEL;
+  return { r0:Math.min(s.ar,s.br), r1:Math.max(s.ar,s.br), c0:Math.min(s.ac,s.bc), c1:Math.max(s.ac,s.bc) }; }
+function tbSelPaint(){
+  document.querySelectorAll('.tb-selcell').forEach(e=>e.classList.remove('tb-selcell'));
+  if(!TB_SEL) return;
+  const {r0,r1,c0,c1}=tbSelRect();
+  for(let r=r0;r<=r1;r++) for(let c=c0;c<=c1;c++) tbCellAt(r,c)?.classList.add('tb-selcell');
+  tbBar();
+}
+function tbBar(){
+  let bar=$I('tb-movebar');
+  if(!bar){ bar=document.createElement('div'); bar.id='tb-movebar'; document.body.appendChild(bar); }
+  const {r0,r1,c0,c1}=tbSelRect();
+  bar.innerHTML = `<b>${r1-r0+1}×${c1-c0+1}칸</b>
+    <button onclick="tbNudge(-1,0)" title="위로 한 칸">⬆</button>
+    <button onclick="tbNudge(1,0)" title="아래로 한 칸">⬇</button>
+    <button onclick="tbNudge(0,-1)" title="왼쪽으로 한 칸">⬅</button>
+    <button onclick="tbNudge(0,1)" title="오른쪽으로 한 칸">➡</button>
+    <button class="arm${TB_ARM?' on':''}" onclick="tbArm()">${TB_ARM?'📍 붙일 첫 칸을 클릭!':'✂️ 옮기기 (자리 맞바꿈)'}</button>
+    <button onclick="tbSelReset()">✕ 해제</button>`;
+  bar.style.display='flex';
+}
+window.tbArm = function(){ TB_ARM=!TB_ARM; tbBar();
+  if(TB_ARM) toast('붙일 위치의 «왼쪽 위 칸»을 클릭하세요 — 두 블록의 내용이 맞바뀌어 사라지지 않아요','ok'); };
+function tbRead(r0,c0,r1,c1){ const out=[];
+  for(let r=r0;r<=r1;r++){ const row=[]; for(let c=c0;c<=c1;c++){ const td=tbCellAt(r,c); row.push(td?tbCellVal(td):''); } out.push(row); }
+  return out; }
+function tbWrite(r0,c0,vals){
+  for(let i=0;i<vals.length;i++) for(let j=0;j<vals[i].length;j++){
+    const td=tbCellAt(r0+i,c0+j); if(td) tbCellSet(td, vals[i][j]); } }
+/* 한 칸 밀기 — 밀려나는 줄이 비는 자리로 돌아 들어와 내용이 사라지지 않는다 */
+window.tbNudge = function(dr,dc){
+  if(!TB_SEL) return;
+  const {r0,r1,c0,c1}=tbSelRect(); const {R,C}=tbGridSize();
+  if(r0+dr<0 || r1+dr>=R || c0+dc<0 || c1+dc>=C){ toast('그쪽으로는 더 못 밀어요.','err'); return; }
+  const A = tbRead(r0,c0,r1,c1);
+  let L, put;
+  if(dr===1){ L=tbRead(r1+1,c0,r1+1,c1); put=()=>tbWrite(r0,c0,L); }
+  else if(dr===-1){ L=tbRead(r0-1,c0,r0-1,c1); put=()=>tbWrite(r1,c0,L); }
+  else if(dc===1){ L=tbRead(r0,c1+1,r1,c1+1); put=()=>{ for(let i=0;i<L.length;i++) tbWrite(r0+i,c0,[L[i]]); }; }
+  else { L=tbRead(r0,c0-1,r1,c0-1); put=()=>{ for(let i=0;i<L.length;i++) tbWrite(r0+i,c1,[L[i]]); }; }
+  tbWrite(r0+dr,c0+dc,A);
+  put();
+  TB_SEL={ar:r0+dr,ac:c0+dc,br:r1+dr,bc:c1+dc};
+  tbSelPaint();
+};
+function tbMoveTo(r,c){
+  const {r0,r1,c0,c1}=tbSelRect(); const h=r1-r0, w=c1-c0; const {R,C}=tbGridSize();
+  if(r+h>=R || c+w>=C){ toast('그 자리엔 블록이 다 안 들어가요.','err'); return; }
+  const overlap = !(r+h<r0 || r>r1 || c+w<c0 || c>c1);
+  if(overlap){ toast('겹치는 자리로는 옮길 수 없어요 — 가까우면 화살표로 한 칸씩 미세요.','err'); return; }
+  const A=tbRead(r0,c0,r1,c1), B=tbRead(r,c,r+h,c+w);
+  tbWrite(r,c,A); tbWrite(r0,c0,B);
+  TB_ARM=false; TB_SEL={ar:r,ac:c,br:r+h,bc:c+w};
+  tbSelPaint(); toast('맞바꿨어요 ✓','ok');
+}
+document.addEventListener('pointerdown', e=>{
+  if(!TB_MODE) return;
+  const td=e.target.closest('#tb-tbl td.tb-cell');
+  if(!td){ if(!e.target.closest('#tb-movebar')) tbSelReset(); return; }
+  e.preventDefault();
+  const {r,c}=tbPosOf(td);
+  if(TB_ARM){ tbMoveTo(r,c); return; }
+  TB_SEL={ar:r,ac:c,br:r,bc:c}; TB_SELDRAG=true; tbSelPaint();
+});
+document.addEventListener('pointerover', e=>{
+  if(!TB_MODE||!TB_SELDRAG) return;
+  const td=e.target.closest('#tb-tbl td.tb-cell'); if(!td) return;
+  const {r,c}=tbPosOf(td); TB_SEL.br=r; TB_SEL.bc=c; tbSelPaint();
+});
+document.addEventListener('pointerup', ()=>{ TB_SELDRAG=false; });
+
 /* 자유 표 줄 드래그 — 예산 표와 같은 방식 */
 document.addEventListener('pointerdown', e=>{
   const h=e.target.closest('#tb-tbl .bg-drag'); if(!h) return;
