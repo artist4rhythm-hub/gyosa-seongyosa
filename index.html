@@ -1529,11 +1529,25 @@ function renderHome(){
       /* 🌤 날씨 · 📝 메모 — 나란히 두고, 좁아지면 위아래로 */
       .hm-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
         gap:14px;margin-bottom:16px}
+      .hm-lay-memo{grid-template-columns:2fr 3fr!important}
+      .hm-lay-one{grid-template-columns:1fr!important}
+      .hm-laybtn{border:1px solid var(--line);background:var(--panel);color:var(--tl);border-radius:100px;
+        padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit}
+      .hm-laybtn:hover{color:var(--gd);border-color:var(--gl)}
       .hm-wx,.hm-memo{background:var(--panel);border:1px solid var(--line);
         border-radius:14px;padding:14px 16px;min-width:0}
       .wx-load{font-size:12.5px;color:var(--tl);padding:14px 2px;text-align:center}
       .wx-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
       .wx-t{font-size:14px;font-weight:800;color:var(--gd)}
+      .wx-minis{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+      .wm-cap{font-size:10px;color:var(--tl);font-weight:800;margin-right:2px}
+      .wx-mini{display:inline-flex;align-items:center;gap:6px;background:var(--iv);border:1px solid var(--line);
+        border-radius:100px;padding:4px 11px;font-size:12px;cursor:pointer}
+      .wx-mini:hover{background:var(--gp)}
+      .wm-n{color:var(--gd);font-size:11.5px}
+      .wm-t{font-weight:900}
+      .wm-hl{color:var(--tl);font-size:11px}
+      .wm-p{color:#2563EB;font-size:10.5px;font-weight:700}
       .wx-sel{margin-left:auto;font-family:inherit;font-size:12px;padding:4px 8px;
         border:1px solid var(--ivd);border-radius:7px;background:var(--wh);color:var(--ts)}
       .wx-now{display:flex;align-items:center;gap:14px;margin-bottom:11px}
@@ -1626,7 +1640,11 @@ function renderHome(){
         </div>
       </div>
 
-      ${(widgetOn('wx')||widgetOn('memo')) ? `<div class="hm-cols">
+      ${(widgetOn('wx')||widgetOn('memo')) ? `
+      <div style="display:flex;justify-content:flex-end;margin:-4px 0 6px">
+        <button class="hm-laybtn" onclick="cycleLayout()" title="날씨·메모 배치를 바꿉니다 (기본 → 메모 넓게 → 한 줄로)">🧩 배치: ${HOME_LAYOUT==='std'?'기본':HOME_LAYOUT==='memo'?'메모 넓게':'한 줄로'}</button>
+      </div>
+      <div class="hm-cols hm-lay-${HOME_LAYOUT}">
         ${widgetOn('wx') ? `<div class="hm-wx" id="hm-wx"><div class="wx-load">날씨를 불러오는 중…</div></div>` : ''}
         ${widgetOn('memo') ? `<div class="hm-memo" id="hm-memo"></div>` : ''}
       </div>` : ''}
@@ -1714,7 +1732,7 @@ function renderHome(){
   loadPrefs().then(()=>{
     renderWorld(); tickWorld();
     return loadWeather();
-  }).then(()=>renderWeather());
+  }).then(()=>{ renderWeather(); loadWeatherMinis(); });
   loadMemo().then(()=>renderMemo());
   loadTodayStrip();
   if(widgetOn('tt') || widgetOn('today')) loadMyTimetable();
@@ -2323,7 +2341,7 @@ window.addWxPlace = async function(i){
   try { localStorage.setItem('hm_wx_place', key); } catch(e){}
   await savePrefs();
   renderWxMine();
-  await loadWeather(); renderWeather();
+  await loadWeather(); renderWeather(); loadWeatherMinis();
 };
 
 window.delWxPlace = async function(i){
@@ -2336,7 +2354,7 @@ window.delWxPlace = async function(i){
   }
   await savePrefs();
   renderWxMine();
-  await loadWeather(); renderWeather();
+  await loadWeather(); renderWeather(); loadWeatherMinis();
 };
 
 /* ═══════════════════════════════════════════
@@ -2586,7 +2604,47 @@ window.setWxPlace = async function(k){
   const box = $I('hm-wx'); if(box) box.innerHTML = '<div class="wx-load">불러오는 중…</div>';
   await loadWeather();
   renderWeather();
+  loadWeatherMinis();   // 🏕 다른 곳 비교줄도 새로
 };
+
+/* 🏕 등록해 둔 «다른 곳»들의 오늘 요약 — 캠프·행사 지역과 나란히 비교 */
+let WX_MINI = {};   // key → {code, t, tmax, tmin, pp}
+function wxMiniRows(){
+  const others = WX_LIST.filter(p=>p.key!==WX_PLACE).slice(0,3);
+  if(!others.length) return '';
+  const rows = others.map(p=>{
+    const m = WX_MINI[p.key];
+    return `<div class="wx-mini" onclick="setWxPlace('${p.key}')" title="눌러서 이 지역을 크게 보기">
+      <b class="wm-n">${esc(p.name)}</b>
+      ${m ? `<span class="wm-i">${wxIcon(m.code)}</span>
+        <span class="wm-t">${Math.round(m.t)}°</span>
+        <span class="wm-hl">${Math.round(m.tmax)}°/${Math.round(m.tmin)}°</span>
+        ${m.pp>=30?`<span class="wm-p">💧${m.pp}%</span>`:''}` : '<span class="wm-hl">…</span>'}
+    </div>`;
+  }).join('');
+  return `<div class="wx-minis"><span class="wm-cap">다른 곳</span>${rows}</div>`;
+}
+async function loadWeatherMinis(){
+  const others = WX_LIST.filter(p=>p.key!==WX_PLACE).slice(0,3);
+  await Promise.all(others.map(async p=>{
+    try {
+      const u = 'https://api.open-meteo.com/v1/forecast'
+        + `?latitude=${p.lat}&longitude=${p.lon}`
+        + '&current=temperature_2m,weather_code'
+        + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max'
+        + '&timezone=auto&forecast_days=1';
+      const r = await fetch(u); const j = await r.json();
+      WX_MINI[p.key] = {
+        code: j.current?.weather_code, t: j.current?.temperature_2m,
+        tmax: j.daily?.temperature_2m_max?.[0], tmin: j.daily?.temperature_2m_min?.[0],
+        pp: j.daily?.precipitation_probability_max?.[0] || 0
+      };
+    } catch(e){}
+  }));
+  // 미니줄만 갱신
+  const host = document.querySelector('.wx-minis');
+  if(host){ host.outerHTML = wxMiniRows(); }
+}
 
 function renderWeather(){
   const box = $I('hm-wx'); if(!box) return;
@@ -2641,6 +2699,7 @@ function renderWeather(){
     <div class="wx-sun">
       <span>🌅 해돋이 <b>${hm2(d.sunrise[0])}</b></span>
       <span>🌇 해넘이 <b>${hm2(d.sunset[0])}</b></span>
+      ${wxMiniRows()}
       <span class="wx-len">낮 ${Math.floor(dayMin/60)}시간 ${dayMin%60}분</span>
     </div>
     <div class="wx-week">${days}</div>`;
@@ -2650,6 +2709,14 @@ function renderWeather(){
    📝 내 메모 — 본인만 보고 쓴다
    저장: userMemos/{uid}
    ═══════════════════════════════════════════ */
+/* 🧩 홈 배치 — 기본(반반) / memo(메모·포스트잇 넓게) / one(위아래 한 줄) · 기기별 기억 */
+let HOME_LAYOUT = (()=>{ try{ const v=localStorage.getItem('hm_layout'); return ['std','memo','one'].includes(v)?v:'std'; }catch(e){ return 'std'; } })();
+window.cycleLayout = function(){
+  HOME_LAYOUT = HOME_LAYOUT==='std' ? 'memo' : HOME_LAYOUT==='memo' ? 'one' : 'std';
+  try{ localStorage.setItem('hm_layout', HOME_LAYOUT); }catch(e){}
+  renderHome();
+};
+
 let MEMO_TEXT = '';
 let _memoTimer = null;
 
