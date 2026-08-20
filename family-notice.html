@@ -1829,6 +1829,25 @@ async function tbAiKey(){
   catch(e){ __aiKey = ''; }
   return __aiKey;
 }
+/* 쓸 수 있는 모델을 구글에 물어봐 자동으로 고른다 — 모델이 은퇴해도 안 깨진다 */
+let __aiModel = null;
+async function tbAiModel(key){
+  if(__aiModel) return __aiModel;
+  try {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key='+encodeURIComponent(key));
+    const d = await r.json();
+    const ms = (d.models||[])
+      .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
+      .map(m=>String(m.name||'').replace('models/',''));
+    __aiModel =
+      ms.find(n=>n==='gemini-flash-latest') ||
+      ms.find(n=>/^gemini-[\d.]+-flash$/.test(n)) ||
+      ms.find(n=>n.includes('flash') && !/lite|image|live|tts|audio|embed/.test(n)) ||
+      ms.find(n=>n.startsWith('gemini') && !/embed|image|live|tts|audio/.test(n)) ||
+      'gemini-2.5-flash';
+  } catch(e){ __aiModel = 'gemini-2.5-flash'; }
+  return __aiModel;
+}
 window.tbAiFile = function(inp){
   const f = inp.files && inp.files[0]; inp.value='';
   if(f) tbAiRun(f);
@@ -1854,7 +1873,9 @@ async function tbAiRun(file){
   try {
     const b64 = await new Promise((res,rej)=>{ const r=new FileReader();
       r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(new Error('이미지 읽기 실패')); r.readAsDataURL(file); });
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+encodeURIComponent(key), {
+    const model = await tbAiModel(key);
+    if(st) st.textContent = '🤖 AI가 표를 읽는 중… (몇 초 걸려요)';
+    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+encodeURIComponent(key), {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ contents:[{ parts:[
         { inline_data:{ mime_type:file.type||'image/png', data:b64 } },
@@ -1863,6 +1884,8 @@ async function tbAiRun(file){
     });
     if(!resp.ok){
       const t = await resp.text();
+      if(resp.status===404){ __aiModel=null; throw new Error('모델을 다시 찾는 중이에요 — 한 번만 더 눌러주세요'); }
+      if(resp.status===429){ throw new Error('오늘 무료 사용량을 다 썼어요 — 내일 다시 시도해 주세요'); }
       throw new Error(resp.status===400&&/API key/i.test(t) ? '키가 올바르지 않아요 — 다시 등록해 주세요' : 'AI 응답 오류 ('+resp.status+')');
     }
     const data = await resp.json();
