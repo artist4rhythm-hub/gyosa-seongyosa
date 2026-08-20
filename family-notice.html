@@ -1668,12 +1668,70 @@ function edTable(b){
       <button class="ed-mini" onclick="tbAddRow()">＋ 줄 추가</button>
       <button class="ed-mini" onclick="tbAddCol()">＋ 열 추가</button>
       <button class="ed-mini" onclick="tbDelCol()">－ 마지막 열 빼기</button>
+      <button class="ed-mini" style="border-color:var(--gm);color:var(--gm);font-weight:800" onclick="tbPasteOpen()">📋 한글·엑셀 표 붙여넣기</button>
       ${p?.rosterImport?`<button class="ed-mini" style="border-color:var(--gm);color:var(--gm)"
         onclick="tbRosterImport()">📋 학생 명부에서 불러오기</button>`:''}
+    </div>
+    <div id="tb-paste-panel" style="display:none;margin-top:10px;border:1.5px dashed var(--gm);border-radius:11px;padding:12px;background:var(--gp)">
+      <div style="font-size:12.5px;font-weight:800;color:var(--gd);margin-bottom:5px">📋 표 통째로 붙여넣기</div>
+      <div style="font-size:11.5px;color:var(--ts);line-height:1.7;margin-bottom:8px">
+        한글(HWP)·엑셀에서 <b>표를 블록 지정해 복사(Ctrl+C)</b>한 뒤, 아래 칸에 <b>붙여넣기(Ctrl+V)</b>하고 «채우기»를 누르세요.<br>
+        세로로 합쳐져 있던 칸은 붙여넣으면 빈 칸이 되는데, 자동으로 <b>«위와 병합»</b>으로 바꿔드립니다.</div>
+      <textarea id="tb-paste-ta" placeholder="여기에 붙여넣기 (Ctrl+V)" style="width:100%;min-height:110px;border:1.5px solid var(--ivd);border-radius:9px;padding:9px 11px;font-size:12px;font-family:ui-monospace,Menlo,monospace;resize:vertical;background:#fff"></textarea>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;font-size:12px;color:var(--ts)">
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="tb-paste-head" checked> 첫 줄은 열 이름(머리) — 건너뛰기</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="tb-paste-merge" checked> 빈 칸은 «위와 병합»으로</label>
+        <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="tb-paste-replace" checked> 지금 줄들을 지우고 새로 채우기</label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="ed-mini" onclick="$I('tb-paste-panel').style.display='none'">닫기</button>
+        <button class="ed-mini" style="background:var(--gd);color:#fff;border-color:var(--gd);font-weight:800;padding:7px 18px" onclick="tbPasteApply()">✨ 채우기</button>
+      </div>
     </div>
     <div class="frow" style="margin-top:10px"><label class="flab">덧붙임 (선택)</label>
       <input class="fin" id="tb-note" value="${esc(d.note||'')}"></div>`;
 }
+
+/* ══ 📋 한글·엑셀 표 붙여넣기 — 탭 구분 텍스트를 줄·칸으로 풀어 한 번에 채운다 ══ */
+window.tbPasteOpen = function(){
+  const pn = $I('tb-paste-panel'); if(!pn) return;
+  pn.style.display = pn.style.display==='none' ? '' : 'none';
+  if(pn.style.display==='') setTimeout(()=>$I('tb-paste-ta')?.focus(), 50);
+};
+window.tbPasteApply = function(){
+  const raw = ($I('tb-paste-ta')?.value||'').replace(/\r/g,'');
+  const lines = raw.split('\n').filter(l=>l.trim()!=='');
+  if(!lines.length){ toast('먼저 표를 붙여넣어 주세요.','err'); return; }
+  let grid = lines.map(l=>l.split('\t'));
+  if(grid.every(r=>r.length===1)){
+    toast('탭으로 나뉜 표가 아니에요 — 한글·엑셀의 «표 안»을 블록 지정해 복사해 주세요.','err'); return;
+  }
+  if($I('tb-paste-head')?.checked) grid = grid.slice(1);
+  if(!grid.length){ toast('머리 줄을 빼고 나니 내용이 없어요.','err'); return; }
+  const mergeEmpty = $I('tb-paste-merge')?.checked;
+  const t = $I('tb-tbl');
+  // 열이 모자라면 자동으로 늘린다
+  let n = tbColCount();
+  const maxC = Math.max(...grid.map(r=>r.length));
+  while(n < maxC){ tbAddCol(); n = tbColCount(); }
+  // 기존 줄 정리
+  if($I('tb-paste-replace')?.checked){
+    [...t.querySelectorAll('tr[data-kind]')].forEach(tr=>tr.remove());
+  }
+  const existing = t.querySelectorAll('tr[data-kind]').length;
+  const html = grid.map((r,ri)=>{
+    const c = [...Array(n)].map((_,ci)=>{
+      const v = (r[ci]||'').trim();
+      if(!v && mergeEmpty && (existing+ri)>0) return TB_MERGE;   // 각 표의 첫 데이터 줄은 병합 금지
+      return v;
+    });
+    return tbRowHTML({c}, n);
+  }).join('');
+  t.rows[t.rows.length-1].insertAdjacentHTML('afterend', html);
+  $I('tb-paste-ta').value='';
+  $I('tb-paste-panel').style.display='none';
+  toast(`✨ ${grid.length}줄을 채웠습니다 — 확인 후 저장을 눌러주세요.`,'ok');
+};
 const TB_MERGE = '⤴';   // 셀 값이 이 표시면 «위 칸과 병합»
 function tbRowHTML(r, n){
   return `<tr data-kind="trow">
@@ -1753,7 +1811,9 @@ window.tbMoveRow = function(btn, dir){
 };
 window.tbAddRow = function(){
   const n = tbColCount();
-  $I('tb-tbl').insertAdjacentHTML('beforeend', tbRowHTML({c:[...Array(n)].map(()=> '')}, n));
+  const t = $I('tb-tbl');
+  // ⚠️ table에 바로 붙이면 새 tbody로 떨어져 나가 «위와 병합»이 이전 줄을 못 찾는다 — 마지막 줄 뒤에 붙인다
+  t.rows[t.rows.length-1].insertAdjacentHTML('afterend', tbRowHTML({c:[...Array(n)].map(()=> '')}, n));
 };
 window.tbAddCol = function(){
   const t = $I('tb-tbl');
