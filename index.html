@@ -2653,11 +2653,20 @@ function renderWeather(){
 let MEMO_TEXT = '';
 let _memoTimer = null;
 
+let STICKIES = [];   // 📌 포스트잇 [{id, color, text}]
 async function loadMemo(){
   try {
     const s = await getDoc(doc(db,'userMemos', CU.uid));
     MEMO_TEXT = (s.exists() && typeof s.data().text === 'string') ? s.data().text : '';
-  } catch(e){ MEMO_TEXT = ''; }
+    STICKIES = (s.exists() && Array.isArray(s.data().stickies)) ? s.data().stickies : [];
+  } catch(e){ MEMO_TEXT = ''; STICKIES = []; }
+}
+let _stTimer = null;
+function saveStickies(){
+  clearTimeout(_stTimer);
+  _stTimer = setTimeout(async ()=>{
+    try { await setDoc(doc(db,'userMemos', CU.uid), { stickies: STICKIES, updatedAt: Timestamp.now() }, { merge:true }); } catch(e){}
+  }, 700);
 }
 
 async function saveMemo(text){
@@ -2668,6 +2677,42 @@ async function saveMemo(text){
     return true;
   } catch(e){ return false; }
 }
+
+function renderStickies(){
+  const b = $I('sticky-board'); if(!b) return;
+  b.innerHTML = STICKIES.length ? STICKIES.map(n=>`
+    <div style="background:${n.color||'#FFF3B0'};border-radius:3px 3px 12px 3px;padding:9px 9px 7px;
+      box-shadow:1px 2px 6px rgba(0,0,0,.13);position:relative;transform:rotate(${(parseInt(n.id,36)%3-1)*0.8}deg)">
+      <button onclick="delSticky('${n.id}')" title="뜯어내기"
+        style="position:absolute;top:3px;right:4px;border:none;background:none;cursor:pointer;
+        font-size:11px;color:rgba(0,0,0,.35);font-weight:900;padding:2px 4px">✕</button>
+      <textarea oninput="editSticky('${n.id}', this)" placeholder="메모…"
+        style="width:100%;border:none;background:transparent;resize:none;outline:none;font-family:inherit;
+        font-size:12px;line-height:1.55;color:#3A3520;min-height:64px;padding-right:14px"
+        >${esc(n.text||'')}</textarea>
+    </div>`).join('')
+    : `<div style="grid-column:1/-1;font-size:11px;color:var(--tl);text-align:center;padding:8px 0">위의 색 단추를 눌러 쪽지를 붙여보세요 — 할 일·전화할 곳·잊지 말 것 ☺️</div>`;
+  // textarea 높이 자동
+  b.querySelectorAll('textarea').forEach(t=>{ t.style.height='auto'; t.style.height=Math.max(64,t.scrollHeight)+'px'; });
+}
+window.addSticky = function(color){
+  if(STICKIES.length>=20){ toast('포스트잇은 20장까지예요 — 다 쓴 쪽지를 뜯어주세요.','err'); return; }
+  STICKIES.unshift({ id: Date.now().toString(36), color, text:'' });
+  renderStickies(); saveStickies();
+  const first = $I('sticky-board')?.querySelector('textarea'); if(first) first.focus();
+};
+window.editSticky = function(id, ta){
+  const n = STICKIES.find(x=>x.id===id); if(!n) return;
+  n.text = ta.value;
+  ta.style.height='auto'; ta.style.height=Math.max(64,ta.scrollHeight)+'px';
+  saveStickies();
+};
+window.delSticky = function(id){
+  const n = STICKIES.find(x=>x.id===id);
+  if(n && (n.text||'').trim() && !confirm('이 쪽지를 뜯어낼까요?')) return;
+  STICKIES = STICKIES.filter(x=>x.id!==id);
+  renderStickies(); saveStickies();
+};
 
 function renderMemo(){
   const box = $I('hm-memo'); if(!box) return;
@@ -2682,7 +2727,20 @@ function renderMemo(){
     <div class="mm-foot">
       <span class="mm-hint">적으면 잠시 뒤 저절로 저장됩니다 · 나만 볼 수 있어요</span>
       <button class="mm-btn" onclick="clearMemo()">비우기</button>
+    </div>
+    <div style="border-top:1px dashed var(--ivd);margin-top:12px;padding-top:11px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+        <span style="font-size:13px;font-weight:900;color:var(--gd)">📌 포스트잇</span>
+        <span style="font-size:10px;color:var(--tl)">쪽지 붙이기 →</span>
+        ${['#FFF3B0','#FFD6E0','#D6E9FF','#DDF3D8'].map(c=>
+          `<button onclick="addSticky('${c}')" title="쪽지 붙이기"
+            style="width:20px;height:20px;border-radius:6px;border:1.5px solid rgba(0,0,0,.12);background:${c};cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.12)"></button>`).join('')}
+        <span style="flex:1"></span>
+        <span style="font-size:10px;color:var(--tl)">${STICKIES.length?STICKIES.length+'장':''}</span>
+      </div>
+      <div id="sticky-board" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:9px"></div>
     </div>`;
+    renderStickies();
 
   const ta = $I('mm-text');
   ta.oninput = ()=>{
