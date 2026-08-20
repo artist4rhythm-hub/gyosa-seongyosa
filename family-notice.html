@@ -79,6 +79,9 @@
 .rv-tb{width:100%;border-collapse:collapse;font-size:12px}
 /* 줄무늬 음영 — 짝수 줄에 옅은 초록빛을 깔아 시선이 줄을 따라가게 한다 (인쇄에도 유지) */
 .rv-tb tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* 병합 표는 줄이 아니라 «묶음» 단위로 음영 — band가 있으면 줄무늬보다 우선 */
+.rv-tb tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rv-tb tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rv-tb tr:hover td{background:#EAF2EC}
 .rv-tb th{background:var(--gd);color:#fff;font-weight:800;padding:7px 8px;text-align:left;font-size:11px;white-space:nowrap}
 .rv-tb td{padding:7px 8px;border-bottom:1px solid var(--iv);white-space:pre-wrap;line-height:1.55;vertical-align:top}
@@ -1304,13 +1307,20 @@ function renderBlock(b){
     const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
     // 명단표의 학년·인원 칸은 줄바꿈 없이 한 줄로 (화면·인쇄 공통)
     const nw = new Set(isRoster ? [0, cntIdx].filter(i=>i>=0) : []);
-    const body=rows.map((r,ri)=>`<tr>${cols.map((_,ci)=>{
+    // 🎨 병합 묶음 밴딩 — 병합이 있는 표는 «묶음»이 바뀔 때마다 음영을 번갈아 (시인성)
+    //    기준 열 = 병합(⤴)이 가장 많은 열: 그 열에 새 값이 나오면 새 묶음이 시작된다
+    const mgCnt = cols.map((_,ci)=>rows.reduce((a,r)=>a+(((r.c||[])[ci]===MG)?1:0),0));
+    const bandCol = hasMG ? mgCnt.indexOf(Math.max(...mgCnt)) : -1;
+    let __gi = -1;
+    const body=rows.map((r,ri)=>{
+      if(bandCol>=0 && (r.c||[])[bandCol]!==MG) __gi++;
+      return `<tr${bandCol>=0?` class="band${__gi%2}"`:''}>${cols.map((_,ci)=>{
       const v=(r.c||[])[ci]||'';
       if(v===MG) return '';                                  // 위 칸이 rowspan으로 덮는다
       const n=span(ri,ci);
       const cls=[n>1?'mg':'', nw.has(ci)?'nwc':''].filter(Boolean).join(' ');
       return `<td${n>1?` rowspan="${n}"`:''}${cls?` class="${cls}"`:''}>${esc(v)}</td>`;
-    }).join('')}</tr>`).join('');
+    }).join('')}</tr>`;}).join('');
     let malt='';
     if(isRoster){
       // 명단표: 「학년 배지 + 인원」 한 줄 / 「이름들」 한 줄로 쌓는다
