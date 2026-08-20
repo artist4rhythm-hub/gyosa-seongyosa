@@ -1448,6 +1448,16 @@ function shareURL(org){
 }
 
 /* 게시 내용 → 공유 문서로 복사 (게시/내리기 때마다 호출) */
+/* 👨‍👩‍👧 학부모 사이트 자동 연동 — 공유 링크가 켜지면 학부모 홈의 「시간표」 단추가 저절로 열린다 */
+async function pushParentLink(org){
+  try {
+    const url = shareURL(org) || '';
+    await setDoc(doc(db,'parentConfig','links_'+org),
+      { timetable: url, timetableAuto: true, updatedAt: Timestamp.now(), updatedBy: (CU?.name||'') },
+      { merge: true });   // 학사일정 링크 등 다른 값은 건드리지 않는다
+  } catch(e){ /* 학부모 링크 반영 실패해도 게시는 유효 */ }
+}
+
 async function syncShare(org){
   const o = org || MG_ORG;
   const sh = SHARES[o];
@@ -1469,6 +1479,7 @@ async function syncShare(org){
         active: false, org: o, snapshot: null, updatedAt: Timestamp.now(),
       }, { merge:true });
     }
+    pushParentLink(o);   // 👨‍👩‍👧 학부모 홈 단추 자동 갱신
   } catch(e){ /* 공유 갱신 실패해도 게시 자체는 유효 */ }
 }
 
@@ -1495,6 +1506,7 @@ window.shareOff = async function(){
   try {
     await deleteDoc(doc(db,'sharedTimetables', sh.id));
     SHARES[MG_ORG] = null;
+    pushParentLink(MG_ORG);   // 학부모 홈 「시간표」 단추도 «준비 중»으로 되돌린다
     renderShareBox();
     toast('공유를 껐습니다 — 링크가 닫혔어요','ok');
   } catch(e){ toast('실패: '+(e.message||''),'err'); }
