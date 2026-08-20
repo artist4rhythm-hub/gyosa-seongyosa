@@ -2892,6 +2892,17 @@ async function loadTodayStrip(){
 }
 window.renderHome = renderHome;
 
+// 홈 위젯에서 공지 바로 삭제 (관리자) — 지우면 위젯이 즉시 갱신된다
+window.delNoticeHome = async function(id){
+  if(!canWriteNotice()) return;
+  if(!confirm('이 공지를 삭제할까요?\n(모든 선생님의 홈에서 사라집니다)')) return;
+  try {
+    await deleteDoc(doc(db,'notices',id));
+    toast('공지를 삭제했습니다.','ok');
+    loadHomeNotices();
+  } catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
+};
+
 // 이번 달 생일 (학생 + 선생님, 기관별, 시점별 구분)
 async function loadHomeBirthdays(){
   const box = $I('home-birthday');
@@ -3104,9 +3115,11 @@ async function loadHomeNotices(){
       const dt = x.createdAt?.seconds ? new Date(x.createdAt.seconds*1000) : null;
       const dstr = dt ? `${dt.getMonth()+1}/${dt.getDate()}` : '';
       const title = (x.title||'(제목 없음)').replace(/</g,'&lt;');
-      return `<div onclick="showTab('notice')" style="font-size:13.5px;color:var(--gd);padding:9px 0;${i<list.length-1?'border-bottom:1px solid var(--ivd)':''};cursor:pointer;display:flex;justify-content:space-between;gap:10px">
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.important?'<span style="color:var(--danger);font-weight:700">[중요] </span>':''}${title}</span>
+      return `<div onclick="showTab('notice')" style="font-size:13.5px;color:var(--gd);padding:9px 0;${i<list.length-1?'border-bottom:1px solid var(--ivd)':''};cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${x.important?'<span style="color:var(--danger);font-weight:700">[중요] </span>':''}${title}</span>
         <span style="color:var(--tl);font-size:11.5px;white-space:nowrap">${dstr}</span>
+        ${canWriteNotice()?`<button onclick="event.stopPropagation();delNoticeHome('${x.id}')" title="이 공지 삭제"
+          style="border:none;background:var(--danger-bg);color:var(--danger);border-radius:7px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🗑</button>`:''}
       </div>`;
     }).join('');
     box.innerHTML = `
