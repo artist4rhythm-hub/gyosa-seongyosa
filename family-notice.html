@@ -1870,24 +1870,27 @@ async function tbAiKey(){
   catch(e){ __aiKey = ''; }
   return __aiKey;
 }
-/* 쓸 수 있는 모델을 구글에 물어봐 자동으로 고른다 — 모델이 은퇴해도 안 깨진다 */
-let __aiModel = null;
-async function tbAiModel(key){
-  if(__aiModel) return __aiModel;
+/* 쓸 수 있는 모델을 구글에 물어봐 «후보 목록»으로 — 하나가 붐비면(503) 다음 후보로 갈아탄다 */
+let __aiModels = null;
+async function tbAiModels(key){
+  if(__aiModels && __aiModels.length) return __aiModels;
   try {
     const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key='+encodeURIComponent(key));
     const d = await r.json();
     const ms = (d.models||[])
       .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
       .map(m=>String(m.name||'').replace('models/',''));
-    __aiModel =
-      ms.find(n=>n==='gemini-flash-latest') ||
-      ms.find(n=>/^gemini-[\d.]+-flash$/.test(n)) ||
-      ms.find(n=>n.includes('flash') && !/lite|image|live|tts|audio|embed/.test(n)) ||
-      ms.find(n=>n.startsWith('gemini') && !/embed|image|live|tts|audio/.test(n)) ||
-      'gemini-2.5-flash';
-  } catch(e){ __aiModel = 'gemini-2.5-flash'; }
-  return __aiModel;
+    const order = [];
+    const push = n => { if(n && !order.includes(n)) order.push(n); };
+    push(ms.find(n=>n==='gemini-flash-latest'));
+    push(ms.find(n=>/^gemini-[\d.]+-flash$/.test(n)));
+    push(ms.find(n=>n==='gemini-flash-lite-latest'));           // 가벼워서 덜 붐빈다
+    push(ms.find(n=>/^gemini-[\d.]+-flash-lite$/.test(n)));
+    ms.filter(n=>n.includes('flash') && !/image|live|tts|audio|embed/.test(n)).forEach(push);
+    ms.filter(n=>n.startsWith('gemini') && !/image|live|tts|audio|embed/.test(n)).forEach(push);
+    __aiModels = order.length ? order : ['gemini-2.5-flash','gemini-2.5-flash-lite'];
+  } catch(e){ __aiModels = ['gemini-2.5-flash','gemini-2.5-flash-lite']; }
+  return __aiModels;
 }
 window.tbAiFile = function(inp){
   const f = inp.files && inp.files[0]; inp.value='';
@@ -1914,22 +1917,39 @@ async function tbAiRun(file){
   try {
     const b64 = await new Promise((res,rej)=>{ const r=new FileReader();
       r.onload=()=>res(String(r.result).split(',')[1]); r.onerror=()=>rej(new Error('이미지 읽기 실패')); r.readAsDataURL(file); });
-    const model = await tbAiModel(key);
-    if(st) st.textContent = '🤖 AI가 표를 읽는 중… (몇 초 걸려요)';
-    const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent?key='+encodeURIComponent(key), {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ contents:[{ parts:[
-        { inline_data:{ mime_type:file.type||'image/png', data:b64 } },
-        { text:'이미지 속 표를 TSV(탭 구분 텍스트)로만 출력해줘. 규칙: 1) 각 행은 줄바꿈, 각 칸은 탭 1개로 구분 2) 세로로 합쳐진(병합) 칸은 묶음의 첫 줄에만 값을 쓰고 그 아래 줄들은 빈 칸으로 둔다 3) 열 이름(머리) 줄이 이미지에 있으면 첫 줄로 포함 4) 설명·마크다운·코드블록 없이 순수 TSV만.' }
-      ]}] })
-    });
-    if(!resp.ok){
-      const t = await resp.text();
-      if(resp.status===404){ __aiModel=null; throw new Error('모델을 다시 찾는 중이에요 — 한 번만 더 눌러주세요'); }
-      if(resp.status===429){ throw new Error('오늘 무료 사용량을 다 썼어요 — 내일 다시 시도해 주세요'); }
-      throw new Error(resp.status===400&&/API key/i.test(t) ? '키가 올바르지 않아요 — 다시 등록해 주세요' : 'AI 응답 오류 ('+resp.status+')');
+    const models = await tbAiModels(key);
+    const reqBody = JSON.stringify({ contents:[{ parts:[
+      { inline_data:{ mime_type:file.type||'image/png', data:b64 } },
+      { text:'이미지 속 표를 TSV(탭 구분 텍스트)로만 출력해줘. 규칙: 1) 각 행은 줄바꿈, 각 칸은 탭 1개로 구분 2) 세로로 합쳐진(병합) 칸은 묶음의 첫 줄에만 값을 쓰고 그 아래 줄들은 빈 칸으로 둔다 3) 열 이름(머리) 줄이 이미지에 있으면 첫 줄로 포함 4) 설명·마크다운·코드블록 없이 순수 TSV만.' }
+    ]}] });
+    let data = null, lastCode = '';
+    outer:
+    for(let mi=0; mi<Math.min(models.length,4); mi++){
+      for(let att=0; att<2; att++){
+        if(st) st.textContent = (mi===0&&att===0)
+          ? '🤖 AI가 표를 읽는 중… (몇 초 걸려요)'
+          : `🤖 지금 붐벼서 다른 경로로 다시 읽는 중… (${mi*2+att+1}번째 시도)`;
+        const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+models[mi]+':generateContent?key='+encodeURIComponent(key), {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: reqBody
+        });
+        if(resp.ok){ data = await resp.json(); break outer; }
+        const t = await resp.text();
+        if(resp.status===400 && /API key/i.test(t)){ __aiKey=null; throw new Error('키가 올바르지 않아요 — 다시 등록해 주세요'); }
+        lastCode = String(resp.status);
+        if(resp.status===404) break;                                    // 이 모델 없음 → 다음 후보
+        if(resp.status===503 || resp.status===429){
+          if(att===0){ await new Promise(r=>setTimeout(r,900)); continue; }  // 잠깐 쉬고 같은 모델 한 번 더
+          break;                                                        // 그래도 붐비면 → 다음 후보
+        }
+        throw new Error('AI 응답 오류 ('+resp.status+')');
+      }
     }
-    const data = await resp.json();
+    if(!data){
+      __aiModels = null;   // 다음 시도 때 후보 목록을 새로 받는다
+      throw new Error(lastCode==='429'
+        ? '사용량 제한에 걸렸어요 — 1분 뒤 다시 눌러주세요'
+        : '지금 구글 AI가 많이 붐벼요 — 30초쯤 뒤에 다시 눌러주세요');
+    }
     let text = data?.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('') || '';
     text = text.replace(/```[a-z]*\n?/g,'').replace(/```/g,'').trim();
     if(!text || !text.includes('\t')){ if(st) st.textContent='표를 찾지 못했어요 — 표 부분만 크게 잘라 다시 시도해 주세요.'; return; }
