@@ -208,6 +208,53 @@ const DEFAULT_TYPES = [
   {name:'체험학습', color:'#0369a1', order:6, isPresent:false},
 ];
 
+/* ── 📋 출결 사유(하위 항목) — 학기말 출결표 기준 ── */
+const REASONS = {
+  '결석':['질병','무단','기타'],
+  '지각':['질병','무단','기타'],
+  '조퇴':['질병','무단','기타'],
+  '체험학습':['가족 대소사','가족 여행','기타'],
+};
+const reasonShort = r => r==='가족 대소사' ? '대' : r==='가족 여행' ? '여' : (r||'').slice(0,1);
+const needsReasonT = t => !!(t && REASONS[t.name]);
+// '병결'은 «결석·질병»으로 통일 — 새 입력 메뉴에서는 숨긴다 (옛 기록은 결석·질병으로 표시)
+const HIDDEN_TYPE_NAMES = ['병결'];
+const menuTypes = () => [...TYPES].sort((a,b)=>(a.order||0)-(b.order||0))
+  .filter(t=>!HIDDEN_TYPE_NAMES.includes(t.name));
+const legacyByeong = t => t && t.name==='병결';
+
+/* ── 🔒 월 단위 잠금 — 입력이 끝난 달은 잠근다 (수퍼·기관관리자만 잠금/해제) ── */
+let MONTH_LOCK = false;
+function canLockMonth(c){
+  return !!CU && (CU.role==='super' || CU.role==='org_admin') && myOrgs().includes(c.org);
+}
+async function loadMonthLock(c){
+  MONTH_LOCK = false;
+  try {
+    const d = await getDoc(doc(db,'attendLocks', `${c.org}_${monthYM}`));
+    MONTH_LOCK = d.exists() && d.data().locked === true;
+  } catch(e){}
+}
+window.toggleMonthLock = async function(){
+  const c = CLASSES.find(x=>x.id===monthClassId); if(!c) return;
+  if(!canLockMonth(c)){ toast('잠금은 수퍼관리자·기관관리자만 할 수 있어요.','err'); return; }
+  const [y,m]=monthYM.split('-').map(Number);
+  if(MONTH_LOCK){
+    if(!confirm(`${y}년 ${m}월 출석부 잠금을 풀까요?\n\n푸는 동안은 다시 입력·수정할 수 있습니다.`)) return;
+  } else {
+    if(!confirm(`${y}년 ${m}월 출석부를 잠글까요?\n\n잠그면 모든 선생님(관리자 포함)이 입력·수정할 수 없고,\n고치려면 잠금을 풀어야 합니다.`)) return;
+  }
+  try {
+    await setDoc(doc(db,'attendLocks', `${c.org}_${monthYM}`), {
+      org: c.org, month: monthYM, locked: !MONTH_LOCK,
+      byName: CU.name||'', byUid: CU.uid, at: Timestamp.now()
+    });
+    MONTH_LOCK = !MONTH_LOCK;
+    toast(MONTH_LOCK ? '🔒 잠갔습니다 — 이 달은 입력이 막혀요' : '🔓 잠금을 풀었습니다','ok');
+    loadMonthBody();
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
 function toast(msg, type=''){
   const t = $I('toast'); t.textContent = msg;
   t.className = 'toast show ' + type;
@@ -552,7 +599,8 @@ function renderMonthCheck(){
   $I('ck-mode-body').innerHTML = `
     <div class="acard">
       <h3 class="actitle">🗓️ 월별 출결 입력</h3>
-      <p class="adesc">반과 월을 선택하면 한 달 전체 출결을 표로 입력할 수 있습니다. 칸을 클릭해 상태를 고르세요. 과거 데이터 정리에 유용합니다.</p>
+      <p class="adesc">반과 월을 선택하면 한 달 전체 출결을 표로 입력할 수 있습니다. 칸을 클릭해 상태를 고르고, <b>사유(질병·무단·기타)까지</b> 고르면 저장됩니다. 과거 날짜도 잠기지 않았다면 언제든 수정할 수 있어요.<br>
+      <span style="color:var(--gm);font-weight:700">📌 같은 날 여러 상황이 겹치면 «결석 › 조퇴 › 지각» 순서로 <b>앞의 것 하나만</b> 기록합니다.</span> (예: 지각하고 조퇴한 날 → 조퇴만)</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <div class="fgrp" style="margin-bottom:0;flex:1;min-width:180px"><label>반</label>
           <select id="m-class" onchange="onMonthCheckChange()">
@@ -581,6 +629,7 @@ async function loadMonthBody(){
   try {
   const c = CLASSES.find(x=>x.id===monthClassId);
   if(!c){ body.innerHTML='<div class="acard"><p class="empty">반을 선택하세요.</p></div>'; return; }
+  await loadMonthLock(c);   // 🔒 이 달 잠금 여부
   const [y,m] = monthYM.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
   const grades = c.grades || {};
@@ -596,7 +645,7 @@ async function loadMonthBody(){
     if(r.classId===monthClassId && (r.date||'').startsWith(prefix)){
       const day = Number(r.date.slice(8,10));
       if(!monthData[r.studentId]) monthData[r.studentId]={};
-      monthData[r.studentId][day] = {id:d.id, typeIds:recTypes(r)};
+      monthData[r.studentId][day] = {id:d.id, typeIds:recTypes(r), reason:r.reason||''};
     }
   });
   const dayInfo = [];
@@ -621,9 +670,15 @@ async function loadMonthBody(){
       const t = tids.length ? TYPES.find(x=>x.id===tids[0]) : null;
       const tnames = tids.map(id=>TYPES.find(x=>x.id===id)?.name||'').filter(Boolean).join('·');
       const blockedCls = di.blocked ? (monthAllowBlocked?'blocked allow':'blocked') : '';
-      const clickable = (!di.blocked || monthAllowBlocked) && canEditClass(c);
+      const clickable = (!di.blocked || monthAllowBlocked) && canEditClass(c) && !MONTH_LOCK;   // 🔒 잠기면 클릭 불가
       let bg='', label='', autoCls='';
-      if(t){ bg=`background:${t.color};color:#fff`; label=(t.name||'').slice(0,1)+(tids.length>1?'⁺':''); }
+      if(t){
+        const rs = legacyByeong(t) ? '질병' : (rec.reason||'');   // 옛 «병결»은 결석·질병으로 본다
+        const nm = legacyByeong(t) ? '결' : (t.name||'').slice(0,1);
+        const sub = rs ? `<span style="font-size:8px;opacity:.9;vertical-align:1px">${reasonShort(rs)}</span>` : '';
+        bg=`background:${legacyByeong(t)?'#dc2626':t.color};color:#fff`;
+        label = nm + sub + (tids.length>1?'⁺':'');
+      }
       else if(di.autoPresent && pType){ // 자동 출석: 연한 초록 흐리게
         bg=`background:${pType.color}22;color:${pType.color}`; label='출'; autoCls='auto-present';
       }
@@ -634,7 +689,9 @@ async function loadMonthBody(){
   body.innerHTML = `
     <div class="acard" style="overflow-x:auto">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <h3 class="actitle" style="margin:0">${c.name} · ${y}년 ${m}월 (${studs.length}명)</h3>
+        <h3 class="actitle" style="margin:0">${c.name} · ${y}년 ${m}월 (${studs.length}명)
+          ${MONTH_LOCK?'<span style="font-size:11px;font-weight:800;color:#8A6410;background:#F7EFD8;border-radius:100px;padding:3px 10px;vertical-align:2px">🔒 잠김 — 수정하려면 잠금을 푸세요</span>':''}
+          ${canLockMonth(c)?`<button class="bm" style="font-size:11px;padding:5px 12px;vertical-align:2px;${MONTH_LOCK?'':'background:#F7EFD8;color:#8A6410'}" onclick="toggleMonthLock()">${MONTH_LOCK?'🔓 잠금 풀기':'🔒 이 달 입력 잠그기'}</button>`:''}</h3>
         <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px">
           ${TYPES.map(t=>`<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:11px;height:11px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}</span>`).join('')}
         </div>
@@ -702,12 +759,15 @@ document.addEventListener('mouseup', (e)=>{
 // 일괄 입력 메뉴
 function openBulkMenu(ev){
   closeMonthMenu();
-  const sorted = [...TYPES].sort((a,b)=>(a.order||0)-(b.order||0));
+  if(MONTH_LOCK){ clearDragSel(); dragCells=[]; return toast('🔒 이 달은 잠겨 있어요.','err'); }
+  const sorted = menuTypes();
   const menu = document.createElement('div');
   menu.className='mmenu'; menu.id='month-menu';
   const cnt = dragCells.length;
   let html = `<div class="sep" style="color:var(--gm);font-weight:700">${cnt}칸 일괄 입력</div>`;
-  html += sorted.map(t=>`<button onclick="applyBulk('${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}</button>`).join('');
+  html += sorted.map(t=> needsReasonT(t)
+    ? `<button onclick="showBulkReason('${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name} <span style="margin-left:auto;color:var(--tl);font-size:10px">사유 ›</span></button>`
+    : `<button onclick="applyBulk('${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}</button>`).join('');
   html += `<div class="sep"></div><button onclick="applyBulkClear()" style="color:var(--danger)">✕ 삭제(미입력)</button>`;
   html += `<button onclick="cancelBulk()" style="color:var(--tl)">취소</button>`;
   menu.innerHTML = html;
@@ -716,13 +776,23 @@ function openBulkMenu(ev){
   menu.style.left=x+'px'; menu.style.top=yy+'px';
 }
 
-async function applyBulk(typeId){
+window.showBulkReason = function(typeId){
+  const menu = $I('month-menu'); if(!menu) return;
+  const t = TYPES.find(x=>x.id===typeId); if(!t) return;
+  const rs = REASONS[t.name] || ['기타'];
+  menu.innerHTML =
+    `<div class="sep" style="color:var(--gm);font-weight:700">${dragCells.length}칸 · ${t.name} — 사유를 골라주세요</div>` +
+    rs.map(r=>`<button onclick="applyBulk('${typeId}','${r}')">${r==='질병'?'🤒':r==='무단'?'❓':r==='가족 대소사'?'👨‍👩‍👧':r==='가족 여행'?'✈️':'📎'} ${r}</button>`).join('') +
+    `<div class="sep"></div><button onclick="cancelBulk()" style="color:var(--tl)">취소</button>`;
+};
+
+async function applyBulk(typeId, reason){
   closeMonthMenu();
   const cells = [...dragCells];
   clearDragSel(); dragCells=[];
   let ok=0;
   for(const {sid, day} of cells){
-    try { await setMonthCell(sid, day, typeId, true); ok++; } catch(e){}
+    try { await setMonthCell(sid, day, typeId, true, reason); ok++; } catch(e){}
   }
   toast(`${ok}칸 입력 완료`,'ok');
 }
@@ -747,13 +817,17 @@ function openMonthMenu(ev, sid, day){
   closeMonthMenu();
   const c = CLASSES.find(x=>x.id===monthClassId);
   if(!c || !canEditClass(c)) return toast('기록 권한이 없습니다.','err');
-  const sorted = [...TYPES].sort((a,b)=>(a.order||0)-(b.order||0));
+  if(MONTH_LOCK) return toast('🔒 이 달은 잠겨 있어요 — 관리자가 잠금을 풀어야 수정할 수 있습니다.','err');
+  const sorted = menuTypes();
   const menu = document.createElement('div');
   menu.className='mmenu'; menu.id='month-menu';
   const cur = monthData[sid] && monthData[sid][day];
-  let html = sorted.slice(0,5).map(t=>`<button onclick="setMonthCell('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}${cur&&cur.typeId===t.id?' ✓':''}</button>`).join('');
+  const btn = t => needsReasonT(t)
+    ? `<button onclick="showReasonMenu('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name} <span style="margin-left:auto;color:var(--tl);font-size:10px">사유 ›</span></button>`
+    : `<button onclick="setMonthCell('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}${cur&&cur.typeId===t.id?' ✓':''}</button>`;
+  let html = sorted.slice(0,5).map(btn).join('');
   if(sorted.length>5){
-    html += `<div class="sep">기타</div>` + sorted.slice(5).map(t=>`<button onclick="setMonthCell('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:3px;background:${t.color};display:inline-block"></span>${t.name}${cur&&cur.typeId===t.id?' ✓':''}</button>`).join('');
+    html += `<div class="sep">기타</div>` + sorted.slice(5).map(btn).join('');
   }
   if(cur){ html += `<div class="sep"></div><button onclick="clearMonthCell('${sid}',${day})" style="color:var(--danger)">✕ 삭제(미입력)</button>`; }
   menu.innerHTML = html;
@@ -762,12 +836,26 @@ function openMonthMenu(ev, sid, day){
   menu.style.left=x+'px'; menu.style.top=yy+'px';
 }
 window.openMonthMenu = openMonthMenu;
+
+/* ── 2단계: 사유 고르기 (필수) ── */
+window.showReasonMenu = function(sid, day, typeId){
+  const menu = $I('month-menu'); if(!menu) return;
+  const t = TYPES.find(x=>x.id===typeId); if(!t) return;
+  const rs = REASONS[t.name] || ['기타'];
+  menu.innerHTML =
+    `<div class="sep" style="color:var(--gm);font-weight:700"><span style="width:10px;height:10px;border-radius:3px;background:${t.color};display:inline-block;margin-right:5px"></span>${t.name} — 사유를 골라주세요</div>` +
+    rs.map(r=>`<button onclick="setMonthCell('${sid}',${day},'${typeId}',false,'${r}')">${r==='질병'?'🤒':r==='무단'?'❓':r==='가족 대소사'?'👨‍👩‍👧':r==='가족 여행'?'✈️':'📎'} ${r}</button>`).join('') +
+    `<div class="sep"></div><button onclick="event.stopPropagation();openMonthMenu(event,'${sid}',${day})" style="color:var(--tl)">‹ 뒤로</button>`;
+};
 function closeMonthMenu(){ const m=$I('month-menu'); if(m) m.remove(); }
 document.addEventListener('click', e=>{ if(!e.target.closest('.mmenu') && !e.target.closest('.dcell')) closeMonthMenu(); });
 
-async function setMonthCell(sid, day, typeId, bulk){
+async function setMonthCell(sid, day, typeId, bulk, reason){
   if(!bulk) closeMonthMenu();
   const c = CLASSES.find(x=>x.id===monthClassId); if(!c) return;
+  if(MONTH_LOCK){ if(!bulk) toast('🔒 이 달은 잠겨 있어요.','err'); return; }
+  const t = TYPES.find(x=>x.id===typeId);
+  if(needsReasonT(t) && !reason){ toast(`${t.name}은(는) 사유(질병·무단·기타)를 골라야 저장돼요.`,'err'); return; }
   const [y,m]=monthYM.split('-').map(Number);
   const dateStr=`${y}-${pad(m)}-${pad(day)}`;
   const s = STUDENTS[sid]; if(!s) return;
@@ -775,19 +863,21 @@ async function setMonthCell(sid, day, typeId, bulk){
   try {
     const data = {
       studentId:sid, studentName:s.name, classId:c.id, className:c.name,
-      org:c.org, date:dateStr, typeId, typeIds:[typeId], memo:(cur&&cur.memo)||'',
+      org:c.org, date:dateStr, month:monthYM, typeId, typeIds:[typeId],
+      reason: reason||'', memo:(cur&&cur.memo)||'',
       by:CU.name, byUid:CU.uid, updatedAt:Timestamp.now()
     };
-    if(cur && cur.id){ await updateDoc(doc(db,'studentAttendance',cur.id), data); monthData[sid][day]={id:cur.id, typeIds:[typeId]}; }
+    if(cur && cur.id){ await updateDoc(doc(db,'studentAttendance',cur.id), data); monthData[sid][day]={id:cur.id, typeIds:[typeId], reason:reason||''}; }
     else { data.createdAt=Timestamp.now(); const ref=await addDoc(collection(db,'studentAttendance'), data);
-      if(!monthData[sid]) monthData[sid]={}; monthData[sid][day]={id:ref.id, typeIds:[typeId]}; }
-    updateMonthCellUI(sid, day, typeId);
+      if(!monthData[sid]) monthData[sid]={}; monthData[sid][day]={id:ref.id, typeIds:[typeId], reason:reason||''}; }
+    updateMonthCellUI(sid, day, typeId, reason||'');
   } catch(e){ toast('저장 실패: '+e.message,'err'); }
 }
 window.setMonthCell = setMonthCell;
 
 async function clearMonthCell(sid, day, bulk){
   if(!bulk) closeMonthMenu();
+  if(MONTH_LOCK){ if(!bulk) toast('🔒 이 달은 잠겨 있어요.','err'); return; }
   const cur = monthData[sid] && monthData[sid][day];
   if(!cur || !cur.id) return;
   try {
@@ -808,7 +898,11 @@ function updateMonthCellUI(sid, day, typeId){
   const cell = row.querySelectorAll('td.dcell')[day-1]; if(!cell) return;
   const t = typeId ? TYPES.find(x=>x.id===typeId) : null;
   cell.classList.remove('auto-present');
-  if(t){ cell.style.background=t.color; cell.style.color='#fff'; cell.textContent=(t.name||'').slice(0,1); }
+  if(t){
+    cell.style.background=t.color; cell.style.color='#fff';
+    const rs = arguments.length>3 ? (arguments[3]||'') : '';
+    cell.innerHTML = (t.name||'').slice(0,1) + (rs?`<span style="font-size:8px;opacity:.9;vertical-align:1px">${reasonShort(rs)}</span>`:'');
+  }
   else {
     // 삭제됨 → 자동출석 대상이면 연한 초록 '출'로 복원
     const [y,m]=monthYM.split('-').map(Number);
