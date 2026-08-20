@@ -2516,10 +2516,11 @@ window.askHRInfoAll = askHRInfoAll;
 // staff.pageDeny = ['approval','cert' ...]  개인별 차단 페이지 키
 const ACC_PAGES = [
   { k:'students', l:'학생관리' }, { k:'attend', l:'출석부' }, { k:'class', l:'반편성' },
-  { k:'calendar', l:'학사일정' }, { k:'cert', l:'증명서' },
+  { k:'calendar', l:'학사일정' }, { k:'gcal', l:'구글캘린더' }, { k:'cert', l:'증명서' },
   { k:'att', l:'출근부' }, { k:'work', l:'근무시간' }, { k:'approval', l:'전자결재' }, { k:'timetable', l:'시간표' },
-  { k:'payreq', l:'경비지급' }, { k:'expense', l:'수행성' },
-  { k:'dir', l:'명부' }, { k:'message', l:'쪽지' }, { k:'board', l:'게시판' },
+  { k:'payreq', l:'경비지급' }, { k:'expense', l:'수행성' }, { k:'actexp', l:'활동경비' },
+  { k:'dir', l:'명부' }, { k:'message', l:'쪽지' }, { k:'board', l:'게시판' }, { k:'family', l:'가정통신문' },
+  { k:'parentadm', l:'학부모관리' },
 ];
 
 async function renderAccessCtl(){
@@ -2533,8 +2534,14 @@ async function renderAccessCtl(){
   };
 
   const sortMode = window._accSort || 'org';   // 'org' 기관순 | 'name' 이름 ㄱㄴㄷ순
+  const fOrg = window._accOrg || '';           // 기관 필터
+  const fDept = window._accDept || '';         // 부서 필터
+  const fQ = (window._accQ || '').trim();      // 이름 검색
   const list = Object.values(STAFF_CACHE||{})
     .filter(s => !s.noAuth && (s.acStatus||'active')!=='quit')
+    .filter(s => !fOrg || s.org===fOrg || (s.orgs||[]).includes(fOrg))
+    .filter(s => !fDept || (s.dept||'')===fDept)
+    .filter(s => !fQ || (s.name||'').includes(fQ))
     .sort((a,b)=>{
       if(sortMode === 'name') return (a.name||'').localeCompare(b.name||'','ko');
       const RO = {super:0, org_admin:1, tab_admin:2, teacher:3, partner:4};
@@ -2569,6 +2576,19 @@ async function renderAccessCtl(){
   box.innerHTML = `
     <div id="acc-cards" class="acc-cards"></div>
     <div class="asc">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <select onchange="window._accOrg=this.value;renderAccessCtl()" style="border:1.5px solid var(--ivd);border-radius:9px;padding:7px 10px;font-size:12px;font-family:inherit">
+          <option value="">전체 기관</option>
+          <option value="daniel" ${ (window._accOrg||'')==='daniel'?'selected':''}>다니엘 아마츠</option>
+          <option value="jihyebit" ${ (window._accOrg||'')==='jihyebit'?'selected':''}>지혜빛</option>
+        </select>
+        <select onchange="window._accDept=this.value;renderAccessCtl()" style="border:1.5px solid var(--ivd);border-radius:9px;padding:7px 10px;font-size:12px;font-family:inherit">
+          <option value="">전체 부서</option>
+          ${[...new Set(Object.values(STAFF_CACHE||{}).map(x=>x.dept).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ko')).map(d=>`<option value="${esc(d)}" ${(window._accDept||'')===d?'selected':''}>${esc(d)}</option>`).join('')}
+        </select>
+        <input placeholder="이름 검색" value="${esc(window._accQ||'')}" oninput="window._accQ=this.value;clearTimeout(window._accQT);window._accQT=setTimeout(renderAccessCtl,350)"
+          style="border:1.5px solid var(--ivd);border-radius:9px;padding:7px 10px;font-size:12px;font-family:inherit;width:120px">
+      </div>
       <h3 class="actitle" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">🔐 페이지 접근 권한
         <select onchange="window._accSort=this.value; renderAccessCtl();" style="height:32px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:12.5px;background:var(--iv);font-family:inherit;font-weight:600">
           <option value="org"${(window._accSort||'org')==='org'?' selected':''}>기관순</option>

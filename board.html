@@ -227,12 +227,20 @@ async function loadStaff(){
   } catch(e){ STAFF = []; }
 }
 
-// 내가 볼 수 있는 게시판 목록
+// 내가 볼 수 있는 게시판 목록 — 기관 관리자는 «다른 기관»도 열람(👀)할 수 있다 (정보 공유)
+function viewOrgs(){
+  if(CU.role==='super' || CU.role==='org_admin') return ['daniel','jihyebit'];
+  return myOrgs();
+}
+function isViewOnly(key){
+  // 내 소속이 아닌 기관 게시판 = 열람 전용 (글·댓글 쓰기 불가)
+  return key!=='all' && !myOrgs().includes(key);
+}
 function myBoards(){
   const boards = [{key:'all', label:'📋 전체'}];
-  const orgs = myOrgs();
-  if(orgs.includes('daniel')) boards.push({key:'daniel', label:'다니엘 아마츠'});
-  if(orgs.includes('jihyebit')) boards.push({key:'jihyebit', label:'지혜빛'});
+  const orgs = viewOrgs();
+  if(orgs.includes('daniel')) boards.push({key:'daniel', label:'다니엘 아마츠'+(isViewOnly('daniel')?' 👀':'')});
+  if(orgs.includes('jihyebit')) boards.push({key:'jihyebit', label:'지혜빛'+(isViewOnly('jihyebit')?' 👀':'')});
   return boards;
 }
 
@@ -254,7 +262,7 @@ function myTrash(){ return isAdmin() ? TRASH : TRASH.filter(p=>p.deletedByUid===
 
 function canSeeBoard(key){
   if(key==='all') return true;
-  return myOrgs().includes(key);
+  return viewOrgs().includes(key);
 }
 
 function showBoard(key){
@@ -420,8 +428,9 @@ function renderBoard(){
       </div>
       ${kw ? `<p class="adesc">🔍 "<b>${esc(searchKeyword)}</b>" 검색 결과 ${list.length}건</p>` : `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <h3 class="actitle" style="margin:0">${boardName}${deptLabel}</h3>
-        <button class="bp" onclick="openCompose()">✏️ 글쓰기</button>
+        <h3 class="actitle" style="margin:0">${boardName}${deptLabel}
+          ${isViewOnly(curBoard)?'<span style="font-size:11px;font-weight:800;color:#8A6410;background:#F7EFD8;border-radius:100px;padding:3px 10px;vertical-align:2px">👀 열람 전용 — 다른 기관 게시판</span>':''}</h3>
+        ${isViewOnly(curBoard)?'':'<button class="bp" onclick="openCompose()">✏️ 글쓰기</button>'}
       </div>
       <p class="adesc">${desc}</p>
       ${isAdmin()?`<button class="bs" style="margin-bottom:12px" onclick="openCatManage()">⚙️ 분류 관리</button>`:''}
@@ -693,6 +702,7 @@ async function persistPostImages(postId){
 }
 
 async function submitPost(){
+  if(isViewOnly(curBoard)){ toast('다른 기관 게시판은 열람만 할 수 있어요.','err'); return; }
   const board = $I('cp-board').value;
   const title = $I('cp-title').value.trim();
   const content = $I('cp-content').value.trim();
@@ -972,6 +982,10 @@ function showReplyInput(parentId, postId){
 window.showReplyInput = showReplyInput;
 
 async function addComment(postId, parentId){
+  const post0 = POSTS.find(p=>p.id===postId);
+  if(post0 && post0.org && post0.org!=='all' && !myOrgs().includes(post0.org)){
+    toast('다른 기관 글에는 댓글을 달 수 없어요 (열람 전용).','err'); return;
+  }
   const input = parentId ? $I('reply-input-'+parentId) : $I('cmt-input');
   if(!input) return;
   const text = input.value.trim();
