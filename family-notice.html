@@ -1702,7 +1702,10 @@ function edTable(b){
         <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="tb-paste-merge" checked> 빈 칸은 «위와 병합»으로</label>
         <label style="display:inline-flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="tb-paste-replace" checked> 지금 줄들을 지우고 새로 채우기</label>
       </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="ed-mini" onclick="tbUnstack()" title="옆으로 반복된(2단·3단) 표를 한 단으로 세로 합칩니다 — 머리글 반복을 자동 감지">🪢 여러 단 → 한 단</button>
+        <span style="font-size:10.5px;color:var(--tl)">2단·3단 표는 이 버튼으로 먼저 한 단으로 만든 뒤 채우세요</span>
+        <span style="flex:1"></span>
         <button class="ed-mini" onclick="$I('tb-paste-panel').style.display='none'">닫기</button>
         <button class="ed-mini" style="background:var(--gd);color:#fff;border-color:var(--gd);font-weight:800;padding:7px 18px" onclick="tbPasteApply()">✨ 채우기</button>
       </div>
@@ -1729,12 +1732,12 @@ window.tbPasteApply = function(){
   if(!grid.length){ toast('머리 줄을 빼고 나니 내용이 없어요.','err'); return; }
   const mergeEmpty = $I('tb-paste-merge')?.checked;
   const t = $I('tb-tbl');
-  // 열이 모자라면 자동으로 늘린다
+  // 열 수를 붙여넣은 표에 맞춘다 — 모자라면 늘리고, «지우고 새로»면 남는 열도 정리
   let n = tbColCount();
   const maxC = Math.max(...grid.map(r=>r.length));
   while(n < maxC){ tbAddCol(); n = tbColCount(); }
-  // 기존 줄 정리
   if($I('tb-paste-replace')?.checked){
+    while(n > Math.max(1, maxC)){ tbDelCol(); n = tbColCount(); }
     [...t.querySelectorAll('tr[data-kind]')].forEach(tr=>tr.remove());
   }
   const existing = t.querySelectorAll('tr[data-kind]').length;
@@ -1822,6 +1825,44 @@ function tbOcrToGrid(words, nCols){
 }
 /* ══ 🤖 AI 표 읽기 (Google Gemini) — 무료 등급으로 충분, 정확도 높음
    키 보관: Firestore config/aiKeys.gemini (교직원만 읽기 · 수퍼만 등록) — 코드에 키를 넣지 않는다 */
+/* ══ 🪢 여러 단 표 → 한 단 — 머리글 반복 주기를 찾아 왼단부터 세로로 이어붙인다 ══ */
+window.tbUnstack = function(){
+  const ta = $I('tb-paste-ta');
+  const raw = (ta?.value||'').replace(/\r/g,'');
+  const lines = raw.split('\n').filter(l=>l.trim()!=='');
+  if(!lines.length){ toast('먼저 표를 붙여넣어 주세요.','err'); return; }
+  const grid = lines.map(l=>l.split('\t'));
+  const width = Math.max(...grid.map(r=>r.length));
+  const norm = s => String(s||'').replace(/\s+/g,'');
+  // 머리글 반복 주기 자동 감지 (예: 주차·날짜·교재명·출판사 가 두 번 → 4)
+  const head = grid[0].map(norm);
+  let period = 0;
+  for(let pd=2; pd<=Math.floor(width/2); pd++){
+    if(width % pd !== 0) continue;
+    let ok = true;
+    for(let i=pd;i<width;i++){ if(head[i] && head[i]!==head[i%pd]){ ok=false; break; } }
+    if(ok && head.slice(0,pd).some(Boolean)){ period = pd; break; }
+  }
+  if(!period){
+    const v = prompt('머리글 반복을 찾지 못했어요.\n한 단의 열 수를 직접 알려주세요 (예: 4)');
+    period = parseInt(v,10)||0;
+    if(!period || period>=width || width%period!==0){ toast('열 수가 맞지 않아요 — 전체 '+width+'열을 똑같이 나눌 수 있는 수여야 해요.','err'); return; }
+  }
+  const blocks = width/period;
+  const hasHead = $I('tb-paste-head')?.checked;
+  const body = hasHead ? grid.slice(1) : grid;
+  const out = [];
+  if(hasHead) out.push(grid[0].slice(0,period));
+  for(let b=0;b<blocks;b++){
+    for(const r of body){
+      const seg = [...Array(period)].map((_,i)=>(r[b*period+i]||'').trim());
+      if(seg.some(v=>v!=='')) out.push(seg);   // 오른단의 빈 꼬리 줄은 버린다
+    }
+  }
+  ta.value = out.map(r=>r.join('\t')).join('\n');
+  toast(`🪢 ${blocks}단 → 한 단 (${period}열)로 합쳤어요 — 확인 후 «채우기»!`,'ok');
+};
+
 let __aiKey = null;
 async function tbAiKey(){
   if(__aiKey !== null) return __aiKey;
