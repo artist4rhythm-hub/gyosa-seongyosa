@@ -995,6 +995,8 @@ window.openDoc = async function(id){
   const d = DOCS.find(x=>x.id===id);
   if(!d) return;
   CUR = { ...d, blocks: parseBlocks(d) };
+  try { const t = JSON.parse(d.trashJson||'[]'); CUR.trash = Array.isArray(t) ? t : []; }
+  catch(e){ CUR.trash = []; }
   renderEdit();
 };
 window.backToList = async function(){
@@ -1060,7 +1062,9 @@ function renderEdit(){
     </div>
     ${blocksHtml}
     ${editable?`<div style="text-align:center;padding:4px 0 12px">
-      <button class="btn" onclick="openLibrary()">＋ 블록 추가</button></div>`:''}
+      <button class="btn" onclick="openLibrary()">＋ 블록 추가</button>
+      <button class="btn" style="background:var(--wh);color:var(--gd);border:1.5px solid var(--gl)" onclick="openClips()">📦 내 블록 저장소</button>
+      ${(CUR.trash&&CUR.trash.length)?`<button class="btn" style="background:var(--wh);color:#8A6410;border:1.5px solid #EAD9A8" onclick="openBlockTrash()">🗑 블록 휴지통 <b>${CUR.trash.length}</b></button>`:''}</div>`:''}
   `;
 }
 window.setDocEdit = function(on){ DOC_EDIT = !!on; renderEdit(); };
@@ -1085,6 +1089,7 @@ function blockCard(b, i, editable){
         <button class="iconbtn" onclick="moveBlock(${i},-1)" ${i===0?'disabled':''}>↑</button>
         <button class="iconbtn" onclick="moveBlock(${i},1)" ${i===CUR.blocks.length-1?'disabled':''}>↓</button>
         <button class="iconbtn" onclick="editBlock(${i})">✏️ 입력</button>
+        <button class="iconbtn" onclick="clipSave(${i})" title="내 블록 저장소에 담아 다른 통신문에서 재사용">📥 담기</button>
         <button class="iconbtn danger" onclick="delBlock(${i})">🗑</button>`:''}
     </div>
     <div class="blkbody">${renderBlock(b) || '<div class="empty">아직 입력된 내용이 없어요 — ✏️ 입력을 눌러 채워주세요.</div>'}</div>
@@ -1106,10 +1111,55 @@ window.moveBlock = async function(i, dir){
 };
 window.delBlock = async function(i){
   if(!canEdit(CUR)) return;
-  if(!confirm(`「${CUR.blocks[i].title}」 블록을 지울까요?`)) return;
-  CUR.blocks.splice(i,1);
+  if(!confirm(`「${CUR.blocks[i].title}」 블록을 휴지통으로 옮길까요?\n(🗑 블록 휴지통에서 언제든 복원할 수 있어요)`)) return;
+  const b = CUR.blocks.splice(i,1)[0];
+  CUR.trash = CUR.trash || [];
+  CUR.trash.unshift({ ...b, _delAt: Date.now(), _delBy: CU.name||'' });
+  if(CUR.trash.length > 30) CUR.trash.length = 30;   // 오래된 것부터 자연 정리
   await persistBlocks();
   renderEdit();
+  toast('🗑 휴지통으로 옮겼어요 — 아래 «블록 휴지통»에서 복원할 수 있어요.','ok');
+};
+
+/* ══ 🗑 블록 휴지통 — 실수로 지운 블록을 되살린다 ══ */
+window.openBlockTrash = function(){
+  const mw = $I('modal-mount'); if(!mw) return;
+  const list = CUR.trash || [];
+  const fmt = t => { const d=new Date(t); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+  mw.innerHTML = `<div class="mbk" onclick="if(event.target===this)closeModal()"><div class="mbox" style="max-width:540px">
+    <h3 style="margin:0 0 4px">🗑 블록 휴지통 <span style="font-size:12px;color:var(--tl);font-weight:600">${list.length}개 · 이 통신문 전용</span></h3>
+    <p class="msub" style="margin:0 0 10px">복원하면 통신문 맨 아래에 되살아나요. 최근 30개까지 보관됩니다.</p>
+    <div style="max-height:52vh;overflow:auto">
+    ${list.length ? list.map((b,i)=>{
+      const icon = (PRESETS.flatMap(g=>g.items).find(x=>x.key===b.key)||{}).icon || '📄';
+      return `<div style="display:flex;align-items:center;gap:10px;border:1px solid var(--ivd);border-radius:11px;padding:10px 12px;margin-bottom:8px">
+        <span style="font-size:18px">${icon}</span>
+        <span style="flex:1;min-width:0">
+          <b style="font-size:13.5px">${esc(b.title||'')}</b>
+          <div style="font-size:10.5px;color:var(--tl)">${esc(b._delBy||'')}이(가) ${b._delAt?fmt(b._delAt):''}에 삭제</div>
+        </span>
+        <button class="iconbtn" onclick="restoreBlock(${i})" title="통신문 맨 아래로 복원">↩ 복원</button>
+        <button class="iconbtn danger" onclick="purgeBlock(${i})" title="영구 삭제">✕</button>
+      </div>`;
+    }).join('') : '<div class="empty" style="padding:24px 0">휴지통이 비어 있어요.</div>'}
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn sub" onclick="closeModal()">닫기</button></div>
+  </div></div>`;
+};
+window.restoreBlock = async function(i){
+  const b = (CUR.trash||[]).splice(i,1)[0]; if(!b) return;
+  delete b._delAt; delete b._delBy;
+  CUR.blocks.push(b);
+  await persistBlocks();
+  renderEdit();
+  openBlockTrash();
+  toast('↩ 복원했어요 — 통신문 맨 아래에 있어요.','ok');
+};
+window.purgeBlock = async function(i){
+  if(!confirm('이 블록을 영구 삭제할까요? 되돌릴 수 없어요.')) return;
+  (CUR.trash||[]).splice(i,1);
+  await persistBlocks();
+  openBlockTrash();
 };
 
 async function persist(extra){
@@ -1121,7 +1171,7 @@ async function persist(extra){
 }
 async function persistBlocks(){
   try {
-    await persist({ blocksJson: JSON.stringify(CUR.blocks) });
+    await persist({ blocksJson: JSON.stringify(CUR.blocks), trashJson: JSON.stringify(CUR.trash||[]) });
   } catch(e){ toast('저장 실패: '+e.message,'err'); }
 }
 
@@ -1152,6 +1202,87 @@ window.addBlock = async function(key){
   closeModal();
   renderEdit();
   editBlock(CUR.blocks.length-1);
+};
+
+/* ══════════ 📦 내 블록 저장소 — 블록을 담아뒀다 다른 통신문에 붙여넣기 ══════════
+   보관: blockClips 컬렉션 {uid, name, fromTitle, block(JSON), createdAt} — 선생님마다 자기 것만 */
+let CLIPS = null;
+async function loadClips(){
+  const snap = await getDocs(query(collection(db,'blockClips'), where('uid','==',CU.uid)));
+  CLIPS = [];
+  snap.forEach(d=>CLIPS.push({ id:d.id, ...d.data() }));
+  CLIPS.sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+}
+window.clipSave = async function(i){
+  const b = CUR.blocks[i]; if(!b) return;
+  const name = prompt('저장소에 담을 이름을 정해주세요:', b.title || '블록');
+  if(name===null) return;
+  try {
+    await addDoc(collection(db,'blockClips'), {
+      uid: CU.uid, byName: CU.name||'',
+      name: (name||b.title||'블록').trim().slice(0,60),
+      fromTitle: CUR.title||'', 
+      block: JSON.stringify(b),
+      createdAt: Timestamp.now()
+    });
+    CLIPS = null;
+    toast('📦 저장소에 담았어요 — 다른 통신문에서 «내 블록 저장소»로 꺼내 쓰세요!','ok');
+  } catch(e){ toast('담기 실패: '+(e.message||''),'err'); }
+};
+window.openClips = async function(){
+  const mw = $I('modal-mount'); if(!mw) return;
+  mw.innerHTML = `<div class="mbk" onclick="if(event.target===this)closeModal()"><div class="mbox" style="max-width:560px">
+    <h3 style="margin:0 0 4px">📦 내 블록 저장소</h3>
+    <p class="msub" style="margin:0 0 10px">담아둔 블록을 골라(<b>여러 개 가능</b>) 이 통신문에 붙여넣어요 — 내용은 복사되니 붙인 뒤 자유롭게 고쳐도 원본엔 영향 없어요.</p>
+    <div id="clip-list" style="max-height:52vh;overflow:auto"><div class="empty" style="padding:24px 0">불러오는 중…</div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      <button class="btn sub" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="clipPaste()">📋 선택한 블록 붙여넣기</button>
+    </div>
+  </div></div>`;
+  if(!CLIPS) await loadClips();
+  renderClipList();
+};
+function renderClipList(){
+  const box=$I('clip-list'); if(!box) return;
+  const fmt = ts => { if(!ts?.seconds) return ''; const d=new Date(ts.seconds*1000); return `${d.getMonth()+1}/${d.getDate()}`; };
+  box.innerHTML = CLIPS.length ? CLIPS.map(c=>{
+    let icon='📄'; try{ const b=JSON.parse(c.block); icon=(PRESETS.flatMap(g=>g.items).find(x=>x.key===b.key)||{}).icon||'📄'; }catch(e){}
+    return `<label style="display:flex;align-items:center;gap:10px;border:1px solid var(--ivd);border-radius:11px;padding:10px 12px;margin-bottom:8px;cursor:pointer">
+      <input type="checkbox" class="clip-ck" value="${c.id}" style="width:16px;height:16px">
+      <span style="font-size:18px">${icon}</span>
+      <span style="flex:1;min-width:0">
+        <b style="font-size:13.5px">${esc(c.name||'')}</b>
+        <div style="font-size:10.5px;color:var(--tl)">${c.fromTitle?esc(c.fromTitle)+' 에서 · ':''}${fmt(c.createdAt)} 담음</div>
+      </span>
+      <button class="iconbtn danger" onclick="event.preventDefault();event.stopPropagation();clipDel('${c.id}')" title="저장소에서 삭제">🗑</button>
+    </label>`;
+  }).join('') : `<div class="empty" style="padding:24px 0;line-height:1.8">저장소가 비어 있어요.<br>블록 머리의 <b>📥 담기</b>를 누르면 여기에 쌓입니다.</div>`;
+}
+window.clipDel = async function(id){
+  if(!confirm('저장소에서 이 블록을 지울까요? (이미 붙여넣은 통신문에는 영향 없어요)')) return;
+  try { await deleteDoc(doc(db,'blockClips',id)); CLIPS = CLIPS.filter(c=>c.id!==id); renderClipList(); }
+  catch(e){ toast('삭제 실패: '+(e.message||''),'err'); }
+};
+window.clipPaste = async function(){
+  const ids = [...document.querySelectorAll('.clip-ck:checked')].map(x=>x.value);
+  if(!ids.length){ toast('붙여넣을 블록을 골라주세요.','err'); return; }
+  if(!canEdit(CUR)){ toast('이 통신문을 수정할 권한이 없어요.','err'); return; }
+  let ok=0;
+  for(const id of ids){
+    const c = CLIPS.find(x=>x.id===id); if(!c) continue;
+    try {
+      const b = JSON.parse(c.block);
+      b.id = rid(8);                       // 새 블록으로 (원본과 완전 분리)
+      CUR.blocks.push(b); ok++;
+    } catch(e){}
+  }
+  if(ok){
+    await persistBlocks();
+    closeModal();
+    renderEdit();
+    toast(`📋 ${ok}개 블록을 붙여넣었어요 — ✏️ 입력에서 필요한 부분만 고치면 끝!`,'ok');
+  }
 };
 
 /* ═══════════════════════════════════════════
