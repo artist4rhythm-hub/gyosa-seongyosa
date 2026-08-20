@@ -2564,6 +2564,7 @@ function viewExpense(id){
       ${clsHTML}
       <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 8px">🧾 영수증 ${e.receiptCount?`(${e.receiptCount}장)`:''}</div>
       <div id="rc-list" style="display:flex;gap:8px;flex-wrap:wrap"><span style="font-size:13px;color:var(--tl)">불러오는 중…</span></div>
+      ${talkSectionHTML(e)}
       <div class="mact">
         <button class="bs" onclick="document.getElementById('exview-mod').remove()">닫기</button>
       </div>
@@ -2572,6 +2573,70 @@ function viewExpense(id){
   loadReceipts(e.id);
 }
 window.viewExpense = viewExpense;
+
+/* ══ 💬 문의·대화 + 📝 담당자 메모 (결재 전 소통) ══ */
+function talkSectionHTML(e){
+  const mgr = isExpManager(e.org);
+  const mine = e.createdByUid === CU?.uid;
+  if(!mgr && !mine) return '';
+  const talks = Array.isArray(e.talks) ? e.talks : [];
+  const fmtT = ts => { if(!ts?.seconds) return ''; const d=new Date(ts.seconds*1000);
+    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+  const bubbles = talks.map(t=>`
+    <div style="display:flex;${t.byUid===CU.uid?'justify-content:flex-end':''};margin-bottom:6px">
+      <div style="max-width:78%;background:${t.mgr?'var(--gp)':'#F3F1EA'};border:1px solid var(--ivd);border-radius:11px;padding:7px 11px">
+        <div style="font-size:10.5px;color:var(--tl);margin-bottom:2px">${esc(t.byName||'')}${t.mgr?' <b style="color:var(--gm)">담당</b>':''} · ${fmtT(t.at)}</div>
+        <div style="font-size:12.5px;white-space:pre-wrap">${esc(t.text||'')}</div>
+      </div>
+    </div>`).join('');
+  return `
+    <div style="font-size:14px;font-weight:800;color:var(--gd);margin:16px 0 6px">💬 문의·대화 ${talks.length?`<span style="font-size:11px;color:var(--tl);font-weight:400">(${talks.length})</span>`:''}</div>
+    <p style="font-size:11.5px;color:var(--tl);margin:0 0 8px">대화는 이 신청 건에 기록으로 남고, 상대에게 쪽지로도 알려드려요.</p>
+    <div>${bubbles || '<div style="font-size:12px;color:var(--tl);padding:4px 0 8px">아직 대화가 없어요 — 궁금한 점을 남겨보세요.</div>'}</div>
+    <div style="display:flex;gap:7px;margin-top:6px">
+      <input type="text" id="tk-in-${e.id}" placeholder="${mgr?'신청자에게 질문·요청 남기기…':'담당자에게 문의 남기기…'}" maxlength="500"
+        style="flex:1;border:1.5px solid var(--ivd);border-radius:9px;padding:9px 11px;font-size:12.5px;font-family:inherit"
+        onkeydown="if(event.key==='Enter')tkSendExp('${e.id}')">
+      <button class="bp" style="padding:8px 16px" onclick="tkSendExp('${e.id}')">보내기</button>
+    </div>
+    ${mgr?`
+    <div style="font-size:14px;font-weight:800;color:var(--gd);margin:14px 0 6px">📝 담당자 메모 <span style="font-size:11px;color:var(--tl);font-weight:400">— 담당자끼리만 보여요 (항목별은 «1번: …»처럼 번호로)</span></div>
+    <textarea id="tk-memo-${e.id}" maxlength="2000" placeholder="예)&#10;1번 항목: 영수증 재확인 필요&#10;학교 청구분 3개는 4월분에 합산"
+      style="width:100%;min-height:70px;border:1.5px solid var(--ivd);border-radius:9px;padding:9px 11px;font-size:12.5px;font-family:inherit;resize:vertical">${esc(e.mgrMemo||'')}</textarea>
+    <div style="text-align:right;margin-top:6px"><button class="bm" onclick="tkSaveMemoExp('${e.id}')">메모 저장</button></div>`:''}`;
+}
+window.tkSendExp = async function(id){
+  const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+  const inp = document.getElementById('tk-in-'+id); const text = (inp?.value||'').trim();
+  if(!text){ toast('내용을 적어주세요.','err'); return; }
+  const mgr = isExpManager(e.org);
+  const item = { byUid:CU.uid, byName:CU.name||'', mgr, text, at:Timestamp.now() };
+  const talks = [...(Array.isArray(e.talks)?e.talks:[]), item];
+  try {
+    await updateDoc(doc(db,'expenses',id), { talks });
+    e.talks = talks;
+    // 상대에게 쪽지 알림 — 담당자가 보내면 신청자에게, 신청자가 보내면 담당자들에게
+    const toUids = mgr ? [e.createdByUid].filter(Boolean) : expManagerUids(e.org);
+    if(toUids.length) await sendMsg(toUids, `[문의] 수행성 경비 — ${e.subject||''}`,
+      `${text}
+
+· 신청 건: ${e.subject||''} (${e.date||''})
+· 수행성 경비 화면에서 이 건을 열면 대화가 보여요.`, 'expense');
+    document.getElementById('exview-mod')?.remove();
+    viewExpense(id);
+    toast('보냈습니다 ✉️','ok');
+  } catch(err){ toast('실패: '+(err.message||''),'err'); }
+};
+window.tkSaveMemoExp = async function(id){
+  const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+  if(!isExpManager(e.org)){ toast('담당자만 메모할 수 있어요.','err'); return; }
+  const memo = (document.getElementById('tk-memo-'+id)?.value||'').trim();
+  try {
+    await updateDoc(doc(db,'expenses',id), { mgrMemo: memo, mgrMemoBy: CU.name||'', mgrMemoAt: Timestamp.now() });
+    e.mgrMemo = memo;
+    toast('메모 저장 ✓','ok');
+  } catch(err){ toast('실패: '+(err.message||''),'err'); }
+};
 
 // 영수증 불러오기 (상세보기)
 async function loadReceipts(expenseId){
