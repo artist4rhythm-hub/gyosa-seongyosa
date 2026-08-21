@@ -78,10 +78,10 @@
 .rv-kv tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rv-tb{width:100%;border-collapse:collapse;font-size:12px}
 /* 줄무늬 음영 — 짝수 줄에 옅은 초록빛을 깔아 시선이 줄을 따라가게 한다 (인쇄에도 유지) */
-.rv-tb tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-/* 병합 표는 줄이 아니라 «묶음» 단위로 음영 — band가 있으면 줄무늬보다 우선 */
-.rv-tb tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.rv-tb tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rv-tb.st-zebra tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* 묶음 음영(st-band) — 병합 묶음이 바뀔 때마다 번갈아 */
+.rv-tb.st-band tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rv-tb.st-band tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 /* 🧲 칸 이동 모드 */
 #tb-tbl.tb-move td.tb-cell{cursor:cell}
 #tb-tbl.tb-move td.tb-cell input{pointer-events:none}
@@ -651,6 +651,10 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 <div id="printArea"></div>
 <div class="toast" id="toast"></div>
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+<style>body{font-family:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif}</style>
 <script src="loading.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
@@ -1042,13 +1046,17 @@ function renderEdit(){
         ${!DOC_EDIT ? `
           ${mayEdit?`<button class="btn sm" onclick="setDocEdit(true)">✏️ 수정하기</button>`:''}
           ${canOwn(CUR)?`<button class="btn line sm" onclick="openPublishModal()">🔗 발행</button>`:''}
+          <button class="btn gray sm" onclick="openPreview()">👁 미리보기</button>
           <button class="btn gray sm" onclick="openPrintModal()">🖨 인쇄</button>
+          <button class="btn gray sm" onclick="dupDoc()" title="이 통신문을 통째로 복사해 새 통신문으로">📄 복제</button>
           ${pub&&CUR.shareId?`<button class="btn gray sm" onclick="copyLink()">📎 공유 링크 복사</button>`:''}
         ` : `
           <button class="btn sm" onclick="setDocEdit(false)">👁 보기로 돌아가기</button>
           ${canOwn(CUR)?`<button class="btn line sm" onclick="openMgrModal()">👥 담당자</button>`:''}
           ${canOwn(CUR)?`<button class="btn line sm" onclick="openPublishModal()">🔗 발행</button>`:''}
+          <button class="btn gray sm" onclick="openPreview()">👁 미리보기</button>
           <button class="btn gray sm" onclick="openPrintModal()">🖨 인쇄</button>
+          <button class="btn gray sm" onclick="dupDoc()" title="이 통신문을 통째로 복사해 새 통신문으로">📄 복제</button>
           ${canOwn(CUR)?`<button class="btn gray sm" onclick="openRevisions()">🕰 이전 판</button>`:''}
           ${canFamAdmin()?`<button class="btn gray sm" onclick="dupDoc()">⧉ 복제</button>`:''}
           ${canOwn(CUR)?`<button class="btn red sm" onclick="delDoc()">🗑 삭제</button>`:''}
@@ -1229,17 +1237,37 @@ window.clipSave = async function(i){
     toast('📦 저장소에 담았어요 — 다른 통신문에서 «내 블록 저장소»로 꺼내 쓰세요!','ok');
   } catch(e){ toast('담기 실패: '+(e.message||''),'err'); }
 };
+/* 우측 도크 — 화면 옆에 붙여두고 보면서 바로바로 붙여넣는다 */
 window.openClips = async function(){
-  const mw = $I('modal-mount'); if(!mw) return;
-  mw.innerHTML = `<div class="mbk" onclick="if(event.target===this)closeModal()"><div class="mbox" style="max-width:560px">
-    <h3 style="margin:0 0 4px">📦 내 블록 저장소</h3>
-    <p class="msub" style="margin:0 0 10px">담아둔 블록을 골라(<b>여러 개 가능</b>) 이 통신문에 붙여넣어요 — 내용은 복사되니 붙인 뒤 자유롭게 고쳐도 원본엔 영향 없어요.</p>
-    <div id="clip-list" style="max-height:52vh;overflow:auto"><div class="empty" style="padding:24px 0">불러오는 중…</div></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-      <button class="btn sub" onclick="closeModal()">닫기</button>
-      <button class="btn" onclick="clipPaste()">📋 선택한 블록 붙여넣기</button>
-    </div>
-  </div></div>`;
+  let dk = $I('clip-dock');
+  if(dk){ dk.remove(); return; }   // 토글
+  dk = document.createElement('div');
+  dk.id = 'clip-dock';
+  dk.innerHTML = `<div class="cd-head">📦 내 블록 저장소
+      <button class="cd-x" onclick="$I('clip-dock').remove()">✕</button></div>
+    <p class="cd-sub">＋를 누르면 이 통신문 맨 아래에 붙어요 — 복사라서 원본은 안전!</p>
+    <div id="clip-list"><div class="empty" style="padding:20px 0;font-size:12px">불러오는 중…</div></div>`;
+  document.body.appendChild(dk);
+  if(!$I('clip-dock-css')){
+    const st=document.createElement('style'); st.id='clip-dock-css';
+    st.textContent = `
+      #clip-dock{position:fixed;top:70px;right:14px;bottom:14px;width:264px;z-index:300;
+        background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:15px;
+        box-shadow:-6px 8px 28px rgba(0,0,0,.14);display:flex;flex-direction:column;overflow:hidden}
+      #clip-dock .cd-head{font-size:13.5px;font-weight:900;color:var(--gd);padding:12px 14px 6px;display:flex;align-items:center}
+      #clip-dock .cd-x{margin-left:auto;border:none;background:none;cursor:pointer;font-size:13px;color:var(--tl)}
+      #clip-dock .cd-sub{font-size:10.5px;color:var(--tl);margin:0;padding:0 14px 8px;line-height:1.5}
+      #clip-dock #clip-list{flex:1;overflow:auto;padding:0 10px 12px}
+      .cd-item{border:1px solid var(--ivd);border-radius:11px;padding:9px 10px;margin-bottom:7px}
+      .cd-item .ci-t{display:flex;align-items:center;gap:7px}
+      .cd-item b{font-size:12.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .cd-item .ci-m{font-size:9.5px;color:var(--tl);margin:2px 0 6px}
+      .cd-item .ci-b{display:flex;gap:6px}
+      .cd-put{flex:1;border:none;background:var(--gd);color:#fff;border-radius:8px;padding:6px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit}
+      .cd-del{border:1px solid #F2C5BE;background:#FDECEA;color:#C0392B;border-radius:8px;padding:6px 9px;font-size:11px;cursor:pointer;font-family:inherit}
+      @media (max-width:900px){ #clip-dock{width:230px} }`;
+    document.head.appendChild(st);
+  }
   if(!CLIPS) await loadClips();
   renderClipList();
 };
@@ -1248,17 +1276,29 @@ function renderClipList(){
   const fmt = ts => { if(!ts?.seconds) return ''; const d=new Date(ts.seconds*1000); return `${d.getMonth()+1}/${d.getDate()}`; };
   box.innerHTML = CLIPS.length ? CLIPS.map(c=>{
     let icon='📄'; try{ const b=JSON.parse(c.block); icon=(PRESETS.flatMap(g=>g.items).find(x=>x.key===b.key)||{}).icon||'📄'; }catch(e){}
-    return `<label style="display:flex;align-items:center;gap:10px;border:1px solid var(--ivd);border-radius:11px;padding:10px 12px;margin-bottom:8px;cursor:pointer">
-      <input type="checkbox" class="clip-ck" value="${c.id}" style="width:16px;height:16px">
-      <span style="font-size:18px">${icon}</span>
-      <span style="flex:1;min-width:0">
-        <b style="font-size:13.5px">${esc(c.name||'')}</b>
-        <div style="font-size:10.5px;color:var(--tl)">${c.fromTitle?esc(c.fromTitle)+' 에서 · ':''}${fmt(c.createdAt)} 담음</div>
-      </span>
-      <button class="iconbtn danger" onclick="event.preventDefault();event.stopPropagation();clipDel('${c.id}')" title="저장소에서 삭제">🗑</button>
-    </label>`;
-  }).join('') : `<div class="empty" style="padding:24px 0;line-height:1.8">저장소가 비어 있어요.<br>블록 머리의 <b>📥 담기</b>를 누르면 여기에 쌓입니다.</div>`;
+    return `<div class="cd-item">
+      <div class="ci-t"><span style="font-size:16px">${icon}</span><b>${esc(c.name||'')}</b></div>
+      <div class="ci-m">${c.fromTitle?esc(c.fromTitle)+' · ':''}${fmt(c.createdAt)}</div>
+      <div class="ci-b">
+        <button class="cd-put" onclick="clipPut('${c.id}')">＋ 붙여넣기</button>
+        <button class="cd-del" onclick="clipDel('${c.id}')" title="저장소에서 삭제">🗑</button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty" style="padding:20px 6px;line-height:1.8;font-size:12px">저장소가 비어 있어요.<br>블록 머리의 <b>📥 담기</b>를 누르면 여기에 쌓입니다.</div>`;
 }
+/* 한 개 바로 붙이기 — 도크는 열린 채 유지되어 연달아 작업 */
+window.clipPut = async function(id){
+  const c = CLIPS.find(x=>x.id===id); if(!c) return;
+  if(!canEdit(CUR)){ toast('이 통신문을 수정할 권한이 없어요.','err'); return; }
+  try {
+    const b = JSON.parse(c.block);
+    b.id = rid(8);
+    CUR.blocks.push(b);
+    await persistBlocks();
+    renderEdit();
+    toast(`📋 「${c.name||''}」 붙여넣기 완료 — 맨 아래에 있어요!`,'ok');
+  } catch(e){ toast('붙여넣기 실패','err'); }
+};
 window.clipDel = async function(id){
   if(!confirm('저장소에서 이 블록을 지울까요? (이미 붙여넣은 통신문에는 영향 없어요)')) return;
   try { await deleteDoc(doc(db,'blockClips',id)); CLIPS = CLIPS.filter(c=>c.id!==id); renderClipList(); }
@@ -1449,10 +1489,10 @@ function renderBlock(b){
     const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
     // 명단표의 학년·인원 칸은 줄바꿈 없이 한 줄로 (화면·인쇄 공통)
     const nw = new Set(isRoster ? [0, cntIdx].filter(i=>i>=0) : []);
-    // 🎨 병합 묶음 밴딩 — 병합이 있는 표는 «묶음»이 바뀔 때마다 음영을 번갈아 (시인성)
-    //    기준 열 = 병합(⤴)이 가장 많은 열: 그 열에 새 값이 나오면 새 묶음이 시작된다
+    // 🎨 표 무늬 3종 — band(묶음 음영) · zebra(줄무늬) · plain(무늬 없음)
+    const tst = d.tstyle || (hasMG ? 'band' : 'zebra');
     const mgCnt = cols.map((_,ci)=>rows.reduce((a,r)=>a+(((r.c||[])[ci]===MG)?1:0),0));
-    const bandCol = hasMG ? mgCnt.indexOf(Math.max(...mgCnt)) : -1;
+    const bandCol = (tst==='band' && hasMG) ? mgCnt.indexOf(Math.max(...mgCnt)) : -1;
     let __gi = -1;
     const body=rows.map((r,ri)=>{
       if(bandCol>=0 && (r.c||[])[bandCol]!==MG) __gi++;
@@ -1493,7 +1533,7 @@ function renderBlock(b){
     }
     const hint = (!malt && cols.length>=5) ? `<div class="m-hint">↔ 표가 넓어요 — 옆으로 밀어 보세요</div>` : '';
     return `<div class="tbwrap${malt?' has-malt':''}">
-      <div class="rv-tbwrap" style="overflow-x:auto"><table class="rv-tb">
+      <div class="rv-tbwrap" style="overflow-x:auto"><table class="rv-tb st-${tst}">
       <tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
       ${body}
     </table></div>${hint}${malt}</div>
@@ -1854,6 +1894,13 @@ function edTable(b){
         <button class="ed-mini" style="background:var(--gd);color:#fff;border-color:var(--gd);font-weight:800;padding:7px 18px" onclick="tbPasteApply()">✨ 채우기</button>
       </div>
     </div>
+    <div class="frow" style="margin-top:10px"><label class="flab">🎨 표 무늬</label>
+      <select class="fsel" id="tb-style">
+        <option value="" ${!d.tstyle?'selected':''}>자동 (병합 있으면 묶음 음영 · 없으면 줄무늬)</option>
+        <option value="band" ${d.tstyle==='band'?'selected':''}>묶음 음영 — 병합 묶음마다 번갈아</option>
+        <option value="zebra" ${d.tstyle==='zebra'?'selected':''}>줄무늬 — 한 줄씩 번갈아</option>
+        <option value="plain" ${d.tstyle==='plain'?'selected':''}>무늬 없음 — 선만 깔끔하게</option>
+      </select></div>
     <div class="frow" style="margin-top:10px"><label class="flab">덧붙임 (선택)</label>
       <input class="fin" id="tb-note" value="${esc(d.note||'')}"></div>`;
 }
@@ -3978,7 +4025,7 @@ function readBlockData(b){
         c:[...tr.querySelectorAll('td.tb-cell')].map(td=>
           td.classList.contains('tb-merged') ? TB_MERGE : (td.querySelector('input')?.value||''))
       })).filter(r=>r.c.some(x=>x.trim()));
-      return { cols, rows, note:$I('tb-note').value.trim() };
+      return { cols, rows, note:$I('tb-note').value.trim(), tstyle: ($I('tb-style')?.value||'') };
     }
     if(b.type === 'budget'){ return $I('bg-people') ? readBudget() : null; }
     if(b.type === 'schedule'){ return (SV && $I('sv-cols')) ? readSchedule() : null; }
@@ -4182,6 +4229,50 @@ window.copyLink = function(){
 /* ═══════════════════════════════════════════
    인쇄
    ═══════════════════════════════════════════ */
+/* 👁 미리보기 — 발행하면 보이는 모습 그대로, 작성 중에 확인 */
+window.openPreview = function(scope){
+  scope = scope || 'all';
+  const blocks = CUR.blocks.filter(b=>scope==='all' || b.pub);
+  const html = blocks.map(b=>{
+    const body = renderBlock(b); if(!body) return '';
+    return `<div style="position:relative">${b.pub?'':'<span style="position:absolute;top:6px;right:6px;font-size:10px;font-weight:800;color:#8A6410;background:#F7EFD8;border-radius:100px;padding:2px 9px;z-index:2">내부용 — 학부모에겐 안 보여요</span>'}${body}</div>`;
+  }).join('');
+  openModal(`
+    <div class="mtitle" style="display:flex;align-items:center;gap:10px">👁 미리보기
+      <select class="fsel" style="width:auto;font-size:12px" onchange="openPreview(this.value)">
+        <option value="all" ${scope==='all'?'selected':''}>전체 (내부용 포함)</option>
+        <option value="pub" ${scope==='pub'?'selected':''}>학부모에게 보이는 것만</option>
+      </select>
+      <span style="flex:1"></span>
+      <button class="btn gray sm" onclick="closeModal()">닫기</button>
+    </div>
+    <div style="max-height:74vh;overflow:auto;background:var(--iv);border-radius:12px;padding:14px">
+      ${html || '<div class="empty" style="padding:30px 0">보여줄 블록이 없어요.</div>'}
+    </div>`);
+  const box=document.querySelector('.mbox'); if(box) box.style.maxWidth='860px';
+};
+
+/* 📄 통신문 복제 — 블록·설정 통째로 복사해 «작성 중» 새 문서로 */
+window.dupDoc = async function(){
+  if(!CUR) return;
+  if(!confirm(`「${CUR.title||''}」을(를) 복제할까요?\n\n블록이 통째로 복사되고, 새 문서는 «작성 중» 상태로 시작해요.`)) return;
+  try {
+    const src = await getDoc(doc(db,'famDocs',CUR.id));
+    if(!src.exists()){ toast('원본을 찾지 못했어요.','err'); return; }
+    const d = { ...src.data() };
+    delete d.publishedAt;
+    d.title = (d.title||'') + ' (복사본)';
+    d.shareId = ''; d.listed = false;
+    d.trashJson = '[]';
+    d.ownerUid = CU.uid; d.ownerName = CU.name||'';
+    d.createdAt = Timestamp.now(); d.updatedAt = Timestamp.now();
+    const ref = await addDoc(collection(db,'famDocs'), d);
+    toast('📄 복제했어요 — 복사본을 열었습니다.','ok');
+    await loadDocs();
+    openDoc(ref.id);
+  } catch(e){ toast('복제 실패: '+(e.message||''),'err'); }
+};
+
 window.openPrintModal = function(){
   openModal(`
     <div class="mtitle">🖨 인쇄</div>

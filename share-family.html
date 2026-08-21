@@ -2,6 +2,10 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+<style>body{font-family:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif}</style>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>가정통신문</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -75,10 +79,10 @@
 .rv-kv tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rv-tb{width:100%;border-collapse:collapse;font-size:12px}
 /* 줄무늬 음영 — 짝수 줄에 옅은 초록빛을 깔아 시선이 줄을 따라가게 한다 (인쇄에도 유지) */
-.rv-tb tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-/* 병합 표는 줄이 아니라 «묶음» 단위로 음영 — band가 있으면 줄무늬보다 우선 */
-.rv-tb tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.rv-tb tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rv-tb.st-zebra tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* 묶음 음영(st-band) — 병합 묶음이 바뀔 때마다 번갈아 */
+.rv-tb.st-band tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rv-tb.st-band tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rv-tb tr:hover td{background:#EAF2EC}
 .rv-tb th{background:var(--gd);color:#fff;font-weight:800;padding:7px 8px;text-align:left;font-size:11px;white-space:nowrap}
 .rv-tb td{padding:7px 8px;border-bottom:1px solid var(--iv);white-space:pre-wrap;line-height:1.55;vertical-align:top}
@@ -1032,10 +1036,10 @@ function renderBlock(b){
     const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
     // 명단표의 학년·인원 칸은 줄바꿈 없이 한 줄로 (화면·인쇄 공통)
     const nw = new Set(isRoster ? [0, cntIdx].filter(i=>i>=0) : []);
-    // 🎨 병합 묶음 밴딩 — 병합이 있는 표는 «묶음»이 바뀔 때마다 음영을 번갈아 (시인성)
-    //    기준 열 = 병합(⤴)이 가장 많은 열: 그 열에 새 값이 나오면 새 묶음이 시작된다
+    // 🎨 표 무늬 3종 — band(묶음 음영) · zebra(줄무늬) · plain(무늬 없음)
+    const tst = d.tstyle || (hasMG ? 'band' : 'zebra');
     const mgCnt = cols.map((_,ci)=>rows.reduce((a,r)=>a+(((r.c||[])[ci]===MG)?1:0),0));
-    const bandCol = hasMG ? mgCnt.indexOf(Math.max(...mgCnt)) : -1;
+    const bandCol = (tst==='band' && hasMG) ? mgCnt.indexOf(Math.max(...mgCnt)) : -1;
     let __gi = -1;
     const body=rows.map((r,ri)=>{
       if(bandCol>=0 && (r.c||[])[bandCol]!==MG) __gi++;
@@ -1076,7 +1080,7 @@ function renderBlock(b){
     }
     const hint = (!malt && cols.length>=5) ? `<div class="m-hint">↔ 표가 넓어요 — 옆으로 밀어 보세요</div>` : '';
     return `<div class="tbwrap${malt?' has-malt':''}">
-      <div class="rv-tbwrap" style="overflow-x:auto"><table class="rv-tb">
+      <div class="rv-tbwrap" style="overflow-x:auto"><table class="rv-tb st-${tst}">
       <tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
       ${body}
     </table></div>${hint}${malt}</div>
