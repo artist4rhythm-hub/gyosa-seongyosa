@@ -522,6 +522,18 @@ function openCompose(editId){
           </select>
         </div>
       </div>
+      ${(!editing && ['super','org_admin'].includes(CU.role))?`
+      <div class="fgrp" style="background:var(--gp);border:1px solid var(--gl);border-radius:8px;padding:12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0"><input type="checkbox" id="cp-notice" onchange="document.getElementById('cp-notice-scope-wrap').style.display=this.checked?'block':'none'" style="width:16px;height:16px"> 📢 공지사항에도 등록 <span style="font-weight:400;color:var(--ts);font-size:11.5px">· 홈 화면 '최근 공지'에 함께 올라갑니다</span></label>
+        <div id="cp-notice-scope-wrap" style="display:none;margin-top:8px">
+          <span style="font-size:12px;color:var(--ts)">공지 대상:</span>
+          <select id="cp-notice-scope" style="border:1.5px solid var(--ivd);border-radius:6px;padding:6px 10px;font-size:13px;background:var(--wh);margin-left:6px">
+            ${CU.role==='super'?'<option value="all">전체</option>':''}
+            ${myOrgs().map(o=>`<option value="org:${o}">${o==='daniel'?'다니엘 아마츠':'지혜빛 선교원'}</option>`).join('')}
+          </select>
+          <label style="display:inline-flex;align-items:center;gap:5px;margin-left:10px;font-size:12px;cursor:pointer"><input type="checkbox" id="cp-notice-imp" style="width:14px;height:14px"> 중요 표시</label>
+        </div>
+      </div>`:''}
       <div class="mact">
         ${!editing?`<button class="bs" onclick="saveDraft()">💾 임시저장</button>`:''}
         <button class="bs" onclick="closeMod()">취소</button>
@@ -728,6 +740,17 @@ async function submitPost(){
       window.hideLoading && window.hideLoading();
     }
     notifyMentions(`${title} ${content}`, ref.id, title, board);
+    // 📢 공지사항에도 등록 (관리자 옵션)
+    if($I('cp-notice')?.checked && ['super','org_admin'].includes(CU.role)){
+      const sv = $I('cp-notice-scope')?.value || 'all';
+      const nd = { title, body: content || link || '(게시판 글 참고)',
+        important: $I('cp-notice-imp')?.checked || false,
+        author: CU.name, readBy: [], fromBoardPost: ref.id, createdAt: Timestamp.now() };
+      if(sv==='all'){ nd.scope='all'; }
+      else { nd.scope='org'; nd.org = sv.split(':')[1]; }
+      try { await addDoc(collection(db,'notices'), nd); toast('공지사항에도 등록했습니다.','ok'); }
+      catch(e){ toast('공지 등록은 실패했습니다: '+e.message,'err'); }
+    }
     clearDraft();
     toast('게시글을 등록했습니다.','ok');
     closeMod();
