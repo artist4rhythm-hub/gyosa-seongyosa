@@ -84,6 +84,16 @@
 .rv-tb.st-band tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 /* 🧲 칸 이동 모드 */
 #tb-tbl.tb-move td.tb-cell{cursor:cell}
+/* 🔍 칸 크게 편집 */
+#tb-zoom{position:fixed;z-index:500;background:var(--wh,#fff);border:2px solid var(--gm);border-radius:13px;
+  box-shadow:0 12px 34px rgba(0,0,0,.22);padding:11px;width:min(92vw,460px)}
+#tb-zoom textarea{width:100%;min-height:84px;border:1.5px solid var(--ivd);border-radius:9px;
+  padding:9px 11px;font-size:13.5px;font-family:inherit;line-height:1.6;resize:vertical}
+#tb-zoom .zb{display:flex;gap:7px;justify-content:flex-end;margin-top:8px}
+#tb-zoom .zb button{border:none;border-radius:9px;padding:7px 15px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+#tb-zoom .z-ok{background:var(--gd);color:#fff}
+#tb-zoom .z-no{background:var(--iv);color:var(--ts)}
+#tb-zoom .z-cap{font-size:11px;font-weight:800;color:var(--gd);margin-bottom:6px}
 #tb-tbl.tb-move td.tb-cell input{pointer-events:none}
 #tb-tbl td.tb-selcell{outline:2.5px solid var(--gm);outline-offset:-2.5px;background:#DCEFE6!important}
 #tb-movebar{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:99999;background:#1F2320;color:#fff;
@@ -1720,7 +1730,7 @@ window.editBlock = function(i, useDraft){
     bb.type==='budget' ? edBudget(bb) :
     bb.type==='schedule' ? edSchedule(bb) :
     bb.type==='assign' ? edAssign(bb) : '';
-  openModal(`
+  openModalWide(`
     <div class="mtitle">✏️ ${esc(b.title)}
       <input class="fin" id="eb-title" value="${esc(bb.title)}"
         style="display:inline-block;width:auto;min-width:170px;margin-left:8px;padding:6px 9px;font-size:12.5px">
@@ -1854,7 +1864,7 @@ function edTable(b){
     <th style="width:74px"></th></tr>`;
   const body = rows.map(r=>tbRowHTML(r, cols.length)).join('');
   return `
-    <div class="msub">첫 줄이 표 머리(열 이름)입니다. ⠿를 끌면 줄 순서가 바뀌고, ⧉는 줄 복사예요.
+    <div class="msub">첫 줄이 표 머리(열 이름)입니다. <b>긴 글은 칸을 더블클릭</b>하면 큰 창에서 편하게 고칠 수 있어요. ⠿를 끌면 줄 순서가 바뀌고, ⧉는 줄 복사예요.
       칸 안의 <b>⤴</b>를 누르면 그 칸이 <b>«위와 같음(병합)»</b>이 되어 발행 표에서 위 칸과 세로로 합쳐집니다 —
       구분만 병합하고 품목은 나누는 식으로 칸마다 따로 정할 수 있어요.</div>
     <div class="ed-tblwrap"><table class="ed-tbl" id="tb-tbl">${head}${body}</table></div>
@@ -2301,6 +2311,43 @@ window.tbDupRow = function(btn){
     td.classList.contains('tb-merged') ? TB_MERGE : (td.querySelector('input')?.value||''));
   tr.insertAdjacentHTML('afterend', tbRowHTML({c:vals}, vals.length));
 };
+/* ══ 🔍 칸 크게 편집 — 좁은 칸의 긴 글을 더블클릭으로 편하게 ══ */
+let __zoomTarget = null;
+function tbZoomClose(){ $I('tb-zoom')?.remove(); __zoomTarget = null; }
+function tbZoomOpen(input){
+  tbZoomClose();
+  __zoomTarget = input;
+  const z = document.createElement('div');
+  z.id = 'tb-zoom';
+  z.innerHTML = `<div class="z-cap">🔍 칸 크게 편집 <span style="font-weight:500;color:var(--tl)">— Enter 적용 · Esc 취소</span></div>
+    <textarea id="tb-zoom-ta"></textarea>
+    <div class="zb"><button class="z-no" onclick="tbZoomClose()">취소</button>
+      <button class="z-ok" id="tb-zoom-ok">적용</button></div>`;
+  document.body.appendChild(z);
+  // 칸 근처에 띄우되 화면 밖으로 안 나가게
+  const r = input.getBoundingClientRect();
+  const W = Math.min(window.innerWidth*0.92, 460);
+  z.style.left = Math.max(8, Math.min(r.left, window.innerWidth - W - 8)) + 'px';
+  z.style.top  = (r.bottom + 170 > window.innerHeight ? Math.max(8, r.top - 178) : r.bottom + 6) + 'px';
+  const ta = z.querySelector('#tb-zoom-ta');
+  ta.value = input.value;
+  ta.focus(); ta.select();
+  const apply = ()=>{ if(__zoomTarget){ __zoomTarget.value = ta.value.replace(/\n+/g,' ').trim(); __zoomTarget.dispatchEvent(new Event('input',{bubbles:true})); } tbZoomClose(); };
+  z.querySelector('#tb-zoom-ok').onclick = apply;
+  ta.addEventListener('keydown', e=>{
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); apply(); }
+    if(e.key==='Escape'){ e.preventDefault(); tbZoomClose(); }
+  });
+}
+document.addEventListener('dblclick', e=>{
+  if(typeof TB_MODE!=='undefined' && TB_MODE) return;   // 이동 모드에선 끔
+  const inp = e.target.closest('#tb-tbl td.tb-cell input');
+  if(inp) tbZoomOpen(inp);
+});
+document.addEventListener('pointerdown', e=>{
+  if($I('tb-zoom') && !e.target.closest('#tb-zoom')) tbZoomClose();
+});
+
 /* ══ 🧲 칸 이동 모드 — 칸을 드래그로 묶어(직사각형) 잡고, 화살표로 밀거나 다른 자리와 맞바꾼다
    AI로 불러온 표에서 한두 칸 어긋난 것을 마우스만으로 바로잡는 용도 ══ */
 let TB_MODE=false, TB_SEL=null, TB_SELDRAG=false, TB_ARM=false;
@@ -4399,6 +4446,12 @@ window.openModal = function(html, wide, lock){
     <div class="mbox ${cls}">${html}</div></div>`;
 };
 window.closeModal = function(){ $I('modal-mount').innerHTML = ''; };
+/* 블록 편집 전용 — 화면을 넓게 쓰는 큰 모달 */
+window.openModalWide = function(html){
+  openModal(html);
+  const box = document.querySelector('.mbox');
+  if(box){ box.style.maxWidth = 'min(96vw, 1360px)'; box.style.width = '96vw'; }
+};
 /* 2층 모달 — 편집창 위에 겹쳐 뜨는 보조 창 (달력·교사·학생 선택) */
 window.openModal2 = function(html){
   $I('modal-mount2').innerHTML = `<div class="mbk" style="z-index:400" onclick="if(event.target===this)closeModal2()">
