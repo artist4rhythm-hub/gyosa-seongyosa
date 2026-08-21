@@ -1529,6 +1529,27 @@ function renderHome(){
       /* 🌤 날씨 · 📝 메모 — 나란히 두고, 좁아지면 위아래로 */
       .hm-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
         gap:14px;margin-bottom:16px}
+      .hm-tools{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:12px;margin-top:12px}
+      .hm-tool{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px 15px}
+      .hm-tool .tl{font-size:13.5px;font-weight:900;color:var(--gd);display:flex;align-items:center;gap:7px;margin-bottom:9px}
+      .hm-tool .tl small{font-weight:600;color:var(--tl);font-size:10px;margin-left:auto}
+      .tk-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line)}
+      .tk-row:last-of-type{border-bottom:none}
+      .tk-row.done span.tx{text-decoration:line-through;color:var(--tl)}
+      .tk-row .tx{flex:1;font-size:12.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .tk-x{border:none;background:none;color:var(--tl);cursor:pointer;font-size:11px;padding:2px 4px}
+      .tk-x:hover{color:var(--danger,#C0392B)}
+      .tk-add{display:flex;gap:6px;margin-top:8px}
+      .tk-add input{flex:1;border:1.5px solid var(--line);border-radius:9px;padding:7px 10px;font-size:12px;font-family:inherit;background:var(--wh);color:var(--tx);min-width:0}
+      .tk-add button{border:none;background:var(--gd);color:#fff;border-radius:9px;padding:0 13px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+      .dd-num{font-size:12px;font-weight:900;color:var(--gm);white-space:nowrap}
+      .dd-num.today{color:#C0392B}
+      .fv-a{flex:1;font-size:12.5px;color:var(--gd);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .fv-a:hover{text-decoration:underline}
+      .fv-recs{margin-top:9px;border-top:1px dashed var(--line);padding-top:8px}
+      .fv-recs summary{font-size:11px;color:var(--tl);cursor:pointer;font-weight:700}
+      .fv-rec{display:flex;align-items:center;gap:7px;padding:4px 0;font-size:12px}
+      .fv-rec button{border:1px solid var(--gl);background:var(--gp);color:var(--gd);border-radius:100px;padding:2px 9px;font-size:10.5px;font-weight:800;cursor:pointer;font-family:inherit}
       .hm-lay-memo{grid-template-columns:2fr 3fr!important}
       .hm-lay-one{grid-template-columns:1fr!important}
       .hm-laybtn{border:1px solid var(--line);background:var(--panel);color:var(--tl);border-radius:100px;
@@ -1649,6 +1670,12 @@ function renderHome(){
         ${widgetOn('memo') ? `<div class="hm-memo" id="hm-memo"></div>` : ''}
       </div>` : ''}
 
+      ${(widgetOn('chk')||widgetOn('dday')||widgetOn('fav')) ? `<div class="hm-tools">
+        ${widgetOn('chk') ? `<div class="hm-tool" id="hm-chk"></div>` : ''}
+        ${widgetOn('dday') ? `<div class="hm-tool" id="hm-dday"></div>` : ''}
+        ${widgetOn('fav') ? `<div class="hm-tool" id="hm-fav"></div>` : ''}
+      </div>` : ''}
+
       ${widgetOn('world') ? `<div class="hm-world" id="hm-world"></div>` : ''}
 
       ${widgetOn('today') ? `<div class="hm-today" id="hm-today">
@@ -1727,13 +1754,14 @@ function renderHome(){
   renderWorld();
   tickWorld();
   renderMemo();
+  renderTools();
   renderWeather();
   // 내가 정해둔 시계·날씨 목록을 먼저 읽고 나서 그린다
   loadPrefs().then(()=>{
     renderWorld(); tickWorld();
     return loadWeather();
   }).then(()=>{ renderWeather(); loadWeatherMinis(); });
-  loadMemo().then(()=>renderMemo());
+  loadMemo().then(()=>{ renderMemo(); renderTools(); });
   loadTodayStrip();
   if(widgetOn('tt') || widgetOn('today')) loadMyTimetable();
   if(widgetOn('quick')) renderQuickTiles();
@@ -1757,7 +1785,7 @@ const HOME_WIDGETS = [
   { key:'quick',  label:'빠른 이동',     hint:'자주 쓰는 화면 바로가기' },
   { key:'todo',   label:'지금 처리할 일', hint:'결재·쪽지·게시글' },
 ];
-const WIDGET_DEFAULT = { clock:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1 };
+const WIDGET_DEFAULT = { clock:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1 };
 let WIDGET_ON = { ...WIDGET_DEFAULT };
 function loadWidgetPrefs(){
   try {
@@ -2709,6 +2737,123 @@ function renderWeather(){
    📝 내 메모 — 본인만 보고 쓴다
    저장: userMemos/{uid}
    ═══════════════════════════════════════════ */
+/* ══════════ 🧰 홈 도구 3종 — ✅ 할 일 · ⏰ D-Day · 🔗 즐겨찾기 ══════════
+   저장: userMemos/{uid} (todos·ddays·favs) — 계정을 따라다닌다 */
+let TODOS = [], DDAYS = [], FAVS = [];
+let CFG_RECS = null;   // 학교 공용 추천 링크 (config/linkRecs — 수퍼가 올리면 모두에게)
+const DEFAULT_RECS = [
+  { name:'구글 드라이브', url:'https://drive.google.com' },
+  { name:'구글 캘린더', url:'https://calendar.google.com' },
+  { name:'미리캔버스 (디자인)', url:'https://www.miricanvas.com' },
+  { name:'캔바 (디자인)', url:'https://www.canva.com' },
+  { name:'패들렛 (협업보드)', url:'https://padlet.com' },
+  { name:'키드키즈 (유아교육)', url:'https://www.kidkids.net' },
+  { name:'기상청 날씨누리', url:'https://www.weather.go.kr' },
+  { name:'국가법령정보', url:'https://www.law.go.kr' },
+];
+const todayStr = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+let _toolsTimer=null;
+function saveTools(){
+  clearTimeout(_toolsTimer);
+  _toolsTimer=setTimeout(async ()=>{
+    try { await setDoc(doc(db,'userMemos',CU.uid), { todos:TODOS, ddays:DDAYS, favs:FAVS, updatedAt:Timestamp.now() }, { merge:true }); } catch(e){}
+  }, 500);
+}
+async function loadRecs(){
+  if(CFG_RECS) return CFG_RECS;
+  let extra=[];
+  try { const d=await getDoc(doc(db,'config','linkRecs')); if(d.exists()&&Array.isArray(d.data().items)) extra=d.data().items; } catch(e){}
+  CFG_RECS=[...DEFAULT_RECS, ...extra.filter(x=>x&&x.url)];
+  return CFG_RECS;
+}
+function renderTools(){
+  /* ✅ 할 일 */
+  const c1=$I('hm-chk');
+  if(c1){
+    c1.innerHTML = `<div class="tl">✅ 오늘 할 일 <small>${TODOS.filter(t=>!t.done).length?TODOS.filter(t=>!t.done).length+'개 남음':'다 했어요!'}</small></div>
+      ${TODOS.map(t=>`<div class="tk-row ${t.done?'done':''}">
+        <input type="checkbox" ${t.done?'checked':''} onchange="tkDone('${t.id}',this.checked)" style="width:15px;height:15px;cursor:pointer">
+        <span class="tx">${esc(t.text)}</span>
+        <button class="tk-x" onclick="tkDel('${t.id}')">✕</button></div>`).join('')
+       || '<div style="font-size:11.5px;color:var(--tl);padding:4px 0 6px">할 일을 적어보세요 — 못 끝낸 일은 내일로 자동 이월돼요.</div>'}
+      <div class="tk-add"><input id="tk-new" placeholder="할 일 추가… (Enter)" maxlength="80"
+        onkeydown="if(event.key==='Enter')tkAdd()"><button onclick="tkAdd()">＋</button></div>`;
+  }
+  /* ⏰ D-Day */
+  const c2=$I('hm-dday');
+  if(c2){
+    const today=todayStr();
+    const list=[...DDAYS].filter(d=>d.date>=today).sort((a,b)=>a.date.localeCompare(b.date));
+    const dn = d => Math.round((new Date(d+'T00:00:00')-new Date(today+'T00:00:00'))/86400000);
+    c2.innerHTML = `<div class="tl">⏰ D-Day <small>${list.length?list.length+'개':''}</small></div>
+      ${list.map(d=>{ const n=dn(d.date);
+        return `<div class="tk-row"><span class="tx">${esc(d.name)} <small style="color:var(--tl)">${d.date.slice(5).replace('-','/')}</small></span>
+          <span class="dd-num ${n===0?'today':''}">${n===0?'🔴 오늘!':'D-'+n}</span>
+          <button class="tk-x" onclick="ddDel('${d.id}')">✕</button></div>`; }).join('')
+       || '<div style="font-size:11.5px;color:var(--tl);padding:4px 0 6px">행사·마감일을 등록하면 매일 카운트가 줄어들어요.</div>'}
+      <div class="tk-add"><input id="dd-name" placeholder="이름 (예: 발표회)" maxlength="30" style="flex:1.3">
+        <input id="dd-date" type="date" style="flex:1"><button onclick="ddAdd()">＋</button></div>`;
+  }
+  /* 🔗 즐겨찾기 */
+  const c3=$I('hm-fav');
+  if(c3){
+    c3.innerHTML = `<div class="tl">🔗 내 즐겨찾기 <small>${FAVS.length?FAVS.length+'개':''}</small></div>
+      ${FAVS.map(f=>`<div class="tk-row">
+        <a class="fv-a" href="${esc(f.url)}" target="_blank" rel="noopener">🌐 ${esc(f.name)}</a>
+        <button class="tk-x" onclick="fvDel('${f.id}')">✕</button></div>`).join('')
+       || '<div style="font-size:11.5px;color:var(--tl);padding:4px 0 6px">자주 가는 사이트를 담아두세요 — 아래 추천에서 골라도 돼요.</div>'}
+      <div class="tk-add"><input id="fv-name" placeholder="이름" maxlength="24" style="flex:1">
+        <input id="fv-url" placeholder="https://…" style="flex:1.6"><button onclick="fvAdd()">＋</button></div>
+      <details class="fv-recs" ontoggle="if(this.open)renderRecs()">
+        <summary>💡 추천 사이트 보기 ${CU?.role==='super'?'· <span onclick="event.preventDefault();recPush()" style="color:var(--gm);text-decoration:underline;cursor:pointer">추천 올리기(전체)</span>':''}</summary>
+        <div id="fv-recs-list" style="margin-top:5px"><span style="font-size:11px;color:var(--tl)">불러오는 중…</span></div>
+      </details>`;
+  }
+}
+window.renderRecs = async function(){
+  const box=$I('fv-recs-list'); if(!box) return;
+  const recs=await loadRecs();
+  const have=new Set(FAVS.map(f=>f.url.replace(/\/+$/,'')));
+  box.innerHTML = recs.map((r,i)=>`<div class="fv-rec">
+    <a class="fv-a" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.name)}</a>
+    ${have.has(r.url.replace(/\/+$/,''))?'<span style="font-size:10px;color:var(--gm);font-weight:800">담김 ✓</span>'
+      :`<button onclick="fvAddRec(${i})">＋ 담기</button>`}</div>`).join('');
+};
+window.tkAdd=function(){ const i=$I('tk-new'); const v=(i?.value||'').trim(); if(!v) return;
+  TODOS.push({id:Date.now().toString(36), text:v, done:false, date:todayStr()});
+  saveTools(); renderTools(); setTimeout(()=>$I('tk-new')?.focus(),30); };
+window.tkDone=function(id,on){ const t=TODOS.find(x=>x.id===id); if(t){ t.done=on; t.date=todayStr(); saveTools(); renderTools(); } };
+window.tkDel=function(id){ TODOS=TODOS.filter(x=>x.id!==id); saveTools(); renderTools(); };
+window.ddAdd=function(){ const n=($I('dd-name')?.value||'').trim(), d=$I('dd-date')?.value||'';
+  if(!n||!d){ toast('이름과 날짜를 넣어주세요.','err'); return; }
+  DDAYS.push({id:Date.now().toString(36), name:n, date:d});
+  saveTools(); renderTools(); };
+window.ddDel=function(id){ DDAYS=DDAYS.filter(x=>x.id!==id); saveTools(); renderTools(); };
+window.fvAdd=function(){ let n=($I('fv-name')?.value||'').trim(), u=($I('fv-url')?.value||'').trim();
+  if(!n||!u){ toast('이름과 주소를 넣어주세요.','err'); return; }
+  if(!/^https?:\/\//.test(u)) u='https://'+u;
+  FAVS.push({id:Date.now().toString(36), name:n, url:u});
+  saveTools(); renderTools(); };
+window.fvAddRec=async function(i){ const recs=await loadRecs(); const r=recs[i]; if(!r) return;
+  FAVS.push({id:Date.now().toString(36), name:r.name, url:r.url});
+  saveTools(); renderTools(); renderRecs(); };
+window.fvDel=function(id){ FAVS=FAVS.filter(x=>x.id!==id); saveTools(); renderTools(); };
+window.recPush=async function(){
+  if(CU?.role!=='super') return;
+  const n=prompt('추천 사이트 이름 (모든 선생님에게 보여요):'); if(!n) return;
+  let u=prompt('주소(URL):'); if(!u) return;
+  if(!/^https?:\/\//.test(u)) u='https://'+u;
+  try {
+    const dref=doc(db,'config','linkRecs');
+    const cur=await getDoc(dref);
+    const items=(cur.exists()&&Array.isArray(cur.data().items))?cur.data().items:[];
+    items.push({name:n.trim(), url:u.trim(), by:CU.name||'', at:Date.now()});
+    await setDoc(dref,{items, updatedAt:Timestamp.now()},{merge:true});
+    CFG_RECS=null; renderRecs();
+    toast('💡 추천 목록에 올렸어요 — 모든 선생님 홈에 떠요!','ok');
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
 /* 🧩 홈 배치 — 기본(반반) / memo(메모·포스트잇 넓게) / one(위아래 한 줄) · 기기별 기억 */
 let HOME_LAYOUT = (()=>{ try{ const v=localStorage.getItem('hm_layout'); return ['std','memo','one'].includes(v)?v:'std'; }catch(e){ return 'std'; } })();
 window.cycleLayout = function(){
@@ -2726,7 +2871,20 @@ async function loadMemo(){
     const s = await getDoc(doc(db,'userMemos', CU.uid));
     MEMO_TEXT = (s.exists() && typeof s.data().text === 'string') ? s.data().text : '';
     STICKIES = (s.exists() && Array.isArray(s.data().stickies)) ? s.data().stickies : [];
-  } catch(e){ MEMO_TEXT = ''; STICKIES = []; }
+    const d = s.exists() ? s.data() : {};
+    TODOS = Array.isArray(d.todos) ? d.todos : [];
+    DDAYS = Array.isArray(d.ddays) ? d.ddays : [];
+    FAVS  = Array.isArray(d.favs)  ? d.favs  : [];
+    // ✅ 이월 정리: 어제 끝낸 일은 치우고, 못 끝낸 일은 오늘로
+    const today = todayStr();
+    const before = JSON.stringify(TODOS);
+    TODOS = TODOS.filter(t=>!(t.done && t.date < today));
+    TODOS.forEach(t=>{ if(!t.done && t.date < today) t.date = today; });
+    // ⏰ 지난 D-Day는 하루 지나면 자동 정리
+    const dl = DDAYS.length;
+    DDAYS = DDAYS.filter(x=>x.date >= today);
+    if(before !== JSON.stringify(TODOS) || dl !== DDAYS.length) saveTools();
+  } catch(e){ MEMO_TEXT = ''; STICKIES = []; TODOS=[]; DDAYS=[]; FAVS=[]; }
 }
 let _stTimer = null;
 function saveStickies(){
