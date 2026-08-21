@@ -858,7 +858,14 @@ const PR_ORG_DEPTS = {
   daniel:   ['초등부','중등부','고등부','행정실'],
   jihyebit: ['유아부'],
 };
-function PR_DEPTS(org){ return PR_ORG_DEPTS[org] || ['초등부','중등부','고등부','행정실']; }
+function PR_DEPTS(org){
+  const base = PR_ORG_DEPTS[org] || ['초등부','중등부','고등부','행정실'];
+  // 💰 «회계»는 조직에 실제로 있는 부서가 아니라 «결재용 구분» —
+  //    직책이 회계 담당자인 사람(과 수퍼)에게만 선택지로 열린다.
+  //    회계로 고르면 부서장 라인을 타지 않고 회계 담당자 결재선(규칙의 «회계 담당자» 행)을 탄다.
+  if(myPosition()==='회계 담당자' || CU?.role==='super') return [...base, '회계'];
+  return base;
+}
 function staffName(uid){ const s=STAFF.find(x=>x.uid===uid); return s?s.name:''; }
 // 특정 직책을 가진 사람 찾기 (해당 기관 기준)
 function findByPosition(pos, org){
@@ -956,9 +963,14 @@ function tierLabel(tiers, i){
 function buildApprovalChain(total, applicantUid, dept, org){
   const R = payRules();
   const me = STAFF.find(s=>s.uid===applicantUid);
-  const myPos = (me && me.position) || '교사';
+  // 부서를 «회계»로 골랐다면 이 건은 회계 담당자 자격으로 — 소속 부서장 라인을 타지 않는다.
+  // 반대로 고등부 등 일반 부서를 골랐다면 회계 직책이어도 «평범한 교사»로 부서장 라인을 탄다.
+  // → 겸직을 신청 건마다 구분: 회계 자격은 오직 «회계»를 골랐을 때만
+  let myPos = (me && me.position) || '교사';
+  if(dept === '회계') myPos = '회계 담당자';
+  else if(myPos === '회계 담당자') myPos = '교사';
   const tier = tierOf(total);
-  const steps = (tier.steps && (tier.steps[myPos] || tier.steps._default)) || [];
+  const steps = (tier.steps && (tier.steps[myPos] !== undefined ? tier.steps[myPos] : tier.steps._default)) || [];
 
   const chain = [];
   steps.forEach(step=>{
