@@ -881,25 +881,53 @@ function parseBlocks(d){
 /* ═══════════════════════════════════════════
    목록 화면
    ═══════════════════════════════════════════ */
+function famFolderOpen(){ try { return JSON.parse(localStorage.getItem('famFolderOpen')||'{}'); } catch(e){ return {}; } }
+function setFamFolderOpen(name, on){
+  const o = famFolderOpen(); o[name] = on ? 1 : 0;
+  try { localStorage.setItem('famFolderOpen', JSON.stringify(o)); } catch(e){}
+}
+window.toggleFamFolder = function(name){
+  const o = famFolderOpen();
+  setFamFolderOpen(name, !(o[name]!==0));   // 기본 열림 → 토글
+  renderList();
+};
+function famRowHTML(d){
+  const pub = d.publishedAt ? true : false;
+  const stale = pub && d.updatedAt && d.publishedAt && d.updatedAt.toMillis() > d.publishedAt.toMillis();
+  const st = !pub ? '<span class="pill gray">작성 중</span>'
+    : stale ? '<span class="pill req">재발행 필요</span>'
+    : '<span class="pill ok">발행됨</span>';
+  return `<tr class="rowbtn" onclick="openDoc('${d.id}')">
+    <td><b>${esc(d.title||'(제목 없음)')}</b></td>
+    <td class="c"><span class="pill blue">${TYPE_L[d.type]||'자유'}</span></td>
+    <td class="c">${st}${d.listed?' <span class="pill gray">게시판</span>':''}</td>
+    <td class="c">${esc(d.ownerName||'')}</td>
+    <td class="c">${(d.editorNames||[]).map(esc).join(', ')||'<span style="color:var(--tl)">—</span>'}</td>
+    <td class="c" style="color:var(--ts);font-size:11px;white-space:nowrap">${dtStr(d.updatedAt)}
+      ${canFamAdmin()?`<button class="iconbtn" style="margin-left:5px" title="폴더 지정"
+        onclick="event.stopPropagation();openFolderPick('${d.id}')">📁</button>`:''}</td>
+  </tr>`;
+}
 function renderList(){
   $I('view-edit').style.display = 'none';
   $I('view-list').style.display = 'block';
   if(window.setCrumb) setCrumb(['가정통신문']);
-  const rows = DOCS.map(d=>{
-    const pub = d.publishedAt ? true : false;
-    const stale = pub && d.updatedAt && d.publishedAt && d.updatedAt.toMillis() > d.publishedAt.toMillis();
-    const st = !pub ? '<span class="pill gray">작성 중</span>'
-      : stale ? '<span class="pill req">재발행 필요</span>'
-      : '<span class="pill ok">발행됨</span>';
-    return `<tr class="rowbtn" onclick="openDoc('${d.id}')">
-      <td><b>${esc(d.title||'(제목 없음)')}</b></td>
-      <td class="c"><span class="pill blue">${TYPE_L[d.type]||'자유'}</span></td>
-      <td class="c">${st}${d.listed?' <span class="pill gray">게시판</span>':''}</td>
-      <td class="c">${esc(d.ownerName||'')}</td>
-      <td class="c">${(d.editorNames||[]).map(esc).join(', ')||'<span style="color:var(--tl)">—</span>'}</td>
-      <td class="c" style="color:var(--ts);font-size:11px">${dtStr(d.updatedAt)}</td>
-    </tr>`;
-  }).join('');
+  // 📁 폴더별로 묶기 — 폴더 없는 문서는 맨 위에
+  const openMap = famFolderOpen();
+  const loose = DOCS.filter(d=>!d.folder);
+  const folders = {};
+  DOCS.filter(d=>d.folder).forEach(d=>{ (folders[d.folder]=folders[d.folder]||[]).push(d); });
+  const fnames = Object.keys(folders).sort((a,b)=>a.localeCompare(b,'ko'));
+  let body = loose.map(famRowHTML).join('');
+  fnames.forEach(fn=>{
+    const open = openMap[fn]!==0;
+    const list = folders[fn];
+    body += `<tr class="fam-folder" onclick="toggleFamFolder('${esc(fn).replace(/'/g,"\\'")}')">
+      <td colspan="6" style="cursor:pointer;background:var(--gp);font-weight:800;color:var(--gd);padding:9px 12px">
+        ${open?'▾':'▸'} 📁 ${esc(fn)} <span style="font-weight:600;color:var(--tl);font-size:11px">(${list.length}개)</span>
+      </td></tr>`;
+    if(open) body += list.map(famRowHTML).join('');
+  });
   $I('view-list').innerHTML = `
     <div class="panel">
       <div class="ptitle">📨 가정통신문
@@ -908,18 +936,49 @@ function renderList(){
         ${canFamAdmin() ? `<button class="btn" onclick="openNewDoc()">＋ 새 통신문</button>` : ''}
       </div>
       <div class="pdesc">양식 블록을 골라 조립하고, 담당자와 협력 담당자가 함께 입력한 뒤
-        학부모 링크 · 게시판 · 인쇄물로 발행합니다.</div>
+        학부모 링크 · 게시판 · 인쇄물로 발행합니다. ${canFamAdmin()?'행 오른쪽 <b>📁</b>로 폴더에 정리할 수 있어요.':''}</div>
       <div class="tblwrap" style="margin-top:11px">
         <table class="famtbl">
           <tr><th>제목</th><th class="c">유형</th><th class="c">상태</th>
             <th class="c">입력 담당자</th><th class="c">협력 담당자</th><th class="c">마지막 수정</th></tr>
-          ${rows || '<tr><td colspan="6" style="text-align:center;color:var(--tl);padding:24px">아직 통신문이 없습니다.</td></tr>'}
+          ${body || '<tr><td colspan="6" style="text-align:center;color:var(--tl);padding:24px">아직 통신문이 없습니다.</td></tr>'}
         </table>
       </div>
       ${canFamAdmin() ? '' : `<div class="pdesc" style="margin-top:9px">새 통신문 만들기는 총괄 담당자가 할 수 있어요.
         내가 입력 담당자·협력 담당자로 지정된 통신문은 열어서 입력할 수 있습니다.</div>`}
     </div>`;
 }
+
+/* 📁 폴더 지정 — 기존 폴더 고르기 + 새 폴더 만들기 */
+window.openFolderPick = function(docId){
+  const d = DOCS.find(x=>x.id===docId); if(!d) return;
+  const existing = [...new Set(DOCS.map(x=>x.folder).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ko'));
+  openModal(`
+    <div class="mtitle">📁 폴더 지정 — ${esc(d.title||'')}</div>
+    <p class="msub" style="margin:0 0 10px">폴더로 묶으면 목록에서 접었다 펼 수 있어요.</p>
+    ${existing.length?`<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
+      ${existing.map(f=>`<button class="btn gray sm" onclick="setFolder('${docId}', this.textContent.trim())">${esc(f)}</button>`).join('')}
+    </div>`:''}
+    <div class="frow"><label class="flab">새 폴더 이름 (또는 직접 입력)</label>
+      <input class="fin" id="fp-name" value="${esc(d.folder||'')}" placeholder="예: 2026-2학기 교재·준비물"
+        onkeydown="if(event.key==='Enter')setFolder('${docId}', this.value)"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+      ${d.folder?`<button class="btn gray sm" onclick="setFolder('${docId}','')">폴더에서 빼기</button>`:''}
+      <button class="btn gray sm" onclick="closeModal()">닫기</button>
+      <button class="btn" onclick="setFolder('${docId}', $I('fp-name').value)">저장</button>
+    </div>`);
+};
+window.setFolder = async function(docId, name){
+  name = (name||'').trim().slice(0,40);
+  try {
+    await updateDoc(doc(db,'famDocs',docId), { folder: name });
+    const d = DOCS.find(x=>x.id===docId); if(d) d.folder = name;
+    if(name) setFamFolderOpen(name, true);
+    closeModal();
+    renderList();
+    toast(name?`📁 「${name}」에 넣었어요`:'폴더에서 뺐어요','ok');
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+};
 
 /* ═══ 새 통신문 ═══ */
 window.openNewDoc = async function(){
