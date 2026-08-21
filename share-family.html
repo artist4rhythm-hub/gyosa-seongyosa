@@ -80,9 +80,19 @@
 .rv-tb{width:100%;border-collapse:collapse;font-size:12px}
 /* 줄무늬 음영 — 짝수 줄에 옅은 초록빛을 깔아 시선이 줄을 따라가게 한다 (인쇄에도 유지) */
 .rv-tb.st-zebra td.zc1{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-/* 묶음 음영(st-band) — 병합 묶음이 바뀔 때마다 번갈아 */
-.rv-tb.st-band tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.rv-tb.st-band tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* 묶음 음영 — 병합 묶음이 바뀔 때마다 번갈아 (줄무늬도 병합 표에선 이 방식으로 통일) */
+.rv-tb.st-band tr.band0 td, .rv-tb.st-zebra tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rv-tb.st-band tr.band1 td, .rv-tb.st-zebra tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* ═══ 🎨 표 색상 스타일 (엑셀식 테마) ═══ */
+.rv-tb.th-navy th{background:#0C2A44}
+.rv-tb.th-navy.st-zebra td.zc1,.rv-tb.th-navy.st-zebra tr.band1 td,.rv-tb.th-navy.st-band tr.band1 td{background:#EDF2F9!important}
+.rv-tb.th-gray th{background:#4B5563}
+.rv-tb.th-gray.st-zebra td.zc1,.rv-tb.th-gray.st-zebra tr.band1 td,.rv-tb.th-gray.st-band tr.band1 td{background:#F3F4F6!important}
+.rv-tb.th-warm th{background:#8A6410}
+.rv-tb.th-warm.st-zebra td.zc1,.rv-tb.th-warm.st-zebra tr.band1 td,.rv-tb.th-warm.st-band tr.band1 td{background:#F9F3E4!important}
+.rv-tb.th-line th{background:#fff!important;color:#1F2320;border-bottom:2.5px solid #1F2320;border-top:2.5px solid #1F2320}
+.rv-tb.th-line.st-zebra td.zc1,.rv-tb.th-line.st-zebra tr.band1 td,.rv-tb.th-line.st-band tr.band1 td{background:#F6F6F4!important}
+.rv-tb.th-navy th,.rv-tb.th-gray th,.rv-tb.th-warm th,.rv-tb.th-line th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rv-tb tr:hover td{background:#EAF2EC}
 .rv-tb th{background:var(--gd);color:#fff;font-weight:800;padding:7px 8px;text-align:left;font-size:11px;white-space:nowrap}
 .rv-tb td{padding:7px 8px;border-bottom:1px solid var(--iv);white-space:pre-wrap;line-height:1.55;vertical-align:top}
@@ -1036,10 +1046,11 @@ function renderBlock(b){
     const listIdx = cols.findIndex(c=>/명단|이름/.test(nm(c)));
     // 명단표의 학년·인원 칸은 줄바꿈 없이 한 줄로 (화면·인쇄 공통)
     const nw = new Set(isRoster ? [0, cntIdx].filter(i=>i>=0) : []);
-    // 🎨 표 무늬 3종 — band(묶음 음영) · zebra(줄무늬) · plain(무늬 없음)
+    // 🎨 표 무늬 — 병합 표는 줄무늬도 «묶음 단위»로 통일 (홀수 줄 묶음이어도 안 어긋난다)
     const tst = d.tstyle || (hasMG ? 'band' : 'zebra');
+    const thm = d.ttheme || 'green';
     const mgCnt = cols.map((_,ci)=>rows.reduce((a,r)=>a+(((r.c||[])[ci]===MG)?1:0),0));
-    const bandCol = (tst==='band' && hasMG) ? mgCnt.indexOf(Math.max(...mgCnt)) : -1;
+    const bandCol = ((tst==='band'||tst==='zebra') && hasMG) ? mgCnt.indexOf(Math.max(...mgCnt)) : -1;
     let __gi = -1;
     const zc = cols.map(()=>0);   // 🦓 열별 «보이는 칸» 순번 — 병합 덩어리도 칸 단위로 번갈아 칠한다
     const body=rows.map((r,ri)=>{
@@ -1048,7 +1059,7 @@ function renderBlock(b){
       const v=(r.c||[])[ci]||'';
       if(v===MG) return '';                                  // 위 칸이 rowspan으로 덮는다
       const n=span(ri,ci);
-      const zcls = tst==='zebra' ? ('zc'+((zc[ci]++)%2)) : '';
+      const zcls = (tst==='zebra' && !hasMG) ? ('zc'+((zc[ci]++)%2)) : '';   // 병합 표는 tr 묶음색이 담당
       const cls=[n>1?'mg':'', nw.has(ci)?'nwc':'', zcls].filter(Boolean).join(' ');
       return `<td${n>1?` rowspan="${n}"`:''}${cls?` class="${cls}"`:''}>${esc(v)}</td>`;
     }).join('')}</tr>`;}).join('');
@@ -1082,7 +1093,7 @@ function renderBlock(b){
     }
     const hint = (!malt && cols.length>=5) ? `<div class="m-hint">↔ 표가 넓어요 — 옆으로 밀어 보세요</div>` : '';
     return `<div class="tbwrap${malt?' has-malt':''}">
-      <div class="rv-tbwrap" style="overflow-x:auto"><table class="rv-tb st-${tst}">
+      <div class="rv-tbwrap" style="overflow-x:auto"><table class="rv-tb st-${tst} th-${thm}">
       <tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>
       ${body}
     </table></div>${hint}${malt}</div>
