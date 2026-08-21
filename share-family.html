@@ -79,7 +79,7 @@
 .rv-kv tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rv-tb{width:100%;border-collapse:collapse;font-size:12px}
 /* 줄무늬 음영 — 짝수 줄에 옅은 초록빛을 깔아 시선이 줄을 따라가게 한다 (인쇄에도 유지) */
-.rv-tb.st-zebra tr:nth-child(even) td{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rv-tb.st-zebra td.zc1{background:#F3F7F4;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 /* 묶음 음영(st-band) — 병합 묶음이 바뀔 때마다 번갈아 */
 .rv-tb.st-band tr.band0 td{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rv-tb.st-band tr.band1 td{background:#EDF4EF;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -1041,13 +1041,15 @@ function renderBlock(b){
     const mgCnt = cols.map((_,ci)=>rows.reduce((a,r)=>a+(((r.c||[])[ci]===MG)?1:0),0));
     const bandCol = (tst==='band' && hasMG) ? mgCnt.indexOf(Math.max(...mgCnt)) : -1;
     let __gi = -1;
+    const zc = cols.map(()=>0);   // 🦓 열별 «보이는 칸» 순번 — 병합 덩어리도 칸 단위로 번갈아 칠한다
     const body=rows.map((r,ri)=>{
       if(bandCol>=0 && (r.c||[])[bandCol]!==MG) __gi++;
       return `<tr${bandCol>=0?` class="band${__gi%2}"`:''}>${cols.map((_,ci)=>{
       const v=(r.c||[])[ci]||'';
       if(v===MG) return '';                                  // 위 칸이 rowspan으로 덮는다
       const n=span(ri,ci);
-      const cls=[n>1?'mg':'', nw.has(ci)?'nwc':''].filter(Boolean).join(' ');
+      const zcls = tst==='zebra' ? ('zc'+((zc[ci]++)%2)) : '';
+      const cls=[n>1?'mg':'', nw.has(ci)?'nwc':'', zcls].filter(Boolean).join(' ');
       return `<td${n>1?` rowspan="${n}"`:''}${cls?` class="${cls}"`:''}>${esc(v)}</td>`;
     }).join('')}</tr>`;}).join('');
     let malt='';
