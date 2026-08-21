@@ -2604,27 +2604,52 @@ function wxName(c){ return (WX_CODE[c]||['—','·'])[0]; }
 function wxIcon(c){ return (WX_CODE[c]||['—','·'])[1]; }
 
 let WX_DATA = null;
+let WX_AQ = null;      // 😷 미세먼지 (Open-Meteo Air Quality)
 async function loadWeather(){
   const p = wxPlaceNow();
   const url = 'https://api.open-meteo.com/v1/forecast'
     + `?latitude=${p.lat}&longitude=${p.lon}`
     + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m'
+    + '&hourly=temperature_2m,weather_code,precipitation_probability,precipitation'
     + '&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max'
     + '&timezone=Asia%2FSeoul&forecast_days=7';
+  const aqUrl = 'https://air-quality-api.open-meteo.com/v1/air-quality'
+    + `?latitude=${p.lat}&longitude=${p.lon}`
+    + '&current=pm10,pm2_5&timezone=Asia%2FSeoul';
   try {
-    const r = await fetch(url);
+    const [r, ra] = await Promise.all([ fetch(url), fetch(aqUrl).catch(()=>null) ]);
     if(!r.ok) throw new Error('날씨를 받아오지 못했습니다');
     WX_DATA = await r.json();
-    try { localStorage.setItem('hm_wx_cache', JSON.stringify({ at:Date.now(), place:WX_PLACE, data:WX_DATA })); } catch(e){}
+    WX_AQ = null;
+    try { if(ra && ra.ok) WX_AQ = await ra.json(); } catch(e2){}
+    try { localStorage.setItem('hm_wx_cache', JSON.stringify({ at:Date.now(), place:WX_PLACE, data:WX_DATA, aq:WX_AQ })); } catch(e){}
     return true;
   } catch(e){
     // 못 받아오면 최근에 받아둔 것을 보여준다 (한 시간 안쪽이면)
     try {
       const c = JSON.parse(localStorage.getItem('hm_wx_cache')||'null');
-      if(c && c.place===WX_PLACE && Date.now()-c.at < 3600000){ WX_DATA = c.data; return true; }
+      if(c && c.place===WX_PLACE && Date.now()-c.at < 3600000){ WX_DATA = c.data; WX_AQ = c.aq||null; return true; }
     } catch(e2){}
     return false;
   }
+}
+
+/* 😷 미세먼지 등급 — 한국 환경부 기준 */
+function pmGrade(kind, v){
+  if(v==null || isNaN(v)) return null;
+  const T = kind==='pm25' ? [15,35,75] : [30,80,150];   // 좋음/보통/나쁨 경계
+  if(v<=T[0]) return ['좋음','#1E88E5'];
+  if(v<=T[1]) return ['보통','#2E7D32'];
+  if(v<=T[2]) return ['나쁨','#EF6C00'];
+  return ['매우나쁨','#C62828'];
+}
+function aqChips(){
+  const c = WX_AQ?.current; if(!c) return '';
+  const g10 = pmGrade('pm10', c.pm10), g25 = pmGrade('pm25', c.pm2_5);
+  if(!g10 && !g25) return '';
+  const chip = (label, v, g) => g ? `<span class="wx-aq" style="color:${g[1]}" title="${label} ${Math.round(v)}㎍/㎥">
+    ${label} <b>${g[0]}</b> <i>${Math.round(v)}</i></span>` : '';
+  return `<span class="wx-aqs">😷 ${chip('미세', c.pm10, g10)} ${chip('초미세', c.pm2_5, g25)}</span>`;
 }
 
 window.setWxPlace = async function(k){
@@ -2729,11 +2754,134 @@ function renderWeather(){
     <div class="wx-sun">
       <span>🌅 해돋이 <b>${hm2(d.sunrise[0])}</b></span>
       <span>🌇 해넘이 <b>${hm2(d.sunset[0])}</b></span>
+      ${aqChips()}
       ${wxMiniRows()}
       <span class="wx-len">낮 ${Math.floor(dayMin/60)}시간 ${dayMin%60}분</span>
     </div>
-    <div class="wx-week">${days}</div>`;
+    <div class="wx-week">${days}</div>
+    <div class="wx-acts">
+      <button class="wx-act" onclick="toggleWxHourly()" id="wx-hbtn">⏱ 시간별 보기</button>
+      <button class="wx-act" onclick="toggleWxModels()" id="wx-mbtn">⚖️ 제공처 비교</button>
+      <a class="wx-act" href="https://www.weather.go.kr/w/image/sat.do" target="_blank" rel="noopener">🛰 위성</a>
+      <a class="wx-act" href="https://www.weather.go.kr/w/image/rdr.do" target="_blank" rel="noopener">📡 레이더</a>
+      <a class="wx-act" href="https://www.windy.com/-Satellite-satellite?satellite,${wxPlaceNow().lat.toFixed(2)},${wxPlaceNow().lon.toFixed(2)},8" target="_blank" rel="noopener">🌍 윈디</a>
+    </div>
+    <div id="wx-hourly" style="display:none"></div>
+    <div id="wx-models" style="display:none"></div>
+    <style>
+      .wx-aqs{display:inline-flex;gap:8px;align-items:center;font-size:12px;color:var(--ts)}
+      .wx-aq{font-weight:600}
+      .wx-aq b{font-weight:800}
+      .wx-aq i{font-style:normal;opacity:.65;font-size:10.5px}
+      .wx-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+      .wx-act{border:1px solid var(--ivd);background:var(--iv);color:var(--ts);border-radius:100px;
+        padding:5px 12px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;
+        text-decoration:none;display:inline-flex;align-items:center;gap:4px}
+      .wx-act:hover{border-color:var(--gm);color:var(--gd)}
+      .wx-act.on{background:var(--gm);border-color:var(--gm);color:#fff}
+      .wx-hstrip{display:flex;gap:4px;overflow-x:auto;padding:10px 2px 6px;scrollbar-width:thin}
+      .wx-h{flex:none;width:52px;text-align:center;background:var(--iv);border:1px solid var(--ivd);
+        border-radius:10px;padding:7px 3px}
+      .wx-h.day0{background:var(--gp);border-color:var(--gl)}
+      .wx-h .h-t{font-size:10.5px;color:var(--tl);font-weight:700}
+      .wx-h .h-i{font-size:17px;margin:2px 0}
+      .wx-h .h-c{font-size:12.5px;font-weight:800;color:var(--gd)}
+      .wx-h .h-p{font-size:10px;color:#1E88E5;font-weight:700;min-height:13px}
+      .wx-h .h-mm{font-size:9.5px;color:var(--tl);min-height:12px}
+      .wx-hday{flex:none;writing-mode:vertical-rl;text-orientation:upright;font-size:10px;
+        font-weight:800;color:var(--gd);background:var(--gp);border-radius:8px;
+        padding:6px 2px;display:flex;align-items:center;letter-spacing:2px}
+      .wx-mtab{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px}
+      .wx-mtab th,.wx-mtab td{border:1px solid var(--ivd);padding:6px 8px;text-align:center}
+      .wx-mtab th{background:var(--iv);color:var(--ts);font-size:11px}
+      .wx-mtab td b{color:var(--gd)}
+      .wx-mnote{font-size:10.5px;color:var(--tl);margin-top:5px}
+    </style>`;
 }
+
+/* ⏱ 시간별 예보 — 오늘·내일·모레, 지금 시각부터 */
+window.toggleWxHourly = function(){
+  const box = $I('wx-hourly'), btn = $I('wx-hbtn');
+  if(!box) return;
+  if(box.style.display!=='none'){ box.style.display='none'; btn?.classList.remove('on'); return; }
+  btn?.classList.add('on');
+  const h = WX_DATA?.hourly;
+  if(!h || !h.time){ box.innerHTML = '<div class="wx-load">시간별 자료가 없습니다.</div>'; box.style.display=''; return; }
+  const now = Date.now();
+  const DOW = ['일','월','화','수','목','금','토'];
+  const todayD = new Date().getDate();
+  let cells = '', lastDay = null, shown = 0;
+  for(let i=0; i<h.time.length && shown<48; i++){
+    const t = new Date(h.time[i]);
+    if(t.getTime() < now - 3600000) continue;   // 지난 시각은 건너뜀
+    if(lastDay!==null && t.getDate()!==lastDay){
+      const lbl = t.getDate()===todayD+1 || (todayD>=28 && t.getDate()===1) ? '내일' : `${DOW[t.getDay()]}요일`;
+      cells += `<div class="wx-hday">${lbl}</div>`;
+    }
+    lastDay = t.getDate();
+    const pp = h.precipitation_probability?.[i], mm = h.precipitation?.[i];
+    cells += `<div class="wx-h ${t.getDate()===todayD?'day0':''}">
+      <div class="h-t">${t.getHours()}시</div>
+      <div class="h-i">${wxIcon(h.weather_code[i])}</div>
+      <div class="h-c">${Math.round(h.temperature_2m[i])}°</div>
+      <div class="h-p">${pp>=20?`💧${pp}%`:''}</div>
+      <div class="h-mm">${mm>=0.1?`${mm.toFixed(1)}㎜`:''}</div>
+    </div>`;
+    shown++;
+  }
+  box.innerHTML = `<div class="wx-hstrip">${cells}</div>
+    <div class="wx-mnote">지금부터 이틀치 · 💧강수확률 · ㎜예상강수량</div>`;
+  box.style.display = '';
+};
+
+/* ⚖️ 제공처(예보 모델) 비교 — 기상청·유럽·미국·일본 */
+const WX_MODELS = [
+  { id:'kma_seamless',  name:'기상청 (한국)' },
+  { id:'ecmwf_ifs025',  name:'ECMWF (유럽)' },
+  { id:'gfs_seamless',  name:'GFS (미국)' },
+  { id:'jma_seamless',  name:'JMA (일본)' },
+];
+let WX_MODEL_CACHE = null;
+window.toggleWxModels = async function(){
+  const box = $I('wx-models'), btn = $I('wx-mbtn');
+  if(!box) return;
+  if(box.style.display!=='none'){ box.style.display='none'; btn?.classList.remove('on'); return; }
+  btn?.classList.add('on');
+  box.style.display = '';
+  const p = wxPlaceNow();
+  if(!WX_MODEL_CACHE || WX_MODEL_CACHE.place!==WX_PLACE || Date.now()-WX_MODEL_CACHE.at > 1800000){
+    box.innerHTML = '<div class="wx-load">제공처별 예보를 모으는 중…</div>';
+    const results = {};
+    await Promise.all(WX_MODELS.map(async m=>{
+      try {
+        const u = 'https://api.open-meteo.com/v1/forecast'
+          + `?latitude=${p.lat}&longitude=${p.lon}`
+          + '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max'
+          + `&models=${m.id}&timezone=Asia%2FSeoul&forecast_days=3`;
+        const r = await fetch(u); if(!r.ok) return;
+        const j = await r.json();
+        if(j.daily?.time) results[m.id] = j.daily;
+      } catch(e){}
+    }));
+    WX_MODEL_CACHE = { place:WX_PLACE, at:Date.now(), results };
+  }
+  const res = WX_MODEL_CACHE.results;
+  const okModels = WX_MODELS.filter(m=>res[m.id]);
+  if(!okModels.length){ box.innerHTML = '<div class="wx-load">제공처 자료를 받아오지 못했습니다.</div>'; return; }
+  const DLBL = ['오늘','내일','모레'];
+  const head = `<tr><th>제공처</th>${DLBL.map(l=>`<th>${l}</th>`).join('')}</tr>`;
+  const rows = okModels.map(m=>{
+    const d = res[m.id];
+    const cols = [0,1,2].map(i=>{
+      if(d.time?.[i]==null) return '<td>—</td>';
+      const pp = d.precipitation_probability_max?.[i];
+      return `<td>${wxIcon(d.weather_code?.[i])} <b>${Math.round(d.temperature_2m_max?.[i])}°</b><span style="color:var(--tl)">/${Math.round(d.temperature_2m_min?.[i])}°</span>${pp>=20?`<br><span style="color:#1E88E5;font-size:10.5px">💧${pp}%</span>`:''}</td>`;
+    }).join('');
+    return `<tr><td style="font-weight:700;white-space:nowrap">${m.name}</td>${cols}</tr>`;
+  }).join('');
+  box.innerHTML = `<table class="wx-mtab">${head}${rows}</table>
+    <div class="wx-mnote">같은 지점을 기관별 예보 모델로 비교한 것 — 서로 다르면 그만큼 예보가 불확실하다는 뜻이에요.</div>`;
+};
 
 /* ═══════════════════════════════════════════
    📝 내 메모 — 본인만 보고 쓴다
@@ -3078,6 +3226,9 @@ async function loadMyTimetable(){
       });
     });
     out.sort((a,b)=>a.start-b.start);
+    // 🔢 합반 학년을 학년 순으로 정렬 (예: "10학년 B"도 숫자→글자 순으로 자연스럽게)
+    const gnum = g => { const m = String(g).match(/\d+/); return m ? parseInt(m[0],10) : 999; };
+    out.forEach(o=>o.grades.sort((a,b)=> gnum(a)-gnum(b) || String(a).localeCompare(String(b),'ko')));
     TT_TODAY = out.filter(x=>!x.rest);
     renderMyTimetable();
   } catch(e){
@@ -3234,6 +3385,11 @@ async function loadHomeBirthdays(){
       ...students.map(s=>toPerson(s,false)),
       ...teachers.map(t=>toPerson(t,true))
     ].filter(Boolean);
+    // 🗂 상세 보기(전체 달력)용으로 반·부서 정보까지 담아 보관
+    BDAY_ALL = [
+      ...students.map(s=>{ const p=toPerson(s,false); if(p){ p.className=s.className||''; p.grade=s.grade||''; } return p; }),
+      ...teachers.map(t=>{ const p=toPerson(t,true); if(p){ p.dept=t.dept||''; } return p; })
+    ].filter(Boolean);
 
     const icon = p => p.isTeacher ? '👩‍🏫' : (p.gender==='남' ? '👦' : p.gender==='여' ? '👧' : '🧒');
     const chip = (p, bg, border, extra) => `<span style="display:inline-flex;align-items:center;gap:5px;background:${bg};border:1px solid ${border};border-radius:100px;padding:5px 12px;margin:0 6px 6px 0;font-size:13px">
@@ -3271,11 +3427,91 @@ async function loadHomeBirthdays(){
         : inner;
     }
 
-    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>🎂</span> 생일 <span style="font-size:12px;color:var(--tl);font-weight:400">(${thisMonth}월 기준)</span></div>`
+    box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>🎂</span> 생일 <span style="font-size:12px;color:var(--tl);font-weight:400">(${thisMonth}월 기준)</span>
+        <button onclick="openBdayAll()" style="margin-left:auto;border:1px solid var(--ivd);background:var(--iv);color:var(--ts);border-radius:100px;padding:4px 12px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📖 전체 보기</button>
+      </div>`
       + (html || '<div style="font-size:13px;color:var(--tl)">이번 달 생일인 사람이 없습니다.</div>');
   } catch(e){
     box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:8px">🎂 생일</div><div style="font-size:13px;color:var(--tl)">불러올 수 없습니다.</div>`;
   }
+}
+
+/* ═══ 🎂 생일 전체 보기 — 월별 · 선생님/학생 · 기관/반별 ═══ */
+let BDAY_ALL = [];
+let BDAY_VIEW = { month: 0, who: 'all', org: 'all' };   // month 0 = 전체(1~12월 모두)
+window.openBdayAll = function(){
+  BDAY_VIEW = { month: new Date().getMonth()+1, who:'all', org:'all' };
+  renderBdayAll();
+};
+window.bdaySet = function(k, v){
+  BDAY_VIEW[k] = (k==='month') ? Number(v) : v;
+  renderBdayAll();
+};
+window.closeBdayAll = function(){ const el=$I('bday-modal'); if(el) el.remove(); };
+function renderBdayAll(){
+  closeBdayAll();
+  const orgNames = {jihyebit:'지혜빛 선교원', daniel:'다니엘 아마츠'};
+  const myOrgList = CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
+  const V = BDAY_VIEW;
+  const icon = p => p.isTeacher ? '👩‍🏫' : (p.gender==='남' ? '👦' : p.gender==='여' ? '👧' : '🧒');
+
+  // 필터 적용
+  let list = BDAY_ALL.slice();
+  if(V.who==='teacher') list = list.filter(p=>p.isTeacher);
+  if(V.who==='student') list = list.filter(p=>!p.isTeacher);
+  if(V.org!=='all')     list = list.filter(p=>p.orgsList.includes(V.org));
+
+  // 월 묶기
+  const months = V.month===0 ? [1,2,3,4,5,6,7,8,9,10,11,12] : [V.month];
+  const nowM = new Date().getMonth()+1, nowD = new Date().getDate();
+  const chipRow = p => `<div style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--iv);font-size:13px">
+    <span style="width:34px;text-align:right;font-weight:800;color:var(--ts);flex:none">${p.day}일</span>
+    <span>${icon(p)}</span><b>${esc(p.name)}</b>
+    ${p.isTeacher
+      ? `<span style="font-size:10px;font-weight:800;color:#8A6410;background:var(--gold-bg);border-radius:100px;padding:1px 7px">선생님</span>${p.dept?`<span style="font-size:11px;color:var(--tl)">${esc(p.dept)}</span>`:''}`
+      : `${p.className?`<span style="font-size:11px;color:var(--tl)">${esc(p.className)}</span>`:''}`}
+    ${(p.month===nowM&&p.day===nowD)?`<span style="font-size:10.5px;font-weight:800;color:var(--goldd)">🎉 오늘</span>`:''}
+    <span style="margin-left:auto;display:flex;gap:4px">${p.orgsList.filter(o=>myOrgList.includes(o)).map(o=>`<span style="width:9px;height:9px;border-radius:50%;background:${o==='jihyebit'?'#5E4B8B':'#0C2A44'}" title="${orgNames[o]}"></span>`).join('')}</span>
+  </div>`;
+
+  let body = '';
+  for(const m of months){
+    const inMonth = list.filter(p=>p.month===m).sort((a,b)=> a.day-b.day || a.name.localeCompare(b.name,'ko'));
+    if(V.month===0 && !inMonth.length) continue;
+    body += `<div style="margin-bottom:14px">
+      <div style="font-size:13.5px;font-weight:900;color:var(--gd);margin-bottom:4px;display:flex;align-items:center;gap:7px">
+        ${m}월 <span style="font-size:11px;color:var(--tl);font-weight:600">${inMonth.length}명</span>
+      </div>
+      ${inMonth.length ? inMonth.map(chipRow).join('') : '<div style="font-size:12px;color:var(--tl);padding:4px">없음</div>'}
+    </div>`;
+  }
+  if(!body) body = '<div style="font-size:13px;color:var(--tl);padding:12px 4px">조건에 맞는 생일이 없습니다.</div>';
+
+  const selBtn = (k, v, label) => `<button onclick="bdaySet('${k}','${v}')" style="border:1.5px solid ${String(BDAY_VIEW[k])===String(v)?'var(--gm)':'var(--ivd)'};background:${String(BDAY_VIEW[k])===String(v)?'var(--gm)':'var(--wh,#fff)'};color:${String(BDAY_VIEW[k])===String(v)?'#fff':'var(--ts)'};border-radius:100px;padding:5px 12px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">${label}</button>`;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'bday-modal';
+  wrap.innerHTML = `
+    <div style="position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;padding:16px">
+      <div onclick="closeBdayAll()" style="position:absolute;inset:0;background:rgba(0,0,0,.4)"></div>
+      <div style="position:relative;z-index:1;width:100%;max-width:560px;max-height:88vh;display:flex;flex-direction:column;background:var(--panel,#fff);border:1px solid var(--line,#ddd);border-radius:16px;padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="font-size:16px;font-weight:900;color:var(--gd)">🎂 생일 전체 보기</span>
+          <button onclick="closeBdayAll()" style="margin-left:auto;border:none;background:var(--iv);border-radius:8px;padding:5px 11px;font-size:13px;cursor:pointer;font-family:inherit">✕</button>
+        </div>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">
+          ${selBtn('who','all','전체')} ${selBtn('who','teacher','👩‍🏫 선생님')} ${selBtn('who','student','🧒 학생')}
+          ${myOrgList.length>1 ? `<span style="width:1px;background:var(--ivd);margin:0 3px"></span>
+            ${selBtn('org','all','두 기관')} ${selBtn('org','daniel','다니엘')} ${selBtn('org','jihyebit','지혜빛')}` : ''}
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">
+          ${selBtn('month','0','연간 전체')}
+          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>selBtn('month',String(m),`${m}월`)).join('')}
+        </div>
+        <div style="flex:1;overflow:auto;border-top:1px solid var(--ivd);padding-top:10px">${body}</div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
 }
 window.loadHomeBirthdays = loadHomeBirthdays;
 

@@ -347,6 +347,7 @@ function renderInbox(){
           onchange="mfSet('unread', this.checked)" style="width:15px;height:15px"> 안 읽은 것만</label>
         ${(mSearch||mFrom||mMonth||mOrg||mUnreadOnly)?`<button class="mclear" onclick="mfClear()">필터 지우기</button>`:''}
         ${unreadCounts.all>0?`<button class="mallread" onclick="markAllRead()">✓ 모두 읽음 (${unreadCounts.all})</button>`:''}
+        ${CU.role==='super'?`<button class="mclear" onclick="cleanOldMsgImages()" title="보낸 지 12개월 지난 쪽지 사진을 삭제해 저장 공간을 아낍니다">🧹 사진 정리</button>`:''}
       </div>
       <div id="msg-rows"></div>
     </div>`;
@@ -402,7 +403,7 @@ function renderInboxRows(){
           ${catBadge(c)}
           <span class="msg-date">${fmtTime(m.createdAt)}</span>
         </div>
-        <div class="msg-sub">${esc(m.subject||'(제목 없음)')}</div>
+        <div class="msg-sub">${m.imgCount?'📷 ':''}${esc(m.subject||'(제목 없음)')}</div>
       </div>
     </div>`;
   }).join('');
@@ -478,6 +479,7 @@ async function openMsg(id){
       <div class="mtitle">${esc(m.subject||'(제목 없음)')}</div>
       <div class="msub">보낸사람: <b>${esc(m.fromName)}</b> · ${fmtFull(m.createdAt)}<br>받는사람: ${esc(names)}</div>
       <div class="readbox">${esc(m.body)}</div>
+      <div id="msg-imgs-view" style="display:none;flex-wrap:wrap;gap:8px;margin-top:10px"></div>
       <div class="mact">
         ${isRecip?`<button class="bs" onclick="replyMsg('${m.fromUid}','${esc(m.fromName).replace(/'/g,"")}','${esc(m.subject).replace(/'/g,"")}')">↩ 답장</button>`:''}
         ${canDelete?`<button class="bs" style="color:var(--danger)" onclick="delMsg('${id}')">삭제</button>`:''}
@@ -487,6 +489,16 @@ async function openMsg(id){
   // 목록 갱신 (읽음 표시 반영)
   const active = document.querySelector('.subtbtn.active')?.id;
   if(active==='tb-inbox') renderInbox();
+  // 📷 첨부 사진 (있을 때만 · 열람 시에만 불러온다)
+  if(m.imgCount || m.imgCount===undefined){
+    loadMsgImages(id).then(imgs=>{
+      const box = $I('msg-imgs-view');
+      if(!box || !imgs.length) return;
+      box.style.display = 'flex';
+      box.innerHTML = imgs.map(d=>`<a href="${d}" target="_blank" rel="noopener" title="새 창에서 크게 보기">
+        <img src="${d}" style="max-width:150px;max-height:150px;border-radius:10px;border:1px solid var(--ivd);object-fit:cover"></a>`).join('');
+    });
+  }
 }
 window.openMsg = openMsg;
 
@@ -526,11 +538,21 @@ function openCompose(reTo, reToName, reSub){
       </div>
       <div class="fgrp"><label>제목</label><input type="text" id="cp-subject" value="${reSub?'Re: '+esc(reSub).replace(/"/g,'&quot;'):''}" placeholder="제목"></div>
       <div class="fgrp"><label>내용</label><textarea id="cp-body" rows="6" placeholder="내용을 입력하세요..."></textarea></div>
+      <div class="fgrp"><label>📷 사진 첨부 <span style="font-weight:400;color:var(--tl)">· 최대 3장, 자동 압축</span> <span id="mimg-cnt" style="font-weight:700;color:var(--gm)"></span></label>
+        <input type="file" id="mimg-file" accept="image/*" multiple style="display:none" onchange="addMsgImages(this.files); this.value='';">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button type="button" onclick="document.getElementById('mimg-file').click()"
+            style="border:1.5px dashed var(--ivd);background:var(--iv);color:var(--ts);border-radius:10px;padding:9px 14px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit">＋ 사진 고르기</button>
+          <div id="mimg-list" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
+      </div>
       <div class="mact">
         <button class="bs" onclick="closeMod()">취소</button>
         <button class="bp" onclick="sendMsg()">보내기</button>
       </div>
     </div></div>`;
+  msgImgs = [];
+  renderMsgImgs();
   renderRecipBox();
 }
 window.openCompose = openCompose;
@@ -585,21 +607,102 @@ function updateRecipCount(){
   const el = $I('recip-count'); if(el) el.textContent = `선택: ${composeSel.size}명`;
 }
 
+/* ── 📷 쪽지 사진 첨부 — 별도 컬렉션(msgImages)에 저장해 목록은 가볍게 ── */
+const MIMG_MAX = 3;               // 쪽지당 최대 3장
+const MIMG_CAP = 400 * 1024;      // 장당 dataURL 최대 약 400KB
+let msgImgs = [];                 // 작성 중 첨부 (dataURL 목록)
+
+window.addMsgImages = async function(files){
+  const list = Array.from(files||[]).filter(f=>f.type.startsWith('image/'));
+  for(const f of list){
+    if(msgImgs.length >= MIMG_MAX){ toast(`사진은 최대 ${MIMG_MAX}장까지 담을 수 있어요.`,'err'); break; }
+    try { msgImgs.push(await compressMsgImage(f)); } catch(e){ toast('사진을 읽지 못했습니다.','err'); }
+  }
+  renderMsgImgs();
+};
+window.rmMsgImage = function(i){ msgImgs.splice(i,1); renderMsgImgs(); };
+function renderMsgImgs(){
+  const box = $I('mimg-list'), cnt = $I('mimg-cnt');
+  if(cnt) cnt.textContent = msgImgs.length ? `${msgImgs.length}/${MIMG_MAX}장` : '';
+  if(!box) return;
+  box.innerHTML = msgImgs.map((d,i)=>`
+    <div style="position:relative;width:62px;height:62px;border-radius:10px;overflow:hidden;border:1px solid var(--ivd)">
+      <img src="${d}" style="width:100%;height:100%;object-fit:cover">
+      <button onclick="rmMsgImage(${i})" style="position:absolute;top:2px;right:2px;width:19px;height:19px;border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:11px;cursor:pointer;line-height:1">✕</button>
+    </div>`).join('');
+}
+// 긴 변 1280px, 400KB 안쪽으로 자동 압축 (영수증 방식의 소통용 완화판)
+function compressMsgImage(file){
+  return new Promise((resolve, reject)=>{
+    const fr = new FileReader();
+    fr.onerror = reject;
+    fr.onload = ()=>{
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = ()=>{
+        const MAX = 1280;
+        let w = img.width, h = img.height;
+        if(Math.max(w,h) > MAX){ const r = MAX/Math.max(w,h); w = Math.round(w*r); h = Math.round(h*r); }
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        let q = 0.8, data = cv.toDataURL('image/jpeg', q);
+        while(data.length > MIMG_CAP && q > 0.4){ q -= 0.08; data = cv.toDataURL('image/jpeg', q); }
+        resolve(data);
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+// 쪽지 사진 불러오기 (열람 시에만)
+async function loadMsgImages(msgId){
+  try {
+    const snap = await getDocs(query(collection(db,'msgImages'), where('msgId','==',msgId)));
+    const arr = []; snap.forEach(d=>arr.push({idx:d.data().idx||0, dataUrl:d.data().dataUrl}));
+    arr.sort((a,b)=>a.idx-b.idx);
+    return arr.map(x=>x.dataUrl);
+  } catch(e){ return []; }
+}
+// 🧹 오래된 쪽지 사진 정리 (수퍼관리자) — 12개월 지난 것 삭제
+window.cleanOldMsgImages = async function(){
+  if(CU.role!=='super') return;
+  if(!confirm('보낸 지 12개월이 지난 쪽지 사진을 모두 정리할까요?\n(쪽지 글은 남고 사진만 삭제됩니다)')) return;
+  try {
+    const cutoff = Date.now() - 365*24*3600*1000;
+    const snap = await getDocs(collection(db,'msgImages'));
+    let n = 0;
+    for(const d of snap.docs){
+      const t = d.data().createdAt?.toMillis?.() || 0;
+      if(t && t < cutoff){ await deleteDoc(doc(db,'msgImages',d.id)); n++; }
+    }
+    toast(n ? `사진 ${n}장을 정리했습니다.` : '정리할 오래된 사진이 없습니다.','ok');
+  } catch(e){ toast('정리 실패: '+e.message,'err'); }
+};
+
 async function sendMsg(){
   const subject = $I('cp-subject').value.trim();
   const body = $I('cp-body').value.trim();
   if(composeSel.size===0) return toast('받는 사람을 선택하세요.','err');
-  if(!body) return toast('내용을 입력하세요.','err');
+  if(!body && !msgImgs.length) return toast('내용이나 사진을 넣어주세요.','err');
   const toUids = Array.from(composeSel);
   const toNames = toUids.map(u=>STAFF.find(s=>s.uid===u)?.name||'?');
   try {
-    await addDoc(collection(db,'messages'), {
+    const ref = await addDoc(collection(db,'messages'), {
       category:'general',
       fromUid:CU.uid, fromName:CU.name, fromOrg:CU.org||'',
       toUids, toNames, subject, body,
+      imgCount: msgImgs.length,
       readBy:[], createdAt:Timestamp.now()
     });
+    // 📷 사진은 별도 컬렉션에 — 쪽지함 목록을 무겁게 하지 않는다
+    for(let i=0; i<msgImgs.length; i++){
+      await addDoc(collection(db,'msgImages'), {
+        msgId: ref.id, idx: i, dataUrl: msgImgs[i],
+        uid: CU.uid, createdAt: Timestamp.now()
+      });
+    }
     toast(`${toUids.length}명에게 쪽지를 보냈습니다.`,'ok');
+    msgImgs = [];
     closeMod();
     await loadMsgs();
     showTab('sent');
