@@ -577,6 +577,8 @@
     <div class="pb-make">
       <span style="font-size:12.5px;color:var(--ts,#5A6560)">저장해둔 배정</span>
       <select class="pb-sel" id="pub-set"></select>
+      <button class="btn" style="border:1.5px solid #C77D00;color:#8A5200;background:#FFF6E8" onclick="previewSet()"
+        title="게시하지 않고 이 배정을 완성 시간표 화면 그대로 살펴봅니다">👁 게시 없이 미리보기</button>
       <button class="btn btn-p" onclick="doPublish()">📌 새로 게시</button>
     </div>
     <div class="pb-hint" id="pub-hint"></div>
@@ -1758,6 +1760,64 @@ function renderPubPanel(){
       : `먼저 <b>시간표 배정</b>에서 작업을 저장해 주세요.`;
   }
 }
+
+/* ══ 👁 게시 없이 미리보기 — 저장해 둔 배정을 «완성 시간표 화면»으로 그대로 살펴본다
+   (게시본은 건드리지 않는다 · 편집→저장→미리보기→마음에 들면 게시 흐름) ══ */
+window.previewSet = async function(){
+  if(!canPublish()){ toast('게시 권한이 없습니다.','err'); return; }
+  const setId = $I('pub-set')?.value;
+  const s = SETS.find(x=>x.id===setId);
+  if(!s){ toast('미리 볼 배정을 골라 주세요.','err'); return; }
+  window.showLoading && window.showLoading('저장된 배정을 읽는 중…');
+  try {
+    const fresh = await getDoc(doc(db,'timetableSets', setId));
+    if(!fresh.exists()) throw new Error('세트를 찾을 수 없습니다');
+    const snap = fresh.data().snapshot || {};
+    // ↓ doPublish와 같은 정리 규칙 — 세트가 기억하는 «작업하던 틀» 그대로
+    const place2All = snap.place2 || {};
+    const cnt = fid => { let n=0; Object.values(place2All[fid]||{}).forEach(bd=>Object.values(bd||{}).forEach(l=>{ n+=(l||[]).length; })); return n; };
+    const frameId = (snap.frameId && place2All[snap.frameId] !== undefined ? snap.frameId : '')
+      || Object.keys(place2All).sort((a,b)=>cnt(b)-cnt(a))[0] || snap.frameId || '';
+    const place2 = frameId ? { [frameId]: place2All[frameId] || {} } : {};
+    const savedFrames = Array.isArray(snap.frames) && snap.frames.length ? snap.frames : FRAMES_CACHE;
+    const frames = frameId ? savedFrames.filter(f=>f.id===frameId) : savedFrames;
+    const usedUids = new Set();
+    (snap.lessons||[]).forEach(l=>(l.teacherUids||[]).forEach(u=>usedUids.add(u)));
+    const teachers = (TEACHERS_CACHE||[]).filter(t=>usedUids.has(t.uid));
+    CUR = { id:'__preview__', preview:true,
+      title: (s.name||'저장 배정'),
+      org: (CU.role!=='super' ? (CU.org==='jihyebit'?'jihyebit':'daniel') : (typeof MG_ORG!=='undefined'?MG_ORG:'daniel')),
+      publishedAt: null,
+      snapshot: { frameId, frames: frames.length?frames:savedFrames, floors:snap.floors||[],
+        lessons:snap.lessons||[], place2, gradeDept:snap.gradeDept||{}, teachers } };
+    // 주황 배너 — 지금 보는 것이 게시본이 아님을 항상 알린다
+    let bar = document.getElementById('tt-preview-bar');
+    if(!bar){
+      bar = document.createElement('div'); bar.id='tt-preview-bar';
+      bar.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:9999;'
+        + 'background:#FFF1DC;border:1.5px solid #E0A34E;color:#8A5200;border-radius:100px;'
+        + 'padding:9px 18px;font-size:13px;font-weight:800;box-shadow:0 6px 18px rgba(0,0,0,.15);'
+        + 'display:flex;gap:12px;align-items:center';
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = `👁 미리보기: ${esc(s.name||'')} — <b>게시되지 않았습니다</b>
+      <button onclick="exitPreview()" style="border:none;background:#8A5200;color:#fff;border-radius:100px;
+        padding:5px 13px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit">게시본으로 돌아가기</button>`;
+    // 보기 화면으로
+    const viewTab = document.querySelector('.tabbtn, .subtbtn');
+    renderView();
+    window.scrollTo({top:0, behavior:'smooth'});
+    toast('👁 미리보기예요 — 게시본은 그대로 있습니다.','ok');
+  } catch(e){ toast('미리보기 실패: '+(e.message||''),'err'); }
+  finally { window.hideLoading && window.hideLoading(); }
+};
+window.exitPreview = function(){
+  document.getElementById('tt-preview-bar')?.remove();
+  CUR = PUBS.find(p=>p.active && orgOf(p)===VIEW_ORG) || pubsForView()[0] || null;
+  renderPubSelect && renderPubSelect();
+  renderView();
+  toast('게시본으로 돌아왔어요.','ok');
+};
 
 window.doPublish = async function(){
   if(!canPublish()){ toast('게시 권한이 없습니다.','err'); return; }
