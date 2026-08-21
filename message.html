@@ -123,7 +123,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp, writeBatch, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -143,8 +143,11 @@ const pad = n => String(n).padStart(2,'0');
 const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
 let CU = null;
 let STAFF = [];       // 전체 교직원 (수신자 선택용)
+let ORGMAP = {};      // uid → 기관 (발신자 기관 필터용, 퇴직자 포함)
 let MSGS = [];        // 내 쪽지 (받은+보낸)
 let composeSel = new Set(); // 작성 중 선택된 수신자 uid
+// 🔎 받은 쪽지 필터 상태
+let mSearch='', mFrom='', mMonth='', mOrg='', mUnreadOnly=false;
 
 function toast(msg, type=''){
   const t = $I('toast'); t.textContent = msg;
@@ -194,9 +197,10 @@ onAuthStateChanged(auth, async (user) => {
 
 async function loadStaff(){
   const snap = await getDocs(collection(db,'staff'));
-  STAFF = [];
+  STAFF = []; ORGMAP = {};
   snap.forEach(d=>{
     const s={uid:d.id, ...d.data()};
+    ORGMAP[d.id] = s.org || '';               // 발신자 기관 조회용 (퇴직자 포함)
     if((s.acStatus||'active')!=='active') return; // 재직자만
     if(s.uid===CU.uid) return; // 본인 제외
     STAFF.push(s);
@@ -274,8 +278,6 @@ function renderInbox(){
     if(!(m.readBy||[]).includes(CU.uid)){ unreadCounts[c]++; unreadCounts.all++; }
   });
 
-  const list = inboxFilter==='all' ? all : all.filter(m=>msgCat(m)===inboxFilter);
-
   const chips = [['all','전체','📥'], ['payreq','경비 지급','💳'], ['expense','수행성 경비','💰'],
                  ['approval','전자결재','🗂️'], ['general','일반','✉️']]
     .map(([k,l,ic])=>{
@@ -287,6 +289,108 @@ function renderInbox(){
       </button>`;
     }).join('');
 
+  // 🔎 필터 선택지 — 받은 쪽지 전체에서 뽑는다
+  const fromNames = [...new Set(all.map(m=>m.fromName||'?'))].sort((a,b)=>a.localeCompare(b,'ko'));
+  const months = [...new Set(all.map(m=>{
+    const t=m.createdAt?.toMillis?.(); if(!t) return null;
+    const d=new Date(t); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }).filter(Boolean))].sort().reverse();
+  const orgsIn = [...new Set(all.map(m=>ORGMAP[m.fromUid]||'').filter(Boolean))];
+  const ORG_L = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+
+  $I('c-inbox').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📥 받은 쪽지</h3>
+      <p class="adesc">종류별로 나누어 볼 수 있습니다. 클릭하면 내용을 볼 수 있습니다.</p>
+      <div class="mcx-bar">${chips}</div>
+      <style>
+        .mcx-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+        .mcx{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1.5px solid var(--ivd);border-radius:100px;background:var(--wh);font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit;}
+        .mcx:hover{border-color:var(--gm);}
+        .mcx.on{background:var(--gm);border-color:var(--gm);color:#fff;}
+        .mcx-n{font-size:11px;opacity:.65;font-weight:600;}
+        .mcx-u{background:#C0392B;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:100px;min-width:16px;text-align:center;line-height:1.3;}
+        .msg-cat{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:100px;white-space:nowrap;}
+        .msg-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+        .mfil{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:12px;
+          background:var(--iv);border:1px solid var(--ivd);border-radius:12px;padding:9px 10px;}
+        .mfil input[type=text]{flex:1;min-width:150px;border:1.5px solid var(--ivd);border-radius:8px;
+          padding:7px 11px;font-size:12.5px;font-family:inherit;background:var(--wh);outline:none;}
+        .mfil input[type=text]:focus{border-color:var(--gm);}
+        .mfil select{border:1.5px solid var(--ivd);border-radius:8px;padding:7px 9px;font-size:12.5px;
+          font-family:inherit;background:var(--wh);color:var(--ts);outline:none;max-width:150px;}
+        .mfil .munread{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;
+          color:var(--ts);cursor:pointer;white-space:nowrap;}
+        .mfil .mclear{border:none;background:none;color:var(--tl);font-size:12px;cursor:pointer;
+          font-family:inherit;text-decoration:underline;white-space:nowrap;}
+        .mallread{border:1px solid var(--gl);background:var(--gp);color:var(--gd);border-radius:100px;
+          padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;}
+        .mallread:hover{background:var(--gl);}
+        .mfil-cnt{font-size:11.5px;color:var(--tl);margin-left:auto;white-space:nowrap;}
+      </style>
+      <div class="mfil">
+        <input type="text" id="mf-q" placeholder="🔍 제목·보낸 사람 검색" value="${esc(mSearch)}"
+          oninput="mfSet('search', this.value)">
+        <select onchange="mfSet('from', this.value)">
+          <option value="">보낸 사람 전체</option>
+          ${fromNames.map(n=>`<option value="${esc(n)}"${mFrom===n?' selected':''}>${esc(n)}</option>`).join('')}
+        </select>
+        <select onchange="mfSet('month', this.value)">
+          <option value="">기간 전체</option>
+          ${months.map(mo=>`<option value="${mo}"${mMonth===mo?' selected':''}>${mo.replace('-','년 ')}월</option>`).join('')}
+        </select>
+        ${orgsIn.length>1?`<select onchange="mfSet('org', this.value)">
+          <option value="">기관 전체</option>
+          ${orgsIn.map(o=>`<option value="${o}"${mOrg===o?' selected':''}>${ORG_L[o]||o}</option>`).join('')}
+        </select>`:''}
+        <label class="munread"><input type="checkbox" ${mUnreadOnly?'checked':''}
+          onchange="mfSet('unread', this.checked)" style="width:15px;height:15px"> 안 읽은 것만</label>
+        ${(mSearch||mFrom||mMonth||mOrg||mUnreadOnly)?`<button class="mclear" onclick="mfClear()">필터 지우기</button>`:''}
+        ${unreadCounts.all>0?`<button class="mallread" onclick="markAllRead()">✓ 모두 읽음 (${unreadCounts.all})</button>`:''}
+      </div>
+      <div id="msg-rows"></div>
+    </div>`;
+  renderInboxRows();
+}
+window.renderInbox = renderInbox;
+
+// 필터 상태 갱신 — 검색은 목록만 다시 그려 입력 포커스 유지
+window.mfSet = function(k, v){
+  if(k==='search') mSearch = v;
+  if(k==='from')   mFrom = v;
+  if(k==='month')  mMonth = v;
+  if(k==='org')    mOrg = v;
+  if(k==='unread') mUnreadOnly = !!v;
+  if(k==='search'){ renderInboxRows(); } else { renderInbox(); }
+};
+window.mfClear = function(){
+  mSearch=''; mFrom=''; mMonth=''; mOrg=''; mUnreadOnly=false;
+  renderInbox();
+};
+
+function inboxFiltered(){
+  const all = MSGS.filter(m=>(m.toUids||[]).includes(CU.uid));
+  let list = inboxFilter==='all' ? all : all.filter(m=>msgCat(m)===inboxFilter);
+  if(mSearch.trim()){
+    const q = mSearch.trim().toLowerCase();
+    list = list.filter(m=>(m.subject||'').toLowerCase().includes(q)
+                        ||(m.fromName||'').toLowerCase().includes(q)
+                        ||(m.body||'').toLowerCase().includes(q));
+  }
+  if(mFrom)  list = list.filter(m=>(m.fromName||'?')===mFrom);
+  if(mMonth) list = list.filter(m=>{
+    const t=m.createdAt?.toMillis?.(); if(!t) return false;
+    const d=new Date(t);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`===mMonth;
+  });
+  if(mOrg)   list = list.filter(m=>(ORGMAP[m.fromUid]||'')===mOrg);
+  if(mUnreadOnly) list = list.filter(m=>!(m.readBy||[]).includes(CU.uid));
+  return list;
+}
+
+function renderInboxRows(){
+  const box = $I('msg-rows'); if(!box) return;
+  const list = inboxFiltered();
   const rows = list.map(m=>{
     const unread = !(m.readBy||[]).includes(CU.uid);
     const c = msgCat(m);
@@ -302,26 +406,31 @@ function renderInbox(){
       </div>
     </div>`;
   }).join('');
-
-  $I('c-inbox').innerHTML = `
-    <div class="acard">
-      <h3 class="actitle">📥 받은 쪽지</h3>
-      <p class="adesc">종류별로 나누어 볼 수 있습니다. 클릭하면 내용을 볼 수 있습니다.</p>
-      <div class="mcx-bar">${chips}</div>
-      <style>
-        .mcx-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
-        .mcx{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border:1.5px solid var(--ivd);border-radius:100px;background:var(--wh);font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit;}
-        .mcx:hover{border-color:var(--gm);}
-        .mcx.on{background:var(--gm);border-color:var(--gm);color:#fff;}
-        .mcx-n{font-size:11px;opacity:.65;font-weight:600;}
-        .mcx-u{background:#C0392B;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:100px;min-width:16px;text-align:center;line-height:1.3;}
-        .msg-cat{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:100px;white-space:nowrap;}
-        .msg-top{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
-      </style>
-      ${rows || `<div class="empty">${inboxFilter==='all'?'받은 쪽지가 없습니다.':'해당 분류의 쪽지가 없습니다.'}</div>`}
-    </div>`;
+  const anyFilter = mSearch||mFrom||mMonth||mOrg||mUnreadOnly;
+  box.innerHTML = rows ||
+    `<div class="empty">${anyFilter?'조건에 맞는 쪽지가 없습니다.':(inboxFilter==='all'?'받은 쪽지가 없습니다.':'해당 분류의 쪽지가 없습니다.')}</div>`;
 }
-window.renderInbox = renderInbox;
+
+// ✓ 모두 읽음 — 안 읽은 받은 쪽지 전부 한 번에 읽음 처리 (400건씩 배치)
+window.markAllRead = async function(){
+  const targets = MSGS.filter(m=>(m.toUids||[]).includes(CU.uid)
+    && !(m.readBy||[]).includes(CU.uid));
+  if(!targets.length) return;
+  if(!confirm(`안 읽은 쪽지 ${targets.length}건을 모두 읽음으로 표시할까요?`)) return;
+  try{
+    for(let i=0; i<targets.length; i+=400){
+      const batch = writeBatch(db);
+      targets.slice(i, i+400).forEach(m=>{
+        batch.update(doc(db,'messages',m.id), { readBy: arrayUnion(CU.uid) });
+      });
+      await batch.commit();
+    }
+    targets.forEach(m=>{ m.readBy = [...(m.readBy||[]), CU.uid]; });
+    toast(`${targets.length}건을 읽음 처리했습니다.`,'ok');
+    updateBadge();
+    renderInbox();
+  }catch(e){ toast('읽음 처리 실패: '+e.message,'err'); }
+};
 
 function renderSent(){
   const list = MSGS.filter(m=>m.fromUid===CU.uid);
