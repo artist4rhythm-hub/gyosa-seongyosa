@@ -1885,6 +1885,7 @@ function edTable(b){
       <button class="ed-mini" onclick="tbDelCol()">－ 마지막 열 빼기</button>
       <button class="ed-mini" style="border-color:var(--gm);color:var(--gm);font-weight:800" onclick="tbPasteOpen()">📋 한글·엑셀 표 붙여넣기</button>
       <button class="ed-mini" id="tb-mode-btn" onclick="tbToggleMode()" title="칸을 드래그로 묶어 잡고 옮깁니다 — AI로 불러온 표의 어긋난 칸 바로잡기">🧲 칸 이동 모드</button>
+      <button class="ed-mini" style="border-color:#8A6410;color:#8A6410" onclick="tbClipToggle()" title="저장소에 담아둔 다른 표의 줄들을 이 표 아래에 합칩니다">📦 저장소 표 이어붙이기</button>
       ${p?.rosterImport?`<button class="ed-mini" style="border-color:var(--gm);color:var(--gm)"
         onclick="tbRosterImport()">📋 학생 명부에서 불러오기</button>`:''}
     </div>
@@ -1916,6 +1917,11 @@ function edTable(b){
         <button class="ed-mini" onclick="$I('tb-paste-panel').style.display='none'">닫기</button>
         <button class="ed-mini" style="background:var(--gd);color:#fff;border-color:var(--gd);font-weight:800;padding:7px 18px" onclick="tbPasteApply()">✨ 채우기</button>
       </div>
+    </div>
+    <div id="tb-clip-panel" style="display:none;margin-top:10px;border:1.5px dashed #EAD9A8;border-radius:11px;padding:12px;background:#FDF9EF">
+      <div style="font-size:12.5px;font-weight:800;color:#8A6410;margin-bottom:5px">📦 저장소에서 표 이어붙이기</div>
+      <div style="font-size:11.5px;color:var(--ts);margin-bottom:8px">담아둔 블록 중 <b>표가 들어있는 것</b>만 보여요 — 누르면 그 표의 줄들이 <b>지금 표 맨 아래</b>에 합쳐집니다 (열이 더 많으면 자동으로 늘어나요).</div>
+      <div id="tb-clip-list"><span style="font-size:11.5px;color:var(--tl)">불러오는 중…</span></div>
     </div>
     <div class="frow" style="margin-top:10px"><label class="flab">🎨 표 무늬</label>
       <select class="fsel" id="tb-style">
@@ -2086,6 +2092,48 @@ window.tbUnstack = function(){
   }
   ta.value = out.map(r=>r.join('\t')).join('\n');
   toast(`🪢 ${blocks}단 → 한 단 (${period}열)로 합쳤어요 — 확인 후 «채우기»!`,'ok');
+};
+
+/* ══ 📦 저장소 표 이어붙이기 — 담아둔 블록의 표 줄들을 지금 편집 중인 표에 합친다 ══ */
+window.tbClipToggle = async function(){
+  const pn = $I('tb-clip-panel'); if(!pn) return;
+  pn.style.display = pn.style.display==='none' ? '' : 'none';
+  if(pn.style.display==='none') return;
+  if(!CLIPS) await loadClips();
+  const box = $I('tb-clip-list'); if(!box) return;
+  const tclips = CLIPS.map(c=>{
+    try { const b=JSON.parse(c.block);
+      if(b?.data && Array.isArray(b.data.rows) && b.data.rows.length) return { ...c, _rows:b.data.rows.length };
+    } catch(e){}
+    return null;
+  }).filter(Boolean);
+  box.innerHTML = tclips.length ? tclips.map(c=>`
+    <div style="display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--ivd);border-radius:9px;padding:8px 11px;margin-bottom:6px">
+      <span style="flex:1;min-width:0;font-size:12.5px"><b>${esc(c.name||'')}</b>
+        <span style="font-size:10px;color:var(--tl)"> ${c.fromTitle?esc(c.fromTitle)+' · ':''}${c._rows}줄</span></span>
+      <button class="ed-mini" style="background:#8A6410;color:#fff;border-color:#8A6410;font-weight:800" onclick="tbClipAppend('${c.id}')">⤵ 이어붙이기</button>
+    </div>`).join('')
+    : '<span style="font-size:11.5px;color:var(--tl)">표가 들어있는 저장 블록이 없어요 — 표 블록 머리의 📥 담기로 먼저 담아주세요.</span>';
+};
+window.tbClipAppend = async function(id){
+  if(!CLIPS) await loadClips();
+  const c = CLIPS.find(x=>x.id===id); if(!c) return;
+  let b; try { b = JSON.parse(c.block); } catch(e){ toast('블록을 읽지 못했어요.','err'); return; }
+  const rowsIn = (b?.data?.rows)||[], colsIn = (b?.data?.cols)||[];
+  if(!rowsIn.length){ toast('이 블록에는 붙일 표 줄이 없어요.','err'); return; }
+  const t = $I('tb-tbl'); if(!t) return;
+  let n = tbColCount();
+  while(n < colsIn.length){ tbAddCol(); n = tbColCount(); }
+  const html = rowsIn.map((r,ri)=>{
+    const cvals = [...Array(n)].map((_,ci)=>{
+      let v = (r.c||[])[ci]; if(v==null) v='';
+      if(ri===0 && v===TB_MERGE) v='';   // 첫 줄이 기존 표와 엉겨 붙지 않게
+      return v;
+    });
+    return tbRowHTML({c:cvals}, n);
+  }).join('');
+  t.rows[t.rows.length-1].insertAdjacentHTML('afterend', html);
+  toast(`📦 「${c.name||''}」 ${rowsIn.length}줄을 이어붙였어요 — 확인 후 저장!`,'ok');
 };
 
 /* ══ 🔑 AI 키 — Gemini(구글·무료)와 OpenAI(GPT·유료) 둘 다 지원
