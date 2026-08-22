@@ -86,6 +86,9 @@ const MENU = [
         desc:'글 · 댓글' },
       { key:'family', label:'가정통신문', icon:'campaign', href:'family-notice.html',
         desc:'통신문 작성 · 발행 · 학부모 공유' },
+      { key:'psite', label:'학부모 사이트', icon:'diversity_3',
+        href:'https://artist4rhythm-hub.github.io/daniel-parents/index.html',
+        desc:'학부모에게 보이는 그 화면 — 교사 모드로 열람·참여' },
     ]
   },
   {
