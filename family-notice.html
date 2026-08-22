@@ -902,7 +902,9 @@ function famRowHTML(d){
     <td class="c"><span class="pill blue">${TYPE_L[d.type]||'자유'}</span></td>
     <td class="c">${st}${d.listed?' <span class="pill gray">게시판</span>':''}</td>
     <td class="c">${esc(d.ownerName||'')}</td>
-    <td class="c">${(d.editorNames||[]).map(esc).join(', ')||'<span style="color:var(--tl)">—</span>'}</td>
+    <td class="c">${(d.editorNames||[]).map(esc).join(', ')||'<span style="color:var(--tl)">—</span>'}
+      ${(canFamAdmin() || d.ownerUid===CU.uid)?`<button class="iconbtn" style="margin-left:4px" title="입력·협력 담당자 변경"
+        onclick="event.stopPropagation();openMgrFromList('${d.id}')">👥</button>`:''}</td>
     <td class="c" style="color:var(--ts);font-size:11px;white-space:nowrap">${dtStr(d.updatedAt)}
       ${canFamAdmin()?`<button class="iconbtn" style="margin-left:5px" title="폴더 지정"
         onclick="event.stopPropagation();openFolderPick('${d.id}')">📁</button>`:''}</td>
@@ -4283,6 +4285,12 @@ async function loadStaffList(){
   STAFF = snap.docs.map(d=>({ uid:d.id, ...d.data() }))
     .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
 }
+// 목록 행의 👥 버튼 — 문서를 열지 않고도 담당자만 바꾼다
+window.openMgrFromList = async function(id){
+  const d = DOCS.find(x=>x.id===id); if(!d) return;
+  CUR = { ...d, blocks: parseBlocks(d) };
+  await openMgrModal();
+};
 window.openMgrModal = async function(){
   if(!canOwn(CUR)) return;
   await loadStaffList();
@@ -4322,7 +4330,10 @@ window.saveMgrs = async function(){
   }
   try {
     await persist(upd);
-    closeModal(); toast('담당자를 저장했어요'); renderEdit();
+    closeModal(); toast('담당자를 저장했어요');
+    // 편집 화면이 열려 있으면 편집 화면을, 목록에서 바꿨으면 목록을 새로 그린다
+    if($I('view-edit') && $I('view-edit').style.display !== 'none') renderEdit();
+    else renderList();
     logAct('managers', editorNames.join(','));
   } catch(e){ toast('저장 실패: '+e.message,'err'); }
 };

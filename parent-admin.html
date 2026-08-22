@@ -73,7 +73,14 @@ td{padding:8px 9px;border-bottom:1px solid var(--iv);vertical-align:top}
 </head>
 <body>
 <div class="gate" id="gate"><div class="card"><div class="ct">학부모 사이트 관리</div>
-  <div class="cd" id="gate-msg">로그인 확인 중…</div></div></div>
+  <div class="cd" id="gate-msg">로그인 확인 중…</div>
+  <div id="gate-login" style="display:none;text-align:left">
+    <label class="fl">아이디</label><input type="text" id="ga-id" autocomplete="username" placeholder="아이디 입력">
+    <label class="fl">비밀번호</label><input type="password" id="ga-pw" autocomplete="current-password" placeholder="비밀번호 입력">
+    <button class="btn" id="ga-btn" style="width:100%;margin-top:12px" onclick="gateLogin()">로그인</button>
+    <div class="msg" id="ga-msg"></div>
+  </div>
+</div></div>
 
 <div id="ms" style="display:none">
 <div class="wrap">
@@ -96,7 +103,7 @@ td{padding:8px 9px;border-bottom:1px solid var(--iv);vertical-align:top}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
   collection, query, where, getDocs, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -417,8 +424,25 @@ async function render(){
   else if(TAB==='conn') await renderConn();
 }
 
+function korEmail(id){ return `${id}@gyosa-seongyosa.staff`; }
+window.gateLogin = async function(){
+  const id = $I('ga-id').value.trim(), pw = $I('ga-pw').value;
+  const m = $I('ga-msg'); m.className='msg';
+  if(!id || !pw){ m.className='msg err'; m.textContent='아이디와 비밀번호를 입력해 주세요.'; return; }
+  $I('ga-btn').disabled = true;
+  try { await signInWithEmailAndPassword(auth, korEmail(id), pw); }
+  catch(e){ m.className='msg err'; m.textContent='로그인 실패 — 아이디나 비밀번호를 확인해 주세요.'; }
+  finally { $I('ga-btn').disabled = false; }
+};
+$I('ga-pw')?.addEventListener?.('keydown', e=>{ if(e.key==='Enter') gateLogin(); });
+
 onAuthStateChanged(auth, async user => {
-  if(!user){ $I('gate-msg').textContent='로그인이 필요합니다 — 홈에서 로그인 후 다시 열어주세요.'; return; }
+  if(!user){
+    $I('gate-msg').textContent='로그인해 주세요 — 교사 선교사 계정 그대로 쓰시면 돼요.';
+    $I('gate-login').style.display='';
+    return;
+  }
+  $I('gate-login').style.display='none';
   try{
     const s = await getDoc(doc(db,'staff',user.uid));
     if(!s.exists()){ $I('gate-msg').textContent='교직원 계정이 아닙니다.'; return; }
