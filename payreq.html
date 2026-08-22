@@ -688,7 +688,8 @@ function renderNew(){
               placeholder="협의 근거를 꼭 적어주세요 — 예: 8/20 운영회의에서 승인, 원장님 구두 결재 (8/21)"
               style="width:100%">
             <div style="font-size:11px;color:var(--ts);margin-top:5px">
-              중간 결재를 건너뛰고 <b>최종 결재자 한 분</b>만 확인합니다. 기록에 ⚡전결 표시와 사유가 남아요.</div>
+              승인 절차 없이 <b>바로 회계 담당자</b>에게 넘어갑니다. 원래 결재선의 부서장·교장 선생님께는
+              <b>열람용</b>으로 공유되어 결재함에서 내용을 확인하실 수 있고, 기록에 ⚡하이패스 표시와 사유가 남아요.</div>
           </div>
         </div>` : ''}
       </div>
@@ -1032,13 +1033,17 @@ async function submitPayReq(){
   const hipass = prMode==='expense' && canHipass() && ($I('pr-hipass')?.checked || false);
   const hipassReason = $I('pr-hipass-reason')?.value?.trim() || '';
   if(hipass && !hipassReason){ toast('하이패스 사유(협의 근거)를 입력해 주세요.','err'); return; }
+  let hipassViewers = [];
   if(prMode==='expense'){
     const r=buildApprovalChain(total, CU.uid, dept, prOrg);
     chain=r.chain; needApproval=r.needApproval;
-    if(hipass && chain.length > 1){
-      // 중간 결재를 건너뛰고 최종 결재자 한 명만 남긴다 (감사 기록은 문서에 남음)
-      chain = [ chain[chain.length-1] ];
-      needApproval = true;
+    if(hipass){
+      // ⚡ 하이패스: 승인 절차 없이 바로 회계 지급 대기로.
+      //    원래 결재선(부서장·교감·교장 등)은 «열람 공유» 명단으로 남아
+      //    결재함에서 내용을 확인할 수 있다 (승인 버튼 없음).
+      hipassViewers = chain.map(c=>({ uid:c.uid, name:c.name, role:c.role, position:c.position||'' }));
+      chain = [];
+      needApproval = false;
     }
     status = needApproval ? 'approving' : 'submitted';  // 승인중 / 상신완료(회계 대기)
   } else {
@@ -1059,6 +1064,7 @@ async function submitPayReq(){
       mode:prMode, org:prOrg, date, applicantName:name, dept, purpose,
       note: prNote,
       hipass: hipass || false, hipassReason: hipass ? hipassReason : '',
+      hipassViewers,
       rows:rowsForSave, total,
       bank: prMode==='expense'?prBank:null,
       chain, chainIndex:0, status,
@@ -1223,6 +1229,24 @@ async function renderApprove(){
     </div>`;
   };
 
+  // ⚡ 하이패스로 열람 공유된 건 (승인 없이 회계로 간 건 — 확인만)
+  const hipassView = PAY_REQUESTS.filter(r=>
+    !r.deleted && r.hipass && (r.hipassViewers||[]).some(v=>v.uid===CU.uid)
+  ).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0)).slice(0,20);
+  const hipassCard = r => `<div class="acard sh-card" style="border-left:4px solid var(--gold)">
+      <div class="sh-ctop">
+        <span class="sh-tag" style="background:var(--goldp);color:var(--goldd)">⚡ 하이패스</span>
+        <b>${esc(r.purpose||'(용도 없음)')}</b>
+        <span class="sh-amt">₩${won(r.total)}</span>
+        <span style="font-size:11px;font-weight:800;color:${r.paid?'#16a34a':'var(--ts)'}">${r.paid?'지급완료':'회계 처리 대기'}</span>
+      </div>
+      <div class="sh-cmeta">${esc(r.date||'')} · ${ORGS[r.org]||r.org} · ${esc(r.dept||'')} · 신청 ${esc(r.applicantName||'')}
+        ${r.hipassReason?` · 사유: ${esc(r.hipassReason)}`:''}</div>
+      <div class="sh-cact">
+        <button class="bm" style="margin-left:auto" onclick="viewPayReq('${r.id}')">내용 확인 →</button>
+      </div>
+    </div>`;
+
   // 주임회의로 공유받은 건 (결재권은 없고 보고 의견만)
   const shared = PAY_REQUESTS.filter(r=>
     !r.deleted && (r.sharedWith||[]).includes(CU.uid) &&
@@ -1252,6 +1276,10 @@ async function renderApprove(){
       <p class="adesc">내 차례인 경비 지급 요청서입니다. 승인하면 다음 결재자에게, 마지막이면 회계 담당자에게 상신됩니다.</p>
     </div>
     ${mine.length? mine.map(r=>card(r,true)).join('') : '<div class="acard"><p class="empty">결재할 요청서가 없습니다.</p></div>'}
+    ${hipassView.length? `<div class="acard" style="margin-top:16px">
+      <h3 class="actitle">⚡ 하이패스 열람 <span style="font-size:12px;color:var(--tl);font-weight:400">(${hipassView.length}건 · 사전 협의 완료로 승인 없이 회계로 넘어간 건)</span></h3>
+      <p class="adesc">결재 승인은 필요 없고, 어떻게 진행됐는지 내용만 확인하시면 됩니다.</p>
+    </div>${hipassView.map(hipassCard).join('')}` : ''}
     ${shared.length? `<div class="acard" style="margin-top:16px">
       <h3 class="actitle">📣 주임회의 공유 <span style="font-size:12px;color:var(--tl);font-weight:400">(${shared.length}건 · 결재권 없이 열람·의견)</span></h3>
       <p class="adesc">다른 선생님이 함께 보자고 열어둔 건입니다. 내용을 보고 의견을 남기면 관련된 분들께 전해집니다.</p>
@@ -2434,7 +2462,8 @@ async function renderList(){
     if(r.mode==='income') return '<span class="pr-badge inc">수입</span>';
     if(r.status==='rejected') return '<span class="pr-badge rej">반려됨</span>';
     if(r.paid) return '<span class="pr-badge paid">지급완료</span>';
-    if(r.status==='approving'){ const cur=r.chain?.[r.chainIndex]; return `${r.hipass?'<span class="pr-badge" style="background:var(--goldp);color:var(--goldd)" title="'+esc(r.hipassReason||'')+'">⚡전결</span> ':''}<span class="pr-badge wait">결재중 (${cur?esc(cur.name)+' '+esc(cur.role||''):''})</span>`; }
+    if(r.hipass){ return `<span class="pr-badge" style="background:var(--goldp);color:var(--goldd)" title="${esc(r.hipassReason||'')}">⚡하이패스</span> ` + (r.paid?'<span class="pr-badge ok">지급완료</span>':'<span class="pr-badge">지급대기</span>'); }
+    if(r.status==='approving'){ const cur=r.chain?.[r.chainIndex]; return `<span class="pr-badge wait">결재중 (${cur?esc(cur.name)+' '+esc(cur.role||''):''})</span>`; }
     if(r.status==='submitted') return '<span class="pr-badge sub">상신완료 (지급대기)</span>';
     return '<span class="pr-badge">-</span>';
   };
@@ -2762,7 +2791,7 @@ function viewPayReq(id){
       </table></div>
       ${r.bank?`<div style="margin-top:8px;font-size:12.5px;color:var(--ts)">입금: ${esc(r.bank.bank||'')} ${esc(r.bank.account||'')} (${esc(r.bank.holder||'')})</div>`:''}
       ${r.note?`<div class="pr-note">💬 <b>신청자 메모</b> ${esc(r.note)}</div>`:''}
-      ${r.hipass?`<div class="pr-note" style="background:var(--goldp);color:var(--goldd)">⚡ <b>하이패스 (전결)</b> ${esc(r.hipassReason||'')} — 중간 결재 생략, 최종 결재자만 확인한 건입니다.</div>`:''}
+      ${r.hipass?`<div class="pr-note" style="background:var(--goldp);color:var(--goldd)">⚡ <b>하이패스 처리</b> ${esc(r.hipassReason||'')} — 사전 협의 완료로 승인 절차 없이 회계로 바로 넘어간 건입니다.${(r.hipassViewers||[]).length?`<br><span style="font-weight:600">열람 공유:</span> ${r.hipassViewers.map(v=>esc(v.name)+'('+esc(v.position||v.role||'')+')').join(', ')}`:''}</div>`:''}
       ${chainHtml}
       ${(r.locked||r.paid)?`<div class="pr-lockbar">🔒 입금이 확인되어 잠겼습니다. 고칠 내용이 있으면 <b>정정 신청</b>으로 차액만 주고받습니다.
         ${(r.createdByUid===CU.uid||isPayManager())?`<button class="bm" onclick="startCorrection('${r.id}')">🧾 정정 신청</button>`:''}
@@ -3101,7 +3130,8 @@ async function renderReport(){
     if(r.mode==='income') return '<span class="pr-badge inc">수입</span>';
     if(r.status==='rejected') return '<span class="pr-badge rej">반려</span>';
     if(r.paid) return '<span class="pr-badge paid">지급완료</span>';
-    if(r.status==='approving'){ const c=r.chain?.[r.chainIndex]; return `${r.hipass?'<span class="pr-badge" style="background:var(--goldp);color:var(--goldd)" title="'+esc(r.hipassReason||'')+'">⚡</span>':''}<span class="pr-badge wait">결재중 ${c?'('+esc(c.name)+')':''}</span>`; }
+    if(r.hipass && !r.paid){ return `<span class="pr-badge" style="background:var(--goldp);color:var(--goldd)" title="${esc(r.hipassReason||'')}">⚡하이패스</span>`; }
+    if(r.status==='approving'){ const c=r.chain?.[r.chainIndex]; return `<span class="pr-badge wait">결재중 ${c?'('+esc(c.name)+')':''}</span>`; }
     if(r.status==='submitted') return '<span class="pr-badge sub">지급대기</span>';
     return '';
   };
