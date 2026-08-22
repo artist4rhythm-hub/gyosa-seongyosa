@@ -4346,15 +4346,56 @@ window.openPublishModal = function(){
       <input type="checkbox" id="pb-list" ${CUR.listed?'checked':''}>
       <span>학부모 게시판 목록에도 올리기 <small style="margin-left:6px">(share-family.html 첫 화면 목록)</small></span>
     </label>
+    <div style="border:1px solid var(--gl,#CFE3DA);background:var(--gp,#EAF4EF);border-radius:12px;padding:12px 14px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:6px">🏫 학부모 사이트 게시판에 자동으로 올리기</div>
+      <div style="font-size:11.5px;color:var(--ts);margin-bottom:8px">
+        선택한 반의 게시판에 통신문 안내 글(+링크)이 선생님 이름으로 올라갑니다.
+        그 반 자녀를 연결한 학부모만 볼 수 있어요. 다시 발행하면 이전 자동 글은 새 글로 교체됩니다.</div>
+      <label class="pick" style="margin-bottom:6px">
+        <input type="checkbox" id="pb-orgall" ${CUR.pbOrgAll?'checked':''}>
+        <span>기관 전체 게시판에 올리기</span>
+      </label>
+      <div id="pb-classes" style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px">
+        <span style="font-size:12px;color:var(--tl)">반 목록 불러오는 중…</span>
+      </div>
+      <label class="pick" style="margin-top:8px;margin-bottom:0">
+        <input type="checkbox" id="pb-pin" ${CUR.pbPinned?'checked':''}>
+        <span>📌 게시판 상단 고정으로 올리기</span>
+      </label>
+    </div>
     ${link?`<div class="linkbox"><span class="lk">${esc(link)}</span>
       <button class="btn line sm" onclick="copyLink()">복사</button></div>`:''}
     <div class="mfoot">
       <button class="btn gray" onclick="closeModal()">취소</button>
       <button class="btn" onclick="doPublish()">${CUR.publishedAt?'다시 발행':'발행하기'}</button>
     </div>`);
+  loadPbClasses();
 };
+// 그 기관 학생들의 반 목록을 모아 체크박스로 (classKey = 학생의 className)
+async function loadPbClasses(){
+  const box = $I('pb-classes'); if(!box) return;
+  try {
+    const snap = await getDocs(query(collection(db,'students'), where('org','==',CUR.org||'daniel')));
+    const map = {};   // className → 대표 학년(표시용)
+    snap.forEach(d=>{ const s=d.data(); const c=(s.className||'').trim();
+      if(c && !map[c]) map[c] = s.grade||''; });
+    const names = Object.keys(map).sort((a,b)=>a.localeCompare(b,'ko'));
+    const prev = new Set(Array.isArray(CUR.pbClasses)?CUR.pbClasses:[]);
+    if(!names.length){ box.innerHTML = '<span style="font-size:12px;color:var(--tl)">이 기관에 반이 지정된 학생이 없습니다.</span>'; return; }
+    box.innerHTML = names.map(c=>`
+      <label style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--ivd);background:var(--wh,#fff);border-radius:100px;padding:5px 11px;font-size:12px;cursor:pointer">
+        <input type="checkbox" class="pb-cls" value="${esc(c)}" ${prev.has(c)?'checked':''} style="width:14px;height:14px">
+        ${map[c]?`<span style="color:var(--tl)">${esc(map[c])}</span>`:''}<b>${esc(c)}</b>
+      </label>`).join('');
+  } catch(e){
+    box.innerHTML = '<span style="font-size:12px;color:var(--danger,#C0392B)">반 목록을 불러오지 못했습니다.</span>';
+  }
+}
 window.doPublish = async function(){
   const listed = $I('pb-list').checked;
+  const pbOrgAll = $I('pb-orgall')?.checked || false;
+  const pbClasses = Array.from(document.querySelectorAll('.pb-cls:checked')).map(el=>el.value);
+  const pbPinned = $I('pb-pin')?.checked || false;
   const shareId = CUR.shareId || rid(20);
   const pubBlocks = CUR.blocks.filter(b=>b.pub);
   try {
@@ -4371,8 +4412,24 @@ window.doPublish = async function(){
       if(listed) items.unshift({ id:shareId, title:CUR.title||'', org:CUR.org||'daniel', at:Date.now() });
       await setDoc(doc(db,'sharedFamily','_index'), { items });
     } catch(e){ console.warn('index update fail', e); }
+    // 🏫 학부모 반별 게시판 자동 게시 — 이전 자동 글은 지우고 새로 올린다 (중복 방지)
+    let boardNote = '';
+    try {
+      const old = await getDocs(query(collection(db,'parentPosts'), where('fromFamDoc','==',CUR.id)));
+      for(const d of old.docs){ await deleteDoc(doc(db,'parentPosts',d.id)); }
+      const link = shareUrl(shareId);
+      const body = `📨 가정통신문이 도착했어요.\n「${CUR.title||'가정통신문'}」\n\n아래 링크를 눌러 확인해 주세요.\n${link}`;
+      const base = { org:CUR.org||'daniel', title:`📨 ${CUR.title||'가정통신문'}`, body,
+        authorUid:CU.uid, authorName:CU.name||'선생님', byStaff:true,
+        pinned:pbPinned, commentCount:0, fromFamDoc:CUR.id, createdAt:Timestamp.now() };
+      let n = 0;
+      if(pbOrgAll){ await addDoc(collection(db,'parentPosts'), { ...base, scope:'org', classKey:'' }); n++; }
+      for(const c of pbClasses){ await addDoc(collection(db,'parentPosts'), { ...base, scope:'class', classKey:c }); n++; }
+      if(n) boardNote = `<div class="msub" style="margin-top:8px">🏫 학부모 게시판에 ${pbOrgAll?'기관 전체':''}${pbOrgAll&&pbClasses.length?' + ':''}${pbClasses.length?`${pbClasses.length}개 반`:''}으로 자동 게시되었습니다.</div>`;
+      else if(old.size) boardNote = `<div class="msub" style="margin-top:8px">🏫 이전 자동 게시 글 ${old.size}건을 내렸습니다.</div>`;
+    } catch(e){ console.warn('parent board post fail', e); boardNote = `<div class="msub" style="margin-top:8px;color:var(--danger,#C0392B)">🏫 게시판 자동 게시는 실패했습니다: ${esc(e.message||'')}</div>`; }
     // 원본 문서 갱신 + 이전 판 보관
-    await persist({ shareId, listed, publishedAt:Timestamp.now() });
+    await persist({ shareId, listed, pbOrgAll, pbClasses, pbPinned, publishedAt:Timestamp.now() });
     try {
       await addDoc(collection(db,'famRevisions'), {
         docId:CUR.id, title:CUR.title||'',
@@ -4390,6 +4447,7 @@ window.doPublish = async function(){
       <div class="msub">이 링크를 학부모께 전달하세요. (카카오톡 공유 가능)</div>
       <div class="linkbox"><span class="lk">${esc(link)}</span>
         <button class="btn line sm" onclick="copyLink()">복사</button></div>
+      ${boardNote}
       <div class="mfoot"><button class="btn" onclick="closeModal()">확인</button></div>`);
   } catch(e){ toast('발행 실패: '+e.message,'err'); }
 };
@@ -4571,10 +4629,22 @@ window.openModal = function(html, wide, lock){
   $I('modal-mount').innerHTML = `<div class="mbk" onclick="if(event.target===this${lock?" && false":""})closeModal()">
     <div class="mbox ${cls}">${html}</div></div>`;
 };
-window.closeModal = function(){ $I('modal-mount').innerHTML = ''; };
-/* 블록 편집 전용 — 화면을 넓게 쓰는 큰 모달 */
-window.openModalWide = function(html){
-  openModal(html);
+window.closeModal = function(){
+  // 편집기가 열려 있었다면 마지막 입력을 임시 저장하고 닫는다 (실수 보호)
+  try { if(typeof EB!=='undefined' && EB>=0 && $I('eb-title')) saveDraft(); } catch(e){}
+  $I('modal-mount').innerHTML = '';
+  try { EB = -1; } catch(e){}
+};
+// 편집 팝업이 열린 채 새로고침·창 닫기를 하면 브라우저가 한 번 물어본다
+window.addEventListener('beforeunload', (e)=>{
+  try {
+    if(typeof EB!=='undefined' && EB>=0 && $I('eb-title')){ e.preventDefault(); e.returnValue=''; }
+  } catch(err){}
+});
+/* 블록 편집 전용 — 화면을 넓게 쓰는 큰 모달
+   ⚠️ 편집 중 내용 보호: 배경(어두운 부분)을 눌러도 닫히지 않는다 (잠금 기본값 켜짐) */
+window.openModalWide = function(html, wide, lock){
+  openModal(html, wide, lock===undefined ? true : lock);
   const box = document.querySelector('.mbox');
   if(box){ box.style.maxWidth = 'min(96vw, 1360px)'; box.style.width = '96vw'; }
 };
