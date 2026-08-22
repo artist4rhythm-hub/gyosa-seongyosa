@@ -143,6 +143,7 @@ const pad = n => String(n).padStart(2,'0');
 const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
 let CU = null;
 let STAFF = [];       // 전체 교직원 (수신자 선택용)
+let STAFF_BY_UID = {};   // 🙂 uid → 교직원 (아바타 조회용, 퇴직자 포함)
 let ORGMAP = {};      // uid → 기관 (발신자 기관 필터용, 퇴직자 포함)
 let MSGS = [];        // 내 쪽지 (받은+보낸)
 let composeSel = new Set(); // 작성 중 선택된 수신자 uid
@@ -201,6 +202,7 @@ async function loadStaff(){
   snap.forEach(d=>{
     const s={uid:d.id, ...d.data()};
     ORGMAP[d.id] = s.org || '';               // 발신자 기관 조회용 (퇴직자 포함)
+    STAFF_BY_UID[d.id] = s;                   // 🙂 아바타 조회용 (퇴직자 포함)
     if((s.acStatus||'active')!=='active') return; // 재직자만
     if(s.uid===CU.uid) return; // 본인 제외
     STAFF.push(s);
@@ -399,6 +401,7 @@ function renderInboxRows(){
       <div class="msg-dot ${unread?'':'read'}"></div>
       <div class="msg-body">
         <div class="msg-top">
+          ${(window.staffAvatar ? staffAvatar(STAFF_BY_UID?.[m.fromUid]||{name:m.fromName}, 24) : '')}
           <span class="msg-from">${esc(m.fromName)}</span>
           ${catBadge(c)}
           <span class="msg-date">${fmtTime(m.createdAt)}</span>

@@ -758,6 +758,32 @@ function showPw(uid) {
       </div>
     </div>`;
   document.body.appendChild(el);
+  MIAV = { avatar: CU.avatar||'', photo: CU.photo||'' };
+  miavPaint();
+  const fi = $I('miav-file');
+  if(fi) fi.addEventListener('change', async ()=>{
+    const f = fi.files && fi.files[0]; if(!f) return;
+    const msg = $I('miav-msg');
+    try {
+      const url = await new Promise((res, rej)=>{
+        const img = new Image();
+        img.onload = ()=>{ try{
+          const S=128, cv=document.createElement('canvas'); cv.width=S; cv.height=S;
+          const cx=cv.getContext('2d'); const m=Math.min(img.width,img.height);
+          cx.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,S,S);
+          const u=cv.toDataURL('image/jpeg',0.82);
+          u.length>140000 ? rej(new Error('사진이 너무 복잡해요 — 다른 사진으로 시도해 주세요.')) : res(u);
+        }catch(e){rej(e);} };
+        img.onerror = ()=>rej(new Error('사진을 읽지 못했습니다.'));
+        img.src = URL.createObjectURL(f);
+      });
+      MIAV.photo = url; MIAV.avatar=''; miavPaint(); msg.style.display='none';
+    } catch(e){
+      msg.style.display='block'; msg.style.background='#FDECEA'; msg.style.color='#C0392B';
+      msg.textContent = e.message||'사진 처리에 실패했습니다.';
+    }
+    fi.value='';
+  });
 }
 window.showPw = showPw;
 
@@ -4836,6 +4862,30 @@ function updEditOrgMode(){
 }
 window.updEditOrgMode = updEditOrgMode;
 
+let MIAV = null;   // {avatar, photo} 편집 중
+function miavPaint(){
+  const cur = { name: CU.name, avatar: MIAV.avatar, photo: MIAV.photo };
+  $I('miav-preview').innerHTML = staffAvatar(cur, 52);
+  $I('miav-emojis').innerHTML = AV_EMOJIS.map(e=>`<button type="button" class="bs"
+    style="width:38px;height:38px;padding:0;border-radius:50%;font-size:18px;background:${avColor(CU.name)};${MIAV.avatar===e&&!MIAV.photo?'outline:2.5px solid var(--gd)':''}"
+    onclick="miavPick('${e}')">${e}</button>`).join('');
+}
+window.miavPick = e => { MIAV.avatar = (MIAV.avatar===e && !MIAV.photo) ? '' : e; MIAV.photo=''; miavPaint(); };
+window.miavClear = () => { MIAV = { avatar:'', photo:'' }; miavPaint(); };
+window.saveMyAvatar = async () => {
+  const msg = $I('miav-msg');
+  try {
+    await updateDoc(doc(db,'staff',CU.uid), { avatar: MIAV.avatar||'', photo: MIAV.photo||'' });
+    CU.avatar = MIAV.avatar||''; CU.photo = MIAV.photo||'';
+    try { window.SB_USER && Object.assign(SB_USER,{avatar:CU.avatar,photo:CU.photo}); } catch(e){}
+    const chip = document.querySelector('.sb-av'); if(chip) chip.innerHTML = staffAvatar(CU, 30);
+    msg.style.display='block'; msg.style.background='#DCFCE7'; msg.style.color='#16A34A';
+    msg.textContent = '저장했습니다 ✓ — 명부·쪽지·결재선에 바로 반영돼요';
+  } catch(e){
+    msg.style.display='block'; msg.style.background='#FDECEA'; msg.style.color='#C0392B';
+    msg.textContent = '저장 실패: ' + (e.message||'');
+  }
+};
 function openMyInfo(){
   const el=document.createElement('div'); el.id='my-info-mod';
   const c = STAFF_CACHE[CU.uid] || CU || {};
@@ -4853,6 +4903,7 @@ function openMyInfo(){
           <button class="subtbtn on" id="mi-t1" onclick="switchMyTab('basic')" style="padding:8px 16px">👤 기본</button>
           <button class="subtbtn" id="mi-t2" onclick="switchMyTab('hr')" style="padding:8px 16px">📇 인사정보</button>
           <button class="subtbtn" id="mi-t3" onclick="switchMyTab('pw')" style="padding:8px 16px">🔑 비밀번호</button>
+          <button class="subtbtn" id="mi-t4" onclick="switchMyTab('av')" style="padding:8px 16px">🙂 프로필</button>
         </div>
 
         <!-- 기본: 명부에 표시되는 내 정보 전체 -->
@@ -4904,6 +4955,30 @@ function openMyInfo(){
           </div>
         </div>
 
+        <!-- 🙂 프로필 아바타 -->
+        <div id="mi-av" style="display:none">
+          <div style="background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--gd);line-height:1.6">
+            명부·쪽지·결재선에서 이름 옆에 보이는 얼굴입니다. 사진을 올리면 사진이,
+            없으면 고른 이모지가, 둘 다 없으면 이름 첫 글자가 보여요.
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+            <span id="miav-preview"></span>
+            <span style="font-size:12.5px;color:var(--ts)">미리보기</span>
+          </div>
+          <div style="font-size:12px;color:var(--tl);margin-bottom:6px">이모지 고르기</div>
+          <div id="miav-emojis" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label class="bs" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px">📷 사진 올리기
+              <input type="file" id="miav-file" accept="image/*" style="display:none"></label>
+            <button class="bs" onclick="miavClear()">기본으로</button>
+          </div>
+          <div class="alert" id="miav-msg" style="display:none;margin-top:10px;border-radius:9px;padding:8px 11px;font-size:12px;font-weight:700"></div>
+          <div class="mact" style="margin-top:16px">
+            <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+            <button class="bp" onclick="saveMyAvatar()">프로필 저장</button>
+          </div>
+        </div>
+
         <!-- 비밀번호 -->
         <div id="mi-pw" style="display:none">
           <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
@@ -4926,6 +5001,8 @@ function openMyInfo(){
 window.openMyInfo = openMyInfo;
 
 function switchMyTab(t){
+  const av = $I('mi-av'); if(av) av.style.display = (t==='av') ? '' : 'none';
+  const t4 = $I('mi-t4'); if(t4) t4.classList.toggle('on', t==='av');
   ['basic','hr','pw'].forEach(k=>{ const e=$I('mi-'+k); if(e) e.style.display='none'; });
   ['mi-t1','mi-t2','mi-t3'].forEach(id=>{ const e=$I(id); if(e) e.classList.remove('on'); });
   const map = {basic:'mi-t1', hr:'mi-t2', pw:'mi-t3'};

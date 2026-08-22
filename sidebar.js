@@ -1,3 +1,17 @@
+
+/* ── 🙂 교직원 아바타: 사진 > 이모지 > 이니셜 (이름 기반 배색) ── */
+window.AV_EMOJIS = ['🕊','🦉','🌿','🫒','🌊','⚓','🎻','🎹','📖','✒️','🕯','🌙','⭐','🏔','🌾','🍇'];
+window.AV_BGS = ['#EAF1F7','#F1EDE3','#E7F1EA','#EFEAE0','#E4EEF2','#E9EDF2','#F2EAE6','#EDE9F2',
+                 '#F0EDE4','#EAE7F0','#F5EFE2','#E6E9F0','#F4F0E2','#E9EFEA','#F1EFE4','#EFE7EE'];
+window.avColor = function(n){ let h=0; for(const c of String(n||'')) h=(h*31+c.charCodeAt(0))>>>0; return AV_BGS[h%AV_BGS.length]; };
+window.staffAvatar = function(p, size){
+  const s = size||30, name = (p&&(p.name||p.fromName))||'?';
+  const ph = (p && typeof p.photo==='string' && p.photo.startsWith('data:image/')) ? p.photo : '';
+  if(ph) return `<img src="${ph}" alt="" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover;flex:none;vertical-align:middle">`;
+  if(p && p.avatar) return `<span style="width:${s}px;height:${s}px;border-radius:50%;background:${avColor(name)};display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s*0.5)}px;flex:none;vertical-align:middle">${p.avatar}</span>`;
+  const ch = String(name).trim().charAt(0)||'?';
+  return `<span style="width:${s}px;height:${s}px;border-radius:50%;background:var(--gd,#1E3932);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s*0.42)}px;font-weight:800;flex:none;vertical-align:middle">${ch}</span>`;
+};
 /* ═══ 화면 모드 (라이트 / 다크 / 자동) ═══
    저장: localStorage gyosa_theme = 'light' | 'dark' | 'auto' (기본 auto = 기기 설정 따름) */
 (function(){
@@ -303,7 +317,7 @@ function renderSidebar(){
         화면 모드 <b id="theme-btn-label">${themeLabel()}</b>
       </button>
       <div class="sb-me">
-        <div class="sb-av">${(SB_USER?.name || '?').slice(0, 1)}</div>
+        <div class="sb-av" style="overflow:hidden;display:flex;align-items:center;justify-content:center;padding:0">${window.staffAvatar ? staffAvatar(SB_USER, 30) : (SB_USER?.name||'?').slice(0,1)}</div>
         <div class="sb-mi">
           <div class="sb-mn">${SB_USER?.name || ''}</div>
           <div class="sb-mr">${sbOrgLabel()}</div>
