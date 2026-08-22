@@ -997,17 +997,18 @@ function buildApprovalChain(total, applicantUid, dept, org){
   const steps = (tier.steps && (tier.steps[myPos] !== undefined ? tier.steps[myPos] : tier.steps._default)) || [];
 
   const chain = [];
+  const missing = [];   // 담당자를 찾지 못해 빠진 직책 (조용히 사라지지 않게 기록)
   steps.forEach(step=>{
     // '부서장'은 신청자 소속 부서의 부서장으로 바꿔 찾는다
     const pos = (step === HEAD_TOKEN) ? ((R.deptHeads||{})[dept] || '') : step;
-    if(!pos) return;
+    if(!pos) { missing.push(step); return; }
     const p = findByPosition(pos, org);
-    if(!p) return;
+    if(!p) { missing.push(pos); return; }
     if(p.uid === applicantUid) return;                 // 본인은 결재자에서 제외
     if(chain.some(c=>c.uid===p.uid)) return;           // 같은 사람이 두 번 들어가지 않게
     chain.push({ role:step, position:pos, uid:p.uid, name:p.name, status:'pending', at:null });
   });
-  return { chain, needApproval: chain.length>0 };
+  return { chain, needApproval: chain.length>0, missing };
 }
 
 
@@ -1034,9 +1035,14 @@ async function submitPayReq(){
   const hipassReason = $I('pr-hipass-reason')?.value?.trim() || '';
   if(hipass && !hipassReason){ toast('하이패스 사유(협의 근거)를 입력해 주세요.','err'); return; }
   let hipassViewers = [];
+  let chainMissing = [];
   if(prMode==='expense'){
     const r=buildApprovalChain(total, CU.uid, dept, prOrg);
-    chain=r.chain; needApproval=r.needApproval;
+    chain=r.chain; needApproval=r.needApproval; chainMissing = r.missing||[];
+    if(chainMissing.length){
+      // 담당자 미지정으로 단계가 빠졌음을 반드시 알린다 (조용히 사라지면 열람·결재 누락)
+      toast(`⚠️ 결재선에서 「${chainMissing.join(', ')}」 담당자를 찾지 못해 그 단계가 빠집니다 — 교직원 명부의 직책 지정을 확인해 주세요.`,'err');
+    }
     if(hipass){
       // ⚡ 하이패스: 승인 절차 없이 바로 회계 지급 대기로.
       //    원래 결재선(부서장·교감·교장 등)은 «열람 공유» 명단으로 남아
@@ -1064,7 +1070,7 @@ async function submitPayReq(){
       mode:prMode, org:prOrg, date, applicantName:name, dept, purpose,
       note: prNote,
       hipass: hipass || false, hipassReason: hipass ? hipassReason : '',
-      hipassViewers,
+      hipassViewers, chainMissing,
       rows:rowsForSave, total,
       bank: prMode==='expense'?prBank:null,
       chain, chainIndex:0, status,
@@ -2791,7 +2797,7 @@ function viewPayReq(id){
       </table></div>
       ${r.bank?`<div style="margin-top:8px;font-size:12.5px;color:var(--ts)">입금: ${esc(r.bank.bank||'')} ${esc(r.bank.account||'')} (${esc(r.bank.holder||'')})</div>`:''}
       ${r.note?`<div class="pr-note">💬 <b>신청자 메모</b> ${esc(r.note)}</div>`:''}
-      ${r.hipass?`<div class="pr-note" style="background:var(--goldp);color:var(--goldd)">⚡ <b>하이패스 처리</b> ${esc(r.hipassReason||'')} — 사전 협의 완료로 승인 절차 없이 회계로 바로 넘어간 건입니다.${(r.hipassViewers||[]).length?`<br><span style="font-weight:600">열람 공유:</span> ${r.hipassViewers.map(v=>esc(v.name)+'('+esc(v.position||v.role||'')+')').join(', ')}`:''}</div>`:''}
+      ${r.hipass?`<div class="pr-note" style="background:var(--goldp);color:var(--goldd)">⚡ <b>하이패스 처리</b> ${esc(r.hipassReason||'')} — 사전 협의 완료로 승인 절차 없이 회계로 바로 넘어간 건입니다.${(r.hipassViewers||[]).length?`<br><span style="font-weight:600">열람 공유:</span> ${r.hipassViewers.map(v=>esc(v.name)+'('+esc(v.position||v.role||'')+')').join(', ')}`:''}${(r.chainMissing||[]).length?`<br><span style="font-weight:600;color:var(--danger,#C0392B)">⚠️ 직책 미지정으로 빠짐:</span> <span style="color:var(--danger,#C0392B)">${r.chainMissing.map(esc).join(', ')} — 교직원 명부에서 직책을 지정하면 다음 건부터 포함됩니다</span>`:''}</div>`:''}
       ${chainHtml}
       ${(r.locked||r.paid)?`<div class="pr-lockbar">🔒 입금이 확인되어 잠겼습니다. 고칠 내용이 있으면 <b>정정 신청</b>으로 차액만 주고받습니다.
         ${(r.createdByUid===CU.uid||isPayManager())?`<button class="bm" onclick="startCorrection('${r.id}')">🧾 정정 신청</button>`:''}
