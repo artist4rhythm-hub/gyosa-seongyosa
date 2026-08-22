@@ -174,8 +174,11 @@ async function renderCodes(){
   const pane=$I('pane');
   pane.innerHTML='<div class="card"><div class="empty">학생 명단을 불러오는 중…</div></div>';
   await loadStudents();
-  const classes=[...new Set(STUDENTS.map(s=>`${s.grade||'?'}||${s.className||'-'}`))];
-  const opts=classes.map(k=>{const [g,c]=k.split('||');return `<option value="${esc(k)}">${esc(g)} ${esc(c)}</option>`;}).join('');
+  const classes=[...new Set(STUDENTS.map(s=>`${s.grade||'?'}||${s.className||'-'}`))]
+    .sort((a,b)=>{ const na=parseInt(a)||99, nb=parseInt(b)||99; return na-nb || a.localeCompare(b,'ko'); });
+  const opts=classes.map(k=>{const [g,c]=k.split('||');
+    const label = (g==='?'&&c==='-') ? '📂 학년·반 미지정' : `${g==='?'?'':g} ${c==='-'?'':c}`.trim();
+    return `<option value="${esc(k)}">${esc(label)}</option>`;}).join('');
   pane.innerHTML=`<div class="card">
     <div class="ct">🎫 가입 코드 — 반 단위 일괄 발급</div>
     <div class="cd">학부모는 이 코드로 자녀를 연결합니다. <b>새로 발급하는 코드부터 학년·반 정보가 실려</b>
@@ -187,6 +190,10 @@ async function renderCodes(){
       <button class="btn sub" onclick="issueClass(true)">전원 새 코드로 재발급</button>
       <button class="btn sub" onclick="printCodes()">🖨 이 반 코드표 인쇄</button>
     </div>
+    <div class="row" style="margin-top:8px">
+      <input type="text" id="code-q" placeholder="🔍 학생 이름 검색 — 전체 반에서 찾아요" style="max-width:280px"
+        oninput="renderCodeTable()">
+    </div>
     <div class="msg" id="code-msg"></div>
     <div id="code-table" style="margin-top:14px;overflow-x:auto"></div>
   </div>`;
@@ -195,16 +202,43 @@ async function renderCodes(){
 function pickedClass(){ const v=$I('cls')?.value||''; const [g,c]=v.split('||'); return {g,c}; }
 function classStudents(){ const {g,c}=pickedClass(); return STUDENTS.filter(s=>String(s.grade||'?')===g && String(s.className||'-')===c); }
 function renderCodeTable(){
-  const list=classStudents();
+  const q = ($I('code-q')?.value||'').trim();
+  // 검색어가 있으면 반과 무관하게 전체 학생에서 찾는다
+  const list = q ? STUDENTS.filter(s=>(s.name||'').includes(q)) : classStudents();
   $I('code-table').innerHTML = list.length ? `<table>
-    <tr><th>이름</th><th>학년·반</th><th>가입 코드</th><th>학부모 연결</th></tr>
-    ${list.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.grade||'')} ${esc(s.className||'')}</td>
+    <tr><th>이름</th><th>학년·반</th><th>가입 코드</th><th>학부모 연결</th><th></th></tr>
+    ${list.map(s=>{
+      const n = LINKS.filter(l=>l.studentId===s.id && l.status==='active').length;
+      return `<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.grade||'')} ${esc(s.className||'')}</td>
       <td class="codecell">${esc(s.joinCode||'—')}</td>
-      <td>${LINKS.filter(l=>l.studentId===s.id && l.status==='active').length
-            ? `<span class="pill on">${LINKS.filter(l=>l.studentId===s.id&&l.status==='active').length}명 연결됨</span>`
-            : '<span class="pill off">아직</span>'}</td></tr>`).join('')}
-  </table>` : '<div class="empty">이 반에 학생이 없습니다.</div>';
+      <td>${n ? `<span class="pill on">${n}명 연결됨</span>` : '<span class="pill off">아직</span>'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn sub" style="padding:5px 10px;font-size:11.5px" onclick="reissueOne('${s.id}')">↻ 재발급</button>
+      </td></tr>`;}).join('')}
+  </table>` : `<div class="empty">${q?'검색 결과가 없습니다.':'이 반에 학생이 없습니다.'}</div>`;
 }
+// 한 명만 새 코드로 — 그 학생의 기존 코드만 무효화, 다른 학생·기존 연결은 그대로
+window.reissueOne = async function(sid){
+  const s = STUDENTS.find(x=>x.id===sid); if(!s) return;
+  if(!confirm(`${s.name} 학생에게 새 가입코드를 발급할까요?\n기존 코드(${s.joinCode||'없음'})는 쓸 수 없게 됩니다.\n이미 연결된 학부모는 그대로 유지돼요.`)) return;
+  const msg=$I('code-msg'); msg.className='msg';
+  try{
+    window.showLoading && window.showLoading('새 코드를 만드는 중…');
+    if(s.joinCode){
+      try{ await updateDoc(doc(db,'joinCodes',s.joinCode), { active:false, revokedAt:Timestamp.now(), revokedBy:CU.name||'' }); }catch(e){}
+    }
+    const code = await genUnique(ORG);
+    await setDoc(doc(db,'joinCodes',code), {
+      code, studentId:s.id, org:ORG, studentName:s.name||'',
+      grade:s.grade||'', className:s.className||'',
+      active:true, createdAt:Timestamp.now(), createdBy:CU.name||''
+    });
+    await updateDoc(doc(db,'students',s.id), { joinCode:code });
+    s.joinCode = code;
+    msg.className='msg ok'; msg.textContent=`✅ ${s.name} — 새 코드 ${code} 발급 완료`;
+  }catch(e){ msg.className='msg err'; msg.textContent='재발급 실패: '+(e.message||''); }
+  finally{ window.hideLoading && window.hideLoading(); renderCodeTable(); }
+};
 window.issueClass = async function(force){
   const list=classStudents();
   const targets = force ? list : list.filter(s=>!s.joinCode);
