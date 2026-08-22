@@ -3949,7 +3949,7 @@ function shareURL(id){
 }
 
 /* 지금 학사일정을 통째로 담아 링크에 올린다 */
-async function buildSnapshot(audience){
+async function buildSnapshot(audience, range){
   let years = [], events = [];
   try {
     const ys = await getDocs(collection(db,'academicYears'));
@@ -3972,6 +3972,16 @@ async function buildSnapshot(audience){
   if(audience === 'parent'){
     events = events.filter(e => (e.audience||'both') !== 'teacher');
     events = events.map(e => { const { memo, ...rest } = e; return rest; });   // 교사 메모는 뺀다
+    // 📅 공개 기간(월~월)이 정해져 있으면 그 범위에 걸치는 일정만 담는다
+    //    — 학부모에게 지난 학기까지 다 보여줄 필요가 없고, 문서 용량도 크게 줄어든다
+    if(range && range.from && range.to){
+      const lo = range.from + '-01', hi = range.to + '-31';
+      events = events.filter(e => {
+        const a = e.startDate || e.date || '', b = e.endDate || e.startDate || e.date || '';
+        return b >= lo && a <= hi;      // 기간에 하루라도 걸치면 포함
+      });
+      holidays = holidays.filter(h => h.date >= lo && h.date <= hi);
+    }
   }
   // 📖 학기 원장 — 링크로 들어온 사람은 원장을 직접 읽을 수 없어 스냅샷에 담는다 (주차 계산용)
   let terms = [];
@@ -3985,12 +3995,40 @@ async function buildSnapshot(audience){
 async function pushShare(kind){
   const cur = SHARES[kind];
   if(!cur || !cur.id) return;
-  const snapshot = await buildSnapshot(kind);
-  await setDoc(doc(db,'sharedAcademic', cur.id), {
+  const range = (kind==='parent') ? shareRange() : null;
+  const snapshot = await buildSnapshot(kind, range);
+  const meta = {
     audience: kind, name: cur.name || (kind==='parent'?'학사일정 (학부모용)':'학사일정 (선생님용)'),
-    active: true, snapshot,
+    active: true,
+    rangeFrom: range?.from || '', rangeTo: range?.to || '',
     updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
-  });
+  };
+  // 📦 문서 한도(1MB) 대비: 크면 조각 문서(id__c0, id__c1 …)로 나눠 싣는다
+  const json = JSON.stringify(snapshot);
+  const SLICE = 800000;                      // 한 조각 약 0.8MB — 한도 안에서 안전
+  let oldChunks = 0;
+  try { const prev = await getDoc(doc(db,'sharedAcademic', cur.id));
+        if(prev.exists()) oldChunks = prev.data().chunks || 0; } catch(e){}
+  if(json.length <= SLICE){
+    await setDoc(doc(db,'sharedAcademic', cur.id), { ...meta, snapshot, chunks: 0 });
+  } else {
+    const n = Math.ceil(json.length / SLICE);
+    for(let i=0;i<n;i++){
+      await setDoc(doc(db,'sharedAcademic', `${cur.id}__c${i}`),
+        { part: json.slice(i*SLICE, (i+1)*SLICE), idx:i, of:n });
+    }
+    await setDoc(doc(db,'sharedAcademic', cur.id), { ...meta, snapshot: null, chunks: n });
+  }
+  // 줄어든 만큼 남은 옛 조각은 지운다
+  const newChunks = (json.length <= SLICE) ? 0 : Math.ceil(json.length / SLICE);
+  for(let i=newChunks; i<oldChunks; i++){
+    try { await deleteDoc(doc(db,'sharedAcademic', `${cur.id}__c${i}`)); } catch(e){}
+  }
+}
+// 학부모용 공개 기간 입력값 (비어 있으면 전체)
+function shareRange(){
+  const f = $I('sh-from')?.value || '', t = $I('sh-to')?.value || '';
+  return (f && t && f <= t) ? { from:f, to:t } : null;
 }
 
 window.makeShare = async function(kind){
@@ -4002,10 +4040,13 @@ window.makeShare = async function(kind){
     b=>'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
   window.showLoading && window.showLoading('공유 링크를 만드는 중…');
   try {
-    SHARES[kind] = { id, name: (name||'').trim() || def, createdAt: Timestamp.now() };
+    const r0 = (kind==='parent') ? shareRange() : null;
+    SHARES[kind] = { id, name: (name||'').trim() || def, createdAt: Timestamp.now(),
+                     rangeFrom: r0?.from||'', rangeTo: r0?.to||'' };
     await pushShare(kind);
     await setDoc(doc(db,'academicConfig','share'), {
-      [kind]: { id, name: SHARES[kind].name, createdByName: CU?.name||'', createdAt: Timestamp.now() },
+      [kind]: { id, name: SHARES[kind].name, createdByName: CU?.name||'',
+                rangeFrom: SHARES[kind].rangeFrom, rangeTo: SHARES[kind].rangeTo, createdAt: Timestamp.now() },
     }, { merge:true });
     window.hideLoading && window.hideLoading();
     renderSharePanel();
@@ -4021,6 +4062,12 @@ window.refreshShare = async function(kind){
   if(!SHARES[kind]) return;
   window.showLoading && window.showLoading('지금 내용을 올리는 중…');
   try {
+    if(kind==='parent'){
+      const r = shareRange();
+      SHARES.parent.rangeFrom = r?.from||''; SHARES.parent.rangeTo = r?.to||'';
+      try { await setDoc(doc(db,'academicConfig','share'),
+        { parent: { ...SHARES.parent } }, { merge:true }); } catch(e){}
+    }
     await pushShare(kind);
     window.hideLoading && window.hideLoading();
     renderSharePanel();
@@ -4099,6 +4146,10 @@ function renderSharePanel(){
         <div class="sh-h"><span class="sh-dot" style="background:${color}"></span><b>${label}</b>
           <span class="sh-off">아직 만들지 않음</span></div>
         <div class="sh-d">${desc}</div>
+        ${kind==='parent' ? `<div class="sh-d" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">📅 공개 기간
+          <input type="month" id="sh-from" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px"> ~
+          <input type="month" id="sh-to" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px">
+          <span style="font-size:11px;color:var(--tl)">비우면 전체 공개</span></div>` : ''}
         <button class="btn btn-sm btn-p" onclick="makeShare('${kind}')">🔗 링크 만들기</button>
       </div>`;
     }
@@ -4120,8 +4171,16 @@ function renderSharePanel(){
     </div>`;
   };
 
+  const pc = SHARES.parent || {};
+  const rangeUI = `<div class="sh-d" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
+    📅 공개 기간
+    <input type="month" id="sh-from" value="${esc(pc.rangeFrom||'')}" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px">
+    ~
+    <input type="month" id="sh-to" value="${esc(pc.rangeTo||'')}" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px">
+    <span style="font-size:11px;color:var(--tl)">이 범위의 일정만 학부모에게 보입니다 · 비우면 전체 · 학기 시작마다 바꾸고 «지금 내용으로 올리기»</span>
+  </div>`;
   $I('share-list').innerHTML =
-    block('parent','학부모용','«학부모 공개»로 표시한 일정만 보입니다. 교사용 메모는 빠집니다.','#2FA84F') +
+    block('parent','학부모용','«학부모 공개»로 표시한 일정만 보입니다. 교사용 메모는 빠집니다.','#2FA84F').replace('<div class="sh-row">', rangeUI + '<div class="sh-row">') +
     block('teacher','선생님용','교사 전용 일정까지 모두 보입니다.','#2F6FD0');
 }
 
@@ -4317,7 +4376,13 @@ async function startShareView(){
       return;
     }
     const d = s.data();
-    const snap = d.snapshot || {};
+    let snap = d.snapshot || {};
+    if(d.chunks){   // 📦 큰 일정은 조각으로 나눠 실려 있다 — 이어붙여 복원
+      const parts = await Promise.all(Array.from({length:d.chunks},
+        (_,i)=>getDoc(doc(db,'sharedAcademic', shareId+'__c'+i))));
+      try { snap = JSON.parse(parts.map(p=>p.exists()?p.data().part:'').join('')); }
+      catch(e){ $I('gate-msg').innerHTML = '일정을 불러오지 못했습니다.<br>학교에 «지금 내용으로 올리기»를 요청해 주세요.'; return; }
+    }
     ALL_YEARS  = snap.years  || [];
     ALL_EVENTS = snap.events || [];
     DEPTS = snap.depts || ['초등부','중등부','고등부'];
@@ -4325,6 +4390,12 @@ async function startShareView(){
     SHARE_HOL_READY = true;
     LEDGER_TERMS = snap.terms || [];    // 📖 학기 원장 — 게시 화면에서도 주차가 나오도록
     logShareView('academic', shareId, d.name || '학사일정');   // 📊 조회 기록
+    if(d.audience==='parent' && d.rangeFrom && d.rangeTo){
+      const bar = document.createElement('div');
+      bar.style.cssText='background:#EAF4EF;color:#1E3932;text-align:center;padding:8px 12px;font-size:12.5px;font-weight:700';
+      bar.textContent = `📅 ${d.rangeFrom.replace('-','년 ')}월 ~ ${d.rangeTo.replace('-','년 ')}월 일정입니다`;
+      document.body.insertBefore(bar, document.body.firstChild);
+    }
     curView = (d.audience === 'parent') ? 'parent' : 'teacher';
     CAN_EDIT = false;
 
