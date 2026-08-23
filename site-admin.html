@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>홈페이지 관리 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="theme.css">
+<script src="loading.js"></script>
+<style>
+.sa-orgs{display:flex;gap:6px;margin-bottom:14px}
+.sa-orgs button{border:1.5px solid var(--ivd);background:var(--wh,#fff);border-radius:100px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--ts)}
+.sa-orgs button.on{background:var(--gd);border-color:var(--gd);color:#fff}
+.sa-card{background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:14px;padding:15px 17px;margin-bottom:11px}
+.sa-card .t{font-size:15px;font-weight:900}
+.sa-card .m{font-size:11.5px;color:var(--tl);margin-top:2px}
+.sa-card .b{font-size:13px;color:var(--ts);margin-top:6px;white-space:pre-wrap;line-height:1.55}
+.sa-card img{max-width:220px;border-radius:9px;margin-top:8px;display:block}
+.sa-act{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.sa-act button{border:1px solid var(--ivd);background:var(--wh,#fff);border-radius:9px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--ts)}
+.pill{display:inline-block;border-radius:100px;padding:3px 10px;font-size:10.5px;font-weight:800;margin-left:6px}
+.pill.on{background:#DCFCE7;color:#16A34A}
+.pill.off{background:#F1F0EC;color:#8A8F98}
+.fm label{display:block;font-size:12px;font-weight:800;margin:11px 0 4px;color:var(--ts)}
+.fm input[type=text],.fm textarea,.fm select{width:100%;border:1.5px solid var(--ivd);border-radius:10px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none;background:var(--wh,#fff)}
+.fm textarea{min-height:130px;resize:vertical;line-height:1.6}
+.btnrow{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.bp2{background:var(--gd);color:#fff;border:none;border-radius:10px;padding:10px 20px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit}
+.bs2{background:var(--wh,#fff);color:var(--ts);border:1px solid var(--ivd);border-radius:10px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.alert{display:none;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:700;margin-top:10px}
+.alert.ok{display:block;background:#DCFCE7;color:#16A34A}
+.alert.err{display:block;background:#FDECEA;color:#C0392B}
+.gatebox{background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:14px;padding:18px 19px;max-width:420px}
+</style>
+</head>
+<body>
+<div id="ls" style="display:none;min-height:100vh;align-items:center;justify-content:center">
+  <div class="gatebox">
+    <div style="font-size:16px;font-weight:900;color:var(--gd);margin-bottom:6px">🌐 홈페이지 관리</div>
+    <div style="font-size:12.5px;color:var(--ts);margin-bottom:12px">교사 선교사 계정으로 로그인해 주세요.</div>
+    <label style="font-size:12px;font-weight:700">아이디</label>
+    <input type="text" id="l-id" style="width:100%;margin:4px 0 10px;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit">
+    <label style="font-size:12px;font-weight:700">비밀번호</label>
+    <input type="password" id="l-pw" style="width:100%;margin:4px 0 14px;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit">
+    <button class="bp2" style="width:100%" onclick="doLogin()">로그인</button>
+    <div class="alert" id="l-msg"></div>
+  </div>
+</div>
+
+<div id="ms" style="display:none">
+  <div style="max-width:880px;margin:0 auto;padding:4px 4px 40px">
+    <div style="font-size:19px;font-weight:900;color:var(--gd);margin:4px 0 4px">🌐 홈페이지 관리</div>
+    <p style="font-size:12.5px;color:var(--ts);margin:0 0 14px;line-height:1.6">
+      공개 홈페이지에 올라갈 소식을 코드 없이 작성·게시·내립니다.
+      여기서 저장하는 내용은 <b>공개 전용 프로젝트</b>에만 발행되어 내부 시스템과 완전히 분리되어 있어요.</p>
+
+    <!-- 공개 프로젝트 관리자 로그인 (한 번만) -->
+    <div class="gatebox" id="pub-gate" style="display:none;margin-bottom:16px">
+      <div style="font-size:14px;font-weight:900;color:var(--gd);margin-bottom:6px">🔑 홈페이지 관리자 열쇠</div>
+      <div style="font-size:12px;color:var(--ts);margin-bottom:12px">
+        공개 홈페이지 전용 관리자 계정으로 한 번 로그인하면 이 기기에서 계속 유지됩니다.</div>
+      <label style="font-size:12px;font-weight:700">관리자 이메일</label>
+      <input type="text" id="p-id" placeholder="site-admin@…" style="width:100%;margin:4px 0 10px;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit">
+      <label style="font-size:12px;font-weight:700">비밀번호</label>
+      <input type="password" id="p-pw" style="width:100%;margin:4px 0 14px;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit">
+      <button class="bp2" style="width:100%" onclick="pubLogin()">열쇠 넣기</button>
+      <div class="alert" id="p-msg"></div>
+    </div>
+
+    <div id="editor" style="display:none">
+      <div class="sa-orgs" id="sa-orgs"></div>
+
+      <div class="sa-card fm" id="write">
+        <div style="font-size:14px;font-weight:900;color:var(--gd)" id="w-title">✏️ 새 소식 쓰기</div>
+        <label>제목</label>
+        <input type="text" id="w-t" placeholder="예: 2027학년도 신입생 상담 안내">
+        <label>분류</label>
+        <select id="w-c">
+          <option>소식</option><option>교육 활동</option><option>입학</option><option>행사</option><option>안내</option>
+        </select>
+        <label>본문</label>
+        <textarea id="w-b" placeholder="공개해도 좋은 내용만 적어주세요. 학생 실명·연락처는 넣지 않습니다."></textarea>
+        <label>사진 (선택 · 1장)</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <label class="bs2" style="cursor:pointer">📷 사진 고르기
+            <input type="file" id="w-f" accept="image/*" style="display:none"></label>
+          <span id="w-fname" style="font-size:12px;color:var(--tl)"></span>
+          <button class="bs2" id="w-fdel" style="display:none" onclick="clearPhoto()">사진 빼기</button>
+        </div>
+        <img id="w-prev" style="display:none;max-width:220px;border-radius:9px;margin-top:9px">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:13px;cursor:pointer">
+          <input type="checkbox" id="w-pub" checked style="width:16px;height:16px"> 바로 게시하기
+        </label>
+        <div class="btnrow">
+          <button class="bs2" id="w-cancel" style="display:none" onclick="resetForm()">새 글로 돌아가기</button>
+          <button class="bp2" onclick="saveNews()">저장</button>
+        </div>
+        <div class="alert" id="w-msg"></div>
+      </div>
+
+      <div style="display:flex;align-items:baseline;gap:8px;margin:16px 0 8px">
+        <span style="font-size:14px;font-weight:900;color:var(--gd)">📰 올라간 소식</span>
+        <a id="preview-link" target="_blank" rel="noopener" style="font-size:12px;font-weight:700;color:var(--ts)">공개 페이지에서 보기 →</a>
+      </div>
+      <div id="list"><div style="color:var(--tl);font-size:13px;padding:14px 0">불러오는 중…</div></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc,
+  collection, getDocs, query, where, Timestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+/* ── 내부(교사) 프로젝트 — 셸·계정 확인용 ── */
+const app = initializeApp({
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
+});
+const auth = getAuth(app);
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+
+/* ── 공개 프로젝트 — 소식 발행 전용 (완전 별개의 집) ── */
+const PUB_FB = {
+  apiKey: "AIzaSyDXocSonG6EgASZ1BRQN8nkb5GKoHCvX_8",
+  authDomain: "daniel-public.firebaseapp.com",
+  projectId: "daniel-public",
+  storageBucket: "daniel-public.firebasestorage.app",
+  messagingSenderId: "509569562681",
+  appId: "1:509569562681:web:da79e96fb55870844b35e8"
+};
+const pubApp = initializeApp(PUB_FB, 'public');
+const pubAuth = getAuth(pubApp);
+const pubDb = getFirestore(pubApp);
+
+const $I = id => document.getElementById(id);
+const esc = t => String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ORGS = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const SITE = 'https://artist4rhythm-hub.github.io/public-web';
+
+let CU=null, ORG='daniel', ITEMS=[], EDIT=null, PHOTO='';
+
+function korEmail(id){ return `${id}@gyosa-seongyosa.staff`; }
+window.doLogin = async function(){
+  const id=$I('l-id').value.trim(), pw=$I('l-pw').value, m=$I('l-msg'); m.className='alert';
+  if(!id||!pw){ m.className='alert err'; m.textContent='아이디와 비밀번호를 입력해 주세요.'; return; }
+  try{ await signInWithEmailAndPassword(auth, korEmail(id), pw); }
+  catch(e){ m.className='alert err'; m.textContent='로그인 실패 — 아이디나 비밀번호를 확인해 주세요.'; }
+};
+
+onAuthStateChanged(auth, async user=>{
+  if(!user){ window.hideLoading&&hideLoading(); $I('ls').style.display='flex'; $I('ms').style.display='none'; return; }
+  const st = await getDoc(doc(db,'staff',user.uid));
+  if(!st.exists()){ $I('ls').style.display='flex'; return; }
+  CU = { uid:user.uid, ...st.data() };
+  window.ORGS = ORGS;
+  if(window.renderShell) renderShell('siteadm', CU);
+  $I('ls').style.display='none'; $I('ms').style.display='';
+  window.hideLoading&&hideLoading();
+  if(window.guardPage && !guardPage(CU,'siteadm')) return;
+});
+
+/* 공개 프로젝트 열쇠 상태 */
+onAuthStateChanged(pubAuth, u=>{
+  $I('pub-gate').style.display = u ? 'none' : '';
+  $I('editor').style.display = u ? '' : 'none';
+  if(u) paintOrgs();
+});
+window.pubLogin = async function(){
+  const m=$I('p-msg'); m.className='alert';
+  try{ await signInWithEmailAndPassword(pubAuth, $I('p-id').value.trim(), $I('p-pw').value); }
+  catch(e){ m.className='alert err'; m.textContent='열쇠가 맞지 않습니다 — 이메일·비밀번호를 확인해 주세요.'; }
+};
+
+function paintOrgs(){
+  $I('sa-orgs').innerHTML = Object.entries(ORGS).map(([k,v])=>
+    `<button class="${k===ORG?'on':''}" onclick="pickOrg('${k}')">${v}</button>`).join('');
+  $I('preview-link').href = ORG==='daniel' ? `${SITE}/news-daniel.html` : `${SITE}/news-jihyebit.html`;
+  loadList();
+}
+window.pickOrg = k => { ORG=k; resetForm(); paintOrgs(); };
+
+async function loadList(){
+  $I('list').innerHTML = '<div style="color:var(--tl);font-size:13px;padding:14px 0">불러오는 중…</div>';
+  try{
+    const snap = await getDocs(query(collection(pubDb,'publicSite'), where('org','==',ORG)));
+    ITEMS = snap.docs.map(d=>({id:d.id, ...d.data()}))
+      .sort((a,b)=>(b.at?.seconds||0)-(a.at?.seconds||0));
+    $I('list').innerHTML = ITEMS.length ? ITEMS.map(p=>{
+      const d = p.at?.seconds ? new Date(p.at.seconds*1000) : null;
+      const ds = d ? `${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}.` : '';
+      const ph = (typeof p.photo==='string'&&p.photo.startsWith('data:image/'))?p.photo:'';
+      return `<div class="sa-card">
+        <div class="t">${esc(p.title||'')}<span class="pill ${p.published?'on':'off'}">${p.published?'게시중':'내려짐'}</span></div>
+        <div class="m">${ds}${p.category?' · '+esc(p.category):''}</div>
+        ${ph?`<img src="${ph}" alt="">`:''}
+        ${p.body?`<div class="b">${esc((p.body||'').slice(0,200))}${(p.body||'').length>200?'…':''}</div>`:''}
+        <div class="sa-act">
+          <button onclick="togglePub('${p.id}')">${p.published?'⬇ 내리기':'⬆ 게시하기'}</button>
+          <button onclick="editNews('${p.id}')">✏️ 수정</button>
+          <button style="color:var(--danger,#C0392B)" onclick="delNews('${p.id}')">🗑 삭제</button>
+        </div>
+      </div>`;
+    }).join('') : '<div style="color:var(--tl);font-size:13px;padding:14px 0">아직 올린 소식이 없습니다 — 위에서 첫 소식을 써 보세요.</div>';
+  }catch(e){
+    $I('list').innerHTML = `<div class="alert err" style="display:block">불러오지 못했습니다: ${esc(e.message||'')}</div>`;
+  }
+}
+
+/* 사진 — 800px 자동 압축 */
+$I('w-f').addEventListener('change', async ()=>{
+  const f = $I('w-f').files && $I('w-f').files[0]; if(!f) return;
+  const m = $I('w-msg'); m.className='alert';
+  try{
+    PHOTO = await new Promise((res, rej)=>{
+      const img = new Image();
+      img.onload = ()=>{ try{
+        const MAX=800, r=Math.min(1, MAX/Math.max(img.width,img.height));
+        const cv=document.createElement('canvas');
+        cv.width=Math.round(img.width*r); cv.height=Math.round(img.height*r);
+        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+        const u=cv.toDataURL('image/jpeg',0.8);
+        u.length>250000 ? rej(new Error('사진이 너무 복잡해요 — 다른 사진으로 시도해 주세요.')) : res(u);
+      }catch(e){rej(e);} };
+      img.onerror=()=>rej(new Error('사진을 읽지 못했습니다.'));
+      img.src=URL.createObjectURL(f);
+    });
+    $I('w-prev').src = PHOTO; $I('w-prev').style.display='block';
+    $I('w-fname').textContent = '✓ 사진 준비됨'; $I('w-fdel').style.display='';
+  }catch(e){ m.className='alert err'; m.textContent = e.message||'사진 처리 실패'; }
+  $I('w-f').value='';
+});
+window.clearPhoto = ()=>{ PHOTO=''; $I('w-prev').style.display='none'; $I('w-fname').textContent=''; $I('w-fdel').style.display='none'; };
+
+window.resetForm = ()=>{
+  EDIT=null; clearPhoto();
+  $I('w-title').textContent='✏️ 새 소식 쓰기';
+  $I('w-t').value=''; $I('w-b').value=''; $I('w-c').value='소식'; $I('w-pub').checked=true;
+  $I('w-cancel').style.display='none'; $I('w-msg').className='alert';
+};
+
+window.editNews = (id)=>{
+  const p = ITEMS.find(x=>x.id===id); if(!p) return;
+  EDIT=id;
+  $I('w-title').textContent='✏️ 소식 수정';
+  $I('w-t').value=p.title||''; $I('w-b').value=p.body||''; $I('w-c').value=p.category||'소식';
+  $I('w-pub').checked=!!p.published;
+  PHOTO = (typeof p.photo==='string'&&p.photo.startsWith('data:image/'))?p.photo:'';
+  if(PHOTO){ $I('w-prev').src=PHOTO; $I('w-prev').style.display='block'; $I('w-fname').textContent='✓ 기존 사진'; $I('w-fdel').style.display=''; }
+  else clearPhoto();
+  $I('w-cancel').style.display='';
+  $I('write').scrollIntoView({behavior:'smooth'});
+};
+
+window.saveNews = async ()=>{
+  const m=$I('w-msg'); m.className='alert';
+  const title=$I('w-t').value.trim(), body=$I('w-b').value.trim();
+  if(!title){ m.className='alert err'; m.textContent='제목을 입력해 주세요.'; return; }
+  const rec = { org:ORG, title, category:$I('w-c').value, body,
+    photo: PHOTO||'', published: $I('w-pub').checked,
+    updatedAt: Timestamp.now(), by: CU?.name||'' };
+  try{
+    if(EDIT) await updateDoc(doc(pubDb,'publicSite',EDIT), rec);
+    else await addDoc(collection(pubDb,'publicSite'), { ...rec, at: Timestamp.now() });
+    m.className='alert ok'; m.textContent = EDIT ? '수정했습니다 ✓' : '올렸습니다 ✓ — 공개 페이지에 바로 반영돼요';
+    resetForm(); loadList();
+  }catch(e){ m.className='alert err'; m.textContent='저장 실패: '+(e.message||''); }
+};
+
+window.togglePub = async (id)=>{
+  const p = ITEMS.find(x=>x.id===id); if(!p) return;
+  try{ await updateDoc(doc(pubDb,'publicSite',id), { published: !p.published, updatedAt: Timestamp.now() }); loadList(); }
+  catch(e){ alert('실패: '+(e.message||'')); }
+};
+window.delNews = async (id)=>{
+  const p = ITEMS.find(x=>x.id===id); if(!p) return;
+  if(!confirm(`「${p.title}」 소식을 완전히 삭제할까요?\n내리기만 하려면 «⬇ 내리기»를 쓰세요.`)) return;
+  try{ await deleteDoc(doc(pubDb,'publicSite',id)); loadList(); }
+  catch(e){ alert('삭제 실패: '+(e.message||'')); }
+};
+</script>
+<script src="modal-close.js"></script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
+<script type="module" src="badges.js"></script>
+</body>
+</html>

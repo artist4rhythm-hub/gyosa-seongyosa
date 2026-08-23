@@ -91,6 +91,9 @@ const MENU = [
       { key:'psite', label:'학부모 사이트', icon:'diversity_3',
         href:'https://artist4rhythm-hub.github.io/daniel-parents/index.html?stay=1',
         desc:'학부모에게 보이는 그 화면 — 교사 모드로 열람·참여' },
+      { key:'pubsite', label:'공개 홈페이지', icon:'public',
+        href:'https://artist4rhythm-hub.github.io/public-web/index.html',
+        desc:'대외 안내용 홈페이지 — 다니엘 대문 (지혜빛은 안에서 이동)' },
     ]
   },
   {
@@ -101,6 +104,8 @@ const MENU = [
       { key:'parentadm', label:'학부모 관리', icon:'family_restroom', href:'parent-admin.html',
         desc:'학부모 사이트 — 가입 코드·게시판·바로가기 링크·연결 현황',
         tabs:['가입 코드','바로가기 링크','게시판 관리','금칙어','연결 현황'], admin:true },
+      { key:'siteadm', label:'홈페이지 관리', icon:'language', href:'site-admin.html',
+        desc:'공개 홈페이지 소식 — 작성·사진·게시/내리기 (별도 관리자 열쇠 필요)', admin:true },
       { key:'adm', label:'관리자', icon:'admin_panel_settings', href:'admin.html',
         desc:'교직원 · 인사 · 보안 · 로그',
         tabs:['통합관리','접근 권한','인사정보','부서·새 학년도','출근부 설정','접속·보안','로그인 기록','활동 로그'], admin:true },
