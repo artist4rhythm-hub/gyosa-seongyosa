@@ -29,6 +29,8 @@ const MENU = [
       { key:'calendar', label:'학사일정', icon:'calendar_month', href:'academic.html',
         desc:'연간 행사 · 학기 · 방학',
         tabs:['월 달력','학기·방학','교사용','학부모용'] },
+      { key:'history', label:'연혁', icon:'auto_stories', href:'history.html',
+        desc:'학년도 책장 — 해마다의 반·담임·학생과 반별 학부모 공지' },
       { key:'gcal', label:'구글 캘린더', icon:'event', href:'calendar.html',
         desc:'구글 캘린더 보기' },
       { key:'cert', label:'증명서 발급', icon:'description', href:'cert.html', deny:['partner'],
@@ -87,7 +89,7 @@ const MENU = [
       { key:'family', label:'가정통신문', icon:'campaign', href:'family-notice.html',
         desc:'통신문 작성 · 발행 · 학부모 공유' },
       { key:'psite', label:'학부모 사이트', icon:'diversity_3',
-        href:'https://artist4rhythm-hub.github.io/daniel-parents/index.html',
+        href:'https://artist4rhythm-hub.github.io/daniel-parents/index.html?stay=1',
         desc:'학부모에게 보이는 그 화면 — 교사 모드로 열람·참여' },
     ]
   },

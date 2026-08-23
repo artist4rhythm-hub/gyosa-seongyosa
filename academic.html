@@ -3929,16 +3929,18 @@ window.runDupClean = async function(){
   try{ await loadEvents(curYear); render(); }catch(_){ location.reload(); }
 };
 
-let SHARES = { parent:null, teacher:null };
+let SHARES = { parent_daniel:null, parent_jihyebit:null, teacher:null };   // 학부모용은 기관별 완전 분리
 
 async function loadShares(){
-  SHARES = { parent:null, teacher:null };
+  SHARES = { parent_daniel:null, parent_jihyebit:null, teacher:null };
   if(!canEditAny()) return;
   try {
     const s = await getDoc(doc(db,'academicConfig','share'));
     if(s.exists()){
       const d = s.data();
-      if(d.parent && d.parent.id)  SHARES.parent  = d.parent;
+      if(d.parent_daniel && d.parent_daniel.id)     SHARES.parent_daniel   = d.parent_daniel;
+      if(d.parent_jihyebit && d.parent_jihyebit.id) SHARES.parent_jihyebit = d.parent_jihyebit;
+      if(!SHARES.parent_daniel && d.parent && d.parent.id) SHARES.parent_daniel = d.parent;   // 옛 통합 링크는 다니엘로 이어받음
       if(d.teacher && d.teacher.id) SHARES.teacher = d.teacher;
     }
   } catch(e){}
@@ -3972,6 +3974,15 @@ async function buildSnapshot(audience, range){
   if(audience === 'parent'){
     events = events.filter(e => (e.audience||'both') !== 'teacher');
     events = events.map(e => { const { memo, ...rest } = e; return rest; });   // 교사 메모는 뺀다
+    // 🏫 기관 완전 분리 — 그 기관 일정(+두 기관 공통)만 담는다
+    if(range && range.org){
+      const O = range.org;
+      const evOrgs = e => (Array.isArray(e.orgs)&&e.orgs.length) ? e.orgs
+        : [ (e.org==='both'||e.org==='all') ? 'all' : (e.org||'daniel') ];
+      events = events.filter(e => { const os = evOrgs(e); return os.includes(O) || os.includes('all'); });
+      holidays = holidays.filter(h => (h.org||'all')==='all' || h.org===O);
+      years = years.filter(y => ((y.org||'daniel')===O));
+    }
     // 📅 공개 기간(월~월)이 정해져 있으면 그 범위에 걸치는 일정만 담는다
     //    — 학부모에게 지난 학기까지 다 보여줄 필요가 없고, 문서 용량도 크게 줄어든다
     if(range && range.from && range.to){
@@ -3989,16 +4000,27 @@ async function buildSnapshot(audience, range){
     const ts = await getDocs(collection(db,'terms'));
     terms = ts.docs.map(d=>({ id:d.id, ...d.data() }));
   } catch(e){}
+  if(audience==='parent' && range && range.org){
+    terms = terms.filter(t => (t.org||'daniel') === range.org);
+  }
   return { years, events, depts: DEPTS.slice(), holidays, terms };
 }
 
+const SHARE_KINDS = {
+  parent_daniel:   { audience:'parent', org:'daniel',   label:'학사일정 (다니엘 아마츠 학부모용)' },
+  parent_jihyebit: { audience:'parent', org:'jihyebit', label:'학사일정 (지혜빛 선교원 학부모용)' },
+  teacher:         { audience:'teacher', org:'',        label:'학사일정 (선생님용)' },
+};
 async function pushShare(kind){
   const cur = SHARES[kind];
   if(!cur || !cur.id) return;
-  const range = (kind==='parent') ? shareRange() : null;
-  const snapshot = await buildSnapshot(kind, range);
+  const KI = SHARE_KINDS[kind] || { audience:kind, org:'' };
+  const range = (KI.audience==='parent')
+    ? Object.assign({ org: KI.org }, shareRange(kind) || {}) : null;
+  const snapshot = await buildSnapshot(KI.audience, range);
   const meta = {
-    audience: kind, name: cur.name || (kind==='parent'?'학사일정 (학부모용)':'학사일정 (선생님용)'),
+    audience: KI.audience, shareOrg: KI.org || '',
+    name: cur.name || KI.label,
     active: true,
     rangeFrom: range?.from || '', rangeTo: range?.to || '',
     updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
@@ -4024,23 +4046,32 @@ async function pushShare(kind){
   for(let i=newChunks; i<oldChunks; i++){
     try { await deleteDoc(doc(db,'sharedAcademic', `${cur.id}__c${i}`)); } catch(e){}
   }
+  // 👨‍👩‍👧 학부모 홈 «일정» 단추 자동 연동 (시간표와 같은 방식)
+  if(KI.audience==='parent' && KI.org){
+    try {
+      await setDoc(doc(db,'parentConfig','links_'+KI.org),
+        { academic: shareUrl(cur.id), academicAuto: true,
+          academicUpdatedAt: Timestamp.now(), academicUpdatedBy: (CU?.name||'') },
+        { merge:true });
+    } catch(e){}
+  }
 }
 // 학부모용 공개 기간 입력값 (비어 있으면 전체)
-function shareRange(){
-  const f = $I('sh-from')?.value || '', t = $I('sh-to')?.value || '';
+function shareRange(kind){
+  const f = $I('sh-from-'+kind)?.value || '', t = $I('sh-to-'+kind)?.value || '';
   return (f && t && f <= t) ? { from:f, to:t } : null;
 }
 
 window.makeShare = async function(kind){
   if(!canEditAny()){ toast('권한이 없습니다.','err'); return; }
-  const def = kind==='parent' ? '학사일정 (학부모용)' : '학사일정 (선생님용)';
+  const def = (SHARE_KINDS[kind]?.label) || '학사일정';
   const name = prompt('링크 이름을 정해 주세요 — 받는 분에게 보이는 제목입니다.', def);
   if(name === null) return;
   const id = 'ac_' + Array.from(crypto.getRandomValues(new Uint8Array(12)),
     b=>'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
   window.showLoading && window.showLoading('공유 링크를 만드는 중…');
   try {
-    const r0 = (kind==='parent') ? shareRange() : null;
+    const r0 = (SHARE_KINDS[kind]?.audience==='parent') ? shareRange(kind) : null;
     SHARES[kind] = { id, name: (name||'').trim() || def, createdAt: Timestamp.now(),
                      rangeFrom: r0?.from||'', rangeTo: r0?.to||'' };
     await pushShare(kind);
@@ -4062,11 +4093,11 @@ window.refreshShare = async function(kind){
   if(!SHARES[kind]) return;
   window.showLoading && window.showLoading('지금 내용을 올리는 중…');
   try {
-    if(kind==='parent'){
-      const r = shareRange();
-      SHARES.parent.rangeFrom = r?.from||''; SHARES.parent.rangeTo = r?.to||'';
+    if(SHARE_KINDS[kind]?.audience==='parent'){
+      const r = shareRange(kind);
+      SHARES[kind].rangeFrom = r?.from||''; SHARES[kind].rangeTo = r?.to||'';
       try { await setDoc(doc(db,'academicConfig','share'),
-        { parent: { ...SHARES.parent } }, { merge:true }); } catch(e){}
+        { [kind]: { ...SHARES[kind] } }, { merge:true }); } catch(e){}
     }
     await pushShare(kind);
     window.hideLoading && window.hideLoading();
@@ -4146,10 +4177,6 @@ function renderSharePanel(){
         <div class="sh-h"><span class="sh-dot" style="background:${color}"></span><b>${label}</b>
           <span class="sh-off">아직 만들지 않음</span></div>
         <div class="sh-d">${desc}</div>
-        ${kind==='parent' ? `<div class="sh-d" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">📅 공개 기간
-          <input type="month" id="sh-from" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px"> ~
-          <input type="month" id="sh-to" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px">
-          <span style="font-size:11px;color:var(--tl)">비우면 전체 공개</span></div>` : ''}
         <button class="btn btn-sm btn-p" onclick="makeShare('${kind}')">🔗 링크 만들기</button>
       </div>`;
     }
@@ -4171,17 +4198,25 @@ function renderSharePanel(){
     </div>`;
   };
 
-  const pc = SHARES.parent || {};
-  const rangeUI = `<div class="sh-d" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
+  const rangeUI = (kind) => { const c = SHARES[kind] || {};
+    return `<div class="sh-d" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:6px">
     📅 공개 기간
-    <input type="month" id="sh-from" value="${esc(pc.rangeFrom||'')}" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px">
+    <input type="month" id="sh-from-${kind}" value="${esc(c.rangeFrom||'')}" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px">
     ~
-    <input type="month" id="sh-to" value="${esc(pc.rangeTo||'')}" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px">
-    <span style="font-size:11px;color:var(--tl)">이 범위의 일정만 학부모에게 보입니다 · 비우면 전체 · 학기 시작마다 바꾸고 «지금 내용으로 올리기»</span>
-  </div>`;
+    <input type="month" id="sh-to-${kind}" value="${esc(c.rangeTo||'')}" style="padding:5px 8px;border:1px solid var(--ivd,#ddd);border-radius:8px">
+    <span style="font-size:11px;color:var(--tl)">이 범위 일정만 보입니다 · 비우면 전체 · 학기마다 바꾸고 «지금 내용으로 올리기»</span>
+  </div>`; };
+  const pdBlock = block('parent_daniel','🏫 다니엘 아마츠 학부모용',
+    '다니엘 아마츠의 «학부모 공개» 일정만 담깁니다. 만들면 다니엘 학부모 홈 «일정» 단추가 자동 연결돼요.','#2FA84F');
+  const pjBlock = block('parent_jihyebit','🌸 지혜빛 선교원 학부모용',
+    '지혜빛 선교원의 «학부모 공개» 일정만 담깁니다. 만들면 지혜빛 학부모 홈 «일정» 단추가 자동 연결돼요.','#8B5CF6');
+  const ins = (html, kind) => html.includes('sh-row')
+    ? html.replace('<div class="sh-row">', rangeUI(kind) + '<div class="sh-row">')
+    : html.replace('<button class="btn btn-sm btn-p" onclick="makeShare', rangeUI(kind) + '<button class="btn btn-sm btn-p" onclick="makeShare');
   $I('share-list').innerHTML =
-    block('parent','학부모용','«학부모 공개»로 표시한 일정만 보입니다. 교사용 메모는 빠집니다.','#2FA84F').replace('<div class="sh-row">', rangeUI + '<div class="sh-row">') +
-    block('teacher','선생님용','교사 전용 일정까지 모두 보입니다.','#2F6FD0');
+    ins(pdBlock,'parent_daniel') +
+    ins(pjBlock,'parent_jihyebit') +
+    block('teacher','선생님용','두 기관·교사 전용 일정까지 모두 보입니다.','#2F6FD0');
 }
 
 /* ═══════════════════════════════════════════════
@@ -4393,10 +4428,15 @@ async function startShareView(){
     if(d.audience==='parent' && d.rangeFrom && d.rangeTo){
       const bar = document.createElement('div');
       bar.style.cssText='background:#EAF4EF;color:#1E3932;text-align:center;padding:8px 12px;font-size:12.5px;font-weight:700';
-      bar.textContent = `📅 ${d.rangeFrom.replace('-','년 ')}월 ~ ${d.rangeTo.replace('-','년 ')}월 일정입니다`;
+      const orgNm = d.shareOrg==='jihyebit' ? '지혜빛 선교원' : d.shareOrg==='daniel' ? '다니엘 아마츠' : '';
+      bar.textContent = `📅 ${orgNm?orgNm+' · ':''}${d.rangeFrom.replace('-','년 ')}월 ~ ${d.rangeTo.replace('-','년 ')}월 일정입니다`;
       document.body.insertBefore(bar, document.body.firstChild);
     }
     curView = (d.audience === 'parent') ? 'parent' : 'teacher';
+    if(d.shareOrg){
+      ORG = d.shareOrg;                                   // 그 기관 달력으로 고정
+      const cm = $I('cal-mount'); if(cm) cm.style.display = 'none';   // 겹쳐보기 바 숨김
+    }
     CAN_EDIT = false;
 
     const years = [...new Set(ALL_YEARS.map(y=>y.year))].sort((a,b)=>b-a);
@@ -4526,5 +4566,22 @@ onAuthStateChanged(auth, async user => {
 <script src="timemachine.js"></script>
 <script src="holidays-kr.js"></script>
 <script src="sidebar.js"></script>
+
+<script>
+/* 학부모 사이트에서 넘어온 경우(pfrom=daniel|jihyebit) 맨 위에 «학부모 홈으로» 복귀 바 */
+(function(){
+  try{
+    var p = new URLSearchParams(location.search).get('pfrom');
+    if(p!=='daniel' && p!=='jihyebit') return;
+    var col = p==='jihyebit' ? '#5E4B8B' : '#0C2A44';
+    var bar = document.createElement('a');
+    bar.href = 'https://artist4rhythm-hub.github.io/daniel-parents/home-'+p+'.html';
+    bar.textContent = '← 학부모 홈으로 돌아가기';
+    bar.style.cssText = 'position:sticky;top:0;z-index:9999;display:block;background:'+col+
+      ';color:#fff;text-align:center;padding:11px 14px;font-size:13.5px;font-weight:800;text-decoration:none;font-family:inherit';
+    document.body.insertBefore(bar, document.body.firstChild);
+  }catch(e){}
+})();
+</script>
 </body>
 </html>

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>연혁 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="theme.css">
+<script src="loading.js"></script>
+<style>
+.hx-year{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.hx-year select{padding:9px 14px;border:1.5px solid var(--ivd);border-radius:10px;font-size:15px;font-weight:800;font-family:inherit;background:var(--wh,#fff)}
+.hx-orgs{display:flex;gap:6px}
+.hx-orgs button{border:1.5px solid var(--ivd);background:var(--wh,#fff);border-radius:100px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--ts)}
+.hx-orgs button.on{background:var(--gd);border-color:var(--gd);color:#fff}
+.hx-sum{font-size:12.5px;color:var(--ts);margin-left:auto}
+.hx-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.hx-card{background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:14px;padding:14px 16px;cursor:pointer;transition:box-shadow .15s}
+.hx-card:hover{box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.hx-card .nm{font-size:15.5px;font-weight:900;color:var(--gd)}
+.hx-card .tc{font-size:12.5px;margin-top:4px}
+.hx-card .cnt{font-size:11.5px;color:var(--tl);margin-top:6px}
+.hx-detail{background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:14px;padding:16px 18px;margin-top:14px}
+.hx-kids{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.hx-kid{background:var(--gp);border:1px solid var(--gl,#CFE3DA);border-radius:100px;padding:5px 12px;font-size:12.5px;font-weight:700;color:var(--gd)}
+.hx-posts{margin-top:14px;border-top:1px solid var(--iv);padding-top:12px}
+.hx-post{padding:9px 0;border-bottom:1px solid var(--iv)}
+.hx-post .t{font-size:13.5px;font-weight:800}
+.hx-post .m{font-size:11.5px;color:var(--tl);margin-top:2px}
+.hx-post .b{font-size:12.5px;color:var(--ts);margin-top:4px;white-space:pre-wrap;line-height:1.55}
+.empty{color:var(--tl);text-align:center;padding:30px 0;font-size:13px}
+</style>
+</head>
+<body>
+<!-- 로그인 화면 (다른 페이지와 동일한 자체 폼) -->
+<div id="ls" style="display:none;min-height:100vh;align-items:center;justify-content:center">
+  <div style="background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:16px;padding:28px;max-width:340px;width:92%">
+    <div style="font-size:17px;font-weight:900;color:var(--gd);margin-bottom:6px">📚 연혁</div>
+    <div style="font-size:12.5px;color:var(--ts);margin-bottom:14px">로그인해 주세요 — 교사 선교사 계정 그대로 쓰시면 돼요.</div>
+    <label style="font-size:12px;font-weight:700">아이디</label>
+    <input type="text" id="l-id" autocomplete="username" style="width:100%;margin:4px 0 10px;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-size:14px;font-family:inherit">
+    <label style="font-size:12px;font-weight:700">비밀번호</label>
+    <input type="password" id="l-pw" autocomplete="current-password" style="width:100%;margin:4px 0 14px;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-size:14px;font-family:inherit">
+    <button class="bp" style="width:100%" onclick="doLogin()">로그인</button>
+    <div id="l-msg" style="display:none;margin-top:10px;border-radius:9px;padding:8px 11px;font-size:12px;font-weight:700"></div>
+  </div>
+</div>
+
+<div id="ms" style="display:none">
+  <div style="max-width:1080px;margin:0 auto;padding:4px 4px 40px">
+    <div style="display:flex;align-items:baseline;gap:10px;margin:4px 0 4px">
+      <span style="font-size:19px;font-weight:900;color:var(--gd)">📚 연혁 — 학년도 책장</span>
+    </div>
+    <p style="font-size:12.5px;color:var(--ts);margin:0 0 14px;line-height:1.6">
+      해마다의 반 구성·담임·학생과, 그 반에 나간 학부모 공지를 한 자리에서 봅니다.
+      반 편성은 연도별로 저장되어 있어 지난해 기록도 그대로 남아 있어요.</p>
+
+    <div class="hx-year">
+      <select id="hx-year" onchange="renderYear()"></select>
+      <div class="hx-orgs" id="hx-orgs"></div>
+      <span class="hx-sum" id="hx-sum"></span>
+    </div>
+
+    <div class="hx-grid" id="hx-grid"></div>
+    <div id="hx-detail"></div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, collection, getDocs, query, where }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
+});
+const auth = getAuth(app);
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+
+const $I = id => document.getElementById(id);
+const esc = t => String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ORGS = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const fmt = ts => { const d = ts?.seconds ? new Date(ts.seconds*1000) : null;
+  return d ? `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}` : ''; };
+
+let CU=null, CLASSES=[], STUDENTS={}, STAFFM={}, ORG='daniel', YEAR=null, OPEN=null;
+
+function korEmail(id){ return `${id}@gyosa-seongyosa.staff`; }
+window.doLogin = async function(){
+  const id=$I('l-id').value.trim(), pw=$I('l-pw').value, m=$I('l-msg');
+  if(!id||!pw){ m.style.display='block'; m.style.background='#FDECEA'; m.style.color='#C0392B';
+    m.textContent='아이디와 비밀번호를 입력해 주세요.'; return; }
+  try{ await signInWithEmailAndPassword(auth, korEmail(id), pw); }
+  catch(e){ m.style.display='block'; m.style.background='#FDECEA'; m.style.color='#C0392B';
+    m.textContent='로그인 실패 — 아이디나 비밀번호를 확인해 주세요.'; }
+};
+$I('l-pw').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+
+onAuthStateChanged(auth, async user=>{
+  if(!user){
+    window.hideLoading && window.hideLoading();
+    $I('ls').style.display='flex'; $I('ms').style.display='none';
+    return;
+  }
+  try{
+    const st = await getDoc(doc(db,'staff',user.uid));
+    if(!st.exists()){ $I('ls').style.display='flex'; return; }
+    CU = { uid:user.uid, ...st.data() };
+    window.ORGS = ORGS;
+    if(window.renderShell) renderShell('history', CU);
+    await loadAll();
+    $I('ls').style.display='none';
+    $I('ms').style.display='';
+    window.hideLoading && window.hideLoading();
+    if(window.guardPage && !guardPage(CU,'history')) return;
+  }catch(e){
+    window.hideLoading && window.hideLoading();
+    document.body.insertAdjacentHTML('afterbegin',
+      `<div style="background:#FDECEA;color:#C0392B;padding:10px 14px;font-size:13px;font-weight:700">불러오지 못했습니다: ${esc(e.message||'')}</div>`);
+  }
+});
+
+async function loadAll(){
+  const [cs, ss, tf] = await Promise.all([
+    getDocs(collection(db,'classes')),
+    getDocs(collection(db,'students')),
+    getDocs(collection(db,'staff')),
+  ]);
+  CLASSES = cs.docs.map(d=>({id:d.id, ...d.data()}));
+  ss.forEach(d=>STUDENTS[d.id] = {id:d.id, ...d.data()});
+  tf.forEach(d=>STAFFM[d.id] = {uid:d.id, ...d.data()});
+
+  // 연도 목록 (반 편성이 있는 해) — 최신부터
+  const years = [...new Set(CLASSES.map(c=>c.year).filter(Boolean))].sort((a,b)=>b-a);
+  if(!years.length){ $I('hx-grid').innerHTML = '<div class="empty">아직 연도별 반 편성 기록이 없습니다.</div>'; return; }
+  YEAR = years[0];
+  $I('hx-year').innerHTML = years.map(y=>`<option value="${y}">${y}학년도</option>`).join('');
+  // 기관 탭 (권한 범위)
+  const myOrgs = CU.role==='super' ? ['daniel','jihyebit']
+    : (Array.isArray(CU.orgs)&&CU.orgs.length ? CU.orgs : [CU.org||'daniel']);
+  if(!myOrgs.includes(ORG)) ORG = myOrgs[0];
+  $I('hx-orgs').innerHTML = myOrgs.map(o=>`<button class="${o===ORG?'on':''}" onclick="pickOrg('${o}')">${ORGS[o]||o}</button>`).join('');
+  renderYear();
+}
+
+window.pickOrg = o => { ORG=o; OPEN=null;
+  document.querySelectorAll('.hx-orgs button').forEach(b=>b.classList.toggle('on', b.textContent===(ORGS[o]||o)));
+  renderYear(); };
+
+window.renderYear = function(){
+  YEAR = Number($I('hx-year').value || YEAR);
+  OPEN = null; $I('hx-detail').innerHTML = '';
+  const list = CLASSES.filter(c=>Number(c.year)===Number(YEAR) && (c.org||'daniel')===ORG)
+    .sort((a,b)=>String(a.grade||'').localeCompare(String(b.grade||''),'ko') || String(a.name||'').localeCompare(String(b.name||''),'ko'));
+  const kids = list.reduce((n,c)=>n+(c.students||[]).length, 0);
+  $I('hx-sum').textContent = `${list.length}개 반 · 학생 ${kids}명`;
+  $I('hx-grid').innerHTML = list.length ? list.map(c=>{
+    const t = STAFFM[c.teacherUid];
+    const gone = (t && (t.acStatus||'active')!=='active');
+    return `<div class="hx-card" onclick="openClass('${c.id}')">
+      <div class="nm">${esc(c.grade||'')} ${esc(c.name||'')}</div>
+      <div class="tc">${t ? `담임 ${window.staffAvatar?staffAvatar(t,22):''} <b>${esc(t.name)}</b>${gone?' <span style="font-size:10.5px;color:var(--tl)">(퇴직·휴직)</span>':''}`
+        : '<span style="color:var(--danger,#C0392B)">담임 기록 없음</span>'}</div>
+      <div class="cnt">학생 ${(c.students||[]).length}명 · 눌러서 명단·공지 보기</div>
+    </div>`;
+  }).join('') : `<div class="empty">${YEAR}학년도 ${ORGS[ORG]} 반 편성 기록이 없습니다.</div>`;
+};
+
+window.openClass = async function(id){
+  const c = CLASSES.find(x=>x.id===id); if(!c) return;
+  OPEN = id;
+  const t = STAFFM[c.teacherUid];
+  const names = (c.students||[]).map(sid=>{
+    const s = STUDENTS[sid];
+    return s ? `<span class="hx-kid">${esc(s.name)}</span>` : null;
+  });
+  const missing = names.filter(x=>x===null).length;
+  const box = $I('hx-detail');
+  box.innerHTML = `<div class="hx-detail">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:16px;font-weight:900;color:var(--gd)">${esc(String(YEAR))}학년도 · ${esc(c.grade||'')} ${esc(c.name||'')}</span>
+      ${t?`<span style="font-size:13px">담임 ${window.staffAvatar?staffAvatar(t,24):''} <b>${esc(t.name)}</b></span>`:''}
+    </div>
+    <div class="hx-kids">${names.filter(Boolean).join('')||'<span style="font-size:12px;color:var(--tl)">배정된 학생 기록이 없습니다.</span>'}
+      ${missing?`<span style="font-size:11.5px;color:var(--tl)">· 이후 삭제된 학생 ${missing}명</span>`:''}</div>
+    <div class="hx-posts" id="hx-posts"><div class="empty">이 반 학부모 공지를 불러오는 중…</div></div>
+  </div>`;
+  box.scrollIntoView({behavior:'smooth', block:'start'});
+  // 그 해, 그 반에 나간 학부모 공지 (통신문 자동 게시·교사 글 포함)
+  try{
+    const snap = await getDocs(query(collection(db,'parentPosts'),
+      where('org','==',ORG), where('classKey','==', c.name||'')));
+    const lo = new Date(Number(YEAR),0,1).getTime()/1000, hi = new Date(Number(YEAR)+1,0,1).getTime()/1000;
+    const posts = snap.docs.map(d=>({id:d.id, ...d.data()}))
+      .filter(p=>{ const s=p.createdAt?.seconds||0; return s>=lo && s<hi; })
+      .sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    $I('hx-posts').innerHTML = `<div style="font-size:13px;font-weight:800;color:var(--gd);margin-bottom:6px">
+        📣 ${esc(String(YEAR))}년 이 반에 나간 학부모 공지 · ${posts.length}건</div>` +
+      (posts.length ? posts.map(p=>`<div class="hx-post">
+        <div class="t">${p.pinned?'📌 ':''}${esc(p.title||'(제목 없음)')}</div>
+        <div class="m">${esc(p.authorName||'')}${p.byStaff?' 선생님':' 학부모'} · ${fmt(p.createdAt)} · 💬 ${p.commentCount||0}</div>
+        <div class="b">${esc((p.body||'').slice(0,300))}${(p.body||'').length>300?'…':''}</div>
+      </div>`).join('') : '<div class="empty">이 해에 이 반으로 나간 공지가 없습니다.</div>');
+  }catch(e){
+    $I('hx-posts').innerHTML = `<div class="empty">공지를 불러오지 못했습니다: ${esc(e.message||'')}</div>`;
+  }
+};
+</script>
+<script src="modal-close.js"></script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
+<script type="module" src="badges.js"></script>
+</body>
+</html>
