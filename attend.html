@@ -152,7 +152,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, query, where, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -481,9 +481,11 @@ async function logActivity(action, category, target, detail){
     });
   } catch(e){}
 }
+const UNIFIED_POS = ['교장','교감','행정실장'];   // 두 기관을 함께 보는 통합 직책
 function myOrgs(){
   if(!CU) return [];
   if(CU.role==='super') return ['jihyebit','daniel'];
+  if(UNIFIED_POS.includes(CU.position||'')) return ['jihyebit','daniel'];
   return CU.orgs && CU.orgs.length ? CU.orgs : [CU.org];
 }
 const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
@@ -575,7 +577,15 @@ onAuthStateChanged(auth, async (user) => {
                         showTab(curTab||'check'); }
       });
     }
-    showTab('check');
+    (function(){
+    const q = new URLSearchParams(location.search);
+    if(q.get('stat')==='live'){
+      const o = q.get('org');
+      if(o==='daniel'||o==='jihyebit'){ statOrg = o; try{ localStorage.setItem('attend_org', o); }catch(e){} }
+      statView = 'live';
+      showTab('stat');
+    } else showTab('check');
+  })();
   } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
 });
 
@@ -721,6 +731,7 @@ function canViewClass(c){
 // ── 탭 전환 ──
 let curTab = 'check';
 function showTab(t){
+  if(t!=='stat') { try{ stopLive(); }catch(e){} }
   curTab = t;
   document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
   $I('tb-'+t)?.classList.add('active');
@@ -1434,9 +1445,108 @@ let statView = 'month'; // student | class | grade | dept | all | month
 let statClassFilter = '';
 let statGradeFilter = '';
 
+let liveUnsub = null;      // 실시간 구독 해제 손잡이
+let liveDate = '';         // 보고 있는 날짜 (기본 오늘)
+function stopLive(){ if(liveUnsub){ try{liveUnsub();}catch(e){} liveUnsub=null; } }
+
+/* ── 🔴 오늘 실시간 (기관 전체) — 담임이 표시하는 순간 화면이 그 자리에서 바뀐다 ──
+   저장 구조가 «특이사항만 기록»이므로: 표시 없음 = 정상 출석.
+   따라서 카드에는 재적·특이 유형별 수·출석률을 보여준다 (미입력 개념 없음). */
+function renderLive(){
+  stopLive();
+  const orgs = myOrgs();
+  const org = statOrg = (window.OrgBar && OrgBar.current) || statOrg || orgs[0];
+  if(!liveDate) liveDate = todayYMD2();
+  $I('c-stat').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">🔴 오늘 실시간 — ${ORGS[org]||org} 전체</h3>
+      <p class="adesc">담임 선생님이 출결을 표시하면 이 화면이 <b>실시간으로</b> 바뀝니다. 표시가 없는 학생은 정상 출석으로 봅니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <div class="fgrp" style="margin-bottom:0"><label>보기</label>
+          <select id="st-view" onchange="onStatChange()">
+            <option value="month">월별 달력</option><option value="week">주간 통계</option>
+            <option value="student">학생별</option><option value="class">반별</option>
+            <option value="grade">학년별</option><option value="dept">부서별</option>
+            <option value="all">전체</option>
+            <option value="live" selected>🔴 오늘 실시간 (기관 전체)</option>
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>날짜</label>
+          <input type="date" id="lv-date" value="${liveDate}" onchange="liveDate=this.value; renderLive();"></div>
+        <span id="lv-pulse" style="font-size:11.5px;color:var(--tl);align-self:center">● 연결 중…</span>
+      </div>
+      <div id="lv-sum" style="margin-bottom:12px"></div>
+      <div id="lv-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px"></div>
+    </div>`;
+  const isToday = liveDate === todayYMD2();
+  const qy = query(collection(db,'studentAttendance'), where('org','==',org), where('date','==',liveDate));
+  liveUnsub = onSnapshot(qy, snap=>{
+    const marks = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    paintLive(org, marks, isToday);
+    const p = $I('lv-pulse');
+    if(p){ p.innerHTML = isToday
+      ? '<span style="color:#16a34a">●</span> 실시간 연결됨 — 표시 즉시 갱신'
+      : '지난 날짜 조회 (실시간과 무관)'; }
+  }, err=>{
+    const g=$I('lv-grid'); if(g) g.innerHTML = `<div style="grid-column:1/-1;color:var(--danger,#C0392B);font-size:13px">불러오지 못했습니다: ${esc(err.message||'')}</div>`;
+  });
+}
+function todayYMD2(){ const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; }
+function paintLive(org, marks, isToday){
+  const cls = sortClasses(CLASSES.filter(c=>c.org===org));
+  const byClass = {};
+  marks.forEach(m=>{ (byClass[m.classId] = byClass[m.classId] || []).push(m); });
+  const typeOf = id => TYPES.find(t=>t.id===id) || null;
+  let totRoster=0, totFlag=0, totAbsent=0;
+  const cards = cls.map(c=>{
+    const roster = (c.students||[]).length;
+    const ms = byClass[c.id] || [];
+    // 학생별 대표 유형(복수면 첫 항목), 정상출석(isPresent) 표시는 특이에서 제외
+    const flagged = {};
+    ms.forEach(m=>{
+      const t = typeOf((m.typeIds&&m.typeIds[0])||m.typeId);
+      if(t && !t.isPresent) flagged[m.studentId] = { t, name:m.studentName||'' };
+    });
+    const flagN = Object.keys(flagged).length;
+    const cnt = {};
+    Object.values(flagged).forEach(f=>{ cnt[f.t.name] = cnt[f.t.name]||{n:0,color:f.t.color,names:[]}; cnt[f.t.name].n++; cnt[f.t.name].names.push(f.name); });
+    const rate = roster ? Math.round((roster-flagN)/roster*1000)/10 : 0;
+    totRoster+=roster; totFlag+=flagN; totAbsent+=flagN;
+    const t = (typeof STAFFM!=='undefined') ? null : null;
+    const chips = Object.entries(cnt).map(([nm,v])=>
+      `<span title="${esc(v.names.join(', '))}" style="display:inline-flex;align-items:center;gap:4px;border:1px solid ${v.color}44;background:${v.color}14;color:${v.color};border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">${esc(nm)} ${v.n}</span>`).join(' ');
+    return `<div style="background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:13px;padding:13px 15px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <b style="font-size:14.5px;color:var(--gd)">${c.grade?'['+esc(c.grade)+'] ':''}${esc(c.name)}</b>
+        <span style="font-size:11px;color:var(--tl)">재적 ${roster}</span>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;min-height:24px">
+        ${flagN ? chips : `<span style="font-size:11.5px;color:#16a34a;font-weight:800">✓ 특이사항 없음${isToday?' (전원 출석)':''}</span>`}
+      </div>
+      <div style="margin-top:9px;background:var(--iv);border-radius:100px;height:7px;overflow:hidden">
+        <div style="width:${rate}%;height:100%;background:${rate>=95?'#16a34a':rate>=85?'#f59e0b':'#dc2626'}"></div>
+      </div>
+      <div style="margin-top:4px;font-size:11px;color:var(--ts);text-align:right">출석 ${rate}%</div>
+    </div>`;
+  }).join('');
+  const orate = totRoster ? Math.round((totRoster-totAbsent)/totRoster*1000)/10 : 0;
+  $I('lv-sum').innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:130px;background:var(--gp);border:1px solid var(--gm);border-radius:12px;padding:11px 14px">
+        <div style="font-size:11px;color:var(--gd)">재적</div><div style="font-size:20px;font-weight:900;color:var(--gd)">${totRoster}명</div></div>
+      <div style="flex:1;min-width:130px;background:#FDF3E7;border:1px solid #F2D9B8;border-radius:12px;padding:11px 14px">
+        <div style="font-size:11px;color:#B4690E">특이사항</div><div style="font-size:20px;font-weight:900;color:#B4690E">${totFlag}건</div></div>
+      <div style="flex:1;min-width:130px;background:#EAF6EF;border:1px solid #CBE7D5;border-radius:12px;padding:11px 14px">
+        <div style="font-size:11px;color:#16a34a">기관 출석률</div><div style="font-size:20px;font-weight:900;color:#16a34a">${orate}%</div></div>
+    </div>`;
+  $I('lv-grid').innerHTML = cards || `<div style="grid-column:1/-1;color:var(--tl);font-size:13px">이 기관에 올해 반 편성이 없습니다.</div>`;
+}
+window.renderLive = renderLive;
+
 function renderStat(){
+  stopLive();
   const orgs = myOrgs();
   statOrg = (window.OrgBar && OrgBar.current) || statOrg || orgs[0];
+  if(statView === 'live'){ renderLive(); return; }
   const ty = new Date().getFullYear();
   const years = [];
   for(let y=ty+1; y>=ty-3; y--) years.push(y);
@@ -1464,6 +1574,7 @@ function renderStat(){
             <option value="grade"${statView==='grade'?' selected':''}>학년별</option>
             <option value="dept"${statView==='dept'?' selected':''}>부서별</option>
             <option value="all"${statView==='all'?' selected':''}>전체</option>
+            <option value="live"${statView==='live'?' selected':''}>🔴 오늘 실시간 (기관 전체)</option>
           </select></div>
         <div class="fgrp" style="margin-bottom:0"><label>반 필터</label>
           <select id="st-class" onchange="onStatChange()"><option value="">전체 반</option></select></div>
@@ -1500,14 +1611,17 @@ window.fillStatFilters = fillStatFilters;
 
 function onStatChange(){
   const prevOrg = statOrg;
-  statYear = Number($I('st-year').value);
+  if($I('st-year')) statYear = Number($I('st-year').value);
   statOrg = (window.OrgBar && OrgBar.current) || statOrg;
-  statTermSel = $I('st-term').value;
-  statView = $I('st-view').value;
+  if($I('st-term')) statTermSel = $I('st-term').value;
+  statView = $I('st-view')?.value || statView;
   statClassFilter = $I('st-class')?.value || '';
   statGradeFilter = $I('st-grade')?.value || '';
-  // 기관이 바뀌면 반/학년 필터 초기화하고 옵션 다시 채움
+  if(statView === 'live'){ renderLive(); return; }        // 🔴 실시간 판으로 전환
   if(prevOrg !== statOrg){ statClassFilter=''; statGradeFilter=''; fillStatFilters(); }
+  // 실시간 판에서 일반 통계로 돌아올 때는 화면 틀부터 다시 그린다 (연도·학기 칸 복원)
+  if(!$I('st-year')){ stopLive(); renderStat(); return; }
+  stopLive();
   buildStat();
 }
 window.onStatChange = onStatChange;

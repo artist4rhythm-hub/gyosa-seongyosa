@@ -340,7 +340,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── Firebase 초기화 ──────────────────────────
 const firebaseConfig = {
@@ -1231,6 +1231,65 @@ const HOME_VERSES = [
   { t:'내 은혜가 네게 족하도다', r:'고린도후서 12:9' },
 ];
 
+/* ── 📋 오늘의 출결 위젯 — 담임이 표시하는 순간 홈 숫자가 바뀐다 ──
+   교장·교감·행정실장(통합 직책)·수퍼는 두 기관이 나란히, 그 외는 소속 기관만. */
+const ATT_UNIFIED_POS = ['교장','교감','행정실장'];
+let _attUnsubs = [], _attRoster = {}, _attTypes = null;
+function attHomeOrgs(){
+  if(!CU) return [];
+  if(CU.role==='super' || ATT_UNIFIED_POS.includes(CU.position||'')) return ['daniel','jihyebit'];
+  return (CU.orgs && CU.orgs.length) ? CU.orgs : [CU.org];
+}
+async function loadAttendWidget(){
+  const box = $I('w-attend'); if(!box) return;
+  _attUnsubs.forEach(u=>{ try{u();}catch(e){} }); _attUnsubs = [];
+  const orgs = attHomeOrgs();
+  if(!orgs.length){ box.innerHTML=''; return; }
+  const today = (()=>{ const n=new Date(); const p=x=>String(x).padStart(2,'0');
+    return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`; })();
+  try {
+    if(!_attTypes){
+      const ts = await getDocs(collection(db,'attendTypes'));
+      _attTypes = ts.docs.map(d=>({id:d.id, ...d.data()}));
+    }
+    for(const o of orgs){
+      if(_attRoster[o] == null){
+        const ss = await getDocs(query(collection(db,'students'), where('org','==',o)));
+        _attRoster[o] = ss.size;
+      }
+    }
+  } catch(e){ box.innerHTML = `<div style="font-size:12px;color:var(--tl)">출결 정보를 불러오지 못했어요.</div>`; return; }
+  box.innerHTML = orgs.map(o=>`<div id="att-row-${o}"></div>`).join('');
+  orgs.forEach(o=>{
+    const qy = query(collection(db,'studentAttendance'), where('org','==',o), where('date','==',today));
+    const un = onSnapshot(qy, snap=>{
+      const flagged = {};
+      snap.forEach(d=>{ const m=d.data();
+        const t=_attTypes.find(x=>x.id===((m.typeIds&&m.typeIds[0])||m.typeId));
+        if(t && !t.isPresent) flagged[m.studentId] = t.name; });
+      const roster = _attRoster[o]||0, flagN = Object.keys(flagged).length;
+      const cnt = {}; Object.values(flagged).forEach(nm=>cnt[nm]=(cnt[nm]||0)+1);
+      const chips = Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,3)
+        .map(([nm,n])=>`${nm} ${n}`).join(' · ');
+      const rate = roster ? Math.round((roster-flagN)/roster*1000)/10 : 0;
+      const col = rate>=95?'#16a34a':rate>=85?'#f59e0b':'#dc2626';
+      const el = $I('att-row-'+o); if(!el) return;
+      el.innerHTML = `
+        <a href="attend.html?stat=live&org=${o}" style="display:block;background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:12px;padding:10px 13px;text-decoration:none;color:inherit">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+            <b style="font-size:13px;color:var(--gd)">${(window.ORGS&&ORGS[o])||o}</b>
+            <span style="font-size:11px;color:var(--tl)">재적 ${roster} · ${flagN?`특이 ${flagN}건${chips?' — '+chips:''}`:'✓ 특이사항 없음'}</span>
+          </div>
+          <div style="margin-top:7px;display:flex;align-items:center;gap:8px">
+            <div style="flex:1;background:var(--iv);border-radius:100px;height:6px;overflow:hidden">
+              <div style="width:${rate}%;height:100%;background:${col}"></div></div>
+            <span style="font-size:11.5px;font-weight:800;color:${col}">${rate}%</span>
+          </div>
+        </a>`;
+    }, ()=>{ const el=$I('att-row-'+o); if(el) el.innerHTML=''; });
+    _attUnsubs.push(un);
+  });
+}
 function renderHome(){
   const body = $I('home-body'); if(!body) return;
   loadWidgetPrefs();
@@ -1723,6 +1782,10 @@ function renderHome(){
       ${widgetOn('quick') ? `<div class="hm-sec">⚡ 빠른 이동 <span class="hm-qedit" onclick="toggleQuickEdit()" id="quick-edit-btn">편집</span></div>
       <div class="hm-quick" id="hm-quick"></div>` : ''}
 
+      ${widgetOn('attend') ? `<div class="hm-sec">📋 오늘의 출결 <span style="font-size:10.5px;font-weight:700;color:#16a34a">● 실시간</span></div>
+      <div id="w-attend" style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px">
+        <div style="font-size:12px;color:var(--tl)">불러오는 중…</div></div>` : ''}
+
       ${widgetOn('todo') ? `<div class="hm-sec">📌 지금 처리할 일 ${active.length?`<span style="font-size:11.5px;font-weight:600;color:#fff;background:var(--gm);padding:2px 10px;border-radius:100px">${active.length}건</span>`:''}</div>
       ${active.length ? `<div class="hm-todos">${bigCards}</div>${idle.length?`<div class="hm-idles">${smallChips}</div>`:''}`
         : `<div class="hm-clear">🎉 <b>모두 처리했어요!</b><div style="font-size:12.5px;color:var(--ts);margin-top:5px">새로 온 결재·쪽지·게시글이 없습니다.</div>
@@ -1782,6 +1845,7 @@ function renderHome(){
   }
 
   startClock();
+  loadAttendWidget();
   renderWorld();
   tickWorld();
   renderMemo();
@@ -1815,8 +1879,9 @@ const HOME_WIDGETS = [
   { key:'tt',     label:'내 시간표',     hint:'오늘 수업을 시간 순서로' },
   { key:'quick',  label:'빠른 이동',     hint:'자주 쓰는 화면 바로가기' },
   { key:'todo',   label:'지금 처리할 일', hint:'결재·쪽지·게시글' },
+  { key:'attend', label:'오늘의 출결',    hint:'기관 출결 실시간 현황' },
 ];
-const WIDGET_DEFAULT = { clock:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1 };
+const WIDGET_DEFAULT = { clock:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1, attend:1 };
 let WIDGET_ON = { ...WIDGET_DEFAULT };
 function loadWidgetPrefs(){
   try {
