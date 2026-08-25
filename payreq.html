@@ -439,7 +439,18 @@ function isAnyExpManager(){
   if(((PAY_MANAGERS&&PAY_MANAGERS.list)||[]).includes(CU.uid)) return true;   // 컨트롤 타워에서 지정한 담당
   return myOrgs().some(o=>(EXP_MANAGERS[o]||[]).includes(CU.uid));
 }
-const myOrgs = () => CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
+const myOrgs = () => {
+  if(!CU) return ['daniel'];
+  if(CU.role==='super') return ['jihyebit','daniel'];
+  // 💰 경비 담당은 두 기관 경비를 함께 정산한다 —
+  //    ① 관리자 → 담당자 지정에서 «경비 지급 요청서 담당»으로 지정된 사람
+  //    ② 직책이 «회계 담당자»인 사람
+  //    은 소속과 무관하게 두 기관이 모두 보인다 (이 페이지 안에서만).
+  try {
+    if(isPayManager() || myPosition()==='회계 담당자') return ['jihyebit','daniel'];
+  } catch(e){}
+  return (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org]);
+};
 function todayYMD(){ const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; }
 function studentGrade(sid){
   for(const c of CLASSES){
