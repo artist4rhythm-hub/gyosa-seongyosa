@@ -4453,14 +4453,56 @@ window.doPublish = async function(){
     renderEdit();
     // 발행 완료 + 링크 안내
     const link = shareUrl(shareId);
+    // 🔔 웹푸시 발송 (관리 설정 config/push.url 이 있을 때만 — 없으면 조용히 건너뜀)
+    let pushNote = '';
+    try {
+      const pc = await getDoc(doc(db,'config','push'));
+      if(pc.exists() && pc.data().url){
+        const idToken = await auth.currentUser.getIdToken();
+        const r = await fetch(pc.data().url.replace(/\/$/,'') + '/notify', {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+idToken },
+          body: JSON.stringify({
+            title: `[${FN_ORGS[CUR.org]||''}] 새 가정통신문`,
+            body: CUR.title || '',
+            link,
+            org: CUR.org,
+            classKeys: (pbOrgAll || !(pbClasses&&pbClasses.length)) ? null : pbClasses,
+          }),
+        });
+        const j = await r.json().catch(()=>({}));
+        pushNote = r.ok
+          ? `<div class="msub" style="margin-top:8px">🔔 알림을 켠 학부모 ${j.sent||0}명에게 푸시를 보냈습니다.</div>`
+          : `<div class="msub" style="margin-top:8px;color:var(--danger,#C0392B)">🔔 푸시 발송 실패: ${esc(j.error||r.status)}</div>`;
+      }
+    } catch(e){ pushNote = ''; }
     openModal(`
       <div class="mtitle">✅ 발행 완료</div>
       <div class="msub">이 링크를 학부모께 전달하세요. (카카오톡 공유 가능)</div>
       <div class="linkbox"><span class="lk">${esc(link)}</span>
         <button class="btn line sm" onclick="copyLink()">복사</button></div>
-      ${boardNote}
+      <div style="margin-top:12px;background:var(--gp);border:1px solid var(--gm);border-radius:12px;padding:12px 14px">
+        <div style="font-size:12.5px;font-weight:800;color:var(--gd);margin-bottom:7px">📣 단톡방 공지 문구 — 그대로 붙여넣으세요</div>
+        <div id="ka-msg" style="white-space:pre-wrap;background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.6">${esc(kakaoMsg(link))}</div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn sm" onclick="copyKakao()">📋 공지 문구 복사</button></div>
+      </div>
+      ${boardNote}${pushNote}
       <div class="mfoot"><button class="btn" onclick="closeModal()">확인</button></div>`);
   } catch(e){ toast('발행 실패: '+e.message,'err'); }
+};
+/* 📣 카톡 단톡방용 공지 문구 — 제목·기관·한 줄 안내·링크 */
+function kakaoMsg(link){
+  const orgNm = (typeof FN_ORGS!=='undefined' ? FN_ORGS[CUR?.org] : '') || '';
+  const title = CUR?.title || '가정통신문';
+  return `[${orgNm}] 가정통신문 📨\n\n「${title}」\n\n아래 링크에서 확인해 주세요.\n${link}\n\n· 로그인 없이 열립니다\n· 학부모 홈(앱)에서도 확인할 수 있어요`;
+}
+window.copyKakao = function(){
+  if(!CUR?.shareId) return;
+  const t = kakaoMsg(shareUrl(CUR.shareId));
+  navigator.clipboard?.writeText(t)
+    .then(()=>toast('공지 문구를 복사했어요 — 단톡방에 붙여넣으세요'))
+    .catch(()=>{ prompt('문구를 직접 복사하세요', t); });
 };
 window.copyLink = function(){
   if(!CUR?.shareId) return;
