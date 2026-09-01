@@ -4964,6 +4964,52 @@ window.enableStaffPush = async () => {
     say(true,'켰습니다 ✓ 이제 쪽지·결재 소식이 이 기기로 옵니다');
   }catch(e){ btn.disabled=false; btn.textContent='🔔 이 기기에서 알림 켜기'; say(false,'실패: '+(e.message||'')); }
 };
+/* 🧪 진단: 어디서 끊기는지 한 번에 본다 + 나에게 테스트 알림 */
+window.diagStaffPush = async () => {
+  const out = $I('nt-diag'); out.style.display='block'; out.textContent = '점검 중…';
+  const L = [];
+  const ok = (t)=>L.push('✅ '+t), bad = (t)=>L.push('❌ '+t), info=(t)=>L.push('ℹ️ '+t);
+  try {
+    // 1 브라우저·권한
+    if(!('Notification' in window)) bad('이 브라우저는 알림 API가 없음 (아이폰·패드는 홈 화면에 추가한 앱에서 열어야 함)');
+    else if(Notification.permission==='granted') ok('알림 권한: 허용됨');
+    else bad('알림 권한: '+Notification.permission+' (허용 필요)');
+    if(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ok('실행 방식: 설치한 앱');
+    else info('실행 방식: 브라우저 탭 (PC 크롬은 OK · 아이폰/패드는 설치 앱 필요)');
+    // 2 서비스 워커
+    if('serviceWorker' in navigator){
+      const regs = await navigator.serviceWorker.getRegistrations();
+      const sw = regs.find(r => (r.active||r.installing||r.waiting)?.scriptURL?.includes('firebase-messaging-sw'));
+      sw ? ok('서비스 워커: 등록됨') : bad('서비스 워커: 미등록 → «알림 켜기»를 다시 눌러주세요');
+    } else bad('서비스 워커 미지원');
+    // 3 내 문서의 토큰
+    const me = await getDoc(doc(db,'staff',CU.uid));
+    const n = (me.exists() && Array.isArray(me.data().fcmTokens)) ? me.data().fcmTokens.length : 0;
+    n ? ok(`내 알림 토큰: ${n}개 저장됨`) : bad('내 알림 토큰: 없음 → «알림 켜기»가 끝까지 성공하지 못함');
+    const prefs = (me.exists() && me.data().notifyPrefs) || {};
+    info('수신 설정: ' + (Object.keys(prefs).length ? JSON.stringify(prefs) : '기본(전부 켜짐)'));
+    // 4 서버 주소·마스터
+    const pc = await getDoc(doc(db,'config','push'));
+    const url = pc.exists() ? (pc.data().url||'') : '';
+    url ? ok('발송 서버 주소: 설정됨') : bad('발송 서버 주소(config/push.url) 없음');
+    try{ const ms = await getDoc(doc(db,'config','pushStaff'));
+      if(ms.exists() && ms.data().enabled===false) bad('관리자 마스터 스위치: 꺼짐'); else ok('관리자 마스터 스위치: 켜짐'); }catch(e){}
+    // 5 나에게 테스트 발송
+    if(url && n){
+      const idToken = await auth.currentUser.getIdToken();
+      const r = await fetch(url.replace(/\/$/,'')+'/notify-staff', { method:'POST',
+        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+idToken },
+        body: JSON.stringify({ uids:[CU.uid], kind:'msg', allowSelf:true,
+          title:'🔔 테스트 알림', body:'이 알림이 보이면 교사 알림 설정 완료!',
+          link:'https://artist4rhythm-hub.github.io/gyosa-seongyosa/index.html' }) });
+      const j = await r.json().catch(()=>({}));
+      if(r.ok && j.sent>0) ok(`서버 응답: ${j.sent}/${j.total} 발송 성공 → 몇 초 안에 이 기기에 알림이 와야 합니다`);
+      else if(r.ok) bad('서버 응답: 발송 0건 ('+(j.note||'')+') — 서버가 옛 버전이면 index.js 재배포 필요');
+      else bad('서버 오류: '+(j.error||r.status)+(r.status===404?' → 서버가 옛 버전(v1)입니다. index.js 재배포 필요':''));
+    }
+  } catch(e){ bad('점검 중 오류: '+(e.message||e)); }
+  out.textContent = L.join('\n');
+};
 window.saveNotifyPrefs = async () => {
   const prefs = {}; NT_KINDS.forEach(([k])=>{ prefs[k] = !!$I('nt-k-'+k)?.checked; });
   const m=$I('nt-msg');
@@ -5086,6 +5132,10 @@ function openMyInfo(){
           <div style="font-size:12px;color:var(--tl);margin-bottom:6px">받을 알림 종류</div>
           <div id="nt-prefs" style="display:flex;flex-direction:column;gap:7px"></div>
           <div class="alert" id="nt-msg" style="display:none;margin-top:10px;border-radius:9px;padding:8px 11px;font-size:12px;font-weight:700"></div>
+          <div style="margin-top:14px;border-top:1px solid var(--iv);padding-top:12px">
+            <button class="bs" onclick="diagStaffPush()">🧪 진단 + 테스트 알림 보내기</button>
+            <div id="nt-diag" style="display:none;margin-top:9px;background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:9px;padding:9px 12px;font-size:12px;line-height:1.7;white-space:pre-wrap"></div>
+          </div>
           <div class="mact" style="margin-top:16px">
             <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
             <button class="bp" onclick="saveNotifyPrefs()">설정 저장</button>
