@@ -495,7 +495,7 @@ async function loadApps(){
 }
 const AST = { submitted:'접수', approved:'승인', hold:'보류', rejected:'반려' };
 function feeOf(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub||0); return Math.round(rate * (a.durMin||0) / 60); }
-function liveCount(a){ return (a.sessions||[]).filter(x=>!x.blocked).length; }
+function liveCount(a){ return (a.sessions||[]).filter(x=>!x.blocked && !x.skip).length; }
 function renderApps(){
   $I('body').innerHTML = `<div class="row" style="margin-bottom:10px"><span class="small">총 ${APPS.length}건 · 동아리 ${APPS.filter(a=>a.type!=='joy').length} · 조이클래스 ${APPS.filter(a=>a.type==='joy').length}</span>
     <button class="bs" style="margin-left:auto" onclick="reloadApps()">새로고침</button></div>` +
@@ -525,7 +525,7 @@ window.viewApp = (id)=>{
     <table class="tb"><tr><th style="width:120px">강사</th><td>${esc(a.instructorName||'')}${a.coInstructors?' / '+esc(a.coInstructors):''}</td></tr>
       <tr><th>연락처</th><td>${esc(a.phone||'')} · ${esc(a.email||'')}</td></tr>
       <tr><th>대상·인원</th><td>${esc(a.grades||'')} · 최소 ${a.minN||0} ~ 최대 ${a.maxN||0}명</td></tr>
-      <tr><th>시간</th><td>${(a.weekdays||[]).map(w=>WD[w]+'요일').join(', ')} ${a.start||''} · ${a.durMin||0}분 · 총 ${liveCount(a)}회</td></tr>
+      <tr><th>기간·시간</th><td>${a.startDate||SEM.rangeFrom} ~ ${a.endDate||SEM.rangeTo} · ${(a.weekdays||[]).map(w=>WD[w]+'요일').join(', ')} ${a.start||''} · ${a.durMin||0}분 · 총 ${liveCount(a)}회</td></tr>
       <tr><th>장소·준비물</th><td>희망 ${esc(a.place||'미정')} / 배정 ${esc(a.room||'미배정')} · ${esc(a.materials||'')}</td></tr>
       <tr><th>회비</th><td>1회 ${feeOf(a).toLocaleString()}원 × ${liveCount(a)}회 = <b>${(feeOf(a)*liveCount(a)).toLocaleString()}원</b> (1인 학기)</td></tr>
       <tr><th>계좌</th><td>${esc(a.bank?.bank||'')} ${esc(a.bank?.account||'')} ${esc(a.bank?.holder||'')}</td></tr>
@@ -533,7 +533,7 @@ window.viewApp = (id)=>{
     </table>
     <div style="font-size:13px;font-weight:900;color:var(--gd);margin:14px 0 6px">수업 활동 계획</div>
     <table class="tb"><tr><th>회</th><th>수업일</th><th>활동 내용</th><th>준비물</th><th>재료비</th></tr>
-      ${(a.sessions||[]).map(s=>`<tr class="${s.blocked?'blocked':''}"><td>${s.blocked?'':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})</td><td>${s.blocked?'<b>'+esc(s.reason||'휴강')+'</b>':esc(s.content||'')}</td><td>${esc(s.materials||'')}</td><td>${esc(s.cost||'')}</td></tr>`).join('')}
+      ${(a.sessions||[]).map(s=>`<tr class="${(s.blocked||s.skip)?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':''}><td>${(s.blocked||s.skip)?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})</td><td>${s.blocked?'<b>🚫 '+esc(s.reason||'휴강')+' — 학교 휴강</b>':s.skip?'<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>':esc(s.content||'')}</td><td>${esc(s.materials||'')}</td><td>${esc(s.cost||'')}</td></tr>`).join('')}
     </table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="bp" onclick="this.closest('.modal-bg').remove()">닫기</button></div></div>`;
   document.body.appendChild(bg);
