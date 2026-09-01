@@ -124,6 +124,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp, writeBatch, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { notifyStaff } from './push-client.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -697,6 +698,11 @@ async function sendMsg(){
       imgCount: msgImgs.length,
       readBy:[], createdAt:Timestamp.now()
     });
+    // 🔔 수신자에게 푸시 (설정 없으면 조용히 건너뜀)
+    notifyStaff(auth, db, { uids: toUids, kind:'msg',
+      title: `✉️ ${CU.name} 선생님의 쪽지`,
+      body: subject || (body||'').slice(0, 60) || '사진을 보냈어요',
+      link: 'https://artist4rhythm-hub.github.io/gyosa-seongyosa/message.html' });
     // 📷 사진은 별도 컬렉션에 — 쪽지함 목록을 무겁게 하지 않는다
     for(let i=0; i<msgImgs.length; i++){
       await addDoc(collection(db,'msgImages'), {

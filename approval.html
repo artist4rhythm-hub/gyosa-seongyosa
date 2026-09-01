@@ -139,6 +139,8 @@ th{background:var(--iv);font-weight:700;font-size:12px;}
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, updateDoc, setDoc, collection, getDocs, addDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { notifyStaff } from './push-client.js';
+const APV_LINK = 'https://artist4rhythm-hub.github.io/gyosa-seongyosa/approval.html';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -500,6 +502,8 @@ async function submitDoc(){
     if(customFields) data.customFields = customFields;
     await addDoc(collection(db,'approvals'), data);
     toast('결재를 상신했습니다.','ok');
+    notifyStaff(auth, db, { uids:[line[0].uid], kind:'approval',
+      title:'📋 결재 요청이 도착했어요', body:`${CU.name} · ${title}`, link: APV_LINK });
     closeMod();
     await loadDocs();
     showTab('mine');
@@ -610,6 +614,10 @@ async function actApprove(id){
       status: isLast ? 'approved' : 'progress'
     });
     toast(isLast?'최종 승인되었습니다.':'승인했습니다. 다음 결재자에게 넘어갑니다.','ok');
+    if(isLast) notifyStaff(auth, db, { uids:[d.drafterUid], kind:'approval_result',
+      title:'✅ 결재가 최종 승인됐어요', body: d.title||'', link: APV_LINK });
+    else notifyStaff(auth, db, { uids:[line[nextStep]?.uid].filter(Boolean), kind:'approval',
+      title:'📋 결재 요청이 도착했어요', body:`${d.drafterName} · ${d.title||''}`, link: APV_LINK });
     closeMod();
     await loadDocs();
     showTab('todo');
@@ -628,6 +636,8 @@ async function actFinal(id){
   try {
     await updateDoc(doc(db,'approvals',id), { line, status:'approved', finalBy:CU.name });
     toast('전결 처리되었습니다.','ok');
+    notifyStaff(auth, db, { uids:[d.drafterUid], kind:'approval_result',
+      title:'✅ 결재가 전결 승인됐어요', body: d.title||'', link: APV_LINK });
     closeMod();
     await loadDocs();
     showTab('todo');
@@ -644,6 +654,8 @@ async function actReject(id){
   try {
     await updateDoc(doc(db,'approvals',id), { line, status:'rejected', rejectReason:reason.trim() });
     toast('반려했습니다.');
+    notifyStaff(auth, db, { uids:[d.drafterUid], kind:'approval_result',
+      title:'❌ 결재가 반려됐어요', body:`${d.title||''} — ${reason.trim().slice(0,60)}`, link: APV_LINK });
     closeMod();
     await loadDocs();
     showTab('todo');

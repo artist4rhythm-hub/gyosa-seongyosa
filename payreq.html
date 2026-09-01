@@ -355,6 +355,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { notifyStaff } from './push-client.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -2284,6 +2285,13 @@ async function sendMsg(toUids, subject, body, category){
       toUids: uids, toNames, subject, body,
       readBy: [], createdAt: Timestamp.now()
     });
+    // 🔔 같은 사람에게 푸시도 — 제목으로 종류를 가른다 (설정 없으면 조용히 건너뜀)
+    const kind = /결재 요청/.test(subject) ? 'approval'
+               : /지급 상신/.test(subject)  ? 'pay'
+               : 'approval_result';
+    notifyStaff(auth, db, { uids, kind, title: '💰 ' + subject,
+      body: String(body||'').split('\n').filter(Boolean).slice(0,2).join(' · ').slice(0,120),
+      link: 'https://artist4rhythm-hub.github.io/gyosa-seongyosa/payreq.html' });
   } catch(e){ console.error('쪽지 발송 실패', e); }
 }
 

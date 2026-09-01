@@ -340,7 +340,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, onSnapshot, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── Firebase 초기화 ──────────────────────────
 const firebaseConfig = {
@@ -760,6 +760,7 @@ function showPw(uid) {
   document.body.appendChild(el);
   MIAV = { avatar: CU.avatar||'', photo: CU.photo||'' };
   miavPaint();
+  try{ paintNotifyTab(); }catch(e){}
   const fi = $I('miav-file');
   if(fi) fi.addEventListener('change', async ()=>{
     const f = fi.files && fi.files[0]; if(!f) return;
@@ -4927,6 +4928,57 @@ function updEditOrgMode(){
 }
 window.updEditOrgMode = updEditOrgMode;
 
+/* ── 🔔 교사 알림: 켜기(토큰 저장) + 종류별 수신 설정 ── */
+const NT_KINDS = [
+  ['msg','✉️ 쪽지 도착'], ['approval','📋 결재 요청 (내 차례)'],
+  ['approval_result','✅ 결재 결과 (승인·반려·지급)'], ['pay','💰 회계 상신 (담당자)'],
+  ['board','📢 게시판 새 글'],
+];
+function paintNotifyTab(){
+  const prefs = CU.notifyPrefs || {};
+  $I('nt-prefs').innerHTML = NT_KINDS.map(([k,l])=>`
+    <label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer">
+      <input type="checkbox" id="nt-k-${k}" ${prefs[k]===false?'':'checked'} style="width:16px;height:16px"> ${l}</label>`).join('');
+  const on = localStorage.getItem('staff_push_on')==='1' && ('Notification' in window) && Notification.permission==='granted';
+  $I('nt-state').textContent = on ? '✓ 이 기기에서 알림 받는 중' : '아직 꺼져 있어요';
+  if(on){ $I('nt-on').textContent='✓ 켜져 있음'; $I('nt-on').disabled=true; }
+}
+window.enableStaffPush = async () => {
+  const btn=$I('nt-on'), m=$I('nt-msg');
+  const say=(ok,t)=>{ m.style.display='block'; m.style.background=ok?'#DCFCE7':'#FDECEA'; m.style.color=ok?'#16A34A':'#C0392B'; m.textContent=t; };
+  try{
+    if(!('Notification' in window) || !('serviceWorker' in navigator)) return say(false,'이 브라우저는 알림을 지원하지 않아요. (아이폰은 홈 화면에 추가한 앱에서)');
+    btn.disabled=true; btn.textContent='설정 중…';
+    const perm = await Notification.requestPermission();
+    if(perm!=='granted'){ btn.disabled=false; btn.textContent='🔔 이 기기에서 알림 켜기'; return say(false,'알림이 허용되지 않았어요. 브라우저 설정에서 허용해 주세요.'); }
+    const cfg = await getDoc(doc(db,'parentConfig','push'));
+    const vk = cfg.exists() ? (cfg.data().vapidKey||cfg.data().vapidkey||'') : '';
+    if(!vk) throw new Error('학교 알림 설정(VAPID)이 아직 없습니다.');
+    const { getMessaging, getToken } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js');
+    const reg = await navigator.serviceWorker.register('firebase-messaging-sw.js');
+    const token = await getToken(getMessaging(app), { vapidKey: vk, serviceWorkerRegistration: reg });
+    if(!token) throw new Error('토큰을 만들지 못했습니다.');
+    await updateDoc(doc(db,'staff',CU.uid), { fcmTokens: arrayUnion(token) });
+    localStorage.setItem('staff_push_on','1');
+    btn.textContent='✓ 켜져 있음'; $I('nt-state').textContent='✓ 이 기기에서 알림 받는 중';
+    say(true,'켰습니다 ✓ 이제 쪽지·결재 소식이 이 기기로 옵니다');
+  }catch(e){ btn.disabled=false; btn.textContent='🔔 이 기기에서 알림 켜기'; say(false,'실패: '+(e.message||'')); }
+};
+window.saveNotifyPrefs = async () => {
+  const prefs = {}; NT_KINDS.forEach(([k])=>{ prefs[k] = !!$I('nt-k-'+k)?.checked; });
+  const m=$I('nt-msg');
+  try{ await updateDoc(doc(db,'staff',CU.uid), { notifyPrefs: prefs }); CU.notifyPrefs = prefs;
+    m.style.display='block'; m.style.background='#DCFCE7'; m.style.color='#16A34A'; m.textContent='설정을 저장했습니다 ✓';
+  }catch(e){ m.style.display='block'; m.style.background='#FDECEA'; m.style.color='#C0392B'; m.textContent='저장 실패: '+(e.message||''); }
+};
+/* 📛 아이콘 뱃지: 홈을 열면 0으로 */
+(function(){
+  function clearBadge(){ try{ if('clearAppBadge' in navigator) navigator.clearAppBadge();
+    const rq=indexedDB.open('pushBadge',1); rq.onupgradeneeded=()=>rq.result.createObjectStore('kv');
+    rq.onsuccess=()=>{ try{ rq.result.transaction('kv','readwrite').objectStore('kv').put(0,'n'); }catch(e){} }; }catch(e){} }
+  clearBadge(); document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') clearBadge(); });
+})();
+
 let MIAV = null;   // {avatar, photo} 편집 중
 function miavPaint(){
   const cur = { name: CU.name, avatar: MIAV.avatar, photo: MIAV.photo };
@@ -4969,6 +5021,7 @@ function openMyInfo(){
           <button class="subtbtn" id="mi-t2" onclick="switchMyTab('hr')" style="padding:8px 16px">📇 인사정보</button>
           <button class="subtbtn" id="mi-t3" onclick="switchMyTab('pw')" style="padding:8px 16px">🔑 비밀번호</button>
           <button class="subtbtn" id="mi-t4" onclick="switchMyTab('av')" style="padding:8px 16px">🙂 프로필</button>
+          <button class="subtbtn" id="mi-t5" onclick="switchMyTab('nt')" style="padding:8px 16px">🔔 알림</button>
         </div>
 
         <!-- 기본: 명부에 표시되는 내 정보 전체 -->
@@ -5020,6 +5073,25 @@ function openMyInfo(){
           </div>
         </div>
 
+        <!-- 🔔 알림 -->
+        <div id="mi-nt" style="display:none">
+          <div style="background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--gd);line-height:1.6">
+            쪽지·결재·회계 소식을 이 기기의 <b>잠금화면 알림</b>으로 받습니다.
+            아이폰·아이패드는 홈 화면에 추가한 앱에서 켜야 해요.
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+            <button class="bp" id="nt-on" onclick="enableStaffPush()">🔔 이 기기에서 알림 켜기</button>
+            <span id="nt-state" style="font-size:12px;color:var(--ts)"></span>
+          </div>
+          <div style="font-size:12px;color:var(--tl);margin-bottom:6px">받을 알림 종류</div>
+          <div id="nt-prefs" style="display:flex;flex-direction:column;gap:7px"></div>
+          <div class="alert" id="nt-msg" style="display:none;margin-top:10px;border-radius:9px;padding:8px 11px;font-size:12px;font-weight:700"></div>
+          <div class="mact" style="margin-top:16px">
+            <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
+            <button class="bp" onclick="saveNotifyPrefs()">설정 저장</button>
+          </div>
+        </div>
+
         <!-- 🙂 프로필 아바타 -->
         <div id="mi-av" style="display:none">
           <div style="background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--gd);line-height:1.6">
@@ -5068,6 +5140,8 @@ window.openMyInfo = openMyInfo;
 function switchMyTab(t){
   const av = $I('mi-av'); if(av) av.style.display = (t==='av') ? '' : 'none';
   const t4 = $I('mi-t4'); if(t4) t4.classList.toggle('on', t==='av');
+  const nt = $I('mi-nt'); if(nt) nt.style.display = (t==='nt') ? '' : 'none';
+  const t5 = $I('mi-t5'); if(t5) t5.classList.toggle('on', t==='nt');
   ['basic','hr','pw'].forEach(k=>{ const e=$I('mi-'+k); if(e) e.style.display='none'; });
   ['mi-t1','mi-t2','mi-t3'].forEach(id=>{ const e=$I(id); if(e) e.classList.remove('on'); });
   const map = {basic:'mi-t1', hr:'mi-t2', pw:'mi-t3'};
