@@ -33,7 +33,7 @@ const MENU = [
         desc:'학년도 책장 — 해마다의 반·담임·학생과 반별 학부모 공지' },
       { key:'club', label:'동아리', icon:'palette', href:'club-admin.html',
         desc:'방과후 동아리·조이클래스 — 학기 설정·강사 모집·신청 취합·공고',
-        tabs:['학기 설정','불가 일정','질문 양식','모집 링크','신청 취합','요일·시간 그리드'] },
+        tabs:['학기 설정','불가 일정','질문 양식','모집 링크','신청 취합','요일·시간 그리드','신청 현황·배정'] },
       { key:'gcal', label:'구글 캘린더', icon:'event', href:'calendar.html',
         desc:'구글 캘린더 보기' },
       { key:'cert', label:'증명서 발급', icon:'description', href:'cert.html', deny:['partner'],
