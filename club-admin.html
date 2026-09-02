@@ -95,6 +95,22 @@ table.tb{width:100%;border-collapse:collapse;font-size:12.5px}
 table.tb th{background:var(--gp);color:var(--gd);padding:7px 8px;text-align:left;border-bottom:1px solid var(--ivd)}
 table.tb td{padding:7px 8px;border-bottom:1px solid var(--iv);vertical-align:top}
 tr.blocked td{color:#B91C1C;background:#FEF2F2}
+
+/* ── 👑 관리자 지정: 서랍식 목록 ── */
+#mgr-list{display:block;width:100%}
+.mgr-top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px}
+.drw{border:1px solid var(--ivd,#DFE7E1);border-radius:12px;background:var(--wh,#fff);margin-bottom:8px;overflow:hidden}
+.drw>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;font-size:13px}
+.drw>summary::-webkit-details-marker{display:none}
+.drw>summary b{font-weight:900}
+.drw>summary em{font-style:normal;font-size:11.5px;color:var(--tw,#7C8A80);font-weight:700;margin-left:auto}
+.drw>summary::after{content:'▾';color:var(--tw,#7C8A80);transition:transform .15s}
+.drw[open]>summary::after{transform:rotate(180deg)}
+.drw-body{display:flex;flex-wrap:wrap;gap:6px;padding:2px 12px 12px}
+.mchip{border:1.5px solid var(--ivd,#DFE7E1);background:var(--wh,#fff);border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;color:var(--ts,#3F4A44)}
+.mchip i{font-style:normal;font-size:10.5px;color:var(--tw,#8A968E);margin-left:5px;font-weight:700}
+.mchip.on{background:#1E3932;border-color:#1E3932;color:#fff}
+.mchip.on i{color:#CFE0D6}
 </style>
 </head>
 <body>
@@ -376,7 +392,7 @@ function renderSet(){
   const s = SEM;
   $I('body').innerHTML = `
   ${CU.role==='super' ? `<div class="card f"><h3>👑 동아리 관리자 지정 <span class="small">— 지정된 선생님만 이 화면에 들어올 수 있습니다 (수퍼는 항상 가능)</span></h3>
-    <div class="row" id="mgr-list"><span class="small">불러오는 중…</span></div></div>` : ''}
+    <div id="mgr-list"><span class="small">불러오는 중…</span></div></div>` : ''}
   <div class="card f"><h3>기본</h3>
     <div class="grid2">
       <div><label>학기 이름</label><input id="s-name" value="${esc(s.name)}"></div>
@@ -478,8 +494,20 @@ async function paintMgrs(){
   if(!STAFF_ALL){ const sn = await getDocs(collection(db,'staff'));
     STAFF_ALL = sn.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>x.name)
       .sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko')); }
-  box.innerHTML = STAFF_ALL.map(t=>`<span class="roomchip ${CLUB_MGRS.includes(t.uid)?'on':''}" onclick="toggleMgr('${t.uid}')">${CLUB_MGRS.includes(t.uid)?'✓ ':''}${esc(t.name)}<span class="small" style="margin-left:2px">${esc(t.position||'')}</span></span>`).join('');
+  const selNames = STAFF_ALL.filter(t=>CLUB_MGRS.includes(t.uid)).map(t=>t.name);
+  const grp = {};
+  STAFF_ALL.forEach(t=>{ const o = ORGS[t.org] || '기타'; const d = t.dept || '부서 미지정';
+    (grp[o]=grp[o]||{}); (grp[o][d]=grp[o][d]||[]).push(t); });
+  const drawers = Object.keys(grp).sort((a,b)=>a.localeCompare(b,'ko')).map(o=>
+    Object.keys(grp[o]).sort((a,b)=>a.localeCompare(b,'ko')).map(d=>{
+      const arr = grp[o][d], selN = arr.filter(t=>CLUB_MGRS.includes(t.uid)).length;
+      return `<details class="drw"${selN?' open':''}><summary><b>${esc(o)} · ${esc(d)}</b><em>${arr.length}명${selN?` · 지정 ${selN}`:''}</em></summary>
+        <div class="drw-body">${arr.map(t=>`<button type="button" class="mchip ${CLUB_MGRS.includes(t.uid)?'on':''}" onclick="toggleMgr('${t.uid}')">${CLUB_MGRS.includes(t.uid)?'✓ ':''}${esc(t.name)}<i>${esc(t.position||'')}</i></button>`).join('')}</div></details>`;
+    }).join('')).join('');
+  box.innerHTML = `<div class="mgr-top"><span class="small">지정된 관리자 <b>${CLUB_MGRS.length}명</b>${selNames.length?` — ${selNames.map(esc).join(', ')}`:' — 아직 없음'}</span>
+      <span class="row" style="gap:6px"><button class="bs" type="button" onclick="mgrAll(true)">모두 펼치기</button><button class="bs" type="button" onclick="mgrAll(false)">모두 접기</button></span></div>` + drawers;
 }
+window.mgrAll = (o)=>{ document.querySelectorAll('#mgr-list details.drw').forEach(d=>d.open=o); };
 window.toggleMgr = async (uid)=>{
   CLUB_MGRS = CLUB_MGRS.includes(uid) ? CLUB_MGRS.filter(x=>x!==uid) : [...CLUB_MGRS, uid];
   try{ await setDoc(doc(db,'config','clubManagers'), { uids: CLUB_MGRS, updatedAt: Timestamp.now(), by: CU.name||'' }); paintMgrs(); toast('관리자 지정을 저장했습니다'); }
