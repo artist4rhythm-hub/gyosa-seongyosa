@@ -676,9 +676,11 @@ const AST = { draft:'📝 작성중', submitted:'접수', approved:'승인', hol
 function inh(list, i, key, flag){ for(let j=i;j>=0;j--){ const x=list[j]; if(x.blocked||x.skip) return ''; if(!x[flag]) return x[key]||''; } return ''; }
 const G = t => `<span style="color:#8A8F98">〃 ${esc(t)}</span>`;
 function feeOf(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub||0); return Math.round(rate * (a.durMin||0) / 60); }
-function semTotal(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub||0);
-  return (a.sessions||[]).filter(s=>!s.blocked&&!s.skip).reduce((t,s)=>t+Math.round(rate*((s.durMin||a.durMin||0))/60),0); }
-function liveCount(a){ return (a.sessions||[]).filter(x=>!x.blocked && !x.skip).length; }
+function semTotal(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub||0); const m=bkSet();
+  return (a.sessions||[]).filter(s=>!isOff(s,m)).reduce((t,s)=>t+Math.round(rate*((s.durMin||a.durMin||0))/60),0); }
+function bkSet(){ const m={}; (SEM?.blocked||[]).forEach(b=>{ if(b.date) m[b.date]=b.reason||'운영 불가'; }); return m; }
+function isOff(x, m){ return x.skip || (!x.extra && (x.blocked || m[x.date])); }   // 새로 막힌 날 즉시 휴강 취급
+function liveCount(a){ const m=bkSet(); return (a.sessions||[]).filter(x=>!isOff(x,m)).length; }
 function renderApps(){
   const L = LIVE(), T = TRASH();
   if(SHOW_TRASH){
@@ -740,7 +742,9 @@ window.viewApp = (id)=>{
     </table>
     <div style="font-size:13px;font-weight:900;color:var(--gd);margin:14px 0 6px">수업 활동 계획</div>
     <table class="tb"><tr><th>회</th><th>수업일</th><th>활동 내용</th><th>준비물</th><th>재료비</th><th>비고</th></tr>
-      ${(a.sessions||[]).map((s,i,arr)=>{ const off = s.blocked||s.skip;
+      ${(a.sessions||[]).map((s,i,arr)=>{ const bkm = bkSet(); const nb = !s.extra && !s.blocked && bkm[s.date];
+        if(nb){ s = {...s, blocked:true, reason:bkm[s.date]}; }
+        const off = s.blocked||s.skip;
         const act = s.blocked ? '<b>🚫 '+esc(s.reason||'휴강')+' — 학교 휴강</b>' : s.skip ? '<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>'
           : (s.sameAct ? G((inh(arr,i,'ctitle','sameAct')?inh(arr,i,'ctitle','sameAct')+' — ':'')+inh(arr,i,'content','sameAct'))
              : (s.ctitle?'<b style="color:#1D4ED8">'+esc(s.ctitle)+'</b><br>':'')+esc(s.content||''));
