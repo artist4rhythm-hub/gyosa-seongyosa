@@ -111,6 +111,9 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .mchip i{font-style:normal;font-size:10.5px;color:var(--tw,#8A968E);margin-left:5px;font-weight:700}
 .mchip.on{background:#1E3932;border-color:#1E3932;color:#fff}
 .mchip.on i{color:#CFE0D6}
+.drw-body.blk{display:block;padding:4px 12px 12px}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:#15803D}
+.live::before{content:'';width:8px;height:8px;border-radius:50%;background:#22C55E;box-shadow:0 0 0 3px #DCFCE7}
 </style>
 </head>
 <body>
@@ -843,6 +846,17 @@ window.viewApp = (id)=>{
 /* ── 👨‍👩‍👧 학부모 신청 현황 · 추첨 · 자동 배정 ── */
 let ENR = [];
 window.__ENRref = ()=>ENR;
+let ENR_UNSUB = null, ENR_SEMID = null;
+function subEnr(){
+  if(VIEW_ONLY) return;                       // 열람 모드는 자체 구독이 이미 있다
+  if(ENR_UNSUB && ENR_SEMID === SEM.id) return;
+  if(ENR_UNSUB){ ENR_UNSUB(); ENR_UNSUB = null; }
+  ENR_SEMID = SEM.id;
+  ENR_UNSUB = onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
+    ENR = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    if(TAB==='enroll') paintEnroll();
+  });
+}
 async function loadEnr(){
   if(VIEW_ONLY) return;   // 열람 모드는 실시간 구독이 채운다
   const snap = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
@@ -855,31 +869,47 @@ function overlap(a,b){ // 두 동아리 시간 겹침
 function clubStat(c){
   const picks = ENR.filter(e=>(e.picks||[]).some(p=>p.clubId===c.id));
   const first = picks.filter(e=>(e.picks||[]).find(p=>p.clubId===c.id).rank===1);
+  const byRank = {1:0,2:0,3:0};
+  picks.forEach(e=>{ const r=(e.picks||[]).find(p=>p.clubId===c.id).rank; byRank[r]=(byRank[r]||0)+1; });
   const assigned = ENR.filter(e=>(e.result||[]).some(r=>r.clubId===c.id && r.state==='assigned'));
   const st = c.cancelled ? 'cancelled' : first.length > (c.maxN||0) ? 'over' : first.length < (c.minN||0) ? 'under' : 'ok';
-  return { picks, first, assigned, st };
+  return { picks, first, assigned, st, byRank };
 }
 const STL = { ok:['🟢 개설 가능','#DCFCE7','#15803D'], under:['🟡 최소 미달','#FEF3C7','#B45309'], over:['🔴 정원 초과 → 추첨','#FEE2E2','#B91C1C'], cancelled:['⚫ 폐강','#E5E7EB','#374151'] };
 async function renderEnroll(){
-  await loadEnr();
+  if(!VIEW_ONLY){ subEnr(); if(!ENR.length) await loadEnr(); }
+  paintEnroll();
+}
+function paintEnroll(){
   const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
+  const byId2 = {}; clubs.forEach(c=>byId2[c.id]=c);
   const students = new Set(ENR.map(e=>e.studentId)).size;
   $I('body').innerHTML = `<div class="card"><h3>신청 현황 · 학생 ${students}명 · 신청 ${ENR.length}건 · 공고 동아리 ${clubs.length}개</h3>
     <div class="small" style="margin-bottom:10px">1순위 기준으로 최소/최대를 판별합니다. 🔴 초과 동아리는 아래에서 추첨 결과(당첨)를 체크하고, 「자동 배정」을 누르면 순위·정원·시간 겹침을 따져 배정 결과를 만듭니다.</div>
     ${VIEW_ONLY
       ? `<div class="small">👀 열람 전용 — 신청·배정이 갱신되면 이 화면도 실시간으로 바뀝니다.</div></div>`
-      : `<div class="row"><button class="bp" onclick="autoAssign()">⚙️ 자동 배정 실행</button><button class="bs" onclick="renderEnroll()">새로고침</button>
-      <span class="small">배정 결과는 학부모에게 «순위 조정·최종 결정» 단계부터 보입니다.</span></div></div>`}
-    ${clubs.map(c=>{ const {picks, first, assigned, st} = clubStat(c); const [lab,bg,fg]=STL[st];
-      return `<div class="ap"><div class="row"><span class="t">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${lab}</span>
-        <span class="small">${(c.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN} · 1순위 ${first.length} / 전체 ${picks.length} · 배정 ${assigned.length}</span>
-        ${VIEW_ONLY ? (c.cancelled?'<span class="pill st-locked" style="margin-left:auto">폐강</span>':'') : `<label class="small" style="margin-left:auto"><input type="checkbox" ${c.cancelled?'checked':''} onchange="setApp('${c.id}',{cancelled:this.checked}); renderEnroll()"> 폐강 처리</label>`}</div>
-        ${picks.length ? `<table class="tb" style="margin-top:8px"><tr><th>순위</th><th>학생</th><th>반</th><th>결과</th>${st==='over'?'<th>추첨 당첨</th>':''}</tr>
+      : `<div class="row" style="align-items:center;gap:10px;flex-wrap:wrap"><button class="bp" onclick="autoAssign()">⚙️ 자동 배정 실행</button><span class="live">실시간 반영중</span>
+        <span class="row" style="gap:6px;margin-left:auto"><button class="bs" onclick="enrAll(true)">모두 펼치기</button><button class="bs" onclick="enrAll(false)">모두 접기</button></span></div>
+      <div class="small" style="margin-top:6px">신청이 저장되는 순간 아래 집계가 바로 바뀝니다. 배정 결과는 학부모에게 «순위 조정·최종 결정» 단계부터 보입니다.</div></div>`}
+    ${clubs.map(c=>{ const {picks, first, assigned, st, byRank} = clubStat(c); const [lab,bg,fg]=STL[st];
+      return `<details class="drw" ${st==='over'||st==='under'?'open':''}><summary><div class="row" style="flex:1;align-items:center;gap:8px;flex-wrap:wrap"><span class="t">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${lab}</span>
+        <span class="small">${(c.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN}</span>
+        <span class="small" style="font-weight:800">1순위 ${byRank[1]||0} · 2순위 ${byRank[2]||0} · 3순위 ${byRank[3]||0} · 배정 ${assigned.length}</span>
+        ${VIEW_ONLY ? (c.cancelled?'<span class="pill st-locked" style="margin-left:auto">폐강</span>':'') : `<label class="small" style="margin-left:auto" onclick="event.stopPropagation()"><input type="checkbox" ${c.cancelled?'checked':''} onchange="setApp('${c.id}',{cancelled:this.checked}); paintEnroll()"> 폐강 처리</label>`}</div></summary>
+        <div class="drw-body blk">${picks.length ? `<table class="tb"><tr><th>순위</th><th>학생</th><th>학년·반</th><th>결과</th>${st==='over'?'<th>추첨 당첨</th>':''}</tr>
           ${picks.sort((a,b)=>(a.picks.find(p=>p.clubId===c.id).rank)-(b.picks.find(p=>p.clubId===c.id).rank)).map(e=>{ const pk=e.picks.find(p=>p.clubId===c.id); const rs=(e.result||[]).find(r=>r.clubId===c.id);
-            return `<tr><td>${pk.rank}순위</td><td>${esc(e.studentName)}</td><td>${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
-              ${st==='over'?`<td>${pk.rank===1?(VIEW_ONLY?((e.lottery||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${(e.lottery||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small" style="margin-top:6px">신청자 없음</div>'}
-      </div>`; }).join('') || '<div class="small">공고된(승인+노출) 동아리가 없습니다. 신청 취합 탭에서 승인·노출을 켜주세요.</div>'}`;
+            return `<tr><td>${pk.rank}순위</td><td>${esc(e.studentName)}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
+              ${st==='over'?`<td>${pk.rank===1?(VIEW_ONLY?((e.lottery||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${(e.lottery||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}</div>
+      </details>`; }).join('') || '<div class="small">공고된(승인+노출) 동아리가 없습니다. 신청 취합 탭에서 승인·노출을 켜주세요.</div>'}
+    ${ENR.length ? `<details class="drw" style="margin-top:14px"><summary><b>👧 학생별 신청 내역</b><em>${new Set(ENR.map(e=>e.studentId)).size}명</em></summary>
+      <div class="drw-body blk"><table class="tb"><tr><th>학생</th><th>신청 (순위순)</th><th>배정 결과</th></tr>
+      ${[...ENR].sort((a,b)=>String(a.studentName||'').localeCompare(String(b.studentName||''),'ko')).map(e=>{
+        const ps=(e.picks||[]).slice().sort((a,b)=>a.rank-b.rank).map(p=>{const c=byId2[p.clubId]; return c?`<b>${p.rank}순위</b> ${esc(c.title)}`:'';}).filter(Boolean).join(' · ');
+        const ok=(e.result||[]).filter(r=>r.state==='assigned').map(r=>byId2[r.clubId]).filter(Boolean).map(c=>esc(c.title)).join(', ');
+        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}<div class="small">${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</div></td><td>${ps||'-'}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}</td></tr>`; }).join('')}
+      </table></div></details>`:''}`;
 }
+window.enrAll = (o)=>{ document.querySelectorAll('#body details.drw').forEach(d=>d.open=o); };
 function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', waitlist:'⏳ 대기' }[st] || st; }
 window.setLottery = async (eid, cid, on)=>{ const e = ENR.find(x=>x.id===eid); const lot = {...(e.lottery||{})}; lot[cid]=on; await updateDoc(doc(db,'clubEnrollments',eid), { lottery: lot }); e.lottery = lot; };
 window.autoAssign = async ()=>{
@@ -891,16 +921,19 @@ window.autoAssign = async ()=>{
   const result = {}; ENR.forEach(e=>result[e.id]=[]);
   for(let rank=1; rank<=3; rank++){
     for(const e of ENR){
-      const pk = (e.picks||[]).find(p=>p.rank===rank); if(!pk) continue;
-      const c = byId[pk.clubId]; if(!c){ continue; }
-      if(c.cancelled){ result[e.id].push({clubId:c.id, state:'cancelled'}); continue; }
-      const st = clubStat(c).st;
-      if(st==='over' && rank===1 && !(e.lottery||{})[c.id]){ result[e.id].push({clubId:c.id, state:'lost'}); continue; }
-      // 시간 겹침: 이미 배정된 것과
-      const mine = result[e.id].filter(r=>r.state==='assigned').map(r=>byId[r.clubId]);
-      if(mine.some(m=>overlap(m,c))){ result[e.id].push({clubId:c.id, state:'overlap'}); continue; }
-      if(cap[c.id] >= (c.maxN||999)){ result[e.id].push({clubId:c.id, state:'full'}); continue; }
-      cap[c.id]++; result[e.id].push({clubId:c.id, state:'assigned'});
+      // 같은 순위에 여러 동아리를 신청할 수 있다 (시간이 안 겹치면 전부 배정)
+      const pks = (e.picks||[]).filter(p=>p.rank===rank);
+      for(const pk of pks){
+        const c = byId[pk.clubId]; if(!c) continue;
+        if(c.cancelled){ result[e.id].push({clubId:c.id, state:'cancelled'}); continue; }
+        const st = clubStat(c).st;
+        if(st==='over' && rank===1 && !(e.lottery||{})[c.id]){ result[e.id].push({clubId:c.id, state:'lost'}); continue; }
+        // 시간 겹침: 이미 배정된 것과
+        const mine = result[e.id].filter(r=>r.state==='assigned').map(r=>byId[r.clubId]);
+        if(mine.some(m=>overlap(m,c))){ result[e.id].push({clubId:c.id, state:'overlap'}); continue; }
+        if(cap[c.id] >= (c.maxN||999)){ result[e.id].push({clubId:c.id, state:'full'}); continue; }
+        cap[c.id]++; result[e.id].push({clubId:c.id, state:'assigned'});
+      }
     }
   }
   let n=0;
