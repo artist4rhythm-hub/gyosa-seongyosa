@@ -338,9 +338,26 @@ function paintStatus(){
     ${prev?`<button class="bs" onclick="setStatus('${prev}')">← ${STATUS[prev]}</button>`:''}
     ${next?`<button class="bp" onclick="setStatus('${next}')">${STATUS[next]} 단계로 →</button>`:''}`;
 }
+async function buildRosters(){
+  // ✅ 확정 시: 배정+참여확정 학생 명단을 각 신청서에 박제 — 강사가 출석 화면에서 자기 문서로 읽는다
+  const snap = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
+  const es = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  const clubs = LIVE().filter(a=>a.status==='approved' && a.published && !a.cancelled);
+  let n = 0;
+  for(const c of clubs){
+    const roster = es.filter(e=>(e.result||[]).some(r=>r.clubId===c.id && r.state==='assigned') && (e.final||{})[c.id]!=='decline')
+      .map(e=>({ studentId:e.studentId, studentName:e.studentName||'', className:e.className||'', grade:e.grade||'' }))
+      .sort((a,b)=>String(a.studentName).localeCompare(String(b.studentName),'ko'));
+    try{ await updateDoc(doc(db,'clubApplications',c.id), { roster, rosterAt:Timestamp.now() });
+      const local = APPS.find(x=>x.id===c.id); if(local){ local.roster = roster; }
+      n++; }catch(e){}
+  }
+  toast(`배정 명단을 ${n}개 동아리에 박제했습니다 ✓ (강사 출석 화면에 반영)`);
+}
 window.setStatus = async (st)=>{
   if(st==='locked' && !confirm('학기를 잠그면 모든 기록이 읽기 전용이 됩니다. 계속할까요?')) return;
   await snapSems('단계 변경 전');
+  if(['confirmed','running'].includes(st)) await buildRosters();
   await updateDoc(doc(db,'clubSemesters',SEM.id), { status: st, statusAt: Timestamp.now() });
   SEM.status = st; paintStatus(); toast(`«${STATUS[st]}» 단계로 바꿨습니다`);
 };
@@ -393,7 +410,7 @@ function renderSet(){
           <div class="row"><input type="number" id="s-fj" value="${s.feeJoy||3000}" oninput="feePreview()" style="width:120px"> <span class="small">원/시간</span></div>
           <div class="fx" id="fx-j"></div></div>
       </div>
-      <div class="small">회비는 전액 강사에게 갑니다 · 학기 말 출석 기준으로 정산</div>
+      <div class="small">회비는 전액 강사에게 갑니다 · 출석과 무관, 학기 말 일괄 정산</div>
     </div>
   </div>
   <div class="card f"><h3>🎯 지원 가능 학년 <span class="small">— 강사가 이 목록에서 카드로 고르고, 학부모는 자녀 학년으로 자동 판별됩니다</span></h3>
