@@ -2751,6 +2751,13 @@ const DUTY_DEFS = [
     doc:['attendConfig','editors'], field:'uids',
     always:s=>s.role==='super' },
 
+  /* 🎨 동아리 — 학기 운영·취합·배정을 맡는 관리자.
+     열람(풀타임 교사 전체)은 아래 «동아리 열람 허용» 토글로 따로 켠다 */
+  { key:'club', icon:'🎨', label:'동아리 관리자',
+    desc:'동아리·조이클래스 학기 운영 · 취합 · 배정',
+    doc:['config','clubManagers'], field:'uids',
+    always:s=>s.role==='super' },
+
   /* 🧩 반편성 — 반 만들기·학생 배정·진급. 수퍼·기관관리자는 늘 열려 있고,
      부서장·교사는 여기서 담당자로 지정해야 고칠 수 있다 */
   { key:'class', icon:'🧩', label:'반편성',
@@ -2770,6 +2777,7 @@ let DUTY = {};              // { key: [uid…] }
 let DUTY_VIEW = 'person';   // 'person' 사람별 · 'duty' 기능별
 
 async function loadDuties(){
+  if(CLUB_VIEW_ON===null) await loadClubView();
   DUTY = {};
   // 문서를 한 번씩만 읽는다 (학사일정처럼 한 문서에 여러 칸이 있으므로)
   const docs = {};
@@ -2859,6 +2867,13 @@ function dutyGrouped(staff){
   return order.map(k=>({key:k, list:map[k]}));
 }
 
+let CLUB_VIEW_ON = null;
+async function loadClubView(){ try{ const d = await getDoc(doc(db,'config','clubAccess')); CLUB_VIEW_ON = !!(d.exists() && d.data().viewerFulltime); }catch(e){ CLUB_VIEW_ON = false; } }
+window.toggleClubView = async (on)=>{
+  try{ await setDoc(doc(db,'config','clubAccess'), { viewerFulltime: on, updatedAt: Timestamp.now() }, { merge:true });
+    CLUB_VIEW_ON = on; showToast&&showToast(on?'풀타임 교사 열람을 켰습니다':'열람을 껐습니다');
+  }catch(e){ alert('수퍼관리자만 바꿀 수 있어요.'); renderDutyPanel(); }
+};
 function renderDutyPanel(){
   const box = $I('duty-box'); if(!box) return;
   const staff = dutyStaffList();
@@ -2870,6 +2885,13 @@ function renderDutyPanel(){
       <button class="${DUTY_VIEW==='duty'?'on':''}" onclick="setDutyView('duty')">🗂 기능별</button>
     </div>
     <span class="duty-note">칸을 눌러 담당을 켜고 끕니다 · <b>늘</b>은 관리자라 자동으로 열려 있는 자리예요</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;background:var(--gp);border:1px solid var(--ivd);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-size:12.5px">
+    🎨 <b>동아리 열람 허용</b>
+    <label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin-left:4px">
+      <input type="checkbox" ${CLUB_VIEW_ON?'checked':''} onchange="toggleClubView(this.checked)"> 풀타임 교사 전체에게 열람만 허용
+    </label>
+    <span style="color:var(--tl)">— 켜면 풀타임 교사(협력교사 제외)가 동아리 탭에서 개설 현황·그리드·배정 현황을 실시간으로 «보기만» 할 수 있어요. 편집은 위의 🎨 동아리 관리자만.</span>
   </div>`;
 
   // ── 빠진 자리 알림 ──

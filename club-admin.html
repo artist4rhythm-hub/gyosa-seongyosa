@@ -137,7 +137,7 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, collection, getDocs, query, where, Timestamp }
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, collection, getDocs, query, where, onSnapshot, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -165,7 +165,7 @@ function ms(role){ return (SEM?.milestones||[]).find(m=>m.role===role) || null; 
 const WD = ['일','월','화','수','목','금','토'];
 const PORTAL = 'https://artist4rhythm-hub.github.io/daniel-parents/club.html';
 
-let CU=null, SEMS=[], SEM=null, APPS=[], TAB='set', CLUB_MGRS=[], STAFF_ALL=null;
+let CU=null, SEMS=[], SEM=null, APPS=[], TAB='set', CLUB_MGRS=[], STAFF_ALL=null, VIEW_ONLY=false, UNSUBS=[];
 const UNIFIED_POS = ['교장','교감','행정실장'];
 function myOrgs(){ if(!CU) return []; if(CU.role==='super'||UNIFIED_POS.includes(CU.position||'')) return ['daniel','jihyebit']; return (CU.orgs&&CU.orgs.length)?CU.orgs:[CU.org]; }
 const toast = (t)=>{ const el=document.createElement('div'); el.textContent=t; el.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1E3932;color:#fff;padding:10px 16px;border-radius:100px;font-size:13px;font-weight:700;z-index:9999'; document.body.appendChild(el); setTimeout(()=>el.remove(),2200); };
@@ -196,14 +196,22 @@ onAuthStateChanged(auth, async user=>{
   if(window.renderShell) renderShell('club', CU);
   // 🔐 접근: 수퍼관리자 + 지정된 동아리 관리자만
   try{ const mg = await getDoc(doc(db,'config','clubManagers')); CLUB_MGRS = (mg.exists() && mg.data().uids) || []; }catch(e){ CLUB_MGRS = []; }
-  if(CU.role!=='super' && !CLUB_MGRS.includes(CU.uid)){
-    $I('ms').style.display='';
-    document.getElementById('ms-wrap').innerHTML = `<div class="card" style="max-width:520px;margin:40px auto;text-align:center">
-      <div style="font-size:34px">🔐</div>
-      <h3 style="margin:8px 0 6px">동아리 관리자만 들어올 수 있어요</h3>
-      <div class="small">수퍼관리자가 «학기 설정 → 동아리 관리자 지정»에서 선생님을 지정하면 이용할 수 있습니다.</div></div>`;
-    window.hideLoading&&hideLoading();
-    return;
+  const isMgr = CU.role==='super' || CLUB_MGRS.includes(CU.uid);
+  if(!isMgr){
+    let viewOK = false;
+    try{ const ac = await getDoc(doc(db,'config','clubAccess'));
+      viewOK = !!(ac.exists() && ac.data().viewerFulltime) && CU.role!=='partner'; }catch(e){}
+    if(!viewOK){
+      $I('ms').style.display='';
+      document.getElementById('ms-wrap').innerHTML = `<div class="card" style="max-width:540px;margin:40px auto;text-align:center">
+        <div style="font-size:34px">🔐</div>
+        <h3 style="margin:8px 0 6px">동아리 화면 접근 권한이 없어요</h3>
+        <div class="small">편집은 수퍼관리자가 지정한 <b>동아리 관리자</b>만, 열람은 관리자 모드에서 <b>«동아리 열람 허용»</b>을 켜면 풀타임 교사가 볼 수 있습니다.</div></div>`;
+      window.hideLoading&&hideLoading();
+      return;
+    }
+    VIEW_ONLY = true;
+    TAB = 'apps';
   }
   $I('ls').style.display='none'; $I('ms').style.display='';
   window.hideLoading&&hideLoading();
@@ -219,6 +227,18 @@ async function loadSems(){
     : '<option value="">(학기 없음)</option>';
   if(SEMS.length) pickSem(SEMS[0].id);
 }
+function liveSubscribe(){
+  UNSUBS.forEach(u=>{ try{u();}catch(e){} }); UNSUBS = [];
+  if(!VIEW_ONLY || !SEM) return;
+  UNSUBS.push(onSnapshot(query(collection(db,'clubApplications'), where('semId','==',SEM.id)), snap=>{
+    APPS = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    if(TAB==='apps'||TAB==='grid') render();
+  }));
+  UNSUBS.push(onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
+    ENR = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    if(TAB==='enroll') render();
+  }));
+}
 window.pickSem = async (id)=>{
   SEM = SEMS.find(s=>s.id===id) || null;
   $I('sem-sel').value = id;
@@ -229,7 +249,7 @@ window.pickSem = async (id)=>{
     SEM.milestones = m;
   }
   if(SEM){ await loadApps(); }
-  paintStatus(); render();
+  paintStatus(); liveSubscribe(); render();
 };
 window.newSem = async ()=>{
   const name = prompt('학기 이름 (예: 2026학년도 2학기)'); if(!name) return;
@@ -260,7 +280,16 @@ window.newSem = async ()=>{
 };
 function paintStatus(){
   if(!SEM){ $I('sem-status').innerHTML=''; $I('sem-flow').innerHTML=''; return; }
-  $I('sem-status').innerHTML = `<span class="pill st-${SEM.status}">${STATUS[SEM.status]||SEM.status}</span>`;
+  $I('sem-status').innerHTML = `<span class="pill st-${SEM.status}">${STATUS[SEM.status]||SEM.status}</span>${VIEW_ONLY?' <span class="pill" style="background:#EEF4FF;color:#1D4ED8">👀 열람 전용 · 실시간</span>':''}`;
+  if(VIEW_ONLY){
+    $I('sem-flow').innerHTML='';
+    document.querySelector('#tabs').innerHTML = `
+      <button class="${TAB==='apps'?'on':''}" onclick="showTab('apps')">📥 개설 현황</button>
+      <button class="${TAB==='grid'?'on':''}" onclick="showTab('grid')">🗓 요일·시간 그리드</button>
+      <button class="${TAB==='enroll'?'on':''}" onclick="showTab('enroll')">👨‍👩‍👧 신청·배정 현황</button>`;
+    const nb = document.querySelector('.cb-top .bs'); if(nb) nb.style.display='none';   // + 새 학기 숨김
+    return;
+  }
   const i = FLOW.indexOf(SEM.status);
   const prev = FLOW[i-1], next = FLOW[i+1];
   $I('sem-flow').innerHTML = `
@@ -272,10 +301,13 @@ window.setStatus = async (st)=>{
   await updateDoc(doc(db,'clubSemesters',SEM.id), { status: st, statusAt: Timestamp.now() });
   SEM.status = st; paintStatus(); toast(`«${STATUS[st]}» 단계로 바꿨습니다`);
 };
-window.showTab = (t)=>{ TAB=t; document.querySelectorAll('#tabs button').forEach((b,i)=>b.classList.toggle('on', ['set','block','q','link','apps','grid','enroll'][i]===t)); render(); };
+window.showTab = (t)=>{ TAB=t;
+  if(VIEW_ONLY){ paintStatus(); render(); return; }
+  document.querySelectorAll('#tabs button').forEach((b,i)=>b.classList.toggle('on', ['set','block','q','link','apps','grid','enroll'][i]===t)); render(); };
 
 function render(){
   if(!SEM){ $I('body').innerHTML='<div class="small">학기를 선택하거나 새로 만드세요.</div>'; return; }
+  if(VIEW_ONLY && !['apps','grid','enroll'].includes(TAB)) TAB='apps';
   ({ set:renderSet, block:renderBlock, q:renderQ, link:renderLink, apps:renderApps, grid:renderGrid, enroll:renderEnroll })[TAB]();
 }
 
@@ -585,12 +617,14 @@ function renderApps(){
       ${a.published?'<span class="pill st-running">공고됨</span>':''}</div>
     <div class="m">👤 ${esc(a.instructorName||'')}${a.coInstructors?' · '+esc(a.coInstructors):''} · ${esc(a.phone||'')} · ${esc(a.email||'')}</div>
     <div class="m">🗓 ${(a.weekdays||[]).map(w=>WD[w]).join('·')} ${a.start||''} · ${a.durMin||0}분 · ${liveCount(a)}회 · 🎯 ${esc((a.gradeSel&&a.gradeSel.length)?a.gradeSel.join('·'):(a.grades||'전체'))} · 👥 ${a.minN||0}~${a.maxN||0}명 · 💰 1회 ${feeOf(a).toLocaleString()}원 → 학기 ${(feeOf(a)*liveCount(a)).toLocaleString()}원 · 📍 희망 ${esc(a.place||'미정')}</div>
-    <div class="act">
-      상태 <select onchange="setApp('${a.id}',{status:this.value})">${Object.entries(AST).map(([k,v])=>`<option value="${k}"${a.status===k?' selected':''}>${v}</option>`).join('')}</select>
+    <div class="act">${VIEW_ONLY
+      ? `<span class="small">📍 ${esc(a.room||'교실 미배정')} · ${a.published?'📣 공고 노출됨':'공고 전'}</span>
+         <button class="bs" onclick="viewApp('${a.id}')">상세 보기</button>`
+      : `상태 <select onchange="setApp('${a.id}',{status:this.value})">${Object.entries(AST).map(([k,v])=>`<option value="${k}"${a.status===k?' selected':''}>${v}</option>`).join('')}</select>
       교실 <select onchange="setApp('${a.id}',{room:this.value})"><option value="">(미배정)</option>${(SEM.rooms||[]).map(r=>`<option${a.room===r?' selected':''}>${esc(r)}</option>`).join('')}</select>
       <label style="font-size:12px"><input type="checkbox" ${a.published?'checked':''} onchange="setApp('${a.id}',{published:this.checked})"> 학부모 공고에 노출</label>
       <button class="bs" onclick="viewApp('${a.id}')">상세 보기</button>
-      <button class="bs" onclick="window.open('${PORTAL}?sem='+SEM.id+'&edit=${a.id}','_blank')">✏️ 관리자 수정</button>
+      <button class="bs" onclick="window.open('${PORTAL}?sem='+SEM.id+'&edit=${a.id}','_blank')">✏️ 관리자 수정</button>`}
     </div></div>`).join('') : '<div class="small">아직 접수된 신청서가 없습니다.</div>');
 }
 window.reloadApps = async ()=>{ await loadApps(); renderApps(); };
@@ -606,7 +640,7 @@ window.viewApp = (id)=>{
     <table class="tb"><tr><th style="width:120px">강사</th><td>${esc(a.instructorName||'')}${a.coInstructors?' / '+esc(a.coInstructors):''}</td></tr>
       <tr><th>연락처</th><td>${esc(a.phone||'')} · ${esc(a.email||'')}</td></tr>
       <tr><th>작성 계정</th><td><span id="own-${a.id}">${esc(a.email||'(없음)')}</span>
-        <button class="bs" style="margin-left:8px;padding:5px 10px;font-size:11.5px" onclick="assignOwner('${a.id}')">🔗 강사 계정 연결·변경</button>
+        ${VIEW_ONLY?'':`<button class="bs" style="margin-left:8px;padding:5px 10px;font-size:11.5px" onclick="assignOwner('${a.id}')">🔗 강사 계정 연결·변경</button>`}
         <div class="small" style="margin-top:3px">관리자가 대신 입력한 신청서는, 강사가 포털에 한 번 로그인한 뒤 여기서 그 계정으로 연결하면 강사 본인이 수정·출석 체크를 할 수 있게 됩니다.</div></td></tr>
       <tr><th>대상·인원</th><td>${esc((a.gradeSel&&a.gradeSel.length)?a.gradeSel.join(', '):(a.grades||'전체'))}${a.gradeNote?` — ${esc(a.gradeNote)}`:''} · 최소 ${a.minN||0} ~ 최대 ${a.maxN||0}명</td></tr>
       <tr><th>기간·시간</th><td>${a.startDate||SEM.rangeFrom} ~ ${a.endDate||SEM.rangeTo} · ${(a.weekdays||[]).map(w=>WD[w]+'요일').join(', ')} ${a.start||''} · ${a.durMin||0}분 · 총 ${liveCount(a)}회</td></tr>
@@ -625,7 +659,9 @@ window.viewApp = (id)=>{
 
 /* ── 👨‍👩‍👧 학부모 신청 현황 · 추첨 · 자동 배정 ── */
 let ENR = [];
+window.__ENRref = ()=>ENR;
 async function loadEnr(){
+  if(VIEW_ONLY) return;   // 열람 모드는 실시간 구독이 채운다
   const snap = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
   ENR = snap.docs.map(d=>({id:d.id, ...d.data()}));
 }
@@ -647,16 +683,18 @@ async function renderEnroll(){
   const students = new Set(ENR.map(e=>e.studentId)).size;
   $I('body').innerHTML = `<div class="card"><h3>신청 현황 · 학생 ${students}명 · 신청 ${ENR.length}건 · 공고 동아리 ${clubs.length}개</h3>
     <div class="small" style="margin-bottom:10px">1순위 기준으로 최소/최대를 판별합니다. 🔴 초과 동아리는 아래에서 추첨 결과(당첨)를 체크하고, 「자동 배정」을 누르면 순위·정원·시간 겹침을 따져 배정 결과를 만듭니다.</div>
-    <div class="row"><button class="bp" onclick="autoAssign()">⚙️ 자동 배정 실행</button><button class="bs" onclick="renderEnroll()">새로고침</button>
-      <span class="small">배정 결과는 학부모에게 «순위 조정·최종 결정» 단계부터 보입니다.</span></div></div>
+    ${VIEW_ONLY
+      ? `<div class="small">👀 열람 전용 — 신청·배정이 갱신되면 이 화면도 실시간으로 바뀝니다.</div></div>`
+      : `<div class="row"><button class="bp" onclick="autoAssign()">⚙️ 자동 배정 실행</button><button class="bs" onclick="renderEnroll()">새로고침</button>
+      <span class="small">배정 결과는 학부모에게 «순위 조정·최종 결정» 단계부터 보입니다.</span></div></div>`}
     ${clubs.map(c=>{ const {picks, first, assigned, st} = clubStat(c); const [lab,bg,fg]=STL[st];
       return `<div class="ap"><div class="row"><span class="t">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${lab}</span>
         <span class="small">${(c.weekdays||[]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN} · 1순위 ${first.length} / 전체 ${picks.length} · 배정 ${assigned.length}</span>
-        <label class="small" style="margin-left:auto"><input type="checkbox" ${c.cancelled?'checked':''} onchange="setApp('${c.id}',{cancelled:this.checked}); renderEnroll()"> 폐강 처리</label></div>
+        ${VIEW_ONLY ? (c.cancelled?'<span class="pill st-locked" style="margin-left:auto">폐강</span>':'') : `<label class="small" style="margin-left:auto"><input type="checkbox" ${c.cancelled?'checked':''} onchange="setApp('${c.id}',{cancelled:this.checked}); renderEnroll()"> 폐강 처리</label>`}</div>
         ${picks.length ? `<table class="tb" style="margin-top:8px"><tr><th>순위</th><th>학생</th><th>반</th><th>결과</th>${st==='over'?'<th>추첨 당첨</th>':''}</tr>
           ${picks.sort((a,b)=>(a.picks.find(p=>p.clubId===c.id).rank)-(b.picks.find(p=>p.clubId===c.id).rank)).map(e=>{ const pk=e.picks.find(p=>p.clubId===c.id); const rs=(e.result||[]).find(r=>r.clubId===c.id);
             return `<tr><td>${pk.rank}순위</td><td>${esc(e.studentName)}</td><td>${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
-              ${st==='over'?`<td>${pk.rank===1?`<input type="checkbox" ${(e.lottery||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`:''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small" style="margin-top:6px">신청자 없음</div>'}
+              ${st==='over'?`<td>${pk.rank===1?(VIEW_ONLY?((e.lottery||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${(e.lottery||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small" style="margin-top:6px">신청자 없음</div>'}
       </div>`; }).join('') || '<div class="small">공고된(승인+노출) 동아리가 없습니다. 신청 취합 탭에서 승인·노출을 켜주세요.</div>'}`;
 }
 function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', waitlist:'⏳ 대기' }[st] || st; }
