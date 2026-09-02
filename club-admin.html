@@ -534,11 +534,12 @@ async function loadApps(){
   const snap = await getDocs(query(collection(db,'clubApplications'), where('semId','==',SEM.id)));
   APPS = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
 }
-const AST = { submitted:'접수', approved:'승인', hold:'보류', rejected:'반려' };
+const AST = { draft:'📝 작성중', submitted:'접수', approved:'승인', hold:'보류', rejected:'반려' };
+function matOf(list, i){ for(let j=i;j>=0;j--){ const x=list[j]; if(x.blocked||x.skip) return ''; if(!x.matSame) return x.materials||''; } return ''; }
 function feeOf(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub||0); return Math.round(rate * (a.durMin||0) / 60); }
 function liveCount(a){ return (a.sessions||[]).filter(x=>!x.blocked && !x.skip).length; }
 function renderApps(){
-  $I('body').innerHTML = `<div class="row" style="margin-bottom:10px"><span class="small">총 ${APPS.length}건 · 동아리 ${APPS.filter(a=>a.type!=='joy').length} · 조이클래스 ${APPS.filter(a=>a.type==='joy').length}</span>
+  $I('body').innerHTML = `<div class="row" style="margin-bottom:10px"><span class="small">총 ${APPS.length}건 · 동아리 ${APPS.filter(a=>a.type!=='joy').length} · 조이클래스 ${APPS.filter(a=>a.type==='joy').length} · 📝 작성중 ${APPS.filter(a=>a.status==='draft').length}</span>
     <button class="bs" style="margin-left:auto" onclick="reloadApps()">새로고침</button></div>` +
   (APPS.length ? APPS.map(a=>`<div class="ap">
     <div class="row"><span class="pill ${a.type==='joy'?'st-lottery':'st-recruiting'}">${a.type==='joy'?'조이클래스':'동아리'}</span>
@@ -569,7 +570,7 @@ window.viewApp = (id)=>{
       <tr><th>작성 계정</th><td><span id="own-${a.id}">${esc(a.email||'(없음)')}</span>
         <button class="bs" style="margin-left:8px;padding:5px 10px;font-size:11.5px" onclick="assignOwner('${a.id}')">🔗 강사 계정 연결·변경</button>
         <div class="small" style="margin-top:3px">관리자가 대신 입력한 신청서는, 강사가 포털에 한 번 로그인한 뒤 여기서 그 계정으로 연결하면 강사 본인이 수정·출석 체크를 할 수 있게 됩니다.</div></td></tr>
-      <tr><th>대상·인원</th><td>${esc((a.gradeSel&&a.gradeSel.length)?a.gradeSel.join(', '):(a.grades||'전체'))} · 최소 ${a.minN||0} ~ 최대 ${a.maxN||0}명</td></tr>
+      <tr><th>대상·인원</th><td>${esc((a.gradeSel&&a.gradeSel.length)?a.gradeSel.join(', '):(a.grades||'전체'))}${a.gradeNote?` — ${esc(a.gradeNote)}`:''} · 최소 ${a.minN||0} ~ 최대 ${a.maxN||0}명</td></tr>
       <tr><th>기간·시간</th><td>${a.startDate||SEM.rangeFrom} ~ ${a.endDate||SEM.rangeTo} · ${(a.weekdays||[]).map(w=>WD[w]+'요일').join(', ')} ${a.start||''} · ${a.durMin||0}분 · 총 ${liveCount(a)}회</td></tr>
       <tr><th>장소·준비물</th><td>희망 ${esc(a.place||'미정')} / 배정 ${esc(a.room||'미배정')} · ${esc(a.materials||'')}</td></tr>
       <tr><th>회비</th><td>1회 ${feeOf(a).toLocaleString()}원 × ${liveCount(a)}회 = <b>${(feeOf(a)*liveCount(a)).toLocaleString()}원</b> (1인 학기)</td></tr>
@@ -578,7 +579,7 @@ window.viewApp = (id)=>{
     </table>
     <div style="font-size:13px;font-weight:900;color:var(--gd);margin:14px 0 6px">수업 활동 계획</div>
     <table class="tb"><tr><th>회</th><th>수업일</th><th>활동 내용</th><th>준비물</th><th>재료비</th></tr>
-      ${(a.sessions||[]).map(s=>`<tr class="${(s.blocked||s.skip)?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':''}><td>${(s.blocked||s.skip)?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})</td><td>${s.blocked?'<b>🚫 '+esc(s.reason||'휴강')+' — 학교 휴강</b>':s.skip?'<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>':esc(s.content||'')}</td><td>${esc(s.materials||'')}</td><td>${esc(s.cost||'')}</td></tr>`).join('')}
+      ${(a.sessions||[]).map((s,i,arr)=>`<tr class="${(s.blocked||s.skip)?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':''}><td>${(s.blocked||s.skip)?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})</td><td>${s.blocked?'<b>🚫 '+esc(s.reason||'휴강')+' — 학교 휴강</b>':s.skip?'<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>':(s.ctitle?'<b style="color:#1D4ED8">'+esc(s.ctitle)+'</b><br>':'')+esc(s.content||'')}</td><td>${(s.blocked||s.skip)?'':(s.matSame?'<span style="color:#8A8F98">〃 '+esc(matOf(arr,i))+'</span>':esc(s.materials||''))}</td><td>${esc(s.cost||'')}</td></tr>`).join('')}
     </table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="bp" onclick="this.closest('.modal-bg').remove()">닫기</button></div></div>`;
   document.body.appendChild(bg);
