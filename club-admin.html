@@ -122,7 +122,7 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 
     <div class="cb-tabs" id="tabs">
       <button class="on" onclick="showTab('set')">⚙️ 학기 설정</button>
-      <button onclick="showTab('block')">🚫 불가 일정</button>
+      <button onclick="showTab('block')">🚫 학사 휴강</button>
       <button onclick="showTab('q')">📝 질문 양식</button>
       <button onclick="showTab('link')">🔗 모집 링크</button>
       <button onclick="showTab('apps')">📥 신청 취합</button>
@@ -527,7 +527,7 @@ async function renderBlock(){
   const inRange = ds => ds>=SEM.rangeFrom && ds<=SEM.rangeTo;
   const head = `<div class="row" style="justify-content:center;gap:12px;margin-bottom:10px">
       <button class="bs" onclick="calMove(-1)">‹</button><b style="font-size:15px;color:var(--gd)">${Y}년 ${M}월</b><button class="bs" onclick="calMove(1)">›</button>
-      <span class="small">학기 ${SEM.rangeFrom} ~ ${SEM.rangeTo} · 불가 ${(SEM.blocked||[]).length}일</span></div>`;
+      <span class="small">학기 ${SEM.rangeFrom} ~ ${SEM.rangeTo} · 학사 휴강 ${(SEM.blocked||[]).length}일</span></div>`;
   const wdh = ['일','월','화','수','목','금','토'].map(w=>`<div class="wd">${w}</div>`).join('');
   let L = wdh, R = wdh;
   for(let i=0;i<first.getDay();i++){ L+='<div></div>'; R+='<div></div>'; }
@@ -539,19 +539,19 @@ async function renderBlock(){
     R += `<div class="d ${we?'we':''} ${out?'out':''} ${bk?'blk':''} ${(!out&&!we)?'pick':''} ${items.length?'has':''}" ${(!out&&!we)?`onclick="blockDlg('${ds}')"`:''} title="${bk?esc(bk)+' — 클릭해서 사유 수정·해제':(items.length?'학사: '+esc(items.map(i=>i.t).join(', '))+' — 클릭해서 휴강 지정':'클릭해서 휴강 지정')}">
       <span class="n">${d}</span>${bk?`<span class="rs">🚫 ${esc(bk)}</span>`:(items.length?`<span class="lb">${esc(items[0].t)}</span>`:'')}</div>`;
   }
-  $I('body').innerHTML = `<div class="card"><h3>운영 불가 일정 — 왼쪽 학사일정을 보며 오른쪽 달력에서 클릭</h3>
+  $I('body').innerHTML = `<div class="card"><h3>학사 휴강 일정 — 왼쪽 학사일정을 보며 오른쪽 달력에서 클릭</h3>
     ${head}
     <div class="cal2">
       <div class="cal"><div class="ttl">📚 학사일정 · 공휴일 <span class="small">읽기 전용</span></div><div class="cg">${L}</div></div>
-      <div class="cal"><div class="ttl">🎨 동아리 운영 달력 <span class="small">평일 클릭 = 불가 지정/해제</span></div><div class="cg">${R}</div></div>
+      <div class="cal"><div class="ttl">🎨 동아리 운영 달력 <span class="small">평일 클릭 = 휴강 지정/해제</span></div><div class="cg">${R}</div></div>
     </div>
     <div class="row" style="margin-top:10px">
-      <button class="bs" onclick="blockMonthEvents()">이 달의 학사 행사·공휴일 전부 불가로</button>
+      <button class="bs" onclick="blockMonthEvents()">이 달의 학사 행사·공휴일 전부 휴강으로</button>
       <button class="bs" onclick="importHolidays()">📅 학기 전체 공휴일 불러오기</button>
       <button class="bs" onclick="importAllEvents()">🗓 학기 전체 학사 행사 불러오기</button>
       <button class="bs" style="color:#B91C1C" onclick="clearBlocks()">전부 지우기</button>
     </div>
-    <div class="small" style="margin-top:6px">불가로 지정한 날은 강사 회차표에서 자동으로 «휴강»으로 빠지고 이유가 표시됩니다. 주말은 운영일이 아니라 지정하지 않습니다.</div>
+    <div class="small" style="margin-top:6px">휴강으로 지정한 날은 강사 회차표에서 «학사 휴강»으로 빠지고 이유가 표시되며, 영향 없는 동아리는 강사가 «그래도 진행»을 선택할 수 있습니다. 주말은 운영일이 아니라 지정하지 않습니다.</div>
   </div>`;
 }
 window.calMove = (d)=>{ const [Y,M]=CAL_YM.split('-').map(Number); const n=new Date(Y, M-1+d, 1); CAL_YM = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; renderBlock(); };
@@ -746,10 +746,10 @@ window.viewApp = (id)=>{
         if(nb){ s = {...s, blocked:true, reason:bkm[s.date]}; }
         const ovr = s.override && bkm[s.date];
         const off = s.blocked||s.skip;
-        const act = s.blocked ? '<b>🚫 '+esc(s.reason||'휴강')+' — 학교 휴강</b>' : s.skip ? '<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>'
+        const act = s.blocked ? '<b>🚫 '+esc(s.reason||'휴강')+' — 학사 휴강</b>' : s.skip ? '<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>'
           : (s.sameAct ? G((inh(arr,i,'ctitle','sameAct')?inh(arr,i,'ctitle','sameAct')+' — ':'')+inh(arr,i,'content','sameAct'))
              : (s.ctitle?'<b style="color:#1D4ED8">'+esc(s.ctitle)+'</b><br>':'')+esc(s.content||''));
-        return `<tr class="${off?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':ovr?'style="background:#FFFBEB"':''}><td>${off?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})${ovr?` <span style="background:#FEF3C7;color:#92400E;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">▶ 진행 · 학교: ${esc(bkm[s.date])}</span>`:''}${s.extra?` <span style="background:#EDE9FE;color:#6D28D9;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">➕${esc(s.extraLabel||'보강')}${(s.start||s.durMin)?` · ${s.start||''}${s.durMin?' '+s.durMin+'분':''}`:''}</span>`:''}</td><td>${act}</td><td>${off?'':(s.matSame?G(inh(arr,i,'materials','matSame')):esc(s.materials||''))}</td><td>${off?'':(s.sameCost?G(inh(arr,i,'cost','sameCost')):esc(s.cost||''))}</td><td>${off?'':(s.sameNote?G(inh(arr,i,'note','sameNote')):esc(s.note||''))}</td></tr>`; }).join('')}
+        return `<tr class="${off?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':ovr?'style="background:#FFFBEB"':''}><td>${off?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})${ovr?` <span style="background:#FEF3C7;color:#92400E;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">▶ 진행 · 학사: ${esc(bkm[s.date])}</span>`:''}${s.extra?` <span style="background:#EDE9FE;color:#6D28D9;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">➕${esc(s.extraLabel||'보강')}${(s.start||s.durMin)?` · ${s.start||''}${s.durMin?' '+s.durMin+'분':''}`:''}</span>`:''}</td><td>${act}</td><td>${off?'':(s.matSame?G(inh(arr,i,'materials','matSame')):esc(s.materials||''))}</td><td>${off?'':(s.sameCost?G(inh(arr,i,'cost','sameCost')):esc(s.cost||''))}</td><td>${off?'':(s.sameNote?G(inh(arr,i,'note','sameNote')):esc(s.note||''))}</td></tr>`; }).join('')}
     </table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="bp" onclick="this.closest('.modal-bg').remove()">닫기</button></div></div>`;
   document.body.appendChild(bg);
