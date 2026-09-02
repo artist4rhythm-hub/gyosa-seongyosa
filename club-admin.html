@@ -604,7 +604,8 @@ async function loadApps(){
   APPS = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
 }
 const AST = { draft:'📝 작성중', submitted:'접수', approved:'승인', hold:'보류', rejected:'반려' };
-function matOf(list, i){ for(let j=i;j>=0;j--){ const x=list[j]; if(x.blocked||x.skip) return ''; if(!x.matSame) return x.materials||''; } return ''; }
+function inh(list, i, key, flag){ for(let j=i;j>=0;j--){ const x=list[j]; if(x.blocked||x.skip) return ''; if(!x[flag]) return x[key]||''; } return ''; }
+const G = t => `<span style="color:#8A8F98">〃 ${esc(t)}</span>`;
 function feeOf(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub||0); return Math.round(rate * (a.durMin||0) / 60); }
 function liveCount(a){ return (a.sessions||[]).filter(x=>!x.blocked && !x.skip).length; }
 function renderApps(){
@@ -650,8 +651,12 @@ window.viewApp = (id)=>{
       ${qs.map(q=>`<tr><th>${esc(q.label)}</th><td style="white-space:pre-wrap">${esc((a.answers||{})[q.id]||'')}</td></tr>`).join('')}
     </table>
     <div style="font-size:13px;font-weight:900;color:var(--gd);margin:14px 0 6px">수업 활동 계획</div>
-    <table class="tb"><tr><th>회</th><th>수업일</th><th>활동 내용</th><th>준비물</th><th>재료비</th></tr>
-      ${(a.sessions||[]).map((s,i,arr)=>`<tr class="${(s.blocked||s.skip)?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':''}><td>${(s.blocked||s.skip)?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})</td><td>${s.blocked?'<b>🚫 '+esc(s.reason||'휴강')+' — 학교 휴강</b>':s.skip?'<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>':(s.ctitle?'<b style="color:#1D4ED8">'+esc(s.ctitle)+'</b><br>':'')+esc(s.content||'')}</td><td>${(s.blocked||s.skip)?'':(s.matSame?'<span style="color:#8A8F98">〃 '+esc(matOf(arr,i))+'</span>':esc(s.materials||''))}</td><td>${esc(s.cost||'')}</td></tr>`).join('')}
+    <table class="tb"><tr><th>회</th><th>수업일</th><th>활동 내용</th><th>준비물</th><th>재료비</th><th>비고</th></tr>
+      ${(a.sessions||[]).map((s,i,arr)=>{ const off = s.blocked||s.skip;
+        const act = s.blocked ? '<b>🚫 '+esc(s.reason||'휴강')+' — 학교 휴강</b>' : s.skip ? '<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>'
+          : (s.sameAct ? G((inh(arr,i,'ctitle','sameAct')?inh(arr,i,'ctitle','sameAct')+' — ':'')+inh(arr,i,'content','sameAct'))
+             : (s.ctitle?'<b style="color:#1D4ED8">'+esc(s.ctitle)+'</b><br>':'')+esc(s.content||''));
+        return `<tr class="${off?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':''}><td>${off?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})</td><td>${act}</td><td>${off?'':(s.matSame?G(inh(arr,i,'materials','matSame')):esc(s.materials||''))}</td><td>${off?'':(s.sameCost?G(inh(arr,i,'cost','sameCost')):esc(s.cost||''))}</td><td>${off?'':(s.sameNote?G(inh(arr,i,'note','sameNote')):esc(s.note||''))}</td></tr>`; }).join('')}
     </table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="bp" onclick="this.closest('.modal-bg').remove()">닫기</button></div></div>`;
   document.body.appendChild(bg);
