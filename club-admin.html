@@ -114,6 +114,15 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .drw-body.blk{display:block;padding:4px 12px 12px}
 .live{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:800;color:#15803D}
 .live::before{content:'';width:8px;height:8px;border-radius:50%;background:#22C55E;box-shadow:0 0 0 3px #DCFCE7}
+.dsum{gap:8px}
+.dsum .dt{font-size:14px;font-weight:900;color:var(--gd,#1E3932)}
+.dsum .dm{font-size:11.5px;color:var(--tw,#7C8A80);font-weight:700}
+.dsum .dcnt{font-size:11.5px;color:var(--ts,#3F4A44);font-weight:700}
+.dsum .dcnt b{font-weight:900;color:var(--gd,#1E3932)}
+.dstop{margin-left:auto;font-size:11.5px;color:var(--tw,#7C8A80);font-weight:700;display:inline-flex;align-items:center;gap:5px}
+.drw{position:relative;isolation:isolate}
+.drw .tb{width:100%}
+.drw .tb th{position:static;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -894,13 +903,13 @@ function paintEnroll(){
         <span class="row" style="gap:6px;margin-left:auto"><button class="bs" onclick="enrAll(true)">모두 펼치기</button><button class="bs" onclick="enrAll(false)">모두 접기</button></span></div>
       <div class="small" style="margin-top:6px">신청이 저장되는 순간 아래 집계가 바로 바뀝니다. 배정 결과는 학부모에게 «순위 조정·최종 결정» 단계부터 보입니다.</div></div>`}
     ${clubs.map(c=>{ const {picks, first, assigned, st, byRank} = clubStat(c); const [lab,bg,fg]=STL[st];
-      return `<details class="drw" ${st==='over'||st==='under'?'open':''}><summary><div class="row" style="flex:1;align-items:center;gap:8px;flex-wrap:wrap"><span class="t">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${lab}</span>
-        <span class="small">${(c.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN}</span>
-        <span class="small" style="font-weight:800">1순위 ${byRank[1]||0} · 2순위 ${byRank[2]||0} · 3순위 ${byRank[3]||0} · 배정 ${assigned.length}</span>
-        ${VIEW_ONLY ? (c.cancelled?'<span class="pill st-locked" style="margin-left:auto">폐강</span>':'') : `<label class="small" style="margin-left:auto" onclick="event.stopPropagation()"><input type="checkbox" ${c.cancelled?'checked':''} onchange="setApp('${c.id}',{cancelled:this.checked}); paintEnroll()"> 폐강 처리</label>`}</div></summary>
-        <div class="drw-body blk">${picks.length ? `<table class="tb"><tr><th>순위</th><th>학생</th><th>학년·반</th><th>결과</th>${st==='over'?'<th>추첨 당첨</th>':''}</tr>
-          ${picks.sort((a,b)=>(a.picks.find(p=>p.clubId===c.id).rank)-(b.picks.find(p=>p.clubId===c.id).rank)).map(e=>{ const pk=e.picks.find(p=>p.clubId===c.id); const rs=(e.result||[]).find(r=>r.clubId===c.id);
-            return `<tr><td>${pk.rank}순위</td><td>${esc(e.studentName)}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
+      return `<details class="drw" ${st==='over'?'open':''}><summary class="dsum"><span class="dt">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${lab}</span>
+        <span class="dm">${(c.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN}</span>
+        <span class="dcnt">1순위 <b>${byRank[1]||0}</b> · 2순위 <b>${byRank[2]||0}</b> · 3순위 <b>${byRank[3]||0}</b> · 배정 <b>${assigned.length}</b></span>
+        ${VIEW_ONLY ? (c.cancelled?'<span class="pill st-locked" style="margin-left:auto">폐강</span>':'') : `<label class="dstop" onclick="event.stopPropagation()"><input type="checkbox" onclick="event.stopPropagation()" ${c.cancelled?'checked':''} onchange="setApp('${c.id}',{cancelled:this.checked}); paintEnroll()"> 폐강 처리</label>`}</summary>
+        <div class="drw-body blk">${picks.length ? `<table class="tb"><tr><th style="width:64px">순위</th><th>학생</th><th>학년·반</th><th>결과</th>${st==='over'?'<th>추첨 당첨</th>':''}</tr>
+          ${picks.slice().sort((a,b)=>(((a.picks||[]).find(p=>p.clubId===c.id)||{}).rank||9)-(((b.picks||[]).find(p=>p.clubId===c.id)||{}).rank||9)).map(e=>{ const pk=(e.picks||[]).find(p=>p.clubId===c.id)||{}; const rs=(e.result||[]).find(r=>r.clubId===c.id);
+            return `<tr><td>${pk.rank||'-'}순위</td><td>${esc(e.studentName)}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
               ${st==='over'?`<td>${pk.rank===1?(VIEW_ONLY?((e.lottery||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${(e.lottery||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}</div>
       </details>`; }).join('') || '<div class="small">공고된(승인+노출) 동아리가 없습니다. 신청 취합 탭에서 승인·노출을 켜주세요.</div>'}
     ${ENR.length ? `<details class="drw" style="margin-top:14px"><summary><b>👧 학생별 신청 내역</b><em>${new Set(ENR.map(e=>e.studentId)).size}명</em></summary>
