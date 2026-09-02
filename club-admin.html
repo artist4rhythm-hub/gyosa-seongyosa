@@ -144,7 +144,7 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, getDocs, query, where, onSnapshot, Timestamp }
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, getDocs, query, where, onSnapshot, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -754,7 +754,7 @@ window.viewApp = (id)=>{
       <div>🗓 기간·시간</div><div>${a.startDate||SEM.rangeFrom} ~ ${a.endDate||SEM.rangeTo} · <b>${wdText} ${a.start||''}</b> · ${a.durMin||0}분 · 총 ${liveCount(a)}회</div>
       <div>📍 장소·준비물</div><div>희망 ${esc(a.place||'미정')} / 배정 <b>${esc(a.room||'미배정')}</b>${a.materials?` · ${esc(a.materials)}`:''}</div>
       <div>💰 회비</div><div>1회 ${feeOf(a).toLocaleString()}원 기준 · <b>학기 1인 ${semTotal(a).toLocaleString()}원</b>${(a.sessions||[]).some(x=>x.durMin&&x.durMin!==a.durMin)?' <span class="small">(🕒 시간 다른 회차 반영)</span>':''}</div>
-      <div>💳 계좌</div><div>${esc(a.bank?.bank||'')} ${esc(a.bank?.account||'')} ${esc(a.bank?.holder||'')||'<span class="small">미등록</span>'}</div>
+      <div>💳 계좌</div><div id="bank-${a.id}"><span class="small">불러오는 중…</span></div>
       <div>🔗 작성 계정</div><div><span id="own-${a.id}">${esc(a.email||'(없음)')}</span>
         ${VIEW_ONLY?'':`<button class="bs" style="margin-left:8px;padding:5px 10px;font-size:11.5px" onclick="assignOwner('${a.id}')">강사 계정 연결·변경</button>`}</div>
     </div>
@@ -772,6 +772,16 @@ window.viewApp = (id)=>{
     </table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="bp" onclick="this.closest('.modal-bg').remove()">닫기</button></div></div>`;
   document.body.appendChild(bg);
+  // 💳 계좌는 강사 프로필(교직원·본인만 열람)에서 — 신청서에 남은 옛 계좌는 조용히 제거해 학부모 노출 차단
+  (async ()=>{
+    const el = document.getElementById('bank-'+a.id); if(!el) return;
+    let b = null;
+    try{ const p = await getDoc(doc(db,'clubInstructors', a.uid||'x')); if(p.exists()) b = p.data(); }catch(e){}
+    const txt = b && (b.bank||b.account) ? `${esc(b.bank||'')} ${esc(b.account||'')} ${esc(b.holder||'')}`
+      : (a.bank && (a.bank.bank||a.bank.account) ? `${esc(a.bank.bank||'')} ${esc(a.bank.account||'')} ${esc(a.bank.holder||'')}` : '');
+    el.innerHTML = txt || '<span class="small">미등록 — 강사가 포털 «내 정보·계좌»에 등록</span>';
+    if(a.bank && !VIEW_ONLY){ try{ await updateDoc(doc(db,'clubApplications',a.id), { bank: deleteField() }); delete a.bank; }catch(e){} }
+  })();
 };
 
 /* ── 👨‍👩‍👧 학부모 신청 현황 · 추첨 · 자동 배정 ── */
@@ -900,29 +910,60 @@ window.assignOwner = async (appId)=>{
 
 /* ── 🗓 요일·시간 그리드 ── */
 function toMin(t){ const [h,m]=String(t||'0:0').split(':').map(Number); return h*60+m; }
+let GRID_SEL = new Set();
+window.gridPick = (g)=>{
+  if(g==='전체') GRID_SEL.clear();
+  else GRID_SEL.has(g) ? GRID_SEL.delete(g) : GRID_SEL.add(g);
+  renderGrid();
+};
+function gridMatch(a){
+  if(!GRID_SEL.size) return true;
+  if(!(a.gradeSel && a.gradeSel.length)) return true;
+  return a.gradeSel.some(g=>GRID_SEL.has(g));
+}
+window.gridInfo = (id)=>{
+  const a = APPS.find(x=>x.id===id); if(!a) return;
+  const gl = (a.gradeSel&&a.gradeSel.length)?sortG(a.gradeSel).join('·'):'전체 학년';
+  const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=e=>{ if(e.target===bg) bg.remove(); };
+  bg.innerHTML = `<div class="modal" style="max-width:420px">
+    <div class="row"><span class="pill ${a.type==='joy'?'st-lottery':'st-recruiting'}">${a.type==='joy'?'조이클래스':'동아리'}</span>
+      <b style="font-size:15.5px">${esc(a.title||'')}</b></div>
+    ${a.intro?`<div class="small" style="margin-top:5px;line-height:1.6">💬 ${esc(a.intro)}</div>`:''}
+    <div style="font-size:13px;line-height:2;margin-top:9px">
+      👤 ${esc(a.instructorName||'')}${a.coInstructors?' · '+esc(a.coInstructors):''}<br>
+      🎯 ${esc(gl)}${a.gradeNote?` <span class="small" style="color:#1D4ED8">(${esc(a.gradeNote)})</span>`:''} · 👥 ${a.minN||0}~${a.maxN||0}명<br>
+      🗓 ${(a.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${a.start||''} · ${a.durMin||0}분 · ${liveCount(a)}회<br>
+      💰 학기 1인 ${semTotal(a).toLocaleString()}원 · 📍 ${esc(a.room||a.place||'미정')}
+    </div>
+    <div class="row" style="justify-content:flex-end;margin-top:12px">
+      <button class="bs" onclick="this.closest('.modal-bg').remove()">닫기</button>
+      <button class="bp" onclick="this.closest('.modal-bg').remove(); viewApp('${a.id}')">상세 보기 →</button></div></div>`;
+  document.body.appendChild(bg);
+};
 function renderGrid(){
   const s0 = toMin(SEM.timeStart||'15:20'), s1 = toMin(SEM.timeEnd||'17:20'), STEP=10;
   const rows = Math.ceil((s1-s0)/STEP);
   const colors = ['#2F6FD0','#8B5CF6','#16A34A','#D97706','#DC2626','#0F766E','#7C3AED','#B45309','#0EA5E9','#DB2777','#65A30D','#9333EA','#EA580C','#0891B2','#4F46E5','#CA8A04'];
-  const G = window.__gridG || '전체';
   const all = LIVE().filter(a=>a.status!=='rejected');
-  const apps = G==='전체' ? all : all.filter(a=>!(a.gradeSel&&a.gradeSel.length) || a.gradeSel.includes(G));
-  const chips = ['전체', ...sortG(SEM.gradeList||[])].map(g=>`<button class="chipbtn ${G===g?'on':''}" onclick="window.__gridG='${g}'; renderGrid()">${g}</button>`).join('');
-  let html = `<div class="card"><h3>요일 × 시간 (${SEM.timeStart}~${SEM.timeEnd}) · 반려·휴지통 제외</h3>
-    <div class="row" style="margin-bottom:8px;gap:5px"><span class="small">학년:</span>${chips}</div>
-    <div class="small" style="margin-bottom:8px">${G==='전체'
-      ? '겹치는 블록은 나란히 표시됩니다 — 학년 칩을 누르면 그 학년이 고를 수 있는 동아리만 남아 충돌이 또렷해집니다.'
-      : `<b>${G}</b> 학생이 신청 가능한 동아리 ${apps.length}개 — 같은 칸에 나란히 있으면 그 학년은 하나만 고르게 됩니다.`}</div>
+  const chips = ['전체', ...sortG(SEM.gradeList||[])].map(g=>{
+    const on = g==='전체' ? !GRID_SEL.size : GRID_SEL.has(g);
+    return `<button class="chipbtn ${on?'on':''}" onclick="gridPick('${g}')">${g}</button>`; }).join('');
+  const selTxt = GRID_SEL.size ? sortG([...GRID_SEL]).join('·') : '';
+  let html = `<div class="card"><h3>요일 × 시간 (${SEM.timeStart}~${SEM.timeEnd}) · 반려·휴지통 제외 · 블록을 누르면 요약</h3>
+    <div class="row" style="margin-bottom:8px;gap:5px"><span class="small">학년(복수 선택):</span>${chips}</div>
+    <div class="small" style="margin-bottom:8px">${GRID_SEL.size
+      ? `<b>${selTxt}</b> 학생이 신청 가능한 동아리만 진하게 — 같은 칸에 진한 블록이 나란히면 그 학년(들)은 하나만 고르게 됩니다.`
+      : '학년 칩을 누르면(여러 개 가능) 해당 학년이 고를 수 있는 동아리만 진하게 남습니다.'}</div>
     <div class="tgrid"><div></div>${[1,2,3,4,5].map(w=>`<div class="h">${WD[w]}</div>`).join('')}`;
   for(let r=0;r<rows;r++){
     const t = s0 + r*STEP;
     html += `<div class="tm">${r%3===0?String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0'):''}</div>`;
     for(let w=1;w<=5;w++) html += `<div class="cell" id="g-${w}-${r}"></div>`;
   }
-  html += `</div><div class="row" style="margin-top:10px">${apps.map(a=>`<span class="chip"><span style="width:10px;height:10px;border-radius:3px;background:${colors[all.indexOf(a)%colors.length]}"></span>${esc(a.title||'')} <span class="small">${esc((a.gradeSel&&a.gradeSel.length)?sortG(a.gradeSel).join('·'):'전체')}</span></span>`).join('')}</div></div>`;
+  html += `</div><div class="row" style="margin-top:10px">${all.map(a=>`<span class="chip" style="cursor:pointer;${gridMatch(a)?'':'opacity:.3'}" onclick="gridInfo('${a.id}')"><span style="width:10px;height:10px;border-radius:3px;background:${colors[all.indexOf(a)%colors.length]}"></span>${esc(a.title||'')} <span class="small">${esc((a.gradeSel&&a.gradeSel.length)?sortG(a.gradeSel).join('·'):'전체')}</span></span>`).join('')}</div></div>`;
   $I('body').innerHTML = html;
   for(let w=1; w<=5; w++){
-    const day = apps.filter(a=>(a.weekdays||[]).includes(w))
+    const day = all.filter(a=>(a.weekdays||[]).includes(w))
       .map(a=>({ a, st: toMin(a.start||SEM.timeStart), en: toMin(a.start||SEM.timeStart)+(a.durMin||60) }))
       .sort((x,y)=>x.st-y.st || y.en-x.en);
     const laneEnd = [];
@@ -931,11 +972,14 @@ function renderGrid(){
     day.forEach(b=>{
       const r0 = Math.max(0, Math.floor((b.st-s0)/STEP)), span = Math.max(1, Math.round((b.en-b.st)/STEP));
       const cell = $I(`g-${w}-${r0}`); if(!cell) return;
+      const hit = gridMatch(b.a);
+      const gl = (b.a.gradeSel&&b.a.gradeSel.length)?sortG(b.a.gradeSel).join('·'):'전체';
       const d = document.createElement('div'); d.className='blk';
       const wd = (100/N), lf = b.lane*wd;
-      d.style.cssText = `top:1px;height:${span*24-4}px;background:${colors[all.indexOf(b.a)%colors.length]};left:calc(${lf}% + 2px);width:calc(${wd}% - 4px)`;
-      d.title = `${b.a.title} · ${b.a.start} ${b.a.durMin}분 · 🎯 ${(b.a.gradeSel&&b.a.gradeSel.length)?sortG(b.a.gradeSel).join('·'):'전체'} · ${b.a.room||'교실 미배정'}`;
-      d.textContent = b.a.title;
+      d.style.cssText = `top:1px;height:${span*24-4}px;background:${colors[all.indexOf(b.a)%colors.length]};left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);cursor:pointer;white-space:normal;line-height:1.3;${hit?'':'opacity:.16;filter:saturate(.4)'}`;
+      d.title = `${b.a.title} · ${b.a.start} ${b.a.durMin}분 · 🎯 ${gl} · ${b.a.room||'교실 미배정'} — 클릭하면 요약`;
+      d.innerHTML = `<div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(b.a.title)}</div><div style="font-size:9px;font-weight:700;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">🎯 ${esc(gl)}</div>`;
+      d.onclick = ()=>gridInfo(b.a.id);
       cell.appendChild(d);
     });
   }
