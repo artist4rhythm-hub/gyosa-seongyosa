@@ -137,7 +137,7 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, collection, getDocs, query, where, onSnapshot, Timestamp }
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, getDocs, query, where, onSnapshot, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -165,7 +165,9 @@ function ms(role){ return (SEM?.milestones||[]).find(m=>m.role===role) || null; 
 const WD = ['일','월','화','수','목','금','토'];
 const PORTAL = 'https://artist4rhythm-hub.github.io/daniel-parents/club.html';
 
-let CU=null, SEMS=[], SEM=null, APPS=[], TAB='set', CLUB_MGRS=[], STAFF_ALL=null, VIEW_ONLY=false, UNSUBS=[];
+let CU=null, SEMS=[], SEM=null, APPS=[], TAB='set', CLUB_MGRS=[], STAFF_ALL=null, VIEW_ONLY=false, UNSUBS=[], SHOW_TRASH=false;
+const LIVE = ()=> APPS.filter(a=>!a.deleted);
+const TRASH = ()=> APPS.filter(a=>a.deleted);
 const UNIFIED_POS = ['교장','교감','행정실장'];
 function myOrgs(){ if(!CU) return []; if(CU.role==='super'||UNIFIED_POS.includes(CU.position||'')) return ['daniel','jihyebit']; return (CU.orgs&&CU.orgs.length)?CU.orgs:[CU.org]; }
 const toast = (t)=>{ const el=document.createElement('div'); el.textContent=t; el.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1E3932;color:#fff;padding:10px 16px;border-radius:100px;font-size:13px;font-weight:700;z-index:9999'; document.body.appendChild(el); setTimeout(()=>el.remove(),2200); };
@@ -216,7 +218,38 @@ onAuthStateChanged(auth, async user=>{
   $I('ls').style.display='none'; $I('ms').style.display='';
   window.hideLoading&&hideLoading();
   await loadSems();
+  initTM();
 });
+
+/* ── ⏱ 타임머신 — 공용 snapshots 재사용 (대상별 최근 15개 자동 보관) ── */
+function initTM(){
+  if(!window.TM || VIEW_ONLY) return;
+  TM.init({ page:'club', pageLabel:'동아리', db,
+    F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,query,where,Timestamp},
+    me:()=>({uid:CU.uid, name:CU.name||''}),
+    canRestore:()=>CU.role==='super' || CLUB_MGRS.includes(CU.uid),
+    targets:[
+      { col:'clubSemesters',  scope:{}, label:'동아리 학기 설정 (전체)' },
+      ...(SEM ? [
+        { col:'clubApplications', scope:{semId:SEM.id}, label:`개설 신청서 묶음 · ${SEM.name}` },
+        { col:'clubEnrollments',  scope:{semId:SEM.id}, label:`학부모 신청 묶음 · ${SEM.name}` },
+      ] : []),
+    ],
+    onRestored: async ()=>{ await loadSems(); if(SEM){ await loadApps(); } render(); },
+  });
+}
+function stripPoster(list){ return list.map(a=>{ const {poster, ...rest}=a; return {...rest, poster: poster||''}; }); }
+async function snapApps(label){
+  if(!window.TM || !SEM) return;
+  try{
+    let docs = APPS.map(a=>({...a}));
+    let big = JSON.stringify(docs).length > 900000;
+    if(big) docs = docs.map(a=>({ ...a, poster:'' }));
+    await TM.snapData('clubApplications', {semId:SEM.id}, label + (big?' (포스터 제외)':''), docs);
+  }catch(e){}
+}
+async function snapSems(label){ if(window.TM) try{ await TM.snapBundle('clubSemesters', {}, label); }catch(e){} }
+async function snapEnr(label){ if(window.TM && SEM) try{ await TM.snapData('clubEnrollments', {semId:SEM.id}, label, (ENR||[]).map(e=>({...e}))); }catch(e){} }
 
 /* ── 학기 ── */
 async function loadSems(){
@@ -249,7 +282,7 @@ window.pickSem = async (id)=>{
     SEM.milestones = m;
   }
   if(SEM){ await loadApps(); }
-  paintStatus(); liveSubscribe(); render();
+  paintStatus(); liveSubscribe(); initTM(); render();
 };
 window.newSem = async ()=>{
   const name = prompt('학기 이름 (예: 2026학년도 2학기)'); if(!name) return;
@@ -298,6 +331,7 @@ function paintStatus(){
 }
 window.setStatus = async (st)=>{
   if(st==='locked' && !confirm('학기를 잠그면 모든 기록이 읽기 전용이 됩니다. 계속할까요?')) return;
+  await snapSems('단계 변경 전');
   await updateDoc(doc(db,'clubSemesters',SEM.id), { status: st, statusAt: Timestamp.now() });
   SEM.status = st; paintStatus(); toast(`«${STATUS[st]}» 단계로 바꿨습니다`);
 };
@@ -431,7 +465,7 @@ function paintGrades(){
   $I('s-grades').innerHTML = list.length ? sortG(list).map(g=>`<span class="roomchip on">${esc(g)}<button class="x" onclick="removeGrade('${esc(g)}')">✕</button></span>`).join('')
     : '<span class="small">아직 없음 — 불러오거나 직접 추가하세요. 비워두면 강사가 자유 글로 적습니다.</span>';
 }
-async function saveGrades(){ try{ await updateDoc(doc(db,'clubSemesters',SEM.id), { gradeList: SEM.gradeList||[] }); }catch(e){ toast('학년 저장 실패: '+(e.message||'')); } }
+async function saveGrades(){ await snapSems('학년 목록 변경 전'); try{ await updateDoc(doc(db,'clubSemesters',SEM.id), { gradeList: SEM.gradeList||[] }); }catch(e){ toast('학년 저장 실패: '+(e.message||'')); } }
 window.addGrade = async ()=>{ const v=$I('s-grade-add').value.trim(); if(!v) return; SEM.gradeList=[...new Set([...(SEM.gradeList||[]), v])]; $I('s-grade-add').value=''; paintGrades(); await saveGrades(); toast('학년을 추가·저장했습니다'); };
 window.removeGrade = async (g)=>{ SEM.gradeList=(SEM.gradeList||[]).filter(x=>x!==g); paintGrades(); await saveGrades(); };
 window.importGrades = async ()=>{
@@ -460,6 +494,7 @@ window.saveSet = async ()=>{
     timeStart:v('s-ts'), timeEnd:v('s-te'), maxMin:Number(v('s-max'))||120,
     feeClub:Number(v('s-fc'))||0, feeJoy:Number(v('s-fj'))||0, refundRule:v('s-rr'),
     rooms: SEM.rooms||[], roomPool: SEM.roomPool||(SEM.rooms||[]), gradeList: SEM.gradeList||[], updatedAt:Timestamp.now() };
+  await snapSems('설정 저장 전');
   try{ await updateDoc(doc(db,'clubSemesters',SEM.id), upd); Object.assign(SEM, upd);
     $I('s-msg').className='alert ok'; $I('s-msg').textContent='저장했습니다 ✓'; $I('sem-sel').options[$I('sem-sel').selectedIndex].text = `${SEM.name} · ${ORGS[SEM.org]}`;
   }catch(e){ $I('s-msg').className='alert err'; $I('s-msg').textContent='저장 실패: '+(e.message||''); }
@@ -501,7 +536,7 @@ async function renderBlock(){
     const items = dayItems(ds), out = !inRange(ds);
     L += `<div class="d ${we?'we':''} ${out?'out':''} ${items.length?'has':''}"><span class="n">${d}</span>${items.slice(0,3).map(it=>`<span class="ev ${it.hol?'hol':''}" title="${esc(it.t)}">${esc(it.t)}</span>`).join('')}${items.length>3?`<span class="small">+${items.length-3}</span>`:''}</div>`;
     const bk = blocked[ds];
-    R += `<div class="d ${we?'we':''} ${out?'out':''} ${bk?'blk':''} ${(!out&&!we)?'pick':''} ${items.length?'has':''}" ${(!out&&!we)?`onclick="toggleBlock('${ds}')"`:''} title="${bk?esc(bk)+' — 클릭하면 해제':(items.length?'학사: '+esc(items.map(i=>i.t).join(', '))+' — 클릭하면 불가로':'클릭하면 불가로')}">
+    R += `<div class="d ${we?'we':''} ${out?'out':''} ${bk?'blk':''} ${(!out&&!we)?'pick':''} ${items.length?'has':''}" ${(!out&&!we)?`onclick="blockDlg('${ds}')"`:''} title="${bk?esc(bk)+' — 클릭해서 사유 수정·해제':(items.length?'학사: '+esc(items.map(i=>i.t).join(', '))+' — 클릭해서 휴강 지정':'클릭해서 휴강 지정')}">
       <span class="n">${d}</span>${bk?`<span class="rs">🚫 ${esc(bk)}</span>`:(items.length?`<span class="lb">${esc(items[0].t)}</span>`:'')}</div>`;
   }
   $I('body').innerHTML = `<div class="card"><h3>운영 불가 일정 — 왼쪽 학사일정을 보며 오른쪽 달력에서 클릭</h3>
@@ -521,18 +556,52 @@ async function renderBlock(){
 }
 window.calMove = (d)=>{ const [Y,M]=CAL_YM.split('-').map(Number); const n=new Date(Y, M-1+d, 1); CAL_YM = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; renderBlock(); };
 async function saveBlocked(arr){
+  await snapSems('불가 일정 변경 전');
   const map = {}; arr.forEach(b=>{ if(b.date) map[b.date] = b; });
   const blocked = Object.values(map).sort((a,b)=>a.date.localeCompare(b.date));
   await updateDoc(doc(db,'clubSemesters',SEM.id), { blocked });
   SEM.blocked = blocked; renderBlock();
 }
-window.toggleBlock = async (ds)=>{
+/* 🚫 휴강 지정·수정 창 — 그날의 학사 항목 중에서 명목을 고르거나 직접 쓴다 */
+window.blockDlg = (ds)=>{
   const cur = (SEM.blocked||[]).find(b=>b.date===ds);
-  if(cur) return saveBlocked((SEM.blocked||[]).filter(b=>b.date!==ds));
   const items = dayItems(ds);
-  let reason = items.length ? items[0].t : '';
-  if(!reason){ reason = prompt('불가 이유 (예: 체육대회)', '운영 불가'); if(reason===null) return; }
-  saveBlocked([...(SEM.blocked||[]), {date:ds, reason:reason||'운영 불가', src: items.length?'academic':'manual'}]);
+  const wd = WD[new Date(ds+'T00:00:00').getDay()];
+  const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=e=>{ if(e.target===bg) bg.remove(); };
+  const opts = items.map((it,i)=>`
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:6px;cursor:pointer">
+      <input type="radio" name="bk-r" value="${esc(it.t)}" ${(cur?cur.reason===it.t:i===0)?'checked':''}
+        onchange="document.getElementById('bk-txt').value=this.value">
+      <span>${it.hol?'🔴':'🔵'} ${esc(it.t)}</span></label>`).join('');
+  const init = cur ? cur.reason : (items[0]?.t || '');
+  bg.innerHTML = `<div class="modal" style="max-width:420px">
+    <div style="font-size:15px;font-weight:900;color:var(--gd)">🚫 ${ds} (${wd}) ${cur?'휴강 사유 수정':'휴강 지정'}</div>
+    <div class="small" style="margin:5px 0 10px">${items.length?'이 날의 학사 항목에서 명목을 고르거나, 아래에 직접 쓰세요.':'이 날은 학사 항목이 없어요 — 명목을 직접 써주세요.'}</div>
+    ${opts}
+    ${items.length?`<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:6px;cursor:pointer">
+      <input type="radio" name="bk-r" value="" ${cur&&!items.some(it=>it.t===cur.reason)?'checked':''}
+        onchange="document.getElementById('bk-txt').focus()"><span>✏️ 직접 입력</span></label>`:''}
+    <input id="bk-txt" value="${esc(init)}" placeholder="휴강 명목 (예: 학부모 상담 주간)"
+      style="width:100%;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit;font-size:13.5px;margin-top:2px">
+    <div class="row" style="justify-content:flex-end;margin-top:14px;gap:6px">
+      ${cur?`<button class="bs" style="color:#15803D;margin-right:auto" onclick="unblockDay('${ds}')">🟢 휴강 해제</button>`:''}
+      <button class="bs" onclick="this.closest('.modal-bg').remove()">취소</button>
+      <button class="bp" onclick="applyBlock('${ds}')">${cur?'사유 저장':'휴강 지정'}</button></div></div>`;
+  document.body.appendChild(bg);
+  const txt = bg.querySelector('#bk-txt'); txt.focus(); txt.setSelectionRange(txt.value.length, txt.value.length);
+};
+window.applyBlock = async (ds)=>{
+  const reason = (document.getElementById('bk-txt')?.value||'').trim() || '운영 불가';
+  const items = dayItems(ds);
+  const rest = (SEM.blocked||[]).filter(b=>b.date!==ds);
+  document.querySelector('.modal-bg')?.remove();
+  await saveBlocked([...rest, {date:ds, reason, src: items.some(it=>it.t===reason)?'academic':'manual'}]);
+  toast(`${ds.slice(5)} — «${reason}» 휴강`);
+};
+window.unblockDay = async (ds)=>{
+  document.querySelector('.modal-bg')?.remove();
+  await saveBlocked((SEM.blocked||[]).filter(b=>b.date!==ds));
+  toast(`${ds.slice(5)} 휴강 해제`);
 };
 window.blockMonthEvents = async ()=>{
   const [Y,M]=CAL_YM.split('-').map(Number); const last=new Date(Y,M,0).getDate(); const add=[];
@@ -581,7 +650,7 @@ function readQ(){ return [...document.querySelectorAll('#q-list .q-row')].map((r
 window.addQ = ()=>{ SEM.questions = [...readQ(), {id:'q'+Date.now(), label:'', type:'long', required:false, forType:'both'}]; renderQ(); };
 window.delQ = (i)=>{ const qs=readQ(); qs.splice(i,1); SEM.questions=qs; renderQ(); };
 window.moveQ = (i,d)=>{ const qs=readQ(); const j=i+d; if(j<0||j>=qs.length) return; [qs[i],qs[j]]=[qs[j],qs[i]]; SEM.questions=qs; renderQ(); };
-window.saveQ = async ()=>{ const qs = readQ().filter(q=>q.label); try{ await updateDoc(doc(db,'clubSemesters',SEM.id),{questions:qs}); SEM.questions=qs; $I('q-msg').className='alert ok'; $I('q-msg').textContent='저장했습니다 ✓'; }catch(e){ $I('q-msg').className='alert err'; $I('q-msg').textContent='실패: '+(e.message||''); } };
+window.saveQ = async ()=>{ const qs = readQ().filter(q=>q.label); await snapSems('질문 저장 전'); try{ await updateDoc(doc(db,'clubSemesters',SEM.id),{questions:qs}); SEM.questions=qs; $I('q-msg').className='alert ok'; $I('q-msg').textContent='저장했습니다 ✓'; }catch(e){ $I('q-msg').className='alert err'; $I('q-msg').textContent='실패: '+(e.message||''); } };
 
 /* ── 🔗 모집 링크 ── */
 function renderLink(){
@@ -609,9 +678,25 @@ const G = t => `<span style="color:#8A8F98">〃 ${esc(t)}</span>`;
 function feeOf(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub||0); return Math.round(rate * (a.durMin||0) / 60); }
 function liveCount(a){ return (a.sessions||[]).filter(x=>!x.blocked && !x.skip).length; }
 function renderApps(){
-  $I('body').innerHTML = `<div class="row" style="margin-bottom:10px"><span class="small">총 ${APPS.length}건 · 동아리 ${APPS.filter(a=>a.type!=='joy').length} · 조이클래스 ${APPS.filter(a=>a.type==='joy').length} · 📝 작성중 ${APPS.filter(a=>a.status==='draft').length}</span>
-    <button class="bs" style="margin-left:auto" onclick="reloadApps()">새로고침</button></div>` +
-  (APPS.length ? APPS.map(a=>`<div class="ap">
+  const L = LIVE(), T = TRASH();
+  if(SHOW_TRASH){
+    $I('body').innerHTML = `<div class="row" style="margin-bottom:10px"><b style="color:#B91C1C">🗑 휴지통 · ${T.length}건</b>
+      <button class="bs" style="margin-left:auto" onclick="SHOW_TRASH=false; renderApps()">← 목록으로</button></div>` +
+      (T.length ? T.map(a=>`<div class="ap" style="opacity:.85">
+        <div class="row"><span class="pill ${a.type==='joy'?'st-lottery':'st-recruiting'}">${a.type==='joy'?'조이클래스':'동아리'}</span>
+          <span class="t">${esc(a.title||'(제목 없음)')}</span>
+          <span class="small">👤 ${esc(a.instructorName||'')} · 삭제 ${a.deletedAt?new Date(a.deletedAt.seconds*1000).toLocaleString('ko-KR'):''} · ${esc(a.deletedBy||'')}</span></div>
+        <div class="act">
+          <button class="bs" onclick="restoreApp('${a.id}')">↩️ 복원</button>
+          <button class="bs" style="color:#B91C1C" onclick="hardDelete('${a.id}')">🔥 영구 삭제</button>
+          <button class="bs" onclick="viewApp('${a.id}')">상세 보기</button></div></div>`).join('')
+      : '<div class="small">휴지통이 비어 있습니다.</div>');
+    return;
+  }
+  $I('body').innerHTML = `<div class="row" style="margin-bottom:10px"><span class="small">총 ${L.length}건 · 동아리 ${L.filter(a=>a.type!=='joy').length} · 조이클래스 ${L.filter(a=>a.type==='joy').length} · 📝 작성중 ${L.filter(a=>a.status==='draft').length}</span>
+    ${VIEW_ONLY?'':`<button class="bs" style="margin-left:auto;color:#B91C1C" onclick="SHOW_TRASH=true; renderApps()">🗑 휴지통 ${T.length}</button>`}
+    <button class="bs" ${VIEW_ONLY?'style="margin-left:auto"':''} onclick="reloadApps()">새로고침</button></div>` +
+  (L.length ? L.map(a=>`<div class="ap">
     <div class="row"><span class="pill ${a.type==='joy'?'st-lottery':'st-recruiting'}">${a.type==='joy'?'조이클래스':'동아리'}</span>
       <span class="t">${esc(a.title||'(제목 없음)')}</span>
       <span class="pill st-${a.status==='approved'?'confirmed':a.status==='rejected'?'locked':a.status==='hold'?'enrolling':'draft'}">${AST[a.status]||a.status}</span>
@@ -625,11 +710,12 @@ function renderApps(){
       교실 <select onchange="setApp('${a.id}',{room:this.value})"><option value="">(미배정)</option>${(SEM.rooms||[]).map(r=>`<option${a.room===r?' selected':''}>${esc(r)}</option>`).join('')}</select>
       <label style="font-size:12px"><input type="checkbox" ${a.published?'checked':''} onchange="setApp('${a.id}',{published:this.checked})"> 학부모 공고에 노출</label>
       <button class="bs" onclick="viewApp('${a.id}')">상세 보기</button>
-      <button class="bs" onclick="window.open('${PORTAL}?sem=${SEM.id}&edit=${a.id}','_blank')">✏️ 관리자 수정</button>`}
+      <button class="bs" onclick="window.open('${PORTAL}?sem=${SEM.id}&edit=${a.id}','_blank')">✏️ 관리자 수정</button>
+      <button class="bs" style="color:#B91C1C" onclick="softDelete('${a.id}')">🗑 삭제</button>`}
     </div></div>`).join('') : '<div class="small">아직 접수된 신청서가 없습니다.</div>');
 }
 window.reloadApps = async ()=>{ await loadApps(); renderApps(); };
-window.setApp = async (id, upd)=>{ try{ await updateDoc(doc(db,'clubApplications',id), {...upd, adminAt:Timestamp.now()}); Object.assign(APPS.find(a=>a.id===id), upd); toast('저장'); if(upd.room!==undefined) renderApps(); }catch(e){ toast('실패: '+(e.message||'')); } };
+window.setApp = async (id, upd)=>{ await snapApps('신청서 변경 전'); try{ await updateDoc(doc(db,'clubApplications',id), {...upd, adminAt:Timestamp.now()}); Object.assign(APPS.find(a=>a.id===id), upd); toast('저장'); if(upd.room!==undefined) renderApps(); }catch(e){ toast('실패: '+(e.message||'')); } };
 window.viewApp = (id)=>{
   const a = APPS.find(x=>x.id===id); if(!a) return;
   const qs = (SEM.questions||[]).filter(q=>q.forType==='both'||q.forType===a.type);
@@ -684,7 +770,7 @@ function clubStat(c){
 const STL = { ok:['🟢 개설 가능','#DCFCE7','#15803D'], under:['🟡 최소 미달','#FEF3C7','#B45309'], over:['🔴 정원 초과 → 추첨','#FEE2E2','#B91C1C'], cancelled:['⚫ 폐강','#E5E7EB','#374151'] };
 async function renderEnroll(){
   await loadEnr();
-  const clubs = APPS.filter(a=>a.status==='approved' && a.published);
+  const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
   const students = new Set(ENR.map(e=>e.studentId)).size;
   $I('body').innerHTML = `<div class="card"><h3>신청 현황 · 학생 ${students}명 · 신청 ${ENR.length}건 · 공고 동아리 ${clubs.length}개</h3>
     <div class="small" style="margin-bottom:10px">1순위 기준으로 최소/최대를 판별합니다. 🔴 초과 동아리는 아래에서 추첨 결과(당첨)를 체크하고, 「자동 배정」을 누르면 순위·정원·시간 겹침을 따져 배정 결과를 만듭니다.</div>
@@ -705,7 +791,8 @@ async function renderEnroll(){
 function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', waitlist:'⏳ 대기' }[st] || st; }
 window.setLottery = async (eid, cid, on)=>{ const e = ENR.find(x=>x.id===eid); const lot = {...(e.lottery||{})}; lot[cid]=on; await updateDoc(doc(db,'clubEnrollments',eid), { lottery: lot }); e.lottery = lot; };
 window.autoAssign = async ()=>{
-  const clubs = APPS.filter(a=>a.status==='approved' && a.published);
+  await snapEnr('자동 배정 전');
+  const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
   const byId = {}; clubs.forEach(c=>byId[c.id]=c);
   const cap = {}; clubs.forEach(c=>cap[c.id]=0);
   // 1) 1순위부터 3순위까지 차례로: 초과 동아리는 «당첨» 체크된 1순위만, 정원 안이면 그대로
@@ -729,6 +816,31 @@ window.autoAssign = async ()=>{
   toast(`${n}건 배정 결과 저장 — 최소 미달 동아리는 «폐강 처리» 후 다시 실행하세요`); renderEnroll();
 };
 
+window.softDelete = async (id)=>{
+  const a = APPS.find(x=>x.id===id); if(!a) return;
+  if(!confirm(`«${a.title||''}» 신청서를 삭제할까요?\n(휴지통으로 이동 — 언제든 복원할 수 있어요)`)) return;
+  await snapApps('삭제 전');
+  try{ await updateDoc(doc(db,'clubApplications',id), { deleted:true, deletedAt:Timestamp.now(), deletedBy:CU.name||'' });
+    Object.assign(a, { deleted:true, deletedAt:{seconds:Date.now()/1000}, deletedBy:CU.name||'' });
+    toast('휴지통으로 옮겼습니다'); renderApps();
+  }catch(e){ toast('삭제 실패: '+(e.message||'')); }
+};
+window.restoreApp = async (id)=>{
+  const a = APPS.find(x=>x.id===id); if(!a) return;
+  try{ await updateDoc(doc(db,'clubApplications',id), { deleted:false, restoredAt:Timestamp.now() });
+    a.deleted=false; toast('복원했습니다'); renderApps();
+  }catch(e){ toast('복원 실패: '+(e.message||'')); }
+};
+window.hardDelete = async (id)=>{
+  const a = APPS.find(x=>x.id===id); if(!a) return;
+  if(!confirm(`«${a.title||''}» 을(를) 영구 삭제합니다.\n마지막 사본은 ⏱ 타임머신에 남지만, 목록에서는 완전히 사라져요.\n정말 진행할까요?`)) return;
+  if(!confirm('한 번 더 확인 — 영구 삭제할까요?')) return;
+  await snapApps('영구 삭제 전');
+  try{ await deleteDoc(doc(db,'clubApplications',id));
+    APPS = APPS.filter(x=>x.id!==id); toast('영구 삭제했습니다 (⏱ 타임머신에 사본 보관)'); renderApps();
+  }catch(e){ toast('영구 삭제 실패: '+(e.message||'')); }
+};
+
 /* 🔗 강사 계정 연결 — clubInstructors(포털에 로그인한 사람들) 중에서 고른다 */
 window.assignOwner = async (appId)=>{
   const a = APPS.find(x=>x.id===appId); if(!a) return;
@@ -748,6 +860,7 @@ window.assignOwner = async (appId)=>{
       <button class="bp" id="own-save">연결</button></div></div>`;
   document.body.appendChild(bg);
   bg.querySelector('#own-save').onclick = async ()=>{
+    await snapApps('강사 계정 연결 전');
     const sel = bg.querySelector('#own-sel');
     const uid = sel.value, email = sel.selectedOptions[0].dataset.email||'';
     try{
@@ -765,7 +878,7 @@ function renderGrid(){
   const s0 = toMin(SEM.timeStart||'15:20'), s1 = toMin(SEM.timeEnd||'17:20'), STEP=10;
   const rows = Math.ceil((s1-s0)/STEP);
   const colors = ['#2F6FD0','#8B5CF6','#16A34A','#D97706','#DC2626','#0F766E','#7C3AED','#B45309'];
-  const apps = APPS.filter(a=>a.status!=='rejected');
+  const apps = LIVE().filter(a=>a.status!=='rejected');
   let html = `<div class="card"><h3>요일 × 시간 (${SEM.timeStart}~${SEM.timeEnd}) · 반려 제외</h3><div class="small" style="margin-bottom:8px">같은 칸에 여러 블록이 겹치면 시간이 충돌하는 동아리입니다 — 교실이 다르면 괜찮고, 같은 학년 대상이면 학부모가 하나만 고르게 됩니다.</div>
     <div class="tgrid"><div></div>${[1,2,3,4,5].map(w=>`<div class="h">${WD[w]}</div>`).join('')}`;
   for(let r=0;r<rows;r++){
@@ -791,6 +904,7 @@ function renderGrid(){
   });
 }
 </script>
+<script src="timemachine.js"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
