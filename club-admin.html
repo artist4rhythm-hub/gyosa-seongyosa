@@ -292,6 +292,12 @@ function renderSet(){
       <div class="small">회비는 전액 강사에게 갑니다 · 학기 말 출석 기준으로 정산</div>
     </div>
   </div>
+  <div class="card f"><h3>🎯 지원 가능 학년 <span class="small">— 강사가 이 목록에서 카드로 고르고, 학부모는 자녀 학년으로 자동 판별됩니다</span></h3>
+    <div class="row" style="margin-bottom:8px">
+      <button class="bs" onclick="importGrades()">📥 반편성에서 학년 불러오기</button>
+      <input type="text" id="s-grade-add" placeholder="학년 직접 추가 (예: 7학년)" style="width:180px" onkeydown="if(event.key==='Enter'){addGrade();event.preventDefault();}">
+      <button class="bs" onclick="addGrade()">＋ 추가</button></div>
+    <div class="row" id="s-grades"></div></div>
   <div class="card f"><h3>↩️ 환불 기준 <span class="small">— 학부모·강사에게 그대로 보입니다</span></h3>
     <textarea id="s-rr" placeholder="예) 결석 회차는 보강이 없으면 1회 요금을 환불합니다. 당일 결석은 …">${esc(s.refundRule||'')}</textarea></div>
   <div class="card f"><h3>🏫 교실 <span class="small">— 교실 풀에서 이 학기에 쓸 교실을 골라 담습니다</span></h3>
@@ -305,7 +311,7 @@ function renderSet(){
   <div class="row"><button class="bp" onclick="saveSet()">설정 저장</button><span class="small">저장 후 강사 포털에 바로 반영됩니다.</span></div>
   <div class="alert" id="s-msg"></div>`;
   if(!Array.isArray(SEM.roomPool)) SEM.roomPool = [...(SEM.rooms||[])];
-  paintTL(); feePreview(); paintRooms();
+  paintTL(); feePreview(); paintRooms(); paintGrades();
   ['s-ts','s-te'].forEach(id=>$I(id).addEventListener('change', paintTL));
 }
 function msRow(m,i){
@@ -345,6 +351,25 @@ function paintRooms(){
 window.toggleRoom = (r)=>{ const sel=new Set(SEM.rooms||[]); sel.has(r)?sel.delete(r):sel.add(r); SEM.rooms=[...sel]; paintRooms(); };
 window.removeRoom = (r)=>{ SEM.roomPool=(SEM.roomPool||[]).filter(x=>x!==r); SEM.rooms=(SEM.rooms||[]).filter(x=>x!==r); paintRooms(); };
 window.addRoom = ()=>{ const v=$I('s-room-add').value.trim(); if(!v) return; SEM.roomPool=[...new Set([...(SEM.roomPool||[]), v])]; SEM.rooms=[...new Set([...(SEM.rooms||[]), v])]; $I('s-room-add').value=''; paintRooms(); };
+function sortG(arr){ return arr.slice().sort((a,b)=>{ const na=parseInt(a), nb=parseInt(b); if(!isNaN(na)&&!isNaN(nb)) return na-nb; if(!isNaN(na)) return -1; if(!isNaN(nb)) return 1; return a.localeCompare(b,'ko'); }); }
+function paintGrades(){
+  const list = SEM.gradeList||[];
+  $I('s-grades').innerHTML = list.length ? sortG(list).map(g=>`<span class="roomchip on">${esc(g)}<button class="x" onclick="removeGrade('${esc(g)}')">✕</button></span>`).join('')
+    : '<span class="small">아직 없음 — 불러오거나 직접 추가하세요. 비워두면 강사가 자유 글로 적습니다.</span>';
+}
+window.addGrade = ()=>{ const v=$I('s-grade-add').value.trim(); if(!v) return; SEM.gradeList=[...new Set([...(SEM.gradeList||[]), v])]; $I('s-grade-add').value=''; paintGrades(); };
+window.removeGrade = (g)=>{ SEM.gradeList=(SEM.gradeList||[]).filter(x=>x!==g); paintGrades(); };
+window.importGrades = async ()=>{
+  try{
+    const y = new Date(SEM.rangeFrom||Date.now()).getFullYear();
+    const snap = await getDocs(query(collection(db,'classes'), where('org','==',SEM.org)));
+    const set = new Set(SEM.gradeList||[]);
+    snap.forEach(d=>{ const c=d.data(); if(c.year && Number(c.year)!==y) return;
+      if(c.grade) set.add(String(c.grade).trim());
+      Object.values(c.grades||{}).forEach(g=>{ if(g) set.add(String(g).trim()); }); });
+    SEM.gradeList=[...set]; paintGrades(); toast(`학년 ${SEM.gradeList.length}개`);
+  }catch(e){ toast('불러오기 실패: '+(e.message||'')); }
+};
 window.importRooms = async ()=>{
   try{
     const d = await getDoc(doc(db,'timetableRooms','main'));
@@ -359,7 +384,7 @@ window.saveSet = async ()=>{
   const upd = { name:v('s-name').trim(), rangeFrom:v('s-from'), rangeTo:v('s-to'), milestones,
     timeStart:v('s-ts'), timeEnd:v('s-te'), maxMin:Number(v('s-max'))||120,
     feeClub:Number(v('s-fc'))||0, feeJoy:Number(v('s-fj'))||0, refundRule:v('s-rr'),
-    rooms: SEM.rooms||[], roomPool: SEM.roomPool||(SEM.rooms||[]), updatedAt:Timestamp.now() };
+    rooms: SEM.rooms||[], roomPool: SEM.roomPool||(SEM.rooms||[]), gradeList: SEM.gradeList||[], updatedAt:Timestamp.now() };
   try{ await updateDoc(doc(db,'clubSemesters',SEM.id), upd); Object.assign(SEM, upd);
     $I('s-msg').className='alert ok'; $I('s-msg').textContent='저장했습니다 ✓'; $I('sem-sel').options[$I('sem-sel').selectedIndex].text = `${SEM.name} · ${ORGS[SEM.org]}`;
   }catch(e){ $I('s-msg').className='alert err'; $I('s-msg').textContent='저장 실패: '+(e.message||''); }
@@ -515,7 +540,7 @@ function renderApps(){
       <span class="pill st-${a.status==='approved'?'confirmed':a.status==='rejected'?'locked':a.status==='hold'?'enrolling':'draft'}">${AST[a.status]||a.status}</span>
       ${a.published?'<span class="pill st-running">공고됨</span>':''}</div>
     <div class="m">👤 ${esc(a.instructorName||'')}${a.coInstructors?' · '+esc(a.coInstructors):''} · ${esc(a.phone||'')} · ${esc(a.email||'')}</div>
-    <div class="m">🗓 ${(a.weekdays||[]).map(w=>WD[w]).join('·')} ${a.start||''} · ${a.durMin||0}분 · ${liveCount(a)}회 · 🎯 ${esc(a.grades||'')} · 👥 ${a.minN||0}~${a.maxN||0}명 · 💰 1회 ${feeOf(a).toLocaleString()}원 → 학기 ${(feeOf(a)*liveCount(a)).toLocaleString()}원 · 📍 희망 ${esc(a.place||'미정')}</div>
+    <div class="m">🗓 ${(a.weekdays||[]).map(w=>WD[w]).join('·')} ${a.start||''} · ${a.durMin||0}분 · ${liveCount(a)}회 · 🎯 ${esc((a.gradeSel&&a.gradeSel.length)?a.gradeSel.join('·'):(a.grades||'전체'))} · 👥 ${a.minN||0}~${a.maxN||0}명 · 💰 1회 ${feeOf(a).toLocaleString()}원 → 학기 ${(feeOf(a)*liveCount(a)).toLocaleString()}원 · 📍 희망 ${esc(a.place||'미정')}</div>
     <div class="act">
       상태 <select onchange="setApp('${a.id}',{status:this.value})">${Object.entries(AST).map(([k,v])=>`<option value="${k}"${a.status===k?' selected':''}>${v}</option>`).join('')}</select>
       교실 <select onchange="setApp('${a.id}',{room:this.value})"><option value="">(미배정)</option>${(SEM.rooms||[]).map(r=>`<option${a.room===r?' selected':''}>${esc(r)}</option>`).join('')}</select>
@@ -532,9 +557,10 @@ window.viewApp = (id)=>{
   bg.innerHTML = `<div class="modal">
     <div style="font-size:16px;font-weight:900;color:var(--gd)">${esc(a.title||'')} <span class="pill ${a.type==='joy'?'st-lottery':'st-recruiting'}">${a.type==='joy'?'조이클래스':'동아리'}</span></div>
     <div class="small" style="margin:4px 0 10px">${esc(a.intro||'')}</div>
+    ${a.poster?`<img src="${a.poster}" style="max-width:280px;border-radius:10px;border:1px solid var(--ivd);margin-bottom:10px">`:''}
     <table class="tb"><tr><th style="width:120px">강사</th><td>${esc(a.instructorName||'')}${a.coInstructors?' / '+esc(a.coInstructors):''}</td></tr>
       <tr><th>연락처</th><td>${esc(a.phone||'')} · ${esc(a.email||'')}</td></tr>
-      <tr><th>대상·인원</th><td>${esc(a.grades||'')} · 최소 ${a.minN||0} ~ 최대 ${a.maxN||0}명</td></tr>
+      <tr><th>대상·인원</th><td>${esc((a.gradeSel&&a.gradeSel.length)?a.gradeSel.join(', '):(a.grades||'전체'))} · 최소 ${a.minN||0} ~ 최대 ${a.maxN||0}명</td></tr>
       <tr><th>기간·시간</th><td>${a.startDate||SEM.rangeFrom} ~ ${a.endDate||SEM.rangeTo} · ${(a.weekdays||[]).map(w=>WD[w]+'요일').join(', ')} ${a.start||''} · ${a.durMin||0}분 · 총 ${liveCount(a)}회</td></tr>
       <tr><th>장소·준비물</th><td>희망 ${esc(a.place||'미정')} / 배정 ${esc(a.room||'미배정')} · ${esc(a.materials||'')}</td></tr>
       <tr><th>회비</th><td>1회 ${feeOf(a).toLocaleString()}원 × ${liveCount(a)}회 = <b>${(feeOf(a)*liveCount(a)).toLocaleString()}원</b> (1인 학기)</td></tr>
