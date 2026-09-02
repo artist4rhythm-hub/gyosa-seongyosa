@@ -679,7 +679,7 @@ function feeOf(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub|
 function semTotal(a){ const rate = a.type==='joy' ? (SEM.feeJoy||0) : (SEM.feeClub||0); const m=bkSet();
   return (a.sessions||[]).filter(s=>!isOff(s,m)).reduce((t,s)=>t+Math.round(rate*((s.durMin||a.durMin||0))/60),0); }
 function bkSet(){ const m={}; (SEM?.blocked||[]).forEach(b=>{ if(b.date) m[b.date]=b.reason||'운영 불가'; }); return m; }
-function isOff(x, m){ return x.skip || (!x.extra && (x.blocked || m[x.date])); }   // 새로 막힌 날 즉시 휴강 취급
+function isOff(x, m){ return x.skip || (!x.extra && !x.override && (x.blocked || m[x.date])); }   // 새로 막힌 날 즉시 휴강 취급 (강사가 «그래도 진행» 택한 회차는 제외)
 function liveCount(a){ const m=bkSet(); return (a.sessions||[]).filter(x=>!isOff(x,m)).length; }
 function renderApps(){
   const L = LIVE(), T = TRASH();
@@ -742,13 +742,14 @@ window.viewApp = (id)=>{
     </table>
     <div style="font-size:13px;font-weight:900;color:var(--gd);margin:14px 0 6px">수업 활동 계획</div>
     <table class="tb"><tr><th>회</th><th>수업일</th><th>활동 내용</th><th>준비물</th><th>재료비</th><th>비고</th></tr>
-      ${(a.sessions||[]).map((s,i,arr)=>{ const bkm = bkSet(); const nb = !s.extra && !s.blocked && bkm[s.date];
+      ${(a.sessions||[]).map((s,i,arr)=>{ const bkm = bkSet(); const nb = !s.extra && !s.override && !s.blocked && bkm[s.date];
         if(nb){ s = {...s, blocked:true, reason:bkm[s.date]}; }
+        const ovr = s.override && bkm[s.date];
         const off = s.blocked||s.skip;
         const act = s.blocked ? '<b>🚫 '+esc(s.reason||'휴강')+' — 학교 휴강</b>' : s.skip ? '<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>'
           : (s.sameAct ? G((inh(arr,i,'ctitle','sameAct')?inh(arr,i,'ctitle','sameAct')+' — ':'')+inh(arr,i,'content','sameAct'))
              : (s.ctitle?'<b style="color:#1D4ED8">'+esc(s.ctitle)+'</b><br>':'')+esc(s.content||''));
-        return `<tr class="${off?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':''}><td>${off?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})${s.extra?` <span style="background:#EDE9FE;color:#6D28D9;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">➕${esc(s.extraLabel||'보강')}${(s.start||s.durMin)?` · ${s.start||''}${s.durMin?' '+s.durMin+'분':''}`:''}</span>`:''}</td><td>${act}</td><td>${off?'':(s.matSame?G(inh(arr,i,'materials','matSame')):esc(s.materials||''))}</td><td>${off?'':(s.sameCost?G(inh(arr,i,'cost','sameCost')):esc(s.cost||''))}</td><td>${off?'':(s.sameNote?G(inh(arr,i,'note','sameNote')):esc(s.note||''))}</td></tr>`; }).join('')}
+        return `<tr class="${off?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':ovr?'style="background:#FFFBEB"':''}><td>${off?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})${ovr?` <span style="background:#FEF3C7;color:#92400E;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">▶ 진행 · 학교: ${esc(bkm[s.date])}</span>`:''}${s.extra?` <span style="background:#EDE9FE;color:#6D28D9;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">➕${esc(s.extraLabel||'보강')}${(s.start||s.durMin)?` · ${s.start||''}${s.durMin?' '+s.durMin+'분':''}`:''}</span>`:''}</td><td>${act}</td><td>${off?'':(s.matSame?G(inh(arr,i,'materials','matSame')):esc(s.materials||''))}</td><td>${off?'':(s.sameCost?G(inh(arr,i,'cost','sameCost')):esc(s.cost||''))}</td><td>${off?'':(s.sameNote?G(inh(arr,i,'note','sameNote')):esc(s.note||''))}</td></tr>`; }).join('')}
     </table>
     <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="bp" onclick="this.closest('.modal-bg').remove()">닫기</button></div></div>`;
   document.body.appendChild(bg);
