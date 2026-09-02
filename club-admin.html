@@ -862,9 +862,11 @@ async function loadEnr(){
   const snap = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
   ENR = snap.docs.map(d=>({id:d.id, ...d.data()}));
 }
-function overlap(a,b){ // 두 동아리 시간 겹침
-  const ws = (a.weekdays||[]).filter(w=>(b.weekdays||[]).includes(w)); if(!ws.length) return false;
-  const a0=toMin(a.start), a1=a0+(a.durMin||0), b0=toMin(b.start), b1=b0+(b.durMin||0); return a0<b1 && b0<a1;
+function overlap(a,b){ // 두 동아리 시간 겹침 — 요일 교집합(숫자 정규화)이 있을 때만 시간 비교
+  const nA=(a.weekdays||[]).map(Number), nB=(b.weekdays||[]).map(Number);
+  if(!nA.some(w=>Number.isInteger(w)&&nB.includes(w))) return false;
+  const a0=toMin(a.start), a1=a0+(Number(a.durMin)||0), b0=toMin(b.start), b1=b0+(Number(b.durMin)||0);
+  return a0<b1 && b0<a1;
 }
 function clubStat(c){
   const picks = ENR.filter(e=>(e.picks||[]).some(p=>p.clubId===c.id));
