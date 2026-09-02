@@ -165,7 +165,7 @@ function ms(role){ return (SEM?.milestones||[]).find(m=>m.role===role) || null; 
 const WD = ['일','월','화','수','목','금','토'];
 const PORTAL = 'https://artist4rhythm-hub.github.io/daniel-parents/club.html';
 
-let CU=null, SEMS=[], SEM=null, APPS=[], TAB='set';
+let CU=null, SEMS=[], SEM=null, APPS=[], TAB='set', CLUB_MGRS=[], STAFF_ALL=null;
 const UNIFIED_POS = ['교장','교감','행정실장'];
 function myOrgs(){ if(!CU) return []; if(CU.role==='super'||UNIFIED_POS.includes(CU.position||'')) return ['daniel','jihyebit']; return (CU.orgs&&CU.orgs.length)?CU.orgs:[CU.org]; }
 const toast = (t)=>{ const el=document.createElement('div'); el.textContent=t; el.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1E3932;color:#fff;padding:10px 16px;border-radius:100px;font-size:13px;font-weight:700;z-index:9999'; document.body.appendChild(el); setTimeout(()=>el.remove(),2200); };
@@ -194,6 +194,17 @@ onAuthStateChanged(auth, async user=>{
   CU = { uid:user.uid, ...st.data() };
   window.ORGS = ORGS;
   if(window.renderShell) renderShell('club', CU);
+  // 🔐 접근: 수퍼관리자 + 지정된 동아리 관리자만
+  try{ const mg = await getDoc(doc(db,'config','clubManagers')); CLUB_MGRS = (mg.exists() && mg.data().uids) || []; }catch(e){ CLUB_MGRS = []; }
+  if(CU.role!=='super' && !CLUB_MGRS.includes(CU.uid)){
+    $I('ms').style.display='';
+    document.getElementById('ms-wrap').innerHTML = `<div class="card" style="max-width:520px;margin:40px auto;text-align:center">
+      <div style="font-size:34px">🔐</div>
+      <h3 style="margin:8px 0 6px">동아리 관리자만 들어올 수 있어요</h3>
+      <div class="small">수퍼관리자가 «학기 설정 → 동아리 관리자 지정»에서 선생님을 지정하면 이용할 수 있습니다.</div></div>`;
+    window.hideLoading&&hideLoading();
+    return;
+  }
   $I('ls').style.display='none'; $I('ms').style.display='';
   window.hideLoading&&hideLoading();
   await loadSems();
@@ -272,6 +283,8 @@ function render(){
 function renderSet(){
   const s = SEM;
   $I('body').innerHTML = `
+  ${CU.role==='super' ? `<div class="card f"><h3>👑 동아리 관리자 지정 <span class="small">— 지정된 선생님만 이 화면에 들어올 수 있습니다 (수퍼는 항상 가능)</span></h3>
+    <div class="row" id="mgr-list"><span class="small">불러오는 중…</span></div></div>` : ''}
   <div class="card f"><h3>기본</h3>
     <div class="grid2">
       <div><label>학기 이름</label><input id="s-name" value="${esc(s.name)}"></div>
@@ -328,6 +341,7 @@ function renderSet(){
   <div class="alert" id="s-msg"></div>`;
   if(!Array.isArray(SEM.roomPool)) SEM.roomPool = [...(SEM.rooms||[])];
   paintTL(); feePreview(); paintRooms(); paintGrades();
+  if(CU.role==='super') paintMgrs();
   ['s-ts','s-te'].forEach(id=>$I(id).addEventListener('change', paintTL));
 }
 function msRow(m,i){
@@ -367,14 +381,27 @@ function paintRooms(){
 window.toggleRoom = (r)=>{ const sel=new Set(SEM.rooms||[]); sel.has(r)?sel.delete(r):sel.add(r); SEM.rooms=[...sel]; paintRooms(); };
 window.removeRoom = (r)=>{ SEM.roomPool=(SEM.roomPool||[]).filter(x=>x!==r); SEM.rooms=(SEM.rooms||[]).filter(x=>x!==r); paintRooms(); };
 window.addRoom = ()=>{ const v=$I('s-room-add').value.trim(); if(!v) return; SEM.roomPool=[...new Set([...(SEM.roomPool||[]), v])]; SEM.rooms=[...new Set([...(SEM.rooms||[]), v])]; $I('s-room-add').value=''; paintRooms(); };
+async function paintMgrs(){
+  const box = $I('mgr-list'); if(!box) return;
+  if(!STAFF_ALL){ const sn = await getDocs(collection(db,'staff'));
+    STAFF_ALL = sn.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>x.name)
+      .sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko')); }
+  box.innerHTML = STAFF_ALL.map(t=>`<span class="roomchip ${CLUB_MGRS.includes(t.uid)?'on':''}" onclick="toggleMgr('${t.uid}')">${CLUB_MGRS.includes(t.uid)?'✓ ':''}${esc(t.name)}<span class="small" style="margin-left:2px">${esc(t.position||'')}</span></span>`).join('');
+}
+window.toggleMgr = async (uid)=>{
+  CLUB_MGRS = CLUB_MGRS.includes(uid) ? CLUB_MGRS.filter(x=>x!==uid) : [...CLUB_MGRS, uid];
+  try{ await setDoc(doc(db,'config','clubManagers'), { uids: CLUB_MGRS, updatedAt: Timestamp.now(), by: CU.name||'' }); paintMgrs(); toast('관리자 지정을 저장했습니다'); }
+  catch(e){ toast('저장 실패(수퍼만 가능): '+(e.message||'')); }
+};
 function sortG(arr){ return arr.slice().sort((a,b)=>{ const na=parseInt(a), nb=parseInt(b); if(!isNaN(na)&&!isNaN(nb)) return na-nb; if(!isNaN(na)) return -1; if(!isNaN(nb)) return 1; return a.localeCompare(b,'ko'); }); }
 function paintGrades(){
   const list = SEM.gradeList||[];
   $I('s-grades').innerHTML = list.length ? sortG(list).map(g=>`<span class="roomchip on">${esc(g)}<button class="x" onclick="removeGrade('${esc(g)}')">✕</button></span>`).join('')
     : '<span class="small">아직 없음 — 불러오거나 직접 추가하세요. 비워두면 강사가 자유 글로 적습니다.</span>';
 }
-window.addGrade = ()=>{ const v=$I('s-grade-add').value.trim(); if(!v) return; SEM.gradeList=[...new Set([...(SEM.gradeList||[]), v])]; $I('s-grade-add').value=''; paintGrades(); };
-window.removeGrade = (g)=>{ SEM.gradeList=(SEM.gradeList||[]).filter(x=>x!==g); paintGrades(); };
+async function saveGrades(){ try{ await updateDoc(doc(db,'clubSemesters',SEM.id), { gradeList: SEM.gradeList||[] }); }catch(e){ toast('학년 저장 실패: '+(e.message||'')); } }
+window.addGrade = async ()=>{ const v=$I('s-grade-add').value.trim(); if(!v) return; SEM.gradeList=[...new Set([...(SEM.gradeList||[]), v])]; $I('s-grade-add').value=''; paintGrades(); await saveGrades(); toast('학년을 추가·저장했습니다'); };
+window.removeGrade = async (g)=>{ SEM.gradeList=(SEM.gradeList||[]).filter(x=>x!==g); paintGrades(); await saveGrades(); };
 window.importGrades = async ()=>{
   try{
     const y = new Date(SEM.rangeFrom||Date.now()).getFullYear();
@@ -383,7 +410,7 @@ window.importGrades = async ()=>{
     snap.forEach(d=>{ const c=d.data(); if(c.year && Number(c.year)!==y) return;
       if(c.grade) set.add(String(c.grade).trim());
       Object.values(c.grades||{}).forEach(g=>{ if(g) set.add(String(g).trim()); }); });
-    SEM.gradeList=[...set]; paintGrades(); toast(`학년 ${SEM.gradeList.length}개`);
+    SEM.gradeList=[...set]; paintGrades(); await saveGrades(); toast(`학년 ${SEM.gradeList.length}개 — 저장 완료 ✓ (강사 포털을 새로고침하면 카드가 보입니다)`);
   }catch(e){ toast('불러오기 실패: '+(e.message||'')); }
 };
 window.importRooms = async ()=>{
@@ -563,6 +590,7 @@ function renderApps(){
       교실 <select onchange="setApp('${a.id}',{room:this.value})"><option value="">(미배정)</option>${(SEM.rooms||[]).map(r=>`<option${a.room===r?' selected':''}>${esc(r)}</option>`).join('')}</select>
       <label style="font-size:12px"><input type="checkbox" ${a.published?'checked':''} onchange="setApp('${a.id}',{published:this.checked})"> 학부모 공고에 노출</label>
       <button class="bs" onclick="viewApp('${a.id}')">상세 보기</button>
+      <button class="bs" onclick="window.open('${PORTAL}?sem='+SEM.id+'&edit=${a.id}','_blank')">✏️ 관리자 수정</button>
     </div></div>`).join('') : '<div class="small">아직 접수된 신청서가 없습니다.</div>');
 }
 window.reloadApps = async ()=>{ await loadApps(); renderApps(); };
