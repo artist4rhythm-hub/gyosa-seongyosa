@@ -566,6 +566,9 @@ window.viewApp = (id)=>{
     ${a.poster?`<img src="${a.poster}" style="max-width:280px;border-radius:10px;border:1px solid var(--ivd);margin-bottom:10px">`:''}
     <table class="tb"><tr><th style="width:120px">강사</th><td>${esc(a.instructorName||'')}${a.coInstructors?' / '+esc(a.coInstructors):''}</td></tr>
       <tr><th>연락처</th><td>${esc(a.phone||'')} · ${esc(a.email||'')}</td></tr>
+      <tr><th>작성 계정</th><td><span id="own-${a.id}">${esc(a.email||'(없음)')}</span>
+        <button class="bs" style="margin-left:8px;padding:5px 10px;font-size:11.5px" onclick="assignOwner('${a.id}')">🔗 강사 계정 연결·변경</button>
+        <div class="small" style="margin-top:3px">관리자가 대신 입력한 신청서는, 강사가 포털에 한 번 로그인한 뒤 여기서 그 계정으로 연결하면 강사 본인이 수정·출석 체크를 할 수 있게 됩니다.</div></td></tr>
       <tr><th>대상·인원</th><td>${esc((a.gradeSel&&a.gradeSel.length)?a.gradeSel.join(', '):(a.grades||'전체'))} · 최소 ${a.minN||0} ~ 최대 ${a.maxN||0}명</td></tr>
       <tr><th>기간·시간</th><td>${a.startDate||SEM.rangeFrom} ~ ${a.endDate||SEM.rangeTo} · ${(a.weekdays||[]).map(w=>WD[w]+'요일').join(', ')} ${a.start||''} · ${a.durMin||0}분 · 총 ${liveCount(a)}회</td></tr>
       <tr><th>장소·준비물</th><td>희망 ${esc(a.place||'미정')} / 배정 ${esc(a.room||'미배정')} · ${esc(a.materials||'')}</td></tr>
@@ -642,6 +645,36 @@ window.autoAssign = async ()=>{
   let n=0;
   for(const e of ENR){ await updateDoc(doc(db,'clubEnrollments',e.id), { result: result[e.id], assignedAt: Timestamp.now() }); e.result = result[e.id]; n++; }
   toast(`${n}건 배정 결과 저장 — 최소 미달 동아리는 «폐강 처리» 후 다시 실행하세요`); renderEnroll();
+};
+
+/* 🔗 강사 계정 연결 — clubInstructors(포털에 로그인한 사람들) 중에서 고른다 */
+window.assignOwner = async (appId)=>{
+  const a = APPS.find(x=>x.id===appId); if(!a) return;
+  const snap = await getDocs(collection(db,'clubInstructors'));
+  const list = snap.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>x.email||x.name)
+    .sort((x,y)=>String(x.name||'').localeCompare(String(y.name||''),'ko'));
+  if(!list.length) return alert('아직 포털에 로그인한 강사 계정이 없습니다.\n강사에게 모집 링크로 한 번 로그인해 달라고 안내한 뒤 다시 시도하세요.');
+  const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=e=>{ if(e.target===bg) bg.remove(); };
+  bg.innerHTML = `<div class="modal" style="max-width:460px">
+    <div style="font-size:15px;font-weight:900;color:var(--gd)">🔗 「${esc(a.title||'')}」 강사 계정 연결</div>
+    <div class="small" style="margin:6px 0 10px">연결하면 그 계정이 이 신청서의 주인이 되어 수정·출석 체크를 할 수 있습니다.</div>
+    <select id="own-sel" style="width:100%;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit;font-size:13.5px">
+      ${list.map(x=>`<option value="${x.uid}" data-email="${esc(x.email||'')}"${x.uid===a.uid?' selected':''}>${esc(x.name||'(이름 없음)')} · ${esc(x.email||'')}${x.uid===a.uid?' (현재)':''}</option>`).join('')}
+    </select>
+    <div class="row" style="justify-content:flex-end;margin-top:12px">
+      <button class="bs" onclick="this.closest('.modal-bg').remove()">취소</button>
+      <button class="bp" id="own-save">연결</button></div></div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('#own-save').onclick = async ()=>{
+    const sel = bg.querySelector('#own-sel');
+    const uid = sel.value, email = sel.selectedOptions[0].dataset.email||'';
+    try{
+      await updateDoc(doc(db,'clubApplications',appId), { uid, email, ownerAssignedBy: CU.name||'', ownerAssignedAt: Timestamp.now() });
+      a.uid = uid; a.email = email;
+      const sp = $I('own-'+appId); if(sp) sp.textContent = email||uid;
+      toast('강사 계정을 연결했습니다'); bg.remove();
+    }catch(e){ alert('연결 실패: '+(e.message||'')); }
+  };
 };
 
 /* ── 🗓 요일·시간 그리드 ── */
