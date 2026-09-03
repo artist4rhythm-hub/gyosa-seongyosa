@@ -239,6 +239,8 @@
   .out-week-row .tt td .sub .sub-t{font-size:8.5px}
   .out-week-row .tt td .sub .sub-d{font-size:9px}
   .out-group:last-child{margin-bottom:0}
+  .pr-opt{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:var(--ink-soft);border:1px solid var(--line-soft);border-radius:9px;padding:5px 9px;background:var(--wh);cursor:pointer;user-select:none}
+  .pr-opt input{accent-color:var(--accent-deep)}
   .og-title{font-size:13px;font-weight:800;color:var(--accent-deep);margin:0 0 8px;padding-left:2px;display:flex;align-items:center;gap:7px}
   .og-title .og-days{font-size:11px;font-weight:600;color:var(--ink-faint)}
   .legend{display:flex;flex-wrap:wrap;gap:9px;font-size:11.5px;color:var(--ink-soft)}
@@ -551,6 +553,8 @@
           <div class="step"><span class="num">★</span><h2>완성 시간표</h2></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm" id="btnImage">이미지 저장</button>
+            <label class="pr-opt"><input type="checkbox" id="prHideText"> 칸 내용 숨김</label>
+            <label class="pr-opt"><input type="checkbox" id="prHideName"> 틀 이름 숨김</label>
             <button class="btn btn-sm" id="btnPrint">인쇄</button>
             <button class="btn btn-sm" id="btnExcel2">엑셀</button>
             <button class="btn btn-sm btn-ghost" id="btnRecalc">새로고침</button>
@@ -2467,7 +2471,18 @@ window.exportImage = exportImage;
 /* ---------- 인쇄 ---------- */
 function printTimetable(){
   if(!$('#output').firstChild){ flash('시간표가 비어 있습니다'); return; }
-  const area=$('#captureArea').innerHTML;
+  const hideText = !!document.getElementById('prHideText')?.checked;
+  const hideName = !!document.getElementById('prHideName')?.checked;
+  let area = $('#captureArea').innerHTML;
+  if(hideName){
+    // 틀 이름(📋 …)만 지우고, 같은 줄의 요일 표기(.og-days)는 살린다
+    const tmp = document.createElement('div'); tmp.innerHTML = area;
+    tmp.querySelectorAll('.og-title').forEach(t=>{
+      const days = t.querySelector('.og-days');
+      t.innerHTML = days ? days.outerHTML : '';
+    });
+    area = tmp.innerHTML;
+  }
   // 주간 가로 보기(월~금 나열)이면 가로 방향 + 한 장에 맞춤
   const isWeek = !!document.querySelector('#output .out-week-row');
   const cols = isWeek ? document.querySelectorAll('#output .out-week-row .out-group').length : 1;
@@ -2509,19 +2524,29 @@ function printTimetable(){
       .ds-k{color:#888}
       /* 필터 칩은 인쇄에서 숨김 */
       #outFilter{display:none!important}
+      /* 🔲 칸 내용 숨김 — 격자·헤더·시간축은 유지, 칸 안 텍스트만 감춤(높이 보존) */
+      body.no-text table.tt td:not(.tm) .cellwrap{visibility:hidden}   /* 시간축(.tm)은 항상 표시 */
+      body.no-text .legend,body.no-text .summary{display:none}
+      .og-title:empty{display:none}
+      .og-days{font-weight:800}
       /* 인쇄 시 셀 높이(인라인 style)를 그대로 유지 → 시간 비례 보존 */
       @media print{
-        @page{margin:8mm; size:${isWeek?'A4 landscape':'auto'}}
+        @page{margin:0; size:${isWeek?'A4 landscape':'auto'}}   /* 여백 0 = 브라우저 머리글(주소·날짜) 제거 */
         table.tt td{ height:auto; }
         .out-week-row{break-inside:avoid;page-break-inside:avoid}
         .out-week-row .out-group{break-inside:avoid;page-break-inside:avoid}
-        body{padding:0}
+        body{padding:9mm}
       }
-    </style></head><body>${area}</body></html>`);
+    </style></head><body class="${hideText?'no-text':''}">${area}</body></html>`);
   w.document.close();
   setTimeout(()=>{ w.focus(); w.print(); },350);
 }
 $('#btnRecalc').onclick=()=>{renderBoard();renderOutput();};
+(function(){  // 인쇄 옵션 기억 (기본: 둘 다 숨김)
+  const t=document.getElementById('prHideText'), n=document.getElementById('prHideName');
+  if(t){ t.checked = localStorage.getItem('tt_pr_text')!=='0'; t.onchange=()=>localStorage.setItem('tt_pr_text', t.checked?'1':'0'); }
+  if(n){ n.checked = localStorage.getItem('tt_pr_name')!=='0'; n.onchange=()=>localStorage.setItem('tt_pr_name', n.checked?'1':'0'); }
+})();
 
 /* ---------- init ---------- */
 function ensurePlanning(){
