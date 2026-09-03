@@ -943,7 +943,7 @@ window.askCancel = (id)=>{
 };
 window.doCancel = async (id, on)=>{ await setApp(id, { cancelled:on }); paintEnroll(); };
 window.enrAll = (o)=>{ document.querySelectorAll('#body details.drw').forEach(d=>d.open=o); };
-function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', waitlist:'⏳ 대기' }[st] || st; }
+function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', declined:'🙅 참여 취소', waitlist:'⏳ 대기' }[st] || st; }
 window.setLottery = async (eid, cid, on)=>{ const e = ENR.find(x=>x.id===eid); const lot = {...(e.lottery||{})}; lot[cid]=on; await updateDoc(doc(db,'clubEnrollments',eid), { lottery: lot }); e.lottery = lot; };
 window.autoAssign = async ()=>{
   await snapEnr('자동 배정 전');
@@ -959,6 +959,7 @@ window.autoAssign = async ()=>{
       for(const pk of pks){
         const c = byId[pk.clubId]; if(!c) continue;
         if(c.cancelled){ result[e.id].push({clubId:c.id, state:'cancelled'}); continue; }
+        if((e.final||{})[c.id]===false){ result[e.id].push({clubId:c.id, state:'declined'}); continue; }  // 학부모가 참여 취소 → 자리 비움
         const st = clubStat(c).st;
         if(st==='over' && rank===1 && !(e.lottery||{})[c.id]){ result[e.id].push({clubId:c.id, state:'lost'}); continue; }
         // 시간 겹침: 이미 배정된 것과
