@@ -922,6 +922,17 @@
   .tv-title{font-size:19px;font-weight:800;color:var(--gd,#1E3932);letter-spacing:-.02em}
   .tv-title{margin-bottom:2px}
   .tv-meta{font-size:12px;color:var(--tl,#93A09A)}
+  .prx-row{display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px}
+  .prx-opt{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--ts,#3F4A44);border:1px solid var(--ivd,#E3E1DA);border-radius:9px;padding:6px 11px;background:var(--wh,#fff);cursor:pointer;user-select:none}
+  .prx-opt i{font-style:normal;font-size:10.5px;color:var(--tl,#93A09A);font-weight:600}
+  .prx-opt input{accent-color:var(--gd,#1E3932)}
+  /* 출력 옵션: 틀 이름 숨김 */
+  .pr-noframe .tv-frame{display:none}
+  /* 출력 옵션: 빈 틀 — 카드·고정밴드·부제 숨기고, 30분 가이드선을 판 전체로 연장 */
+  .pr-blank .tv-card,.pr-blank .tv-bg{display:none!important}
+  .pr-blank .tv-meta{display:none}
+  .pr-blank .tv-tick{overflow:visible}
+  .pr-blank .tv-tick::after{content:'';position:absolute;left:100%;top:0;width:2400px;border-top:1px dashed var(--ivd,#E3E1DA);pointer-events:none}
   .tv-tbl{width:100%;border-collapse:separate;border-spacing:0;min-width:640px}
   .tv-tbl th,.tv-tbl td{border:1px solid var(--ivd,#E3E1DA);padding:0;vertical-align:top}
   .tv-tbl thead th{background:var(--gp,#E8F3EF);color:var(--gd,#1E3932);font-size:13px;
@@ -4144,7 +4155,7 @@ function renderTvView(fitH){
     <div class="tv-sheet" id="tv-sheet">
       <div class="tv-head">
         <div class="tv-title">${esc(label)} 시간표</div>
-        <div class="tv-meta">${esc(frameName)} · ${kindLabel} · 주 ${totalCards}시간 · ${hm(s0)}~${hm(e0)}</div>
+        <div class="tv-meta">${frameName?`<span class="tv-frame">${esc(frameName)} · </span>`:''}${kindLabel} · 주 ${totalCards}시간 · ${hm(s0)}~${hm(e0)}</div>
         ${fitH ? '' : `<div class="tv-zoom">
           <span>세로 크기</span>
           ${TV_ZOOMS.map((z,i)=>`<button class="tv-zb ${Math.abs(z-tvZoom)<0.01?'on':''}"
@@ -4223,6 +4234,10 @@ window.tvPrint = function(){
         <button class="pr-k ${tvKind==='room'?'on':''}" data-k="room" onclick="setPrKind('room')">🏫 교실별</button>
       </div>
       <label class="pr-all"><input type="checkbox" onchange="toggleAllPrint(this.checked)"> 모두 고르기</label>
+      <div class="prx-row">
+        <label class="prx-opt"><input type="checkbox" id="prx-noframe" ${(function(){try{return localStorage.getItem('sa_pr_noframe')!=='0'}catch(e){return true}})()?'checked':''} onchange="try{localStorage.setItem('sa_pr_noframe',this.checked?'1':'0')}catch(e){}"> 틀 이름 숨김</label>
+        <label class="prx-opt"><input type="checkbox" id="prx-blank" ${(function(){try{return localStorage.getItem('sa_pr_blank')==='1'}catch(e){return false}})()?'checked':''} onchange="try{localStorage.setItem('sa_pr_blank',this.checked?'1':'0')}catch(e){}"> 빈 틀로 출력 <i>(요일·시간만)</i></label>
+      </div>
       <div class="pr-list" id="pr-list"></div>
       <div class="mact">
         <span class="pr-n" id="pr-n" style="margin-right:auto"></span>
@@ -4268,6 +4283,7 @@ const tvNeedPDF = ()=> tvLoadScriptOnce(
 /* 한 장을 A4 세로 상자에 그려 캔버스로 뜬다 */
 async function tvRenderPageCanvas(page){
   const holder = document.createElement('div');
+  holder.className = prOptCls();
   holder.style.cssText = `position:fixed;left:-12000px;top:0;width:${TVX_W}px;height:${TVX_H}px;`
     + 'background:#ffffff;z-index:-1;overflow:hidden;padding:26px 24px;box-sizing:border-box;'
     + 'display:flex;flex-direction:column;';
@@ -4386,6 +4402,12 @@ function buildTvPages(fitH){
   return out;
 }
 
+function prOptCls(){
+  let c = '';
+  try{ if(localStorage.getItem('sa_pr_noframe')!=='0') c += ' pr-noframe'; }catch(e){ c += ' pr-noframe'; }
+  try{ if(localStorage.getItem('sa_pr_blank')==='1') c += ' pr-blank'; }catch(e){}
+  return c.trim();
+}
 window.doTvPrint = function(){
   if(!prPicked.size){ toast('인쇄할 것을 골라 주세요.','err'); return; }
   const pageList = buildTvPages();
@@ -4393,11 +4415,12 @@ window.doTvPrint = function(){
   const pages = pageList.map(p=>`<div class="pr-page">${p.html}</div>`).join('');
 
   $I('printArea').innerHTML = pages;
+  $I('printArea').className = prOptCls();
   closeTvPrint();
   document.body.classList.add('printing');
   const done = ()=>{
     document.body.classList.remove('printing');
-    $I('printArea').innerHTML='';
+    $I('printArea').innerHTML=''; $I('printArea').className='';
     window.removeEventListener('afterprint', done);
   };
   window.addEventListener('afterprint', done);
