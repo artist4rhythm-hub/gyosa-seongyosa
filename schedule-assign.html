@@ -928,11 +928,14 @@
   .prx-opt input{accent-color:var(--gd,#1E3932)}
   /* 출력 옵션: 틀 이름 숨김 */
   .pr-noframe .tv-frame{display:none}
-  /* 출력 옵션: 빈 틀 — 카드·고정밴드·부제 숨기고, 30분 가이드선을 판 전체로 연장 */
-  .pr-blank .tv-card,.pr-blank .tv-bg{display:none!important}
-  .pr-blank .tv-meta{display:none}
-  .pr-blank .tv-tick{overflow:visible}
-  .pr-blank .tv-tick::after{content:'';position:absolute;left:100%;top:0;width:2400px;border-top:1px dashed var(--ivd,#E3E1DA);pointer-events:none}
+  /* 출력 옵션: 틀 배경 숨김 — 고정 밴드·부제 제거, 빈 슬롯에 30분 점선 가이드 */
+  .pr-nobg .tv-bg{display:none!important}
+  .pr-nobg .tv-meta{display:none}
+  .pr-nobg .tv-tick{overflow:visible}
+  .pr-nobg .tv-tick::after{content:'';position:absolute;left:100%;top:0;width:2400px;border-top:1px dashed var(--ivd,#E3E1DA);pointer-events:none;z-index:0}
+  .pr-nobg .tv-card{z-index:1}
+  /* 출력 옵션: 수업 카드 숨김 */
+  .pr-nocard .tv-card{display:none!important}
   .tv-tbl{width:100%;border-collapse:separate;border-spacing:0;min-width:640px}
   .tv-tbl th,.tv-tbl td{border:1px solid var(--ivd,#E3E1DA);padding:0;vertical-align:top}
   .tv-tbl thead th{background:var(--gp,#E8F3EF);color:var(--gd,#1E3932);font-size:13px;
@@ -4235,8 +4238,9 @@ window.tvPrint = function(){
       </div>
       <label class="pr-all"><input type="checkbox" onchange="toggleAllPrint(this.checked)"> 모두 고르기</label>
       <div class="prx-row">
-        <label class="prx-opt"><input type="checkbox" id="prx-noframe" ${(function(){try{return localStorage.getItem('sa_pr_noframe')!=='0'}catch(e){return true}})()?'checked':''} onchange="try{localStorage.setItem('sa_pr_noframe',this.checked?'1':'0')}catch(e){}"> 틀 이름 숨김</label>
-        <label class="prx-opt"><input type="checkbox" id="prx-blank" ${(function(){try{return localStorage.getItem('sa_pr_blank')==='1'}catch(e){return false}})()?'checked':''} onchange="try{localStorage.setItem('sa_pr_blank',this.checked?'1':'0')}catch(e){}"> 빈 틀로 출력 <i>(요일·시간만)</i></label>
+        <label class="prx-opt"><input type="checkbox" ${(function(){try{return localStorage.getItem('sa_pr_noframe')!=='0'}catch(e){return true}})()?'checked':''} onchange="try{localStorage.setItem('sa_pr_noframe',this.checked?'1':'0')}catch(e){}"> 틀 이름 숨김</label>
+        <label class="prx-opt"><input type="checkbox" ${(function(){try{const v=localStorage.getItem('sa_pr_nobg');return v===null?localStorage.getItem('sa_pr_blank')==='1':v==='1'}catch(e){return false}})()?'checked':''} onchange="try{localStorage.setItem('sa_pr_nobg',this.checked?'1':'0')}catch(e){}"> 틀 배경 숨김 <i>(조회·쉬는시간 밴드)</i></label>
+        <label class="prx-opt"><input type="checkbox" ${(function(){try{return localStorage.getItem('sa_pr_nocard')==='1'}catch(e){return false}})()?'checked':''} onchange="try{localStorage.setItem('sa_pr_nocard',this.checked?'1':'0')}catch(e){}"> 수업 카드 숨김</label>
       </div>
       <div class="pr-list" id="pr-list"></div>
       <div class="mact">
@@ -4405,7 +4409,8 @@ function buildTvPages(fitH){
 function prOptCls(){
   let c = '';
   try{ if(localStorage.getItem('sa_pr_noframe')!=='0') c += ' pr-noframe'; }catch(e){ c += ' pr-noframe'; }
-  try{ if(localStorage.getItem('sa_pr_blank')==='1') c += ' pr-blank'; }catch(e){}
+  try{ const v=localStorage.getItem('sa_pr_nobg'); if(v===null ? localStorage.getItem('sa_pr_blank')==='1' : v==='1') c += ' pr-nobg'; }catch(e){}
+  try{ if(localStorage.getItem('sa_pr_nocard')==='1') c += ' pr-nocard'; }catch(e){}
   return c.trim();
 }
 window.doTvPrint = function(){
