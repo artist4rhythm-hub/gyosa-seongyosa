@@ -571,7 +571,7 @@ window.toggleGrade = toggleGrade;
 function buildCert(rec){
   const cfg = ORG_CONFIG[rec.org];
   if(!cfg) return '<div class="cert-sheet">알 수 없는 기관</div>';
-  const th = cfg.theme || {accent:'#1a2440', line:'#b8935a', line2:'#B08D3C', bg:'var(--wh)'};
+  const th = cfg.theme || {accent:'#1a2440', line:'#b8935a', line2:'#B08D3C', bg:'#ffffff'};
   const styleVars = `--c-accent:${th.accent};--c-line:${th.line};--c-line2:${th.line2};--c-bg:${th.bg};`;
   const stampHTML = rec.hideStamp ? '' : `<img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">`;
 
@@ -1437,7 +1437,7 @@ async function renderCertCanvas(c, hideStamp){
   const W = Math.round(210 * MM);   // 794px
   const H = Math.round(297 * MM);   // 1123px
   const holder = document.createElement('div');
-  holder.style.cssText = `position:fixed;left:-9999px;top:0;width:${W}px;height:${H}px;background:var(--wh);overflow:hidden;`;
+  holder.style.cssText = `position:fixed;left:-9999px;top:0;width:${W}px;height:${H}px;background:#ffffff;overflow:hidden;`;
   holder.innerHTML = buildCertFromRecord(c, {hideStamp});
   document.body.appendChild(holder);
   const sheet = holder.querySelector('.cert-sheet');
@@ -1445,8 +1445,13 @@ async function renderCertCanvas(c, hideStamp){
   try {
     if(document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch(e){} }
     await new Promise(r=>setTimeout(r,400));
+    // html2canvas는 옵션 문자열을 자체 파서로 읽어 var(--…)를 이해하지 못한다 → 실제 색으로 풀어 전달
+    const rawBg = (ORG_CONFIG[c.org]?.theme?.bg) || '#ffffff';
+    const bgFixed = (typeof rawBg === 'string' && rawBg.includes('var('))
+      ? (getComputedStyle(document.documentElement).getPropertyValue((rawBg.match(/var\((--[^,)]+)/)||[])[1]||'').trim() || '#ffffff')
+      : rawBg;
     const canvas = await window.html2canvas(sheet, {
-      backgroundColor: (ORG_CONFIG[c.org]?.theme?.bg)||'var(--wh)',
+      backgroundColor: bgFixed,
       width: W, height: H, windowWidth: W, windowHeight: H,
       scale: 2, useCORS:true, logging:false
     });
