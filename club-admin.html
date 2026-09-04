@@ -369,8 +369,13 @@ function paintStatus(){
   $I('sem-flow').innerHTML = `
     ${prev && !(isR2A()&&SEM.status==='enrolling') ? `<button class="bs" onclick="setStatus('${prev}')">← ${stLabel(prev)}</button>`:''}
     ${next?`<button class="bp" onclick="setStatus('${next}')">${stLabel(next)} 단계로 →</button>`:''}
-    ${SEM.status==='adjusting' && !isR2A() ? `<button class="bp" style="background:#B45309;border-color:#B45309" onclick="openR2()">🎯 추가 모집 열기…</button>`:''}
-    ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" onclick="cancelR2()">↩ 추가 모집 취소</button>`:''}`;
+    ${SEM.status==='adjusting' && !isR2A() ? (SEM.r1Done
+        ? `<button class="bs" onclick="viewR1()">📜 1차 기록</button><button class="bp" style="background:#B45309;border-color:#B45309" onclick="openR2()">🎯 추가 모집 열기…</button>`
+        : `<button class="bp" style="background:#15803D;border-color:#15803D" onclick="finalizeR1()">✅ 1차 확정·기록 저장…</button>`)
+      :''}
+    ${isR2A() ? `<button class="bs" onclick="viewR1()">📜 1차 기록</button>`:''}
+    ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" onclick="cancelR2()">↩ 추가 모집 취소</button>`:''}
+    ${['confirmed','running','settling','locked'].includes(SEM.status) ? `<button class="bs" onclick="viewFinalRec()">📜 최종 기록</button>`:''}`;
 }
 async function buildRosters(){
   // ✅ 확정 시: 배정+참여확정 학생 명단을 각 신청서에 박제 — 강사가 출석 화면에서 자기 문서로 읽는다
@@ -379,7 +384,7 @@ async function buildRosters(){
   const clubs = LIVE().filter(a=>a.status==='approved' && a.published && !a.cancelled);
   let n = 0;
   for(const c of clubs){
-    const roster = es.filter(e=>(e.result||[]).some(r=>r.clubId===c.id && r.state==='assigned') && (e.final||{})[c.id]!=='decline')
+    const roster = es.filter(e=> [...r1SetOf(e)].includes(c.id) || (e.result2||[]).some(r=>r.clubId===c.id && r.state==='assigned'))
       .map(e=>({ studentId:e.studentId, studentName:e.studentName||'', className:e.className||'', grade:e.grade||'' }))
       .sort((a,b)=>String(a.studentName).localeCompare(String(b.studentName),'ko'));
     try{ await updateDoc(doc(db,'clubApplications',c.id), { roster, rosterAt:Timestamp.now() });
@@ -391,6 +396,7 @@ async function buildRosters(){
 window.setStatus = async (st)=>{
   if(st==='locked' && !confirm('학기를 잠그면 모든 기록이 읽기 전용이 됩니다. 계속할까요?')) return;
   await snapSems('단계 변경 전');
+  if(st==='confirmed'){ try{ await archiveFinal(); }catch(_){ } }
   if(['confirmed','running'].includes(st)) await buildRosters();
   await updateDoc(doc(db,'clubSemesters',SEM.id), { status: st, statusAt: Timestamp.now() });
   SEM.status = st; paintStatus(); toast(`«${STATUS[st]}» 단계로 바꿨습니다`);
@@ -908,7 +914,7 @@ function paintEnroll(){
   const byId2 = {}; clubs.forEach(c=>byId2[c.id]=c);
   const students = new Set(ENR.map(e=>e.studentId)).size;
   $I('body').innerHTML = `<div class="card"><h3>신청 현황 · 학생 ${students}명 · 신청 ${ENR.length}건 · 공고 동아리 ${clubs.length}개</h3>
-    <div class="small" style="margin-bottom:10px">${isR2A()?'🎯 <b>추가 모집</b> — 잔여석(정원−1차 확정) 기준입니다. 잔여석보다 1순위가 많으면 «당첨» 체크 후 실행하세요. <b>배정 = 즉시 확정</b>(학부모 확정·취소 단계 없음), 1차 결과는 변경되지 않습니다.':'1순위 기준으로 최소/최대를 판별합니다. 🔴 초과 동아리는 아래에서 추첨 결과(당첨)를 체크하고, 「자동 배정」을 누르면 순위·정원·시간 겹침을 따져 배정 결과를 만듭니다.'}</div>
+    <div class="small" style="margin-bottom:10px">${isR2A()?'🎯 <b>추가 모집</b> — 잔여석(✅ 1차 확정 도장 기준)입니다. <b>🔵 1차 지원 학생은 추첨 없이 우선 배정</b>되고, 남는 자리에서 신규 지원자끼리 초과 시에만 «당첨» 체크가 반영됩니다 (이력자만으로 초과면 이력자끼리 추첨). <b>배정 = 즉시 확정</b> · 1차 결과는 변경되지 않습니다.':'1순위 기준으로 최소/최대를 판별합니다. 🔴 초과 동아리는 아래에서 추첨 결과(당첨)를 체크하고, 「자동 배정」을 누르면 순위·정원·시간 겹침을 따져 배정 결과를 만듭니다.'}</div>
     ${VIEW_ONLY
       ? `<div class="small">👀 열람 전용 — 신청·배정이 갱신되면 이 화면도 실시간으로 바뀝니다.</div></div>`
       : `<div class="row" style="align-items:center;gap:10px;flex-wrap:wrap"><button class="bp" onclick="${isR2A()?'autoAssign2()':'autoAssign()'}">⚙️ ${isR2A()?'2차 추첨·배정 실행':'자동 배정 실행'}</button><span class="live">실시간 반영중</span>
@@ -916,7 +922,7 @@ function paintEnroll(){
       <div class="small" style="margin-top:6px">신청이 저장되는 순간 아래 집계가 바로 바뀝니다. 배정 결과는 학부모에게 «순위 조정·최종 결정» 단계부터 보입니다.</div></div>`}
     ${clubs.map(c=>{ let {picks, first, assigned, st, byRank} = clubStat(c);
       const R2A = isR2A(); let left=0, a2=0, closed2=false;
-      if(R2A){ left = leftOf(c); closed2 = !!c.r2Closed || !c.r2Open || !!c.cancelled || left<=0;
+      if(R2A){ left = (c.r1Left!=null? Number(c.r1Left) : leftOf(c)); closed2 = !!c.r2Closed || !c.r2Open || !!c.cancelled || left<=0;
         picks = ENR.filter(e=>slotPicks(e).some(p=>p.clubId===c.id));
         byRank = {}; picks.forEach(e=>{ const p=slotPicks(e).find(x=>x.clubId===c.id); if(p) byRank[p.rank]=(byRank[p.rank]||0)+1; });
         a2 = ENR.filter(e=>(e.result2||[]).some(r=>r.clubId===c.id && r.state==='assigned')).length;
@@ -925,10 +931,10 @@ function paintEnroll(){
       return `<details class="drw" ${st==='over'?'open':''}><summary class="dsum"><span class="dt">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${R2A?(closed2?'⛔ 모집 완료':st==='over'?'🔴 초과(추첨)':'🎯 모집중'):lab}</span>${st==='under' ? (c.underOpen===true?`<span class="pill" style="background:#DCFCE7;color:#15803D">강사: 개설 원함</span>`:c.underOpen===false?`<span class="pill" style="background:#FEE2E2;color:#B91C1C">강사: 폐강 요청</span>`:`<span class="pill" style="background:#EEF1EE;color:#7C8A80">강사 결정 대기</span>`) : ''}
         <span class="dm">${(c.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN}</span>
         <span class="dcnt">${R2A?`잔여 <b>${left}</b> · 1순위 <b>${byRank[1]||0}</b> · 2순위 <b>${byRank[2]||0}</b> · 2차 배정 <b>${a2}</b>`:`1순위 <b>${byRank[1]||0}</b> · 2순위 <b>${byRank[2]||0}</b> · 3순위 <b>${byRank[3]||0}</b> · 배정 <b>${assigned.length}</b>`}</span>
-        ${VIEW_ONLY && c.cancelled ? '<span class="pill st-locked" style="margin-left:auto">폐강</span>' : ''}</summary>
+        ${VIEW_ONLY && c.cancelled ? '<span class="pill st-locked" style="margin-left:auto">폐강</span>' : ''}</summary>${R2A?`<div class="small" style="margin:4px 0 8px"><b style="color:#15803D">✅ 1차 확정 ${(c.r1Conf!=null?c.r1Conf:confirmedN(c.id))}명</b>${(()=>{ const nm=ENR.filter(e=>[...r1SetOf(e)].includes(c.id)).map(e=>e.studentName).filter(Boolean); return nm.length?` — ${nm.map(esc).join(', ')}`:''; })()} <span style="color:var(--tl)">(변경되지 않습니다)</span></div>`:''}
         <div class="drw-body tblwrap">${picks.length ? `<table class="tb"><tr><th style="width:64px">순위</th><th>학생</th><th>학년·반</th><th>결과</th>${st==='over'?'<th>추첨 당첨</th>':''}</tr>
           ${picks.slice().sort((a,b)=>((slotPicks(a).find(p=>p.clubId===c.id)||{}).rank||9)-((slotPicks(b).find(p=>p.clubId===c.id)||{}).rank||9)).map(e=>{ const pk=slotPicks(e).find(p=>p.clubId===c.id)||{}; const rs=((R2A?e.result2:e.result)||[]).find(r=>r.clubId===c.id);
-            return `<tr><td>${pk.rank||'-'}순위</td><td>${esc(e.studentName)}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
+            return `<tr><td>${pk.rank||'-'}순위</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
               ${st==='over'?`<td>${pk.rank===1?(VIEW_ONLY?(((R2A?e.lottery2:e.lottery)||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${((R2A?e.lottery2:e.lottery)||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}${VIEW_ONLY?'':`<div class="drw-foot">${R2A?`<button class="bs" onclick="togR2('${c.id}', ${closed2?'false':'true'})">${closed2?'🔓 다시 열기':'🔒 모집 닫기'}</button>`:''}${!R2A&&st==='under'?`<span class="small" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center">강사 결정 대리 기록:
             <button class="bs" onclick="admUnder('${c.id}',true)">🟢 개설</button>
             <button class="bs" onclick="admUnder('${c.id}',false)">⚫ 요청</button>
@@ -970,34 +976,117 @@ window.setLottery = async (eid, cid, on)=>{ const e = ENR.find(x=>x.id===eid); c
 window.togR2 = async (id, close)=>{ const c=LIVE().find(x=>x.id===id); if(!c) return;
   if(!close && leftOf(c)<=0){ toast('잔여석이 없어 다시 열 수 없어요'); return; }
   await setApp(id, { r2Closed: !!close, ...(close?{}:{r2Open:true, r2Left:leftOf(c)}) }); paintEnroll(); };
+
+/* ═══ ✅ 1차 확정 도장 · 📜 기록 ═══ */
+const histOf = (e, cid) => (e.picks||[]).some(p=>p.clubId===cid);
+const r1SetOf = e => new Set(e.r1Final || (e.result||[]).filter(r=>r.state==='assigned' && (e.final||{})[r.clubId]!==false).map(r=>r.clubId));
+window.finalizeR1 = async ()=>{
+  const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
+  let confT=0;
+  const rows = clubs.filter(c=>!c.cancelled).map(c=>{ const n=confirmedN(c.id); confT+=n;
+    const max=Number(c.maxN)||0, min=Number(c.minN)||0, left=Math.max(0,max-n);
+    return { c, n, left, cls: left<=0?'full':(n>=min?'left':'under') }; });
+  if(!confirm(`✅ 1차 확정 도장을 찍습니다\n\n· 학생별 현재 배정(취소 제외)을 «1차 확정 명단»으로 고정 — 이후 불변\n· 동아리별 분류(🔴 모집 완료 / 🟢 잔여 / 🟡 미달)와 잔여석 확정\n· 📜 1차 기록 문서 저장 (언제든 열람)\n\n동아리 ${rows.length}개 · 확정 ${confT}명 — 진행할까요?`)) return;
+  await snapSems('1차 확정 전'); await snapEnr('1차 확정 전');
+  for(const e of ENR){
+    const fin = (e.result||[]).filter(r=>r.state==='assigned' && (e.final||{})[r.clubId]!==false).map(r=>r.clubId);
+    try{ if((e.result||[]).length) await updateDoc(doc(db,'clubEnrollments',e.id), { r1Final: fin, r1At: Timestamp.now() }); }catch(_){}
+    e.r1Final = fin;
+  }
+  for(const {c,n,left,cls} of rows) await setApp(c.id, { r1Conf:n, r1Left:left, r1Class:cls });
+  for(const c of clubs.filter(x=>x.cancelled)) await setApp(c.id, { r1Conf:0, r1Left:0, r1Class:'cancelled' });
+  const arch = { kind:'clubR1', semId:SEM.id, semName:SEM.name||'', at:Timestamp.now(), byName:(CU&&CU.name)||'',
+    clubs: rows.map(({c,n,left,cls})=>({ id:c.id, title:c.title||'', cls, conf:n, left, maxN:Number(c.maxN)||0, minN:Number(c.minN)||0,
+      names: ENR.filter(e=>(e.r1Final||[]).includes(c.id)).map(e=>e.studentName||'').sort((a,b)=>a.localeCompare(b,'ko')) })),
+    students: ENR.filter(e=>(e.r1Final||[]).length).map(e=>({ name:e.studentName||'', grade:e.grade||'',
+      clubs:(e.r1Final||[]).map(id=>{ const c=clubs.find(x=>x.id===id); return c?c.title:id; }) })) };
+  try{ await deleteDoc(doc(db,'snapshots','clubR1_'+SEM.id)); }catch(_){}
+  await setDoc(doc(db,'snapshots','clubR1_'+SEM.id), arch);
+  await updateDoc(doc(db,'clubSemesters',SEM.id), { r1Done:true, r1At:Timestamp.now() });
+  Object.assign(SEM, { r1Done:true });
+  paintStatus(); renderEnroll();
+  toast('✅ 1차 확정·기록 저장 완료 — 이제 🎯 추가 모집을 열 수 있습니다');
+};
+const CLS_LAB = { full:'🔴 모집 완료', left:'🟢 정원 충족·잔여', under:'🟡 정원 미달', cancelled:'⚫ 폐강' };
+async function loadArch(id){ try{ const d = await getDoc(doc(db,'snapshots',id)); return d.exists()?d.data():null; }catch(_){ return null; } }
+function archModal(title, a, isFinal){
+  if(!a){ toast('기록이 아직 없습니다 — 해당 단계 버튼으로 먼저 저장하세요','err'); return; }
+  const td='padding:6px 8px;border-bottom:1px solid #ECEFEC;vertical-align:top';
+  const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=e=>{ if(e.target===bg) bg.remove(); };
+  bg.innerHTML = `<div class="modal" style="max-width:660px;max-height:88vh;overflow:auto"><h3 style="margin:0 0 4px">${title}</h3>
+    <div class="small" style="margin-bottom:10px">${esc(a.semName||'')} · 저장 ${a.at&&a.at.toDate?a.at.toDate().toLocaleString('ko-KR'):''} · ${esc(a.byName||'')}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <tr style="background:var(--iv,#F4F6F4)"><th style="${td}">동아리</th><th style="${td}">분류</th><th style="${td};text-align:center">확정</th><th style="${td};text-align:center">잔여</th><th style="${td}">확정 명단</th></tr>
+      ${(a.clubs||[]).map(c=>`<tr><td style="${td}"><b>${esc(c.title)}</b></td><td style="${td};white-space:nowrap">${CLS_LAB[c.cls]||c.cls}</td><td style="${td};text-align:center">${c.conf}/${c.maxN}</td><td style="${td};text-align:center">${c.left}</td><td style="${td};font-size:11.5px">${(c.names||[]).map(esc).join(', ')||'—'}</td></tr>`).join('')}</table>
+    <div class="small" style="margin-top:10px;color:var(--tl)">확정 학생 ${(a.students||[]).length}명${isFinal?' (1차 + 추가 모집 합산)':''}</div>
+    <button class="bp" style="width:100%;margin-top:12px" onclick="this.closest('.modal-bg').remove()">닫기</button></div>`;
+  document.body.appendChild(bg);
+}
+window.viewR1 = async ()=>{ archModal('📜 1차 모집 확정 기록', await loadArch('clubR1_'+SEM.id), false); };
+window.viewFinalRec = async ()=>{ archModal('📜 최종 확정 기록', await loadArch('clubFinal_'+SEM.id), true); };
+async function archiveFinal(){
+  const snap = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
+  const es = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+  const clubs = LIVE().filter(a=>a.status==='approved' && a.published && !a.cancelled);
+  const finalIds = e => { const st = r1SetOf(e); (e.result2||[]).forEach(r=>{ if(r.state==='assigned') st.add(r.clubId); }); return [...st]; };
+  const arch = { kind:'clubFinal', semId:SEM.id, semName:SEM.name||'', at:Timestamp.now(), byName:(CU&&CU.name)||'',
+    clubs: clubs.map(c=>{ const names = es.filter(e=>finalIds(e).includes(c.id)).map(e=>e.studentName||'').sort((a,b)=>a.localeCompare(b,'ko'));
+      const max=Number(c.maxN)||0, min=Number(c.minN)||0;
+      return { id:c.id, title:c.title||'', cls: names.length>=max?'full':(names.length>=min?'left':'under'), conf:names.length, left:Math.max(0,max-names.length), maxN:max, minN:min, names }; }),
+    students: es.map(e=>({ name:e.studentName||'', grade:e.grade||'', clubs: finalIds(e).map(id=>{ const c=clubs.find(x=>x.id===id); return c?c.title:id; }) })).filter(x=>x.clubs.length) };
+  try{ await deleteDoc(doc(db,'snapshots','clubFinal_'+SEM.id)); }catch(_){}
+  await setDoc(doc(db,'snapshots','clubFinal_'+SEM.id), arch);
+}
+
 window.autoAssign2 = async ()=>{
   await snapEnr('2차 자동 배정 전');
   const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
   const byId = {}; clubs.forEach(c=>byId[c.id]=c);
-  const cap = {}, lim = {}, mode = {};
-  clubs.forEach(c=>{ const base = confirmedN(c.id); cap[c.id]=base; lim[c.id]=Number(c.maxN)||999;
-    const closed = !!c.r2Closed || !c.r2Open || !!c.cancelled || (lim[c.id]-base)<=0;
-    const r1 = ENR.filter(e=>slotPicks(e).some(p=>p.clubId===c.id && p.rank===1)).length;
-    mode[c.id] = closed ? 'closed' : (r1 > (lim[c.id]-base) ? 'over' : 'ok'); });
-  const firstOf = e => (e.result||[]).filter(r=>r.state==='assigned' && (e.final||{})[r.clubId]!==false).map(r=>byId[r.clubId]).filter(Boolean);
+  const cap = {}, lim = {}, closedM = {};
+  clubs.forEach(c=>{
+    const base = (c.r1Conf!=null ? Number(c.r1Conf) : confirmedN(c.id));
+    cap[c.id]=base; lim[c.id]=Number(c.maxN)||999;
+    closedM[c.id] = !!c.r2Closed || !c.r2Open || !!c.cancelled || (lim[c.id]-base)<=0;
+  });
+  const firstOf = e => [...r1SetOf(e)].map(id=>byId[id]).filter(Boolean);
   const res = {}; ENR.forEach(e=>res[e.id]=[]);
-  for(let rank=1; rank<=2; rank++) for(const e of ENR) for(const pk of slotPicks(e).filter(p=>p.rank===rank)){
-    const c = byId[pk.clubId]; if(!c) continue;
-    if(mode[c.id]==='closed'){ res[e.id].push({clubId:c.id, state:'closed'}); continue; }
-    if(mode[c.id]==='over' && rank===1 && !(e.lottery2||{})[c.id]){ res[e.id].push({clubId:c.id, state:'lost'}); continue; }
+  const tryAssign = (e, c)=>{
     const mine = [...firstOf(e), ...res[e.id].filter(r=>r.state==='assigned').map(r=>byId[r.clubId])];
-    if(mine.some(m=>overlap(m,c))){ res[e.id].push({clubId:c.id, state:'overlap'}); continue; }
-    if(cap[c.id] >= lim[c.id]){ res[e.id].push({clubId:c.id, state:'full'}); continue; }
-    cap[c.id]++; res[e.id].push({clubId:c.id, state:'assigned'});
+    if(mine.some(m=>overlap(m,c))){ res[e.id].push({clubId:c.id, state:'overlap'}); return; }
+    if(cap[c.id] >= lim[c.id]){ res[e.id].push({clubId:c.id, state:'full'}); return; }
+    cap[c.id]++; res[e.id].push({clubId:c.id, state:'assigned', ...(histOf(e,c.id)?{hist:true}:{})});
+  };
+  for(const c of clubs){
+    const q1 = ENR.filter(e=>slotPicks(e).some(p=>p.clubId===c.id && p.rank===1));
+    if(!q1.length) continue;
+    if(closedM[c.id]){ q1.forEach(e=>res[e.id].push({clubId:c.id, state:'closed'})); continue; }
+    const seats = lim[c.id] - cap[c.id];
+    const hist = q1.filter(e=>histOf(e,c.id)), fresh = q1.filter(e=>!histOf(e,c.id));
+    if(hist.length > seats){
+      hist.forEach(e=> (e.lottery2||{})[c.id] ? tryAssign(e,c) : res[e.id].push({clubId:c.id, state:'lost'}));
+      fresh.forEach(e=> res[e.id].push({clubId:c.id, state:'full'}));
+    } else {
+      hist.forEach(e=> tryAssign(e,c));
+      const remain = lim[c.id] - cap[c.id];
+      if(fresh.length > remain) fresh.forEach(e=> (e.lottery2||{})[c.id] ? tryAssign(e,c) : res[e.id].push({clubId:c.id, state:'lost'}));
+      else fresh.forEach(e=> tryAssign(e,c));
+    }
+  }
+  for(const e of ENR) for(const pk of slotPicks(e).filter(p=>p.rank===2)){
+    const c = byId[pk.clubId]; if(!c) continue;
+    if(res[e.id].some(r=>r.clubId===c.id)) continue;
+    if(closedM[c.id]){ res[e.id].push({clubId:c.id, state:'closed'}); continue; }
+    tryAssign(e, c);
   }
   let n=0;
   for(const e of ENR){ if(!slotPicks(e).length) continue;
     await updateDoc(doc(db,'clubEnrollments',e.id), { result2: res[e.id], assigned2At: Timestamp.now() }); e.result2 = res[e.id]; n++; }
-  toast(`🎯 2차 배정 ${n}건 저장 — 배정이 곧 확정입니다 (조정 단계 없음)`); renderEnroll();
+  toast(`🎯 2차 배정 ${n}건 저장 — 1차 지원 학생 우선 · 배정 = 즉시 확정`); renderEnroll();
 };
 window.openR2 = ()=>{
+  if(!SEM.r1Done){ toast('먼저 ✅ 1차 확정·기록 저장을 진행해 주세요','err'); return; }
   const clubs = LIVE().filter(a=>a.status==='approved' && a.published && !a.cancelled);
-  const opens = clubs.map(c=>({c, left:leftOf(c)})).filter(x=>x.left>0);
+  const opens = clubs.map(c=>({c, left:(c.r1Left!=null?Number(c.r1Left):leftOf(c))})).filter(x=>x.left>0 && x.c.r1Class!=='full');
   const def = SEM.r2CloseAt || '';
   const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=e=>{ if(e.target===bg) bg.remove(); };
   bg.innerHTML = `<div class="modal" style="max-width:470px"><h3 style="margin:0 0 8px">🎯 추가 모집 열기</h3>
@@ -1015,8 +1104,8 @@ window.doOpenR2 = async ()=>{
   const at = ($I('r2at')||{}).value || '';
   await snapSems('추가 모집 열기 전'); await snapEnr('추가 모집 열기 전');
   const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
-  for(const c of clubs){ const left = leftOf(c);
-    await setApp(c.id, { r2Open: left>0 && !c.cancelled, r2Left: left, r2Closed:false }); }
+  for(const c of clubs){ const left = (c.r1Left!=null ? Number(c.r1Left) : leftOf(c));
+    await setApp(c.id, { r2Open: left>0 && !c.cancelled && c.r1Class!=='full', r2Left: left, r2Closed:false }); }
   await updateDoc(doc(db,'clubSemesters',SEM.id), { round:2, r2CloseAt:at, status:'enrolling', statusAt:Timestamp.now() });
   Object.assign(SEM, { round:2, r2CloseAt:at, status:'enrolling' });
   paintStatus(); toast('🎯 추가 모집을 열었습니다 — 학부모 화면이 2차 모드로 바뀝니다');
