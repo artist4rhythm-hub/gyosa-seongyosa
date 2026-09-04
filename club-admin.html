@@ -367,8 +367,10 @@ function paintStatus(){
   const i = FLOW.indexOf(SEM.status);
   const prev = FLOW[i-1], next = FLOW[i+1];
   $I('sem-flow').innerHTML = `
-    ${prev?`<button class="bs" onclick="setStatus('${prev}')">← ${STATUS[prev]}</button>`:''}
-    ${next?`<button class="bp" onclick="setStatus('${next}')">${STATUS[next]} 단계로 →</button>`:''}`;
+    ${prev && !(isR2A()&&SEM.status==='enrolling') ? `<button class="bs" onclick="setStatus('${prev}')">← ${stLabel(prev)}</button>`:''}
+    ${next?`<button class="bp" onclick="setStatus('${next}')">${stLabel(next)} 단계로 →</button>`:''}
+    ${SEM.status==='adjusting' && !isR2A() ? `<button class="bp" style="background:#B45309;border-color:#B45309" onclick="openR2()">🎯 추가 모집 열기…</button>`:''}
+    ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" onclick="cancelR2()">↩ 추가 모집 취소</button>`:''}`;
 }
 async function buildRosters(){
   // ✅ 확정 시: 배정+참여확정 학생 명단을 각 신청서에 박제 — 강사가 출석 화면에서 자기 문서로 읽는다
@@ -733,7 +735,7 @@ function renderLink(){
   $I('body').innerHTML = `
   <div class="card"><h3>강사 모집 링크</h3>
     <div class="row"><input readonly value="${url}" style="flex:1;min-width:260px;padding:9px 11px;border:1px solid var(--ivd);border-radius:9px;font-family:inherit;font-size:13px"><button class="bs" onclick="navigator.clipboard.writeText('${url}').then(()=>toast('링크 복사'))">복사</button></div>
-    <div class="small" style="margin-top:6px">외부 강사·학부모·교사·학생 강사 누구나 이 링크로 들어와 이메일로 로그인하고 작성합니다. «강사 모집중» 단계에서만 작성이 열립니다. (현재: <b>${STATUS[SEM.status]}</b>)</div></div>
+    <div class="small" style="margin-top:6px">외부 강사·학부모·교사·학생 강사 누구나 이 링크로 들어와 이메일로 로그인하고 작성합니다. «강사 모집중» 단계에서만 작성이 열립니다. (현재: <b>${stLabel(SEM.status)}</b>)</div></div>
   <div class="card"><h3>📣 카톡 공지 문구</h3>
     <div style="white-space:pre-wrap;background:var(--gp);border-radius:9px;padding:10px 12px;font-size:12.5px;line-height:1.6" id="lk-msg">${esc(msg)}</div>
     <div class="row" style="margin-top:8px"><button class="bp" onclick="navigator.clipboard.writeText(document.getElementById('lk-msg').textContent).then(()=>toast('공지 문구 복사'))">📋 공지 문구 복사</button></div></div>
@@ -858,6 +860,12 @@ window.viewApp = (id)=>{
 
 /* ── 👨‍👩‍👧 학부모 신청 현황 · 추첨 · 자동 배정 ── */
 let ENR = [];
+/* 🎯 2차 추가 모집 도우미 */
+const isR2A = () => SEM && Number(SEM.round||1) === 2;
+const slotPicks = e => isR2A() ? (e.picks2||[]) : (e.picks||[]);
+const confirmedN = cid => ENR.filter(e=>(e.result||[]).some(r=>r.clubId===cid && r.state==='assigned' && (e.final||{})[r.clubId]!==false)).length;
+const leftOf = c => Math.max(0, (Number(c.maxN)||0) - confirmedN(c.id));
+const stLabel = st => isR2A() ? ({enrolling:'🎯 추가 모집중', adjusting:'2차 추첨·배정(조정 없음)'}[st]||STATUS[st]) : STATUS[st];
 window.__ENRref = ()=>ENR;
 let ENR_UNSUB = null, ENR_SEMID = null;
 function subEnr(){
@@ -900,24 +908,31 @@ function paintEnroll(){
   const byId2 = {}; clubs.forEach(c=>byId2[c.id]=c);
   const students = new Set(ENR.map(e=>e.studentId)).size;
   $I('body').innerHTML = `<div class="card"><h3>신청 현황 · 학생 ${students}명 · 신청 ${ENR.length}건 · 공고 동아리 ${clubs.length}개</h3>
-    <div class="small" style="margin-bottom:10px">1순위 기준으로 최소/최대를 판별합니다. 🔴 초과 동아리는 아래에서 추첨 결과(당첨)를 체크하고, 「자동 배정」을 누르면 순위·정원·시간 겹침을 따져 배정 결과를 만듭니다.</div>
+    <div class="small" style="margin-bottom:10px">${isR2A()?'🎯 <b>추가 모집</b> — 잔여석(정원−1차 확정) 기준입니다. 잔여석보다 1순위가 많으면 «당첨» 체크 후 실행하세요. <b>배정 = 즉시 확정</b>(학부모 확정·취소 단계 없음), 1차 결과는 변경되지 않습니다.':'1순위 기준으로 최소/최대를 판별합니다. 🔴 초과 동아리는 아래에서 추첨 결과(당첨)를 체크하고, 「자동 배정」을 누르면 순위·정원·시간 겹침을 따져 배정 결과를 만듭니다.'}</div>
     ${VIEW_ONLY
       ? `<div class="small">👀 열람 전용 — 신청·배정이 갱신되면 이 화면도 실시간으로 바뀝니다.</div></div>`
-      : `<div class="row" style="align-items:center;gap:10px;flex-wrap:wrap"><button class="bp" onclick="autoAssign()">⚙️ 자동 배정 실행</button><span class="live">실시간 반영중</span>
+      : `<div class="row" style="align-items:center;gap:10px;flex-wrap:wrap"><button class="bp" onclick="${isR2A()?'autoAssign2()':'autoAssign()'}">⚙️ ${isR2A()?'2차 추첨·배정 실행':'자동 배정 실행'}</button><span class="live">실시간 반영중</span>
         <span class="row" style="gap:6px;margin-left:auto"><button class="bs" onclick="enrAll(true)">모두 펼치기</button><button class="bs" onclick="enrAll(false)">모두 접기</button></span></div>
       <div class="small" style="margin-top:6px">신청이 저장되는 순간 아래 집계가 바로 바뀝니다. 배정 결과는 학부모에게 «순위 조정·최종 결정» 단계부터 보입니다.</div></div>`}
-    ${clubs.map(c=>{ const {picks, first, assigned, st, byRank} = clubStat(c); const [lab,bg,fg]=STL[st];
-      return `<details class="drw" ${st==='over'?'open':''}><summary class="dsum"><span class="dt">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${lab}</span>${st==='under' ? (c.underOpen===true?`<span class="pill" style="background:#DCFCE7;color:#15803D">강사: 개설 원함</span>`:c.underOpen===false?`<span class="pill" style="background:#FEE2E2;color:#B91C1C">강사: 폐강 요청</span>`:`<span class="pill" style="background:#EEF1EE;color:#7C8A80">강사 결정 대기</span>`) : ''}
+    ${clubs.map(c=>{ let {picks, first, assigned, st, byRank} = clubStat(c);
+      const R2A = isR2A(); let left=0, a2=0, closed2=false;
+      if(R2A){ left = leftOf(c); closed2 = !!c.r2Closed || !c.r2Open || !!c.cancelled || left<=0;
+        picks = ENR.filter(e=>slotPicks(e).some(p=>p.clubId===c.id));
+        byRank = {}; picks.forEach(e=>{ const p=slotPicks(e).find(x=>x.clubId===c.id); if(p) byRank[p.rank]=(byRank[p.rank]||0)+1; });
+        a2 = ENR.filter(e=>(e.result2||[]).some(r=>r.clubId===c.id && r.state==='assigned')).length;
+        st = closed2 ? 'ok' : ((byRank[1]||0) > left ? 'over' : 'ok'); }
+      const [lab,bg,fg]=STL[st];
+      return `<details class="drw" ${st==='over'?'open':''}><summary class="dsum"><span class="dt">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${R2A?(closed2?'⛔ 모집 완료':st==='over'?'🔴 초과(추첨)':'🎯 모집중'):lab}</span>${st==='under' ? (c.underOpen===true?`<span class="pill" style="background:#DCFCE7;color:#15803D">강사: 개설 원함</span>`:c.underOpen===false?`<span class="pill" style="background:#FEE2E2;color:#B91C1C">강사: 폐강 요청</span>`:`<span class="pill" style="background:#EEF1EE;color:#7C8A80">강사 결정 대기</span>`) : ''}
         <span class="dm">${(c.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN}</span>
-        <span class="dcnt">1순위 <b>${byRank[1]||0}</b> · 2순위 <b>${byRank[2]||0}</b> · 3순위 <b>${byRank[3]||0}</b> · 배정 <b>${assigned.length}</b></span>
+        <span class="dcnt">${R2A?`잔여 <b>${left}</b> · 1순위 <b>${byRank[1]||0}</b> · 2순위 <b>${byRank[2]||0}</b> · 2차 배정 <b>${a2}</b>`:`1순위 <b>${byRank[1]||0}</b> · 2순위 <b>${byRank[2]||0}</b> · 3순위 <b>${byRank[3]||0}</b> · 배정 <b>${assigned.length}</b>`}</span>
         ${VIEW_ONLY && c.cancelled ? '<span class="pill st-locked" style="margin-left:auto">폐강</span>' : ''}</summary>
         <div class="drw-body tblwrap">${picks.length ? `<table class="tb"><tr><th style="width:64px">순위</th><th>학생</th><th>학년·반</th><th>결과</th>${st==='over'?'<th>추첨 당첨</th>':''}</tr>
-          ${picks.slice().sort((a,b)=>(((a.picks||[]).find(p=>p.clubId===c.id)||{}).rank||9)-(((b.picks||[]).find(p=>p.clubId===c.id)||{}).rank||9)).map(e=>{ const pk=(e.picks||[]).find(p=>p.clubId===c.id)||{}; const rs=(e.result||[]).find(r=>r.clubId===c.id);
+          ${picks.slice().sort((a,b)=>((slotPicks(a).find(p=>p.clubId===c.id)||{}).rank||9)-((slotPicks(b).find(p=>p.clubId===c.id)||{}).rank||9)).map(e=>{ const pk=slotPicks(e).find(p=>p.clubId===c.id)||{}; const rs=((R2A?e.result2:e.result)||[]).find(r=>r.clubId===c.id);
             return `<tr><td>${pk.rank||'-'}순위</td><td>${esc(e.studentName)}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
-              ${st==='over'?`<td>${pk.rank===1?(VIEW_ONLY?((e.lottery||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${(e.lottery||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}${VIEW_ONLY?'':`<div class="drw-foot">${st==='under'?`<span class="small" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center">강사 결정 대리 기록:
+              ${st==='over'?`<td>${pk.rank===1?(VIEW_ONLY?(((R2A?e.lottery2:e.lottery)||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${((R2A?e.lottery2:e.lottery)||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}${VIEW_ONLY?'':`<div class="drw-foot">${R2A?`<button class="bs" onclick="togR2('${c.id}', ${closed2?'false':'true'})">${closed2?'🔓 다시 열기':'🔒 모집 닫기'}</button>`:''}${!R2A&&st==='under'?`<span class="small" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center">강사 결정 대리 기록:
             <button class="bs" onclick="admUnder('${c.id}',true)">🟢 개설</button>
             <button class="bs" onclick="admUnder('${c.id}',false)">⚫ 요청</button>
-            <button class="bs" onclick="admUnder('${c.id}',null)">지움</button></span>`:''}${c.cancelled
+            <button class="bs" onclick="admUnder('${c.id}',null)">지움</button></span>`:''}${R2A?'':c.cancelled
           ? `<button class="bs" onclick="askCancel('${c.id}')">폐강 해제</button>`
           : `<button class="bs" style="border-color:#FCA5A5;color:#B91C1C;background:#FFF7F7" onclick="askCancel('${c.id}')">⚫ 폐강 처리…</button>`}</div>`}</div>
       </details>`; }).join('') || '<div class="small">공고된(승인+노출) 동아리가 없습니다. 신청 취합 탭에서 승인·노출을 켜주세요.</div>'}
@@ -926,7 +941,9 @@ function paintEnroll(){
       ${[...ENR].sort((a,b)=>String(a.studentName||'').localeCompare(String(b.studentName||''),'ko')).map(e=>{
         const ps=(e.picks||[]).slice().sort((a,b)=>a.rank-b.rank).map(p=>{const c=byId2[p.clubId]; return c?`<b>${p.rank}순위</b> ${esc(c.title)}`:'';}).filter(Boolean).join(' · ');
         const ok=(e.result||[]).filter(r=>r.state==='assigned').map(r=>byId2[r.clubId]).filter(Boolean).map(c=>esc(c.title)).join(', ');
-        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}<div class="small">${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</div></td><td>${ps||'-'}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}</td></tr>`; }).join('')}
+        const ps2=(e.picks2||[]).slice().sort((a,b)=>a.rank-b.rank).map(p=>{const c=byId2[p.clubId]; return c?`<b>${p.rank}</b> ${esc(c.title)}`:'';}).filter(Boolean).join(' · ');
+        const ok2=(e.result2||[]).filter(r=>r.state==='assigned').map(r=>byId2[r.clubId]).filter(Boolean).map(c=>esc(c.title)).join(', ');
+        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}<div class="small">${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</div></td><td>${ps||'-'}${ps2?`<div class="small" style="color:#B45309">🎯 2차: ${ps2}</div>`:''}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}${ok2?`<div class="small" style="color:#B45309">🎯 ${ok2}</div>`:''}</td></tr>`; }).join('')}
       </table></div></details>`:''}`;
 }
 window.admUnder = async (id, val)=>{ await setApp(id, { underOpen: val }); paintEnroll(); };
@@ -947,8 +964,68 @@ window.askCancel = (id)=>{
 };
 window.doCancel = async (id, on)=>{ await setApp(id, { cancelled:on }); paintEnroll(); };
 window.enrAll = (o)=>{ document.querySelectorAll('#body details.drw').forEach(d=>d.open=o); };
-function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', declined:'🙅 참여 취소', waitlist:'⏳ 대기' }[st] || st; }
-window.setLottery = async (eid, cid, on)=>{ const e = ENR.find(x=>x.id===eid); const lot = {...(e.lottery||{})}; lot[cid]=on; await updateDoc(doc(db,'clubEnrollments',eid), { lottery: lot }); e.lottery = lot; };
+function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', declined:'🙅 참여 취소', closed:'⛔ 모집 마감', waitlist:'⏳ 대기' }[st] || st; }
+window.setLottery = async (eid, cid, on)=>{ const e = ENR.find(x=>x.id===eid); const f = isR2A()?'lottery2':'lottery';
+  const lot = {...(e[f]||{})}; lot[cid]=on; await updateDoc(doc(db,'clubEnrollments',eid), { [f]: lot }); e[f] = lot; };
+window.togR2 = async (id, close)=>{ const c=LIVE().find(x=>x.id===id); if(!c) return;
+  if(!close && leftOf(c)<=0){ toast('잔여석이 없어 다시 열 수 없어요'); return; }
+  await setApp(id, { r2Closed: !!close, ...(close?{}:{r2Open:true, r2Left:leftOf(c)}) }); paintEnroll(); };
+window.autoAssign2 = async ()=>{
+  await snapEnr('2차 자동 배정 전');
+  const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
+  const byId = {}; clubs.forEach(c=>byId[c.id]=c);
+  const cap = {}, lim = {}, mode = {};
+  clubs.forEach(c=>{ const base = confirmedN(c.id); cap[c.id]=base; lim[c.id]=Number(c.maxN)||999;
+    const closed = !!c.r2Closed || !c.r2Open || !!c.cancelled || (lim[c.id]-base)<=0;
+    const r1 = ENR.filter(e=>slotPicks(e).some(p=>p.clubId===c.id && p.rank===1)).length;
+    mode[c.id] = closed ? 'closed' : (r1 > (lim[c.id]-base) ? 'over' : 'ok'); });
+  const firstOf = e => (e.result||[]).filter(r=>r.state==='assigned' && (e.final||{})[r.clubId]!==false).map(r=>byId[r.clubId]).filter(Boolean);
+  const res = {}; ENR.forEach(e=>res[e.id]=[]);
+  for(let rank=1; rank<=2; rank++) for(const e of ENR) for(const pk of slotPicks(e).filter(p=>p.rank===rank)){
+    const c = byId[pk.clubId]; if(!c) continue;
+    if(mode[c.id]==='closed'){ res[e.id].push({clubId:c.id, state:'closed'}); continue; }
+    if(mode[c.id]==='over' && rank===1 && !(e.lottery2||{})[c.id]){ res[e.id].push({clubId:c.id, state:'lost'}); continue; }
+    const mine = [...firstOf(e), ...res[e.id].filter(r=>r.state==='assigned').map(r=>byId[r.clubId])];
+    if(mine.some(m=>overlap(m,c))){ res[e.id].push({clubId:c.id, state:'overlap'}); continue; }
+    if(cap[c.id] >= lim[c.id]){ res[e.id].push({clubId:c.id, state:'full'}); continue; }
+    cap[c.id]++; res[e.id].push({clubId:c.id, state:'assigned'});
+  }
+  let n=0;
+  for(const e of ENR){ if(!slotPicks(e).length) continue;
+    await updateDoc(doc(db,'clubEnrollments',e.id), { result2: res[e.id], assigned2At: Timestamp.now() }); e.result2 = res[e.id]; n++; }
+  toast(`🎯 2차 배정 ${n}건 저장 — 배정이 곧 확정입니다 (조정 단계 없음)`); renderEnroll();
+};
+window.openR2 = ()=>{
+  const clubs = LIVE().filter(a=>a.status==='approved' && a.published && !a.cancelled);
+  const opens = clubs.map(c=>({c, left:leftOf(c)})).filter(x=>x.left>0);
+  const def = SEM.r2CloseAt || '';
+  const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=e=>{ if(e.target===bg) bg.remove(); };
+  bg.innerHTML = `<div class="modal" style="max-width:470px"><h3 style="margin:0 0 8px">🎯 추가 모집 열기</h3>
+    <div class="small" style="line-height:1.85">빈자리 동아리 <b>${opens.length}개</b>가 열립니다 (꽉 찬 동아리는 「모집 완료」로 잠김).<br>
+      학부모는 <b>1·2순위만</b> 신청하고, 1차 확정과 겹치는 시간은 선택이 막힙니다.<br>
+      각 동아리 「잔여 N자리」는 지금 시점(정원 − 1차 확정)으로 안내됩니다.</div>
+    <div class="small" style="margin:10px 0 4px;font-weight:800">추가 모집 마감 일시</div>
+    <input type="datetime-local" id="r2at" value="${def}" style="width:100%;height:38px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:10px;padding:0 10px;font-family:inherit">
+    <div class="row" style="justify-content:flex-end;margin-top:14px;gap:8px">
+      <button class="bs" onclick="this.closest('.modal-bg').remove()">취소</button>
+      <button class="bp" style="background:#B45309;border-color:#B45309" onclick="doOpenR2(); this.closest('.modal-bg').remove()">🎯 추가 모집 열기</button></div></div>`;
+  document.body.appendChild(bg);
+};
+window.doOpenR2 = async ()=>{
+  const at = ($I('r2at')||{}).value || '';
+  await snapSems('추가 모집 열기 전'); await snapEnr('추가 모집 열기 전');
+  const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
+  for(const c of clubs){ const left = leftOf(c);
+    await setApp(c.id, { r2Open: left>0 && !c.cancelled, r2Left: left, r2Closed:false }); }
+  await updateDoc(doc(db,'clubSemesters',SEM.id), { round:2, r2CloseAt:at, status:'enrolling', statusAt:Timestamp.now() });
+  Object.assign(SEM, { round:2, r2CloseAt:at, status:'enrolling' });
+  paintStatus(); toast('🎯 추가 모집을 열었습니다 — 학부모 화면이 2차 모드로 바뀝니다');
+};
+window.cancelR2 = async ()=>{
+  if(!confirm('추가 모집을 취소하고 1차 «순위 조정» 단계로 되돌릴까요?\n2차 신청 기록은 지워지지 않고 숨겨지며, 다시 열면 이어집니다.')) return;
+  await updateDoc(doc(db,'clubSemesters',SEM.id), { round:1, status:'adjusting', statusAt:Timestamp.now() });
+  Object.assign(SEM, { round:1, status:'adjusting' }); paintStatus(); toast('1차 «순위 조정»으로 되돌렸습니다');
+};
 window.autoAssign = async ()=>{
   await snapEnr('자동 배정 전');
   const clubs = LIVE().filter(a=>a.status==='approved' && a.published);
