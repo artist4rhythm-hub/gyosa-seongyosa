@@ -286,6 +286,13 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .pr-vtbl th,.pr-vtbl td{border:1px solid var(--ivd);padding:6px 8px;}
 .pr-vtbl thead th{background:var(--gd);color:#fff;font-weight:700;}
 .pr-vtbl tfoot td{background:var(--iv);}
+
+/* ── 🔎 목록 정렬·검색 툴바 ── */
+.flt{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 12px}
+.flt input,.flt select{height:38px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 12px;font-size:13px;background:var(--wh);font-family:inherit;color:var(--ts)}
+.flt input:focus,.flt select:focus{outline:none;border-color:var(--gm,#1E3932)}
+.flt .q{flex:1;min-width:200px}
+.flt .amt{width:118px}
 </style>
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
@@ -3163,6 +3170,7 @@ async function renderReport(){
     return '';
   };
 
+    const PRL = prPipe(list);
   box.innerHTML = `
     <div class="acard">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
@@ -3203,8 +3211,9 @@ async function renderReport(){
     </div>
 
     <div class="acard">
-      <h3 class="actitle">📋 요청서 목록 <span style="font-size:12px;color:var(--tl);font-weight:400">(${list.length}건)</span></h3>
-      ${list.length? list.map(r=>{
+      <h3 class="actitle">📋 요청서 목록 <span style="font-size:12px;color:var(--tl);font-weight:400">(${PRL.length}건)</span></h3>
+      ${prBar()}
+      ${PRL.length? PRL.map(r=>{
         const canPay = !r.paid && (r.status==='submitted'||r.status==='income');
         return `<div class="rp-item">
           <div style="flex:1;min-width:220px">
@@ -3232,6 +3241,40 @@ async function renderReport(){
         </div>`;
       }).join('') : '<p class="empty">해당 조건의 요청서가 없습니다.</p>'}
     </div>`;
+}
+
+/* ── 🔎 취합 목록 정렬·검색 ── */
+let PRF = { q:'', op:'', amt:'', sort:(()=>{try{return localStorage.getItem('pr_flt_sort')||'date_desc'}catch(e){return 'date_desc'}})() };
+function hayPR(r){ return [r.purpose,(r.rows||[]).map(x=>x&&x.name).join(' '),r.applicantName,r.createdByName,r.paidByName,r.dept].filter(Boolean).join(' ').toLowerCase(); }
+function prPipe(arr){
+  let a = arr.slice();
+  const q=(PRF.q||'').trim().toLowerCase();
+  if(q) a = a.filter(r=>hayPR(r).includes(q));
+  const amt = Number(PRF.amt);
+  if(PRF.op && PRF.amt!=='' && !isNaN(amt)) a = a.filter(r=>{ const t=Number(r.total)||0; return PRF.op==='ge'?t>=amt:PRF.op==='le'?t<=amt:t===amt; });
+  const made=r=>r.createdAt?.seconds||0, dt=r=>String(r.date||'');
+  const k=PRF.sort;
+  a.sort((x,y)=> k==='date_asc' ? (dt(x).localeCompare(dt(y))||made(x)-made(y))
+    : k==='made_desc' ? made(y)-made(x)
+    : k==='made_asc'  ? made(x)-made(y)
+    : k==='amt_desc'  ? (Number(y.total)||0)-(Number(x.total)||0)
+    : k==='amt_asc'   ? (Number(x.total)||0)-(Number(y.total)||0)
+    : (dt(y).localeCompare(dt(x))||made(y)-made(x)) );
+  return a;
+}
+window.prSet = (k,v,fid)=>{ PRF[k]=v; if(k==='sort'){ try{localStorage.setItem('pr_flt_sort',v)}catch(e){} } renderReport(); if(fid){ const el=document.getElementById(fid); if(el){ el.focus(); if(el.setSelectionRange){ const L=el.value.length; try{el.setSelectionRange(L,L);}catch(_){}} } } };
+function prBar(){
+  const so = v => PRF.sort===v?' selected':'';
+  const oo = v => PRF.op===v?' selected':'';
+  return `<div class="flt">
+    <input class="q" id="pr-q" type="text" placeholder="🔍 용도·항목·이름 검색" value="${esc(PRF.q)}" oninput="prSet('q',this.value,'pr-q')">
+    <select onchange="prSet('op',this.value)"><option value=""${oo('')}>금액 조건</option><option value="ge"${oo('ge')}>이상</option><option value="le"${oo('le')}>이하</option><option value="eq"${oo('eq')}>정확히</option></select>
+    <input class="amt" id="pr-amt" type="number" placeholder="금액" value="${esc(PRF.amt)}" oninput="prSet('amt',this.value,'pr-amt')">
+    <select onchange="prSet('sort',this.value)">
+      <option value="date_desc"${so('date_desc')}>날짜 최신순</option><option value="date_asc"${so('date_asc')}>날짜 오래된순</option>
+      <option value="made_desc"${so('made_desc')}>입력 최신순</option><option value="made_asc"${so('made_asc')}>입력 순서대로</option>
+      <option value="amt_desc"${so('amt_desc')}>금액 큰순</option><option value="amt_asc"${so('amt_asc')}>금액 작은순</option>
+    </select></div>`;
 }
 window.renderReport = renderReport;
 function setRpOrg(o){ rpOrg=o; renderReport(); }

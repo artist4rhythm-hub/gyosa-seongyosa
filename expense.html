@@ -208,6 +208,13 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .iv-cnt{min-width:52px;text-align:center;font-size:12.5px;font-weight:800;color:var(--gd);}
 .iv-div{width:1px;height:20px;background:var(--ivd);margin:0 4px;}
 .iv-tip{text-align:center;font-size:11.5px;color:rgba(255,255,255,.75);}
+
+/* ── 🔎 목록 정렬·검색 툴바 ── */
+.flt{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 12px}
+.flt input,.flt select{height:38px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 12px;font-size:13px;background:var(--wh);font-family:inherit;color:var(--ts)}
+.flt input:focus,.flt select:focus{outline:none;border-color:var(--gm,#1E3932)}
+.flt .q{flex:1;min-width:200px}
+.flt .amt{width:118px}
 </style>
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
@@ -2401,6 +2408,40 @@ async function submitExpense(){
 window.submitExpense = submitExpense;
 
 // ══════════ 신청 내역 ══════════
+
+/* ── 🔎 수행성 경비 목록 정렬·검색 ── */
+let EXF = { q:'', op:'', amt:'', sort:(()=>{try{return localStorage.getItem('ex_flt_sort')||'date_desc'}catch(e){return 'date_desc'}})() };
+function hayEX(e){ return [e.subject,e.items,e.teacher,e.createdByName,e.paidByName].filter(Boolean).join(' ').toLowerCase(); }
+function exPipe(arr){
+  let a = arr.slice();
+  const q=(EXF.q||'').trim().toLowerCase();
+  if(q) a = a.filter(r=>hayEX(r).includes(q));
+  const amt = Number(EXF.amt);
+  if(EXF.op && EXF.amt!=='' && !isNaN(amt)) a = a.filter(r=>{ const t=Number(r.total)||0; return EXF.op==='ge'?t>=amt:EXF.op==='le'?t<=amt:t===amt; });
+  const made=r=>r.createdAt?.seconds||0, dt=r=>String(r.date||'');
+  const k=EXF.sort;
+  a.sort((x,y)=> k==='date_asc' ? (dt(x).localeCompare(dt(y))||made(x)-made(y))
+    : k==='made_desc' ? made(y)-made(x)
+    : k==='made_asc'  ? made(x)-made(y)
+    : k==='amt_desc'  ? (Number(y.total)||0)-(Number(x.total)||0)
+    : k==='amt_asc'   ? (Number(x.total)||0)-(Number(y.total)||0)
+    : (dt(y).localeCompare(dt(x))||made(y)-made(x)) );
+  return a;
+}
+window.exSet = (k,v,fid)=>{ EXF[k]=v; if(k==='sort'){ try{localStorage.setItem('ex_flt_sort',v)}catch(e){} } renderList(); if(fid){ const el=document.getElementById(fid); if(el){ el.focus(); if(el.setSelectionRange){ const L=el.value.length; try{el.setSelectionRange(L,L);}catch(_){}} } } };
+function exBar(){
+  const so = v => EXF.sort===v?' selected':'';
+  const oo = v => EXF.op===v?' selected':'';
+  return `<div class="flt">
+    <input class="q" id="ex-q" type="text" placeholder="🔍 제목·품목·이름 검색" value="${esc(EXF.q)}" oninput="exSet('q',this.value,'ex-q')">
+    <select onchange="exSet('op',this.value)"><option value=""${oo('')}>금액 조건</option><option value="ge"${oo('ge')}>이상</option><option value="le"${oo('le')}>이하</option><option value="eq"${oo('eq')}>정확히</option></select>
+    <input class="amt" id="ex-amt" type="number" placeholder="금액" value="${esc(EXF.amt)}" oninput="exSet('amt',this.value,'ex-amt')">
+    <select onchange="exSet('sort',this.value)">
+      <option value="date_desc"${so('date_desc')}>날짜 최신순</option><option value="date_asc"${so('date_asc')}>날짜 오래된순</option>
+      <option value="made_desc"${so('made_desc')}>입력 최신순</option><option value="made_asc"${so('made_asc')}>입력 순서대로</option>
+      <option value="amt_desc"${so('amt_desc')}>금액 큰순</option><option value="amt_asc"${so('amt_asc')}>금액 작은순</option>
+    </select></div>`;
+}
 async function renderList(){
   const box = $I('tab-list');
   if(!Object.keys(EXP_LOCKS).length) { try { await loadSemLocks(); } catch(e){} }
@@ -2456,8 +2497,9 @@ async function renderList(){
       <p class="adesc">${expTrash?'삭제한 신청입니다. 언제든 되돌릴 수 있습니다.':'날짜순으로 정리된 수행성 경비 신청 내역입니다. 같은 기관 선생님과 관리자가 열람할 수 있습니다.'}</p>
       ${orgTabs}
       ${expTrash?'':semTabs}
+      ${exBar()}
       <div class="clist">
-        ${shown.length ? shown.map(e=>`
+        ${(window.__EXL = exPipe(shown)).length ? window.__EXL.map(e=>`
           <div class="citem">
             <div style="flex:1;min-width:200px">
               <div style="font-size:15px;font-weight:700;color:var(--gd)"><span class="seq-badge" style="font-size:11px;background:var(--sb-dark);color:#fff;padding:2px 7px;border-radius:6px;font-weight:800;margin-right:5px">${expenseSeqNo(e.id)}</span>${esc(e.subject)} <span style="font-size:12px;color:var(--tl);font-weight:400">· ${esc(e.items||'')}</span>${e.receiptCount?` <span style="font-size:11px;background:var(--goldp);color:var(--goldd);padding:2px 7px;border-radius:100px;font-weight:700">🧾 ${e.receiptCount}장</span>`:''}${e.paid?` <span style="font-size:11px;background:var(--ok-bg);color:var(--ok);padding:2px 8px;border-radius:8px;font-weight:700">✅ 입금완료</span>`:` <span style="font-size:11px;background:var(--warn-bg);color:var(--warn);padding:2px 8px;border-radius:8px;font-weight:700">⏳ 입금대기</span>`}${

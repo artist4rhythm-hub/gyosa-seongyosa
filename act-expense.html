@@ -125,6 +125,13 @@
 .acttbl tr.selrow td{background:var(--gp) !important}
 .acttbl.gsum th{font-size:11px;padding:6px 4px}
 .acttbl.gsum td{font-size:12px;padding:6px 4px}
+
+/* ── 🔎 목록 정렬·검색 툴바 ── */
+.flt{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0 12px}
+.flt input,.flt select{height:38px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 12px;font-size:13px;background:var(--wh);font-family:inherit;color:var(--ts)}
+.flt input:focus,.flt select:focus{outline:none;border-color:var(--gm,#1E3932)}
+.flt .q{flex:1;min-width:200px}
+.flt .amt{width:118px}
 </style>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
@@ -856,11 +863,43 @@ function tagOf(i){   // 영수증 글자표: A~Z, 그 다음 AA…
   return s;
 }
 
+
+/* ── 🔎 지출 목록 정렬·검색 ── */
+let ACF = { q:'', op:'', amt:'', sort:(()=>{try{return localStorage.getItem('act_flt_sort')||'made_asc'}catch(e){return 'made_asc'}})() };
+function hayAC(e){ return [e.cat,e.item,e.detail,e.note,e.requesterName,(Array.isArray(e.items)?e.items.map(r=>r&&((r.name||'')+' '+(r.note||''))).join(' '):'')].filter(Boolean).join(' ').toLowerCase(); }
+function acPipe(arr){
+  let a = arr.slice();
+  const q=(ACF.q||'').trim().toLowerCase();
+  if(q) a = a.filter(e=>hayAC(e).includes(q));
+  const amt = Number(ACF.amt);
+  if(ACF.op && ACF.amt!=='' && !isNaN(amt)) a = a.filter(e=>{ const t=Number(e.subtotal)||0; return ACF.op==='ge'?t>=amt:ACF.op==='le'?t<=amt:t===amt; });
+  const made=e=>e.createdAt?.seconds||0;
+  const k=ACF.sort;
+  a.sort((x,y)=> k==='made_desc' ? made(y)-made(x)
+    : k==='amt_desc' ? (Number(y.subtotal)||0)-(Number(x.subtotal)||0)
+    : k==='amt_asc'  ? (Number(x.subtotal)||0)-(Number(y.subtotal)||0)
+    : made(x)-made(y) );
+  return a;
+}
+window.acSet = (k,v,fid)=>{ ACF[k]=v; if(k==='sort'){ try{localStorage.setItem('act_flt_sort',v)}catch(e){} } renderExpenses(); if(fid){ const el=document.getElementById(fid); if(el){ el.focus(); if(el.setSelectionRange){ const L=el.value.length; try{el.setSelectionRange(L,L);}catch(_){}} } } };
+function acBar(){
+  const so = v => ACF.sort===v?' selected':'';
+  const oo = v => ACF.op===v?' selected':'';
+  return `<div class="flt no-print">
+    <input class="q" id="ac-q" type="text" placeholder="🔍 분류·품목·내용·이름 검색" value="${esc(ACF.q)}" oninput="acSet('q',this.value,'ac-q')">
+    <select onchange="acSet('op',this.value)"><option value=""${oo('')}>금액 조건</option><option value="ge"${oo('ge')}>이상</option><option value="le"${oo('le')}>이하</option><option value="eq"${oo('eq')}>정확히</option></select>
+    <input class="amt" id="ac-amt" type="number" placeholder="금액" value="${esc(ACF.amt)}" oninput="acSet('amt',this.value,'ac-amt')">
+    <select onchange="acSet('sort',this.value)">
+      <option value="made_asc"${so('made_asc')}>입력 순서대로</option><option value="made_desc"${so('made_desc')}>입력 최신순</option>
+      <option value="amt_desc"${so('amt_desc')}>금액 큰순</option><option value="amt_asc"${so('amt_asc')}>금액 작은순</option>
+    </select></div>`;
+}
 function renderExpenses(){
   const mgr = canMgr(CUR);
   const conf = confirmedExp(), pend = pendingExp();
-  const confSum = conf.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
-  const pendSum = pend.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+  const AC1 = acPipe(conf), AC2 = acPipe(pend);
+  const confSum = AC1.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+  const pendSum = AC2.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
 
   const lock = isLocked();
   const row = (e, i, isConf) => {
@@ -897,10 +936,11 @@ function renderExpenses(){
     </tr>`;
   };
 
-  $I('tab-body').innerHTML = `<div class="panel">
+  $I('tab-body').innerHTML = `
+    ${acBar()}<div class="panel">
     <div class="stat">
-      <div class="s">확정 지출<b>${fmt(confSum)}원 · ${conf.length}건</b></div>
-      <div class="s">신청 대기<b>${fmt(pendSum)}원 · ${pend.length}건</b></div>
+      <div class="s">확정 지출<b>${fmt(confSum)}원 · ${AC1.length}건</b></div>
+      <div class="s">신청 대기<b>${fmt(pendSum)}원 · ${AC2.length}건</b></div>
       <div class="s">잔액 (수입−확정 지출)<b>${fmt((Number(CUR.incSum)||0) - confSum)}원</b></div>
     </div>
     ${lock ? `<div class="pdesc" style="margin-bottom:10px">🔒 마감된 활동 — 열람만 가능합니다</div>`
@@ -913,10 +953,10 @@ function renderExpenses(){
     <div class="tblwrap"><table class="acttbl" style="min-width:840px">
       <tr><th class="c">NO</th><th>구분</th><th>품목 · 지출 줄</th>
         <th class="r">소계</th><th class="c">신청·담당</th><th class="c">신청 일시</th><th class="c">영수증</th><th class="c">상태</th><th class="c no-print"></th></tr>
-      ${conf.map((e,i)=>row(e,i,true)).join('')}
-      ${conf.length?`<tr class="sumrow"><td colspan="3">확정 지출 합계 (${conf.length}건)</td>
+      ${AC1.map((e,i)=>row(e,i,true)).join('')}
+      ${AC1.length?`<tr class="sumrow"><td colspan="3">확정 지출 합계 (${AC1.length}건)</td>
         <td class="r">${fmt(confSum)}</td><td colspan="5"></td></tr>`:''}
-      ${pend.map((e,i)=>row(e,i,false)).join('')}
+      ${AC2.map((e,i)=>row(e,i,false)).join('')}
       ${!EXPENSES.length?`<tr><td colspan="9" style="text-align:center;color:var(--tl);padding:20px">
         아직 지출 기록이 없습니다</td></tr>`:''}
     </table></div>
