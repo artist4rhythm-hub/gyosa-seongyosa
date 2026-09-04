@@ -132,6 +132,10 @@
 .flt input:focus,.flt select:focus{outline:none;border-color:var(--gm,#1E3932)}
 .flt .q{flex:1;min-width:200px}
 .flt .amt{width:118px}
+.aiov{position:fixed;inset:0;background:rgba(20,30,25,.5);z-index:120;display:flex;align-items:center;justify-content:center;padding:16px}
+.aibox{background:var(--wh,#fff);border-radius:14px;padding:18px;width:100%;max-width:440px;max-height:92vh;overflow:auto}
+.aibox label{display:block;font-size:11.5px;font-weight:800;color:var(--tw,#7C8A80);margin:10px 0 4px}
+.aibox input,.aibox select{width:100%;height:38px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:10px;padding:0 11px;font-size:13px;font-family:inherit;background:var(--wh,#fff);color:var(--ts,#3F4A44)}
 </style>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
@@ -202,7 +206,7 @@ let ACT_ADMIN = false;             // 활동 경비 총괄 담당자 (actConfig/
 let LEDGERS = [];
 let CUR = null;                    // 열려 있는 활동
 let TAB = 'mem';                   // mem | exp | rep | set
-let MEMBERS = [], EXPENSES = [];
+let MEMBERS = [], EXPENSES = [], INCOMES = [];
 let STUDENTS = null, CLASSES = null, STAFF = null;   // 담기 모달에서 처음 쓸 때 받아온다
 let MFILTER = 'all';               // 참가자 필터
 let MSEL = new Set();              // 참가자 일괄 작업 선택
@@ -345,12 +349,14 @@ window.openLedger = async function(id){
   render();
 };
 async function reloadLedgerData(){
-  const [ms, es] = await Promise.all([
+  const [ms, es, isnap] = await Promise.all([
     getDocs(query(collection(db,'actMembers'), where('ledgerId','==',CUR.id))),
-    getDocs(query(collection(db,'actExpenses'), where('ledgerId','==',CUR.id)))
+    getDocs(query(collection(db,'actExpenses'), where('ledgerId','==',CUR.id))),
+    getDocs(query(collection(db,'actIncomes'), where('ledgerId','==',CUR.id)))
   ]);
   MEMBERS = ms.docs.map(d=>({ id:d.id, ...d.data() }));
   EXPENSES = es.docs.map(d=>({ id:d.id, ...d.data() }));
+  INCOMES  = isnap.docs.map(d=>({ id:d.id, ...d.data() }));
   sortMembers(); sortExpenses();
 }
 function sortMembers(){
@@ -405,6 +411,7 @@ function renderDetail(){
       </div>
       <div class="dtabs no-print" style="margin-top:10px">
         <button class="dtab ${TAB==='mem'?'on':''}" onclick="setTab('mem')">👥 참가자 · 회비</button>
+        <button class="dtab ${TAB==='inc'?'on':''}" onclick="setTab('inc')">💰 수입</button>
         <button class="dtab ${TAB==='exp'?'on':''}" onclick="setTab('exp')">🧾 지출</button>
         <button class="dtab ${TAB==='rep'?'on':''}" onclick="setTab('rep')">📊 회계 보고</button>
         ${mgr ? `<button class="dtab ${TAB==='set'?'on':''}" onclick="setTab('set')">⚙ 설정</button>` : ''}
@@ -413,6 +420,7 @@ function renderDetail(){
     <div id="tab-body"></div>`;
   if(TAB==='mem') renderMembers();
   else if(TAB==='exp') renderExpenses();
+  else if(TAB==='inc') renderIncomes();
   else if(TAB==='rep') renderReport();
   else renderSettings();
 }
@@ -458,6 +466,8 @@ function renderMembers(){
       <div class="s">입금 완료<b>${paid.length}명</b></div>
       <div class="s">입금 대기<b>${MEMBERS.length-paid.length}명</b></div>
       <div class="s">수입 (입금 완료분)<b>${fmt(incSum)}원</b></div>
+      <div class="s">추가 수입<b>${fmt(extraIncome())}원</b></div>
+      <div class="s">총수입<b>${fmt(incSum + extraIncome())}원</b></div>
       <div class="s">1인 회비<b>${fmt(CUR.fee)}원</b></div>
     </div>
     ${(()=>{ /* 📊 구분(학년·선생님)별 참가·입금 요약 */
@@ -894,6 +904,151 @@ function acBar(){
       <option value="amt_desc"${so('amt_desc')}>금액 큰순</option><option value="amt_asc"${so('amt_asc')}>금액 작은순</option>
     </select></div>`;
 }
+
+/* ═══ 💰 추가 수입 ═══ */
+const INC_CATS = ['페이백·캐시백','학교 지원금','헌금','플로잉','기타'];
+const INC_ICON = { '페이백·캐시백':'💳','학교 지원금':'🏫','헌금':'🙏','플로잉':'🌊' };
+const extraIncome = () => INCOMES.reduce((n,e)=>n+(Number(e.amount)||0),0);
+let AIF = { q:'', op:'', amt:'', sort:(()=>{try{return localStorage.getItem('act_inc_sort')||'made_asc'}catch(e){return 'made_asc'}})() };
+function aiPipe(arr){
+  let a = arr.slice();
+  const q=(AIF.q||'').trim().toLowerCase();
+  if(q) a = a.filter(e=>[e.cat,e.title,e.note,e.byName,e.linkLabel].filter(Boolean).join(' ').toLowerCase().includes(q));
+  const amt = Number(AIF.amt);
+  if(AIF.op && AIF.amt!=='' && !isNaN(amt)) a = a.filter(e=>{ const t=Number(e.amount)||0; return AIF.op==='ge'?t>=amt:AIF.op==='le'?t<=amt:t===amt; });
+  const made=e=>e.createdAt?.seconds||0, dd=e=>String(e.ds||'');
+  const k=AIF.sort;
+  a.sort((x,y)=> k==='made_desc'?made(y)-made(x)
+    : k==='ds_desc'?(dd(y).localeCompare(dd(x))||made(y)-made(x))
+    : k==='ds_asc'?(dd(x).localeCompare(dd(y))||made(x)-made(y))
+    : k==='amt_desc'?(Number(y.amount)||0)-(Number(x.amount)||0)
+    : k==='amt_asc'?(Number(x.amount)||0)-(Number(y.amount)||0)
+    : made(x)-made(y));
+  return a;
+}
+window.aiSet=(k,v,fid)=>{ AIF[k]=v; if(k==='sort'){try{localStorage.setItem('act_inc_sort',v)}catch(e){}} renderIncomes(); if(fid){const el=document.getElementById(fid); if(el){el.focus(); if(el.setSelectionRange){const L=el.value.length; try{el.setSelectionRange(L,L)}catch(_){}}}} };
+function aiBar(){
+  const so=v=>AIF.sort===v?' selected':''; const oo=v=>AIF.op===v?' selected':'';
+  return `<div class="flt no-print">
+    <input class="q" id="ai-q" type="text" placeholder="🔍 분류·내용·이름 검색" value="${esc(AIF.q)}" oninput="aiSet('q',this.value,'ai-q')">
+    <select onchange="aiSet('op',this.value)"><option value=""${oo('')}>금액 조건</option><option value="ge"${oo('ge')}>이상</option><option value="le"${oo('le')}>이하</option><option value="eq"${oo('eq')}>정확히</option></select>
+    <input class="amt" id="ai-amt" type="number" placeholder="금액" value="${esc(AIF.amt)}" oninput="aiSet('amt',this.value,'ai-amt')">
+    <select onchange="aiSet('sort',this.value)">
+      <option value="made_asc"${so('made_asc')}>입력 순서대로</option><option value="made_desc"${so('made_desc')}>입력 최신순</option>
+      <option value="ds_desc"${so('ds_desc')}>일자 최신순</option><option value="ds_asc"${so('ds_asc')}>일자 오래된순</option>
+      <option value="amt_desc"${so('amt_desc')}>금액 큰순</option><option value="amt_asc"${so('amt_asc')}>금액 작은순</option>
+    </select></div>`;
+}
+function renderIncomes(){
+  const mgr = canMgr(CUR), locked = isLocked();
+  const feeSum = MEMBERS.filter(m=>m.paid).reduce((n,m)=>n+(Number(m.fee)||0),0);
+  const xSum = extraIncome();
+  const confSum = confirmedExp().reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+  const bal = feeSum + xSum - confSum;
+  const L = aiPipe(INCOMES);
+  const rows = L.map(e=>`<tr>
+      <td style="white-space:nowrap"><span class="pill gray">${INC_ICON[e.cat]||'➕'} ${esc(e.cat||'기타')}</span></td>
+      <td>${esc(e.title||'')}${e.linkLabel?` <span class="pill gray" style="font-size:9.5px">🔗 ${esc(e.linkLabel)}</span>`:''}${e.note?`<div style="font-size:10.5px;color:var(--tl)">${esc(e.note)}</div>`:''}</td>
+      <td class="c" style="white-space:nowrap">${esc(sd(e.ds)||'—')}</td>
+      <td class="r"><b>${fmt(Number(e.amount)||0)}</b></td>
+      <td class="c" style="font-size:11px;color:var(--ts)">${esc(e.byName||'')}</td>
+      ${mgr&&!locked?`<td class="c no-print" style="white-space:nowrap">
+        <button class="btn line sm" onclick="openIncForm('${e.id}')">✎</button>
+        <button class="btn line sm" style="color:#B91C1C;border-color:#FCA5A5" onclick="delIncome('${e.id}')">🗑</button></td>`:''}
+    </tr>`).join('');
+  $I('tab-body').innerHTML = `<div class="panel">
+    <div class="stat">
+      <div class="s">회비 수입<b>${fmt(feeSum)}원</b></div>
+      <div class="s">추가 수입 (${INCOMES.length}건)<b>${fmt(xSum)}원</b></div>
+      <div class="s">총수입<b>${fmt(feeSum+xSum)}원</b></div>
+      <div class="s">확정 지출<b>${fmt(confSum)}원</b></div>
+      <div class="s">잔액<b style="${bal<0?'color:#B91C1C':''}">${fmt(bal)}원${bal<0?' ⚠':''}</b></div>
+    </div>
+    ${bal<0?`<div class="pdesc" style="color:#B91C1C;font-weight:800;margin-top:6px">⚠ 지출이 총수입을 넘었습니다 — 학교 지원금 등 추가 수입 입력이 필요할 수 있어요.</div>`:''}
+    ${aiBar()}
+    <div class="tblwrap"><table class="acttbl">
+      <tr><th>분류</th><th>내용</th><th class="c">일자</th><th class="r">금액</th><th class="c">입력자</th>${mgr&&!locked?'<th class="c no-print"></th>':''}</tr>
+      ${rows || `<tr><td colspan="${mgr&&!locked?6:5}" style="text-align:center;color:var(--tl);padding:18px">추가 수입이 없습니다 — 페이백·지원금·헌금 등이 생기면 여기에 기록하세요</td></tr>`}
+    </table></div>
+    ${mgr&&!locked?`<div style="margin-top:11px"><button class="btn" onclick="openIncForm()">＋ 수입 추가</button></div>`:''}
+  </div>`;
+}
+async function snapshotInc(e, reason){
+  try{ const before = {...e}; delete before.id;
+    await addDoc(collection(db,'actRevisions'), { ledgerId:CUR.id, incomeId:e.id, reason, before, byUid:CU.uid, byName:CU.name||'', at:Timestamp.now() });
+  }catch(err){ console.warn('inc revision', err); }
+}
+window.openIncForm = function(id){
+  const e = id ? INCOMES.find(x=>x.id===id) : null;
+  const opt = EXPENSES.slice().sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))
+    .map(x=>{ const lab = `${x.cat?x.cat+' · ':''}${x.item||x.detail||''} ${fmt(Number(x.subtotal)||0)}원`;
+      return `<option value="${x.id}" data-lab="${esc(lab)}" ${e&&e.linkExpenseId===x.id?'selected':''}>${esc(lab)}</option>`; }).join('');
+  const bg = document.createElement('div'); bg.className='aiov'; bg.onclick=ev=>{ if(ev.target===bg) bg.remove(); };
+  bg.innerHTML = `<div class="aibox">
+    <b style="font-size:14.5px;color:var(--gd)">${e?'✎ 수입 수정':'＋ 수입 추가'}</b>
+    <label>분류</label>
+    <select id="ai-cat" onchange="document.getElementById('ai-cat2').style.display=this.value==='기타'?'block':'none'">
+      ${INC_CATS.map(c=>`<option value="${c}" ${e&&(INC_CATS.includes(e.cat)?e.cat===c:c==='기타')?'selected':''}>${INC_ICON[c]||'➕'} ${c}</option>`).join('')}
+    </select>
+    <input id="ai-cat2" type="text" placeholder="분류 직접 입력" value="${e&&!INC_CATS.includes(e.cat)?esc(e.cat||''):''}" style="display:${e&&!INC_CATS.includes(e.cat)?'block':'none'}">
+    <label>내용</label><input id="ai-title" type="text" placeholder="예: 숙소 결제 5% 상품권 페이백" value="${e?esc(e.title||''):''}">
+    <label>금액 (원)</label><input id="ai-amount" type="number" value="${e?Number(e.amount)||'':''}" placeholder="0">
+    <label>일자</label><input id="ai-ds" type="date" value="${e?.ds||todayDs()}">
+    <label>🔗 연결 지출 (선택 — 페이백 근거 등)</label>
+    <select id="ai-link"><option value="">연결 안 함</option>${opt}</select>
+    <label>메모</label><input id="ai-note" type="text" value="${e?esc(e.note||''):''}" placeholder="선택 입력">
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn gray" onclick="this.closest('.aiov').remove()">취소</button>
+      <button class="btn" onclick="saveIncome('${id||''}')">${e?'저장':'추가'}</button></div>
+  </div>`;
+  document.body.appendChild(bg);
+};
+window.saveIncome = async function(id){
+  const catSel = document.getElementById('ai-cat').value;
+  const cat = catSel==='기타' ? (document.getElementById('ai-cat2').value.trim()||'기타') : catSel;
+  const title = document.getElementById('ai-title').value.trim();
+  const amount = Number(document.getElementById('ai-amount').value);
+  const dsv = document.getElementById('ai-ds').value || todayDs();
+  const linkSel = document.getElementById('ai-link');
+  const linkExpenseId = linkSel.value || '';
+  const linkLabel = linkExpenseId ? (linkSel.selectedOptions[0]?.dataset?.lab||'') : '';
+  const note = document.getElementById('ai-note').value.trim();
+  if(!amount || amount<=0){ toast('금액을 입력해 주세요.','err'); return; }
+  try{
+    if(id){
+      const e = INCOMES.find(x=>x.id===id); if(!e) return;
+      await snapshotInc(e, '수입 수정 전');
+      const upd = { cat, title, amount, ds:dsv, linkExpenseId, linkLabel, note, updatedAt:Timestamp.now() };
+      await updateDoc(doc(db,'actIncomes', id), upd);
+      Object.assign(e, upd);
+      logAct('수입 수정', `${cat} · ${title||'-'} ${fmt(amount)}원`);
+      toast('수입을 수정했습니다.','ok');
+    } else {
+      const data = { ledgerId:CUR.id, org:CUR.org||'', cat, title, amount, ds:dsv, linkExpenseId, linkLabel, note,
+        byUid:CU.uid, byName:CU.name||'', createdAt:Timestamp.now() };
+      const ref = await addDoc(collection(db,'actIncomes'), data);
+      INCOMES.push({ id:ref.id, ...data });
+      logAct('수입 추가', `${cat} · ${title||'-'} ${fmt(amount)}원`);
+      toast('수입을 추가했습니다.','ok');
+    }
+    document.querySelector('.aiov')?.remove();
+    try{ await pushSums(); }catch(e){}
+    renderIncomes();
+  }catch(err){ toast('저장 실패: '+(err.message||''),'err'); }
+};
+window.delIncome = async function(id){
+  const e = INCOMES.find(x=>x.id===id); if(!e) return;
+  if(!confirm(`「${e.cat} · ${e.title||'-'} ${fmt(Number(e.amount)||0)}원」 수입을 삭제할까요?`)) return;
+  try{
+    await snapshotInc(e, '수입 삭제');
+    await deleteDoc(doc(db,'actIncomes', id));
+    INCOMES = INCOMES.filter(x=>x.id!==id);
+    logAct('수입 삭제', `${e.cat} · ${e.title||'-'} ${fmt(Number(e.amount)||0)}원`);
+    try{ await pushSums(); }catch(e){}
+    toast('삭제했습니다.','ok'); renderIncomes();
+  }catch(err){ toast('삭제 실패: '+(err.message||''),'err'); }
+};
+
 function renderExpenses(){
   const mgr = canMgr(CUR);
   const conf = confirmedExp(), pend = pendingExp();
@@ -941,7 +1096,7 @@ function renderExpenses(){
     <div class="stat">
       <div class="s">확정 지출<b>${fmt(confSum)}원 · ${AC1.length}건</b></div>
       <div class="s">신청 대기<b>${fmt(pendSum)}원 · ${AC2.length}건</b></div>
-      <div class="s">잔액 (수입−확정 지출)<b>${fmt((Number(CUR.incSum)||0) - confSum)}원</b></div>
+      <div class="s">잔액 (총수입−확정 지출)<b>${fmt(MEMBERS.filter(m=>m.paid).reduce((n,m)=>n+(Number(m.fee)||0),0) + extraIncome() - confSum)}원</b></div>
     </div>
     ${lock ? `<div class="pdesc" style="margin-bottom:10px">🔒 마감된 활동 — 열람만 가능합니다</div>`
       : `<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px" class="no-print">
@@ -1195,6 +1350,9 @@ function renderReport(){
   const incSum = paidM.reduce((n,m)=>n+(Number(m.fee)||0),0);
   const conf = confirmedExp();
   const expSum = conf.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
+  const extraArr = INCOMES.slice().sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+  const extraSum = extraArr.reduce((n,e)=>n+(Number(e.amount)||0),0);
+  const totalIn = incSum + extraSum;
 
   /* 수입 — 학년별 (인원 칸 따로 · 1인 회비는 균일하면 금액, 아니면 「개별」) */
   const groups = [];
@@ -1212,7 +1370,7 @@ function renderReport(){
     return `<tr><td style="font-weight:800;color:var(--gd)">${esc(lb)}</td>
       <td class="c">${arr.length}</td><td class="r">${feeCell}</td>
       <td class="r">${fmt(sum)}</td>
-      <td class="r" style="color:var(--ts)">${incSum?Math.round(sum/incSum*1000)/10:0}%</td></tr>`;
+      <td class="r" style="color:var(--ts)">${totalIn?Math.round(sum/totalIn*1000)/10:0}%</td></tr>`;
   }).join('');
 
   /* 지출 — 용도별 (1인 비용은 제목 칸에, 셀엔 숫자만) */
@@ -1236,7 +1394,7 @@ function renderReport(){
     `<div><i style="background:${PAL[i%PAL.length]}"></i>${esc(c)} <b>${expSum?Math.round(v/expSum*100):0}%</b></div>`).join('');
 
   /* 잔액 · 환급 — 단수 정리 도우미: 절사 단위를 고르면 지급액이 딱 떨어진다 */
-  const bal = incSum - expSum;
+  const bal = totalIn - expSum;
   const RU = window._rndUnit || 1;          // 1 · 10 · 100 · 1000원 단위 절사
   const rawPer = paidN ? bal/paidN : 0;
   const per = paidN ? Math.floor(rawPer / RU) * RU : 0;
@@ -1254,8 +1412,9 @@ function renderReport(){
         <div class="tblwrap"><table class="acttbl" style="min-width:0">
           <tr><th>수입 — 학년별 회비</th><th class="c">인원</th><th class="r">1인 회비</th><th class="r">소계</th><th class="r">비율</th></tr>
           ${incRows || '<tr><td colspan="5" style="text-align:center;color:var(--tl);padding:16px">입금 완료된 참가자가 없습니다</td></tr>'}
-          <tr class="sumrow"><td>합계</td><td class="c">${paidN}</td><td></td>
-            <td class="r">${fmt(incSum)}</td><td class="r">100%</td></tr>
+          ${extraArr.length?`<tr><th>수입 — 추가</th><th class="c">일자</th><th class="r"></th><th class="r">금액</th><th class="r">비율</th></tr>`+extraArr.map(e=>`<tr><td>${INC_ICON[e.cat]||'➕'} ${esc(e.cat||'기타')}${e.title?` · ${esc(e.title)}`:''}${e.linkLabel?` <span style="font-size:9.5px;color:var(--tl)">🔗 ${esc(e.linkLabel)}</span>`:''}</td><td class="c">${esc(sd(e.ds)||'')}</td><td class="r"></td><td class="r">${fmt(Number(e.amount)||0)}</td><td class="r" style="color:var(--ts)">${totalIn?Math.round((Number(e.amount)||0)/totalIn*1000)/10:0}%</td></tr>`).join(''):''}
+          <tr class="sumrow"><td>합계 ${extraSum?`(회비 ${fmt(incSum)} + 추가 ${fmt(extraSum)})`:''}</td><td class="c">${paidN}</td><td></td>
+            <td class="r">${fmt(totalIn)}</td><td class="r">100%</td></tr>
         </table></div>
         ${waitN?`<div class="pdesc" style="margin-top:6px">입금 대기 ${waitN}명은 합계에 넣지 않았습니다</div>`:''}
       </div>
@@ -1277,12 +1436,12 @@ function renderReport(){
       <tr><th colspan="3">잔액 · 환급 정리</th></tr>
       <tr><td colspan="3" style="background:var(--gp);font-size:11.5px;color:var(--gd);line-height:1.9">
         <b>산출 과정</b><br>
-        ① 수입 ${fmt(incSum)} − 지출 ${fmt(expSum)} = <b>잔액 ${fmt(bal)}원</b><br>
+        ① 총수입 ${fmt(totalIn)}${extraSum?` (회비 ${fmt(incSum)} + 추가 ${fmt(extraSum)})`:''} − 지출 ${fmt(expSum)} = <b style="${bal<0?'color:#B91C1C':''}">잔액 ${fmt(bal)}원${bal<0?' ⚠ 부족':''}</b><br>
         ② 잔액 ${fmt(bal)} ÷ ${paidN}명 = ${paidN?fmt(Math.round(rawPer*100)/100):0}원
            → ${RU>1?`${fmt(RU)}원 단위 절사 → `:''}<b>1인 ${fmt(per)}원</b><br>
         ③ ${fmt(per)} × ${paidN}명 = <b>실제 환급 합계 ${fmt(per*paidN)}원</b>
            · 단수 ${fmt(bal)} − ${fmt(per*paidN)} = <b>${fmt(rem)}원</b></td></tr>
-      <tr><td>잔여 회비 전체 (수입 − 지출)</td><td class="r"><b>${fmt(bal)}</b></td><td></td></tr>
+      <tr><td>잔액 전체 (총수입 − 지출)</td><td class="r"><b>${fmt(bal)}</b></td><td></td></tr>
       <tr><td>1인당 잔여 회비 (${paidN}명)
           <select class="fsel no-print" style="width:auto;display:inline-block;margin-left:8px;
             padding:3px 7px;font-size:11px" onchange="setRndUnit(this.value)">
@@ -1698,7 +1857,7 @@ window.saveLedger = async function(){
 /* ═══ 합계를 활동 문서에 담아둔다 (목록 화면용) ═══ */
 async function pushSums(){
   if(!CUR) return;
-  const incSum = MEMBERS.filter(m=>m.paid).reduce((n,m)=>n+(Number(m.fee)||0),0);
+  const incSum = MEMBERS.filter(m=>m.paid).reduce((n,m)=>n+(Number(m.fee)||0),0) + INCOMES.reduce((n,e)=>n+(Number(e.amount)||0),0);
   const expSum = confirmedExp().reduce((n,e)=>n+(Number(e.subtotal)||0),0);
   CUR.incSum = incSum; CUR.expSum = expSum;
   try { await updateDoc(doc(db,'actLedgers',CUR.id), { incSum, expSum }); } catch(e){}
