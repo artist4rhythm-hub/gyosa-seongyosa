@@ -349,14 +349,22 @@ window.openLedger = async function(id){
   render();
 };
 async function reloadLedgerData(){
-  const [ms, es, isnap] = await Promise.all([
+  const [ms, es] = await Promise.all([
     getDocs(query(collection(db,'actMembers'), where('ledgerId','==',CUR.id))),
-    getDocs(query(collection(db,'actExpenses'), where('ledgerId','==',CUR.id))),
-    getDocs(query(collection(db,'actIncomes'), where('ledgerId','==',CUR.id)))
+    getDocs(query(collection(db,'actExpenses'), where('ledgerId','==',CUR.id)))
   ]);
   MEMBERS = ms.docs.map(d=>({ id:d.id, ...d.data() }));
   EXPENSES = es.docs.map(d=>({ id:d.id, ...d.data() }));
-  INCOMES  = isnap.docs.map(d=>({ id:d.id, ...d.data() }));
+  // 💰 추가 수입 — 보안 규칙(actIncomes)이 아직 게시 전이어도 화면이 죽지 않게 별도 보호
+  try{
+    const isnap = await getDocs(query(collection(db,'actIncomes'), where('ledgerId','==',CUR.id)));
+    INCOMES = isnap.docs.map(d=>({ id:d.id, ...d.data() }));
+    window.__incRuleOk = true;
+  }catch(e){
+    INCOMES = [];
+    if(window.__incRuleOk !== false){ window.__incRuleOk = false;
+      console.warn('actIncomes 읽기 거부 — Firestore 규칙에 actIncomes 블록을 추가해 주세요.', e?.code||e); }
+  }
   sortMembers(); sortExpenses();
 }
 function sortMembers(){
@@ -957,6 +965,7 @@ function renderIncomes(){
         <button class="btn line sm" style="color:#B91C1C;border-color:#FCA5A5" onclick="delIncome('${e.id}')">🗑</button></td>`:''}
     </tr>`).join('');
   $I('tab-body').innerHTML = `<div class="panel">
+    ${window.__incRuleOk===false?`<div class="pdesc" style="color:#B45309;font-weight:800;margin-bottom:8px">⚠ 수입 저장소(actIncomes) 접근이 거부되었습니다 — Firestore 규칙에 actExpenses 블록을 복사해 actIncomes로 추가·게시하면 활성화됩니다.</div>`:''}
     <div class="stat">
       <div class="s">회비 수입<b>${fmt(feeSum)}원</b></div>
       <div class="s">추가 수입 (${INCOMES.length}건)<b>${fmt(xSum)}원</b></div>
