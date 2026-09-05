@@ -741,6 +741,12 @@
       text-overflow:clip !important; word-break:keep-all; line-height:1.3;
       max-width:100% !important; }
   }
+  body.share-mode #vs-toggle, body.share-mode .vs-drawer, body.share-mode .vw-drag{display:none !important}
+  body.share-parent #org-bar, body.share-parent .ac-viewtoggle{display:none !important}
+  .sh-cnt{display:inline-flex;font-size:11px;font-weight:800;border-radius:999px;padding:2px 9px;margin-left:6px}
+  .sh-cnt.ok{background:#DFEFE3;color:#1F6B4A}
+  .sh-cnt.zero{background:#FDE9E7;color:#B0392E}
+  .sh-warn{margin-top:6px;font-size:11.5px;color:#B0392E;font-weight:700}
   .vs-drawer{display:none;background:#FDFCF8;border:1.5px dashed #CBD6CE;border-radius:12px;padding:12px 14px;margin:10px 0}
   .vs-drawer.open{display:block}
   .vs-drawer .vsd-t{font-size:11.5px;font-weight:900;color:#1F6B4A;margin-bottom:9px}
@@ -4197,8 +4203,9 @@ function renderSharePanel(){
     }
     return `<div class="sh-block">
       <div class="sh-h"><span class="sh-dot" style="background:${color}"></span><b>${label}</b>
-        <span class="sh-nm">${esc(cur.name||'')}</span></div>
+        <span class="sh-nm">${esc(cur.name||'')}</span><span class="sh-cnt" id="shcnt-${kind}">집계 중…</span></div>
       <div class="sh-d">${desc}</div>
+      <div class="sh-warn" id="shwarn-${kind}" style="display:none">⚠ 지금 조건으론 담길 일정이 <b>0건</b> — 공개 기간을 확인하고, 일정을 넣은 뒤 <b>«지금 내용으로 올리기»</b>를 눌러야 링크에 반영됩니다.</div>
       <div class="sh-row">
         <input readonly value="${esc(shareURL(cur.id))}" onclick="this.select()" class="sh-url">
         <button class="btn btn-sm" onclick="copyShare('${kind}')">📋 복사</button>
@@ -4232,6 +4239,21 @@ function renderSharePanel(){
     ins(pdBlock,'parent_daniel') +
     ins(pjBlock,'parent_jihyebit') +
     block('teacher','선생님용','두 기관·교사 전용 일정까지 모두 보입니다.','#2F6FD0');
+  setTimeout(fillShareCounts, 0);
+}
+async function fillShareCounts(){
+  for(const kind of ['parent_daniel','parent_jihyebit','teacher']){
+    const el = $I('shcnt-'+kind); if(!el || !SHARES[kind] || !SHARES[kind].id) continue;
+    try{
+      const KI = SHARE_KINDS[kind] || { audience:kind, org:'' };
+      const range = (KI.audience==='parent') ? Object.assign({ org: KI.org }, shareRange(kind) || {}) : null;
+      const snap = await buildSnapshot(KI.audience, range);
+      const n = (snap.events||[]).length;
+      el.textContent = '담길 일정 ' + n + '건';
+      el.className = 'sh-cnt ' + (n ? 'ok' : 'zero');
+      const w = $I('shwarn-'+kind); if(w) w.style.display = n ? 'none' : 'block';
+    }catch(e){ el.textContent = '집계 실패'; el.className = 'sh-cnt zero'; }
+  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -4421,6 +4443,7 @@ async function startShareView(){
   document.body.classList.add('share-mode');
   try {
     const s = await getDoc(doc(db,'sharedAcademic', shareId));
+    if(s.exists() && (s.data().audience||'') !== 'teacher') document.body.classList.add('share-parent');
     if(!s.exists() || s.data().active === false){
       $I('gate-msg').innerHTML = '이 링크는 더 이상 열리지 않습니다.<br>학교에 새 링크를 요청해 주세요.';
       return;
