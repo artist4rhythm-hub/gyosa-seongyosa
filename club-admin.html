@@ -963,9 +963,20 @@ function paintEnroll(){
         const ok=(e.result||[]).filter(r=>r.state==='assigned').map(r=>byId2[r.clubId]).filter(Boolean).map(c=>esc(c.title)).join(', ');
         const ps2=(e.picks2||[]).slice().sort((a,b)=>a.rank-b.rank).map(p=>{const c=byId2[p.clubId]; return c?`<b>${p.rank}</b> ${esc(c.title)}`:'';}).filter(Boolean).join(' · ');
         const ok2=(e.result2||[]).filter(r=>r.state==='assigned').map(r=>byId2[r.clubId]).filter(Boolean).map(c=>esc(c.title)).join(', ');
-        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}<div class="small">${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</div></td><td>${ps||'-'}${ps2?`<div class="small" style="color:#B45309">🎯 2차: ${ps2}</div>`:''}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}${ok2?`<div class="small" style="color:#B45309">🎯 ${ok2}</div>`:''}</td></tr>`; }).join('')}
+        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}<div class="small">${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</div></td><td>${ps||'-'}${ps2?`<div class="small" style="color:#B45309">🎯 2차: ${ps2}</div>`:''}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}${ok2?`<div class="small" style="color:#B45309">🎯 ${ok2}</div>`:''}</td></tr>`; }).join('')}${(e.picks2||[]).length && !VIEW_ONLY ? ` <button class="bs" style="font-size:10px;padding:2px 8px;color:#B91C1C;border-color:#F3C2C2" onclick="delStu2('${e.id}')" title="이 학생의 2차 신청 전체 삭제">🗑 2차 삭제</button>` : ''}
       </table></div></details>`:''}`;
 }
+window.delStu2 = async (eid)=>{
+  const e = ENR.find(x=>x.id===eid); if(!e) return;
+  const titles = (e.picks2||[]).map(p=>{ const c=LIVE().find(x=>x.id===p.clubId); return c?c.title:p.clubId; }).join(', ');
+  if(!confirm(`${e.studentName||''} 학생의 2차 신청을 전부 삭제할까요?\n(${titles||'없음'})\n대기·제비뽑기 체크도 함께 지웁니다 — 미리/잘못 들어온 신청 정리용`)) return;
+  try{
+    await updateDoc(doc(db,'clubEnrollments', e.id), { picks2: [], waits2: [], lottery2: {} });
+    e.picks2 = []; e.waits2 = []; e.lottery2 = {};
+    clubLog('2차 신청 전체 삭제(관리자)', `${e.studentName||''} · ${titles||'-'}`);
+    toast('삭제했습니다'); renderEnroll();
+  }catch(err){ toast('삭제 실패: '+(err.message||''),'err'); }
+};
 window.delPick2 = async (eid, cid)=>{
   const e = ENR.find(x=>x.id===eid); const c = LIVE().find(x=>x.id===cid); if(!e) return;
   if(!confirm(`${e.studentName||''} — «${c?c.title:''}» 2차 지원을 삭제할까요?\n(학부모가 잘못/미리 넣은 신청 정리용)`)) return;
