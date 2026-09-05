@@ -749,6 +749,10 @@
   .sh-warn{margin-top:6px;font-size:11.5px;color:#B0392E;font-weight:700}
   .vs-drawer{display:none;background:#FDFCF8;border:1.5px dashed #CBD6CE;border-radius:12px;padding:12px 14px;margin:10px 0}
   .vs-drawer.open{display:block}
+  .cc-box{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px}
+  .cc-chip{border-radius:999px;padding:2px 4px 2px 10px;font-size:11.5px;font-weight:800;display:inline-flex;align-items:center;gap:3px}
+  .cc-chip i{font-style:normal;cursor:pointer;padding:0 5px;opacity:.7}
+  .cc-chip i:hover{opacity:1}
   .vs-drawer .vsd-t{font-size:11.5px;font-weight:900;color:#1F6B4A;margin-bottom:9px}
   #vs-toggle.on{background:#EAF3EE;border-color:#BFD8CB;color:#1F6B4A}
   html[data-thm="dark"] .vs-drawer{background:#22302B;border-color:#3A4C45}
@@ -902,7 +906,7 @@ function hasHolidayData(year){ return !!(window.KRHOL && window.KRHOL.has(year))
    분류 · 시간대 · 대상
    ═══════════════════════════════════════════════ */
 const CATEGORIES = {
-  event:{label:'행사',color:'#8B5CF6'}, program:{label:'프로그램',color:'#3B82F6'},
+  teacher:{label:'교사',color:'#2F855A'}, event:{label:'행사',color:'#8B5CF6'}, program:{label:'프로그램',color:'#3B82F6'},
   break:{label:'방학',color:'#F97316'}, exam:{label:'시험',color:'#16A34A'},
   worship:{label:'예배·기도회',color:'#0D9488'}, admin:{label:'행정',color:'#6B7280'},
   /* 휴교 — 학교가 쉬는 날. 달력에서 공휴일과 같은 빨간 칸으로 보인다.
@@ -945,6 +949,7 @@ const EV_COLORS = ['#8B5CF6','#3B82F6','#0D9488','#16A34A','#F97316','#E11D48','
 /* 🎨 분류마다 쓰기 좋은 색 — 같은 «행사»라도 체육대회·발표회·캠프를 색으로 나눌 수 있게
    각 줄은 [연함 → 진함] 순서. 분류를 고르면 그 계열이 먼저 보이고, 아래에 전체 색도 함께 나온다. */
 const CAT_PALETTE = {
+  teacher: ['#A7D7BE','#7FC29B','#4E9F76','#2F855A','#276749','#86EFAC','#34D399','#0F766E'],
   event:   ['#C4B5FD','#A78BFA','#8B5CF6','#7C3AED','#6D28D9','#F0ABFC','#D946EF','#A21CAF'],
   program: ['#93C5FD','#60A5FA','#3B82F6','#2563EB','#1D4ED8','#67E8F9','#06B6D4','#0E7490'],
   break:   ['#FDBA74','#FB923C','#F97316','#EA580C','#C2410C','#FCD34D','#F59E0B','#B45309'],
@@ -953,7 +958,35 @@ const CAT_PALETTE = {
   admin:   ['#D1D5DB','#9CA3AF','#6B7280','#4B5563','#374151','#D6D3D1','#A8A29E','#57534E'],
   closed:  ['#FCA5A5','#F87171','#EF4444','#DC2626','#B91C1C','#FDA4AF','#F43F5E','#9F1239'],
 };
+function regCatLabel(id,label,color){ try{ CATEGORIES[id]={label,color}; }catch(_){} }
+function unregCatLabel(id){ try{ delete CATEGORIES[id]; }catch(_){} }
 function catPalette(cat){ return CAT_PALETTE[cat] || CAT_PALETTE.event; }
+/* 🎨 사용자 정의 분류 — calendars/evTypes 에 {list:[{id,label,color}]} */
+let CUSTOM_CATS = [], _ccLoaded = false;
+async function loadCustomCats(){
+  try{
+    const d = await getDoc(doc(db,'calendars','evTypes'));
+    CUSTOM_CATS = (d.exists() && Array.isArray(d.data().list)) ? d.data().list : [];
+  }catch(_){ CUSTOM_CATS = []; }
+  CUSTOM_CATS.forEach(c=>{ if(c && c.id){ CAT_PALETTE['ct_'+c.id] = Array(8).fill(c.color||'#8B5CF6'); regCatLabel('ct_'+c.id, c.label||'분류', c.color||'#8B5CF6'); } });
+}
+const CC_COLORS = ['#1F6B4A','#B45309','#7C3AED','#0E7490','#BE185D','#4D7C0F','#9A3412','#1D4ED8'];
+window.addCustomCat = async function(){
+  const name = (prompt('새 분류 이름 (예: 상담, 회의, 견학)')||'').trim();
+  if(!name) return;
+  const c = { id: Date.now().toString(36), label: name.slice(0,10), color: CC_COLORS[CUSTOM_CATS.length % CC_COLORS.length] };
+  CUSTOM_CATS.push(c); CAT_PALETTE['ct_'+c.id] = Array(8).fill(c.color); regCatLabel('ct_'+c.id, c.label, c.color);
+  try{ await setDoc(doc(db,'calendars','evTypes'), { list: CUSTOM_CATS }); toast('🎨 분류 «'+c.label+'» 추가 — 일정 입력창의 분류에서 고를 수 있어요','ok'); }
+  catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+  try{ renderViewBar(); render(); }catch(_){}
+};
+window.delCustomCat = async function(id){
+  const c = CUSTOM_CATS.find(x=>x.id===id); if(!c) return;
+  if(!confirm('분류 «'+c.label+'»를 지울까요?\n이 분류를 쓰던 일정은 기본 색으로 표시됩니다.')) return;
+  CUSTOM_CATS = CUSTOM_CATS.filter(x=>x.id!==id); delete CAT_PALETTE['ct_'+id]; unregCatLabel('ct_'+id);
+  try{ await setDoc(doc(db,'calendars','evTypes'), { list: CUSTOM_CATS }); }catch(e){}
+  try{ renderViewBar(); render(); }catch(_){}
+};
 
 /* 🌈 학년 배지 — 색은 무지개, 모양은 부서
      색: 1 빨강 · 2·3 주황 · 4·5 노랑 · 6·7 초록 · 8·9 파랑 · 10·11 남색 · 12 보라
@@ -2397,7 +2430,7 @@ window.pickEvOrg = function(o){
 /* 빈 칸을 누르면 그 날짜·시간대로 새 행사 */
 window.addOn = function(ds, slot, ev){
   if(ev && ev.target.closest('.ev-chip')) return;   // 행사를 누른 것이면 그쪽으로
-  if(!CAN_EDIT || curTab !== 'edit') return;        // 추가는 편집 탭에서만
+  if(!CAN_EDIT || SHARE_MODE) return;               // ⚡ 보기 화면에서도 날짜를 누르면 바로 입력
   openEventDlg(null, ds, slot);
 };
 
@@ -2780,6 +2813,9 @@ window.saveEvent = async function(){
   })();
 };
 
+document.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && e.target && e.target.id==='ev-title' && typeof window.saveEvent==='function'){ e.preventDefault(); saveEvent(); }
+});
 window.delEvent = async function(id){
   if(!needEdit()) return;
   const e = EVENTS.find(x=>x.id===id); if(!e) return;
@@ -3225,9 +3261,15 @@ function renderViewBar(){
       title="주마다 학년별 수업일 표를 함께 봅니다">📋 수업일</button>
     <button class="vw-gear ${VW_OPEN?'on':''}" onclick="toggleViewSetup()">⚙ 보기 설정</button>
     <div class="vw-panel ${VW_OPEN?'open':''}" id="vw-panel">${viewSetupHTML()}</div>`;
+  if(!_ccLoaded){ _ccLoaded = true; loadCustomCats().then(()=>{ try{ renderViewBar(); render(); }catch(_){} }); }
+  const ccHtml = CAN_EDIT ? `
+    <div class="cc-box"><b style="font-size:11.5px;color:var(--gd,#1E3932)">🎨 분류</b>
+      ${CUSTOM_CATS.map(c=>`<span class="cc-chip" style="background:${c.color}22;color:${c.color}">${esc(c.label)}<i onclick="delCustomCat('${c.id}')" title="삭제">×</i></span>`).join('')}
+      <button class="btn btn-sm" onclick="addCustomCat()">＋ 분류 추가</button>
+    </div>` : '';
   const ex = $I('vw-extra');
-  if(ex){ bar.innerHTML = mainHtml; ex.innerHTML = extraHtml; }   // 서랍이 있으면 부가 설정은 서랍 속으로
-  else  { bar.innerHTML = mainHtml + extraHtml; }
+  if(ex){ bar.innerHTML = mainHtml; ex.innerHTML = extraHtml + ccHtml; }   // 서랍이 있으면 부가 설정은 서랍 속으로
+  else  { bar.innerHTML = mainHtml + extraHtml + ccHtml; }
 }
 
 let VW_OPEN = false;
@@ -3828,7 +3870,7 @@ function openIcsImportDlg(fname){
         <span style="display:block;font-size:11.5px;color:var(--ts);margin-top:1px">${esc(e.start)}${e.end!==e.start?` ~ ${esc(e.end)}`:''}${e.memo?` · ${esc(e.memo.slice(0,40))}${e.memo.length>40?'…':''}`:''}</span>
       </span></label>`;
   }).join('');
-  const CATL={event:'행사',program:'프로그램',worship:'예배·기도회',admin:'행정',break:'방학',exam:'시험',closed:'휴교·휴일'};
+  const CATL={teacher:'교사',event:'행사',program:'프로그램',worship:'예배·기도회',admin:'행정',break:'방학',exam:'시험',closed:'휴교·휴일'};
   const chipRow=(id,map,onKey)=>`<div class="chips" id="${id}">${Object.entries(map).map(([k,l])=>
     `<button type="button" class="chip ${k===onKey?'on':''}" data-k="${k}"
       onclick="this.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));this.classList.add('on')">${l}</button>`).join('')}</div>`;
