@@ -741,6 +741,12 @@
       text-overflow:clip !important; word-break:keep-all; line-height:1.3;
       max-width:100% !important; }
   }
+  .vs-drawer{display:none;background:#FDFCF8;border:1.5px dashed #CBD6CE;border-radius:12px;padding:12px 14px;margin:10px 0}
+  .vs-drawer.open{display:block}
+  .vs-drawer .vsd-t{font-size:11.5px;font-weight:900;color:#1F6B4A;margin-bottom:9px}
+  #vs-toggle.on{background:#EAF3EE;border-color:#BFD8CB;color:#1F6B4A}
+  html[data-thm="dark"] .vs-drawer{background:#22302B;border-color:#3A4C45}
+  html[data-thm="dark"] .vs-drawer .vsd-t{color:#8FD3AE}
 </style>
 </head>
 <body>
@@ -769,16 +775,22 @@
           <button onclick="moveMonth(1)">›</button>
         </div>
         <button class="btn" onclick="goToday()">오늘</button>
+        <button class="btn" id="vs-toggle" onclick="const d=document.getElementById('vs-drawer');d.classList.toggle('open');this.classList.toggle('on',d.classList.contains('open'))">⚙️ 보기·설정</button>
       </div>
     </div>
 
-    <div class="yr-bar">
-      <span style="font-size:12.5px;font-weight:800;color:var(--gd,#1E3932)">학년도</span>
-      <select class="yr-sel" id="yr-sel" onchange="onPickYear(this.value)"></select>
-      <span id="yr-note" style="font-size:11.5px;color:var(--tl,#93A09A)"></span>
-      <span id="yr-act" style="margin-left:auto;display:flex;gap:6px"></span>
-    </div>
 
+    <div class="vs-drawer" id="vs-drawer">
+      <div class="vsd-t">⚙️ 보기·설정</div>
+      <div class="yr-bar" style="border:0;background:transparent;padding:0;margin:0 0 8px">
+        <span style="font-size:12.5px;font-weight:800;color:var(--gd,#1E3932)">학년도</span>
+        <select class="yr-sel" id="yr-sel" onchange="onPickYear(this.value)"></select>
+        <span id="yr-note" style="font-size:11.5px;color:var(--tl,#93A09A)"></span>
+        <span id="yr-act" style="margin-left:auto;display:flex;gap:6px"></span>
+      </div>
+      <div id="vw-extra" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px"></div>
+      <div id="grade-legend"></div>
+    </div>
     <div class="ph-bar" id="ph-bar"></div>
     <div class="vw-bar" id="vw-bar"></div>
     <div class="gf-bar" id="gf-bar"></div>
@@ -791,7 +803,6 @@
     <div id="cal-mount"></div>
     <div id="cd-mount" style="display:none"></div>
     <div class="ac-legend" id="legend"></div>
-    <div id="grade-legend"></div>
 
     <!-- 담당자: 학기·방학 골격 -->
     <div class="panel" id="term-panel" style="display:none">
@@ -1584,7 +1595,7 @@ function weekBars(days, slot){
   const lanes = [];
   groups.forEach(gp=>{
     // 이 묶음이 쓸 첫 줄을 정한다 — 아직 아무도 안 쓰는 줄부터
-    let base = lanes.length;
+    let base = 0;   // 🩹 첫 빈 줄부터 — 안 겹치면 같은 줄을 나눠 쓴다 (세로 부풀기 해결)
     gp.items.forEach(b=>{
       let li = base;
       while(lanes[li] && !lanes[li].every(x => b.start >= x.start+x.span || x.start >= b.start+b.span)) li++;
@@ -3196,17 +3207,21 @@ window.setSlim = function(on){
 function renderViewBar(){
   const bar = $I('vw-bar'); if(!bar) return;
   bar.style.display='';
-  bar.innerHTML = `
+  const mainHtml = `
     <div class="ac-viewtoggle">
       <button class="${curView==='teacher'?'on':''}" onclick="setView('teacher')">교사용</button>
       <button class="${curView==='parent'?'on':''}" onclick="setView('parent')">학부모용</button>
     </div>
     ${CAN_EDIT?`<button class="vw-drag ${DRAG_ON?'on':''}" onclick="toggleDrag()"
-      title="켜면 행사를 끌어서 날짜를 옮길 수 있어요">🖐 옮기기 ${DRAG_ON?'켬':'끔'}</button>`:''}
+      title="켜면 행사를 끌어서 날짜를 옮길 수 있어요">🖐 옮기기 ${DRAG_ON?'켬':'끔'}</button>`:''}`;
+  const extraHtml = `
     <button class="vw-fb ${(CD_ALL||CD_OPEN.size)?'on':''}" onclick="toggleAllCd()"
       title="주마다 학년별 수업일 표를 함께 봅니다">📋 수업일</button>
     <button class="vw-gear ${VW_OPEN?'on':''}" onclick="toggleViewSetup()">⚙ 보기 설정</button>
     <div class="vw-panel ${VW_OPEN?'open':''}" id="vw-panel">${viewSetupHTML()}</div>`;
+  const ex = $I('vw-extra');
+  if(ex){ bar.innerHTML = mainHtml; ex.innerHTML = extraHtml; }   // 서랍이 있으면 부가 설정은 서랍 속으로
+  else  { bar.innerHTML = mainHtml + extraHtml; }
 }
 
 let VW_OPEN = false;
