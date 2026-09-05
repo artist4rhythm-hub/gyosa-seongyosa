@@ -977,7 +977,7 @@ window.askCancel = (id)=>{
 };
 window.doCancel = async (id, on)=>{ await setApp(id, { cancelled:on }); paintEnroll(); };
 window.enrAll = (o)=>{ document.querySelectorAll('#body details.drw').forEach(d=>d.open=o); };
-function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', declined:'🙅 참여 취소', closed:'⛔ 모집 마감', waitlist:'⏳ 대기' }[st] || st; }
+function resLabel(st){ return { assigned:'✅ 배정', lost:'❌ 추첨 탈락', full:'⛔ 정원 마감', overlap:'⏱ 시간 겹침', cancelled:'⚫ 폐강', declined:'🙅 참여 취소', closed:'⛔ 모집 마감', skipped:'⏭ 자동 미지원', waitlist:'⏳ 대기' }[st] || st; }
 window.setLottery = async (eid, cid, on)=>{ const e = ENR.find(x=>x.id===eid); const f = isR2A()?'lottery2':'lottery';
   const lot = {...(e[f]||{})}; lot[cid]=on; await updateDoc(doc(db,'clubEnrollments',eid), { [f]: lot }); e[f] = lot; };
 window.togR2 = async (id, close)=>{ const c=LIVE().find(x=>x.id===id); if(!c) return;
@@ -1079,11 +1079,21 @@ window.autoAssign2 = async ()=>{
       else fresh.forEach(e=> tryAssign(e,c));
     }
   }
-  for(const e of ENR) for(const pk of slotPicks(e).filter(p=>p.rank===2)){
-    const c = byId[pk.clubId]; if(!c) continue;
-    if(res[e.id].some(r=>r.clubId===c.id)) continue;
-    if(closedM[c.id]){ res[e.id].push({clubId:c.id, state:'closed'}); continue; }
-    tryAssign(e, c);
+  for(const e of ENR){
+    const pks2 = slotPicks(e).filter(p=>p.rank===2);
+    if(!pks2.length) continue;
+    const p1 = slotPicks(e).filter(p=>p.rank===1);
+    const fail1 = p1.length===0 || p1.some(p=>{ const r=res[e.id].find(x=>x.clubId===p.clubId); return !r || r.state!=='assigned'; });
+    let stop = !fail1;                                   // 1지망 전부 배정 → 사다리 미가동
+    for(const pk of pks2){
+      const c = byId[pk.clubId]; if(!c) continue;
+      if(res[e.id].some(r=>r.clubId===c.id)) continue;
+      if(stop){ res[e.id].push({clubId:c.id, state:'skipped'}); continue; }
+      if(closedM[c.id]){ res[e.id].push({clubId:c.id, state:'closed'}); continue; }
+      const before = cap[c.id];
+      tryAssign(e, c);
+      if(cap[c.id] > before) stop = true;                // 하나 확보 → 나머지 자동 미지원
+    }
   }
   let n=0;
   for(const e of ENR){ if(!slotPicks(e).length) continue;
@@ -1131,10 +1141,19 @@ window.autoAssign = async ()=>{
   const result = {}; ENR.forEach(e=>result[e.id]=[]);
   for(let rank=1; rank<=3; rank++){
     for(const e of ENR){
-      // 같은 순위에 여러 동아리를 신청할 수 있다 (시간이 안 겹치면 전부 배정)
+      // 1지망: 시간이 안 겹치면 전부 도전 · 2~3지망: 🪜 보충 사다리 (1지망 실패 시에만, 층 전체에서 최대 1개)
       const pks = (e.picks||[]).filter(p=>p.rank===rank);
+      if(!pks.length) continue;
+      if(rank>=2){
+        const p1 = (e.picks||[]).filter(p=>p.rank===1);
+        const fail1 = p1.length===0 || p1.some(p=>{ const r=result[e.id].find(x=>x.clubId===p.clubId); return !r || r.state!=='assigned'; });
+        const ladderWon = result[e.id].some(r=>r.state==='assigned' && r.viaLadder);
+        if(!fail1 || ladderWon){ pks.forEach(pk=>result[e.id].push({clubId:pk.clubId, state:'skipped'})); continue; }
+      }
+      let stop = false;
       for(const pk of pks){
         const c = byId[pk.clubId]; if(!c) continue;
+        if(stop){ result[e.id].push({clubId:c.id, state:'skipped'}); continue; }   // 같은 층에서 이미 확보 → 자동 미지원
         if(c.cancelled){ result[e.id].push({clubId:c.id, state:'cancelled'}); continue; }
         if((e.final||{})[c.id]===false){ result[e.id].push({clubId:c.id, state:'declined'}); continue; }  // 학부모가 참여 취소 → 자리 비움
         const st = clubStat(c).st;
@@ -1143,7 +1162,8 @@ window.autoAssign = async ()=>{
         const mine = result[e.id].filter(r=>r.state==='assigned').map(r=>byId[r.clubId]);
         if(mine.some(m=>overlap(m,c))){ result[e.id].push({clubId:c.id, state:'overlap'}); continue; }
         if(cap[c.id] >= (c.maxN||999)){ result[e.id].push({clubId:c.id, state:'full'}); continue; }
-        cap[c.id]++; result[e.id].push({clubId:c.id, state:'assigned'});
+        cap[c.id]++; result[e.id].push({clubId:c.id, state:'assigned', ...(rank>=2?{viaLadder:true}:{})});
+        if(rank>=2) stop = true;
       }
     }
   }
