@@ -370,7 +370,7 @@ function paintStatus(){
     ${prev && !(isR2A()&&SEM.status==='enrolling') ? `<button class="bs" onclick="setStatus('${prev}')">← ${stLabel(prev)}</button>`:''}
     ${next?`<button class="bp" onclick="setStatus('${next}')">${stLabel(next)} 단계로 →</button>`:''}
     ${SEM.status==='adjusting' && !isR2A() ? (SEM.r1Done
-        ? `<button class="bp" style="background:#B45309;border-color:#B45309" onclick="openR2()">🎯 추가 모집 열기…</button>`
+        ? `<button class="bs" onclick="finalizeR1()" title="새 기준 결과로 1차 확정을 다시 저장">✅ 다시 도장…</button><button class="bp" style="background:#B45309;border-color:#B45309" onclick="openR2()">🎯 추가 모집 열기…</button>`
         : `<button class="bp" style="background:#15803D;border-color:#15803D" onclick="finalizeR1()">✅ 1차 확정·기록 저장…</button>`)
       :''}
     ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" onclick="cancelR2()">↩ 추가 모집 취소</button>`:''}
@@ -993,7 +993,7 @@ window.finalizeR1 = async ()=>{
   const rows = clubs.filter(c=>!c.cancelled).map(c=>{ const n=confirmedN(c.id); confT+=n;
     const max=Number(c.maxN)||0, min=Number(c.minN)||0, left=Math.max(0,max-n);
     return { c, n, left, cls: left<=0?'full':(n>=min?'left':'under') }; });
-  if(!confirm(`✅ 1차 확정 도장을 찍습니다\n\n· 학생별 현재 배정(취소 제외)을 «1차 확정 명단»으로 고정 — 이후 불변\n· 동아리별 분류(🔴 모집 완료 / 🟢 잔여 / 🟡 미달)와 잔여석 확정\n· 📜 1차 기록 문서 저장 (언제든 열람)\n\n동아리 ${rows.length}개 · 확정 ${confT}명 — 진행할까요?`)) return;
+  if(!confirm(`${SEM.r1Done?'⚠ 이미 저장된 1차 확정을 «새 기준 결과»로 덮어씁니다.\n(직전 상태는 타임머신 스냅샷에 자동 보관)\n\n':''}✅ 1차 확정 도장을 찍습니다\n\n· 학생별 현재 배정(취소 제외)을 «1차 확정 명단»으로 고정 — 이후 불변\n· 동아리별 분류(🔴 모집 완료 / 🟢 잔여 / 🟡 미달)와 잔여석 확정\n· 📜 1차 기록 문서 저장 (언제든 열람)\n\n동아리 ${rows.length}개 · 확정 ${confT}명 — 진행할까요?`)) return;
   await snapSems('1차 확정 전'); await snapEnr('1차 확정 전');
   for(const e of ENR){
     const fin = (e.result||[]).filter(r=>r.state==='assigned' && (e.final||{})[r.clubId]!==false).map(r=>r.clubId);
@@ -1078,13 +1078,17 @@ window.viewRecords = async ()=>{
     ${items.map((it,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:10px 2px;border-bottom:1px solid #F0F2F0">
       <div style="flex:1"><b style="font-size:13px">${it.label}</b>
         <div class="small" style="color:var(--tl)">${it.a ? ('저장됨 · '+(it.a.at&&it.a.at.toDate?it.a.at.toDate().toLocaleString('ko-KR'):'')) : it.hint}</div></div>
-      ${it.a ? `<button class="bs" onclick="__recOpen(${i})">열람</button>`
+      ${it.a ? `<button class="bs" onclick="__recOpen(${i})">열람</button><button class="bs" onclick="__recRe('${it.k}')" title="새 기준으로 다시 저장">↻</button>`
         : (it.type==='apps' ? `<button class="bs" onclick="__recMake('${it.k}')">지금 저장</button>` : `<span class="small" style="color:var(--tl)">대기</span>`)}
     </div>`).join('')}
     <button class="bp" style="width:100%;margin-top:12px" onclick="this.closest('.modal-bg').remove()">닫기</button></div>`;
   document.body.appendChild(bg);
   window.__recOpen = (i)=>{ const it = items[i]; bg.remove(); it.type==='apps' ? appsModal(it.label, it.a) : archModal(it.label, it.a, it.k==='clubFinal'); };
   window.__recMake = async (k)=>{ bg.remove(); try{ await archiveApplies(k); toast('📜 저장했습니다'); }catch(e){ toast('저장 실패: '+(e.message||''),'err'); } viewRecords(); };
+  window.__recRe = async (k)=>{ bg.remove();
+    if(k==='clubR1'){ finalizeR1(); return; }                                   // 확인창·도장·기록 갱신까지 한 번에
+    if(k==='clubFinal'){ try{ await archiveFinal(); toast('🏁 최종 기록을 현재 상태로 다시 저장했습니다'); }catch(e){ toast('저장 실패: '+(e.message||''),'err'); } viewRecords(); return; }
+    try{ await archiveApplies(k); toast('📜 다시 저장했습니다'); }catch(e){ toast('저장 실패: '+(e.message||''),'err'); } viewRecords(); };
 };
 async function archiveFinal(){
   const snap = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
