@@ -376,7 +376,8 @@ function paintStatus(){
       :''}
     ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" onclick="cancelR2()">↩ 추가 모집 취소</button>`:''}
     <button class="bs" onclick="viewRecords()">📜 기록</button>
-    <button class="bs" onclick="viewClubLogs()">📋 로그</button>`;
+    <button class="bs" onclick="viewClubLogs()">📋 로그</button>
+    ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" style="color:#B45309;border-color:#F1D3AE" onclick="editR2Close()">⏰ 마감 ${SEM.r2CloseAt?esc(SEM.r2CloseAt.replace('T',' ').slice(5)):'미설정'} · 변경</button>`:''}`;
 }
 async function buildRosters(){
   // ✅ 확정 시: 배정+참여확정 학생 명단을 각 신청서에 박제 — 강사가 출석 화면에서 자기 문서로 읽는다
@@ -738,7 +739,15 @@ function renderLink(){
   const PURL = PORTAL.replace('club.html','club-enroll.html') + '?org=' + SEM.org;
   const re = ms('recruitEnd'), pe = ms('planEnd');
   const es = ms('enrollStart'), ee = ms('enrollEnd');
-  const pmsg = `[${ORGS[SEM.org]}] ${SEM.name} 방과후 동아리·조이클래스 신청 안내 🎨\n\n개설 동아리를 둘러보고 자녀별로 1·2·3순위를 골라 신청해 주세요.\n${PURL}\n\n${es?.at?`· 신청 시작: ${es.at.replace('T',' ')}\n`:''}· ${ee?.label||'학부모 신청 마감'}: ${ee?.at ? ee.at.replace('T',' ') : '(설정 예정)'}\n· 학부모 포털 계정으로 로그인 → 🎨 동아리 신청\n· 정원 초과 시 추첨, 시간이 겹치지 않으면 여러 개 참여할 수 있어요`;
+  const pmsg = isR2A() ? `[${ORGS[SEM.org]}] ${SEM.name} 🎯 동아리 추가 모집 안내
+
+빈자리가 남은 동아리만 1·2지망으로 신청할 수 있어요.
+${PURL}
+
+· 추가 모집 마감: ${SEM.r2CloseAt ? SEM.r2CloseAt.replace('T',' ') : '(설정 예정)'}
+· 초과 시 제비뽑기(선생님 입력) · 배정 = 즉시 확정
+· 1차 확정은 그대로 유지 — 취소(«최종 지원하지 않기»)는 이 기간에만 가능
+· ⛔ 모집 완료 동아리는 ⏳ 대기 걸기 (신중히! 당첨 = 즉시 확정)` : `[${ORGS[SEM.org]}] ${SEM.name} 방과후 동아리·조이클래스 신청 안내 🎨\n\n개설 동아리를 둘러보고 자녀별로 1·2·3순위를 골라 신청해 주세요.\n${PURL}\n\n${es?.at?`· 신청 시작: ${es.at.replace('T',' ')}\n`:''}· ${ee?.label||'학부모 신청 마감'}: ${ee?.at ? ee.at.replace('T',' ') : '(설정 예정)'}\n· 학부모 포털 계정으로 로그인 → 🎨 동아리 신청\n· 정원 초과 시 추첨, 시간이 겹치지 않으면 여러 개 참여할 수 있어요`;
   const msg = `[${ORGS[SEM.org]}] ${SEM.name} 방과후 동아리·조이클래스 개설 신청 안내 🎨\n\n동아리(성인 강사) 또는 조이클래스(DA 중·고 학생 강사)를 개설하실 분은 아래 링크에서 신청서를 작성해 주세요.\n${url}\n\n· ${re?.label||'강사 모집 마감'}: ${re?.at ? re.at.replace('T',' ') : '(설정 예정)'}${pe?.at?`\n· ${pe.label}: ${pe.at.replace('T',' ')}`:''}\n· 수업 시간: ${SEM.timeStart}~${SEM.timeEnd} (최대 ${SEM.maxMin}분)\n· 이메일만 있으면 계정 없이 바로 작성할 수 있어요`;
   $I('body').innerHTML = `
   <div class="card"><h3>강사 모집 링크</h3>
@@ -997,6 +1006,26 @@ window.delWait2 = async (eid, cid)=>{
     e.waits2 = w; clubLog('대기 삭제(관리자)', `${e.studentName||''} · ${c?c.title:cid}`);
     toast('삭제했습니다'); renderEnroll();
   }catch(err){ toast('삭제 실패: '+(err.message||''),'err'); }
+};
+window.editR2Close = ()=>{
+  const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=e=>{ if(e.target===bg) bg.remove(); };
+  bg.innerHTML = `<div class="modal" style="max-width:360px"><h3 style="margin:0 0 8px">⏰ 추가 모집 마감 변경</h3>
+    <input type="datetime-local" id="r2c-in" value="${esc(SEM.r2CloseAt||'')}" style="width:100%;padding:9px;border:1.5px solid var(--ln,#E3E1DA);border-radius:10px;font-family:inherit">
+    <div class="small" style="margin:8px 0 0;color:var(--tl)">저장하면 학부모 화면의 마감 안내가 즉시 바뀌고, 마감 시각이 지나면 신청·취소·대기가 자동 잠깁니다.</div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="bs" style="flex:1" onclick="this.closest('.modal-bg').remove()">취소</button>
+    <button class="bp" style="flex:1" onclick="saveR2Close()">저장</button></div></div>`;
+  document.body.appendChild(bg);
+};
+window.saveR2Close = async ()=>{
+  const v = document.getElementById('r2c-in').value;
+  if(!v){ toast('마감 일시를 입력해 주세요','err'); return; }
+  try{
+    await updateDoc(doc(db,'clubSemesters', SEM.id), { r2CloseAt: v });
+    SEM.r2CloseAt = v;
+    clubLog('추가 모집 마감 변경', v.replace('T',' '));
+    document.querySelector('.modal-bg')?.remove();
+    paintStatus(); toast('⏰ 마감을 바꿨습니다 — 학부모 화면에 즉시 반영');
+  }catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
 };
 window.viewClubLogs = async ()=>{
   let rows = [];
