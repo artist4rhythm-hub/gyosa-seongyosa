@@ -377,7 +377,7 @@ function paintStatus(){
     ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" onclick="cancelR2()">↩ 추가 모집 취소</button>`:''}
     <button class="bs" onclick="viewRecords()">📜 기록</button>
     <button class="bs" onclick="viewClubLogs()">📋 로그</button>
-    ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" style="color:#B45309;border-color:#F1D3AE" onclick="editR2Close()">⏰ 마감 ${SEM.r2CloseAt?esc(SEM.r2CloseAt.replace('T',' ').slice(5)):'미설정'} · 변경</button>`:''}`;
+    ${isR2A() && SEM.status==='enrolling' ? `<button class="bs" style="color:#B45309;border-color:#F1D3AE" onclick="editR2Close()">⏰ 마감 ${SEM.r2CloseAt?esc(SEM.r2CloseAt.replace('T',' ').slice(5)):'미설정'} · 변경</button>`:''}` + stageNavHTML();
 }
 async function buildRosters(){
   // ✅ 확정 시: 배정+참여확정 학생 명단을 각 신청서에 박제 — 강사가 출석 화면에서 자기 문서로 읽는다
@@ -1007,6 +1007,30 @@ window.delWait2 = async (eid, cid)=>{
     toast('삭제했습니다'); renderEnroll();
   }catch(err){ toast('삭제 실패: '+(err.message||''),'err'); }
 };
+function stageNavHTML(){
+  try{
+    const sch = SEM.sched || SEM.schedule || SEM.timeline || [];
+    const dOf = keys => { const r = sch.find(x=>{ const L=(x.label||'')+(x.role||''); return keys.some(k=>L.includes(k)); });
+      return (r && r.at) ? String(r.at).replace('T',' ').slice(5,16) : ''; };
+    const st = SEM.status, R2 = isR2A();
+    const cur = st==='recruiting'?0 : st==='planning'?1 : st==='published'?2
+      : (st==='enrolling'&&!R2)?3 : (st==='adjusting'&&!R2)?(SEM.r1Done?5:4)
+      : (st==='enrolling'&&R2)?6 : (st==='adjusting'&&R2)?7
+      : st==='confirmed'?8 : (['running','settling','locked'].includes(st))?9 : 0;
+    const steps = [
+      ['강사 모집', dOf(['강사 모집 시작'])], ['계획서', dOf(['계획서'])], ['공고·취합', dOf(['공고'])],
+      ['학부모 신청', dOf(['학부모 신청 시작'])], ['순위 조정', dOf(['순위 조정'])], ['✅ 1차 확정', ''],
+      ['🎯 추가 모집', SEM.r2CloseAt ? ('~'+SEM.r2CloseAt.replace('T',' ').slice(5,16)) : ''],
+      ['2차 추첨·배정', ''], ['확정', dOf(['최종 결정'])], ['운영', '']];
+    return `<div style="display:flex;gap:5px;flex-wrap:wrap;align-items:flex-start;margin:10px 0 0;padding:9px 12px;background:var(--iv,#F4F6F4);border-radius:12px">
+      ${steps.map((p,i)=>`<div style="display:flex;align-items:flex-start;gap:5px"><div style="display:flex;flex-direction:column;align-items:center">
+        <span style="font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap;${i<cur?'background:#DCFCE7;color:#15803D':i===cur?'background:var(--gd,#1E3932);color:#fff':'background:#fff;color:#9AA69F;border:1px solid #E3E1DA'}">${i<cur?'✓ ':''}${p[0]}</span>
+        ${p[1]?`<span style="font-size:9px;color:var(--tl,#93A09A);margin-top:2px;white-space:nowrap">${esc(p[1])}</span>`:''}
+      </div>${i<steps.length-1?`<span style="color:#C7D2CB;font-size:10px;line-height:20px">›</span>`:''}</div>`).join('')}
+      <span style="flex-basis:100%;font-size:10px;color:var(--tl,#93A09A);margin-top:3px">날짜는 안내용(학기 설정 일정표) · 실제 단계 전환은 위 버튼이 결정합니다</span>
+    </div>`;
+  }catch(_){ return ''; }
+}
 window.editR2Close = ()=>{
   const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=e=>{ if(e.target===bg) bg.remove(); };
   bg.innerHTML = `<div class="modal" style="max-width:360px"><h3 style="margin:0 0 8px">⏰ 추가 모집 마감 변경</h3>
@@ -1022,6 +1046,12 @@ window.saveR2Close = async ()=>{
   try{
     await updateDoc(doc(db,'clubSemesters', SEM.id), { r2CloseAt: v });
     SEM.r2CloseAt = v;
+    try{
+      const key = SEM.sched ? 'sched' : (SEM.schedule ? 'schedule' : null);
+      const sch = key ? SEM[key] : null;
+      const row = sch && sch.find(x=>{ const L=(x.label||''); return L.includes('2차') && (L.includes('마감')||L.includes('정정')); });
+      if(row){ row.at = v; await updateDoc(doc(db,'clubSemesters', SEM.id), { [key]: sch }); }
+    }catch(_){}
     clubLog('추가 모집 마감 변경', v.replace('T',' '));
     document.querySelector('.modal-bg')?.remove();
     paintStatus(); toast('⏰ 마감을 바꿨습니다 — 학부모 화면에 즉시 반영');
