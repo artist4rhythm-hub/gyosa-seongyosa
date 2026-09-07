@@ -34,6 +34,8 @@ const MENU = [
       { key:'club', label:'동아리', icon:'palette', href:'club-admin.html',
         desc:'방과후 동아리·조이클래스 — 학기 설정·강사 모집·신청 취합·공고',
         tabs:['학기 설정','학사 휴강','질문 양식','모집 링크','신청 취합','요일·시간 그리드','신청 현황·배정'] },
+      { key:'clubstat', label:'동아리 현황', icon:'calendar_month', href:'club-status.html',
+        desc:'최종 확정 동아리 · 참여 명단 · 월별 일정 달력 — 학부모 공유 링크 게시' },
       { key:'gcal', label:'구글 캘린더', icon:'event', href:'calendar.html',
         desc:'구글 캘린더 보기' },
       { key:'cert', label:'증명서 발급', icon:'description', href:'cert.html', deny:['partner'],
