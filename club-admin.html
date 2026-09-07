@@ -881,7 +881,7 @@ let ENR = [];
 const isR2A = () => SEM && Number(SEM.round||1) === 2;
 const slotPicks = e => isR2A() ? (e.picks2||[]) : (e.picks||[]);
 const confirmedN = cid => ENR.filter(e=>(e.result||[]).some(r=>r.clubId===cid && r.state==='assigned' && (e.final||{})[r.clubId]!==false)).length;
-const leftOf = c => Math.max(0, (Number(c.maxN)||0) - confirmedN(c.id));
+const leftOf = c => Math.max(0, (Number(c.maxN)||0) + (Number(c.capOver)||0) - confirmedN(c.id));
 const stLabel = st => isR2A() ? ({enrolling:'🎯 추가 모집중', adjusting:'2차 추첨·배정(조정 없음)'}[st]||STATUS[st]) : STATUS[st];
 window.__ENRref = ()=>ENR;
 let ENR_UNSUB = null, ENR_SEMID = null;
@@ -940,7 +940,7 @@ function paintEnroll(){
         st = closed2 ? 'ok' : ((byRank[1]||0) > left ? 'over' : 'ok'); }
       const [lab,bg,fg]=STL[st];
       return `<details class="drw" ${st==='over'?'open':''}><summary class="dsum"><span class="dt">${esc(c.title)}</span><span class="pill" style="background:${bg};color:${fg}">${R2A?(closed2?'⛔ 모집 완료':st==='over'?'🔴 초과(추첨)':'🎯 모집중'):lab}</span>${st==='under' ? (c.underOpen===true?`<span class="pill" style="background:#DCFCE7;color:#15803D">강사: 개설 원함</span>`:c.underOpen===false?`<span class="pill" style="background:#FEE2E2;color:#B91C1C">강사: 폐강 요청</span>`:`<span class="pill" style="background:#EEF1EE;color:#7C8A80">강사 결정 대기</span>`) : ''}
-        <span class="dm">${(c.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN}</span>
+        <span class="dm">${(c.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${c.start} · ${c.durMin}분 · 정원 ${c.minN}~${c.maxN}${(Number(c.capOver)||0)?`<b style="color:#B45309"> +${c.capOver}</b>`:''}</span>
         <span class="dcnt">${R2A?`잔여 <b>${left}</b>${cancelsOf(c.id)?` · 🙅 취소 <b style="color:#B91C1C">${cancelsOf(c.id)}</b>`:''}${(()=>{const w=ENR.filter(e=>(e.waits2||[]).includes(c.id)).length;return w?` · ⏳ 대기 <b style="color:#B45309">${w}</b>`:'';})()} · 1순위 <b>${byRank[1]||0}</b> · 2순위 <b>${byRank[2]||0}</b> · 2차 배정 <b>${a2}</b>`:`1순위 <b>${byRank[1]||0}</b> · 2순위 <b>${byRank[2]||0}</b> · 3순위 <b>${byRank[3]||0}</b> · 배정 <b>${assigned.length}</b>`}</span>
         ${VIEW_ONLY && c.cancelled ? '<span class="pill st-locked" style="margin-left:auto">폐강</span>' : ''}</summary>${R2A?(()=>{ const fin = ENR.filter(e=>[...r1SetOf(e)].includes(c.id)).sort((a,b)=>String(a.studentName||'').localeCompare(String(b.studentName||''),'ko'));
           return `<div class="drw-body" style="padding-bottom:0">
@@ -957,8 +957,8 @@ function paintEnroll(){
           </div>`; })():''}
         <div class="drw-body tblwrap">${picks.length ? `<table class="tb"><tr><th style="width:64px">순위</th><th>학생</th><th>학년·반</th><th>결과</th>${(st==='over'||R2A)?`<th>${R2A?'제비뽑기 당첨':'추첨 당첨'}</th>`:''}</tr>
           ${picks.slice().sort((a,b)=>((slotPicks(a).find(p=>p.clubId===c.id)||{}).rank||9)-((slotPicks(b).find(p=>p.clubId===c.id)||{}).rank||9)).map(e=>{ const pk=slotPicks(e).find(p=>p.clubId===c.id)||{}; const rs=((R2A?e.result2:e.result)||[]).find(r=>r.clubId===c.id);
-            return `<tr><td>${pk.rank||'-'}순위</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${R2A&&!VIEW_ONLY?` <i class="rm2" onclick="delPick2('${e.id}','${c.id}')" title="이 2차 지원 삭제">🗑</i>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
-              ${(st==='over'||R2A) ? `<td>${pk.rank===1?(VIEW_ONLY?(((R2A?e.lottery2:e.lottery)||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${((R2A?e.lottery2:e.lottery)||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}${VIEW_ONLY?'':`<div class="drw-foot">${CAN_FIX()?`<button class="bs" onclick="fixPickStu('${c.id}')" title="이 동아리에 학생 지원 추가">➕ 지원 추가</button>`:''}${R2A?`<button class="bs" onclick="togR2('${c.id}', ${closed2?'false':'true'})">${closed2?'🔓 다시 열기':'🔒 모집 닫기'}</button>`:''}${!R2A&&st==='under'?`<span class="small" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center">강사 결정 대리 기록:
+            return `<tr><td>${(CAN_FIX()&&pk.rank)?`<select onchange="fixRankQuick('${e.id}','${c.id}',this.value)" title="순위 즉석 변경 — 겹치면 자동 맞교환" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit;font-weight:800;font-size:12px">${[1,2,3].map(n=>`<option value="${n}"${pk.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>`:`${pk.rank||'-'}순위`}</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${R2A&&!VIEW_ONLY?` <i class="rm2" onclick="delPick2('${e.id}','${c.id}')" title="이 2차 지원 삭제">🗑</i>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
+              ${(st==='over'||R2A) ? `<td>${(R2A||pk.rank===1)?(VIEW_ONLY?(((R2A?e.lottery2:e.lottery)||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${((R2A?e.lottery2:e.lottery)||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}${VIEW_ONLY?'':`<div class="drw-foot">${CAN_FIX()?`<button class="bs" onclick="fixPickStu('${c.id}')" title="이 동아리에 학생 지원 추가">➕ 지원 추가</button><label class="small" style="display:inline-flex;gap:4px;align-items:center;font-weight:800" title="강사가 초과 수용을 허락한 경우 — ⚙️ 배정 상한이 정원+N이 됩니다">👥 초과 허용 <select onchange="setCapOver('${c.id}',this.value)" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit">${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<option value="${n}"${(Number(c.capOver)||0)===n?' selected':''}>+${n}</option>`).join('')}</select></label>`:''}${R2A?`<button class="bs" onclick="togR2('${c.id}', ${closed2?'false':'true'})">${closed2?'🔓 다시 열기':'🔒 모집 닫기'}</button>`:''}${!R2A&&st==='under'?`<span class="small" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center">강사 결정 대리 기록:
             <button class="bs" onclick="admUnder('${c.id}',true)">🟢 개설</button>
             <button class="bs" onclick="admUnder('${c.id}',false)">⚫ 요청</button>
             <button class="bs" onclick="admUnder('${c.id}',null)">지움</button></span>`:''}${R2A?'':c.cancelled
@@ -1089,6 +1089,35 @@ function renderFix(){
       <button class="bs" onclick="this.closest('.modal-bg').remove()">취소</button>
       <button class="bp" onclick="fixSave()">저장</button></div></div>`);
 }
+/* ── 순위 즉석 변경 (서랍 표에서 바로 · 겹치면 자동 맞교환) ── */
+window.fixRankQuick = async (eid, cid, v)=>{
+  if(!CAN_FIX()) return;
+  const e = ENR.find(x=>x.id===eid); if(!e) return;
+  const key = isR2A()?'picks2':'picks';
+  const arr = (e[key]||[]).map(p=>({...p}));
+  const me = arr.find(p=>p.clubId===cid); if(!me) return;
+  const nv = parseInt(v)||1; if(me.rank===nv) return;
+  const other = arr.find(p=>p.rank===nv && p.clubId!==cid);
+  if(other) other.rank = me.rank;                     // 맞교환으로 순위 충돌 방지
+  const was = me.rank; me.rank = nv;
+  try{
+    await updateDoc(doc(db,'clubEnrollments', eid), { [key]: arr, updatedAt: Timestamp.now() });
+    e[key] = arr;
+    clubLog('순위 변경(수퍼)', `${e.studentName||''} · ${fixTitle(cid)} ${was}→${nv}순위${other?` (↔ ${fixTitle(other.clubId)})`:''}`);
+    toast(other?`순위를 바꿨습니다 — «${fixTitle(other.clubId)}»와 맞교환`:'순위를 바꿨습니다'); renderEnroll();
+  }catch(err){ toast('변경 실패: '+(err.message||''),'err'); renderEnroll(); }
+};
+/* ── 👥 정원 초과 허용 (강사 수용 시 배정 상한 = 정원+N) ── */
+window.setCapOver = async (cid, v)=>{
+  if(!CAN_FIX()) return;
+  const n = Math.max(0, Math.min(10, parseInt(v)||0));
+  try{
+    await setApp(cid, { capOver: n });
+    clubLog('정원 초과 허용(수퍼)', `${fixTitle(cid)} → 정원 +${n}`);
+    toast(n?`정원 +${n} 허용 — ⚙️ 배정 실행 시 상한에 반영됩니다`:'초과 허용을 해제했습니다');
+    paintEnroll();
+  }catch(err){ toast('저장 실패: '+(err.message||''),'err'); }
+};
 window.fixSetRank = (i,v)=>{ if(ED&&ED.rows[i]) ED.rows[i].rank = parseInt(v)||1; renderFix(); };
 window.fixDel = i=>{ if(ED){ ED.rows.splice(i,1); renderFix(); } };
 window.fixAdd = ()=>{
@@ -1354,7 +1383,7 @@ window.autoAssign2 = async ()=>{
   const cap = {}, lim = {}, closedM = {}, waitClub = {};
   clubs.forEach(c=>{
     const base = Math.max(0, (c.r1Conf!=null ? Number(c.r1Conf) : confirmedN(c.id)) - cancelsOf(c.id));   // 🙅 취소 반영
-    cap[c.id]=base; lim[c.id]=Number(c.maxN)||999;
+    cap[c.id]=base; lim[c.id]=(Number(c.maxN)||999)+(Number(c.capOver)||0);   // 👥 초과 허용 반영
     closedM[c.id] = !!c.r2Closed || !c.r2Open || !!c.cancelled || (lim[c.id]-base)<=0;
     waitClub[c.id] = !c.cancelled && !c.r2Open && (lim[c.id]-base)>0;               // ⏳ 취소로 자리 난 완료 동아리
   });
@@ -1472,7 +1501,7 @@ window.autoAssign = async ()=>{
         // 시간 겹침: 이미 배정된 것과
         const mine = result[e.id].filter(r=>r.state==='assigned').map(r=>byId[r.clubId]);
         if(mine.some(m=>overlap(m,c))){ result[e.id].push({clubId:c.id, state:'overlap'}); continue; }
-        if(cap[c.id] >= (c.maxN||999)){ result[e.id].push({clubId:c.id, state:'full'}); continue; }
+        if(cap[c.id] >= ((c.maxN||999)+(Number(c.capOver)||0))){ result[e.id].push({clubId:c.id, state:'full'}); continue; }
         cap[c.id]++; result[e.id].push({clubId:c.id, state:'assigned', ...(rank>=2?{viaLadder:true}:{})});
         if(rank>=2) stop = true;
       }
