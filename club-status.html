@@ -317,6 +317,13 @@ async function boot(){
     const orgs = (CU.role==='super') ? ['daniel','jihyebit'] : ((CU.orgs&&CU.orgs.length)?CU.orgs:[CU.org]);
     SEMS = ss.docs.map(d=>({id:d.id, ...d.data()})).filter(s=>orgs.includes(s.org))
       .sort((a,b)=> String(b.rangeFrom||'').localeCompare(String(a.rangeFrom||'')));
+    document.addEventListener('visibilitychange', async ()=>{        // 탭에 돌아오면 폐강·명단 변화 즉시 반영
+      if(document.hidden || SHARE || !SEM) return;
+      try{ await loadClubs();
+        const enr = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
+        ENR = enr.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>!e.deleted);
+        render(); }catch(e){}
+    });
     if(!SEMS.length){ $I('ls').style.display='none'; $I('ms').style.display='block';
       $I('cs').innerHTML='<div class="empty" style="margin-top:40px">아직 동아리 학기가 없어요.</div>'; window.hideLoading&&hideLoading(); return; }
     SEM = SEMS[0];
