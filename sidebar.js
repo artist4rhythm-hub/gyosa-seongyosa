@@ -323,6 +323,7 @@ function renderSidebar(){
           <div class="sb-mr">${sbOrgLabel()}</div>
         </div>
       </div>
+      <div id="sb-ver" class="sb-ver"></div>
       </div>
     </div>`;
   // 버튼이 방금 그려졌으니 지금 고른 글자 크기를 표시해 준다
@@ -538,6 +539,7 @@ function injectSidebarCSS(){
 
 .sb-foot{border-top:1px solid rgba(255,255,255,.1);padding:10px 12px;}
 .sb-me{display:flex;align-items:center;gap:8px;}
+.sb-ver{margin-top:8px;font-size:10px;letter-spacing:.02em;color:rgba(255,255,255,.45);text-align:center;font-variant-numeric:tabular-nums;}
 .sb-av{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:#fff;flex:none;}
 .sb-mi{min-width:0;}
 .sb-mn{font-size:12.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -826,6 +828,17 @@ window.guardPage = guardPage;
       + 'padding:2px 4px;line-height:1">✕</button>';
     document.body.appendChild(b);
   }
+
+  /* ── 🏷 버전 배지 — version.json 한 곳만 올리면 전 화면에 반영 ── */
+  (async function fillVer(tries){
+    tries = tries || 0;
+    let v = window.__APPVER;
+    if(!v){ try{ const r = await fetch('version.json?_='+Date.now(), { cache:'no-store' });
+      const j = await r.json(); v = j && j.v; window.__APPVER = v; }catch(e){} }
+    const el = document.getElementById('sb-ver');
+    if(el && v){ el.textContent = '교사 선교사 v' + v; return; }
+    if(tries < 12) setTimeout(()=>fillVer(tries+1), 700);   // 사이드바가 아직 안 그려졌으면 잠시 뒤
+  })();
 
   setTimeout(check, 4000);                    // 열리고 4초 뒤 기준값을 잡는다
   setInterval(check, 5 * 60 * 1000);          // 5분마다
