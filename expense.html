@@ -2826,7 +2826,7 @@ async function togglePaid(id, paid){
 window.togglePaid = togglePaid;
 
 // ══════════ 📊 취합 ══════════
-let reportOrg = '';
+let reportOrg = ''; window.__expOrg = reportOrg;
 let reportSem = '';
 let DEPOSITS = [];  // 예치금 입금 기록
 
@@ -2950,7 +2950,7 @@ function semLockBarHTML(org, sem){
 async function renderReport(){
   const box = $I('tab-report');
   const orgs = myOrgs();
-  if(!reportOrg || !orgs.includes(reportOrg)) reportOrg = orgs[0];
+  if(!reportOrg || !orgs.includes(reportOrg)) reportOrg = orgs[0]; window.__expOrg = reportOrg;
   box.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
   window.showLoading && window.showLoading('취합 자료를 계산하는 중…');
   try {
@@ -3074,7 +3074,7 @@ async function renderReport(){
 
     <div class="acard">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <h3 class="actitle" style="margin:0">👦 학년별 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순 · 학년을 눌러 펼치기)</span></h3>
+        <h3 class="actitle" style="margin:0">👦 ${(((typeof reportOrg!=='undefined'&&reportOrg)||(typeof payOrg!=='undefined'&&payOrg)||(typeof expOrg!=='undefined'&&expOrg)||window.__expOrg||'')==='jihyebit')?'나이별':'학년별'} 청구 합산 <span style="font-size:12px;color:var(--tl);font-weight:400">(${students.length}명 · 학년순 · 학년을 눌러 펼치기)</span></h3>
         ${students.length?`<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bm" onclick="excelReport()">📊 엑셀 다운로드</button><button class="bm" onclick="viewReceiptCollection()">🧾 영수증 취합</button><button class="bp" style="padding:8px 16px" onclick="viewAllSheet()">📋 전체 상세표 보기</button></div>`:''}
       </div>
       ${students.length ? `<div id="rp-class-groups" style="margin-top:12px">${renderReportClassGroups(list, students)}</div>
@@ -3153,7 +3153,7 @@ async function renderReport(){
     </div>`;
 }
 window.renderReport = renderReport;
-function setReportOrg(o){ reportOrg = o; reportSem = ''; renderReport(); }
+function setReportOrg(o){ reportOrg = o; window.__expOrg = reportOrg; reportSem = ''; renderReport(); }
 window.setReportOrg = setReportOrg;
 function setReportSem(s){ reportSem = s; renderReport(); }
 window.setReportSem = setReportSem;
@@ -3490,7 +3490,7 @@ async function renderPay(keepState){
   };
   const byGrade = {};
   studs.forEach(s=>{
-    const g = gradeLabel(s.grade) || s.className || '학년 미지정';
+    const g = gradeLabel(s.grade) || s.className || ((((typeof reportOrg!=='undefined'&&reportOrg)||(typeof payOrg!=='undefined'&&payOrg)||(typeof expOrg!=='undefined'&&expOrg)||window.__expOrg||'')==='jihyebit')?'나이 미지정':'학년 미지정');
     (byGrade[g]=byGrade[g]||[]).push(s);
   });
 
@@ -3545,7 +3545,7 @@ async function renderPay(keepState){
         const p = PAYMENTS[st.id]||{};
         const netv = st.charge - st.refund;
         if(netv===0) return;
-        const key = gl(st.grade)||'학년 미지정';
+        const key = gl(st.grade)||((((typeof reportOrg!=='undefined'&&reportOrg)||(typeof payOrg!=='undefined'&&payOrg)||(typeof expOrg!=='undefined'&&expOrg)||window.__expOrg||'')==='jihyebit')?'나이 미지정':'학년 미지정');
         if(!gsum[key]) gsum[key] = { pend:[], has:true };
         if(netv>0 && !(p.deposit&&p.deposit.checked)) gsum[key].pend.push(st.name);
         else if(netv<0 && !(p.refund&&p.refund.checked))
@@ -3781,7 +3781,7 @@ let openRepCls = {};
 function renderReportClassGroups(list, students){
   // 학생을 학년별로 묶기 (grade 기준, 없으면 학년 미지정)
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
-  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); let _o=''; try{ _o = (typeof reportOrg!=='undefined'&&reportOrg) || (typeof payOrg!=='undefined'&&payOrg) || (typeof expOrg!=='undefined'&&expOrg) || window.__expOrg || ''; }catch(_){} const _jh = _o==='jihyebit'; return n?(n+(_jh?'세':'학년')):(_jh?'나이 미지정':'학년 미지정'); };
   const byCls = {};
   students.forEach(s=>{
     const k = gradeLabel(s.grade);
@@ -3868,7 +3868,7 @@ function viewClassSheet(gradeKey){
   const list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem)
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
-  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); let _o=''; try{ _o = (typeof reportOrg!=='undefined'&&reportOrg) || (typeof payOrg!=='undefined'&&payOrg) || (typeof expOrg!=='undefined'&&expOrg) || window.__expOrg || ''; }catch(_){} const _jh = _o==='jihyebit'; return n?(n+(_jh?'세':'학년')):(_jh?'나이 미지정':'학년 미지정'); };
   // 이 학년에 속한 학생이 참여한 신청만
   const stuMap = new Map();
   const items = [];
@@ -4540,7 +4540,7 @@ function schoolAmtOf(e){
 // 전체 상세표 출력용 데이터 준비 (모든 학생 × 모든 항목, 학년 구분)
 function buildAllSheetData(){
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
-  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); let _o=''; try{ _o = (typeof reportOrg!=='undefined'&&reportOrg) || (typeof payOrg!=='undefined'&&payOrg) || (typeof expOrg!=='undefined'&&expOrg) || window.__expOrg || ''; }catch(_){} const _jh = _o==='jihyebit'; return n?(n+(_jh?'세':'학년')):(_jh?'나이 미지정':'학년 미지정'); };
   let list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
   // 🏫 «학교 청구분만» 모드: 학교 청구·반환이 있는 항목만 모아 본다 (이미지·PDF 저장에도 그대로 반영)
   if(allSheetGroupBy==='school') list = list.filter(e=>schoolAmtOf(e)!==0);
@@ -4712,7 +4712,7 @@ function renderAllSheet(){
   const box = $I('all-sheet-body');
   if(!box) return;
   const gradeNum = g => parseInt(String(g||'').replace(/[^0-9]/g,''),10)||99;
-  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); return n?`${n}학년`:'학년 미지정'; };
+  const gradeLabel = g => { const n=parseInt(String(g||'').replace(/[^0-9]/g,''),10); let _o=''; try{ _o = (typeof reportOrg!=='undefined'&&reportOrg) || (typeof payOrg!=='undefined'&&payOrg) || (typeof expOrg!=='undefined'&&expOrg) || window.__expOrg || ''; }catch(_){} const _jh = _o==='jihyebit'; return n?(n+(_jh?'세':'학년')):(_jh?'나이 미지정':'학년 미지정'); };
 
   let list = EXPENSES.filter(e=>!e.deleted && e.org===reportOrg && e.semester===reportSem);
   // 🏫 «학교 청구분만» 모드: 학교 청구·반환이 있는 항목만
