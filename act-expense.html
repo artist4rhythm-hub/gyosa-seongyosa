@@ -1523,6 +1523,9 @@ function buildReportShare(){
   const paidM = MEMBERS.filter(m=>m.paid);
   const paidN = paidM.length;
   const incSum = paidM.reduce((n,m)=>n+(Number(m.fee)||0),0);
+  const bsExtras = (INCOMES||[]).map(x=>({ label: (x.cat? x.cat+' · ' : '') + (x.title||''), ds: x.ds||'', sum: Number(x.amount)||0 })).filter(x=>x.sum>0);
+  const bsExtraSum = bsExtras.reduce((n,x)=>n+x.sum,0);
+  const bsIncTotal = incSum + bsExtraSum;
   const conf = EXPENSES.filter(e=>e.status!=='req');
   const expSum = conf.reduce((n,e)=>n+(Number(e.subtotal)||0),0);
   const inc = [];
@@ -1545,11 +1548,11 @@ function buildReportShare(){
   conf.forEach(e=>{ const c=e.cat||'기타'; byCat[c]=(byCat[c]||0)+(Number(e.subtotal)||0); });
   const exp = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>({cat:c, sum:v}));
   const RU = window._rndUnit || 1;
-  const per = paidN ? Math.floor((incSum-expSum)/paidN/RU)*RU : 0;
+  const per = paidN ? Math.floor((bsIncTotal-expSum)/paidN/RU)*RU : 0;
   return {
     type:'actReport', name:CUR.name||'', startDs:CUR.startDs||'', endDs:CUR.endDs||'',
     closed: isLocked(), closedDs: CUR.closedDs||'',
-    paidN, waitN: MEMBERS.length - paidN, incSum, expSum, inc, exp,
+    paidN, waitN: MEMBERS.length - paidN, incSum, extra: bsExtras, extraSum: bsExtraSum, incTotal: bsIncTotal, expSum, inc, exp,
     per, rndUnit:RU,
     memN: paidM.filter(m=>m.kind!=='teacher').length,
     teaN: paidM.filter(m=>m.kind==='teacher').length,

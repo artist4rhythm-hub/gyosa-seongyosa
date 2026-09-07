@@ -89,7 +89,9 @@ async function main(){
 }
 
 function render(d){
-  const bal = (d.incSum||0) - (d.expSum||0);
+  const incTotal = (d.incTotal!=null) ? Number(d.incTotal) : (d.incSum||0);
+  const extraSum = Number(d.extraSum)||0;
+  const bal = incTotal - (d.expSum||0);
   const per = d.per||0, paidN = d.paidN||0;
   const rem = bal - per*paidN;
   const rawPer = paidN ? bal/paidN : 0;
@@ -137,6 +139,11 @@ function render(d){
         <tr class="sumrow"><td>합계</td><td class="c">${paidN}</td><td></td>
           <td class="r">${fmt(d.incSum)}</td><td class="r">100%</td></tr>
       </table>
+      ${(d.extra&&d.extra.length)?`<table style="margin-top:9px">
+        <tr><th>수입 — 추가</th><th class="r">일자</th><th class="r">금액</th></tr>
+        ${d.extra.map(x=>`<tr><td>🏫 ${esc(x.label||'')}</td><td class="r">${esc(String(x.ds||'').slice(5))}</td><td class="r">${fmt(x.sum)}</td></tr>`).join('')}
+        <tr class="sumrow"><td>합계 (회비 ${fmt(d.incSum)} + 추가 ${fmt(extraSum)})</td><td></td><td class="r"><b>${fmt(incTotal)}</b></td></tr>
+      </table>`:''}
     </div>
     <div class="panel">
       <div class="pt">지출 — 용도별</div>
@@ -158,13 +165,13 @@ function render(d){
     <div class="pt">잔액 · 환급 정리</div>
     <div class="calc">
       <b>산출 과정</b><br>
-      ① 수입 ${fmt(d.incSum)} − 지출 ${fmt(d.expSum)} = <b>잔액 ${fmt(bal)}원</b><br>
+      ① 총수입 ${fmt(incTotal)}${extraSum?` (회비 ${fmt(d.incSum)} + 추가 ${fmt(extraSum)})`:''} − 지출 ${fmt(d.expSum)} = <b>잔액 ${fmt(bal)}원</b><br>
       ② 잔액 ${fmt(bal)} ÷ ${paidN}명 = ${paidN?fmt(Math.round(rawPer*100)/100):0}원
         → ${d.rndUnit>1?`${fmt(d.rndUnit)}원 단위 절사 → `:''}<b>1인 ${fmt(per)}원</b><br>
       ③ ${fmt(per)} × ${paidN}명 = <b>실제 환급 합계 ${fmt(per*paidN)}원</b>
         · 단수 <b>${fmt(rem)}원</b></div>
     <table>
-      <tr><td>잔여 회비 전체 (수입 − 지출)</td><td class="r"><b>${fmt(bal)}</b></td></tr>
+      <tr><td>잔액 전체 (총수입 − 지출)</td><td class="r"><b>${fmt(bal)}</b></td></tr>
       <tr><td>1인당 환급액 (${paidN}명)</td><td class="r">${fmt(per)}</td></tr>
       <tr><td>참여 멤버 ${d.memN||0}명 환급</td><td class="r">${fmt(per*(d.memN||0))}</td></tr>
       <tr><td>참여 선생님 ${d.teaN||0}명 환급</td><td class="r">${fmt(per*(d.teaN||0))}</td></tr>
