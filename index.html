@@ -226,6 +226,38 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
 <script>
+/* ⛑ 부트 안전망 — 화면이 뜨기 전에 JS가 죽거나 12초 넘게 멈추면, 백지 대신 자가복구 카드 */
+(function(){
+  window.__BOOT_OK = false;
+  function card(msg){
+    if(window.__BOOT_OK || document.getElementById('bootFix')) return;
+    var d=document.createElement('div'); d.id='bootFix';
+    d.innerHTML='<div style="position:fixed;inset:0;background:#F2F0EB;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:-apple-system,\'Apple SD Gothic Neo\',sans-serif">'
+      +'<div style="background:#fff;border-radius:16px;padding:28px 26px;max-width:340px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.08)">'
+      +'<div style="font-size:34px">🛠</div>'
+      +'<div style="font-weight:900;font-size:16px;margin:10px 0 6px;color:#0C2A44">화면을 여는 중 멈췄어요</div>'
+      +'<div style="font-size:12.5px;color:#5A6560;line-height:1.7">'+msg+'</div>'
+      +'<button onclick="location.reload()" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;background:#0C2A44;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">🔄 다시 시도</button>'
+      +'<button id="bootClean" style="margin-top:8px;width:100%;padding:11px;border:1.5px solid #E3E1DA;border-radius:10px;background:#fff;color:#5A6560;font-weight:700;font-size:12.5px;font-family:inherit;cursor:pointer">🧹 임시 저장 비우고 새로 열기</button>'
+      +'<div style="font-size:10.5px;color:#9AA29D;margin-top:8px">로그인·설정은 지워지지 않아요</div>'
+      +'</div></div>';
+    var put=function(){ document.body.appendChild(d);
+      var b=d.querySelector('#bootClean'); if(b) b.onclick=async function(){
+        try{ if(navigator.serviceWorker){ var rs=await navigator.serviceWorker.getRegistrations(); for(var r of rs) await r.unregister(); } }catch(e){}
+        try{ var ks=await caches.keys(); for(var k of ks) await caches.delete(k); }catch(e){}
+        location.reload();
+      }; };
+    document.body ? put() : document.addEventListener('DOMContentLoaded', put);
+  }
+  window.addEventListener('error', function(ev){
+    if(ev && ev.target && ev.target!==window && ev.error===undefined) return;   // 그림 하나 못 받은 것 정도는 무시
+    card('업데이트 직후 파일이 잠깐 어긋났거나<br>임시 저장이 꼬였을 수 있어요.');
+  }, true);
+  window.addEventListener('unhandledrejection', function(){ card('업데이트 직후 파일이 잠깐 어긋났거나<br>임시 저장이 꼬였을 수 있어요.'); });
+  setTimeout(function(){ card('연결이 오래 걸리고 있어요.<br>한 번 더 시도하거나 🧹를 눌러보세요.'); }, 12000);
+})();
+</script>
+<script>
 /* ⛑ 인라인 복구 감시 — 바깥 JS(캐시)가 깨져 화면이 영영 안 뜰 때를 위한 최후의 안전망.
    이 코드는 index.html 안에 있어서 캐시가 어떻게 꼬여도 항상 실행된다. */
 (function(){
@@ -447,7 +479,7 @@ onAuthStateChanged(auth, async (user) => {
       if (acStatus === 'leave' || acStatus === 'quit') {
         await signOut(auth);
         window.hideLoading && window.hideLoading();
-        $I('ls').style.display = 'flex';
+        window.__BOOT_OK=true; $I('ls').style.display = 'flex';
         showLoginErr(acStatus==='quit' ? '퇴직 처리된 계정입니다. 관리자에게 문의하세요.' : '휴직 중인 계정입니다. 관리자에게 문의하세요.');
         return;
       }
@@ -458,7 +490,7 @@ onAuthStateChanged(auth, async (user) => {
       } catch(e){}
       authResolved = true;
       $I('ls').style.display = 'none';
-      $I('ms').style.display = 'flex';
+      window.__BOOT_OK=true; $I('ms').style.display = 'flex';
       await loadAttConfig();
       // 로그인 기록 저장 (비동기, 실패해도 진행)
       recordLogin(user.uid, data.name, data.org).catch(()=>{});
@@ -466,7 +498,7 @@ onAuthStateChanged(auth, async (user) => {
     } else {
       await signOut(auth);
       window.hideLoading && window.hideLoading();
-      $I('ls').style.display = 'flex';
+      window.__BOOT_OK=true; $I('ls').style.display = 'flex';
       showLoginErr('계정 정보를 찾을 수 없습니다.');
     }
   } else {
@@ -476,7 +508,7 @@ onAuthStateChanged(auth, async (user) => {
     CU = null;
     authResolved = true;
     window.hideLoading && window.hideLoading();
-    $I('ls').style.display = 'flex';
+    window.__BOOT_OK=true; $I('ls').style.display = 'flex';
     $I('ms').style.display = 'none';
   }
 });

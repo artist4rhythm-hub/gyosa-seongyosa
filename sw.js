@@ -5,7 +5,7 @@
 //   · 화면(HTML)     → 네트워크 우선 (no-cache: 바뀐 코드 즉시 반영) + 받으면 저장 → 실패(오프라인) 시 캐시
 //   · 그림·글꼴·JS·SDK → 캐시 우선, 뒤에서 조용히 갱신 (두 번째부터 즉시 뜬다)
 //   · Firestore 등 실시간 자료 → 손대지 않음 (항상 실서버)
-const CACHE = 'gyosa-v4';   // v4: 굳은 캐시 전부 정리 + 흰 화면 자가 복구
+const CACHE = 'gyosa-v5';   // v5: 우리 사이트 JS·CSS·JSON도 네트워크 우선 — 업데이트 직후 «새 화면+옛 부품» 혼합(백지 원인) 원천 차단
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
@@ -26,7 +26,7 @@ function isStatic(req){
   if (u.hostname === 'api.ipify.org') return false;
   // 우리 사이트의 정적 파일
   if (u.origin === self.location.origin)
-    return /\.(png|jpg|jpeg|webp|svg|ico|js|css|json|woff2?)$/i.test(u.pathname);
+    return /\.(png|jpg|jpeg|webp|svg|ico|woff2?)$/i.test(u.pathname);   // js·css·json은 아래 «코드 파일» 분기로
   // 글꼴·Firebase SDK (CDN)
   if (u.hostname === 'fonts.googleapis.com' || u.hostname === 'fonts.gstatic.com') return true;
   if (u.hostname === 'www.gstatic.com' && u.pathname.includes('firebasejs')) return true;
@@ -69,6 +69,23 @@ self.addEventListener('fetch', e => {
   style="margin-top:8px;width:100%;padding:11px;border:1.5px solid #E3E1DA;border-radius:10px;background:#fff;
   color:#5A6560;font-weight:700;font-size:12.5px;font-family:inherit;cursor:pointer">🧹 임시 저장 비우고 새로 열기</button>
 </div></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      }
+    })());
+    return;
+  }
+
+  // ── 코드 파일(우리 사이트 JS·CSS·JSON): 네트워크 우선 + 저장 → 오프라인이면 캐시 ──
+  //    HTML은 새것인데 JS는 옛 캐시가 나가는 «혼합 상태»가 업데이트 직후 백지의 주범이었다.
+  const cu = new URL(req.url);
+  if (cu.origin === self.location.origin && /\.(js|css|json)$/i.test(cu.pathname)) {
+    e.respondWith((async () => {
+      try {
+        const res = await fetch(req, { cache: 'no-cache' });
+        if (res && res.ok) { const c = await caches.open(CACHE); c.put(req, res.clone()); }
+        return res;
+      } catch (_) {
+        const hit = await caches.match(req);
+        return hit || Response.error();
       }
     })());
     return;
