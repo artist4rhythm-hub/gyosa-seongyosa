@@ -957,7 +957,7 @@ function paintEnroll(){
           </div>`; })():''}
         <div class="drw-body tblwrap">${picks.length ? `<table class="tb"><tr><th style="width:64px">순위</th><th>학생</th><th>학년·반</th><th>결과</th>${(st==='over'||R2A)?`<th>${R2A?'제비뽑기 당첨':'추첨 당첨'}</th>`:''}</tr>
           ${picks.slice().sort((a,b)=>((slotPicks(a).find(p=>p.clubId===c.id)||{}).rank||9)-((slotPicks(b).find(p=>p.clubId===c.id)||{}).rank||9)).map(e=>{ const pk=slotPicks(e).find(p=>p.clubId===c.id)||{}; const rs=((R2A?e.result2:e.result)||[]).find(r=>r.clubId===c.id);
-            return `<tr><td>${(CAN_FIX()&&pk.rank)?`<select onchange="fixRankQuick('${e.id}','${c.id}',this.value)" title="순위 즉석 변경 — 겹치면 자동 맞교환" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit;font-weight:800;font-size:12px">${[1,2,3].map(n=>`<option value="${n}"${pk.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>`:`${pk.rank||'-'}순위`}</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${R2A&&!VIEW_ONLY?` <i class="rm2" onclick="delPick2('${e.id}','${c.id}')" title="이 2차 지원 삭제">🗑</i>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
+            return `<tr><td>${(CAN_FIX()&&pk.rank)?`<select onchange="fixRankQuick('${e.id}','${c.id}',this.value)" title="순위 즉석 변경 — 겹치면 자동 맞교환" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit;font-weight:800;font-size:12px">${(R2A?[1,2]:[1,2,3]).map(n=>`<option value="${n}"${pk.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>`:`${pk.rank||'-'}순위`}</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${R2A&&!VIEW_ONLY?` <i class="rm2" onclick="delPick2('${e.id}','${c.id}')" title="이 2차 지원 삭제">🗑</i>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
               ${(st==='over'||R2A) ? `<td>${(R2A||pk.rank===1)?(VIEW_ONLY?(((R2A?e.lottery2:e.lottery)||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${((R2A?e.lottery2:e.lottery)||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}${VIEW_ONLY?'':`<div class="drw-foot">${CAN_FIX()?`<button class="bs" onclick="fixPickStu('${c.id}')" title="이 동아리에 학생 지원 추가">➕ 지원 추가</button><label class="small" style="display:inline-flex;gap:4px;align-items:center;font-weight:800" title="강사가 초과 수용을 허락한 경우 — ⚙️ 배정 상한이 정원+N이 됩니다">👥 초과 허용 <select onchange="setCapOver('${c.id}',this.value)" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit">${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<option value="${n}"${(Number(c.capOver)||0)===n?' selected':''}>+${n}</option>`).join('')}</select></label>`:''}${R2A?`<button class="bs" onclick="togR2('${c.id}', ${closed2?'false':'true'})">${closed2?'🔓 다시 열기':'🔒 모집 닫기'}</button>`:''}${!R2A&&st==='under'?`<span class="small" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center">강사 결정 대리 기록:
             <button class="bs" onclick="admUnder('${c.id}',true)">🟢 개설</button>
             <button class="bs" onclick="admUnder('${c.id}',false)">⚫ 요청</button>
@@ -1019,6 +1019,7 @@ function fixBg(html){
 }
 const fixClubs = () => LIVE().filter(a=>a.status==='approved' && !a.cancelled);
 const fixTitle = cid => { const c=fixClubs().find(x=>x.id===cid) || LIVE().find(x=>x.id===cid); return c?c.title:cid; };
+const fixTitleC = cid => fixClubs().find(x=>x.id===cid) || LIVE().find(x=>x.id===cid) || null;
 
 /* ── 학생 검색 → 정정 에디터 진입 ── */
 window.fixPickStu = async (presetCid)=>{
@@ -1054,11 +1055,7 @@ window.fixPicks = async (sid, presetCid)=>{
   if(!name){ toast('학생 정보를 찾지 못했습니다','err'); return; }
   const rows = ((ph2? (e&&e.picks2) : (e&&e.picks))||[]).map(p=>({clubId:p.clubId, rank:p.rank||1})).sort((a,b)=>a.rank-b.rank);
   ED = { sid, name, grade, className:cls, eid:e?e.id:null, rows, ph2 };
-  if(presetCid && !rows.some(r=>r.clubId===presetCid)){
-    const used = new Set(rows.map(r=>r.rank)); const free=[1,2,3].find(n=>!used.has(n));
-    if(free!=null) rows.push({clubId:presetCid, rank:free});
-    else toast('이미 1·2·3순위가 차 있어요 — 하나 비운 뒤 추가하세요','err');
-  }
+  if(presetCid && !rows.some(r=>r.clubId===presetCid)) rows.push({clubId:presetCid, rank:1});
   renderFix();
 };
 function renderFix(){
@@ -1072,12 +1069,12 @@ function renderFix(){
   fixBg(`<div class="modal" style="max-width:500px">
     <div style="font-size:15px;font-weight:900;color:var(--gd)">✏️ 지원 정정 — ${esc(ED.name)} <span class="small" style="font-weight:700">${esc(ED.grade||'')}${ED.className?` · ${esc(ED.className)}`:''}</span>
       <span class="pill" style="margin-left:6px;background:${ED.ph2?'#FEF3C7':'#DBEAFE'};color:${ED.ph2?'#B45309':'#1D4ED8'};font-size:10.5px">${ED.ph2?'🎯 2차 추가 모집':'1차 모집'}</span></div>
-    <div class="small" style="margin:5px 0 10px">순위를 바꾸거나 🗑로 빼고, 아래에서 동아리를 추가하세요. <b>저장 즉시 반영</b>되며 활동 기록에 남습니다.${ED.ph2?' (1차 확정 동아리는 추가 목록에서 제외)':''}</div>
+    <div class="small" style="margin:5px 0 10px">순위를 바꾸거나 🗑로 빼고, 아래에서 동아리를 추가하세요. <b>시간이 안 겹치면 같은 순위 여러 개도 가능</b>합니다. 저장 즉시 반영되며 활동 기록에 남습니다.${ED.ph2?' (1차 확정 동아리는 추가 목록에서 제외)':''}</div>
     <div id="fx-rows">${ED.rows.length ? ED.rows.slice().sort((a,b)=>a.rank-b.rank).map((r,i)=>{
       const idx = ED.rows.indexOf(r);
       return `<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--ivd);border-radius:11px;margin-bottom:6px;background:var(--iv,#FAFAF7)">
         <select onchange="fixSetRank(${idx}, this.value)" style="padding:5px 6px;border:1.5px solid var(--ivd);border-radius:8px;font-family:inherit;font-weight:800">
-          ${[1,2,3].map(n=>`<option value="${n}"${r.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>
+          ${(ED.ph2?[1,2]:[1,2,3]).map(n=>`<option value="${n}"${r.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>
         <b style="font-size:13px">${esc(fixTitle(r.clubId))}</b>${gradeWarn(r.clubId)}
         <button class="bs" style="margin-left:auto;color:#B91C1C;border-color:#F3C2C2;padding:2px 9px" onclick="fixDel(${idx})">🗑</button></div>`; }).join('')
       : '<div class="small" style="padding:6px 2px">지원 내역이 없습니다 — 아래에서 추가하세요. (비운 채 저장 = 전체 삭제)</div>'}</div>
@@ -1097,8 +1094,10 @@ window.fixRankQuick = async (eid, cid, v)=>{
   const arr = (e[key]||[]).map(p=>({...p}));
   const me = arr.find(p=>p.clubId===cid); if(!me) return;
   const nv = parseInt(v)||1; if(me.rank===nv) return;
-  const other = arr.find(p=>p.rank===nv && p.clubId!==cid);
-  if(other) other.rank = me.rank;                     // 맞교환으로 순위 충돌 방지
+  const cMe = fixTitleC(cid);
+  const other = arr.find(p=>{ if(p.rank!==nv || p.clubId===cid) return false;
+    const o = fixTitleC(p.clubId); return cMe && o && overlap(cMe, o); });  // 같은 순위 공존 허용 — 시간 겹칠 때만 맞교환
+  if(other) other.rank = me.rank;
   const was = me.rank; me.rank = nv;
   try{
     await updateDoc(doc(db,'clubEnrollments', eid), { [key]: arr, updatedAt: Timestamp.now() });
@@ -1122,15 +1121,17 @@ window.fixSetRank = (i,v)=>{ if(ED&&ED.rows[i]) ED.rows[i].rank = parseInt(v)||1
 window.fixDel = i=>{ if(ED){ ED.rows.splice(i,1); renderFix(); } };
 window.fixAdd = ()=>{
   const sel = document.getElementById('fx-add'); const cid = sel && sel.value; if(!cid) return;
-  if(ED.rows.length>=3){ toast('순위는 최대 3개까지입니다','err'); return; }
-  const used = new Set(ED.rows.map(r=>r.rank)); const free=[1,2,3].find(n=>!used.has(n));
-  ED.rows.push({clubId:cid, rank:free||1}); renderFix();
+  ED.rows.push({clubId:cid, rank:1}); renderFix();   // 개수 제한 없음 — 같은 순위도 시간만 안 겹치면 허용
 };
 window.fixSave = async ()=>{
   if(!ED || !CAN_FIX()) return;
   const rows = ED.rows.slice().sort((a,b)=>a.rank-b.rank);
-  const ranks = rows.map(r=>r.rank);
-  if(new Set(ranks).size !== ranks.length){ toast('순위가 겹칩니다 — 1·2·3을 서로 다르게 골라주세요','err'); return; }
+  const cOf = id => fixClubs().find(x=>x.id===id) || LIVE().find(x=>x.id===id);
+  for(let i=0;i<rows.length;i++) for(let j=i+1;j<rows.length;j++){
+    if(rows[i].rank!==rows[j].rank) continue;
+    const a=cOf(rows[i].clubId), b=cOf(rows[j].clubId);
+    if(a && b && overlap(a,b)){ toast(`«${a.title}»와 «${b.title}»는 시간이 겹쳐 같은 ${rows[i].rank}순위가 될 수 없어요`,'err'); return; }
+  }
   const key = ED.ph2?'picks2':'picks', lotKey = ED.ph2?'lottery2':'lottery';
   const detail = `${ED.name} · ${ED.ph2?'2차':'1차'} → ${rows.map(r=>`${r.rank}순위 ${fixTitle(r.clubId)}`).join(', ')||'(전체 삭제)'}`;
   try{
