@@ -869,7 +869,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, addDoc, updateDoc, serverTimestamp,
-  collection, getDocs, query, where, Timestamp }
+  collection, getDocs, orderBy, query, where, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -1207,7 +1207,7 @@ function refreshCanEdit(){
         {col:'academicEvents', scope:()=>({year:curYear}), label:'학사일정 행사 (올해 전체)'},
         {col:'holidays', scope:{}, label:'쉬는 날 원장 (공휴일·휴무)'},
       ],
-      onRestored: async ()=>{ await loadEvents(curYear); render(); }
+      onRestored: async ()=>{ await loadEvents(curYear, curMonth, true); render(); }
     });
   }
 }
@@ -1310,17 +1310,22 @@ let ALL_EVENTS = [];
 
 let LEDGER_HOL = [];   // 관리자·출근부에서 수동 등록한 쉬는 날 (원장)
 let SHARE_HOL_READY = false;
-async function loadLedgerHolidays(){
+const HOL_YEARS = new Set();                    // 연 단위 캐시 — 같은 해는 다시 묻지 않는다
+async function loadLedgerHolidays(year){
   // 공유 링크로 들어온 화면은 저장해 둔 목록을 쓴다 (원장을 직접 읽을 수 없다)
   if(SHARE_MODE){ if(SHARE_HOL_READY) return; LEDGER_HOL = LEDGER_HOL || []; return; }
+  const y = Number(year) || curYear || new Date().getFullYear();
+  if(HOL_YEARS.has(y)) return;
   try {
-    const snap = await getDocs(collection(db,'holidays'));
-    LEDGER_HOL = [];
+    const snap = await getDocs(query(collection(db,'holidays'),
+      where('date','>=',`${y-1}-11-01`), where('date','<=',`${y+1}-02-15`)));
+    LEDGER_HOL = LEDGER_HOL || [];
+    const seen = new Set(LEDGER_HOL.map(v=>`${v.date}|${v.name||''}`));
     snap.forEach(d=>{ const v=d.data();
-      // 법정(kr)은 내장 자료로 이미 표시, 학사일정 연동(academic)은 행사로 이미 표시 — 순수 수동분만
-      if(v.src!=='kr' && v.src!=='academic') LEDGER_HOL.push(v);
+      if(v.src!=='kr' && v.src!=='academic' && !seen.has(`${v.date}|${v.name||''}`)) LEDGER_HOL.push(v);
     });
-  } catch(e){ LEDGER_HOL = []; }
+    HOL_YEARS.add(y);
+  } catch(e){ LEDGER_HOL = LEDGER_HOL || []; }
 }
 /* 지금 보는 기관에 해당하는 수동 휴일 {날짜:{name,who}}
    who — all: 모두 쉬는 날 · school: 학교 휴교 · staff: 교사만 쉬는 날
@@ -1360,17 +1365,33 @@ function holInfoMap(year){
   return map;
 }
 
-async function loadEvents(year){
+/* 📅 월 창 로딩 — 열린 달(±92일 소급)만 서버에 묻고, 캐시·이웃 달 선적재로 넘김이 0초 */
+const EV_CACHE = {};
+const evCacheClear = ()=>{ for(const k in EV_CACHE) delete EV_CACHE[k]; };
+const _p2 = n=>String(n).padStart(2,'0');
+async function fetchMonthEvents(y, m){
+  const k = `${y}-${_p2(m)}`;
+  if(EV_CACHE[k]) return EV_CACHE[k];
+  const mEnd = `${y}-${_p2(m)}-${_p2(daysInMonth(y,m))}`;
+  const lb = new Date(y, m-1, 1); lb.setDate(lb.getDate()-92);      // 긴 행사(방학 등) 소급 포착
+  const A = `${lb.getFullYear()}-${_p2(lb.getMonth()+1)}-${_p2(lb.getDate())}`;
+  const snap = await getDocs(query(collection(db,'academicEvents'),
+    where('start','>=',A), where('start','<=',mEnd), orderBy('start')));
+  return EV_CACHE[k] = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+}
+async function loadEvents(year, month, fresh){
   // 공유 링크(로그인 없음)에서는 서버에 다시 묻지 않는다
-  //  — 물으면 권한이 없어 실패하면서 스냅샷에 담긴 행사까지 비워버린다
   if(typeof shareId !== 'undefined' && shareId) return;
-  ALL_EVENTS = [];
-  try {
-    const snap = await getDocs(query(collection(db,'academicEvents'), where('year','==',Number(year))));
-    ALL_EVENTS = snap.docs.map(d=>({ id:d.id, ...d.data() }));
-  } catch(e){}
-  await loadLedgerHolidays();   // 원장도 함께 새로고침
+  if(fresh) evCacheClear();
+  const m = month || curMonth || 1;
+  try { ALL_EVENTS = await fetchMonthEvents(Number(year), m); }
+  catch(e){ ALL_EVENTS = []; }
+  await loadLedgerHolidays(Number(year));
   applyEventScope();
+  // 🚀 이웃 달 선적재 (실패해도 조용히)
+  const nb = new Date(year, m, 1), pb = new Date(year, m-2, 1);
+  fetchMonthEvents(nb.getFullYear(), nb.getMonth()+1).catch(()=>{});
+  fetchMonthEvents(pb.getFullYear(), pb.getMonth()+1).catch(()=>{});
 }
 
 /* 지금 고른 기관의 행사만 보여준다 */
@@ -2058,7 +2079,7 @@ async function jumpToMonth(y,m){
   monthBusy(25, `${y}년 ${m}월 행사 받는 중…`);
   curYear = y; curMonth = m;
   FLOW_MONTHS = 1;
-  try { if(typeof loadEvents==='function') await loadEvents(y); } catch(e){}
+  try { if(typeof loadEvents==='function') await loadEvents(y, m); } catch(e){}
   monthBusy(75, '달력 그리는 중…');
   render();
   monthBusy(0);
@@ -2192,7 +2213,7 @@ function renderYearBar(){
 window.onPickYear = async function(v){
   curYear = Number(v)||curYear;
   await loadYear(curYear);
-  await loadEvents(curYear);
+  await loadEvents(curYear, curMonth, true);
   renderYearBar(); render();
 };
 
@@ -2213,7 +2234,7 @@ window.newYearPrompt = async function(){
   curYear = y; curMonth = 1;
   await loadYear(y);
   if(!YEARS.some(x=>String(x.year)===String(y))) await createYear();
-  else { await loadEvents(y); renderYearBar(); render(); }
+  else { await loadEvents(y, curMonth, false); renderYearBar(); render(); }
 };
 
 /* ═══════════════════════════════════════════════
@@ -2809,7 +2830,7 @@ window.saveEvent = async function(){
       }
     } catch(e){
       toast('저장이 서버에 닿지 못했어요: '+(e.message||'')+' — 화면을 원래대로 되돌립니다','err');
-      try{ await loadEvents(curYear); render(); }catch(_){}
+      try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){}
     }
   })();
 };
@@ -2841,7 +2862,7 @@ window.delEvent = async function(id){
       await deleteDoc(doc(db,'academicEvents', id));
     } catch(err){
       toast('삭제가 서버에 닿지 못했어요: '+(err.message||'')+' — 화면을 원래대로 되돌립니다','err');
-      try{ await loadEvents(curYear); render(); }catch(_){}
+      try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){}
     }
   })();
 };
@@ -3148,7 +3169,7 @@ window.onWeekDrop = async function(ev){
       ...linkPatch,
       updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
     });
-    await loadEvents(curYear);
+    await loadEvents(curYear, curMonth, true);
     render();
     toast(`"${e.title}" ${delta>0?`${delta}일 뒤로`:`${-delta}일 앞으로`} 옮겼습니다 ✓`,'ok');
   } catch(err){ toast('옮기기 실패: '+(err.message||''),'err'); }
@@ -3190,7 +3211,7 @@ async function reorderAt(ev, e){
         updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
       });
     }
-    await loadEvents(curYear);
+    await loadEvents(curYear, curMonth, true);
     render();
     toast(`"${e.title}" 순서를 옮겼습니다 ✓`,'ok');
   } catch(err){ toast('순서 바꾸기 실패: '+(err.message||''),'err'); }
@@ -3922,7 +3943,7 @@ window.runIcsImport = async function(){
   }
   ov.remove(); ICS_IMP=null;
   toast(fail?`${ok}건 가져옴 · ${fail}건 실패`:`✅ ${ok}건을 학사일정에 담았습니다`, fail?'err':'ok');
-  try{ await loadEvents(curYear); render(); }catch(_){ location.reload(); }
+  try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){ location.reload(); }
 };
 
 /* ═══ 🧹 겹친 일정 찾기·정리 ═══
@@ -3990,7 +4011,7 @@ window.runDupClean = async function(){
   }
   ov.remove();
   toast(fail?`${ok}건 정리 · ${fail}건 실패`:`✅ 겹친 사본 ${ok}건을 정리했습니다`, fail?'err':'ok');
-  try{ await loadEvents(curYear); render(); }catch(_){ location.reload(); }
+  try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){ location.reload(); }
 };
 
 let SHARES = { parent_daniel:null, parent_jihyebit:null, teacher:null };   // 학부모용은 기관별 완전 분리
@@ -4403,7 +4424,7 @@ async function switchOrg(o){
     curYear = YEARS[0].year;
   }
   await loadYear(curYear);
-  await loadEvents(curYear);
+  await loadEvents(curYear, curMonth, true);
   renderCalBar();
   renderTabs();
   renderYearBar();
@@ -4613,7 +4634,7 @@ onAuthStateChanged(auth, async user => {
     gateStep(80, '학년도 뼈대 받는 중…');
     await loadYear(curYear);
     gateStep(90, '행사 받는 중…');
-    await loadEvents(curYear);
+    await loadEvents(curYear, curMonth, true);
     gateStep(100, '달력 그리는 중…');
 
     if(!canEditAny()){
