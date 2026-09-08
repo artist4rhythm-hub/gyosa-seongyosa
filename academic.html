@@ -1372,12 +1372,27 @@ const _p2 = n=>String(n).padStart(2,'0');
 async function fetchMonthEvents(y, m){
   const k = `${y}-${_p2(m)}`;
   if(EV_CACHE[k]) return EV_CACHE[k];
+  const mStart = `${y}-${_p2(m)}-01`;
   const mEnd = `${y}-${_p2(m)}-${_p2(daysInMonth(y,m))}`;
   const lb = new Date(y, m-1, 1); lb.setDate(lb.getDate()-92);      // 긴 행사(방학 등) 소급 포착
   const A = `${lb.getFullYear()}-${_p2(lb.getMonth()+1)}-${_p2(lb.getDate())}`;
-  const snap = await getDocs(query(collection(db,'academicEvents'),
-    where('start','>=',A), where('start','<=',mEnd), orderBy('start')));
-  return EV_CACHE[k] = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+  // 1차: 월 창 조회 (빠름)
+  try{
+    const snap = await getDocs(query(collection(db,'academicEvents'),
+      where('start','>=',A), where('start','<=',mEnd), orderBy('start')));
+    const arr = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    if(arr.length) return EV_CACHE[k] = arr;
+  }catch(e){ console.warn('[학사] 월 창 조회 실패 — 연 단위로 폴백합니다', e); }
+  // 2차: 검증된 연 단위 조회로 폴백 → 이 달과 겹치는 것만 추려 캐시
+  //      (월 창이 0건일 때도 한 번 확인 — start 필드가 없는 유물 행사까지 구조)
+  const ys = await getDocs(query(collection(db,'academicEvents'), where('year','==',Number(y))));
+  const all = ys.docs.map(d=>({ id:d.id, ...d.data() }));
+  const win = all.filter(e=>{
+    const s = e.start || e.date || ''; if(!s) return false;
+    const t = e.end || s;
+    return s <= mEnd && t >= mStart || (s >= A && s <= mEnd);
+  });
+  return EV_CACHE[k] = win;
 }
 async function loadEvents(year, month, fresh){
   // 공유 링크(로그인 없음)에서는 서버에 다시 묻지 않는다
