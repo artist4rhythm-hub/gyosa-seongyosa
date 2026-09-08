@@ -233,6 +233,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
+<script src="org-core.js"></script>
 <script src="menu.js"></script>
 <script src="timemachine.js"></script>
 <script src="holidays-kr.js"></script>
@@ -424,12 +425,36 @@ function korEmail(id) { return `${id}@gyosa-seongyosa.staff`; }
 
 // 현재 유저가 볼 수 있는 기관 목록 반환
 // super: 모든 기관 / org_admin: 관리 기관만 / 그 외: 본인 기관
-function myOrgs() {
-  if (!CU) return [];
-  if (CU.role === 'super') return ['jihyebit', 'daniel'];
-  if (CU.role === 'org_admin') return CU.orgs && CU.orgs.length ? CU.orgs : [CU.org];
-  return [CU.org];
-}
+function myOrgs(){ return orgCore.myOrgs(CU,'std'); }   // 🏛 org-core — 이제 모든 교직원의 «접근 기관»을 존중 (2단계)
+/* 🔁 접근 기관 부여 (수퍼) — 겸직 선생님에게 두 기관 열람을 연다 */
+window.editOrgsMini = async function(uid){
+  const s = STAFF.find(x=>x.uid===uid); if(!s) return;
+  const cur = new Set(s.orgs && s.orgs.length ? s.orgs : [s.org]);
+  const bg = document.createElement('div');
+  bg.style.cssText='position:fixed;inset:0;background:rgba(20,26,32,.45);z-index:1500;display:flex;align-items:center;justify-content:center;padding:20px';
+  bg.addEventListener('click', ev=>{ if(ev.target===bg) bg.remove(); });
+  bg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:20px 18px;max-width:320px;width:100%">
+    <div style="font-size:14.5px;font-weight:900;color:#0C2A44">🔁 접근 기관 — ${esc(s.name||'')}</div>
+    <div style="font-size:11.5px;color:#7A7F87;margin:5px 0 12px">체크한 기관의 화면(학생·출석·게시판 등)을 열람할 수 있어요.<br>소속(명패)은 <b>${esc(ORGS[s.org]||s.org)}</b> 그대로입니다.</div>
+    ${['daniel','jihyebit'].map(o=>`<label style="display:flex;align-items:center;gap:8px;padding:9px 10px;border:1.5px solid #E3E1DA;border-radius:10px;margin-bottom:7px;cursor:pointer;font-size:13px;font-weight:800">
+      <input type="checkbox" class="om-org" value="${o}" ${cur.has(o)?'checked':''} style="width:16px;height:16px"> ${ORGS[o]||o}${o===s.org?' <span style="font-size:10px;color:#98A39D">(소속)</span>':''}</label>`).join('')}
+    <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:10px">
+      <button class="iconbtn om-x" style="padding:8px 14px">취소</button>
+      <button class="iconbtn" id="om-save" style="padding:8px 16px;background:#0C2A44;color:#fff;border-color:#0C2A44;font-weight:800">저장</button></div></div>`;
+  document.body.appendChild(bg);
+  bg.querySelector('.om-x').onclick = ()=>bg.remove();
+  bg.querySelector('#om-save').onclick = async ()=>{
+    const on = [...bg.querySelectorAll('.om-org:checked')].map(c=>c.value);
+    if(!on.length){ toast('한 기관 이상 선택하세요','err'); return; }
+    if(!on.includes(s.org)) on.unshift(s.org);           // 소속 기관은 항상 포함
+    try{
+      await setDoc(doc(db,'staff', uid), { orgs:on }, { merge:true });
+      s.orgs = on; bg.remove();
+      toast(on.length>1 ? `🔁 ${s.name||''} — 두 기관 열람이 열렸어요` : '접근 기관을 소속만으로 되돌렸어요');
+      if(typeof renderStaff==='function') renderStaff();
+    }catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+  };
+};
 // 해당 기관을 볼 권한이 있는지
 function canSeeOrg(org) {
   if (CU && CU.role === 'super') return true;
@@ -811,7 +836,7 @@ async function loadStaff() {
       <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:200px;flex-wrap:wrap">
         <span class="sname">${s.name}</span>
         <span class="sid" style="color:var(--tl);font-size:12px">${s.id}</span>
-        <span style="font-size:12px;color:var(--ts)">${s.role==='org_admin' ? (s.orgs&&s.orgs.length?s.orgs.map(o=>ORGS[o]||o).join(', '):ORGS[s.org]||s.org) : (ORGS[s.org]||s.org)+(s.dept!=='전체'?' · '+s.dept:'')}</span>
+        <span style="font-size:12px;color:var(--ts)">${s.role==='org_admin' ? (s.orgs&&s.orgs.length?s.orgs.map(o=>ORGS[o]||o).join(', '):ORGS[s.org]||s.org) : (ORGS[s.org]||s.org)+(s.dept!=='전체'?' · '+s.dept:'')}${(s.role!=='org_admin'&&s.role!=='super'&&s.orgs&&s.orgs.length>1)?` <span style="font-size:10.5px;font-weight:800;color:#1E4B74;background:#E5EDFC;border-radius:7px;padding:1px 7px">🔁 양기관</span>`:''}${(CU&&CU.role==='super'&&s.role!=='super'&&s.role!=='org_admin')?` <button class="iconbtn" style="font-size:11px;padding:1px 6px" title="접근 기관 — 겸직 선생님에게 두 기관 열람을 열어줘요" onclick="event.stopPropagation();editOrgsMini('${s.uid}')">🔁</button>`:''}</span>
         <span class="rbadge ${s.role==='super'?'r-super':s.role==='org_admin'?'r-org':s.role==='tab_admin'?'r-tab':s.role==='partner'?'r-partner':'r-teacher'}">${ROLES[s.role]||s.role}</span>
         ${acBadge}
         <span style="font-size:11px;color:var(--tl)">${llStr}</span>
