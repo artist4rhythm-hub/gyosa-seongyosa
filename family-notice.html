@@ -489,7 +489,10 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 .ag-rsec{display:flex;flex-wrap:wrap;gap:6px;min-height:24px;padding:2px;border-radius:9px}
 .ag-hint.mini{font-size:10.5px;padding:2px 4px}
 .agr-row{display:flex;gap:7px;align-items:center;margin-bottom:7px}
-.agr-row .agr-n{flex:1}
+.agr-row .agr-n{flex:1;min-width:0;width:auto}
+.agr-row .agr-c{width:84px;flex:none}
+.fam-fbtns{margin-left:6px;display:inline-flex;gap:2px;vertical-align:middle}
+.fam-fbtns .iconbtn{font-size:12px;padding:2px 5px}
 .ag-ghost{position:fixed;z-index:999;pointer-events:none;background:var(--gd);color:#fff;
   font-size:14px;font-weight:800;border-radius:12px;padding:9px 17px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
 .ag-stu{touch-action:none}
@@ -934,9 +937,9 @@ function renderList(){
   fnames.forEach(fn=>{
     const open = openMap[fn]!==0;
     const list = folders[fn];
-    body += `<tr class="fam-folder" onclick="toggleFamFolder('${esc(fn).replace(/'/g,"\\'")}')">
+    body += `<tr class="fam-folder" onclick="toggleFamFolder('${esc(fn).replace(/'/g,"\\'")}')" data-fn="${esc(fn)}">
       <td colspan="6" style="cursor:pointer;background:var(--gp);font-weight:800;color:var(--gd);padding:9px 12px">
-        ${open?'▾':'▸'} 📁 ${esc(fn)} <span style="font-weight:600;color:var(--tl);font-size:11px">(${list.length}개)</span>
+        ${open?'▾':'▸'} 📁 ${esc(fn)} <span style="font-weight:600;color:var(--tl);font-size:11px">(${list.length}개)</span>${canFamAdmin()?`<span class="fam-fbtns" onclick="event.stopPropagation()"><button class="iconbtn" title="폴더 이름 바꾸기" onclick="famFolderRename('${esc(fn).replace(/'/g,"\\'")}')">✏️</button><button class="iconbtn" title="폴더 풀기 (통신문은 남고 폴더만 사라져요)" onclick="famFolderDissolve('${esc(fn).replace(/'/g,"\\'")}')">🗑</button></span>`:''}
       </td></tr>`;
     if(open) body += list.map(famRowHTML).join('');
   });
@@ -960,6 +963,27 @@ function renderList(){
         내가 입력 담당자·협력 담당자로 지정된 통신문은 열어서 입력할 수 있습니다.</div>`}
     </div>`;
 }
+
+/* 📁 폴더 이름 바꾸기 · 폴더 풀기 */
+window.famFolderRename = async function(fn){
+  const nv = prompt('폴더의 새 이름을 입력하세요', fn);
+  if(nv==null) return;
+  const name = nv.trim();
+  if(!name || name===fn) return;
+  const targets = DOCS.filter(d=>d.folder===fn);
+  try{
+    for(const d of targets){ await updateDoc(doc(db,'famDocs', d.id), { folder:name }); d.folder=name; }
+    toast(`폴더 이름을 「${name}」으로 바꿨어요 (${targets.length}건)`); renderList();
+  }catch(e){ toast('이름 변경 실패: '+(e.message||''),'err'); }
+};
+window.famFolderDissolve = async function(fn){
+  const targets = DOCS.filter(d=>d.folder===fn);
+  if(!confirm(`폴더 「${fn}」을 풀까요?\n안의 통신문 ${targets.length}건은 삭제되지 않고 목록 맨 위로 나옵니다.`)) return;
+  try{
+    for(const d of targets){ await updateDoc(doc(db,'famDocs', d.id), { folder:'' }); d.folder=''; }
+    toast(`폴더를 풀었어요 — 통신문 ${targets.length}건은 그대로예요`); renderList();
+  }catch(e){ toast('폴더 풀기 실패: '+(e.message||''),'err'); }
+};
 
 /* 📁 폴더 지정 — 기존 폴더 고르기 + 새 폴더 만들기 */
 window.openFolderPick = function(docId){
@@ -4488,11 +4512,26 @@ async function loadPbClasses(){
     const names = Object.keys(map).sort((a,b)=>a.localeCompare(b,'ko'));
     const prev = new Set(Array.isArray(CUR.pbClasses)?CUR.pbClasses:[]);
     if(!names.length){ box.innerHTML = '<span style="font-size:12px;color:var(--tl)">이 기관에 반이 지정된 학생이 없습니다.</span>'; return; }
-    box.innerHTML = names.map(c=>`
+    // 🎓 학년별로 묶어서 — 학년 배지를 누르면 그 학년 반 전체가 한 번에 켜지고 꺼져요
+    const byG = {};
+    names.forEach(c=>{ const g = map[c]||'학년 미지정'; (byG[g]=byG[g]||[]).push(c); });
+    const gks = Object.keys(byG).sort((a,b)=>a.localeCompare(b,'ko',{numeric:true}));
+    const chip = c => `
       <label style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--ivd);background:var(--wh,#fff);border-radius:100px;padding:5px 11px;font-size:12px;cursor:pointer">
-        <input type="checkbox" class="pb-cls" value="${esc(c)}" ${prev.has(c)?'checked':''} style="width:14px;height:14px">
-        ${map[c]?`<span style="color:var(--tl)">${esc(map[c])}</span>`:''}<b>${esc(c)}</b>
-      </label>`).join('');
+        <input type="checkbox" class="pb-cls" value="${esc(c)}" data-g="${esc(map[c]||'')}" ${prev.has(c)?'checked':''} style="width:14px;height:14px">
+        <b>${esc(c)}</b></label>`;
+    box.innerHTML = gks.map(g=>`
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%;margin-bottom:2px">
+        <button type="button" class="pb-grade" data-g="${esc(g)}" title="이 학년 반 전체를 한 번에 켜고 꺼요"
+          style="font-family:inherit;font-size:11.5px;font-weight:900;color:var(--gd,#1E3932);background:var(--gp,#EAF4EF);border:1px solid var(--gl,#CFE3DA);border-radius:100px;padding:5px 12px;cursor:pointer">🎓 ${esc(g)}</button>
+        ${byG[g].map(chip).join('')}
+      </div>`).join('');
+    box.querySelectorAll('.pb-grade').forEach(b=>b.addEventListener('click', ()=>{
+      const g = b.dataset.g==='학년 미지정' ? '' : b.dataset.g;
+      const inputs = [...box.querySelectorAll('.pb-cls')].filter(i=>(i.dataset.g||'')===g || (b.dataset.g==='학년 미지정' && !i.dataset.g));
+      const allOn = inputs.every(i=>i.checked);
+      inputs.forEach(i=>{ i.checked = !allOn; });
+    }));
   } catch(e){
     box.innerHTML = '<span style="font-size:12px;color:var(--danger,#C0392B)">반 목록을 불러오지 못했습니다.</span>';
   }
@@ -4505,17 +4544,18 @@ window.doPublish = async function(){
   const shareId = CUR.shareId || rid(20);
   const pubBlocks = CUR.blocks.filter(b=>b.pub);
   try {
+    const aud = pbOrgAll ? { t:'all' } : (pbClasses.length ? { t:'sel', c:pbClasses } : { t:'all' });   // 🎯 대상: 전체 or 선택 반(학년은 반으로 펼쳐짐)
     await setDoc(doc(db,'sharedFamily', shareId), {
       docId:CUR.id, title:CUR.title||'', org:CUR.org||'daniel',
       blocksJson: JSON.stringify(pubBlocks),
-      publishedAt:Timestamp.now(), listed
+      publishedAt:Timestamp.now(), listed, aud
     });
     // 학부모 게시판 목록 (_index)
     try {
       const ix = await getDoc(doc(db,'sharedFamily','_index'));
       let items = ix.exists() && Array.isArray(ix.data().items) ? ix.data().items : [];
       items = items.filter(it=>it.id !== shareId);
-      if(listed) items.unshift({ id:shareId, title:CUR.title||'', org:CUR.org||'daniel', at:Date.now() });
+      if(listed) items.unshift({ id:shareId, title:CUR.title||'', org:CUR.org||'daniel', at:Date.now(), aud });
       await setDoc(doc(db,'sharedFamily','_index'), { items });
     } catch(e){ console.warn('index update fail', e); }
     // 🏫 학부모 반별 게시판 자동 게시 — 이전 자동 글은 지우고 새로 올린다 (중복 방지)
@@ -4794,7 +4834,7 @@ window.addEventListener('beforeunload', (e)=>{
 window.openModalWide = function(html, wide, lock){
   openModal(html, wide, lock===undefined ? true : lock);
   const box = document.querySelector('.mbox');
-  if(box){ box.style.maxWidth = 'min(96vw, 1360px)'; box.style.width = '96vw'; }
+  if(box){ box.style.maxWidth = 'min(97vw, 1760px)'; box.style.width = '97vw'; box.style.maxHeight = '94vh'; }
 };
 /* 2층 모달 — 편집창 위에 겹쳐 뜨는 보조 창 (달력·교사·학생 선택) */
 window.openModal2 = function(html){
