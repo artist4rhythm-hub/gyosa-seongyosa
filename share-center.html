@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>공유 링크 · 교사 선교사</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
+<link rel="stylesheet" href="theme.css">
+<script src="loading.js"></script>
+<style>
+#sc{max-width:760px;margin:0 auto;padding:14px 12px 90px;font-family:'Noto Sans KR',-apple-system,'Apple SD Gothic Neo',sans-serif;color:#22262B}
+.ph{background:linear-gradient(135deg,#0C2A44 0%,#1E4B74 100%);border-radius:14px;color:#fff;
+  padding:14px 16px;display:flex;align-items:center;gap:11px;margin-bottom:10px}
+.ph .em{font-size:22px}
+.ph b{font-size:15px;font-weight:900;display:block}
+.ph span{font-size:11px;opacity:.75}
+.sumr{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.sst{background:#fff;border:1px solid #E7E4DC;border-radius:12px;padding:10px 6px;text-align:center}
+.sst b{font-size:20px;font-weight:900;display:block;color:#0C2A44;font-variant-numeric:tabular-nums}
+.sst span{font-size:10.5px;font-weight:800;color:#8A8F98}
+.warn{background:#FEF3D9;border:1px solid #F1DCA8;border-radius:12px;padding:10px 13px;font-size:12px;
+  color:#8A6A1B;font-weight:700;margin-bottom:12px;line-height:1.7}
+details.kd{background:#FBFAF7;border:1px solid #E7E4DC;border-radius:14px;margin-bottom:10px;overflow:hidden}
+details.kd summary{list-style:none;cursor:pointer;padding:12px 14px;font-size:14px;font-weight:900;color:#0C2A44;
+  display:flex;align-items:center;gap:8px}
+details.kd summary::-webkit-details-marker{display:none}
+details.kd summary .cnt{margin-left:auto;font-size:11px;font-weight:800;color:#8A8F98}
+.lrow{border-top:1px solid #EFECE4;padding:10px 14px;cursor:pointer}
+.lrow:hover{background:#F6F4EE}
+.lr1{display:flex;align-items:center;gap:8px;min-width:0}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+.dot.g{background:#16a34a}.dot.y{background:#E5A83B}.dot.w{background:#D4D7DC}
+.lr1 b{font-size:13px;font-weight:900;color:#22262B;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lstat{font-size:11px;font-weight:800;color:#5A5F66;white-space:nowrap;font-variant-numeric:tabular-nums}
+.lstat em{font-style:normal;color:#0C2A44;font-weight:900}
+.lr2{display:flex;align-items:center;gap:8px;margin-top:4px;padding-left:17px}
+.lsub{font-size:10.5px;color:#8A8F98;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lbtn{font-family:inherit;font-size:11px;font-weight:800;border:1px solid #E3E1DA;border-radius:8px;
+  background:#fff;color:#5A5F66;padding:3px 9px;cursor:pointer;flex:none}
+.lbtn:hover{border-color:#0C2A44;color:#0C2A44}
+.recent{border-top:1px dashed #E7E4DC;margin-top:8px;padding:7px 2px 2px 17px}
+.rv{font-size:11px;color:#5A5F66;padding:2px 0;font-variant-numeric:tabular-nums}
+.rv b{color:#22262B;font-weight:800}
+.empty{padding:12px 14px;font-size:12px;color:#98A0A8;border-top:1px solid #EFECE4}
+#ls{display:none;min-height:100vh;align-items:center;justify-content:center;padding:20px}
+.lbox{background:#fff;border:1px solid #E7E4DC;border-radius:16px;padding:26px 22px;max-width:340px;width:100%}
+.lbox h1{font-size:16px;font-weight:900;text-align:center;color:#0C2A44;margin:0}
+.lbox p{font-size:11.5px;color:#8A8F98;text-align:center;margin:4px 0 14px}
+.lbox input{width:100%;padding:11px 12px;border:1.5px solid #E7E4DC;border-radius:10px;font-family:inherit;font-size:13.5px;margin-bottom:8px;box-sizing:border-box}
+.lbox button{width:100%;padding:12px;border:0;border-radius:10px;background:#0C2A44;color:#fff;font-family:inherit;font-size:14px;font-weight:800;cursor:pointer}
+.alert{font-size:11.5px;color:#B91C1C;text-align:center;margin-top:8px;min-height:15px}
+</style>
+</head>
+<body>
+<div id="tb"></div><div id="sb"></div>
+<div id="ls"><div class="lbox">
+  <h1>🔗 공유 링크</h1><p>교사 계정으로 로그인해 주세요</p>
+  <input id="l-id" placeholder="아이디"><input id="l-pw" type="password" placeholder="비밀번호" onkeydown="if(event.key==='Enter')doLogin()">
+  <button onclick="doLogin()">로그인</button><div id="l-msg" class="alert"></div>
+</div></div>
+<div id="ms" style="display:none"><div id="sc"></div></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, collection, getDocs, query, orderBy, limit }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
+});
+const auth = getAuth(app);
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+const $I = id => document.getElementById(id);
+const esc = t => String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ORGS = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const PARENT_BASE = 'https://artist4rhythm-hub.github.io/daniel-parents';   // 학부모 저장소 주소
+const toast = t=>{ const el=document.createElement('div'); el.textContent=t;
+  el.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1E3932;color:#fff;padding:10px 16px;border-radius:100px;font-size:13px;font-weight:700;z-index:9999';
+  document.body.appendChild(el); setTimeout(()=>el.remove(),2200); };
+
+let CU=null, LINKS=[], STATS={}, TOTAL={n:0,today:0,week:0}, OPENROW=null;
+
+const relTime = ms=>{ if(!ms) return '기록 없음';
+  const d=(Date.now()-ms)/1000;
+  if(d<3600) return `${Math.max(1,Math.round(d/60))}분 전`;
+  if(d<86400) return `${Math.round(d/3600)}시간 전`;
+  if(d<86400*30) return `${Math.round(d/86400)}일 전`;
+  return new Date(ms).toISOString().slice(0,10); };
+const fdate = ts=>{ const ms=ts&&ts.seconds?ts.seconds*1000:(typeof ts==='number'?ts:null);
+  return ms? new Date(ms).toISOString().slice(0,10).replace(/-/g,'.') : ''; };
+
+async function loadAll(){
+  const grab = async p => { try{ return await p; }catch(e){ return null; } };
+  const [famIx, acadS, ttS, csS, semS, logS] = await Promise.all([
+    grab(getDoc(doc(db,'sharedFamily','_index'))),
+    grab(getDocs(collection(db,'sharedAcademic'))),
+    grab(getDocs(collection(db,'sharedTimetables'))),
+    grab(getDocs(collection(db,'clubStatusShare'))),
+    grab(getDocs(collection(db,'clubSemesters'))),
+    grab(getDocs(query(collection(db,'shareViewLogs'), orderBy('at','desc'), limit(3000)))),
+  ]);
+  // ── 📊 조회 집계 ──
+  STATS={}; TOTAL={n:0,today:0,week:0};
+  const now=Date.now(), day0=new Date(); day0.setHours(0,0,0,0);
+  if(logS) logS.forEach(d=>{ const m=d.data(); const ms=m.at&&m.at.seconds?m.at.seconds*1000:0;
+    const k=`${m.kind}|${m.shareId}`;
+    const st=(STATS[k]=STATS[k]||{n:0,last:0,today:0,week:0,recent:[]});
+    st.n++; TOTAL.n++;
+    if(ms>st.last) st.last=ms;
+    if(ms>=day0.getTime()){ st.today++; TOTAL.today++; }
+    if(now-ms<7*86400000){ st.week++; TOTAL.week++; }
+    if(st.recent.length<5) st.recent.push({ms, device:m.device||'', ref:m.ref||''});
+  });
+  // ── 🔗 링크 대장 ──
+  LINKS=[];
+  const put=(kind,gLabel,id,title,sub,url)=>LINKS.push({kind,gLabel,id,title,sub,url});
+  if(famIx && famIx.exists()){
+    put('family-list','📨 가정통신문','_index','가정통신문 목록 페이지','학부모용 전체 목록', `${location.origin}${location.pathname.replace('share-center.html','share-family.html')}`);
+    (famIx.data().items||[]).forEach(it=>{
+      const aud = it.aud && it.aud.t==='sel' ? `대상 ${it.aud.c.length}개 반` : '전체';
+      put('family','📨 가정통신문', it.id, it.title||'(제목 없음)',
+        `${ORGS[it.org]||it.org} · ${aud} · ${it.at? new Date(it.at).toISOString().slice(0,10).replace(/-/g,'.') : ''}`,
+        `${location.origin}${location.pathname.replace('share-center.html','share-family.html')}?id=${it.id}`); });
+  }
+  if(acadS) acadS.docs.filter(d=>!d.id.includes('__c')).forEach(d=>{ const m=d.data();
+    put('academic','🗓 학사일정', d.id, m.name||'학사일정 공유본',
+      `${m.audience==='parent'?'학부모용':'교사용'}${m.shareOrg?` · ${ORGS[m.shareOrg]||m.shareOrg}`:''} · ${fdate(m.updatedAt)} 갱신`,
+      `${location.origin}${location.pathname.replace('share-center.html','academic.html')}?share=${d.id}`); });
+  if(ttS) ttS.docs.forEach(d=>{ const m=d.data();
+    put('timetable','🕘 시간표', d.id, m.title||'시간표 공유본', fdate(m.updatedAt||m.publishedAt)+' 갱신',
+      `${location.origin}${location.pathname.replace('share-center.html','share-timetable.html')}?id=${d.id}`); });
+  if(csS) csS.docs.forEach(d=>{ const m=d.data();
+    put('clubStatus','🎨 동아리', d.id, `${ORGS[m.org]||m.org} 동아리 현황 · ${m.semName||m.semId}`,
+      `${fdate(m.publishedAt)} 게시${m.byName?` · ${m.byName}`:''}`,
+      `${location.origin}${location.pathname.replace('share-center.html','club-status.html')}?share=${d.id}`); });
+  if(semS) semS.docs.map(d=>({id:d.id,...d.data()}))
+    .filter(s=>['enrolling','adjusting','confirmed','running'].includes(s.status))
+    .sort((a,b)=>String(b.rangeFrom||'').localeCompare(String(a.rangeFrom||'')))
+    .forEach(s=> put('clubEnroll','🎨 동아리', s.id, `동아리 신청 · ${ORGS[s.org]||s.org} ${s.name||''}`,
+      `상태: ${({enrolling:'모집 중',adjusting:'조정 중',confirmed:'확정',running:'운영 중'})[s.status]||s.status}`,
+      `${PARENT_BASE}/club-enroll.html`));
+}
+
+function statusDot(st){ if(!st||!st.n) return 'w'; return (Date.now()-st.last<7*86400000)?'g':'y'; }
+function render(){
+  const groups={};
+  LINKS.forEach(l=>{ (groups[l.gLabel]=groups[l.gLabel]||[]).push(l); });
+  let h=`<div class="ph"><div class="em">🔗</div>
+    <div><b>공유 링크 관제탑</b><span>발행된 링크의 살아있음과 조회 흐름을 한눈에</span></div></div>
+    <div class="sumr">
+      <div class="sst"><b>${LINKS.length}</b><span>등록된 링크</span></div>
+      <div class="sst"><b>${TOTAL.today}</b><span>오늘 조회</span></div>
+      <div class="sst"><b>${TOTAL.week}</b><span>최근 7일</span></div></div>`;
+  if(TOTAL.n===0) h+=`<div class="warn">📊 아직 조회 기록이 없어요 — <b>보안 규칙 v18 게시 후</b>부터 모든 공유 페이지의 조회가 자동으로 쌓입니다. 링크 대장 기능은 지금도 정상 작동해요.</div>`;
+  for(const g of Object.keys(groups)){
+    const rows = groups[g].map(l=>{
+      const st = STATS[`${l.kind}|${l.id}`];
+      const open = OPENROW===`${l.kind}|${l.id}`;
+      return `<div class="lrow" onclick="togRow('${l.kind}','${esc(l.id)}')">
+        <div class="lr1"><span class="dot ${statusDot(st)}"></span><b>${esc(l.title)}</b>
+          <span class="lstat">${st&&st.n?`📊 <em>${st.n}</em>회 · ${relTime(st.last)}`:'조회 기록 없음'}</span></div>
+        <div class="lr2"><span class="lsub">${esc(l.sub||'')}</span>
+          <button class="lbtn" onclick="event.stopPropagation();copyLink('${esc(l.url)}')">📎 복사</button>
+          <button class="lbtn" onclick="event.stopPropagation();window.open('${esc(l.url)}','_blank')">열기</button></div>
+        ${open&&st&&st.recent.length?`<div class="recent">${st.recent.map(r=>
+          `<div class="rv"><b>${relTime(r.ms)}</b> · ${esc(r.device)}${st.today?'':''}</div>`).join('')}
+          ${st.week?`<div class="rv" style="color:#98A0A8">오늘 ${st.today} · 7일 ${st.week}</div>`:''}</div>`:''}
+      </div>`; }).join('');
+    h += `<details class="kd" open><summary>${esc(g)}<span class="cnt">${groups[g].length}개</span></summary>${rows||'<div class="empty">아직 발행된 링크가 없어요.</div>'}</details>`;
+  }
+  $I('sc').innerHTML = h;
+}
+window.togRow = (k,id)=>{ const key=`${k}|${id}`; OPENROW = OPENROW===key? null : key; render(); };
+window.copyLink = url=>{ navigator.clipboard?.writeText(url).then(()=>toast('링크를 복사했어요')).catch(()=>prompt('복사하세요', url)); };
+
+onAuthStateChanged(auth, async user=>{
+  if(!user){ window.hideLoading&&hideLoading(); $I('ls').style.display='flex'; return; }
+  const st = await getDoc(doc(db,'staff', user.uid));
+  if(!st.exists()){ $I('l-msg').textContent='교사 계정이 아니에요.'; $I('ls').style.display='flex'; window.hideLoading&&hideLoading(); return; }
+  CU = { uid:user.uid, ...st.data() };
+  window.ORGS = ORGS;
+  if(window.renderShell) renderShell('sharecenter', CU);
+  await loadAll(); render();
+  $I('ls').style.display='none'; $I('ms').style.display='block'; window.hideLoading&&hideLoading();
+  document.addEventListener('visibilitychange', async ()=>{ if(document.hidden) return;
+    try{ await loadAll(); render(); }catch(e){} });
+});
+window.doLogin = async ()=>{
+  const id=$I('l-id').value.trim(), pw=$I('l-pw').value; $I('l-msg').textContent='';
+  try{ await signInWithEmailAndPassword(auth, `${id}@gyosa-seongyosa.staff`, pw); }
+  catch(e){ $I('l-msg').textContent='로그인 실패 — 아이디나 비밀번호를 확인해 주세요.'; }
+};
+</script>
+<script src="modal-close.js"></script>
+<script src="org-core.js"></script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
+</body>
+</html>

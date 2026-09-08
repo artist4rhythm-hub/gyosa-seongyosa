@@ -169,7 +169,7 @@ body.share-mode #tb,body.share-mode #sb{display:none!important}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, query, where, Timestamp }
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, Timestamp, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -299,7 +299,25 @@ async function boot(){
     SEM = sm.exists() ? {id:sm.id, ...sm.data()} : {id:SNAP.semId, name:SNAP.semName, org:SNAP.org, blocked:[]};
     ACID = SNAP.acShareId||'';
     if(ACID) ACAD = await loadAcad(ACID);
+
+/* 📊 게시 링크 조회 기록 — 실패해도 화면 영향 없음 (규칙 v18 게시 후부터 쌓입니다) */
+async function logShareView(kind, shareId, title){
+  try{
+    const ua = navigator.userAgent || '';
+    const os = /iPhone|iPad|iPod/.test(ua)?'iOS' : /Android/.test(ua)?'Android'
+             : /Macintosh/.test(ua)?'Mac' : /Windows/.test(ua)?'Windows' : '기타';
+    const mob = /Mobi|Android|iPhone|iPad/.test(ua);
+    await addDoc(collection(db,'shareViewLogs'), {
+      kind, shareId: String(shareId||''), title: String(title||'').slice(0,80),
+      at: serverTimestamp(),
+      device: os + (mob?' · 모바일':' · PC'),
+      lang: navigator.language || '',
+      ref: String(document.referrer||'').slice(0,200)
+    });
+  }catch(_){/* 무시 */}
+}
     await loadClubs();
+    logShareView('clubStatus', SHARE_ID, `${(ORGS[SNAP.org]||SNAP.org||'')} 동아리 현황`);
     $I('ms').style.display='block'; render(); window.hideLoading&&hideLoading();
     document.addEventListener('visibilitychange', async ()=>{ if(document.hidden) return;
       try{ await loadClubs(); if(ACID) ACAD = await loadAcad(ACID); render(); }catch(e){} });
