@@ -27,7 +27,12 @@ window.orgCore = (function(){
       if(CU.role==='super' || UNIFIED_POS.includes(CU.position||'')) return DF.slice();
       return base(CU); },
   };
-  function myOrgs(CU, key){ return (POLICY[key] || POLICY.std)(CU); }
+  function myOrgs(CU, key){
+    const full = (POLICY[key] || POLICY.std)(CU);
+    const g = curOrg();                                   // 🧭 전역 스위처: 단일 기관을 고르면
+    if((g==='daniel'||g==='jihyebit') && full.includes(g)) return [g];   //    전 화면의 스코프가 그 기관으로 좁혀진다
+    return full;                                          // '함께(all)'·미지정·권한 밖 = 원래 정책 그대로
+  }
 
   /* ── 🧭 전역 기관 컨텍스트 (3단계) ── */
   function curOrg(){

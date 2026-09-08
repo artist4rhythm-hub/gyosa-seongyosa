@@ -37,6 +37,7 @@ window.OrgBar = (function(){
     return S.opts.orgs[0] || '';
   }
   function init(opts){
+    window.__ORG_LIVE = true;                             // 이 화면은 새로고침 없이 스위처를 따라간다
     S.opts = Object.assign({ orgs:[], labels:{}, storeKey:'orgbar', allowAll:false, defaultAll:false }, opts||{});
     // 호스트 — #org-bar가 있으면 쓰고, 없으면 상단 이동경로(#tb) 바로 아래 자가 생성
     S.host = document.getElementById('org-bar');

@@ -852,7 +852,10 @@ window.guardPage = guardPage;
         `<button type="button" class="sbo${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('');
     };
     host.addEventListener('click', e=>{ const b=e.target.closest('.sbo');
-      if(b) orgCore.setCurOrg(b.dataset.v, false); });
+      if(!b) return;
+      orgCore.setCurOrg(b.dataset.v, false);
+      if(!window.__ORG_LIVE) setTimeout(()=>location.reload(), 80);   // 라이브 미지원 화면은 새 스코프로 다시 연다
+    });
     window.addEventListener('orgchange', draw);
     draw();
   })();
