@@ -1365,48 +1365,27 @@ function holInfoMap(year){
   return map;
 }
 
-/* 📅 월 창 로딩 — 열린 달(±92일 소급)만 서버에 묻고, 캐시·이웃 달 선적재로 넘김이 0초 */
-const EV_CACHE = {};
-const evCacheClear = ()=>{ for(const k in EV_CACHE) delete EV_CACHE[k]; };
-const _p2 = n=>String(n).padStart(2,'0');
-async function fetchMonthEvents(y, m){
-  const k = `${y}-${_p2(m)}`;
-  if(EV_CACHE[k]) return EV_CACHE[k];
-  const mStart = `${y}-${_p2(m)}-01`;
-  const mEnd = `${y}-${_p2(m)}-${_p2(daysInMonth(y,m))}`;
-  const lb = new Date(y, m-1, 1); lb.setDate(lb.getDate()-92);      // 긴 행사(방학 등) 소급 포착
-  const A = `${lb.getFullYear()}-${_p2(lb.getMonth()+1)}-${_p2(lb.getDate())}`;
-  // 1차: 월 창 조회 (빠름)
-  try{
-    const snap = await getDocs(query(collection(db,'academicEvents'),
-      where('start','>=',A), where('start','<=',mEnd), orderBy('start')));
-    const arr = snap.docs.map(d=>({ id:d.id, ...d.data() }));
-    if(arr.length) return EV_CACHE[k] = arr;
-  }catch(e){ console.warn('[학사] 월 창 조회 실패 — 연 단위로 폴백합니다', e); }
-  // 2차: 검증된 연 단위 조회로 폴백 → 이 달과 겹치는 것만 추려 캐시
-  //      (월 창이 0건일 때도 한 번 확인 — start 필드가 없는 유물 행사까지 구조)
-  const ys = await getDocs(query(collection(db,'academicEvents'), where('year','==',Number(y))));
-  const all = ys.docs.map(d=>({ id:d.id, ...d.data() }));
-  const win = all.filter(e=>{
-    const s = e.start || e.date || ''; if(!s) return false;
-    const t = e.end || s;
-    return s <= mEnd && t >= mStart || (s >= A && s <= mEnd);
-  });
-  return EV_CACHE[k] = win;
-}
+/* 📅 연 단위 캐시 로딩 — 배포 전과 «완전히 동일한» 검증된 연 쿼리를 정본으로.
+   같은 해는 세션 내 재조회 0 — 달 넘김이 느렸던 진짜 원인(매 넘김마다 그 해 전체 재조회)을 캐시로 끊는다 */
+const EV_YEAR_CACHE = {};
+const evCacheClear = ()=>{ for(const k in EV_YEAR_CACHE) delete EV_YEAR_CACHE[k]; };
 async function loadEvents(year, month, fresh){
   // 공유 링크(로그인 없음)에서는 서버에 다시 묻지 않는다
   if(typeof shareId !== 'undefined' && shareId) return;
-  if(fresh) evCacheClear();
-  const m = month || curMonth || 1;
-  try { ALL_EVENTS = await fetchMonthEvents(Number(year), m); }
-  catch(e){ ALL_EVENTS = []; }
-  await loadLedgerHolidays(Number(year));
+  const y = Number(year);
+  if(fresh) delete EV_YEAR_CACHE[y];
+  if(!(y in EV_YEAR_CACHE)){
+    try {
+      const snap = await getDocs(query(collection(db,'academicEvents'), where('year','==',y)));
+      EV_YEAR_CACHE[y] = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    } catch(e){
+      console.error('[학사] 행사 불러오기 실패 — 원본 데이터는 안전하며 화면이 못 읽었을 뿐입니다', e);
+    }
+  }
+  ALL_EVENTS = EV_YEAR_CACHE[y] || [];
+  if(!(y in EV_YEAR_CACHE)) { /* 실패는 캐시하지 않음 — 다음 시도에 재조회 */ }
+  await loadLedgerHolidays(y);
   applyEventScope();
-  // 🚀 이웃 달 선적재 (실패해도 조용히)
-  const nb = new Date(year, m, 1), pb = new Date(year, m-2, 1);
-  fetchMonthEvents(nb.getFullYear(), nb.getMonth()+1).catch(()=>{});
-  fetchMonthEvents(pb.getFullYear(), pb.getMonth()+1).catch(()=>{});
 }
 
 /* 지금 고른 기관의 행사만 보여준다 */
