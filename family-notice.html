@@ -480,6 +480,16 @@ tr.bg-subrow .bg-amt{color:#8a6410}
 .ag-pgrp{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
 .ag-pool.dropover{border-color:var(--gm);background:var(--gp)}
 .ag-unit.dropover{border-color:var(--gm);box-shadow:0 0 0 2px var(--gm);background:var(--gp)}
+.ag-role{font-size:10px;font-weight:900;color:#8A8F86;background:#F1F0EA;border:1px solid var(--ivd);
+  border-radius:7px;padding:1px 7px;margin-right:5px;cursor:pointer;flex:none}
+.ag-role.on{color:#7A5A10;background:#FBF0D5;border-color:#E8D6A5}
+.ag-rh{font-size:11px;font-weight:900;color:var(--gm);margin:8px 2px 4px;display:flex;align-items:center;gap:5px}
+.ag-rh b{font-size:10px;color:var(--tl);font-weight:800}
+.ag-rh b.over{color:var(--red)}
+.ag-rsec{display:flex;flex-wrap:wrap;gap:6px;min-height:24px;padding:2px;border-radius:9px}
+.ag-hint.mini{font-size:10.5px;padding:2px 4px}
+.agr-row{display:flex;gap:7px;align-items:center;margin-bottom:7px}
+.agr-row .agr-n{flex:1}
 .ag-ghost{position:fixed;z-index:999;pointer-events:none;background:var(--gd);color:#fff;
   font-size:14px;font-weight:800;border-radius:12px;padding:9px 17px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
 .ag-stu{touch-action:none}
@@ -3802,7 +3812,7 @@ function edAssign(b){
       <textarea class="ftxt" id="ag-info" rows="2">${esc(d.info||'')}</textarea></div>`:''}
     <div class="ag-top">
       <button class="btn sm" onclick="agAddUnit()">${K.addLabel}</button>
-      ${d.kind==='team'?'<button class="ed-mini" onclick="agAutoAsk()" title="학년·성별이 고르게 섞이도록 초안을 자동으로 나눠줘요">✨ 자동 배분</button>':''}
+      ${d.kind==='team'?'<button class="ed-mini" onclick="agAutoAsk()" title="학년·성별이 고르게 섞이도록 초안을 자동으로 나눠줘요">✨ 자동 배분</button><button class="ed-mini" onclick="agRoles()" title="팀장·부팀장 같은 역할 이름과 정원을 행사에 맞게 정해요">🎭 역할 틀</button>':''}
       <span id="ag-sum" class="ag-sum"></span>
     </div>
     <div class="ag-wrap">
@@ -3824,24 +3834,34 @@ async function agInit(){
   const rosterIds = CUR.blocks.find(x=>x.key==='fnRoster')?.data?.ids || [];
   const all = rosterIds.map(agStuOf).filter(Boolean);
   const units = (seed.units||[]).map(u=>({ ...u, id:u.id||agRid(),
+    roleOf: u.roleOf ? { ...u.roleOf } : {},
     students:(u.students||[]).map(sv=> all.find(a=>a.id===sv.id) || sv) }));
   const used = new Set(units.flatMap(u=>u.students.map(x=>x.id)));
   try { await loadStaffList(); } catch(e){}
   const tnames = fnEventTeachers();
-  AG = { kind:seed.kind||'team', units,
+  AG = { kind:seed.kind||'team', units, roles: Array.isArray(seed.roles)? seed.roles.map(r=>({n:r.n,c:Number(r.c)||0})) : [],
     pool: all.filter(x=>!used.has(x.id)), sel:null,
     teachers: tnames.map(n=>{ const t=STAFF?.find(x=>x.name===n);
       return { n, g:t?.gender||'', uid:t?.uid||'' }; }) };
   if(!rosterIds.length) toast('먼저 일반 계획의 👥 도우미로 「참가 학생 명단」을 만들어 주세요.','err');
   agPaint();
 }
-const agChip = (st,from)=>`<button class="ag-stu${AG.selSet&&AG.selSet.has(st.id)?' sel':''}${st._warn?' warn':''}"
+const agChip = (st,from)=>{
+  let roleBadge='';
+  if(from!=='pool' && AG.kind==='team' && (AG.roles||[]).length){
+    const u=AG.units.find(x=>x.id===from);
+    const r=(u&&u.roleOf&&u.roleOf[st.id])||'';
+    roleBadge=`<span class="ag-role${r?' on':''}" title="누르면 역할이 바뀌어요 (${[...AG.roles.map(x=>x.n),'팀원'].join(' → ')})"
+      onclick="event.stopPropagation();agCycleRole('${esc(from)}','${st.id}')">${esc(r||'팀원')}</span>`;
+  }
+  return `<button class="ag-stu${AG.selSet&&AG.selSet.has(st.id)?' sel':''}${st._warn?' warn':''}"
     data-sid="${esc(st.id)}" data-from="${esc(from)}"
-    onclick="agSel(event,'${from}','${st.id}')">
+    onclick="agSel(event,'${from}','${st.id}')">${roleBadge}
     <span class="n">${esc(st.n)}</span>
     <span class="meta"><span class="fnp-gd ${st.x==='남'?'m':st.x==='여'?'f':''}">${st.x||'?'}</span>
       ${st.g?`<b>${esc(String(st.g).replace('학년',''))}학년</b>`:''}</span>
     ${from!=='pool'?`<i onclick="event.stopPropagation();agOut('${from}','${st.id}')">✕</i>`:''}</button>`;
+};
 /* 🎩 선생님 카드 — 끌어서 조·차량·호실에 담당으로 배치 */
 const agTchCard = (t, from)=>{
   const canGd = CU && (CU.role==='super'||CU.role==='org_admin') && t.uid;
@@ -3986,8 +4006,22 @@ function agPaint(){
         <button class="ed-mini" style="color:var(--red)" onclick="event.stopPropagation();agDelUnit('${u.id}')">✕</button>
       </div>
       ${head}
-      <div class="ag-us">${u.students.map(st=>agChip(st,u.id)).join('')
-        || '<span class="ag-hint">학생을 골라 이 카드를 누르면 들어와요</span>'}</div>
+      <div class="ag-us">${(()=>{
+        if(AG.kind==='team' && (AG.roles||[]).length){
+          u.roleOf = u.roleOf||{};
+          Object.keys(u.roleOf).forEach(sid=>{ if(!u.students.some(x=>x.id===sid)) delete u.roleOf[sid]; });
+          const secs = AG.roles.map(r=>{
+            const ms = u.students.filter(x=>u.roleOf[x.id]===r.n);
+            return `<div class="ag-rh">⭐ ${esc(r.n)} <b class="${r.c>0&&ms.length>r.c?'over':''}">${ms.length}/${r.c||'∞'}</b></div>
+              <div class="ag-rsec">${ms.map(st=>agChip(st,u.id)).join('')||'<span class="ag-hint mini">이름표를 눌러 지정</span>'}</div>`;
+          }).join('');
+          const rest = u.students.filter(x=>!u.roleOf[x.id]);
+          return secs + `<div class="ag-rh">👥 팀원 <b>${rest.length}</b></div>
+            <div class="ag-rsec">${rest.map(st=>agChip(st,u.id)).join('')||'<span class="ag-hint mini">학생을 골라 카드를 누르면 들어와요</span>'}</div>`;
+        }
+        return u.students.map(st=>agChip(st,u.id)).join('')
+          || '<span class="ag-hint">학생을 골라 이 카드를 누르면 들어와요</span>';
+      })()}</div>
     </div>`;
   }).join('') || `<div class="empty" style="font-size:12.5px">${K.addLabel} 버튼으로 시작하세요.</div>`;
 }
@@ -4099,6 +4133,62 @@ window.agDrop = function(uid){ agMoveSelTo(uid, null); };
     setTimeout(()=>{ window.__agDragMoved=false; }, 50);
   });
 })();
+/* 🎭 역할 순환 — 정원 찬 역할은 건너뛰고, 마지막은 항상 「팀원」 */
+window.agCycleRole = function(uid, sid){
+  const u = AG.units.find(x=>x.id===uid); if(!u) return;
+  u.roleOf = u.roleOf || {};
+  const seq = [...(AG.roles||[]).map(r=>r.n), ''];          // '' = 팀원
+  const cur = u.roleOf[sid] || '';
+  let i = seq.indexOf(cur);
+  for(let step=0; step<seq.length; step++){
+    i = (i+1) % seq.length;
+    const cand = seq[i];
+    if(cand===''){ delete u.roleOf[sid]; agPaint(); saveDraft(); return; }
+    const R = AG.roles.find(r=>r.n===cand);
+    const filled = u.students.filter(x=>x.id!==sid && u.roleOf[x.id]===cand).length;
+    if(R && R.c>0 && filled>=R.c){ continue; }               // 정원 찬 역할은 통과
+    u.roleOf[sid]=cand; agPaint(); saveDraft();
+    return;
+  }
+};
+/* 🎭 역할 틀 편집 — 행사마다 이름·정원을 다르게 */
+window.agRoles = function(){
+  const rows = (AG.roles||[]).length ? AG.roles : [{n:'팀장',c:1},{n:'부팀장',c:1}];
+  const rowHTML = (r,i)=>`<div class="agr-row" data-i="${i}">
+      <input class="fin agr-n" value="${esc(r.n)}" placeholder="역할 이름 (예: 팀장)">
+      <select class="fsel agr-c">${[1,2,3,4,5,6,7,8,9].map(n=>`<option value="${n}"${(r.c||1)===n?' selected':''}>${n}명</option>`).join('')}</select>
+      <button class="ed-mini" style="color:var(--red)" onclick="this.closest('.agr-row').remove()">✕</button></div>`;
+  openModal2(`
+    <div class="mtitle">🎭 역할 틀</div>
+    <div class="msub">이 조 편성에서 쓸 역할과 정원을 정해요 — 행사마다 다르게 저장됩니다.<br>
+      나머지 인원은 자동으로 <b>「팀원」</b>(정원 없음)이에요. 조 카드에서 이름표를 누르면 역할이 순환합니다.</div>
+    <div id="agr-list">${rows.map(rowHTML).join('')}</div>
+    <button class="ed-mini" style="margin-top:8px" onclick="(function(){
+      const l=document.getElementById('agr-list');
+      l.insertAdjacentHTML('beforeend', \`<div class=&quot;agr-row&quot;><input class=&quot;fin agr-n&quot; placeholder=&quot;역할 이름&quot;><select class=&quot;fsel agr-c&quot;>${[1,2,3,4,5,6,7,8,9].map(n=>`<option value=&quot;${n}&quot;>${n}명</option>`).join('')}</select><button class=&quot;ed-mini&quot; style=&quot;color:var(--red)&quot; onclick=&quot;this.closest('.agr-row').remove()&quot;>✕</button></div>\`);
+    })()">＋ 역할 추가</button>
+    <div class="mfoot">
+      <button class="ed-mini" style="margin-right:auto;color:var(--red)" onclick="window.__agRolesSave([])">역할 없이 쓰기</button>
+      <button class="btn gray" onclick="closeModal2()">취소</button>
+      <button class="btn" onclick="window.__agRolesSave()">저장</button></div>`);
+  window.__agRolesSave = (forced)=>{
+    let out;
+    if(Array.isArray(forced)) out = forced;
+    else {
+      out = [...document.querySelectorAll('#agr-list .agr-row')].map(row=>({
+        n: row.querySelector('.agr-n').value.trim(),
+        c: Number(row.querySelector('.agr-c').value)||1 }))
+        .filter(r=>r.n && r.n!=='팀원');
+      const seen=new Set(); out = out.filter(r=>{ if(seen.has(r.n)) return false; seen.add(r.n); return true; });
+    }
+    AG.roles = out;
+    const keep = new Set(out.map(r=>r.n));
+    AG.units.forEach(u=>{ if(!u.roleOf) return;
+      Object.keys(u.roleOf).forEach(sid=>{ if(!keep.has(u.roleOf[sid])) delete u.roleOf[sid]; }); });
+    closeModal2(); agPaint(); saveDraft();
+    toast(out.length?`역할 틀 저장 — ${out.map(r=>`${r.n} ${r.c}명`).join(' · ')} + 팀원`:'역할 없이 씁니다');
+  };
+};
 window.agOut = function(uid, sid){
   const u = AG.units.find(x=>x.id===uid); if(!u) return;
   const i = u.students.findIndex(x=>x.id===sid); if(i<0) return;
@@ -4209,9 +4299,14 @@ function readBlockData(b){
     if(b.type === 'assign'){
       if(!AG || !$I('ag-units')) return null;
       return { kind:AG.kind, info:$I('ag-info')?.value.trim()||'',
-        units:AG.units.map(u=>({ id:u.id, name:(u.name||'').trim(), tN:u.tN||'',
-          cap:u.cap||0, drvN:u.drvN||'', gender:u.gender||'', label:u.label||'', memo:u.memo||'',
-          students:u.students.map(x=>({id:x.id,n:x.n,g:x.g,x:x.x})) })),
+        roles:(AG.roles||[]).map(r=>({n:r.n,c:Number(r.c)||0})),
+        units:AG.units.map(u=>{
+          const ro={}; Object.entries(u.roleOf||{}).forEach(([sid,rn])=>{
+            if(u.students.some(x=>x.id===sid)) ro[sid]=rn; });
+          return { id:u.id, name:(u.name||'').trim(), tN:u.tN||'',
+            cap:u.cap||0, drvN:u.drvN||'', gender:u.gender||'', label:u.label||'', memo:u.memo||'',
+            roleOf:ro, students:u.students.map(x=>({id:x.id,n:x.n,g:x.g,x:x.x})) };
+        }),
         note:$I('ag-note')?.value.trim()||'' };
     }
   } catch(e){ return null; }

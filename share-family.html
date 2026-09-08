@@ -692,6 +692,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true })   /* 🔌 막히는 네트워크 자동 우회 */;
 
+/* 🎭 조 편성 역할 행 스타일 */
+const __roleCss = document.createElement('style');
+__roleCss.textContent = `.rv-ag.has-roles .lb{background:#F4F2EC;font-weight:900;font-size:11px;color:#5A5F56;
+    text-align:center;white-space:nowrap;padding:6px 8px}
+  .rv-ag .lb.num{font-weight:800;color:#9AA096;font-size:10.5px}
+  .rv-ag .rolec{background:#FBF3DC;font-weight:800}
+  .rv-ag tr.rolerow td{border-bottom:2px solid #EADFC2}`;
+document.head.appendChild(__roleCss);
 const ICONS={"cover": "🏞", "purpose": "🎯", "plan": "🗂", "schedule": "⏰", "teamAssign": "👥", "vehAssign": "🚌", "roomAssign": "🛏", "budget": "💰", "itemsP": "🎒", "itemsG": "🍳", "itemsS": "🏫", "roles": "🧑\u200d🏫", "contact": "📞", "hosp": "🏥", "matGuide": "ℹ️", "matTbl": "📚", "freeT": "📝", "freeK": "🔑", "freeTb": "🧮"};
 const SCH_COLORS = ['', '#FDECEC', '#FFF4E0', '#FFF9D6', '#E6F3E6', '#E3EDF7', '#EFE6F5',
   '#FFE4EF', '#E0F7FA', '#F3E8FF', '#FFEFD9', '#DCFCE7', '#DBEAFE', '#FEF3C7', '#FDE2E4', '#E2E8F0', '#D1FAE5', '#EDE9FE'];
@@ -837,12 +845,18 @@ function renderAssign(d){
         <td class="c">${esc(u.memo||'')}</td></tr>`).join('')}
     </table></div>`;
   } else {
-    const maxR=Math.max(...units.map(u=>u.students.length),0);
-    core=`<div style="overflow-x:auto"><table class="rv-ag">
-      <tr>${units.map(u=>`<th class="tch">${esc(u.tN||'')}</th>`).join('')}</tr>
-      <tr>${units.map(u=>`<th>${esc(u.name||'')} <small>(${u.students.length}명)</small></th>`).join('')}</tr>
-      ${[...Array(maxR)].map((_,r)=>`<tr>${units.map(u=>
-        `<td class="c">${u.students[r]?nm(u.students[r]):''}</td>`).join('')}</tr>`).join('')}
+    const roles = Array.isArray(d.roles) ? d.roles.filter(r=>r&&r.n) : [];
+    const hasR = roles.length>0;
+    const roleMs = (u,rn)=> u.students.filter(st=>((u.roleOf||{})[st.id])===rn);
+    const restOf = u => hasR ? u.students.filter(st=>!(u.roleOf||{})[st.id]) : u.students;
+    const maxR = Math.max(...units.map(u=>restOf(u).length),0);
+    core=`<div style="overflow-x:auto"><table class="rv-ag${hasR?' has-roles':''}">
+      <tr>${hasR?'<th class="lb">교사</th>':''}${units.map(u=>`<th class="tch">${esc(u.tN||'')}</th>`).join('')}</tr>
+      <tr>${hasR?'<th class="lb"></th>':''}${units.map(u=>`<th>${esc(u.name||'')} <small>(${u.students.length}명)</small></th>`).join('')}</tr>
+      ${roles.map(r=>`<tr class="rolerow"><td class="lb">${esc(r.n)}</td>${units.map(u=>
+        `<td class="c rolec">${roleMs(u,r.n).map(nm).join('<br>')||''}</td>`).join('')}</tr>`).join('')}
+      ${[...Array(maxR)].map((_,ri)=>`<tr>${hasR?`<td class="lb num">${ri+1}</td>`:''}${units.map(u=>
+        `<td class="c">${restOf(u)[ri]?nm(restOf(u)[ri]):''}</td>`).join('')}</tr>`).join('')}
     </table></div>`;
   }
   return core + (d.note?`<div class="rv-note">${esc(d.note)}</div>`:'');
