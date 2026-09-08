@@ -212,6 +212,7 @@ function sbVisibleGroups(){
 
 /* ═══ 셸(사이드바+본문) 생성 ═══ */
 function renderShell(activeKey, user){
+  window.__PAGEKEY = activeKey;
   SB_ACTIVE = activeKey;
   SB_USER = user || null;
 
@@ -277,6 +278,7 @@ function renderSidebar(){
       </button>
     </div>
 
+    <div id="sb-orgsw" class="sb-orgsw"></div>
     <div class="sb-search">
       <span class="material-symbols-rounded">search</span>
       <input id="sb-q" placeholder="검색  (⌘K)" oninput="onSearch(this.value)" onkeydown="onSearchKey(event)" autocomplete="off">
@@ -539,6 +541,12 @@ function injectSidebarCSS(){
 
 .sb-foot{border-top:1px solid rgba(255,255,255,.1);padding:10px 12px;}
 .sb-me{display:flex;align-items:center;gap:8px;}
+.sb-orgsw{display:flex;gap:5px;padding:0 12px 8px}
+.sb-orgsw:empty{display:none}
+.sbo{flex:1;font-family:inherit;font-size:11px;font-weight:800;color:rgba(255,255,255,.65);
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:9px;
+  padding:6px 4px;cursor:pointer;white-space:nowrap}
+.sbo.on{background:#D8B45A;border-color:#D8B45A;color:#2A2416}
 .sb-ver{margin-top:8px;font-size:10px;letter-spacing:.02em;color:rgba(255,255,255,.45);text-align:center;font-variant-numeric:tabular-nums;}
 .sb-av{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:#fff;flex:none;}
 .sb-mi{min-width:0;}
@@ -828,6 +836,26 @@ window.guardPage = guardPage;
       + 'padding:2px 4px;line-height:1">✕</button>';
     document.body.appendChild(b);
   }
+
+  /* ── 🧭 전역 기관 스위처 — 어디서 바꾸든 전 화면이 따라온다 ── */
+  (function orgSwitch(){
+    if(!window.orgCore || !SB_USER) return;
+    const orgs = orgCore.myOrgs(SB_USER, 'std');
+    if(orgs.length < 2) return;                              // 단일 기관 사용자에겐 불필요
+    const host = document.getElementById('sb-orgsw'); if(!host) return;
+    const draw = ()=>{
+      const cur = orgCore.curOrg() || SB_USER.org || orgs[0];
+      const showAll = orgCore.combinedHas(window.__PAGEKEY || '');
+      const items = [ ...orgs.map(o=>[o, (window.ORGS&&ORGS[o])||o]),
+                      ...(showAll ? [['all','👥 함께']] : []) ];
+      host.innerHTML = items.map(([v,l])=>
+        `<button type="button" class="sbo${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('');
+    };
+    host.addEventListener('click', e=>{ const b=e.target.closest('.sbo');
+      if(b) orgCore.setCurOrg(b.dataset.v, false); });
+    window.addEventListener('orgchange', draw);
+    draw();
+  })();
 
   /* ── 🏷 버전 배지 — version.json 한 곳만 올리면 전 화면에 반영 ── */
   (async function fillVer(tries){

@@ -28,5 +28,33 @@ window.orgCore = (function(){
       return base(CU); },
   };
   function myOrgs(CU, key){ return (POLICY[key] || POLICY.std)(CU); }
-  return { myOrgs, POLICY, UNIFIED_POS, JF, DF };
+
+  /* ── 🧭 전역 기관 컨텍스트 (3단계) ── */
+  function curOrg(){
+    try{ const q = new URLSearchParams(location.search).get('org');
+      if(q==='daniel'||q==='jihyebit'||q==='all') return q; }catch(e){}
+    try{ const v = localStorage.getItem('gyosa_curorg');
+      if(v==='daniel'||v==='jihyebit'||v==='all') return v; }catch(e){}
+    return '';
+  }
+  function setCurOrg(v, silent){
+    try{ localStorage.setItem('gyosa_curorg', v); }catch(e){}
+    try{ window.dispatchEvent(new CustomEvent('orgchange', { detail:{ org:v, silent:!!silent } })); }catch(e){}
+  }
+
+  /* ── 👥 함께 보기 허용 목록 — systemConfig/orgView (로컬 캐시) ── */
+  const DEFAULT_COMBINED = ['home','students','academic','directory','board'];
+  function combined(){
+    try{ const j = JSON.parse(localStorage.getItem('gyosa_orgview')||'null');
+      if(Array.isArray(j)) return j; }catch(e){}
+    return DEFAULT_COMBINED.slice();
+  }
+  const combinedHas = k => combined().includes(k);
+  function applyLocalOrgView(list){
+    if(!Array.isArray(list)) return;
+    try{ localStorage.setItem('gyosa_orgview', JSON.stringify(list)); }catch(e){}
+  }
+
+  return { myOrgs, POLICY, UNIFIED_POS, JF, DF,
+           curOrg, setCurOrg, combined, combinedHas, applyLocalOrgView, DEFAULT_COMBINED };
 })();
