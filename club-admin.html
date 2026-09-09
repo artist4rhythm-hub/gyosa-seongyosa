@@ -127,6 +127,26 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .drw{position:relative;isolation:isolate}
 .drw .tb{width:100%}
 .drw .tb th{position:static;white-space:nowrap}
+.cfb{display:inline-block;font-size:10px;font-weight:900;border-radius:8px;padding:1px 6px;vertical-align:1px;cursor:help}
+.cfb.r{background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5}
+.cfb.y{background:#FEF3C7;color:#B45309;border:1px solid #F1DCA8}
+.cfb.mini{padding:0 5px}
+.mx-flt{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:2px 0 8px}
+.mx-flt input[type=text],.mx-flt input:not([type]),.mx-flt select{padding:7px 9px;border:1.5px solid var(--ivd);border-radius:10px;font-family:inherit;font-size:12.5px}
+.mx-flt label{font-size:12px;font-weight:800;color:var(--ts);display:inline-flex;gap:5px;align-items:center}
+.mx-wrap{max-height:62vh;overflow:auto;border:1px solid var(--ivd);border-radius:12px}
+.mx-tb{border-collapse:separate;border-spacing:0;min-width:640px}
+.mx-tb th{position:sticky;top:0;background:var(--gp,#EAF4EF);z-index:2}
+.mx-tb th.mx-nm, .mx-tb td.mx-nm{position:sticky;left:0;background:#fff;z-index:1;min-width:96px;box-shadow:2px 0 0 var(--ivd)}
+.mx-tb th.mx-nm{z-index:3;background:var(--gp,#EAF4EF)}
+.mx-cell{min-width:118px;vertical-align:top;padding:5px 6px}
+.mxc{display:inline-flex;flex-direction:column;gap:0;font-size:10.5px;font-weight:800;color:#14532D;
+  background:#DCFCE7;border:1.5px solid #BBE7C8;border-radius:9px;padding:3px 7px;margin:2px 3px 2px 0;line-height:1.25;cursor:help}
+.mxc i{font-style:normal;font-weight:700;font-size:9.5px;color:#3E6B4F}
+.mxc.p{background:#E5EDFC;border-color:#C7D8F5;color:#1D4ED8}
+.mxc.p i{color:#4A6DB5}
+.mxc.bad{border-color:#DC2626;box-shadow:0 0 0 1.5px #FCA5A5;background:#FEF0F0;color:#B91C1C}
+.mxc.warn{border-color:#D97706;box-shadow:0 0 0 1.5px #F5D48A}
 .rm2{font-style:normal;cursor:pointer;font-size:11px;opacity:.5;margin-left:2px}.rm2:hover{opacity:1}
 </style>
 </head>
@@ -918,6 +938,7 @@ function clubStat(c){
 }
 const STL = { ok:['🟢 개설 가능','#DCFCE7','#15803D'], under:['🟡 최소 미달','#FEF3C7','#B45309'], over:['🔴 정원 초과 → 추첨','#FEE2E2','#B91C1C'], cancelled:['⚫ 폐강','#E5E7EB','#374151'] };
 async function renderEnroll(){
+  buildConflicts();                                // ⚠️ 겹침 최신화 (시간 변경 즉시 반영)
   if(!VIEW_ONLY){ subEnr(); if(!ENR.length) await loadEnr(); }
   paintEnroll();
 }
@@ -947,7 +968,7 @@ function paintEnroll(){
           return `<div class="drw-body" style="padding-bottom:0">
             <div class="small" style="font-weight:900;color:#15803D;margin:2px 0 6px">✅ 1차 확정 명단 · ${fin.length}명 <span style="font-weight:700;color:var(--tl)">— 추가 모집과 무관 · 변경되지 않습니다</span></div>
             ${fin.length?`<div class="tblwrap"><table class="tb"><tr><th>학생</th><th>학년·반</th><th style="width:86px">상태</th></tr>
-              ${fin.map(e=>{ const xd=!!((e.r2Cancel||{})[c.id]); return `<tr style="background:${xd?'#FFF5F5':'#F7FCF8'}"><td><b style="${xd?'color:#98A39D;text-decoration:line-through':''}">${esc(e.studentName||'')}</b>${xd?' <span class="pill" style="background:#FEE2E2;color:#B91C1C;font-size:9.5px">🙅 지원 취소</span>':''}</td><td>${esc(e.grade||'')}${e.className?` · ${esc(e.className)}`:''}</td><td><span class="pill" style="background:${xd?'#EEF1EE':'#DCFCE7'};color:${xd?'#7C8A80':'#15803D'}">${xd?'취소':'확정'}</span></td></tr>`; }).join('')}</table></div>`
+              ${fin.map(e=>{ const xd=!!((e.r2Cancel||{})[c.id]); return `<tr style="background:${xd?'#FFF5F5':'#F7FCF8'}"><td><b style="${xd?'color:#98A39D;text-decoration:line-through':''}">${esc(e.studentName||'')}</b>${xd?' <span class="pill" style="background:#FEE2E2;color:#B91C1C;font-size:9.5px">🙅 지원 취소</span>':''}${confBadgeCell(e.studentId, c.id)}</td><td>${esc(e.grade||'')}${e.className?` · ${esc(e.className)}`:''}</td><td><span class="pill" style="background:${xd?'#EEF1EE':'#DCFCE7'};color:${xd?'#7C8A80':'#15803D'}">${xd?'취소':'확정'}</span></td></tr>`; }).join('')}</table></div>`
               :`<div class="small" style="color:var(--tl)">1차 확정 인원이 없습니다</div>`}
             ${(()=>{ const ws = ENR.filter(e=>(e.waits2||[]).includes(c.id)); if(!ws.length) return '';
               return `<div class="small" style="font-weight:900;color:#B45309;margin:12px 0 6px">⏳ 대기 · ${ws.length}명 <span style="font-weight:700;color:var(--tl)">— 자리가 나면 제비뽑기 (체크 = 당첨)</span></div>
@@ -958,7 +979,7 @@ function paintEnroll(){
           </div>`; })():''}
         <div class="drw-body tblwrap">${picks.length ? `<table class="tb"><tr><th style="width:64px">순위</th><th>학생</th><th>학년·반</th><th>결과</th>${(st==='over'||R2A)?`<th>${R2A?'제비뽑기 당첨':'추첨 당첨'}</th>`:''}</tr>
           ${picks.slice().sort((a,b)=>((slotPicks(a).find(p=>p.clubId===c.id)||{}).rank||9)-((slotPicks(b).find(p=>p.clubId===c.id)||{}).rank||9)).map(e=>{ const pk=slotPicks(e).find(p=>p.clubId===c.id)||{}; const rs=((R2A?e.result2:e.result)||[]).find(r=>r.clubId===c.id);
-            return `<tr><td>${(CAN_FIX()&&pk.rank)?`<select onchange="fixRankQuick('${e.id}','${c.id}',this.value)" title="순위 즉석 변경 — 겹치면 자동 맞교환" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit;font-weight:800;font-size:12px">${(R2A?[1,2]:[1,2,3]).map(n=>`<option value="${n}"${pk.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>`:`${pk.rank||'-'}순위`}</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${R2A&&!VIEW_ONLY?` <i class="rm2" onclick="delPick2('${e.id}','${c.id}')" title="이 2차 지원 삭제">🗑</i>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
+            return `<tr><td>${(CAN_FIX()&&pk.rank)?`<select onchange="fixRankQuick('${e.id}','${c.id}',this.value)" title="순위 즉석 변경 — 겹치면 자동 맞교환" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit;font-weight:800;font-size:12px">${(R2A?[1,2]:[1,2,3]).map(n=>`<option value="${n}"${pk.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>`:`${pk.rank||'-'}순위`}</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${R2A&&!VIEW_ONLY?` <i class="rm2" onclick="delPick2('${e.id}','${c.id}')" title="이 2차 지원 삭제">🗑</i>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}${confBadgeCell(e.studentId, c.id)}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
               ${(st==='over'||R2A) ? `<td>${(R2A||pk.rank===1)?(VIEW_ONLY?(((R2A?e.lottery2:e.lottery)||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${((R2A?e.lottery2:e.lottery)||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}${VIEW_ONLY?'':`<div class="drw-foot">${CAN_FIX()?`<button class="bs" onclick="fixPickStu('${c.id}')" title="이 동아리에 학생 지원 추가">➕ 지원 추가</button><label class="small" style="display:inline-flex;gap:4px;align-items:center;font-weight:800" title="강사가 초과 수용을 허락한 경우 — ⚙️ 배정 상한이 정원+N이 됩니다">👥 초과 허용 <select onchange="setCapOver('${c.id}',this.value)" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit">${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<option value="${n}"${(Number(c.capOver)||0)===n?' selected':''}>+${n}</option>`).join('')}</select></label>`:''}${R2A?`<button class="bs" onclick="togR2('${c.id}', ${closed2?'false':'true'})">${closed2?'🔓 다시 열기':'🔒 모집 닫기'}</button>`:''}${!R2A&&st==='under'?`<span class="small" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center">강사 결정 대리 기록:
             <button class="bs" onclick="admUnder('${c.id}',true)">🟢 개설</button>
             <button class="bs" onclick="admUnder('${c.id}',false)">⚫ 요청</button>
@@ -966,6 +987,7 @@ function paintEnroll(){
           ? `<button class="bs" onclick="askCancel('${c.id}')">폐강 해제</button>`
           : `<button class="bs" style="border-color:#FCA5A5;color:#B91C1C;background:#FFF7F7" onclick="askCancel('${c.id}')">⚫ 폐강 처리…</button>`}</div>`}</div>
       </details>`; }).join('') || '<div class="small">공고된(승인+노출) 동아리가 없습니다. 신청 취합 탭에서 승인·노출을 켜주세요.</div>'}
+    ${ENR.length ? mxSecHTML() : ''}
     ${ENR.length ? `<details class="drw" style="margin-top:14px"><summary><b>👧 학생별 신청 내역</b><em>${new Set(ENR.map(e=>e.studentId)).size}명</em></summary>
       <div class="drw-body tblwrap">${CAN_FIX()?`<div style="margin:2px 0 8px"><button class="bs" onclick="fixPickStu()">➕ 신청 추가 · 학생 검색</button></div>`:''}<table class="tb"><tr><th>학생</th><th>신청 (순위순)</th><th>배정 결과</th></tr>
       ${[...ENR].sort((a,b)=>String(a.studentName||'').localeCompare(String(b.studentName||''),'ko')).map(e=>{
@@ -974,7 +996,7 @@ function paintEnroll(){
         const ps2=(e.picks2||[]).slice().sort((a,b)=>a.rank-b.rank).map(p=>{const c=byId2[p.clubId]; return c?`<b>${p.rank}</b> ${esc(c.title)}`:'';}).filter(Boolean).join(' · ');
         const del2 = (!VIEW_ONLY && (e.picks2||[]).length) ? ` <button class="bs" style="font-size:10px;padding:1px 7px;color:#B91C1C;border-color:#F3C2C2" onclick="delStu2('${e.id}')" title="이 학생의 2차 신청 전체 삭제">🗑 2차 삭제</button>` : '';
         const ok2=(e.result2||[]).filter(r=>r.state==='assigned').map(r=>byId2[r.clubId]).filter(Boolean).map(c=>esc(c.title)).join(', ');
-        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}${CAN_FIX()?` <button class="bs" style="font-size:10px;padding:1px 7px" onclick="fixPicks('${e.studentId}')" title="지원 정정 (순위 변경·추가·삭제)">✏️</button>`:''}<div class="small">${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</div></td><td>${ps||'-'}${ps2?`<div class="small" style="color:#B45309">🎯 2차: ${ps2}${del2}</div>`:''}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}${ok2?`<div class="small" style="color:#B45309">🎯 ${ok2}</div>`:''}</td></tr>`; }).join('')}
+        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}${CAN_FIX()?` <button class="bs" style="font-size:10px;padding:1px 7px" onclick="fixPicks('${e.studentId}')" title="지원 정정 (순위 변경·추가·삭제)">✏️</button>`:''}${confBadgeRow(e.studentId)}<div class="small">${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</div></td><td>${ps||'-'}${ps2?`<div class="small" style="color:#B45309">🎯 2차: ${ps2}${del2}</div>`:''}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}${ok2?`<div class="small" style="color:#B45309">🎯 ${ok2}</div>`:''}</td></tr>`; }).join('')}
       </table></div></details>`:''}`;
 }
 window.delStu2 = async (eid)=>{
@@ -1087,6 +1109,116 @@ function renderFix(){
       <button class="bs" onclick="this.closest('.modal-bg').remove()">취소</button>
       <button class="bp" onclick="fixSave()">저장</button></div></div>`);
 }
+/* ══ ⚠️ 시간 겹침 감지 + 🧮 학생×요일 취합표 ══
+   강사가 시간을 바꾸면 overlap()이 현재값으로 판정 — 확정끼리 겹치면 🔴, 대기 신청이 확정과 겹치면 🟡 */
+const mm2t = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
+const timeRange = c => `${c.start||''}–${mm2t(toMin(c.start)+(Number(c.durMin)||0))}`;
+const dayStr = c => (c.weekdays||[]).map(w=>WD[Number(w)]).filter(Boolean).join('·');
+function effClubsOf(e){                       // 실충돌 대상: 1차 확정(취소 반영) + 2차 배정
+  const ids = new Set([...r1LiveSet(e)]);
+  (e.result2||[]).forEach(r=>{ if(r.state==='assigned') ids.add(r.clubId); });
+  return ids;
+}
+function pendClubsOf(e){                      // 아직 배정 전 2차 신청
+  const eff = effClubsOf(e); const out = new Set();
+  (e.picks2||[]).forEach(p=>{ if(p && p.clubId && !eff.has(p.clubId)) out.add(p.clubId); });
+  return out;
+}
+let CONF = {};
+function buildConflicts(){
+  CONF = {}; const by = {}; LIVE().forEach(c=>by[c.id]=c);
+  ENR.forEach(e=>{
+    const eff = [...effClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
+    const pen = [...pendClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
+    const red=[], yel=[];
+    for(let i=0;i<eff.length;i++) for(let j=i+1;j<eff.length;j++)
+      if(overlap(eff[i],eff[j])) red.push([eff[i].id, eff[j].id]);
+    pen.forEach(p=>eff.forEach(cc=>{ if(overlap(p,cc)) yel.push([p.id, cc.id]); }));
+    if(red.length||yel.length) CONF[e.studentId] = { red, yel };
+  });
+}
+function confTip(sid){
+  const c = CONF[sid]; if(!c) return '';
+  const by = {}; LIVE().forEach(x=>by[x.id]=x);
+  const ln = (p,ico)=>{ const [a,b]=p.map(id=>by[id]); if(!a||!b) return '';
+    return `${ico} ${a.title}(${dayStr(a)} ${timeRange(a)}) ↔ ${b.title}(${dayStr(b)} ${timeRange(b)})`; };
+  return [...c.red.map(p=>ln(p,'🔴')), ...c.yel.map(p=>ln(p,'🟡'))].filter(Boolean).join('\n');
+}
+function confBadgeRow(sid){
+  const c = CONF[sid]; if(!c) return '';
+  return ` <span class="cfb ${c.red.length?'r':'y'}" title="${esc(confTip(sid))}">⚠${c.red.length||''}</span>`;
+}
+function confBadgeCell(sid, cid){
+  const c = CONF[sid]; if(!c) return '';
+  const hit = c.red.some(p=>p.includes(cid)) ? 'r' : (c.yel.some(p=>p.includes(cid)) ? 'y' : '');
+  return hit ? ` <span class="cfb ${hit} mini" title="${esc(confTip(sid))}">⚠</span>` : '';
+}
+/* ── 🧮 취합표 ── */
+let MX = { q:'', g:'', c:'', only:false, open:false };
+window.MXTOG = el => { MX.open = !!el.open; };
+window.mxF = (k, v) => { MX[k] = (k==='only') ? !!v : String(v);
+  const b = $I('mx-body'); if(b) b.innerHTML = mxBodyHTML(); };
+function mxStudents(){
+  return [...ENR].filter(e=>!e.deleted && (effClubsOf(e).size || pendClubsOf(e).size))
+    .sort((a,b)=>(parseInt(a.grade)||99)-(parseInt(b.grade)||99)
+      || String(a.className||'').localeCompare(String(b.className||''),'ko')
+      || String(a.studentName||'').localeCompare(String(b.studentName||''),'ko'));
+}
+function mxDays(){
+  const ds = new Set();
+  LIVE().forEach(c=>{ if(c.status==='approved' && !c.cancelled)
+    (c.weekdays||[]).forEach(w=>ds.add(Number(w))); });
+  return [1,2,3,4,5,6,0].filter(d=>ds.has(d));
+}
+function mxBodyHTML(){
+  const by = {}; LIVE().forEach(c=>by[c.id]=c);
+  const days = mxDays();
+  let rows = mxStudents();
+  if(MX.q) rows = rows.filter(e=>String(e.studentName||'').includes(MX.q));
+  if(MX.g) rows = rows.filter(e=>String(e.grade||'').replace('학년','').trim()===MX.g);
+  if(MX.c) rows = rows.filter(e=>String(e.className||'')===MX.c);
+  if(MX.only) rows = rows.filter(e=>CONF[e.studentId]);
+  if(!rows.length) return `<div class="small" style="padding:10px 4px;color:var(--tl)">조건에 맞는 학생이 없어요.</div>`;
+  const chip = (sid, c, pend)=>{
+    const conf = CONF[sid];
+    const bad = conf && (conf.red.some(p=>p.includes(c.id)) ? 'bad' : (conf.yel.some(p=>p.includes(c.id)) ? 'warn' : ''));
+    return `<span class="mxc ${pend?'p':''} ${bad||''}" title="${esc(c.title)} · ${dayStr(c)} ${timeRange(c)}${pend?' · 2차 신청 대기':' · 확정/배정'}">${esc((c.title||'').slice(0,6))}<i>${esc(c.start||'')}</i></span>`;
+  };
+  return `<table class="tb mx-tb"><tr><th class="mx-nm">학생</th>${days.map(d=>`<th>${WD[d]}</th>`).join('')}</tr>
+    ${rows.map(e=>{
+      const eff=[...effClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
+      const pen=[...pendClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
+      return `<tr><td class="mx-nm"><b>${esc(e.studentName||'')}</b>${confBadgeRow(e.studentId)}
+          <div class="small">${esc(String(e.grade||'').replace('학년',''))}${e.className?`·${esc(String(e.className).replace('반',''))}`:''}</div></td>
+        ${days.map(d=>{
+          const here = [
+            ...eff.filter(c=>(c.weekdays||[]).map(Number).includes(d)).map(c=>chip(e.studentId,c,false)),
+            ...pen.filter(c=>(c.weekdays||[]).map(Number).includes(d)).map(c=>chip(e.studentId,c,true)),
+          ];
+          return `<td class="mx-cell">${here.join('')||''}</td>`;
+        }).join('')}</tr>`;
+    }).join('')}</table>`;
+}
+function mxSecHTML(){
+  const stus = mxStudents();
+  const redN = stus.filter(e=>CONF[e.studentId]&&CONF[e.studentId].red.length).length;
+  const yelN = stus.filter(e=>CONF[e.studentId]&&!CONF[e.studentId].red.length&&CONF[e.studentId].yel.length).length;
+  const grades = [...new Set(stus.map(e=>String(e.grade||'').replace('학년','').trim()).filter(Boolean))].sort((a,b)=>a-b);
+  const classes = [...new Set(stus.map(e=>e.className).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ko'));
+  return `<details class="drw" style="margin-top:14px" ${MX.open?'open':''} ontoggle="MXTOG(this)">
+    <summary><b>🧮 학생×요일 취합표</b><em>${stus.length}명${redN?` · <b style="color:#B91C1C">⚠ 겹침 ${redN}명</b>`:''}${yelN?` · <b style="color:#B45309">🟡 주의 ${yelN}명</b>`:''}</em></summary>
+    <div class="drw-body">
+      <div class="mx-flt">
+        <input placeholder="🔍 이름" value="${esc(MX.q)}" oninput="mxF('q', this.value.trim())">
+        <select onchange="mxF('g', this.value)"><option value="">학년 전체</option>${grades.map(g=>`<option value="${g}"${MX.g===g?' selected':''}>${g}학년</option>`).join('')}</select>
+        <select onchange="mxF('c', this.value)"><option value="">반 전체</option>${classes.map(cn=>`<option value="${esc(cn)}"${MX.c===cn?' selected':''}>${esc(cn)}</option>`).join('')}</select>
+        <label><input type="checkbox" ${MX.only?'checked':''} onchange="mxF('only', this.checked)"> ⚠ 겹침·주의만</label>
+      </div>
+      <div class="small" style="margin:2px 2px 8px;color:var(--tl)">🟩 확정·배정 · 🟦 2차 신청 대기 · <b style="color:#B91C1C">빨간 테두리 = 시간 겹침</b>(강사 시간 변경도 즉시 반영)</div>
+      <div class="tblwrap mx-wrap" id="mx-body">${mxBodyHTML()}</div>
+    </div></details>`;
+}
+
 /* ── 🩹 학년·반 자가 치유 — 신청서에 학년·반이 비면 학생 원장에서 찾아 화면·문서를 1회 보정 ── */
 let _enrichBusy = false;
 const _blank = v => !(v && String(v).trim());
