@@ -312,6 +312,7 @@ function liveSubscribe(){
   UNSUBS.push(onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
     ENR = snap.docs.map(d=>({id:d.id, ...d.data()}));
     if(TAB==='enroll') render();
+    enrichEnr();                                   // 🩹 학년·반 빈 신청서 자가 치유 (관리자 직접 추가분 등)
   }));
 }
 window.pickSem = async (id)=>{
@@ -1086,6 +1087,37 @@ function renderFix(){
       <button class="bs" onclick="this.closest('.modal-bg').remove()">취소</button>
       <button class="bp" onclick="fixSave()">저장</button></div></div>`);
 }
+/* ── 🩹 학년·반 자가 치유 — 신청서에 학년·반이 비면 학생 원장에서 찾아 화면·문서를 1회 보정 ── */
+let _enrichBusy = false;
+const _blank = v => !(v && String(v).trim());
+async function enrichEnr(){
+  if(_enrichBusy || !ENR || !ENR.length) return;
+  const targets = ENR.filter(e => e.studentId && (_blank(e.grade) || _blank(e.className)) && !e.__healed);
+  if(!targets.length) return;
+  _enrichBusy = true;
+  try{
+    const stus = await loadStuAll();
+    const map = {}; stus.forEach(s=>map[s.id]=s);
+    let touched = false;
+    for(const e of targets){
+      e.__healed = true;                           // 같은 문서 반복 시도 방지
+      const st = map[e.studentId]; if(!st) continue;
+      const patch = {};
+      if(_blank(e.grade) && st.grade){
+        const g = String(st.grade).trim();
+        patch.grade = /^\d+$/.test(g) ? g + '학년' : g;   // 숫자만이면 '3' → '3학년'
+      }
+      const cn = st.className || st.class || '';
+      if(_blank(e.className) && cn) patch.className = String(cn).trim();
+      if(_blank(e.studentName) && st.name) patch.studentName = st.name;
+      if(!Object.keys(patch).length) continue;
+      Object.assign(e, patch); touched = true;
+      try{ await updateDoc(doc(db,'clubEnrollments', e.id), patch); }catch(_){/* 화면 보정만이라도 */}
+    }
+    if(touched && TAB==='enroll') render();
+  } finally { _enrichBusy = false; }
+}
+
 /* ── 순위 즉석 변경 (서랍 표에서 바로 · 겹치면 자동 맞교환) ── */
 window.fixRankQuick = async (eid, cid, v)=>{
   if(!CAN_FIX()) return;
