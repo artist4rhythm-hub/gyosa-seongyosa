@@ -968,7 +968,7 @@ function paintEnroll(){
           return `<div class="drw-body" style="padding-bottom:0">
             <div class="small" style="font-weight:900;color:#15803D;margin:2px 0 6px">✅ 1차 확정 명단 · ${fin.length}명 <span style="font-weight:700;color:var(--tl)">— 추가 모집과 무관 · 변경되지 않습니다</span></div>
             ${fin.length?`<div class="tblwrap"><table class="tb"><tr><th>학생</th><th>학년·반</th><th style="width:86px">상태</th></tr>
-              ${fin.map(e=>{ const xd=!!((e.r2Cancel||{})[c.id]); return `<tr style="background:${xd?'#FFF5F5':'#F7FCF8'}"><td><b style="${xd?'color:#98A39D;text-decoration:line-through':''}">${esc(e.studentName||'')}</b>${xd?' <span class="pill" style="background:#FEE2E2;color:#B91C1C;font-size:9.5px">🙅 지원 취소</span>':''}${confBadgeCell(e.studentId, c.id)}</td><td>${esc(e.grade||'')}${e.className?` · ${esc(e.className)}`:''}</td><td><span class="pill" style="background:${xd?'#EEF1EE':'#DCFCE7'};color:${xd?'#7C8A80':'#15803D'}">${xd?'취소':'확정'}</span></td></tr>`; }).join('')}</table></div>`
+              ${fin.map(e=>{ const xd=!!((e.r2Cancel||{})[c.id]); return `<tr style="background:${xd?'#FFF5F5':'#F7FCF8'}"><td><b style="${xd?'color:#98A39D;text-decoration:line-through':''}">${esc(e.studentName||'')}</b>${xd?' <span class="pill" style="background:#FEE2E2;color:#B91C1C;font-size:9.5px">🙅 지원 취소</span>':''}${confBadgeCell(e.studentId, c.id)}</td><td>${esc(e.grade||'')}${e.className?` · ${esc(e.className)}`:''}</td><td><span class="pill" style="background:${xd?'#EEF1EE':'#DCFCE7'};color:${xd?'#7C8A80':'#15803D'}">${xd?'취소':'확정'}</span>${CAN_FIX()?`<button class="bs" style="font-size:9.5px;padding:0 6px;margin-left:5px;${xd?'':'border-color:#F3C2C2;color:#B91C1C'}" onclick="r1Cancel('${e.id}','${c.id}',${xd?'false':'true'})">${xd?'복구':'취소'}</button>`:''}</td></tr>`; }).join('')}</table></div>`
               :`<div class="small" style="color:var(--tl)">1차 확정 인원이 없습니다</div>`}
             ${(()=>{ const ws = ENR.filter(e=>(e.waits2||[]).includes(c.id)); if(!ws.length) return '';
               return `<div class="small" style="font-weight:900;color:#B45309;margin:12px 0 6px">⏳ 대기 · ${ws.length}명 <span style="font-weight:700;color:var(--tl)">— 자리가 나면 제비뽑기 (체크 = 당첨)</span></div>
@@ -1004,8 +1004,8 @@ window.delStu2 = async (eid)=>{
   const titles = (e.picks2||[]).map(p=>{ const c=LIVE().find(x=>x.id===p.clubId); return c?c.title:p.clubId; }).join(', ');
   if(!confirm(`${e.studentName||''} 학생의 2차 신청을 전부 삭제할까요?\n(${titles||'없음'})\n대기·제비뽑기 체크도 함께 지웁니다 — 미리/잘못 들어온 신청 정리용`)) return;
   try{
-    await updateDoc(doc(db,'clubEnrollments', e.id), { picks2: [], waits2: [], lottery2: {} });
-    e.picks2 = []; e.waits2 = []; e.lottery2 = {};
+    await updateDoc(doc(db,'clubEnrollments', e.id), { picks2: [], waits2: [], lottery2: {}, result2: [] });
+    e.picks2 = []; e.waits2 = []; e.lottery2 = {}; e.result2 = [];
     clubLog('2차 신청 전체 삭제(관리자)', `${e.studentName||''} · ${titles||'-'}`);
     toast('삭제했습니다'); renderEnroll();
   }catch(err){ toast('삭제 실패: '+(err.message||''),'err'); }
@@ -1015,8 +1015,10 @@ window.delPick2 = async (eid, cid)=>{
   if(!confirm(`${e.studentName||''} — «${c?c.title:''}» 2차 지원을 삭제할까요?\n(학부모가 잘못/미리 넣은 신청 정리용)`)) return;
   const p2 = (e.picks2||[]).filter(p=>p.clubId!==cid);
   const lot = { ...(e.lottery2||{}) }; delete lot[cid];
-  try{ await updateDoc(doc(db,'clubEnrollments', e.id), { picks2: p2, lottery2: lot });
-    e.picks2 = p2; e.lottery2 = lot;
+  const r2 = (e.result2||[]).filter(r=>r.clubId!==cid);          // 👻 배정 결과 유령 방지
+  const w2 = (e.waits2||[]).filter(id=>id!==cid);
+  try{ await updateDoc(doc(db,'clubEnrollments', e.id), { picks2: p2, lottery2: lot, result2: r2, waits2: w2 });
+    e.picks2 = p2; e.lottery2 = lot; e.result2 = r2; e.waits2 = w2;
     clubLog('2차 지원 삭제(관리자)', `${e.studentName||''} · ${c?c.title:cid}`);
     toast('삭제했습니다'); renderEnroll();
   }catch(err){ toast('삭제 실패: '+(err.message||''),'err'); }
@@ -1128,6 +1130,7 @@ let CONF = {};
 function buildConflicts(){
   CONF = {}; const by = {}; LIVE().forEach(c=>by[c.id]=c);
   ENR.forEach(e=>{
+    if(e.deleted) return;
     const eff = [...effClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
     const pen = [...pendClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
     const red=[], yel=[];
@@ -1219,6 +1222,23 @@ function mxSecHTML(){
     </div></details>`;
 }
 
+/* ── 🙅 1차 확정 참여 취소·복구 (수퍼) — 자리·집계·겹침이 즉시 해소된다 ── */
+window.r1Cancel = async (eid, cid, on)=>{
+  if(!CAN_FIX()) return;
+  const e = ENR.find(x=>x.id===eid); const c = LIVE().find(x=>x.id===cid); if(!e) return;
+  const nm = e.studentName||'', tt = c?c.title:cid;
+  if(on){
+    if(!confirm(`${nm} — «${tt}» 1차 확정 참여를 취소할까요?\n자리가 비고 시간 겹침 경고도 해소됩니다.\n학부모 화면에는 '지원 취소'로 표시되며, 언제든 복구할 수 있어요.`)) return;
+  }
+  try{
+    await updateDoc(doc(db,'clubEnrollments', eid), { [`r2Cancel.${cid}`]: on });
+    e.r2Cancel = { ...(e.r2Cancel||{}), [cid]: on };
+    clubLog(on?'1차 확정 취소(수퍼)':'1차 확정 복구(수퍼)', `${nm} · ${tt}`);
+    toast(on?`«${tt}» 참여를 취소했어요 — 자리와 겹침이 정리됩니다`:'참여를 복구했어요');
+    renderEnroll();
+  }catch(err){ toast('처리 실패: '+(err.message||''),'err'); }
+};
+
 /* ── 🩹 학년·반 자가 치유 — 신청서에 학년·반이 비면 학생 원장에서 찾아 화면·문서를 1회 보정 ── */
 let _enrichBusy = false;
 const _blank = v => !(v && String(v).trim());
@@ -1303,7 +1323,13 @@ window.fixSave = async ()=>{
       const e = ENR.find(x=>x.id===ED.eid) || {};
       const lot = {}; const keep = new Set(rows.map(r=>r.clubId));
       Object.entries(e[lotKey]||{}).forEach(([k,v])=>{ if(v && keep.has(k)) lot[k]=true; });
-      await updateDoc(doc(db,'clubEnrollments', ED.eid), { [key]: rows, [lotKey]: lot, updatedAt: Timestamp.now() });
+      const resKey = ED.ph2 ? 'result2' : 'result';
+      const res = (e[resKey]||[]).filter(r=>keep.has(r.clubId));   // 👻 뺀 동아리의 배정 결과도 함께 정리
+      const payload = { [key]: rows, [lotKey]: lot, [resKey]: res, updatedAt: Timestamp.now() };
+      if(!ED.ph2){ const fin = {}; Object.entries(e.final||{}).forEach(([k,v])=>{ if(keep.has(k)) fin[k]=v; }); payload.final = fin; }
+      if(ED.ph2){ payload.waits2 = (e.waits2||[]).filter(id=>keep.has(id)); }
+      await updateDoc(doc(db,'clubEnrollments', ED.eid), payload);
+      Object.assign(e, payload); delete e.updatedAt;               // 스냅샷 전 즉시 화면 반영
     }else{
       const id = `${SEM.id}_${ED.sid}`;
       await setDoc(doc(db,'clubEnrollments', id), { semId:SEM.id, org:SEM.org, parentUid:'', studentId:ED.sid,
