@@ -127,6 +127,18 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .drw{position:relative;isolation:isolate}
 .drw .tb{width:100%}
 .drw .tb th{position:static;white-space:nowrap}
+.finchips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:2px}
+.fchip{display:inline-flex;align-items:center;gap:5px;background:#F1FBF4;border:1.5px solid #CFEBD8;
+  border-radius:10px;padding:4px 8px;font-size:12px;line-height:1.2}
+.fchip b{font-weight:800;color:#14532D}
+.fchip i{font-style:normal;font-size:10.5px;font-weight:700;color:#6B8A76}
+.fchip button{font-family:inherit;font-size:10px;font-weight:900;color:#B91C1C;background:#fff;
+  border:1px solid #F3C2C2;border-radius:7px;padding:1px 6px;cursor:pointer;margin-left:1px}
+.fchip button:hover{background:#FEE2E2}
+.fchip.x{background:#FAF7F7;border-color:#E8DDDD}
+.fchip.x b{color:#9AA39C;text-decoration:line-through}
+.fchip.x i{color:#B3BAB4}
+.fchip.x button{color:#15803D;border-color:#CFEBD8}
 .conf-ban{background:#FEF0F0;border:1.5px solid #FCA5A5;border-radius:12px;padding:10px 14px;
   font-size:12.5px;color:#7F1D1D;font-weight:700;margin:10px 0 2px;cursor:pointer;line-height:1.7}
 .conf-ban:hover{border-color:#DC2626}
@@ -977,19 +989,18 @@ function paintEnroll(){
         ${VIEW_ONLY && c.cancelled ? '<span class="pill st-locked" style="margin-left:auto">폐강</span>' : ''}</summary>${R2A?(()=>{ const fin = ENR.filter(e=>[...r1SetOf(e)].includes(c.id)).sort((a,b)=>String(a.studentName||'').localeCompare(String(b.studentName||''),'ko'));
           return `<div class="drw-body" style="padding-bottom:0">
             <div class="small" style="font-weight:900;color:#15803D;margin:2px 0 6px">✅ 1차 확정 명단 · ${fin.length}명 <span style="font-weight:700;color:var(--tl)">— 추가 모집과 무관 · 변경되지 않습니다</span></div>
-            ${fin.length?`<div class="tblwrap"><table class="tb"><tr><th>학생</th><th>학년·반</th><th style="width:86px">상태</th></tr>
-              ${fin.map(e=>{ const xd=!!((e.r2Cancel||{})[c.id]); return `<tr style="background:${xd?'#FFF5F5':'#F7FCF8'}"><td><b style="${xd?'color:#98A39D;text-decoration:line-through':''}">${esc(e.studentName||'')}</b>${xd?' <span class="pill" style="background:#FEE2E2;color:#B91C1C;font-size:9.5px">🙅 지원 취소</span>':''}${confBadgeCell(e.studentId, c.id)}</td><td>${esc(e.grade||'')}${e.className?` · ${esc(e.className)}`:''}</td><td><span class="pill" style="background:${xd?'#EEF1EE':'#DCFCE7'};color:${xd?'#7C8A80':'#15803D'}">${xd?'취소':'확정'}</span>${CAN_FIX()?`<button class="bs" style="font-size:9.5px;padding:0 6px;margin-left:5px;${xd?'':'border-color:#F3C2C2;color:#B91C1C'}" onclick="r1Cancel('${e.id}','${c.id}',${xd?'false':'true'})">${xd?'복구':'취소'}</button>`:''}</td></tr>`; }).join('')}</table></div>`
-              :`<div class="small" style="color:var(--tl)">1차 확정 인원이 없습니다</div>`}
+            ${fin.length?`<div class="finchips">${fin.map(e=>{ const xd=!!((e.r2Cancel||{})[c.id]);
+              return `<span class="fchip${xd?' x':''}"><b>${esc(e.studentName||'(이름 미기재)')}</b><i>${gcMini(e)}</i>${confBadgeCell(e.studentId, c.id)}${CAN_FIX()?`<button title="${xd?'참여 복구':'참여 취소 — 자리가 비고 겹침도 해소됩니다'}" onclick="r1Cancel('${e.id}','${c.id}',${xd?'false':'true'})">${xd?'복구':'✕'}</button>`:''}</span>`; }).join('')}</div>`:`<div class="small" style="color:var(--tl)">1차 확정 인원이 없습니다</div>`}
             ${(()=>{ const ws = ENR.filter(e=>(e.waits2||[]).includes(c.id)); if(!ws.length) return '';
               return `<div class="small" style="font-weight:900;color:#B45309;margin:12px 0 6px">⏳ 대기 · ${ws.length}명 <span style="font-weight:700;color:var(--tl)">— 자리가 나면 제비뽑기 (체크 = 당첨)</span></div>
               <div class="tblwrap"><table class="tb"><tr><th>학생</th><th>학년·반</th><th style="width:110px">제비뽑기 당첨</th></tr>
-              ${ws.map(e=>`<tr><td><b>${esc(e.studentName||'')}</b>${!VIEW_ONLY?` <i class="rm2" onclick="delWait2('${e.id}','${c.id}')" title="대기 삭제">🗑</i>`:''}</td><td>${esc(e.grade||'')}${e.className?` · ${esc(e.className)}`:''}</td>
+              ${ws.map(e=>`<tr><td><b>${esc(e.studentName||'')}</b>${!VIEW_ONLY?` <i class="rm2" onclick="delWait2('${e.id}','${c.id}')" title="대기 삭제">🗑</i>`:''}</td><td>${gcTxt(e)}</td>
                 <td class="c">${VIEW_ONLY?((e.lottery2||{})[c.id]?'✔':''):`<input type="checkbox" ${(e.lottery2||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`}</td></tr>`).join('')}</table></div>`; })()}
             <div class="small" style="font-weight:900;color:#B45309;margin:12px 0 0">🎯 2차 추가 지원 · ${picks.length}명 <span style="font-weight:700;color:var(--tl)">— 🔵 표식 = 이 동아리 1차 지원 이력 (참고용 · 추첨은 전원 동일)</span></div>
           </div>`; })():''}
         <div class="drw-body tblwrap">${picks.length ? `<table class="tb"><tr><th style="width:64px">순위</th><th>학생</th><th>학년·반</th><th>결과</th>${(st==='over'||R2A)?`<th>${R2A?'제비뽑기 당첨':'추첨 당첨'}</th>`:''}</tr>
           ${picks.slice().sort((a,b)=>((slotPicks(a).find(p=>p.clubId===c.id)||{}).rank||9)-((slotPicks(b).find(p=>p.clubId===c.id)||{}).rank||9)).map(e=>{ const pk=slotPicks(e).find(p=>p.clubId===c.id)||{}; const rs=((R2A?e.result2:e.result)||[]).find(r=>r.clubId===c.id);
-            return `<tr><td>${(CAN_FIX()&&pk.rank)?`<select onchange="fixRankQuick('${e.id}','${c.id}',this.value)" title="순위 즉석 변경 — 겹치면 자동 맞교환" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit;font-weight:800;font-size:12px">${(R2A?[1,2]:[1,2,3]).map(n=>`<option value="${n}"${pk.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>`:`${pk.rank||'-'}순위`}</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${R2A&&!VIEW_ONLY?` <i class="rm2" onclick="delPick2('${e.id}','${c.id}')" title="이 2차 지원 삭제">🗑</i>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}${confBadgeCell(e.studentId, c.id)}</td><td>${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</td><td>${rs?resLabel(rs.state):'-'}</td>
+            return `<tr><td>${(CAN_FIX()&&pk.rank)?`<select onchange="fixRankQuick('${e.id}','${c.id}',this.value)" title="순위 즉석 변경 — 겹치면 자동 맞교환" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit;font-weight:800;font-size:12px">${(R2A?[1,2]:[1,2,3]).map(n=>`<option value="${n}"${pk.rank===n?' selected':''}>${n}순위</option>`).join('')}</select>`:`${pk.rank||'-'}순위`}</td><td>${esc(e.studentName)}${R2A&&histOf(e,c.id)?` <span class="pill" style="background:#DBEAFE;color:#1D4ED8;font-size:9.5px">1차 지원</span>`:''}${R2A&&!VIEW_ONLY?` <i class="rm2" onclick="delPick2('${e.id}','${c.id}')" title="이 2차 지원 삭제">🗑</i>`:''}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}${confBadgeCell(e.studentId, c.id)}</td><td>${gcTxt(e)}</td><td>${rs?resLabel(rs.state):'-'}</td>
               ${(st==='over'||R2A) ? `<td>${(R2A||pk.rank===1)?(VIEW_ONLY?(((R2A?e.lottery2:e.lottery)||{})[c.id]?'🎯 당첨':'—'):`<input type="checkbox" ${((R2A?e.lottery2:e.lottery)||{})[c.id]?'checked':''} onchange="setLottery('${e.id}','${c.id}',this.checked)">`):''}</td>`:''}</tr>`; }).join('')}</table>` : '<div class="small">신청자 없음</div>'}${VIEW_ONLY?'':`<div class="drw-foot">${CAN_FIX()?`<button class="bs" onclick="fixPickStu('${c.id}')" title="이 동아리에 학생 지원 추가">➕ 지원 추가</button><label class="small" style="display:inline-flex;gap:4px;align-items:center;font-weight:800" title="강사가 초과 수용을 허락한 경우 — ⚙️ 배정 상한이 정원+N이 됩니다">👥 초과 허용 <select onchange="setCapOver('${c.id}',this.value)" style="padding:2px 3px;border:1px solid var(--ivd);border-radius:7px;font-family:inherit">${[0,1,2,3,4,5,6,7,8,9,10].map(n=>`<option value="${n}"${(Number(c.capOver)||0)===n?' selected':''}>+${n}</option>`).join('')}</select></label>`:''}${R2A?`<button class="bs" onclick="togR2('${c.id}', ${closed2?'false':'true'})">${closed2?'🔓 다시 열기':'🔒 모집 닫기'}</button>`:''}${!R2A&&st==='under'?`<span class="small" style="margin-right:auto;display:inline-flex;gap:5px;align-items:center">강사 결정 대리 기록:
             <button class="bs" onclick="admUnder('${c.id}',true)">🟢 개설</button>
             <button class="bs" onclick="admUnder('${c.id}',false)">⚫ 요청</button>
@@ -1006,7 +1017,7 @@ function paintEnroll(){
         const ps2=(e.picks2||[]).slice().sort((a,b)=>a.rank-b.rank).map(p=>{const c=byId2[p.clubId]; return c?`<b>${p.rank}</b> ${esc(c.title)}`:'';}).filter(Boolean).join(' · ');
         const del2 = (!VIEW_ONLY && (e.picks2||[]).length) ? ` <button class="bs" style="font-size:10px;padding:1px 7px;color:#B91C1C;border-color:#F3C2C2" onclick="delStu2('${e.id}')" title="이 학생의 2차 신청 전체 삭제">🗑 2차 삭제</button>` : '';
         const ok2=(e.result2||[]).filter(r=>r.state==='assigned').map(r=>byId2[r.clubId]).filter(Boolean).map(c=>esc(c.title)).join(', ');
-        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}${CAN_FIX()?` <button class="bs" style="font-size:10px;padding:1px 7px" onclick="fixPicks('${e.studentId}')" title="지원 정정 (순위 변경·추가·삭제)">✏️</button>`:''}${confBadgeRow(e.studentId)}<div class="small">${esc(e.grade||'')}${e.grade&&e.className?' · ':''}${esc(e.className||'')}</div></td><td>${ps||'-'}${ps2?`<div class="small" style="color:#B45309">🎯 2차: ${ps2}${del2}</div>`:''}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}${ok2?`<div class="small" style="color:#B45309">🎯 ${ok2}</div>`:''}</td></tr>`; }).join('')}
+        return `<tr><td>${esc(e.studentName||'')}${e.via==='simple'?' <span class="small" title="간편 신청">✍️</span>':''}${CAN_FIX()?` <button class="bs" style="font-size:10px;padding:1px 7px" onclick="fixPicks('${e.studentId}')" title="지원 정정 (순위 변경·추가·삭제)">✏️</button>`:''}${confBadgeRow(e.studentId)}<div class="small">${gcTxt(e)}</div></td><td>${ps||'-'}${ps2?`<div class="small" style="color:#B45309">🎯 2차: ${ps2}${del2}</div>`:''}</td><td>${ok?'✅ '+ok:((e.result||[]).length?'—':'대기')}${ok2?`<div class="small" style="color:#B45309">🎯 ${ok2}</div>`:''}</td></tr>`; }).join('')}
       </table></div></details>`:''}`;
 }
 window.delStu2 = async (eid)=>{
@@ -1086,7 +1097,10 @@ window.fixPicks = async (sid, presetCid)=>{
   const e = ENR.find(x=>x.studentId===sid) || null;
   let name='', grade='', cls='';
   if(e){ name=e.studentName||''; grade=e.grade||''; cls=e.className||''; }
-  if(!name){ const st=(await loadStuAll()).find(x=>x.id===sid); if(st){ name=st.name||name; grade=st.grade||grade; cls=st.className||cls; } }
+  if(!name || !grade || !cls){                      // 🩹 이름만 있고 학년·반이 비어도 원장에서 채운다
+    const st=(await loadStuAll()).find(x=>x.id===sid);
+    if(st){ const N=stuNorm(st); name=name||N.name; grade=grade||N.grade; cls=cls||N.className; }
+  }
   if(!name){ toast('학생 정보를 찾지 못했습니다','err'); return; }
   const rows = ((ph2? (e&&e.picks2) : (e&&e.picks))||[]).map(p=>({clubId:p.clubId, rank:p.rank||1})).sort((a,b)=>a.rank-b.rank);
   ED = { sid, name, grade, className:cls, eid:e?e.id:null, rows, ph2 };
@@ -1203,7 +1217,7 @@ function mxBodyHTML(){
       const eff=[...effClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
       const pen=[...pendClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
       return `<tr><td class="mx-nm"><b>${esc(e.studentName||'(이름 미기재)')}</b>${confBadgeRow(e.studentId)}
-          <div class="small">${esc(String(e.grade||'').replace('학년',''))}${e.className?`·${esc(String(e.className).replace('반',''))}`:''}</div></td>
+          <div class="small">${gcMini(e)}</div></td>
         ${days.map(d=>{
           const here = [
             ...eff.filter(c=>(c.weekdays||[]).map(Number).includes(d)).map(c=>chip(e.studentId,c,false)),
@@ -1244,6 +1258,22 @@ function mxSecHTML(){
       <div class="tblwrap mx-wrap" id="mx-body">${mxBodyHTML()}</div>
     </div></details>`;
 }
+
+/* ── 👤 학생 원장 캐시 — 신청서에 학년·반이 없어도 화면엔 항상 보이게 ── */
+window.__STU = window.__STU || { byId:{}, byName:{} };
+const stuNorm = st => ({
+  name: st.name||'',
+  grade: (()=>{ const g=String(st.grade ?? st.gradeName ?? '').trim(); return g && /^\d+$/.test(g) ? g+'학년' : g; })(),
+  className: String(st.className ?? st.class ?? st.cls ?? '').trim(),
+});
+function stuOf(e){
+  const S = window.__STU;
+  return (e.studentId && S.byId[e.studentId]) || (e.studentName && S.byName[e.studentName]) || null;
+}
+function gPart(e){ const g=String(e.grade||'').trim(); if(g) return g; const st=stuOf(e); return st? st.grade : ''; }
+function cPart(e){ const c=String(e.className||'').trim(); if(c) return c; const st=stuOf(e); return st? st.className : ''; }
+function gcTxt(e){ const g=gPart(e), c=cPart(e); return esc(g) + (g&&c?' · ':'') + esc(c); }
+function gcMini(e){ const g=String(gPart(e)).replace('학년',''), c=String(cPart(e)).replace('반',''); return esc(g) + (g&&c?'·':'') + esc(c); }
 
 /* ── 🧹 유령(잔상) 일괄 정리 — 신청(picks)이 없는데 남아 있는 배정·추첨·대기 기록을 청소 ── */
 window.mxGhostScan = async ()=>{
@@ -1307,24 +1337,31 @@ let _enrichBusy = false;
 const _blank = v => !(v && String(v).trim());
 async function enrichEnr(){
   if(_enrichBusy || !ENR || !ENR.length) return;
-  const targets = ENR.filter(e => e.studentId && (_blank(e.grade) || _blank(e.className)) && !e.__healed);
+  const targets = ENR.filter(e => (_blank(e.grade) || _blank(e.className) || _blank(e.studentId)) && !e.__healed);
   if(!targets.length) return;
   _enrichBusy = true;
   try{
     const stus = await loadStuAll();
     const map = {}; stus.forEach(s=>map[s.id]=s);
+    // 캐시 적재 — 문서 보정이 실패해도 화면 표시는 항상 살아난다
+    const S = window.__STU; S.byId={}; S.byName={};
+    stus.forEach(s=>{ const n=stuNorm(s); S.byId[s.id]=n; if(n.name && !S.byName[n.name]) S.byName[n.name]=n; });
     let touched = false;
     for(const e of targets){
       e.__healed = true;                           // 같은 문서 반복 시도 방지
-      const st = map[e.studentId]; if(!st) continue;
-      const patch = {};
-      if(_blank(e.grade) && st.grade){
-        const g = String(st.grade).trim();
-        patch.grade = /^\d+$/.test(g) ? g + '학년' : g;   // 숫자만이면 '3' → '3학년'
+      let st = map[e.studentId];
+      let sid = e.studentId;
+      if(!st && e.studentName){                    // 🔎 id가 없거나 안 맞으면 이름으로 찾는다
+        const hits = stus.filter(x=>String(x.name||'').trim()===String(e.studentName).trim());
+        if(hits.length===1){ st = hits[0]; sid = hits[0].id; }
       }
-      const cn = st.className || st.class || '';
-      if(_blank(e.className) && cn) patch.className = String(cn).trim();
-      if(_blank(e.studentName) && st.name) patch.studentName = st.name;
+      if(!st) continue;
+      const N = stuNorm(st);
+      const patch = {};
+      if(_blank(e.grade) && N.grade) patch.grade = N.grade;
+      if(_blank(e.className) && N.className) patch.className = N.className;
+      if(_blank(e.studentName) && N.name) patch.studentName = N.name;
+      if(_blank(e.studentId) && sid) patch.studentId = sid;
       if(!Object.keys(patch).length) continue;
       Object.assign(e, patch); touched = true;
       try{ await updateDoc(doc(db,'clubEnrollments', e.id), patch); }catch(_){/* 화면 보정만이라도 */}
