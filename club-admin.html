@@ -1048,11 +1048,35 @@ window.delPick2 = async (eid, cid)=>{
 /* ═══ ✏️ 지원 정정(수퍼관리자) — 순위 변경·지원 추가·신규 학생 지원 종합 에디터 ═══ */
 const CAN_FIX = () => !VIEW_ONLY && CU && CU.role==='super';
 let STU_ALL = null, ED = null;
+let CLS_ALL = null;
+async function loadClassesAll(){                    // 🏫 반편성 원장 — 학년·반의 진짜 출처
+  if(CLS_ALL) return CLS_ALL;
+  try{
+    const snap = await getDocs(collection(db,'classes'));
+    CLS_ALL = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  }catch(_){ CLS_ALL = []; }
+  return CLS_ALL;
+}
+function clsInfoOf(sid, list){                      // 학생관리와 동일 규칙 (올해 반 우선)
+  const y = new Date().getFullYear();
+  const sorted = [...list].sort((a,b)=>((b.year||y)===y?1:0)-((a.year||y)===y?1:0));
+  for(const c of sorted){
+    if((c.students||[]).includes(sid))
+      return { grade: (c.grades && c.grades[sid]) || c.grade || '', className: c.name || '' };
+  }
+  return { grade:'', className:'' };
+}
 async function loadStuAll(){
   if(STU_ALL) return STU_ALL;
   try{
-    const snap = await getDocs(query(collection(db,'students'), where('org','==',SEM.org)));
-    STU_ALL = snap.docs.map(d=>({id:d.id, ...d.data()})).filter(st=>!st.deleted)
+    const [snap, cls] = await Promise.all([
+      getDocs(query(collection(db,'students'), where('org','==',SEM.org))),
+      loadClassesAll(),
+    ]);
+    STU_ALL = snap.docs.map(d=>{ const st={id:d.id, ...d.data()};
+        const info = clsInfoOf(d.id, cls);          // 👈 학년·반을 여기서 붙인다
+        return { ...st, grade: st.grade || info.grade, className: st.className || info.className };
+      }).filter(st=>!st.deleted)
       .sort((a,b)=> (parseInt(a.grade)||99)-(parseInt(b.grade)||99) || String(a.name||'').localeCompare(String(b.name||''),'ko'));
   }catch(_){ STU_ALL = []; }
   return STU_ALL;
@@ -1082,7 +1106,7 @@ window.fixPickStu = async (presetCid)=>{
     bg.querySelector('#fx-list').innerHTML = list.length ? list.slice(0,80).map(st=>
       `<div style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px dashed var(--ivd);cursor:pointer"
         onclick="fixPicks('${st.id}'${presetCid?`,'${presetCid}'`:''})">
-        <b style="font-size:13px">${esc(st.name||'')}</b><span>${esc(st.grade||'')}${st.className?` · ${esc(st.className)}`:''}</span>
+        <b style="font-size:13px">${esc(st.name||'')}</b><span style="font-weight:800;color:${(st.grade||st.className)?'#3E6B4F':'#C0392B'}">${(st.grade||st.className)? esc(st.grade||'')+(st.grade&&st.className?' · ':'')+esc(st.className||'') : '반 미배정'}</span>
         ${applied.has(st.id)?'<span class="pill" style="margin-left:auto;background:#DCFCE7;color:#166534;font-size:10px">신청 있음</span>':'<span class="pill" style="margin-left:auto;background:#F1F5F9;color:#64748B;font-size:10px">신청 없음</span>'}</div>`).join('')
       : '검색 결과가 없습니다.' + (stus.length? '' : ' (학생 명단을 불러오지 못했어요)');
   };
