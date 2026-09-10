@@ -352,9 +352,8 @@ function liveSubscribe(){
     if(TAB==='apps'||TAB==='grid') render();
   }));
   UNSUBS.push(onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
-    ENR = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    setENR(snap.docs.map(d=>({id:d.id, ...d.data()})));
     if(TAB==='enroll') render();
-    enrichEnr();                                   // 🩹 학년·반 빈 신청서 자가 치유 (관리자 직접 추가분 등)
   }));
 }
 window.pickSem = async (id)=>{
@@ -934,15 +933,17 @@ function subEnr(){
   if(ENR_UNSUB){ ENR_UNSUB(); ENR_UNSUB = null; }
   ENR_SEMID = SEM.id;
   ENR_UNSUB = onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
-    ENR = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    setENR(snap.docs.map(d=>({id:d.id, ...d.data()})));
     if(TAB==='enroll') paintEnroll();
   });
 }
 async function loadEnr(){
   if(VIEW_ONLY) return;   // 열람 모드는 실시간 구독이 채운다
   const snap = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
-  ENR = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  setENR(snap.docs.map(d=>({id:d.id, ...d.data()})));
 }
+/* 🚪 ENR 단일 관문 — 어떤 경로로 들어와도 학년·반 치유를 거친다 */
+function setENR(list){ ENR = list; try{ enrichEnr(); }catch(e){ console.warn('[치유] 건너뜀', e); } }
 function overlap(a,b){ // 두 동아리 시간 겹침 — 요일 교집합(숫자 정규화)이 있을 때만 시간 비교
   const nA=(a.weekdays||[]).map(Number), nB=(b.weekdays||[]).map(Number);
   if(!nA.some(w=>Number.isInteger(w)&&nB.includes(w))) return false;
@@ -1142,6 +1143,12 @@ function renderFix(){
   fixBg(`<div class="modal" style="max-width:500px">
     <div style="font-size:15px;font-weight:900;color:var(--gd)">✏️ 지원 정정 — ${esc(ED.name)} <span class="small" style="font-weight:700">${esc(ED.grade||'')}${ED.className?` · ${esc(ED.className)}`:''}</span>
       <span class="pill" style="margin-left:6px;background:${ED.ph2?'#FEF3C7':'#DBEAFE'};color:${ED.ph2?'#B45309':'#1D4ED8'};font-size:10.5px">${ED.ph2?'🎯 2차 추가 모집':'1차 모집'}</span></div>
+    <div style="display:flex;gap:6px;align-items:center;margin:8px 0 4px">
+      <span class="small" style="font-weight:800;white-space:nowrap">🏫 학년·반</span>
+      <input id="fx-grade" value="${esc(ED.grade||'')}" placeholder="예: 3학년" style="width:96px;padding:6px 8px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit;font-size:12.5px">
+      <input id="fx-class" value="${esc(ED.className||'')}" placeholder="예: 샬롬반" style="width:110px;padding:6px 8px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit;font-size:12.5px">
+      <span class="small" style="color:var(--tl)">${(ED.grade||ED.className)?'반편성에서 가져왔어요 — 필요하면 고칠 수 있습니다':'반편성에 없어 비어 있어요 — 여기서 직접 넣으면 모든 화면에 반영됩니다'}</span>
+    </div>
     <div class="small" style="margin:5px 0 10px">순위를 바꾸거나 🗑로 빼고, 아래에서 동아리를 추가하세요. <b>시간이 안 겹치면 같은 순위 여러 개도 가능</b>합니다. 저장 즉시 반영되며 활동 기록에 남습니다.${ED.ph2?' (1차 확정 동아리는 추가 목록에서 제외)':''}</div>
     <div id="fx-rows">${ED.rows.length ? ED.rows.slice().sort((a,b)=>a.rank-b.rank).map((r,i)=>{
       const idx = ED.rows.indexOf(r);
@@ -1296,7 +1303,10 @@ function stuOf(e){
 }
 function gPart(e){ const g=String(e.grade||'').trim(); if(g) return g; const st=stuOf(e); return st? st.grade : ''; }
 function cPart(e){ const c=String(e.className||'').trim(); if(c) return c; const st=stuOf(e); return st? st.className : ''; }
-function gcTxt(e){ const g=gPart(e), c=cPart(e); return esc(g) + (g&&c?' · ':'') + esc(c); }
+function gcTxt(e){ const g=gPart(e), c=cPart(e);
+  if(g||c) return esc(g) + (g&&c?' · ':'') + esc(c);
+  const S=window.__STU, known = !!(e.studentId && S.byId[e.studentId]) || !!(e.studentName && S.byName[e.studentName]);
+  return `<span style="color:#C0392B;font-weight:800" title="${known?'학생 원장에는 있으나 반편성에 배정되어 있지 않습니다 — 반편성에서 반에 넣거나, ✏️ 정정에서 직접 입력하세요':'학생 원장에서 이 학생을 찾지 못했습니다 — ✏️ 정정에서 직접 입력할 수 있어요'}">${known?'반 미배정':'미확인'}</span>`; }
 function gcMini(e){ const g=String(gPart(e)).replace('학년',''), c=String(cPart(e)).replace('반',''); return esc(g) + (g&&c?'·':'') + esc(c); }
 
 /* ── 🧹 유령(잔상) 일괄 정리 — 신청(picks)이 없는데 남아 있는 배정·추첨·대기 기록을 청소 ── */
@@ -1449,15 +1459,22 @@ window.fixSave = async ()=>{
       Object.entries(e[lotKey]||{}).forEach(([k,v])=>{ if(v && keep.has(k)) lot[k]=true; });
       const resKey = ED.ph2 ? 'result2' : 'result';
       const res = (e[resKey]||[]).filter(r=>keep.has(r.clubId));   // 👻 뺀 동아리의 배정 결과도 함께 정리
+      const gI = document.getElementById('fx-grade'), cI = document.getElementById('fx-class');
+      const gV = gI ? gI.value.trim() : '', cV = cI ? cI.value.trim() : '';
       const payload = { [key]: rows, [lotKey]: lot, [resKey]: res, updatedAt: Timestamp.now() };
+      if(gV) payload.grade = gV;                    // 🏫 직접 입력·원장값을 문서에 확정 기록
+      if(cV) payload.className = cV;
       if(!ED.ph2){ const fin = {}; Object.entries(e.final||{}).forEach(([k,v])=>{ if(keep.has(k)) fin[k]=v; }); payload.final = fin; }
       if(ED.ph2){ payload.waits2 = (e.waits2||[]).filter(id=>keep.has(id)); }
       await updateDoc(doc(db,'clubEnrollments', ED.eid), payload);
       Object.assign(e, payload); delete e.updatedAt;               // 스냅샷 전 즉시 화면 반영
     }else{
       const id = `${SEM.id}_${ED.sid}`;
+      const gI = document.getElementById('fx-grade'), cI = document.getElementById('fx-class');
+      const gV = (gI ? gI.value.trim() : '') || ED.grade || '';
+      const cV = (cI ? cI.value.trim() : '') || ED.className || '';
       await setDoc(doc(db,'clubEnrollments', id), { semId:SEM.id, org:SEM.org, parentUid:'', studentId:ED.sid,
-        studentName:ED.name, className:ED.className||'', grade:ED.grade||'', [key]: rows,
+        studentName:ED.name, className:cV, grade:gV, [key]: rows,
         status:'applied', via:'admin', createdAt:Timestamp.now(), updatedAt:Timestamp.now() }, { merge:true });
     }
     clubLog('지원 정정(수퍼)', detail);
