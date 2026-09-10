@@ -42,6 +42,7 @@ body.share-mode #tb,body.share-mode #sb{display:none!important}
 .ccard{background:var(--cs-wh);border:1px solid var(--cs-line);border-radius:12px;padding:11px 12px;cursor:pointer}
 .ccard .dot{width:11px;height:11px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:-1px}
 .ccard b{font-size:13px;font-weight:900;letter-spacing:-.01em}
+.ccard .m .rm{font-weight:800;color:#1E4B74;background:#E5EDFC;border-radius:7px;padding:1px 7px}
 .ccard .m{font-size:10.8px;color:var(--cs-ink2);margin-top:4px;font-weight:600}
 .ccard .n{font-size:10.8px;color:var(--cs-ink3);margin-top:2px;font-weight:700}
 .ccard .n em{font-style:normal;color:var(--cs-pt);font-weight:900}
@@ -277,16 +278,27 @@ function acadItemsOf(ds){
 }
 
 /* ── 데이터 적재 ── */
-async function loadClubs(){
+/* 🏫 교실 — 관리자 배정(room)이 진실, 없으면 강사 희망(place)을 보조로 */
+const roomOf = c => String(c.room || c.loc || c.place || '').trim();
+let CLUB_UNSUB = null;
+function loadClubs(){                       // 🔗 실시간 구독 — 교실·시간을 고치면 이 화면이 곧바로 따라온다
   const qy = SHARE
     ? query(collection(db,'clubApplications'), where('semId','==',SEM.id), where('published','==',true))
     : query(collection(db,'clubApplications'), where('semId','==',SEM.id));
-  const ss = await getDocs(qy);
-  CLUBS = ss.docs.map(d=>({id:d.id, ...d.data()}))
-    .filter(c=>!c.deleted && !c.cancelled && c.status==='approved' && (c.sessions||[]).length)
-    .filter(c=> SHARE ? true : true);
-  MONTHS = [...new Set(CLUBS.flatMap(c=>liveSessions(c).map(s=>s.date.slice(0,7))))].sort();
-  if(!MONTHS.includes(MON)) MON = MONTHS.includes(todayS.slice(0,7)) ? todayS.slice(0,7) : (MONTHS[0]||'');
+  const apply = ss => {
+    CLUBS = ss.docs.map(d=>({id:d.id, ...d.data()}))
+      .filter(c=>!c.deleted && !c.cancelled && c.status==='approved' && (c.sessions||[]).length);
+    MONTHS = [...new Set(CLUBS.flatMap(c=>liveSessions(c).map(s=>s.date.slice(0,7))))].sort();
+    if(!MONTHS.includes(MON)) MON = MONTHS.includes(todayS.slice(0,7)) ? todayS.slice(0,7) : (MONTHS[0]||'');
+  };
+  return new Promise(resolve=>{
+    if(CLUB_UNSUB){ try{ CLUB_UNSUB(); }catch(e){} CLUB_UNSUB = null; }
+    let first = true;
+    CLUB_UNSUB = onSnapshot(qy, ss=>{
+      apply(ss);
+      if(first){ first=false; resolve(); } else { try{ render(); }catch(e){} }
+    }, err=>{ console.warn('[현황] 동아리 구독 실패', err); if(first){ first=false; resolve(); } });
+  });
 }
 async function boot(){
   if(SHARE){
@@ -412,7 +424,7 @@ function render(){
     const days=(c.weekdays||[]).map(w=>WD[w]).join('·');
     h += `<div class="ccard${open?' open':''}" onclick="togC('${c.id}')">
       <b><span class="dot" style="background:${col}"></span>${esc(c.title||'')}</b>
-      <div class="m">${days} ${esc(c.start||'')}${c.start?`–${addMin(c.start,c.durMin||60)}`:''}${c.loc?` · ${esc(c.loc)}`:''}</div>
+      <div class="m">${days} ${esc(c.start||'')}${c.start?`–${addMin(c.start,c.durMin||60)}`:''}${roomOf(c)?` · <span class="rm">🏫 ${esc(roomOf(c))}</span>`:''}</div>
       <div class="n">👥 <em>${r.length}명</em>${c.instr?` · ${esc(c.instr)} 강사`:''} · 총 ${ses.length?ses[0].total:0}차시</div>
       ${open?`<div class="roster">${r.length? r.map(s=>`<span class="stu">${esc(s.n)}<i>${esc(String(s.g).replace('학년',''))}${s.c?'·'+esc(String(s.c).replace('반','')):''}</i></span>`).join('')
         : `<span class="none">${SHARE?'명단은 게시 이후 표시됩니다':'확정된 참여자가 아직 없어요'}</span>`}</div>`:''}
@@ -524,7 +536,7 @@ window.popSes = (cid, ds)=>{ const c=CLUBS.find(x=>x.id===cid); if(!c) return;
   const s=liveSessions(c).find(x=>x.date===ds); if(!s) return;
   const r=rosterOf(cid);
   popBG(`<div class="pop"><div class="pt" style="background:${colorOf(cid)}">${esc(c.title||'')} · ${s.no}/${s.total}차시</div>
-    <div class="pb"><b>${dLabel(ds)} ${s.time} – ${s.end}</b>${c.loc?` · ${esc(c.loc)}`:''}<br>
+    <div class="pb"><b>${dLabel(ds)} ${s.time} – ${s.end}</b>${roomOf(c)?` · 🏫 ${esc(roomOf(c))}`:''}<br>
     ${c.instr?`${esc(c.instr)} 강사 · `:''}참여 ${r.length}명</div>
     <div class="foot">보강·시간 변경은 강사 입력 즉시 이 달력에 반영됩니다</div></div>`); };
 
