@@ -127,6 +127,10 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .drw{position:relative;isolation:isolate}
 .drw .tb{width:100%}
 .drw .tb th{position:static;white-space:nowrap}
+.conf-ban{background:#FEF0F0;border:1.5px solid #FCA5A5;border-radius:12px;padding:10px 14px;
+  font-size:12.5px;color:#7F1D1D;font-weight:700;margin:10px 0 2px;cursor:pointer;line-height:1.7}
+.conf-ban:hover{border-color:#DC2626}
+.conf-ban .go{float:right;font-weight:900;color:#B91C1C}
 .cfb{display:inline-block;font-size:10px;font-weight:900;border-radius:8px;padding:1px 6px;vertical-align:1px;cursor:help}
 .cfb.r{background:#FEE2E2;color:#B91C1C;border:1px solid #FCA5A5}
 .cfb.y{background:#FEF3C7;color:#B45309;border:1px solid #F1DCA8}
@@ -136,7 +140,13 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .mx-flt label{font-size:12px;font-weight:800;color:var(--ts);display:inline-flex;gap:5px;align-items:center}
 .mx-wrap{max-height:62vh;overflow:auto;border:1px solid var(--ivd);border-radius:12px}
 .mx-tb{border-collapse:separate;border-spacing:0;min-width:640px}
-.mx-tb th{position:sticky;top:0;background:var(--gp,#EAF4EF);z-index:2}
+.mx-tb th{position:sticky;top:0;background:var(--gp,#EAF4EF);z-index:2;
+  color:#0C2A44;font-weight:900;font-size:12px;text-align:center;padding:8px 6px;min-width:126px;border-bottom:2px solid var(--ivd)}
+.mx-tb td{border-bottom:1px solid #EFECE4;vertical-align:top}
+.mx-tb tr:nth-child(even) td{background:#FBFAF6}
+.mx-tb tr:nth-child(even) td.mx-nm{background:#FBFAF6}
+.mx-tb td.mx-nm{padding:7px 9px}
+.mx-tb td.mx-nm b{font-size:12.5px}
 .mx-tb th.mx-nm, .mx-tb td.mx-nm{position:sticky;left:0;background:#fff;z-index:1;min-width:96px;box-shadow:2px 0 0 var(--ivd)}
 .mx-tb th.mx-nm{z-index:3;background:var(--gp,#EAF4EF)}
 .mx-cell{min-width:118px;vertical-align:top;padding:5px 6px}
@@ -987,7 +997,7 @@ function paintEnroll(){
           ? `<button class="bs" onclick="askCancel('${c.id}')">폐강 해제</button>`
           : `<button class="bs" style="border-color:#FCA5A5;color:#B91C1C;background:#FFF7F7" onclick="askCancel('${c.id}')">⚫ 폐강 처리…</button>`}</div>`}</div>
       </details>`; }).join('') || '<div class="small">공고된(승인+노출) 동아리가 없습니다. 신청 취합 탭에서 승인·노출을 켜주세요.</div>'}
-    ${ENR.length ? mxSecHTML() : ''}
+    ${ENR.length ? confBannerHTML() + mxSecHTML() : ''}
     ${ENR.length ? `<details class="drw" style="margin-top:14px"><summary><b>👧 학생별 신청 내역</b><em>${new Set(ENR.map(e=>e.studentId)).size}명</em></summary>
       <div class="drw-body tblwrap">${CAN_FIX()?`<div style="margin:2px 0 8px"><button class="bs" onclick="fixPickStu()">➕ 신청 추가 · 학생 검색</button></div>`:''}<table class="tb"><tr><th>학생</th><th>신청 (순위순)</th><th>배정 결과</th></tr>
       ${[...ENR].sort((a,b)=>String(a.studentName||'').localeCompare(String(b.studentName||''),'ko')).map(e=>{
@@ -1129,7 +1139,7 @@ function pendClubsOf(e){                      // 아직 배정 전 2차 신청
 let CONF = {};
 function buildConflicts(){
   CONF = {}; const by = {}; LIVE().forEach(c=>by[c.id]=c);
-  ENR.forEach(e=>{
+  ENR.forEach(e=>{ try{
     if(e.deleted) return;
     const eff = [...effClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
     const pen = [...pendClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
@@ -1138,7 +1148,7 @@ function buildConflicts(){
       if(overlap(eff[i],eff[j])) red.push([eff[i].id, eff[j].id]);
     pen.forEach(p=>eff.forEach(cc=>{ if(overlap(p,cc)) yel.push([p.id, cc.id]); }));
     if(red.length||yel.length) CONF[e.studentId] = { red, yel };
-  });
+  }catch(err){ console.warn('[겹침판정] 한 학생 건너뜀', e&&e.studentName, err); } });
 }
 function confTip(sid){
   const c = CONF[sid]; if(!c) return '';
@@ -1157,8 +1167,9 @@ function confBadgeCell(sid, cid){
   return hit ? ` <span class="cfb ${hit} mini" title="${esc(confTip(sid))}">⚠</span>` : '';
 }
 /* ── 🧮 취합표 ── */
-let MX = { q:'', g:'', c:'', only:false, open:false };
-window.MXTOG = el => { MX.open = !!el.open; };
+let MX = { q:'', g:'', c:'', only:false,
+  open:(()=>{ try{ return localStorage.getItem('gyosa_mxopen')==='1'; }catch(e){ return false; } })() };
+window.MXTOG = el => { MX.open = !!el.open; try{ localStorage.setItem('gyosa_mxopen', MX.open?'1':'0'); }catch(e){} };
 window.mxF = (k, v) => { MX[k] = (k==='only') ? !!v : String(v);
   const b = $I('mx-body'); if(b) b.innerHTML = mxBodyHTML(); };
 function mxStudents(){
@@ -1191,7 +1202,7 @@ function mxBodyHTML(){
     ${rows.map(e=>{
       const eff=[...effClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
       const pen=[...pendClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
-      return `<tr><td class="mx-nm"><b>${esc(e.studentName||'')}</b>${confBadgeRow(e.studentId)}
+      return `<tr><td class="mx-nm"><b>${esc(e.studentName||'(이름 미기재)')}</b>${confBadgeRow(e.studentId)}
           <div class="small">${esc(String(e.grade||'').replace('학년',''))}${e.className?`·${esc(String(e.className).replace('반',''))}`:''}</div></td>
         ${days.map(d=>{
           const here = [
@@ -1201,6 +1212,17 @@ function mxBodyHTML(){
           return `<td class="mx-cell">${here.join('')||''}</td>`;
         }).join('')}</tr>`;
     }).join('')}</table>`;
+}
+function confBannerHTML(){
+  const reds=[], yels=[];
+  mxStudents().forEach(e=>{ const c=CONF[e.studentId]; if(!c) return;
+    (c.red.length?reds:yels).push(e.studentName||'(이름 미기재)'); });
+  if(!reds.length && !yels.length) return '';
+  return `<div class="conf-ban" onclick="MX.open=true;try{localStorage.setItem('gyosa_mxopen','1')}catch(e){};renderEnroll();setTimeout(()=>{const el=document.getElementById('mx-body');el&&el.scrollIntoView({behavior:'smooth',block:'center'})},60)">
+    ${reds.length?`<b>⚠ 시간 겹침 ${reds.length}명</b> — ${reds.slice(0,6).map(esc).join(', ')}${reds.length>6?' 외':''}`:''}
+    ${reds.length&&yels.length?' · ':''}
+    ${yels.length?`<span style="color:#B45309">🟡 주의 ${yels.length}명 — ${yels.slice(0,4).map(esc).join(', ')}${yels.length>4?' 외':''}</span>`:''}
+    <span class="go">취합표에서 보기 ›</span></div>`;
 }
 function mxSecHTML(){
   const stus = mxStudents();

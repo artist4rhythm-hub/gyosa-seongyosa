@@ -169,7 +169,7 @@ body.share-mode #tb,body.share-mode #sb{display:none!important}
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, Timestamp, serverTimestamp }
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, onSnapshot, Timestamp, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -337,10 +337,7 @@ async function logShareView(kind, shareId, title){
       .sort((a,b)=> String(b.rangeFrom||'').localeCompare(String(a.rangeFrom||'')));
     document.addEventListener('visibilitychange', async ()=>{        // 탭에 돌아오면 폐강·명단 변화 즉시 반영
       if(document.hidden || SHARE || !SEM) return;
-      try{ await loadClubs();
-        const enr = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
-        ENR = enr.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>!e.deleted);
-        render(); }catch(e){}
+      try{ await loadClubs(); render(); }catch(e){}   // 명단은 구독이 실시간 담당
     });
     if(!SEMS.length){ $I('ls').style.display='none'; $I('ms').style.display='block';
       $I('cs').innerHTML='<div class="empty" style="margin-top:40px">아직 동아리 학기가 없어요.</div>'; window.hideLoading&&hideLoading(); return; }
@@ -355,9 +352,11 @@ async function reloadSem(){
   ACID = SNAP?.acShareId || await pickAcadId();
   if(ACID) ACAD = await loadAcad(ACID);
   await loadClubs();
-  const enr = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)));
-  ENR = enr.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>!e.deleted);
-  render();
+  if(window.__enrUn){ try{ __enrUn(); }catch(e){} }
+  window.__enrUn = onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
+    ENR = snap.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>!e.deleted);   // 🔗 단일 진실원: 관리 화면에서 바꾸면 여기도 즉시
+    render();
+  });
 }
 window.pickSem = async id=>{ const s=SEMS.find(x=>x.id===id); if(!s) return; SEM=s; window.showLoading&&showLoading(); await reloadSem(); window.hideLoading&&hideLoading(); };
 
@@ -393,7 +392,7 @@ function render(){
       <select onchange="pickSem(this.value)">${SEMS.map(s=>`<option value="${s.id}"${s.id===SEM.id?' selected':''}>${esc(ORGS[s.org]||s.org)} · ${esc(s.name||s.id)}</option>`).join('')}</select>
       ${CU?.role==='super'?`<button class="tb-btn pr" onclick="stampStatus()">📊 현황 게시</button>`:''}
       ${SNAP?`<button class="tb-btn" onclick="copyShare()">🔗 링크 복사</button>`:''}
-      <div class="pubnote">${SNAP?`게시됨 · ${SNAP.byName?esc(SNAP.byName)+' · ':''}명단·색은 도장 시점 기준, 일정·학사는 실시간 반영`:'아직 게시 전 — 「📊 현황 게시」를 누르면 학부모 공유 링크가 생깁니다 (명단은 도장 시점으로 담겨요)'}</div>
+      <div class="pubnote">${SNAP?`게시됨 · ${SNAP.byName?esc(SNAP.byName)+' · ':''}공유 링크의 명단·색은 도장 시점 기준 — <b>이 화면의 명단은 실시간</b>입니다 (다시 게시하면 공유본도 갱신)`:'아직 게시 전 — 「📊 현황 게시」를 누르면 학부모 공유 링크가 생깁니다 (명단은 도장 시점으로 담겨요)'}</div>
     </div>`;
   }
   h += `<div class="ph"><div class="em">🎨</div>
