@@ -103,7 +103,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
   content:'';position:absolute;top:11.5mm;left:11.5mm;right:11.5mm;bottom:11.5mm;
   border:0.5px solid var(--c-line2,#B08D3C);pointer-events:none;z-index:2;
 }
-.cert-bg{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:110mm;opacity:0.06;pointer-events:none;z-index:0;}
+.cert-bg{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:74mm;opacity:0.11;pointer-events:none;z-index:0;}
 .cert-inner{position:relative;z-index:1;padding:2mm 8mm;}
 .cert-docno{text-align:right;font-size:10.5pt;color:#555;letter-spacing:1px;margin-bottom:12mm;}
 .cert-title{
@@ -120,6 +120,11 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .cert-value.addr-val{font-size:12.5pt;line-height:1.45;}
 .cert-statement{text-align:center;font-size:13.5pt;line-height:2.1;margin:16mm 0 22mm;color:#222;}
 .cert-statement b{font-weight:700;color:var(--c-accent,#1a2440);}
+.cert-issue{text-align:center;font-size:12.5pt;letter-spacing:1px;color:#222;margin-top:4mm}
+.fc-tbl{width:100%;border-collapse:collapse;margin:8mm 0 4mm;font-size:11pt}
+.fc-tbl th{background:#F5F2E9;border:1px solid #E0DCCF;padding:2.4mm 3mm;font-weight:800;color:#4a4a4a;font-size:10.5pt}
+.fc-tbl td{border:1px solid #E0DCCF;padding:2.4mm 3mm;text-align:center;color:#222}
+.cert-sheet.former .cert-statement{margin:8mm 0 6mm;font-size:12.5pt}
 .cert-org{text-align:center;margin-top:8mm;}
 .cert-orgname{font-size:22pt;font-weight:800;letter-spacing:3px;color:var(--c-accent,#1a2440);}
 .cert-orgen{font-size:8.5pt;letter-spacing:4px;color:#888;margin-top:2px;font-family:serif;}
@@ -435,6 +440,8 @@ window.showTab = showTab;
 // ── 발급 화면: 학생 선택 ──
 let issueSearch = '';
 let issueOrg = '';  // 현재 선택된 기관
+let CERT_MODE = 'current';                 // 'current' 재학증명서 · 'former' 재학 사실 확인서
+window.setCertMode = m => { CERT_MODE = m; openGrades = {}; renderIssue(); };
 function renderIssue(){
   const box = $I('tab-issue');
   const orgs = myOrgs();
@@ -445,8 +452,14 @@ function renderIssue(){
     </div>` : '';
   box.innerHTML = `
     <div class="acard">
-      <h3 class="actitle">➕ ${esc(cfg.certTitle||'증명서')} 발급 (${ORGS[issueOrg]||issueOrg})</h3>
-      <p class="adesc">학생을 선택하면 증명서를 미리 확인하고 발급할 수 있습니다. 담임 선생님은 담당 반 학생을, 관리자는 전체 학생을 발급할 수 있습니다.</p>
+      <h3 class="actitle">➕ ${CERT_MODE==='former'?'재학 사실 확인서':esc(cfg.certTitle||'증명서')} 발급 (${ORGS[issueOrg]||issueOrg})</h3>
+      <p class="adesc">${CERT_MODE==='former'
+        ? '이미 <b>자퇴·전학 등으로 떠난 학생</b>의 재학 기간과 참여한 교육과정을 확인해 주는 문서입니다.'
+        : '학생을 선택하면 증명서를 미리 확인하고 발급할 수 있습니다. 담임 선생님은 담당 반 학생을, 관리자는 전체 학생을 발급할 수 있습니다.'}</p>
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <button class="${CERT_MODE==='current'?'bp':'bs'}" onclick="setCertMode('current')">🎓 ${esc(cfg.certTitle||'재학 증명서')}</button>
+        <button class="${CERT_MODE==='former'?'bp':'bs'}" onclick="setCertMode('former')">📜 재학 사실 확인서</button>
+      </div>
       ${orgTabs}
       <input type="text" id="issue-search" placeholder="학생 이름 검색" value="${esc(issueSearch)}" style="height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);width:100%;margin-bottom:14px;font-family:inherit">
       <div class="slist" id="issue-slist"></div>
@@ -467,13 +480,13 @@ function renderStudentList(){
   const list = $I('issue-slist');
   if(!list) return;
   const students = STUDENTS
-    .filter(s=>(s.status||'active')==='active')
+    .filter(s=> CERT_MODE==='former' ? (s.status||'active')!=='active' : (s.status||'active')==='active')
     .filter(s=>s.org===issueOrg)
     .filter(s=>canIssue(s))
     .filter(s=>!issueSearch || (s.name||'').includes(issueSearch));
 
   if(!students.length){
-    list.innerHTML = '<p class="empty">발급 가능한 학생이 없습니다.</p>';
+    list.innerHTML = `<p class="empty">${CERT_MODE==='former'?'자퇴·전학 등으로 종료된 학생이 없습니다. (학생관리에서 상태를 바꾸면 여기에 나타납니다)':'발급 가능한 학생이 없습니다.'}</p>`;
     return;
   }
 
@@ -1045,6 +1058,93 @@ async function doIssueStaff(uid, org, mode){
 window.doIssueStaff = doIssueStaff;
 
 // 학생+옵션 → rec 변환 후 렌더 (미리보기용)
+/* ═══ 🎓 재학 사실 확인서 ═══
+   반편성 이력(classes: year + grades[sid])에서 과정 구간을 스스로 계산합니다. */
+function courseSegments(sid, startDs, endDs){
+  const rows = [];
+  CLASSES.forEach(c=>{
+    if(!(c.students||[]).includes(sid)) return;
+    const g = (c.grades && c.grades[sid]) || c.grade || '';
+    const y = Number(c.year) || 0;
+    if(!g || !y) return;
+    rows.push({ y, g, n: parseInt(g,10) });
+  });
+  rows.sort((a,b)=>a.y-b.y);
+  const segs = [];
+  rows.forEach(r=>{
+    const dept = gradeToDept(r.g);
+    const last = segs[segs.length-1];
+    if(last && last.dept===dept){ last.y2=r.y; last.g2=r.n; }
+    else segs.push({ dept, y1:r.y, y2:r.y, g1:r.n, g2:r.n });
+  });
+  const ymText = (y, isEnd)=>{
+    if(isEnd){ // 마지막 구간은 실제 종료월까지
+      return endDs && Number(endDs.slice(0,4))<=y+1 ? `${endDs.slice(0,4)}.${endDs.slice(5,7)}` : `${y+1}.02`;
+    }
+    return startDs && Number(startDs.slice(0,4))===y ? `${startDs.slice(0,4)}.${startDs.slice(5,7)}` : `${y}.03`;
+  };
+  return segs.map((s,i)=>({
+    dept: s.dept || '교육과정',
+    course: deptCourse(s.dept),
+    period: `${ymText(s.y1,false)} ~ ${ymText(s.y2, true)}`,
+    grades: s.g1===s.g2 ? `${s.g1}학년` : `${s.g1} ~ ${s.g2}학년`
+  }));
+}
+function periodText(a, b){
+  if(!a || !b) return '';
+  const d1=new Date(a+'T00:00:00'), d2=new Date(b+'T00:00:00');
+  let m = (d2.getFullYear()-d1.getFullYear())*12 + (d2.getMonth()-d1.getMonth());
+  if(d2.getDate() < d1.getDate()) m--;
+  const y=Math.floor(m/12), mo=m%12;
+  return `${y?`${y}년 `:''}${mo?`${mo}개월`:(y?'':'1개월 미만')}`.trim();
+}
+function buildFormerCert(o){
+  const cfg = ORG_CONFIG[o.org]; if(!cfg) return '<div class="cert-sheet">알 수 없는 기관</div>';
+  const th = cfg.theme || {};
+  const styleVars = `--c-accent:${th.accent};--c-line:${th.line};--c-line2:${th.line2};--c-bg:${th.bg};`;
+  const stampHTML = o.hideStamp ? '' : `<img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">`;
+  const segs = o.segs || [];
+  const endLabel = o.endType==='transfer' ? `전학${o.endSchool?` (${esc(o.endSchool)})`:''}`
+    : o.endType==='finish' ? '수료' : o.endType==='etc' ? '기타' : '자퇴';
+  return `
+  <div class="cert-sheet former" style="${styleVars}">
+    <img class="cert-bg" src="${cfg.logo}" alt="" onerror="this.style.display='none'">
+    <div class="cert-inner">
+      <div class="cert-docno">문서번호 : ${esc(o.docNo)}</div>
+      <div class="cert-title">재학 사실 확인서</div>
+      <div class="cert-title-line"></div>
+      <div class="cert-fields">
+        <div class="cert-row">${labelHTML("성명")}<span class="cert-colon">:</span><span class="cert-value">${esc(o.name||'')}</span></div>
+        <div class="cert-row">${labelHTML("생년월일")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(o.birth))}</span></div>
+        <div class="cert-row">${labelHTML("주소")}<span class="cert-colon">:</span><span class="cert-value addr-val">${esc(o.address||'-')}</span></div>
+        <div class="cert-row">${labelHTML("재학기간")}<span class="cert-colon">:</span><span class="cert-value">${esc(korDate(o.startDate))} ~ ${esc(korDate(o.endDate))}${o.startDate&&o.endDate?` (${periodText(o.startDate,o.endDate)})`:''}</span></div>
+        <div class="cert-row">${labelHTML("입학구분")}<span class="cert-colon">:</span><span class="cert-value">${o.admitType==='transferIn'?'편입학':'신입학'}</span></div>
+        <div class="cert-row">${labelHTML("종료구분")}<span class="cert-colon">:</span><span class="cert-value">${endLabel}</span></div>
+      </div>
+      ${segs.length?`<table class="fc-tbl"><tr><th>교육과정</th><th>참여 기간</th><th>학년</th></tr>
+        ${segs.map(s=>`<tr><td>${esc(s.course)}</td><td>${esc(s.period)}</td><td>${esc(s.grades)}</td></tr>`).join('')}</table>`:''}
+      <div class="cert-statement">
+        위 사람은 위 기간 동안 '${esc(cfg.orgName)}'에서<br>
+        ${segs.length?'위와 같이 ':''}<b>교육과정에 참여하였음을 확인합니다.</b>
+      </div>
+      <div class="cert-issue">${esc(korDate(o.issueDate))}</div>
+      <div class="cert-org">
+        <div class="cert-orgname">${esc(cfg.orgName)}</div>
+        <div class="cert-orgen">${esc(cfg.orgEn)}</div>
+        <div class="cert-rep">
+          대표자 &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
+          ${stampHTML}
+        </div>
+      </div>
+    </div>
+    <div class="cert-footer">
+      <div class="fline"></div>
+      <div class="addr">${esc(cfg.address)}　|　TEL. ${esc(cfg.phone)}</div>
+      ${(cfg.notes||[]).map(n=>`<div class="note">· ${esc(n)}</div>`).join('')}
+    </div>
+  </div>`;
+}
+
 function buildCertHTML(s, opts){
   const g = studentGrade(s.id);
   const dept = gradeToDept(g);
@@ -1071,19 +1171,49 @@ function openPreview(sid){
   const tempDocNo = (cfg?.code||'DA') + '-C-' + issueDate.slice(2).replace(/-/g,'') + '-XX';
 
   // 기관별 확인·입력 항목 정의 (모두 필수)
+  const FORMER = (CERT_MODE === 'former');
   const fieldDefs = [];
   fieldDefs.push({key:'address', label:'주소', type:'text', placeholder:'주소를 입력하세요', required:true});
   fieldDefs.push({key:'birth', label:'생년월일', type:'date', required:true});
-  if(cfg?.layout==='grade'){
+  if(FORMER){
+    fieldDefs.push({key:'admitDate', label:'입학일 (재학 시작)', type:'date', required:true});
+    fieldDefs.push({key:'endDate', label:'종료일 (자퇴·전학일)', type:'date', required:true});
+  } else if(cfg?.layout==='grade'){
     fieldDefs.push({key:'admitDate', label:'입학일', type:'date', required:true});
   }
+  if(FORMER && !s.endDate) s.endDate = s.quitDate || s.transferDate || '';
 
+  const formerPickHTML = FORMER ? `
+    <div class="fgrp"><label>입학구분</label>
+      <select id="pv-admitType" onchange="window.pvRefresh&&pvRefresh()" style="width:100%;height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-family:inherit;font-size:14px;background:var(--iv)">
+        <option value="new">신입학</option><option value="transferIn">편입학</option></select></div>
+    <div class="fgrp"><label>종료구분</label>
+      <select id="pv-endType" onchange="document.getElementById('pv-endSchool-wrap').style.display=this.value==='transfer'?'block':'none';window.pvRefresh&&pvRefresh()" style="width:100%;height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-family:inherit;font-size:14px;background:var(--iv)">
+        <option value="quit"${s.transferDate?'':' selected'}>자퇴</option>
+        <option value="transfer"${s.transferDate?' selected':''}>전학</option>
+        <option value="finish">수료</option><option value="etc">기타</option></select></div>
+    <div class="fgrp" id="pv-endSchool-wrap" style="display:${s.transferDate?'block':'none'}"><label>전출 학교 <span class="fgrp-hint" style="color:#9ca3af;font-weight:400">· 선택</span></label>
+      <input type="text" id="pv-endSchool" value="" placeholder="예: ○○중학교" oninput="window.pvRefresh&&pvRefresh()"></div>` : '';
+
+  const readFormer = () => ({
+    admitType: $I('pv-admitType')?.value || 'new',
+    endType: $I('pv-endType')?.value || 'quit',
+    endSchool: $I('pv-endSchool')?.value.trim() || '',
+  });
+  window.__readFormer = readFormer;
   const buildPreview = () => {
     const vals = {};
     fieldDefs.forEach(f=>{ vals[f.key] = $I('pv-'+f.key)?.value || (s[f.key]||''); });
+    if(FORMER){
+      const f = readFormer();
+      return buildFormerCert({ org:s.org, docNo:tempDocNo, issueDate, name:s.name,
+        birth:vals.birth, address:vals.address, startDate:vals.admitDate, endDate:vals.endDate,
+        admitType:f.admitType, endType:f.endType, endSchool:f.endSchool,
+        segs: courseSegments(s.id, vals.admitDate, vals.endDate) });
+    }
     return buildCertHTML(s, {docNo:tempDocNo, issueDate, address:vals.address, birth:vals.birth, admitDate:vals.admitDate});
   };
-  const certHtml = buildCertHTML(s, {docNo:tempDocNo, issueDate, address:s.address||''});
+  const certHtml = buildPreview();
 
   // 입력 필드 HTML
   const fieldsHTML = fieldDefs.map(f=>{
@@ -1100,7 +1230,7 @@ function openPreview(sid){
       <div class="mtitle">증명서 확인 후 발급</div>
       <div class="msub">아래 항목이 <b>모두 정확한지 확인</b>하세요. 빈 항목이나 바뀐 정보를 수정하면 학생 정보에도 반영됩니다.</div>
       ${!dept && cfg?.layout==='grade' ? '<div style="background:var(--warn-bg);color:var(--warn);padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px">⚠️ 이 학생은 반 편성에서 학년 정보가 없어 교육과정이 정확히 표시되지 않을 수 있습니다. 반편성을 먼저 확인하세요.</div>' : ''}
-      ${fieldsHTML}
+      ${fieldsHTML}${formerPickHTML}
       <div id="pv-warn" style="display:none;background:var(--danger-bg);color:var(--danger);padding:10px 14px;border-radius:8px;font-size:13px;margin:4px 0 12px;border:1px solid var(--danger-bg)"></div>
       <div class="zoom-bar">
         <button class="zoom-btn" onclick="zoomCert(-1)">−</button>
@@ -1118,7 +1248,7 @@ function openPreview(sid){
       <div class="mact">
         <button class="bs" onclick="closePreview()">취소</button>
         <button class="bs" onclick="gotoStudentEdit('${s.id}')">✏️ 학생 정보 수정</button>
-        <button class="bp" id="pv-issue-btn" onclick="doIssue('${s.id}')" disabled style="opacity:.45;cursor:not-allowed">✅ 발급하기</button>
+        <button class="bp" id="pv-issue-btn" onclick="doIssue('${s.id}','${FORMER?'former':'current'}')" disabled style="opacity:.45;cursor:not-allowed">✅ 발급하기</button>
       </div>
     </div>`;
   $I('mwrap').appendChild(mv);
@@ -1167,23 +1297,31 @@ function gotoStudentEdit(sid){
 window.gotoStudentEdit = gotoStudentEdit;
 
 // ── 발급 실행 ──
-async function doIssue(sid){
+async function doIssue(sid, mode){
   const s = STUDENTS.find(x=>x.id===sid);
   if(!s) return;
   const cfg = ORG_CONFIG[s.org];
   if(!cfg){ toast('이 기관은 증명서 발급을 지원하지 않습니다.','err'); return; }
+  const FORMER = (mode==='former') || (CERT_MODE==='former');
   const issueDate = todayYMD();
 
   // 입력 필드에서 값 수집
   const newAddr = $I('pv-address')?.value.trim() || '';
   const newBirth = $I('pv-birth')?.value.trim() || '';
   const newAdmit = $I('pv-admitDate')?.value.trim() || '';
+  const newEnd = $I('pv-endDate')?.value.trim() || '';
 
   // 필수 항목 검증
   const missing = [];
   if(!newAddr) missing.push('주소');
   if(!newBirth) missing.push('생년월일');
-  if(cfg.layout==='grade' && !newAdmit) missing.push('입학일');
+  if(FORMER){
+    if(!newAdmit) missing.push('입학일');
+    if(!newEnd) missing.push('종료일');
+  } else if(cfg.layout==='grade' && !newAdmit) missing.push('입학일');
+  if(FORMER && newAdmit && newEnd && newEnd < newAdmit){
+    toast('종료일이 입학일보다 빠를 수 없습니다.','err'); return;
+  }
   if(missing.length){
     toast(`${missing.join(', ')}을(를) 입력해주세요.`,'err');
     const km = missing[0]==='주소'?'address':missing[0]==='생년월일'?'birth':'admitDate';
@@ -1217,6 +1355,27 @@ async function doIssue(sid){
 
     const g = studentGrade(s.id);
     const dept = gradeToDept(g);
+    if(FORMER){
+      const f = (window.__readFormer ? window.__readFormer() : {admitType:'new', endType:'quit', endSchool:''});
+      const segs = courseSegments(s.id, newAdmit, newEnd);
+      const rec = {
+        docNo, docNoDate: datePart, seq,
+        kind: 'former', type: '재학사실', org: s.org,
+        studentId: sid, studentName: s.name||'',
+        grade: g||'', dept: dept||'',
+        birth: newBirth, address: newAddr,
+        admitDate: newAdmit, startDate: newAdmit, endDate: newEnd,
+        admitType: f.admitType, endType: f.endType, endSchool: f.endSchool,
+        segs, issueDate,
+        issuedByUid: CU.uid, issuedByName: CU.name||'',
+        createdAt: Timestamp.now()
+      };
+      await addDoc(collection(db,'certificates'), rec);
+      closePreview();
+      toast(`재학 사실 확인서 발급 완료 (${docNo})`,'ok');
+      showTab('list');
+      return;
+    }
     const record = {
       docNo, docNoDate: datePart, seq,
       type: cfg.verb, org: s.org,
@@ -1251,7 +1410,7 @@ async function renderList(){
     /* 교직원 증명서(재직·경력)는 개인정보(생년월일·주소)가 담기니
        발급 범위와 같은 규칙으로만 보인다. 학생 재학증명서는 기관 기준 유지. */
     CERTS = CERTS.filter(c=>{
-      if(c.kind!=='employ' && c.kind!=='career') return true;   // 재학증명서
+      if(c.kind!=='employ' && c.kind!=='career') return true;   // 재학증명서·재학사실확인서
       const s = STAFF_ALL.find(x=>x.uid===c.staffUid);
       if(s) return canIssueStaffCert(s);
       // 명부에서 지워진 분의 기록은 관리자만
@@ -1295,6 +1454,15 @@ function buildCertFromRecord(c, opts){
       hireDate: c.hireDate, leaveDate: c.leaveDate, position: c.position,
       duty: c.duty, dutyShown: c.dutyShown, purpose: c.purpose,
       hideStamp: opts && opts.hideStamp
+    });
+  }
+  if(c.kind === 'former'){
+    return buildFormerCert({
+      org: c.org, docNo: c.docNo, issueDate: c.issueDate,
+      name: c.studentName, birth: c.birth, address: c.address,
+      startDate: c.startDate || c.admitDate, endDate: c.endDate,
+      admitType: c.admitType, endType: c.endType, endSchool: c.endSchool,
+      segs: c.segs || [], hideStamp: opts && opts.hideStamp
     });
   }
   return buildCert({
@@ -1355,7 +1523,7 @@ function certPrintCSS(){
     .cert-sheet{position:relative;background:var(--c-bg,#fffdf9);width:210mm;height:297mm;padding:24mm 22mm;margin:0;font-family:'Nanum Myeongjo','Noto Serif KR',serif;color:#1a1a1a;overflow:hidden;}
     .cert-sheet::before{content:'';position:absolute;top:10mm;left:10mm;right:10mm;bottom:10mm;border:1.5px solid var(--c-line,#b8935a);pointer-events:none;}
     .cert-sheet::after{content:'';position:absolute;top:11.5mm;left:11.5mm;right:11.5mm;bottom:11.5mm;border:0.5px solid var(--c-line2,#B08D3C);pointer-events:none;}
-    .cert-bg{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:110mm;opacity:0.06;pointer-events:none;}
+    .cert-bg{position:absolute;top:52%;left:50%;transform:translate(-50%,-50%);width:74mm;opacity:0.11;pointer-events:none;}
     .cert-inner{position:relative;z-index:1;padding:6mm 8mm;}
     .cert-docno{text-align:right;font-size:10.5pt;color:#555;letter-spacing:1px;margin-bottom:16mm;}
     .cert-title{text-align:center;font-size:34pt;font-weight:800;letter-spacing:16px;color:var(--c-accent,#1a2440);margin:0 0 4mm;text-indent:16px;}
@@ -1377,6 +1545,11 @@ function certPrintCSS(){
     .cert-orginfo-row .cert-colon{width:5mm;}
     .cert-org{text-align:center;margin-top:8mm;}
     .cert-sheet.jh .cert-org{margin-top:14mm;}
+    .cert-issue{text-align:center;font-size:12.5pt;letter-spacing:1px;color:#222;margin-top:4mm}
+    .fc-tbl{width:100%;border-collapse:collapse;margin:8mm 0 4mm;font-size:11pt}
+    .fc-tbl th{background:#F5F2E9;border:1px solid #E0DCCF;padding:2.4mm 3mm;font-weight:800;color:#4a4a4a;font-size:10.5pt}
+    .fc-tbl td{border:1px solid #E0DCCF;padding:2.4mm 3mm;text-align:center;color:#222}
+    .cert-sheet.former .cert-statement{margin:8mm 0 6mm;font-size:12.5pt}
     .cert-orgname{font-size:22pt;font-weight:800;letter-spacing:3px;color:var(--c-accent,#1a2440);}
     .cert-orgen{font-size:8.5pt;letter-spacing:4px;color:#888;margin-top:2px;}
     .cert-rep{position:relative;display:inline-block;margin-top:10mm;font-size:15pt;letter-spacing:2px;}
