@@ -79,6 +79,9 @@ const MENU = [
       { key:'actexp', label:'활동 경비', icon:'festival', href:'act-expense.html',
         desc:'행사별 회비 · 지출 · 회계 보고',
         tabs:['활동 목록','참가자·회비','지출','회계 보고'] },
+      { key:'buildexp', label:'공사 경비', icon:'construction', href:'build-expense.html',
+        desc:'선입금 · 집행 · 정산 (지정된 담당자만)', admin:true,
+        tabs:['공사 목록','선입금','집행','정산 보고'] },
     ]
   },
   {

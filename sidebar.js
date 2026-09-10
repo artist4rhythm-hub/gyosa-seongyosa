@@ -206,7 +206,7 @@ function sbVisibleGroups(){
   const admin = sbIsAdmin();
   return MENU
     .filter(g => !g.admin || admin)
-    .map(g => ({ ...g, items: g.items.filter(it => (!it.admin || admin) && !(it.deny||[]).includes(SB_USER?.role) && !((SB_USER?.pageDeny)||[]).includes(it.key)) }))
+    .map(g => ({ ...g, items: g.items.filter(it => (!it.admin || admin || ((SB_USER?.pageAllow)||[]).includes(it.key)) && !(it.deny||[]).includes(SB_USER?.role) && !((SB_USER?.pageDeny)||[]).includes(it.key)) }))
     .filter(g => g.items.length);
 }
 

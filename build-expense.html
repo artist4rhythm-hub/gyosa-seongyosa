@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>공사 경비 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="theme.css">
+<script src="loading.js"></script>
+<style>
+:root{
+  --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
+  --iv:#F2F0EB; --ivd:#E3E1DA; --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#fff;
+  --amber:#B45309; --amberp:#FFF4E5; --red:#C0392B; --redp:#FDECEA;
+  --blu:#1D4ED8; --blup:#E5EDFC; --grn:#166534; --grnp:#DCFCE7;
+  --sh:0 2px 12px rgba(30,57,50,.08); --r:12px;
+}
+#gate{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:var(--iv);z-index:100}
+#gate .gbox{text-align:center;max-width:340px;padding:20px}
+#gate .gtitle{font-size:17px;font-weight:900;color:var(--gd);margin-bottom:8px}
+#gate .gsub{font-size:13px;color:var(--ts);line-height:1.7}
+#gate .gbtn{display:inline-block;margin-top:14px;font-size:13px;font-weight:700;color:#fff;
+  background:var(--gd);border-radius:9px;padding:9px 18px;text-decoration:none}
+#ms{display:none;flex-direction:column;gap:12px;max-width:1080px;margin:0 auto;padding:4px 4px 80px}
+.panel{background:var(--wh);border:1px solid var(--ivd);border-radius:var(--r);padding:16px;box-shadow:var(--sh)}
+.ptitle{font-size:15px;font-weight:900;color:var(--gd);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pdesc{font-size:12px;color:var(--ts);margin-top:3px;line-height:1.6}
+.btn{font-family:inherit;font-size:12.5px;font-weight:800;padding:8px 14px;border-radius:9px;
+  border:1px solid var(--gm);background:var(--gm);color:#fff;cursor:pointer}
+.btn.line{background:var(--wh);color:var(--gm)}
+.btn.gray{background:var(--wh);border-color:var(--ivd);color:var(--ts)}
+.btn.red{background:var(--wh);border-color:var(--red);color:var(--red)}
+.btn.gold{background:#D8B45A;border-color:#D8B45A;color:#4A3A12}
+.btn.sm{font-size:11px;padding:6px 10px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.pill{font-size:10.5px;font-weight:900;border-radius:100px;padding:2px 9px}
+.pill.run{background:var(--grnp);color:var(--grn)}
+.pill.prep{background:var(--iv);color:var(--tl)}
+.pill.done{background:var(--blup);color:var(--blu)}
+.pill.lock{background:#EEF1EE;color:#7C8A80}
+.chip{font-size:10.5px;font-weight:800;border-radius:8px;padding:2px 8px;background:var(--iv);color:var(--ts)}
+.chip.card{background:var(--blup);color:var(--blu)}
+.chip.cash{background:var(--amberp);color:var(--amber)}
+.chip.acct{background:var(--grnp);color:var(--grn)}
+.chip.warn{background:var(--redp);color:var(--red)}
+/* 공사 카드 */
+.jcard{border:1px solid var(--ivd);border-radius:13px;padding:12px 13px;margin-bottom:9px;background:var(--wh);cursor:pointer}
+.jcard:hover{border-color:var(--gm)}
+.jtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.jtop b{font-size:14.5px;font-weight:900;color:var(--gd)}
+.jmeta{font-size:11px;color:var(--tl);font-weight:700}
+.jbar{height:8px;border-radius:100px;background:var(--iv);margin:9px 0 7px;overflow:hidden}
+.jbar i{display:block;height:100%;background:#E08A5B}
+.jbar i.over{background:var(--red)}
+.jnums{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;font-weight:800}
+.jnums span{color:var(--tl)}
+.jnums b{font-variant-numeric:tabular-nums}
+.n-in{color:var(--grn)}.n-out{color:var(--amber)}.n-bal{color:#0C2A44}.n-bal.minus{color:var(--red)}
+/* 탭 */
+.dtabs{display:flex;gap:5px;flex-wrap:wrap;margin:10px 0}
+.dtab{font-family:inherit;font-size:11.5px;font-weight:800;color:var(--ts);background:var(--wh);
+  border:1.5px solid var(--ivd);border-radius:10px;padding:6px 11px;cursor:pointer}
+.dtab.on{background:var(--gd);border-color:var(--gd);color:#fff}
+/* 표 */
+.tblwrap{overflow-x:auto;border:1px solid var(--ivd);border-radius:11px}
+table.tb{width:100%;border-collapse:collapse;font-size:12px}
+table.tb th{background:var(--gp);color:var(--gd);font-weight:900;font-size:11px;padding:8px;text-align:left;
+  border-bottom:2px solid var(--ivd);white-space:nowrap}
+table.tb td{padding:7px 8px;border-bottom:1px solid #EFECE4;vertical-align:middle}
+table.tb td.c,table.tb th.c{text-align:center}
+table.tb td.r,table.tb th.r{text-align:right;font-variant-numeric:tabular-nums}
+table.tb tr:nth-child(even) td{background:#FBFAF6}
+.tiny{font-size:10.5px;color:var(--tl);font-weight:700}
+.rcpt{font-size:10px;font-weight:800;color:var(--grn);background:var(--grnp);border-radius:7px;padding:1px 7px}
+.rcpt.no{background:var(--redp);color:var(--red)}
+/* 폼 */
+.form{background:var(--iv);border:1px solid var(--ivd);border-radius:12px;padding:12px}
+.frow{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.flab{width:80px;flex:none;font-size:11.5px;font-weight:800;color:var(--ts)}
+.fin{flex:1;min-width:120px;background:var(--wh);border:1.5px solid var(--ivd);border-radius:9px;
+  padding:8px 10px;font-family:inherit;font-size:12.5px;color:var(--tx)}
+.fin.num{text-align:right;font-variant-numeric:tabular-nums;font-weight:800}
+.fin.w{flex:0 0 130px;min-width:0}
+.drop{border:1.5px dashed var(--ivd);border-radius:11px;padding:12px;text-align:center;background:var(--wh);
+  font-size:11.5px;color:var(--tl);font-weight:700;cursor:pointer}
+.thumb{max-height:70px;border-radius:8px;border:1px solid var(--ivd)}
+/* 요약 */
+.sumgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
+.sbox{background:var(--wh);border:1px solid var(--ivd);border-radius:12px;padding:11px 8px;text-align:center}
+.sbox b{display:block;font-size:18px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.25}
+.sbox span{font-size:10.5px;font-weight:800;color:var(--tl)}
+.sbox.in b{color:var(--grn)}.sbox.out b{color:var(--amber)}.sbox.bal b{color:#0C2A44}
+.sbox.bal.minus b{color:var(--red)}.sbox.clm b{color:var(--blu)}
+/* 모달 */
+.modal-bg{position:fixed;inset:0;background:rgba(20,26,32,.45);z-index:1200;display:flex;
+  align-items:center;justify-content:center;padding:20px}
+.modal{background:var(--wh);border-radius:14px;padding:18px;max-width:520px;width:100%;max-height:88vh;overflow:auto}
+.mtitle{font-size:15px;font-weight:900;color:var(--gd);margin-bottom:4px}
+.msub{font-size:11.5px;color:var(--ts);margin-bottom:12px;line-height:1.7}
+.mfoot{display:flex;gap:7px;justify-content:flex-end;margin-top:12px}
+@media print{ .no-print{display:none !important} body{background:#fff} }
+</style>
+</head>
+<body>
+<div id="tb"></div><div id="sb"></div>
+<div id="gate"><div class="gbox">
+  <div class="gtitle">🏗 공사 경비</div>
+  <div class="gsub" id="gate-msg">확인 중…</div>
+  <a class="gbtn" id="gate-btn" href="index.html" style="display:none">홈으로</a>
+</div></div>
+<div id="ms"></div>
+<div id="modal-mount"></div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
+  collection, getDocs, query, where, Timestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
+});
+const auth = getAuth(app);
+const db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+
+const $I = id => document.getElementById(id);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const fmt = n => (Number(n)||0).toLocaleString('ko-KR');
+const todayDs = ()=>{ const d=new Date(), p=x=>String(x).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+const mmdd = ds => ds ? `${Number(String(ds).slice(5,7))}.${String(ds).slice(8,10)}` : '';
+const ORGS = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const toast = (t,kind)=>{ const el=document.createElement('div'); el.textContent=t;
+  el.style.cssText=`position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:${kind==='err'?'#C0392B':'#1E3932'};color:#fff;padding:10px 16px;border-radius:100px;font-size:13px;font-weight:700;z-index:9999;max-width:88vw;text-align:center`;
+  document.body.appendChild(el); setTimeout(()=>el.remove(),2600); };
+window.closeModal = ()=> document.querySelector('.modal-bg')?.remove();
+function openModal(html, wide){
+  closeModal();
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  bg.addEventListener('click', ev=>{ if(ev.target===bg) closeModal(); });
+  bg.innerHTML = `<div class="modal"${wide?' style="max-width:720px"':''}>${html}</div>`;
+  document.body.appendChild(bg); return bg;
+}
+
+/* ═══ 상태 ═══ */
+let CU=null, IS_SUPER=false, BLD_ADMIN=false;
+let LEDGERS=[], CUR=null, PRE=[], EXP=[], STAFF=[];
+let TAB='pre', VIEW='list';
+const MODE_L = { prepay:'선입금형', claim:'후청구형', mixed:'혼합' };
+const METHOD_L = { card:'카드', cash:'현금', acct:'계좌' };
+const canAdmin = ()=> IS_SUPER || BLD_ADMIN;
+const canMgr = l => canAdmin() || ((l?.managers)||[]).includes(CU?.uid);
+const isLocked = ()=> !!(CUR && (CUR.locked || CUR.status==='done'));
+const myOrgs = ()=> (window.orgCore ? orgCore.myOrgs(CU,'std') : (CU?.orgs?.length?CU.orgs:[CU?.org]));
+
+/* ═══ 집계 ═══ */
+const preSum = id => PRE.filter(p=>p.ledgerId===id).reduce((s,p)=>s+(Number(p.amount)||0),0);
+const expSum = id => EXP.filter(e=>e.ledgerId===id).reduce((s,e)=>s+(Number(e.subtotal ?? e.amount)||0),0);
+const claimSum = id => EXP.filter(e=>e.ledgerId===id && e.claim && !e.claimedAt)
+  .reduce((s,e)=>s+(Number(e.subtotal ?? e.amount)||0),0);
+const noRcpt = id => EXP.filter(e=>e.ledgerId===id && !e.receiptImg).length;
+
+/* ═══ 적재 ═══ */
+async function loadLedgers(){
+  try{
+    const snap = await getDocs(collection(db,'bldLedgers'));
+    const orgs = myOrgs();
+    LEDGERS = snap.docs.map(d=>({id:d.id, ...d.data()}))
+      .filter(l=>!l.deleted && orgs.includes(l.org||'daniel'))
+      .filter(l=>canAdmin() || (l.managers||[]).includes(CU.uid))
+      .sort((a,b)=>String(b.startDs||'').localeCompare(String(a.startDs||'')));
+  }catch(e){ LEDGERS=[]; console.error('[공사] 목록 실패', e); }
+  // 목록 카드의 숫자를 위해 전체 하위 기록을 한 번에 (건수가 적은 원장이라 안전)
+  try{
+    const [ps, es] = await Promise.all([ getDocs(collection(db,'bldPrepays')), getDocs(collection(db,'bldExpenses')) ]);
+    PRE = ps.docs.map(d=>({id:d.id, ...d.data()})).filter(x=>!x.deleted);
+    EXP = es.docs.map(d=>({id:d.id, ...d.data()})).filter(x=>!x.deleted);
+  }catch(e){ PRE=[]; EXP=[]; }
+}
+async function loadStaff(){
+  if(STAFF.length) return STAFF;
+  try{ const s = await getDocs(collection(db,'staff'));
+    STAFF = s.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>!x.deleted && x.status!=='퇴직'); }
+  catch(e){ STAFF=[]; }
+  return STAFF;
+}
+
+/* ═══ 목록 화면 ═══ */
+function renderList(){
+  VIEW='list';
+  $I('ms').innerHTML = `
+    <div class="panel">
+      <div class="ptitle">🏗 공사 경비
+        ${canAdmin()?'<span class="pill run">총괄</span>':'<span class="pill prep">담당</span>'}
+        <span style="margin-left:auto" class="row">
+          ${canAdmin()?`<button class="btn" onclick="openLedgerForm()">＋ 새 공사 만들기</button>`:''}
+        </span></div>
+      <div class="pdesc">선입금을 받아 집행하고 정산하는 공사 전용 장부입니다. 공사마다 담당자를 정하고, 담당자는 영수증을 한 건씩 기록합니다.</div>
+    </div>
+    <div class="panel">
+      ${LEDGERS.length ? LEDGERS.map(cardHTML).join('') :
+        `<div class="pdesc" style="text-align:center;padding:22px 0">
+          아직 등록된 공사가 없습니다${canAdmin()?' — 「＋ 새 공사 만들기」로 시작하세요':' — 총괄 담당자가 공사를 만들고 담당으로 지정하면 여기에 보입니다'}.</div>`}
+    </div>`;
+}
+function cardHTML(l){
+  const p=preSum(l.id), x=expSum(l.id), bal=p-x, cl=claimSum(l.id), nr=noRcpt(l.id);
+  const pct = p>0 ? Math.min(100, Math.round(x/p*100)) : (x>0?100:0);
+  const st = l.locked||l.status==='done' ? '<span class="pill done">정산 완료</span>'
+    : l.status==='run' ? '<span class="pill run">진행 중</span>' : '<span class="pill prep">준비</span>';
+  return `<div class="jcard" onclick="openLedger('${l.id}')">
+    <div class="jtop"><b>${esc(l.name||'(이름 없음)')}</b>${st}
+      ${l.locked?'<span class="pill lock">🔒 잠김</span>':''}
+      <span class="chip">${MODE_L[l.fund||'prepay']}</span>
+      <span class="jmeta" style="margin-left:auto">${esc(ORGS[l.org]||l.org||'')}${l.startDs?` · ${l.startDs}${l.endDs?` ~ ${l.endDs}`:''}`:''} · 담당 ${esc((l.managerNames||[]).join(' · ')||'—')}</span></div>
+    <div class="jbar"><i class="${bal<0?'over':''}" style="width:${pct}%"></i></div>
+    <div class="jnums">
+      <span>선입금 <b class="n-in">${fmt(p)}</b></span>
+      <span>집행 <b class="n-out">${fmt(x)}</b></span>
+      <span>잔액 <b class="n-bal${bal<0?' minus':''}">${fmt(bal)}</b></span>
+      ${cl?`<span>청구 예정 <b style="color:var(--blu)">${fmt(cl)}</b></span>`:''}
+      <span class="tiny">영수증 ${EXP.filter(e=>e.ledgerId===l.id&&e.receiptImg).length}건${nr?` · 미첨부 ${nr}`:''}</span>
+    </div></div>`;
+}
+window.openLedger = id => { CUR = LEDGERS.find(l=>l.id===id) || null; TAB='pre'; renderDetail(); window.scrollTo(0,0); };
+window.backToList = ()=>{ CUR=null; renderList(); window.scrollTo(0,0); };
+window.setTab = t => { TAB=t; renderDetail(); };
+
+/* ═══ 상세 ═══ */
+function renderDetail(){
+  if(!CUR){ renderList(); return; }
+  VIEW='detail';
+  const p=preSum(CUR.id), x=expSum(CUR.id), bal=p-x, cl=claimSum(CUR.id);
+  const mgr = canMgr(CUR);
+  $I('ms').innerHTML = `
+    <div class="panel no-print">
+      <div class="row">
+        <button class="btn gray sm" onclick="backToList()">‹ 목록</button>
+        <div class="ptitle" style="margin-left:4px">🏗 ${esc(CUR.name||'')}
+          ${CUR.locked?'<span class="pill lock">🔒 잠김</span>':''}
+          <span class="chip">${MODE_L[CUR.fund||'prepay']}</span></div>
+        <span class="jmeta" style="margin-left:auto">${CUR.startDs||''}${CUR.endDs?` ~ ${CUR.endDs}`:''} · 담당 ${esc((CUR.managerNames||[]).join(' · ')||'—')}</span>
+      </div>
+      <div class="dtabs">
+        <button class="dtab ${TAB==='pre'?'on':''}" onclick="setTab('pre')">💵 선입금</button>
+        <button class="dtab ${TAB==='exp'?'on':''}" onclick="setTab('exp')">🧾 집행</button>
+        <button class="dtab ${TAB==='rep'?'on':''}" onclick="setTab('rep')">📊 정산 보고</button>
+        ${canAdmin()?`<button class="dtab ${TAB==='set'?'on':''}" onclick="setTab('set')">⚙ 설정</button>`:''}
+      </div>
+      <div class="sumgrid" style="margin-bottom:0">
+        <div class="sbox in"><b>${fmt(p)}</b><span>선입금</span></div>
+        <div class="sbox out"><b>${fmt(x)}</b><span>집행${p>0?` (${Math.round(x/p*100)}%)`:''}</span></div>
+        <div class="sbox bal${bal<0?' minus':''}"><b>${fmt(bal)}</b><span>${bal<0?'초과 집행':'잔액'}</span></div>
+        ${(CUR.fund==='claim'||CUR.fund==='mixed'||cl)?`<div class="sbox clm"><b>${fmt(cl)}</b><span>청구 예정</span></div>`:''}
+      </div>
+    </div>
+    <div class="panel" id="tab-body"></div>`;
+  const body = $I('tab-body');
+  if(TAB==='pre') body.innerHTML = preTabHTML(mgr);
+  else if(TAB==='exp') body.innerHTML = expTabHTML(mgr);
+  else if(TAB==='rep') body.innerHTML = repTabHTML();
+  else body.innerHTML = setTabHTML();
+}
+
+/* ── 💵 선입금 ── */
+function preTabHTML(){
+  const list = PRE.filter(p=>p.ledgerId===CUR.id).sort((a,b)=>String(a.ds||'').localeCompare(String(b.ds||'')));
+  const tot = list.reduce((s,p)=>s+(Number(p.amount)||0),0);
+  const canEdit = canAdmin() && !isLocked();
+  return `<div class="ptitle">💵 선입금 <span class="pdesc" style="margin:0 0 0 6px">어디서 · 얼마를 받았는지</span>
+      ${canEdit?`<button class="btn sm" style="margin-left:auto" onclick="openPreForm()">＋ 선입금 기록</button>`:''}</div>
+    <div class="pdesc" style="margin-bottom:10px">${canAdmin()?'선입금은 총괄 담당자만 입력·수정합니다.':'선입금은 총괄 담당자가 관리합니다 — 보기 전용이에요.'}</div>
+    <div class="tblwrap"><table class="tb">
+      <tr><th>받은 날</th><th>출처</th><th class="c">방법</th><th class="r">금액</th><th>메모</th><th class="c">증빙</th>${canEdit?'<th class="c">관리</th>':''}</tr>
+      ${list.length ? list.map(p=>`<tr>
+        <td>${mmdd(p.ds)}</td><td><b>${esc(p.src||'')}</b></td>
+        <td class="c"><span class="chip ${p.method||'acct'}">${METHOD_L[p.method]||'계좌'}</span></td>
+        <td class="r"><b>${fmt(p.amount)}</b></td><td class="tiny">${esc(p.memo||'')}</td>
+        <td class="c">${p.receiptImg?`<span class="rcpt" onclick="viewImg('${p.id}','pre')" style="cursor:pointer">📎 보기</span>`:'<span class="rcpt no">없음</span>'}</td>
+        ${canEdit?`<td class="c"><button class="btn gray sm" onclick="openPreForm('${p.id}')">고침</button>
+          <button class="btn red sm" onclick="delPre('${p.id}')">삭제</button></td>`:''}
+      </tr>`).join('') : `<tr><td colspan="${canEdit?7:6}" class="c tiny" style="padding:20px">아직 선입금 기록이 없습니다.</td></tr>`}
+      ${list.length?`<tr style="background:var(--gp)"><td colspan="3" style="font-weight:900;color:var(--gd)">선입금 합계</td>
+        <td class="r" style="font-weight:900;color:var(--grn)">${fmt(tot)}</td><td colspan="${canEdit?3:2}"></td></tr>`:''}
+    </table></div>`;
+}
+window.openPreForm = (id)=>{
+  const p = id ? PRE.find(x=>x.id===id) : null;
+  openModal(`<div class="mtitle">💵 ${p?'선입금 고치기':'선입금 기록'}</div>
+    <div class="msub">공사 대금으로 미리 받은 돈을 남깁니다. 출처는 자유롭게 적으세요(본부 지원금·○○교회 후원·보험금 등).</div>
+    <div class="form">
+      <div class="frow"><span class="flab">받은 날</span><input type="date" id="pf-ds" class="fin w" value="${p?.ds||todayDs()}">
+        <span class="flab" style="width:auto">방법</span>
+        <select id="pf-method" class="fin w">${['acct','cash','card'].map(m=>`<option value="${m}"${(p?.method||'acct')===m?' selected':''}>${METHOD_L[m]}</option>`).join('')}</select></div>
+      <div class="frow"><span class="flab">출처</span><input id="pf-src" class="fin" value="${esc(p?.src||'')}" placeholder="예: 본부 시설지원금"></div>
+      <div class="frow"><span class="flab">금액</span><input id="pf-amt" class="fin num w" type="number" value="${p?.amount||''}" placeholder="0"><span class="tiny">원</span></div>
+      <div class="frow"><span class="flab">메모</span><input id="pf-memo" class="fin" value="${esc(p?.memo||'')}" placeholder="입금자명·지정 용도 등 (선택)"></div>
+      <div class="drop" onclick="document.getElementById('pf-img').click()" id="pf-drop">${p?.receiptImg?'📎 증빙 있음 — 눌러서 교체':'📎 입금 증빙 올리기 (선택)'}</div>
+      <input type="file" id="pf-img" accept="image/*" style="display:none" onchange="pickImg(this,'pf')">
+    </div>
+    <div class="mfoot"><button class="btn gray" onclick="closeModal()">취소</button>
+      <button class="btn" onclick="savePre('${id||''}')">저장</button></div>`);
+  window.__img = p?.receiptImg || '';
+};
+window.pickImg = (input, pfx)=>{
+  const f = input.files?.[0]; if(!f) return;
+  if(f.size > 4*1024*1024){ toast('이미지가 너무 큽니다 (4MB 이하)','err'); return; }
+  const r = new FileReader();
+  r.onload = ()=>{ window.__img = r.result;
+    const d=$I(pfx+'-drop'); if(d) d.innerHTML = `<img src="${r.result}" class="thumb"><div class="tiny" style="margin-top:5px">눌러서 교체</div>`; };
+  r.readAsDataURL(f);
+};
+window.savePre = async (id)=>{
+  if(!canAdmin() || isLocked()) return;
+  const ds=$I('pf-ds').value, src=$I('pf-src').value.trim(), amount=Number($I('pf-amt').value)||0;
+  if(!src){ toast('출처를 적어주세요','err'); return; }
+  if(amount<=0){ toast('금액을 넣어주세요','err'); return; }
+  const data = { ledgerId:CUR.id, org:CUR.org||'daniel', ds, src, amount,
+    method:$I('pf-method').value, memo:$I('pf-memo').value.trim(), receiptImg:window.__img||'' };
+  try{
+    if(id){ await updateDoc(doc(db,'bldPrepays',id), data); Object.assign(PRE.find(x=>x.id===id), data); }
+    else { data.createdAt=Timestamp.now(); data.byUid=CU.uid; data.byName=CU.name||'';
+      const ref = await addDoc(collection(db,'bldPrepays'), data); PRE.push({id:ref.id, ...data}); }
+    closeModal(); renderDetail(); toast('저장했습니다');
+  }catch(e){ toast('저장 실패: '+(e.code==='permission-denied'?'보안 규칙(bldPrepays) 게시가 필요합니다':(e.message||'')),'err'); }
+};
+window.delPre = async id=>{
+  if(!canAdmin() || isLocked()) return;
+  const p = PRE.find(x=>x.id===id); if(!p) return;
+  if(!confirm(`${p.src} ${fmt(p.amount)}원 선입금 기록을 지울까요?`)) return;
+  try{ await deleteDoc(doc(db,'bldPrepays',id)); PRE = PRE.filter(x=>x.id!==id); renderDetail(); toast('지웠습니다'); }
+  catch(e){ toast('삭제 실패','err'); }
+};
+window.viewImg = (id, kind)=>{
+  const src = (kind==='pre'?PRE:EXP).find(x=>x.id===id)?.receiptImg; if(!src) return;
+  openModal(`<div class="mtitle">📎 증빙</div><img src="${src}" style="width:100%;border-radius:10px">
+    <div class="mfoot"><button class="btn gray" onclick="closeModal()">닫기</button></div>`, true);
+};
+
+/* ── 🧾 집행 ── */
+function expTabHTML(mgr){
+  const list = EXP.filter(e=>e.ledgerId===CUR.id).sort((a,b)=>String(a.ds||'').localeCompare(String(b.ds||'')));
+  const tot = list.reduce((s,e)=>s+(Number(e.subtotal ?? e.amount)||0),0);
+  const canEdit = mgr && !isLocked();
+  const byM = m => list.filter(e=>(e.method||'card')===m).length;
+  return `<div class="ptitle">🧾 집행 <span class="pdesc" style="margin:0 0 0 6px">영수증 한 건에 한 줄</span>
+      ${canEdit?`<button class="btn sm" style="margin-left:auto" onclick="openExpForm()">＋ 집행 기록</button>`:''}</div>
+    <div class="row" style="margin:8px 0 10px">
+      <span class="chip">전체 ${list.length}</span>
+      <span class="chip card">카드 ${byM('card')}</span><span class="chip cash">현금 ${byM('cash')}</span>
+      <span class="chip acct">계좌 ${byM('acct')}</span>
+      ${noRcpt(CUR.id)?`<span class="chip warn">영수증 미첨부 ${noRcpt(CUR.id)}</span>`:''}
+      ${claimSum(CUR.id)?`<span class="chip" style="background:var(--blup);color:var(--blu)">청구 예정 ${fmt(claimSum(CUR.id))}원</span>`:''}
+    </div>
+    <div class="tblwrap"><table class="tb">
+      <tr><th class="c">#</th><th>날짜</th><th>항목</th><th>업체</th><th class="c">분류</th><th class="c">결제</th>
+        <th class="r">금액</th><th class="c">청구</th><th class="c">증빙</th><th>담당</th>${canEdit?'<th class="c">관리</th>':''}</tr>
+      ${list.length ? list.map((e,i)=>`<tr>
+        <td class="c tiny">${i+1}</td><td>${mmdd(e.ds)}</td><td><b>${esc(e.item||'')}</b>${e.detail?`<div class="tiny">${esc(e.detail)}</div>`:''}</td>
+        <td class="tiny">${esc(e.vendor||'')}</td>
+        <td class="c"><span class="chip">${esc(e.cat||'기타')}</span></td>
+        <td class="c"><span class="chip ${e.method||'card'}">${METHOD_L[e.method]||'카드'}</span></td>
+        <td class="r"><b>${fmt(e.subtotal ?? e.amount)}</b></td>
+        <td class="c">${e.claim?(e.claimedAt?'<span class="chip acct">청구 완료</span>':'<span class="chip" style="background:var(--blup);color:var(--blu)">예정</span>'):'<span class="tiny">—</span>'}</td>
+        <td class="c">${e.receiptImg?`<span class="rcpt" onclick="viewImg('${e.id}','exp')" style="cursor:pointer">📎</span>`:'<span class="rcpt no">없음</span>'}</td>
+        <td class="tiny">${esc(e.byName||'')}</td>
+        ${canEdit?`<td class="c"><button class="btn gray sm" onclick="openExpForm('${e.id}')">고침</button>
+          <button class="btn red sm" onclick="delExp('${e.id}')">삭제</button></td>`:''}
+      </tr>`).join('') : `<tr><td colspan="${canEdit?11:10}" class="c tiny" style="padding:20px">아직 집행 기록이 없습니다.</td></tr>`}
+      ${list.length?`<tr style="background:var(--gp)"><td colspan="6" style="font-weight:900;color:var(--gd)">집행 합계 (${list.length}건)</td>
+        <td class="r" style="font-weight:900;color:var(--amber)">${fmt(tot)}</td><td colspan="${canEdit?4:3}"></td></tr>`:''}
+    </table></div>`;
+}
+window.openExpForm = (id)=>{
+  const e = id ? EXP.find(x=>x.id===id) : null;
+  const cats = (CUR.cats && CUR.cats.length) ? CUR.cats : ['자재','인건비','장비','기타'];
+  const defClaim = e ? !!e.claim : (CUR.fund==='claim');
+  openModal(`<div class="mtitle">🧾 ${e?'집행 고치기':'집행 기록'}</div>
+    <div class="msub">결재 없이 바로 기록됩니다. 카드로 먼저 쓰고 나중에 청구할 건이면 <b>「나중에 청구」</b>를 켜두세요.</div>
+    <div class="form">
+      <div class="frow"><span class="flab">날짜</span><input type="date" id="ef-ds" class="fin w" value="${e?.ds||todayDs()}">
+        <span class="flab" style="width:auto">분류</span>
+        <select id="ef-cat" class="fin w">${cats.map(c=>`<option${(e?.cat||cats[0])===c?' selected':''}>${esc(c)}</option>`).join('')}</select></div>
+      <div class="frow"><span class="flab">항목</span><input id="ef-item" class="fin" value="${esc(e?.item||'')}" placeholder="예: 타일 자재"></div>
+      <div class="frow"><span class="flab">업체</span><input id="ef-vendor" class="fin" value="${esc(e?.vendor||'')}" placeholder="예: 대성타일"></div>
+      <div class="frow"><span class="flab">금액</span><input id="ef-amt" class="fin num w" type="number" value="${e?.subtotal ?? e?.amount ?? ''}" placeholder="0"><span class="tiny">원</span>
+        <span class="flab" style="width:auto">결제</span>
+        <select id="ef-method" class="fin w">${['card','cash','acct'].map(m=>`<option value="${m}"${(e?.method||'card')===m?' selected':''}>${METHOD_L[m]}</option>`).join('')}</select></div>
+      <div class="frow"><span class="flab">메모</span><input id="ef-detail" class="fin" value="${esc(e?.detail||'')}" placeholder="수량·규격 등 (선택)"></div>
+      <div class="frow"><span class="flab">청구</span>
+        <label class="tiny" style="display:inline-flex;gap:6px;align-items:center;font-size:12px;font-weight:800">
+          <input type="checkbox" id="ef-claim" ${defClaim?'checked':''} style="width:16px;height:16px"> 나중에 청구할 건 (선입금에서 쓴 게 아님)</label>
+        ${e?.claim?`<label class="tiny" style="display:inline-flex;gap:6px;align-items:center;font-size:12px;font-weight:800;margin-left:10px">
+          <input type="checkbox" id="ef-claimed" ${e.claimedAt?'checked':''} style="width:16px;height:16px"> 청구 완료</label>`:''}
+      </div>
+      <div class="drop" onclick="document.getElementById('ef-img').click()" id="ef-drop">${e?.receiptImg?'📎 영수증 있음 — 눌러서 교체':'📎 영수증 사진 올리기'}</div>
+      <input type="file" id="ef-img" accept="image/*" style="display:none" onchange="pickImg(this,'ef')">
+    </div>
+    <div class="mfoot"><button class="btn gray" onclick="closeModal()">취소</button>
+      <button class="btn" onclick="saveExp('${id||''}')">저장</button></div>`);
+  window.__img = e?.receiptImg || '';
+};
+window.saveExp = async (id)=>{
+  if(!canMgr(CUR) || isLocked()) return;
+  const item=$I('ef-item').value.trim(), amount=Number($I('ef-amt').value)||0;
+  if(!item){ toast('항목을 적어주세요','err'); return; }
+  if(amount<=0){ toast('금액을 넣어주세요','err'); return; }
+  const claim = $I('ef-claim').checked;
+  const claimedEl = $I('ef-claimed');
+  const data = { ledgerId:CUR.id, org:CUR.org||'daniel', ds:$I('ef-ds').value, item,
+    vendor:$I('ef-vendor').value.trim(), cat:$I('ef-cat').value, detail:$I('ef-detail').value.trim(),
+    amount, subtotal:amount, method:$I('ef-method').value, claim,
+    claimedAt: (claim && claimedEl && claimedEl.checked) ? Timestamp.now() : null,
+    receiptImg: window.__img||'' };
+  try{
+    if(id){ await updateDoc(doc(db,'bldExpenses',id), data); Object.assign(EXP.find(x=>x.id===id), data); }
+    else { data.createdAt=Timestamp.now(); data.byUid=CU.uid; data.byName=CU.name||'';
+      const ref = await addDoc(collection(db,'bldExpenses'), data); EXP.push({id:ref.id, ...data}); }
+    closeModal(); renderDetail(); toast('저장했습니다');
+  }catch(e){ toast('저장 실패: '+(e.code==='permission-denied'?'보안 규칙(bldExpenses) 게시가 필요합니다':(e.message||'')),'err'); }
+};
+window.delExp = async id=>{
+  if(!canMgr(CUR) || isLocked()) return;
+  const e = EXP.find(x=>x.id===id); if(!e) return;
+  if(!confirm(`${e.item} ${fmt(e.subtotal ?? e.amount)}원 집행 기록을 지울까요?`)) return;
+  try{ await deleteDoc(doc(db,'bldExpenses',id)); EXP = EXP.filter(x=>x.id!==id); renderDetail(); toast('지웠습니다'); }
+  catch(e){ toast('삭제 실패','err'); }
+};
+
+/* ── 📊 정산 보고 ── */
+function repTabHTML(){
+  const list = EXP.filter(e=>e.ledgerId===CUR.id);
+  const tot = list.reduce((s,e)=>s+(Number(e.subtotal ?? e.amount)||0),0);
+  const byCat = {}; list.forEach(e=>{ const c=e.cat||'기타';
+    (byCat[c]=byCat[c]||{n:0,sum:0}); byCat[c].n++; byCat[c].sum += Number(e.subtotal ?? e.amount)||0; });
+  const pre = PRE.filter(p=>p.ledgerId===CUR.id);
+  const bySrc = {}; pre.forEach(p=>{ const s=p.src||'기타'; bySrc[s]=(bySrc[s]||0)+(Number(p.amount)||0); });
+  return `<div class="ptitle">📊 정산 보고</div>
+    <div class="pdesc" style="margin-bottom:10px">표 파일과 영수증 모음을 뽑을 수 있어요. 잠긴 공사도 출력은 언제나 가능합니다.</div>
+    <div class="row no-print" style="margin-bottom:12px">
+      <button class="btn gold" onclick="exportCSV()">📗 표 파일 내려받기</button>
+      <button class="btn gold" onclick="printReceipts()">🧾 영수증 모음 PDF</button>
+      <button class="btn gray" onclick="window.print()">🖨 이 화면 인쇄</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px">
+      <div><div class="ptitle" style="font-size:13px;margin-bottom:6px">💵 출처별 선입금</div>
+        <div class="tblwrap"><table class="tb"><tr><th>출처</th><th class="r">금액</th></tr>
+        ${Object.keys(bySrc).length? Object.entries(bySrc).sort((a,b)=>b[1]-a[1]).map(([s,v])=>
+          `<tr><td><b>${esc(s)}</b></td><td class="r"><b>${fmt(v)}</b></td></tr>`).join('')
+          : '<tr><td colspan="2" class="c tiny" style="padding:14px">기록 없음</td></tr>'}
+        </table></div></div>
+      <div><div class="ptitle" style="font-size:13px;margin-bottom:6px">🧾 분류별 집행</div>
+        <div class="tblwrap"><table class="tb"><tr><th>분류</th><th class="c">건수</th><th class="r">금액</th><th class="r">비중</th></tr>
+        ${Object.keys(byCat).length? Object.entries(byCat).sort((a,b)=>b[1].sum-a[1].sum).map(([c,v])=>
+          `<tr><td><b>${esc(c)}</b></td><td class="c">${v.n}</td><td class="r"><b>${fmt(v.sum)}</b></td>
+            <td class="r tiny">${tot?Math.round(v.sum/tot*100):0}%</td></tr>`).join('')
+          : '<tr><td colspan="4" class="c tiny" style="padding:14px">기록 없음</td></tr>'}
+        </table></div></div>
+    </div>`;
+}
+window.exportCSV = ()=>{
+  const list = EXP.filter(e=>e.ledgerId===CUR.id).sort((a,b)=>String(a.ds||'').localeCompare(String(b.ds||'')));
+  const pre = PRE.filter(p=>p.ledgerId===CUR.id).sort((a,b)=>String(a.ds||'').localeCompare(String(b.ds||'')));
+  const q = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const rows = [];
+  rows.push([q('공사'), q(CUR.name||''), q('기간'), q(`${CUR.startDs||''} ~ ${CUR.endDs||''}`), q('자금 방식'), q(MODE_L[CUR.fund||'prepay'])].join(','));
+  rows.push('');
+  rows.push([q('■ 선입금')].join(','));
+  rows.push(['번호','받은 날','출처','방법','금액','메모'].map(q).join(','));
+  pre.forEach((p,i)=> rows.push([i+1, p.ds||'', p.src||'', METHOD_L[p.method]||'', Number(p.amount)||0, p.memo||''].map(q).join(',')));
+  rows.push(['','','','선입금 합계', preSum(CUR.id), ''].map(q).join(','));
+  rows.push('');
+  rows.push([q('■ 집행')].join(','));
+  rows.push(['번호','날짜','항목','업체','분류','결제','금액','청구','영수증','담당','메모'].map(q).join(','));
+  list.forEach((e,i)=> rows.push([i+1, e.ds||'', e.item||'', e.vendor||'', e.cat||'', METHOD_L[e.method]||'',
+    Number(e.subtotal ?? e.amount)||0, e.claim?(e.claimedAt?'청구 완료':'청구 예정'):'', e.receiptImg?'있음':'없음',
+    e.byName||'', e.detail||''].map(q).join(',')));
+  rows.push(['','','','','','집행 합계', expSum(CUR.id), '', '', '', ''].map(q).join(','));
+  rows.push('');
+  rows.push([q('잔액'), q(preSum(CUR.id)-expSum(CUR.id)), q('청구 예정'), q(claimSum(CUR.id))].join(','));
+  const blob = new Blob(['\uFEFF'+rows.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download = `공사경비_${(CUR.name||'').replace(/[\\/:*?"<>|]/g,'')}_${todayDs()}.csv`; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  toast('표 파일을 내려받았습니다');
+};
+/* 🧾 영수증 모음 — 기존 수행성 경비와 같은 규칙(카드 단위 분할 금지·순번 일치) */
+window.printReceipts = async ()=>{
+  const list = EXP.filter(e=>e.ledgerId===CUR.id).sort((a,b)=>String(a.ds||'').localeCompare(String(b.ds||'')));
+  const withR = list.map((e,i)=>({...e, seq:i+1})).filter(e=>e.receiptImg);
+  if(!withR.length){ toast('첨부된 영수증이 없습니다','err'); return; }
+  window.showLoading && showLoading('영수증 모음을 만드는 중…');
+  try{
+    await ensureH2C(); await ensureJsPDF();
+    const holder = document.createElement('div');
+    holder.style.cssText='position:fixed;left:-99999px;top:0;color-scheme:light;--wh:#FFFFFF;--iv:#F2F0EB;--gp:#E8F3EF;';
+    const noR = list.filter(e=>!e.receiptImg);
+    holder.innerHTML = `<style>${window.RCCOL_CSS}</style>
+      <div class="rc-doc">
+        <div class="rc-head"><div class="rc-title">🏗 ${esc(CUR.name||'')} — 영수증 모음</div>
+          <div class="rc-sub">${ORGS[CUR.org]||CUR.org||''} · ${CUR.startDs||''}${CUR.endDs?` ~ ${CUR.endDs}`:''} · 출력 ${todayDs()} · ${esc(CU.name||'')}
+            <br>선입금 ${fmt(preSum(CUR.id))}원 · 집행 ${fmt(expSum(CUR.id))}원 · 잔액 ${fmt(preSum(CUR.id)-expSum(CUR.id))}원 · 영수증 ${withR.length}장</div></div>
+        ${withR.map(e=>`<div class="rc-card">
+          <div class="rc-chd"><span class="rc-seq">${e.seq}</span><span class="rc-subj">${esc(e.item||'')}</span>
+            <span class="rc-meta">${e.ds||''} · ${esc(e.vendor||'')} · ${esc(e.cat||'')} · ${METHOD_L[e.method]||''} · <b>${fmt(e.subtotal ?? e.amount)}원</b> · ${esc(e.byName||'')}</span></div>
+          <div class="rc-grid"><div class="rc-cell wide"><span class="rc-no">${e.seq}</span>
+            <img src="${e.receiptImg}"></div></div></div>`).join('')}
+        ${noR.length?`<div class="rc-card"><div class="rc-chd"><span class="rc-seq">!</span>
+          <span class="rc-subj">영수증 미첨부 ${noR.length}건</span></div>
+          <div style="padding:10px 12px;font-size:11.5px;line-height:1.9">${noR.map(e=>
+            `· ${e.ds||''} ${esc(e.item||'')} — ${fmt(e.subtotal ?? e.amount)}원 (${esc(e.vendor||'')}${e.byName?` · ${esc(e.byName)}`:''})`).join('<br>')}</div></div>`:''}
+        <div class="rc-foot">교사 선교사 시스템 · 공사 경비</div>
+      </div>`;
+    document.body.appendChild(holder);
+    const node = holder.querySelector('.rc-doc');
+    await Promise.all([...node.querySelectorAll('img')].map(im=> im.complete?Promise.resolve():new Promise(r=>{im.onload=r;im.onerror=r;})));
+    const canvas = await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const points = collectBreakPoints(node, canvas, ['.rc-card','.rc-cell']);
+    const hard = collectHardBreaks(node, canvas, '.rc-card', 10);
+    document.body.removeChild(holder);
+    addCanvasToPDF(pdf, canvas, points, {margin:6, quality:0.9, hard});
+    pdf.save(`공사경비_영수증모음_${(CUR.name||'').replace(/[\\/:*?"<>|]/g,'')}.pdf`);
+    window.hideLoading && hideLoading(); toast('PDF를 저장했습니다');
+  }catch(e){ window.hideLoading && hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+};
+
+/* ── ⚙ 설정 ── */
+function setTabHTML(){
+  return `<div class="ptitle">⚙ 설정</div>
+    <div class="pdesc" style="margin-bottom:10px">공사 정보·담당자·분류를 고치고, 정산이 끝나면 잠글 수 있습니다.</div>
+    <div class="row">
+      <button class="btn line" onclick="openLedgerForm('${CUR.id}')">✏️ 공사 정보 고치기</button>
+      <button class="btn ${CUR.locked?'':'gray'}" onclick="toggleLock()">${CUR.locked?'🔓 잠금 풀기':'🔒 정산 완료로 잠그기'}</button>
+      <button class="btn red" style="margin-left:auto" onclick="delLedger()">🗑 공사 지우기</button>
+    </div>`;
+}
+window.toggleLock = async ()=>{
+  if(!canAdmin()) return;
+  const on = !CUR.locked;
+  if(on && !confirm('정산 완료로 잠글까요?\n더 이상 선입금·집행을 고칠 수 없고, 출력만 가능합니다. (언제든 풀 수 있어요)')) return;
+  try{ await updateDoc(doc(db,'bldLedgers',CUR.id), { locked:on, status:on?'done':'run' });
+    CUR.locked=on; CUR.status=on?'done':'run'; renderDetail(); toast(on?'잠갔습니다':'잠금을 풀었습니다'); }
+  catch(e){ toast('처리 실패','err'); }
+};
+window.delLedger = async ()=>{
+  if(!canAdmin()) return;
+  if(!confirm(`「${CUR.name}」 공사를 지울까요?\n선입금·집행 기록도 함께 보이지 않게 됩니다.`)) return;
+  try{ await updateDoc(doc(db,'bldLedgers',CUR.id), { deleted:true });
+    LEDGERS = LEDGERS.filter(l=>l.id!==CUR.id); backToList(); toast('지웠습니다'); }
+  catch(e){ toast('삭제 실패','err'); }
+};
+window.openLedgerForm = async (id)=>{
+  if(!canAdmin()) return;
+  const l = id ? LEDGERS.find(x=>x.id===id) : null;
+  const staff = await loadStaff();
+  const picked = new Set(l?.managers||[]);
+  const orgs = myOrgs();
+  openModal(`<div class="mtitle">🏗 ${l?'공사 정보 고치기':'새 공사 만들기'}</div>
+    <div class="msub">자금 방식은 나중에 바꿔도 됩니다 — 화면에 어떤 숫자를 먼저 보여줄지 정하는 것이에요.</div>
+    <div class="form">
+      <div class="frow"><span class="flab">공사 이름</span><input id="lf-name" class="fin" value="${esc(l?.name||'')}" placeholder="예: 본관 3층 화장실 보수"></div>
+      <div class="frow"><span class="flab">기관</span>
+        <select id="lf-org" class="fin w">${orgs.map(o=>`<option value="${o}"${(l?.org||orgs[0])===o?' selected':''}>${ORGS[o]||o}</option>`).join('')}</select>
+        <span class="flab" style="width:auto">상태</span>
+        <select id="lf-status" class="fin w">
+          <option value="prep"${(l?.status||'prep')==='prep'?' selected':''}>준비</option>
+          <option value="run"${l?.status==='run'?' selected':''}>진행 중</option></select></div>
+      <div class="frow"><span class="flab">기간</span><input type="date" id="lf-start" class="fin w" value="${l?.startDs||todayDs()}">
+        <span class="tiny">~</span><input type="date" id="lf-end" class="fin w" value="${l?.endDs||''}"></div>
+      <div class="frow"><span class="flab">자금 방식</span>
+        <select id="lf-fund" class="fin">
+          <option value="prepay"${(l?.fund||'prepay')==='prepay'?' selected':''}>선입금형 — 먼저 받아 두고 집행</option>
+          <option value="claim"${l?.fund==='claim'?' selected':''}>후청구형 — 카드로 먼저 쓰고 나중에 청구</option>
+          <option value="mixed"${l?.fund==='mixed'?' selected':''}>혼합 — 둘 다 있음</option></select></div>
+      <div class="frow"><span class="flab">분류</span><input id="lf-cats" class="fin" value="${esc((l?.cats||['자재','인건비','장비','기타']).join(', '))}" placeholder="쉼표로 구분"></div>
+      <div class="frow" style="align-items:flex-start"><span class="flab">담당자</span>
+        <div style="flex:1">
+          <input id="lf-q" class="fin" placeholder="이름 검색" oninput="drawMgr(this.value)" style="margin-bottom:6px">
+          <div id="lf-mgr" style="max-height:180px;overflow:auto;background:var(--wh);border:1.5px solid var(--ivd);border-radius:9px;padding:6px"></div>
+        </div></div>
+    </div>
+    <div class="mfoot"><button class="btn gray" onclick="closeModal()">취소</button>
+      <button class="btn" onclick="saveLedger('${id||''}')">저장</button></div>`);
+  window.__mgr = picked;
+  window.drawMgr = (q)=>{
+    const list = staff.filter(s=>!q || String(s.name||'').includes(q)).slice(0,60);
+    $I('lf-mgr').innerHTML = list.map(s=>`<label style="display:flex;align-items:center;gap:7px;padding:5px 4px;font-size:12.5px;font-weight:700;cursor:pointer">
+      <input type="checkbox" value="${s.uid}" ${window.__mgr.has(s.uid)?'checked':''} onchange="togMgr('${s.uid}',this.checked)" style="width:15px;height:15px">
+      ${esc(s.name||'')} <span class="tiny">${esc(ORGS[s.org]||s.org||'')}${s.position?` · ${esc(s.position)}`:''}</span></label>`).join('')
+      || '<div class="tiny" style="padding:6px">검색 결과 없음</div>';
+  };
+  window.togMgr = (uid,on)=>{ on ? window.__mgr.add(uid) : window.__mgr.delete(uid); };
+  drawMgr('');
+};
+window.saveLedger = async (id)=>{
+  if(!canAdmin()) return;
+  const name=$I('lf-name').value.trim();
+  if(!name){ toast('공사 이름을 넣어주세요','err'); return; }
+  const staff = await loadStaff();
+  const uids = [...window.__mgr];
+  const data = { name, org:$I('lf-org').value, status:$I('lf-status').value,
+    startDs:$I('lf-start').value, endDs:$I('lf-end').value, fund:$I('lf-fund').value,
+    cats:$I('lf-cats').value.split(',').map(s=>s.trim()).filter(Boolean),
+    managers:uids, managerNames:uids.map(u=>staff.find(s=>s.uid===u)?.name||'').filter(Boolean) };
+  try{
+    if(id){ await updateDoc(doc(db,'bldLedgers',id), data); Object.assign(LEDGERS.find(l=>l.id===id), data); if(CUR&&CUR.id===id) Object.assign(CUR,data); }
+    else { data.createdAt=Timestamp.now(); data.createdByUid=CU.uid; data.createdByName=CU.name||''; data.locked=false;
+      const ref = await addDoc(collection(db,'bldLedgers'), data); LEDGERS.unshift({id:ref.id, ...data}); }
+    // 담당자에게 메뉴가 보이도록 (실패해도 저장은 유지)
+    for(const u of uids){
+      try{ const st = await getDoc(doc(db,'staff',u));
+        const cur = (st.exists() && Array.isArray(st.data().pageAllow)) ? st.data().pageAllow : [];
+        if(!cur.includes('buildexp')) await setDoc(doc(db,'staff',u), { pageAllow:[...cur,'buildexp'] }, { merge:true });
+      }catch(_){}
+    }
+    closeModal(); CUR ? renderDetail() : renderList(); toast('저장했습니다');
+  }catch(e){ toast('저장 실패: '+(e.code==='permission-denied'?'보안 규칙(bldLedgers) 게시가 필요합니다':(e.message||'')),'err'); }
+};
+
+/* ═══ 부팅 ═══ */
+onAuthStateChanged(auth, async user=>{
+  if(!user){ $I('gate-msg').textContent='로그인이 필요합니다.'; $I('gate-btn').style.display='inline-block';
+    window.hideLoading&&hideLoading(); return; }
+  try{
+    const s = await getDoc(doc(db,'staff', user.uid));
+    if(!s.exists()){ $I('gate-msg').textContent='교직원 계정이 아닙니다.'; $I('gate-btn').style.display='inline-block';
+      window.hideLoading&&hideLoading(); return; }
+    CU = { uid:user.uid, ...s.data() };
+    IS_SUPER = CU.role==='super';
+    window.ORGS = ORGS;
+    if(window.renderShell) renderShell('buildexp', CU);
+    if(window.setCrumb) setCrumb(['공사 경비']);
+    try{ const c = await getDoc(doc(db,'bldConfig','editors'));
+      BLD_ADMIN = c.exists() && Array.isArray(c.data().uids) && c.data().uids.includes(CU.uid); }catch(_){}
+    await loadLedgers();
+    if(!canAdmin() && !LEDGERS.length){
+      $I('gate-msg').innerHTML='공사 경비는 <b>총괄 담당자와 공사별 담당자</b>만 볼 수 있습니다.<br>필요하시면 총괄 담당자에게 요청해 주세요.';
+      $I('gate-btn').style.display='inline-block'; window.hideLoading&&hideLoading(); return;
+    }
+    $I('gate').style.display='none'; $I('ms').style.display='flex';
+    renderList(); window.hideLoading&&hideLoading();
+  }catch(e){
+    $I('gate-msg').textContent='불러오지 못했습니다: '+(e.message||'');
+    $I('gate-btn').style.display='inline-block'; window.hideLoading&&hideLoading();
+  }
+});
+</script>
+<script src="print-core.js"></script>
+<script src="modal-close.js"></script>
+<script src="org-core.js"></script>
+<script src="menu.js"></script>
+<script src="sidebar.js"></script>
+</body>
+</html>
