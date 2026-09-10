@@ -140,7 +140,7 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .mx-flt label{font-size:12px;font-weight:800;color:var(--ts);display:inline-flex;gap:5px;align-items:center}
 .mx-wrap{max-height:62vh;overflow:auto;border:1px solid var(--ivd);border-radius:12px}
 .mx-tb{border-collapse:separate;border-spacing:0;min-width:640px}
-.mx-tb th{position:sticky;top:0;background:var(--gp,#EAF4EF);z-index:2;
+.mx-tb thead th{position:sticky;top:0;background:var(--gp,#EAF4EF);z-index:2;
   color:#0C2A44;font-weight:900;font-size:12px;text-align:center;padding:8px 6px;min-width:126px;border-bottom:2px solid var(--ivd)}
 .mx-tb td{border-bottom:1px solid #EFECE4;vertical-align:top}
 .mx-tb tr:nth-child(even) td{background:#FBFAF6}
@@ -148,7 +148,7 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .mx-tb td.mx-nm{padding:7px 9px}
 .mx-tb td.mx-nm b{font-size:12.5px}
 .mx-tb th.mx-nm, .mx-tb td.mx-nm{position:sticky;left:0;background:#fff;z-index:1;min-width:96px;box-shadow:2px 0 0 var(--ivd)}
-.mx-tb th.mx-nm{z-index:3;background:var(--gp,#EAF4EF)}
+.mx-tb thead th.mx-nm{z-index:4;background:var(--gp,#EAF4EF)}
 .mx-cell{min-width:118px;vertical-align:top;padding:5px 6px}
 .mxc{display:inline-flex;flex-direction:column;gap:0;font-size:10.5px;font-weight:800;color:#14532D;
   background:#DCFCE7;border:1.5px solid #BBE7C8;border-radius:9px;padding:3px 7px;margin:2px 3px 2px 0;line-height:1.25;cursor:help}
@@ -1198,7 +1198,7 @@ function mxBodyHTML(){
     const bad = conf && (conf.red.some(p=>p.includes(c.id)) ? 'bad' : (conf.yel.some(p=>p.includes(c.id)) ? 'warn' : ''));
     return `<span class="mxc ${pend?'p':''} ${bad||''}" title="${esc(c.title)} · ${dayStr(c)} ${timeRange(c)}${pend?' · 2차 신청 대기':' · 확정/배정'}">${esc((c.title||'').slice(0,6))}<i>${esc(c.start||'')}</i></span>`;
   };
-  return `<table class="tb mx-tb"><tr><th class="mx-nm">학생</th>${days.map(d=>`<th>${WD[d]}</th>`).join('')}</tr>
+  return `<table class="tb mx-tb"><thead><tr><th class="mx-nm">학생</th>${days.map(d=>`<th>${WD[d]}요일</th>`).join('')}</tr></thead><tbody>
     ${rows.map(e=>{
       const eff=[...effClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
       const pen=[...pendClubsOf(e)].map(id=>by[id]).filter(c=>c&&!c.cancelled);
@@ -1211,7 +1211,7 @@ function mxBodyHTML(){
           ];
           return `<td class="mx-cell">${here.join('')||''}</td>`;
         }).join('')}</tr>`;
-    }).join('')}</table>`;
+    }).join('')}</tbody></table>`;
 }
 function confBannerHTML(){
   const reds=[], yels=[];
@@ -1238,11 +1238,52 @@ function mxSecHTML(){
         <select onchange="mxF('g', this.value)"><option value="">학년 전체</option>${grades.map(g=>`<option value="${g}"${MX.g===g?' selected':''}>${g}학년</option>`).join('')}</select>
         <select onchange="mxF('c', this.value)"><option value="">반 전체</option>${classes.map(cn=>`<option value="${esc(cn)}"${MX.c===cn?' selected':''}>${esc(cn)}</option>`).join('')}</select>
         <label><input type="checkbox" ${MX.only?'checked':''} onchange="mxF('only', this.checked)"> ⚠ 겹침·주의만</label>
+        ${CAN_FIX()?`<button class="bs" style="margin-left:auto" onclick="mxGhostScan()" title="신청은 지워졌는데 배정·추첨·대기 기록만 남은 잔상을 찾아 정리합니다">🧹 잔상 정리</button>`:''}
       </div>
       <div class="small" style="margin:2px 2px 8px;color:var(--tl)">🟩 확정·배정 · 🟦 2차 신청 대기 · <b style="color:#B91C1C">빨간 테두리 = 시간 겹침</b>(강사 시간 변경도 즉시 반영)</div>
       <div class="tblwrap mx-wrap" id="mx-body">${mxBodyHTML()}</div>
     </div></details>`;
 }
+
+/* ── 🧹 유령(잔상) 일괄 정리 — 신청(picks)이 없는데 남아 있는 배정·추첨·대기 기록을 청소 ── */
+window.mxGhostScan = async ()=>{
+  if(!CAN_FIX()) return;
+  const by = {}; LIVE().forEach(c=>by[c.id]=c);
+  const tt = id => (by[id]?by[id].title:id);
+  const jobs = [];
+  ENR.forEach(e=>{
+    if(e.deleted) return;
+    const p2 = new Set((e.picks2||[]).map(p=>p.clubId));
+    const p1 = new Set((e.picks||[]).map(p=>p.clubId));
+    const gR2 = (e.result2||[]).filter(r=>!p2.has(r.clubId));
+    const gL2 = Object.keys(e.lottery2||{}).filter(k=>(e.lottery2||{})[k] && !p2.has(k));
+    const gW2 = (e.waits2||[]).filter(id=>!p2.has(id));
+    const gR1 = e.r1Final ? [] : (e.result||[]).filter(r=>!p1.has(r.clubId));   // 1차 도장 후엔 r1Final이 진실 — 보존
+    if(gR2.length||gL2.length||gW2.length||gR1.length)
+      jobs.push({ e, gR2, gL2, gW2, gR1,
+        label: [...new Set([...gR2.map(r=>tt(r.clubId)), ...gL2.map(tt), ...gW2.map(tt), ...gR1.map(r=>tt(r.clubId))])].join(', ') });
+  });
+  if(!jobs.length){ toast('🧹 잔상이 없습니다 — 원장이 깨끗해요'); return; }
+  const list = jobs.slice(0,12).map(j=>`· ${j.e.studentName||'(이름 미기재)'} — ${j.label}`).join('\n');
+  if(!confirm(`🧹 신청 없이 남은 배정·추첨·대기 잔상 ${jobs.length}명분을 정리할까요?\n\n${list}${jobs.length>12?'\n…외 '+(jobs.length-12)+'명':''}\n\n※ 신청·확정 명단은 건드리지 않습니다. 정리하면 취합표·현황·집계가 실제와 일치하게 됩니다.`)) return;
+  let ok=0, fail=0;
+  for(const j of jobs){
+    const e=j.e;
+    const payload = {
+      result2: (e.result2||[]).filter(r=>!j.gR2.includes(r)),
+      waits2: (e.waits2||[]).filter(id=>!j.gW2.includes(id)),
+      lottery2: Object.fromEntries(Object.entries(e.lottery2||{}).filter(([k,v])=>v && !j.gL2.includes(k))),
+    };
+    if(j.gR1.length) payload.result = (e.result||[]).filter(r=>!j.gR1.includes(r));
+    try{
+      await updateDoc(doc(db,'clubEnrollments', e.id), payload);
+      Object.assign(e, payload); ok++;
+    }catch(err){ fail++; }
+  }
+  clubLog('🧹 잔상 일괄 정리(수퍼)', `${ok}명 정리${fail?` · 실패 ${fail}`:''}`);
+  toast(`🧹 정리 완료 — ${ok}명분 잔상 제거${fail?` (실패 ${fail})`:''}`);
+  renderEnroll();
+};
 
 /* ── 🙅 1차 확정 참여 취소·복구 (수퍼) — 자리·집계·겹침이 즉시 해소된다 ── */
 window.r1Cancel = async (eid, cid, on)=>{
