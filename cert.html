@@ -1089,32 +1089,57 @@ window.doIssueStaff = doIssueStaff;
 /* ═══ 🎓 재학 사실 확인서 ═══
    반편성 이력(classes: year + grades[sid])에서 과정 구간을 스스로 계산합니다. */
 function courseSegments(sid, startDs, endDs){
-  const rows = [];
+  /* 재학기간 전체를 학년으로 환산해 과정 구간을 만든다.
+     반편성 원장에 남아 있는 해를 «기준점»으로 잡고, 없는 해는 학년을 ±1씩 되짚어 채운다.
+     (학년도: 3월 시작 ~ 이듬해 2월) */
+  const ay = ds => { if(!ds) return null; const y=Number(String(ds).slice(0,4)), m=Number(String(ds).slice(5,7));
+    return (m>=3) ? y : y-1; };
+  const startAY = ay(startDs), endAY = ay(endDs);
+  if(startAY==null || endAY==null || endAY < startAY) return [];
+
+  // ① 반편성 원장에서 «학년도 → 학년» 알아낸 것들
+  const known = {};
   CLASSES.forEach(c=>{
     if(!(c.students||[]).includes(sid)) return;
-    const g = (c.grades && c.grades[sid]) || c.grade || '';
-    const y = Number(c.year) || 0;
-    if(!g || !y) return;
-    rows.push({ y, g, n: parseInt(g,10) });
+    const g = parseInt((c.grades && c.grades[sid]) || c.grade || '', 10);
+    const y = Number(c.year);
+    if(!isNaN(g) && y) known[y] = g;
   });
-  rows.sort((a,b)=>a.y-b.y);
+  const anchors = Object.keys(known).map(Number).sort((x,z)=>x-z);
+  if(!anchors.length) return [];
+
+  // ② 재학 기간의 모든 학년도를 채운다 (아는 해는 그대로, 모르는 해는 기준점에서 환산)
+  const gradeAt = y => {
+    if(known[y] != null) return known[y];
+    let best = anchors[0];
+    anchors.forEach(a2=>{ if(Math.abs(a2-y) < Math.abs(best-y)) best = a2; });
+    return known[best] + (y - best);
+  };
+  const rows = [];
+  for(let y=startAY; y<=endAY; y++){
+    const g = gradeAt(y);
+    if(!(g>=1 && g<=12)) continue;                 // 환산이 범위를 벗어나면 건너뛴다
+    rows.push({ y, g });
+  }
+  if(!rows.length) return [];
+
+  // ③ 같은 과정끼리 이어 붙이기
   const segs = [];
   rows.forEach(r=>{
-    const dept = gradeToDept(r.g);
+    const dept = gradeToDept(String(r.g));
     const last = segs[segs.length-1];
-    if(last && last.dept===dept){ last.y2=r.y; last.g2=r.n; }
-    else segs.push({ dept, y1:r.y, y2:r.y, g1:r.n, g2:r.n });
+    if(last && last.dept===dept){ last.y2=r.y; last.g2=r.g; }
+    else segs.push({ dept, y1:r.y, y2:r.y, g1:r.g, g2:r.g });
   });
-  const ymText = (y, isEnd)=>{
-    if(isEnd){ // 마지막 구간은 실제 종료월까지
-      return endDs && Number(endDs.slice(0,4))<=y+1 ? `${endDs.slice(0,4)}.${endDs.slice(5,7)}` : `${y+1}.02`;
-    }
-    return startDs && Number(startDs.slice(0,4))===y ? `${startDs.slice(0,4)}.${startDs.slice(5,7)}` : `${y}.03`;
-  };
-  return segs.map((s,i)=>({
+
+  // ④ 실제 입학월·종료월을 양끝에 반영
+  const mm = ds => String(ds).slice(5,7);
+  return segs.map(s=>({
     dept: s.dept || '교육과정',
     course: deptCourse(s.dept),
-    period: `${ymText(s.y1,false)} ~ ${ymText(s.y2, true)}`,
+    period: `${s.y1===startAY ? `${String(startDs).slice(0,4)}.${mm(startDs)}` : `${s.y1}.03`}`
+          + ` ~ `
+          + `${s.y2===endAY ? `${String(endDs).slice(0,4)}.${mm(endDs)}` : `${s.y2+1}.02`}`,
     grades: s.g1===s.g2 ? `${s.g1}학년` : `${s.g1} ~ ${s.g2}학년`
   }));
 }

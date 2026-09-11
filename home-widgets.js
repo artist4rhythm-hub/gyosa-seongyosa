@@ -74,6 +74,8 @@ async function loadAttendWidget(){
         const st = smap[m.studentId] || {};
         flag[m.studentId] = {
           name: st.name||m.studentName||'',
+          clsId: st.classId || m.classId || '',
+          grade: st.grade || '',
           cls: st.className || m.className || '',
           type: ts.map(t=>t.name).join('·'),            // 예: 지각·조퇴 (둘 다 보이게)
           types: ts.map(t=>t.name),
@@ -88,17 +90,26 @@ async function loadAttendWidget(){
   });
 }
 function attByClass(o){
+  /* 반 이름이 학년마다 겹치므로(로이반=2·3학년 등) «반 문서» 단위로 가른다.
+     재적이 1명이라도 있는 반은 특이사항이 없어도 모두 보여준다. */
   const map = {};
-  const gOf = {};                                        // 반 → 대표 학년 (정렬용)
-  (_attStu[o]||[]).forEach(st=>{ const c=st.className||'미배정';
-    (map[c]=map[c]||{n:0,fl:[]}).n++;
-    const g = parseInt(st.grade,10); if(!isNaN(g) && (gOf[c]==null || g<gOf[c])) gOf[c]=g; });
-  const flag = (_attLast[o]||{}).flag || {};
-  Object.values(flag).forEach(f=>{ const c=f.cls||'미배정'; (map[c]=map[c]||{n:0,fl:[]}).fl.push(f); });
-  return Object.entries(map).sort((a,b)=>{
-    const ga=gOf[a[0]]??99, gb=gOf[b[0]]??99;            // 학년 순 → 이름 순
-    return ga-gb || a[0].localeCompare(b[0],'ko');
+  const key = st => st.classId || ('nm:'+(st.className||'미배정'));
+  (_attStu[o]||[]).forEach(st=>{
+    const k = key(st);
+    const m = (map[k] = map[k] || { name: st.className||'미배정', grade: st.grade||'', n:0, fl:[] });
+    m.n++;
+    if(!m.grade && st.grade) m.grade = st.grade;
   });
+  const flag = (_attLast[o]||{}).flag || {};
+  Object.values(flag).forEach(f=>{
+    const k = f.clsId || ('nm:'+(f.cls||'미배정'));
+    const m = (map[k] = map[k] || { name: f.cls||'미배정', grade: f.grade||'', n:0, fl:[] });
+    m.fl.push(f);
+  });
+  const gnum = g => { const n = parseInt(String(g),10); return isNaN(n) ? 99 : n; };
+  return Object.entries(map)
+    .filter(([,v])=>v.n > 0)                                  // 재학생 있는 반만
+    .sort((a,b)=> gnum(a[1].grade)-gnum(b[1].grade) || String(a[1].name).localeCompare(String(b[1].name),'ko'));
 }
 function paintAttOrg(o){
   const el = $I('att-row-'+o); if(!el) return;
@@ -116,11 +127,11 @@ function paintAttOrg(o){
   if(ATT_STYLE==='cls'){
     const cls = attByClass(o);
     h = `<div class="att-orghd"><b>${esc(orgNm)}</b><span>${present}/${roster} 출석 · ${rate}%</span></div>
-      <div class="att-grid">${cls.map(([c,v])=>{
+      <div class="att-grid">${cls.map(([,v])=>{
         const p = v.n - v.fl.length, pct = v.n? Math.round(p/v.n*100) : 100;
-        const gLabel = (_attStu[o]||[]).find(st=>(st.className||'미배정')===c && st.grade);
+        const gTxt = v.grade ? String(v.grade).replace('학년','')+'학년' : '';
         return `<a class="att-card${v.fl.length?' has':''}" href="${go}">
-          <div class="att-ct"><b>${gLabel?`<i class="att-g">${esc(String(gLabel.grade).replace('학년','')+'학년')}</i> `:''}${esc(c)}</b><span>${p}/${v.n}</span></div>
+          <div class="att-ct"><b>${gTxt?`<i class="att-g">${esc(gTxt)}</i> `:''}${esc(v.name)}</b><span>${p}/${v.n}</span></div>
           <div class="att-bar"><i style="width:${pct}%;${pct<100?'background:#f59e0b':''}"></i></div>
           <div class="att-pch">${v.fl.length? v.fl.map(chip).join('') : '<span class="att-pc ok">✓ 전원 출석</span>'}</div></a>`; }).join('')}</div>`;
   } else if(ATT_STYLE==='board'){
@@ -149,9 +160,10 @@ function paintAttOrg(o){
           <span>결석 ${cnt.abs} · 지각 ${cnt.lat} · 조퇴 ${cnt.ear} — 탭해서 반별 보기</span></div>
         <span class="att-ar">${ATT_OPEN[o]?'⌃':'⌄'}</span></div>
       <div class="att-tick">${tick}</div>
-      ${ATT_OPEN[o]?`<div class="att-open">${cls.map(([c,v])=>{
+      ${ATT_OPEN[o]?`<div class="att-open">${cls.map(([,v])=>{
         const p=v.n-v.fl.length;
-        return `<a class="att-trow" href="${go}"><b>${esc(c)}</b><span class="n">${p}/${v.n}</span>
+        const gTxt = v.grade ? String(v.grade).replace('학년','')+'학년 ' : '';
+        return `<a class="att-trow" href="${go}"><b>${esc(gTxt)}${esc(v.name)}</b><span class="n">${p}/${v.n}</span>
           <span class="who">${v.fl.length? v.fl.map(f=>`${ATT_BK[f.bk].l} ${esc(f.name)}`).join(' · ') : '✓ 전원 출석'}</span></a>`; }).join('')}</div>`:''}
     </div>`;
   }
