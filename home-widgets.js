@@ -10,7 +10,8 @@ export function installHomeWidgets(ctx){
 
 /* ── 📋 오늘의 출결 2.0 — 반별·보드·요약 3스타일, 담임이 표시하는 순간 홈이 바뀐다 ── */
 const ATT_UNIFIED_POS = ['교장','교감','행정실장'];
-let _attUnsubs = [], _attStu = {}, _attTypes = null, _attLast = {}, ATT_OPEN = {};
+let _attUnsubs = [], _attStu = {}, _attTypes = null, _attLast = {}, ATT_OPEN = {}
+let _attCls = null;   // 🏫 반편성 원장 캐시
 let ATT_STYLE = (()=>{ try{ return localStorage.getItem('gyosa_attstyle')||'cls'; }catch(e){ return 'cls'; } })();
 window.setAttStyle = s => { ATT_STYLE = s; try{ localStorage.setItem('gyosa_attstyle', s); }catch(e){}
   document.querySelectorAll('.att-seg button').forEach(b=>b.classList.toggle('on', b.dataset.s===s));
@@ -38,10 +39,25 @@ async function loadAttendWidget(){
       const ts = await getDocs(collection(db,'attendTypes'));
       _attTypes = ts.docs.map(d=>({id:d.id, ...d.data()}));
     }
+    if(_attCls == null){                                   // 🏫 반편성 원장 — 학생 문서엔 반이 없다
+      const cs = await getDocs(collection(db,'classes'));
+      _attCls = cs.docs.map(d=>({id:d.id, ...d.data()}));
+    }
     for(const o of orgs){
       if(_attStu[o] == null){
         const ss = await getDocs(query(collection(db,'students'), where('org','==',o)));
-        _attStu[o] = ss.docs.map(d=>({id:d.id, ...d.data()})).filter(x=>!x.deleted);
+        const y = new Date().getFullYear();
+        const mine = _attCls.filter(c=>!c.org || c.org===o)
+          .sort((a,b)=>((b.year||y)===y?1:0)-((a.year||y)===y?1:0));   // 올해 반 우선
+        const info = {};
+        mine.forEach(c=>{ (c.students||[]).forEach(sid=>{
+          if(info[sid]) return;
+          info[sid] = { className: c.name||'', classId: c.id,
+            grade: (c.grades && c.grades[sid]) || c.grade || '' }; }); });
+        _attStu[o] = ss.docs.map(d=>{ const st={id:d.id, ...d.data()};
+            const i = info[d.id] || {};
+            return { ...st, className: st.className || i.className || '', classId: i.classId||'', grade: st.grade || i.grade || '' };
+          }).filter(x=>!x.deleted && (x.status||'active')==='active');
       }
     }
   } catch(e){ box.innerHTML = `<div class="hw-dim">출결 정보를 불러오지 못했어요.</div>`; return; }
@@ -52,12 +68,19 @@ async function loadAttendWidget(){
       const smap = {}; _attStu[o].forEach(st=>smap[st.id]=st);
       const flag = {};
       snap.forEach(d=>{ const m=d.data();
-        const t=_attTypes.find(x=>x.id===((m.typeIds&&m.typeIds[0])||m.typeId));
-        if(t && !t.isPresent){
-          const st = smap[m.studentId] || {};
-          flag[m.studentId] = { name:st.name||m.studentName||'', cls:st.className||'', 
-            type:t.name||'', bk:attBucket(t.name), memo:m.memo||m.note||m.reason||'' };
-        } });
+        const ids = (m.typeIds && m.typeIds.length) ? m.typeIds : (m.typeId?[m.typeId]:[]);
+        const ts = ids.map(id=>_attTypes.find(x=>x.id===id)).filter(t=>t && !t.isPresent);
+        if(!ts.length) return;
+        const st = smap[m.studentId] || {};
+        flag[m.studentId] = {
+          name: st.name||m.studentName||'',
+          cls: st.className || m.className || '',
+          type: ts.map(t=>t.name).join('·'),            // 예: 지각·조퇴 (둘 다 보이게)
+          types: ts.map(t=>t.name),
+          bk: attBucket(ts[0].name),
+          bks: ts.map(t=>attBucket(t.name)),
+          memo: m.memo||m.note||m.reason||'' };
+      });
       _attLast[o] = { flag, today };
       paintAttOrg(o);
     }, ()=>{ const el=$I('att-row-'+o); if(el) el.innerHTML=`<div class="hw-dim">출결 구독 실패 — 새로고침해 보세요.</div>`; });
@@ -66,11 +89,16 @@ async function loadAttendWidget(){
 }
 function attByClass(o){
   const map = {};
+  const gOf = {};                                        // 반 → 대표 학년 (정렬용)
   (_attStu[o]||[]).forEach(st=>{ const c=st.className||'미배정';
-    (map[c]=map[c]||{n:0,fl:[]}).n++; });
+    (map[c]=map[c]||{n:0,fl:[]}).n++;
+    const g = parseInt(st.grade,10); if(!isNaN(g) && (gOf[c]==null || g<gOf[c])) gOf[c]=g; });
   const flag = (_attLast[o]||{}).flag || {};
   Object.values(flag).forEach(f=>{ const c=f.cls||'미배정'; (map[c]=map[c]||{n:0,fl:[]}).fl.push(f); });
-  return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0],'ko'));
+  return Object.entries(map).sort((a,b)=>{
+    const ga=gOf[a[0]]??99, gb=gOf[b[0]]??99;            // 학년 순 → 이름 순
+    return ga-gb || a[0].localeCompare(b[0],'ko');
+  });
 }
 function paintAttOrg(o){
   const el = $I('att-row-'+o); if(!el) return;
@@ -78,20 +106,21 @@ function paintAttOrg(o){
   const roster = (_attStu[o]||[]).length;
   const flags = Object.values(L.flag);
   const cnt = { abs:0, lat:0, ear:0, etc:0 };
-  flags.forEach(f=>cnt[f.bk]++);
+  flags.forEach(f=>{ const seen={}; (f.bks||[f.bk]).forEach(b=>{ if(seen[b]) return; seen[b]=1; cnt[b]++; }); });
   const present = Math.max(0, roster - flags.length);
   const rate = roster ? Math.round(present/roster*100) : 100;
   const orgNm = (window.ORGS&&ORGS[o])||o;
   const go = `attend.html?stat=live&org=${o}`;
-  const chip = f => `<span class="att-pc" style="background:${ATT_BK[f.bk].bg};color:${ATT_BK[f.bk].c}">${ATT_BK[f.bk].l} ${esc(f.name)}</span>`;
+  const chip = f => `<span class="att-pc" style="background:${ATT_BK[f.bk].bg};color:${ATT_BK[f.bk].c}" title="${esc(f.type)}${f.memo?' · '+esc(f.memo):''}">${(f.bks||[f.bk]).map(b=>ATT_BK[b].l).join('')} ${esc(f.name)}</span>`;
   let h = '';
   if(ATT_STYLE==='cls'){
     const cls = attByClass(o);
     h = `<div class="att-orghd"><b>${esc(orgNm)}</b><span>${present}/${roster} 출석 · ${rate}%</span></div>
       <div class="att-grid">${cls.map(([c,v])=>{
         const p = v.n - v.fl.length, pct = v.n? Math.round(p/v.n*100) : 100;
-        return `<a class="att-card" href="${go}">
-          <div class="att-ct"><b>${esc(c)}</b><span>${p}/${v.n}</span></div>
+        const gLabel = (_attStu[o]||[]).find(st=>(st.className||'미배정')===c && st.grade);
+        return `<a class="att-card${v.fl.length?' has':''}" href="${go}">
+          <div class="att-ct"><b>${gLabel?`<i class="att-g">${esc(String(gLabel.grade).replace('학년','')+'학년')}</i> `:''}${esc(c)}</b><span>${p}/${v.n}</span></div>
           <div class="att-bar"><i style="width:${pct}%;${pct<100?'background:#f59e0b':''}"></i></div>
           <div class="att-pch">${v.fl.length? v.fl.map(chip).join('') : '<span class="att-pc ok">✓ 전원 출석</span>'}</div></a>`; }).join('')}</div>`;
   } else if(ATT_STYLE==='board'){
