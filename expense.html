@@ -585,7 +585,10 @@ window.showTab = showTab;
 
 // ══════════ 경비 신청 ══════════
 let expOrg = '';
-let expMode = 'equal';   // equal(1/N) | indiv(개별 청구) | refund(개별 반환) | group(그룹 균등)
+let SCHOOL_RETURNS = [];             // 📚 학교 귀속분 반납 기록
+let expMode = 'equal';
+let expPayer = 'teacher';            // 🧑‍🏫 선생님 선지출 · 📚 학교 보유 물품(학교 귀속분)
+window.setExpPayer = p => { expPayer = p; renderNew(); };   // equal(1/N) | indiv(개별 청구) | refund(개별 반환) | group(그룹 균등)
 // 그룹 균등 청구: 그룹별 총액 ÷ 그룹 인원
 let expGroups = [ {total:0, ids:[]}, {total:0, ids:[]} ];
 let activeGroup = 0;
@@ -666,7 +669,15 @@ function renderNew(){
         <button class="subtbtn ${expMode==='refund'?'on':''}" onclick="setExpMode('refund')" style="padding:8px 16px">↩️ 개별 반환</button>
         <button class="subtbtn ${expMode==='group'?'on':''}" onclick="setExpMode('group')" style="padding:8px 16px">👥 그룹 균등</button>
       </div>
-      <p class="adesc" id="mode-desc" style="margin-bottom:14px"></p>
+      <p class="adesc" id="mode-desc" style="margin-bottom:10px"></p>
+      <div class="fgrp" style="margin-bottom:14px">
+        <label>비용을 낸 곳 *</label>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <button type="button" class="subtbtn ${expPayer==='teacher'?'on':''}" id="pay-t" onclick="setExpPayer('teacher')" style="padding:8px 14px">🧑‍🏫 선생님 선지출</button>
+          <button type="button" class="subtbtn ${expPayer==='school'?'on':''}" id="pay-s" onclick="setExpPayer('school')" style="padding:8px 14px">📚 학교 보유 물품</button>
+        </div>
+        <p class="adesc" id="payer-desc" style="margin-top:6px"></p>
+      </div>
       <div class="frow">
         <div class="fgrp"><label>신청 날짜 *</label><input type="date" id="ex-date" value="${todayYMD()}" onchange="onReqDateChange()"></div>
         <div class="fgrp"><label>학기 *</label>
@@ -780,6 +791,14 @@ function applyModeUI(){
     group: '그룹마다 금액이 다를 때 사용합니다. A그룹 학생들은 A금액을, B그룹 학생들은 B금액을 인원수로 나눠 청구합니다.'
   };
   const md=$I('mode-desc'); if(md) md.textContent = descs[expMode]||'';
+  // 📚 학교 물품이면 계좌·학교 부담분 칸을 감춘다 (돌려줄 선생님이 없다)
+  const isSchool = (expPayer==='school');
+  const pd = $I('payer-desc');
+  if(pd) pd.innerHTML = isSchool
+    ? '학교가 <b>이미 일괄구매해 보유 중인 물품</b>을 학생이 가져간 경우입니다. 선생님께 지급되는 금액은 없고, 모인 금액은 <b>학교 귀속분</b>으로 잡혀 나중에 학교 회계로 반납합니다.'
+    : '선생님이 <b>먼저 결제한 비용</b>을 학생에게 나눠 청구하고, 관리자가 선생님께 선입금으로 돌려드립니다. (기존 방식)';
+  ['ex-bank','ex-holder','ex-account'].forEach(id=>{ const el=$I(id); if(el&&el.closest('.fgrp')) el.closest('.fgrp').style.display = isSchool?'none':''; });
+  const wsq=$I('wrap-schoolqty'); if(wsq && isSchool) wsq.style.display='none';
   const wt=$I('wrap-total'); if(wt) wt.style.display = expMode==='equal'?'':'none';
   const wq=$I('wrap-schoolqty'); if(wq) wq.style.display = expMode==='equal'?'':'none';
   const wa=$I('wrap-schoolamt'); if(wa) wa.style.display = expMode==='refund'?'':'none';
@@ -1534,6 +1553,7 @@ async function editExpense(id){
   if($I('ex-items')) $I('ex-items').value = e.items||'';
   if($I('ex-detail')) $I('ex-detail').value = e.detail||'';
   if($I('ex-total')) $I('ex-total').value = (e.mode==='equal'||!e.mode) ? (e.total||'') : '';
+  expPayer = (e.payer==='school') ? 'school' : 'teacher';
   if($I('ex-schoolqty')) $I('ex-schoolqty').value = e.schoolQty||0;
   if($I('ex-schoolamt')) $I('ex-schoolamt').value = (e.mode==='refund' ? (e.schoolTotal||0) : 0);
   if($I('ex-school')) $I('ex-school').value = e.schoolNote||'';
@@ -2230,7 +2250,7 @@ async function submitExpense(){
       note: (receiptExempt && (existingReceipts.length+receipts.length)<1) ? `🧾 영수증 없음 · 사유: ${esc(receiptExemptReason)}` : ''
     })) return;
     record = {
-      org: expOrg, mode:'equal', date, semester, teacher, subject, items, detail,
+      org: expOrg, mode:'equal', payer: expPayer, date, semester, teacher, subject, items, detail,
       total, per, count: ids.length,
       schoolQty: sq, schoolTotal: per*sq,
       students, bank, holder, account, schoolNote,
@@ -2264,7 +2284,7 @@ async function submitExpense(){
       note: (receiptExempt && (existingReceipts.length+receipts.length)<1) ? `🧾 영수증 없음 · 사유: ${esc(receiptExemptReason)}` : ''
     })) return;
     record = {
-      org: expOrg, mode:'group', date, semester, teacher, subject, items, detail,
+      org: expOrg, mode:'group', payer: expPayer, date, semester, teacher, subject, items, detail,
       total: grandTotal, count: students.length,
       groups: used.map(g=>({label:GRP_STYLE[g.i].l, total:g.total, count:g.ids.length, per:perAmount(g.total,g.ids.length)})),
       students, bank, holder, account, schoolNote,
@@ -2301,7 +2321,7 @@ async function submitExpense(){
       note: (receiptExempt && (existingReceipts.length+receipts.length)<1) ? `🧾 영수증 없음 · 사유: ${esc(receiptExemptReason)}` : ''
     })) return;
     record = {
-      org: expOrg, mode: expMode, date, semester, teacher, subject, items, detail,
+      org: expOrg, mode: expMode, payer: expPayer, date, semester, teacher, subject, items, detail,
       total: sum, per: null, count: ids.length,
       schoolQty: 0, schoolTotal: (expMode==='refund' ? schoolRefundAmt : 0),
       students, bank, holder, account, schoolNote,
@@ -2510,7 +2530,7 @@ async function renderList(){
                 ${e.mode==='indiv' ? `<b style="color:var(--gm)">✏️ 개별 청구</b> · ${e.count}명 · 합계 <b style="color:var(--gm)">₩${won(e.total)}</b>`
                 : e.mode==='refund' ? `<b style="color:var(--info)">↩️ 개별 반환</b> · ${e.count}명 · 합계 <b style="color:var(--info)">₩${won(e.total)}</b>`
                 : e.mode==='group' ? `<b style="color:var(--gm)">👥 그룹 균등</b> · ${(e.groups||[]).map(g=>`${g.label} ${g.count}명×₩${won(g.per)}`).join(' · ')} · 합계 <b style="color:var(--gm)">₩${won(e.total)}</b>`
-                : `<b style="color:var(--gm)">₩${won(e.total)}</b> ÷ ${e.count}${e.schoolQty?`+${e.schoolQty}`:''} = <b style="color:var(--gm)">₩${won(e.per)}/인</b>`}
+                : `<b style="color:var(--gm)">₩${won(e.total)}</b> ÷ ${e.count}${e.schoolQty?`+${e.schoolQty}`:''} = <b style="color:var(--gm)">₩${won(e.per)}/인</b>`}${e.payer==='school'?' <span style="font-size:10px;font-weight:900;background:#E5EDFC;color:#1D4ED8;border-radius:7px;padding:1px 7px">📚 학교</span>':''}
               </div>
               ${e.paid&&e.paidAt?`<div style="font-size:11.5px;color:var(--ok);margin-top:3px">💰 ${esc(e.paidByName||'')} · ${esc(fmtDateTime(e.paidAt))} 입금 확인</div>`:''}
             </div>
@@ -2958,6 +2978,9 @@ async function renderReport(){
     const snap = await getDocs(collection(db,'expenses'));
     EXPENSES = []; snap.forEach(d=>EXPENSES.push({id:d.id, ...d.data()}));
     EXPENSES.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));   // 날짜순 자동 정렬
+    try{ const rs = await getDocs(collection(db,'expenseSchoolReturns'));
+      SCHOOL_RETURNS = rs.docs.map(d=>({id:d.id, ...d.data()})).filter(x=>!x.deleted);
+    }catch(e){ SCHOOL_RETURNS = []; }
     const dsnap = await getDocs(collection(db,'expenseDeposits'));
     DEPOSITS = []; dsnap.forEach(d=>DEPOSITS.push({id:d.id, ...d.data()}));
     await loadSemLocks();
@@ -2990,13 +3013,19 @@ async function renderReport(){
   const effSum = (e) => (e.students||[]).reduce((t,s)=>t+(stuAmt(e,s.id)||0),0);
 
   // 요약
-  let totalCharge=0, totalRefund=0, totalSchool=0;
+  let totalCharge=0, totalRefund=0, totalSchool=0, schoolDue=0;
   list.forEach(e=>{
     const sum = effSum(e);
     if(e.mode==='refund') totalRefund += sum; else totalCharge += sum;
-    totalSchool += (e.mode==='refund'?-1:1)*(e.schoolTotal||0);   // 학교 반환분이 생기면 자동 차감
+    totalSchool += (e.mode==='refund'?-1:1)*(e.schoolTotal||0);   // 학교 «부담»분 (나가는 돈)
+    if(e.payer==='school' && e.mode!=='refund') schoolDue += sum;  // 📚 학교 «귀속»분 (학교로 갈 돈)
   });
   const net = totalCharge - totalRefund;
+  const teacherPay = net - schoolDue;                              // 선생님께 실제로 지급할 금액
+  const retDone = SCHOOL_RETURNS.filter(r=>r.org===reportOrg && r.semester===reportSem)
+    .reduce((t,r)=>t+(Number(r.amount)||0),0);
+  const schoolLeft = schoolDue - retDone;
+  window.__schoolDue = schoolDue;
 
   // 학생별 합산 (청구 +, 반환 −)
   const stuMap = new Map(); // sid → {name, grade, className, charge, refund, items:[]}
@@ -3083,7 +3112,10 @@ async function renderReport(){
         <span>총 청구 <b style="color:var(--gm)">₩${won(totalCharge)}</b></span>
         <span>총 반환 <b style="color:var(--info)">₩${won(totalRefund)}</b></span>
         <span>순 청구 <b style="color:var(--goldd)">₩${won(net)}</b></span>
-        ${totalSchool ? `<span style="border-left:2px solid var(--ivd);padding-left:16px">학교 청구 <b style="color:var(--ts)">₩${won(totalSchool)}</b></span>
+        ${schoolDue ? `<span style="border-left:2px solid var(--ivd);padding-left:16px">📚 학교 귀속분 <b style="color:var(--blu,#1D4ED8)">₩${won(schoolDue)}</b>${retDone?` <span style="font-size:11px;color:var(--tl)">(반납 ₩${won(retDone)} · 남음 ₩${won(schoolLeft)})</span>`:''}
+          <button class="bs" style="margin-left:8px;font-size:11px;padding:3px 9px" onclick="openSchoolReturn()">반납 처리</button></span>
+        <span style="border-left:2px solid var(--ivd);padding-left:16px">🧑‍🏫 선생님 지급분 <b style="color:var(--gm)">₩${won(teacherPay + totalSchool)}</b></span>` : ''}
+        ${totalSchool ? `<span style="border-left:2px solid var(--ivd);padding-left:16px">학교 부담 <b style="color:var(--ts)">₩${won(totalSchool)}</b></span>
         <span>합산 요청액 <b style="color:var(--gd)">₩${won(net + totalSchool)}</b> <span style="font-size:11px;font-weight:600;color:var(--tl)">(학생 순청구＋학교)</span></span>` : ''}
       </div>` : '<p class="empty">이 학기에 취합할 신청 내역이 없습니다.</p>'}
     </div>
@@ -3105,7 +3137,7 @@ async function renderReport(){
         <div style="padding:11px 4px;border-bottom:2px solid var(--ivd);text-align:right;font-weight:700;color:var(--info)">＋₩${won(totalRefund)}</div>
 
         <div style="padding:14px 4px;font-weight:800;color:var(--gd);font-size:15px">= 통장에 있어야 할 금액</div>
-        <div style="padding:14px 4px;text-align:right;font-weight:800;color:var(--gd);font-size:20px">₩${won(depTotal - totalCharge - totalSchool + totalRefund)}</div>
+        <div style="padding:14px 4px;text-align:right;font-weight:800;color:var(--gd);font-size:20px">₩${won(depTotal - totalCharge - totalSchool + totalRefund + schoolDue - retDone)}</div>
       </div>
 
       ${canManage ? `
@@ -3113,7 +3145,7 @@ async function renderReport(){
         <label style="display:block;font-size:13px;font-weight:700;color:var(--gd);margin-bottom:8px">🏦 실제 통장 잔액을 입력해 대조해 보세요</label>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="number" id="bank-actual" placeholder="실제 통장 잔액 (원)" inputmode="numeric"
-            oninput="checkBankBalance(${depTotal - totalCharge - totalSchool + totalRefund})"
+            oninput="checkBankBalance(${depTotal - totalCharge - totalSchool + totalRefund + schoolDue - retDone})"
             style="flex:1;min-width:180px;height:44px;border:1.5px solid var(--gm);border-radius:10px;padding:0 14px;font-size:16px;font-weight:700;color:var(--gm);text-align:right;background:var(--wh);font-family:inherit">
           <button class="bm" onclick="$I('bank-actual').value='';$I('bank-diff').innerHTML='';">지우기</button>
         </div>
@@ -4944,6 +4976,71 @@ async function addDeposit(){
 }
 window.addDeposit = addDeposit;
 
+/* ── 📚 학교 귀속분 반납 처리 ── */
+window.openSchoolReturn = ()=>{
+  if(!isExpManager(reportOrg)){ toast('경비 관리자만 처리할 수 있습니다.','err'); return; }
+  const mine = SCHOOL_RETURNS.filter(r=>r.org===reportOrg && r.semester===reportSem)
+    .sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const done = mine.reduce((t,r)=>t+(Number(r.amount)||0),0);
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(20,26,32,.45);z-index:1400;display:flex;align-items:center;justify-content:center;padding:20px';
+  bg.addEventListener('click', ev=>{ if(ev.target===bg) bg.remove(); });
+  bg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:18px;max-width:460px;width:100%;max-height:86vh;overflow:auto">
+    <div style="font-size:15px;font-weight:900;color:var(--gd)">📚 학교 귀속분 반납 처리</div>
+    <div style="font-size:11.5px;color:var(--ts);margin:5px 0 12px;line-height:1.75">
+      학교가 보유하던 물품을 학생이 가져간 금액입니다. 학교 회계로 이체한 내역을 남기면 «남은 금액»이 줄어듭니다.</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="flex:1;background:var(--iv);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:17px;font-weight:900;color:#1D4ED8">₩${won(window.__schoolDue||0)}</div>
+        <div style="font-size:10.5px;font-weight:800;color:var(--tl)">학교 귀속분</div></div>
+      <div style="flex:1;background:var(--iv);border-radius:10px;padding:10px;text-align:center">
+        <div style="font-size:17px;font-weight:900;color:var(--gd)">₩${won((window.__schoolDue||0)-done)}</div>
+        <div style="font-size:10.5px;font-weight:800;color:var(--tl)">아직 남음</div></div>
+    </div>
+    ${mine.length?`<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px">
+      <tr><th style="text-align:left;padding:6px;background:var(--iv);font-size:11px">날짜</th>
+        <th style="text-align:right;padding:6px;background:var(--iv);font-size:11px">금액</th>
+        <th style="text-align:left;padding:6px;background:var(--iv);font-size:11px">메모</th><th style="background:var(--iv)"></th></tr>
+      ${mine.map(r=>`<tr><td style="padding:6px;border-bottom:1px solid var(--iv)">${esc(r.date||'')}</td>
+        <td style="padding:6px;text-align:right;font-weight:800;border-bottom:1px solid var(--iv)">₩${won(r.amount)}</td>
+        <td style="padding:6px;font-size:11px;color:var(--tl);border-bottom:1px solid var(--iv)">${esc(r.memo||'')}</td>
+        <td style="padding:6px;border-bottom:1px solid var(--iv)"><button class="bs" style="font-size:10.5px;padding:2px 7px" onclick="delSchoolReturn('${r.id}')">삭제</button></td></tr>`).join('')}
+    </table>`:'<div style="font-size:11.5px;color:var(--tl);margin-bottom:12px">아직 반납 기록이 없습니다.</div>'}
+    <div style="background:var(--iv);border-radius:11px;padding:11px">
+      <div style="display:flex;gap:7px;margin-bottom:7px">
+        <input type="date" id="sr-date" value="${todayYMD()}" style="flex:1;padding:8px;border:1.5px solid var(--ivd);border-radius:8px;font-family:inherit;font-size:12.5px">
+        <input type="number" id="sr-amount" placeholder="금액" value="${Math.max(0,(window.__schoolDue||0)-done)}" style="flex:1;padding:8px;border:1.5px solid var(--ivd);border-radius:8px;font-family:inherit;font-size:12.5px;text-align:right;font-weight:800">
+      </div>
+      <input type="text" id="sr-memo" placeholder="메모 (예: 9월분 학교 계좌 이체)" style="width:100%;padding:8px;border:1.5px solid var(--ivd);border-radius:8px;font-family:inherit;font-size:12.5px">
+      <div style="display:flex;gap:7px;justify-content:flex-end;margin-top:9px">
+        <button class="bs" onclick="this.closest('.modal-bg').remove()">닫기</button>
+        <button class="bp" onclick="saveSchoolReturn()">반납 기록 추가</button></div>
+    </div></div>`;
+  document.body.appendChild(bg);
+};
+window.saveSchoolReturn = async ()=>{
+  const date = document.getElementById('sr-date')?.value;
+  const amount = parseInt(document.getElementById('sr-amount')?.value||'0',10)||0;
+  const memo = document.getElementById('sr-memo')?.value.trim()||'';
+  if(!date || amount<=0){ toast('날짜와 금액을 확인해 주세요.','err'); return; }
+  try{
+    const ref = await addDoc(collection(db,'expenseSchoolReturns'), {
+      org: reportOrg, semester: reportSem, date, amount, memo,
+      createdByUid: CU.uid, createdByName: CU.name||'', createdAt: Timestamp.now() });
+    SCHOOL_RETURNS.push({ id: ref.id, org: reportOrg, semester: reportSem, date, amount, memo });
+    document.querySelector('.modal-bg')?.remove();
+    toast('반납 기록을 추가했습니다.','ok'); renderReport();
+  }catch(e){ toast('저장 실패: '+(e.code==='permission-denied'?'보안 규칙(expenseSchoolReturns) 게시가 필요합니다':e.message),'err'); }
+};
+window.delSchoolReturn = async id=>{
+  if(!confirm('이 반납 기록을 지울까요?')) return;
+  try{ await deleteDoc(doc(db,'expenseSchoolReturns',id));
+    SCHOOL_RETURNS = SCHOOL_RETURNS.filter(r=>r.id!==id);
+    document.querySelector('.modal-bg')?.remove(); toast('지웠습니다.','ok'); renderReport();
+  }catch(e){ toast('삭제 실패','err'); }
+};
+
 async function delDeposit(id){
   if(!isExpManager(reportOrg)){ toast('경비 관리자만 삭제할 수 있습니다.','err'); return; }
   if(!confirm('이 예치금 입금 기록을 삭제할까요?')) return;
@@ -5132,7 +5229,7 @@ async function backupYear(){
         e.date, e.semester?semKor(e.semester):'', ORGS[e.org]||e.org,
         e.mode==='refund'?'개별반환':e.mode==='indiv'?'개별청구':'균등(1/N)',
         e.teacher||'', e.subject, e.items, e.detail||'',
-        e.total, e.per??'', e.count, e.schoolQty||0, e.schoolTotal||0,
+        e.total, e.per??'', e.count, e.schoolQty||0, e.schoolTotal||0, (e.payer==='school'?'학교 보유 물품':'선생님 선지출'),
         e.bank||'', e.account||'', e.holder||'', e.createdByName||'',
         e.receiptCount||0,
         (e.students||[]).map(s=>`${s.name}:${s.amt??e.per??''}`).join('; ')
