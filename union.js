@@ -5,25 +5,36 @@
    · 탭을 닫으면 자동 잠김 (sessionStorage)
    저장: systemConfig/union { salt, hash, uids[] }  ·  기록: unionLogs
    ═══════════════════════════════════════════════════════════ */
-import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, addDoc, collection, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
-const CFG = {
-  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
-  authDomain: "daniel-amatz.firebaseapp.com",
-  projectId: "daniel-amatz",
-  storageBucket: "daniel-amatz.firebasestorage.app",
-  messagingSenderId: "455744290312",
-  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
-};
-const app = getApps().length ? getApps()[0] : initializeApp(CFG);
-const db = getFirestore(app);
-const auth = getAuth(app);
+/* ⛑ 페이지가 Firebase를 «먼저» 켜도록 기다린다.
+   이 모듈이 먼저 Firestore를 켜면 페이지의 initializeFirestore(...)가 예외를 던지고
+   부트 안전망(🛠 화면)이 떠버린다 — badges.js와 같은 대기 방식으로 맞춘다. */
+function waitForApp(){
+  return new Promise(resolve => {
+    let tries = 0;
+    const tick = () => {
+      if(getApps().length) return resolve(getApp());
+      if(++tries > 60) return resolve(null);      // 최대 ~9초
+      setTimeout(tick, 150);
+    };
+    tick();
+  });
+}
+let _fb = null;
+async function fb(){
+  if(_fb) return _fb;
+  const app = await waitForApp();
+  if(!app) return null;
+  try{ _fb = { db: getFirestore(app), auth: getAuth(app) }; }catch(e){ return null; }
+  return _fb;
+}
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-const me = () => (window.CU && window.CU.uid) ? window.CU : (auth.currentUser ? { uid:auth.currentUser.uid, name:'' } : null);
+const me = () => (window.CU && window.CU.uid) ? window.CU : (_fb && _fb.auth && _fb.auth.currentUser ? { uid:_fb.auth.currentUser.uid, name:'' } : null);
 
 /* ── 코드 변환 (원문을 저장하지 않는다) ── */
 async function hash(code, salt){
@@ -36,13 +47,15 @@ let _cfg = null, _cfgTried = false;
 async function loadCfg(){
   if(_cfgTried) return _cfg;
   _cfgTried = true;
-  try{ const s = await getDoc(doc(db,'systemConfig','union'));
+  const F = await fb(); if(!F){ _cfgTried = false; return null; }
+  try{ const s = await getDoc(doc(F.db,'systemConfig','union'));
     _cfg = s.exists() ? s.data() : null;
   }catch(e){ _cfg = null; }        // 권한이 없으면 읽히지 않는다 = 열 수 없는 사람
   return _cfg;
 }
 /* 권한자인가 — 설정 문서를 읽을 수 있고 목록에 들어 있으면 */
 async function canUnion(){
+  await fb();
   const u = me(); if(!u) return false;
   if(window.CU && window.CU.role === 'super') return true;
   const c = await loadCfg();
@@ -50,7 +63,8 @@ async function canUnion(){
 }
 async function logUnion(result, extra){
   const u = me(); if(!u) return;
-  try{ await addDoc(collection(db,'unionLogs'), {
+  const F = await fb(); if(!F) return;
+  try{ await addDoc(collection(F.db,'unionLogs'), {
     uid: u.uid, name: (window.CU && window.CU.name) || '', result,
     page: (location.pathname.split('/').pop()||''), at: Timestamp.now(), ...(extra||{}) }); }catch(e){}
 }
@@ -157,7 +171,8 @@ window.unionSave = async ()=>{
     if(msg) msg.textContent = '처음 설정할 때는 코드를 입력해야 합니다'; return;
   }
   try{
-    await setDoc(doc(db,'systemConfig','union'), data, { merge:true });
+    const F = await fb(); if(!F) throw new Error('firebase');
+    await setDoc(doc(F.db,'systemConfig','union'), data, { merge:true });
     _cfgTried = false; _cfg = null;
     closeModal();
     alert('연합 설정을 저장했습니다.');
@@ -197,11 +212,10 @@ function armDoor(){
 }
 
 function boot(){
-  paintBanner();
-  armDoor();
+  try{ paintBanner(); armDoor(); }catch(e){ console.warn('[연합] 초기화 건너뜀', e); return; }
   // 사이드바가 나중에 그려지는 화면을 위해 잠깐 지켜본다
   let n = 0;
-  const t = setInterval(()=>{ armDoor(); if(++n > 20) clearInterval(t); }, 300);
+  const t = setInterval(()=>{ try{ armDoor(); }catch(e){} if(++n > 20) clearInterval(t); }, 300);
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
 else boot();
