@@ -6,7 +6,7 @@
    저장: systemConfig/union { salt, hash, uids[] }  ·  기록: unionLogs
    ═══════════════════════════════════════════════════════════ */
 import { getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, doc, getDoc, setDoc, addDoc, collection, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
@@ -34,7 +34,30 @@ async function fb(){
 }
 
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-const me = () => (window.CU && window.CU.uid) ? window.CU : (_fb && _fb.auth && _fb.auth.currentUser ? { uid:_fb.auth.currentUser.uid, name:'' } : null);
+/* 🙋 로그인 계정 — 화면마다 CU가 전역에 없을 수 있으므로 직접 확인한다 */
+let _me = null, _meTried = false;
+function waitUser(auth){
+  return new Promise(res=>{
+    if(auth.currentUser) return res(auth.currentUser);
+    let done = false;
+    const un = onAuthStateChanged(auth, u=>{ if(u && !done){ done = true; try{ un(); }catch(e){} res(u); } });
+    setTimeout(()=>{ if(!done){ done = true; res(auth.currentUser || null); } }, 7000);
+  });
+}
+async function whoami(){
+  if(_me) return _me;
+  if(_meTried && !_me) _meTried = false;              // 로그인이 늦어지면 다시 시도
+  const F = await fb(); if(!F) return null;
+  const u = await waitUser(F.auth); if(!u) return null;
+  _meTried = true;
+  try{
+    const s = await getDoc(doc(F.db,'staff',u.uid));
+    const d = s.exists() ? s.data() : {};
+    _me = { uid:u.uid, name: d.name || '', role: d.role || '' };
+  }catch(e){ _me = { uid:u.uid, name:'', role:'' }; }
+  return _me;
+}
+const me = () => _me;
 
 /* ── 코드 변환 (원문을 저장하지 않는다) ── */
 async function hash(code, salt){
@@ -55,20 +78,20 @@ async function loadCfg(){
 }
 /* 권한자인가 — 설정 문서를 읽을 수 있고 목록에 들어 있으면 */
 async function canUnion(){
-  await fb();
-  const u = me(); if(!u) return false;
+  const u = await whoami(); if(!u) return false;
   const pre = await loadCfg();
-  if(pre && pre.enabled === false && !(window.CU && window.CU.role === 'super')) return false;
-  if(window.CU && window.CU.role === 'super') return true;
-  const c = await loadCfg();
+  const isSuper = (u.role === 'super');
+  if(pre && pre.enabled === false && !isSuper) return false;
+  if(isSuper) return true;
+  const c = pre;
   if(c && c.enabled === false) return false;             // 관리자 화면에서 «사용 안 함»으로 꺼둔 상태
   return !!(c && Array.isArray(c.uids) && c.uids.includes(u.uid));
 }
 async function logUnion(result, extra){
-  const u = me(); if(!u) return;
+  const u = await whoami(); if(!u) return;
   const F = await fb(); if(!F) return;
   try{ await addDoc(collection(F.db,'unionLogs'), {
-    uid: u.uid, name: (window.CU && window.CU.name) || '', result,
+    uid: u.uid, name: u.name || '', result,
     page: (location.pathname.split('/').pop()||''), at: Timestamp.now(), ...(extra||{}) }); }catch(e){}
 }
 
@@ -103,7 +126,7 @@ async function openDialog(){
     <div id="union-msg" style="font-size:11px;color:#C0392B;font-weight:700;text-align:center;height:16px;margin-top:7px">
       ${wait?`잠시 후 다시 시도해 주세요 (${wait}초)`:''}</div>
     <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px">
-      ${(window.CU&&window.CU.role==='super')?`<button onclick="unionSettings()" style="margin-right:auto;font-size:11px;font-weight:800;color:#5A6560;background:#fff;border:1.5px solid #E3E1DA;border-radius:9px;padding:7px 11px;cursor:pointer">⚙ 설정</button>`:''}
+      ${(_me && _me.role==='super')?`<button onclick="unionSettings()" style="margin-right:auto;font-size:11px;font-weight:800;color:#5A6560;background:#fff;border:1.5px solid #E3E1DA;border-radius:9px;padding:7px 11px;cursor:pointer">⚙ 설정</button>`:''}
       <button onclick="unionCloseModal()" style="font-size:11.5px;font-weight:800;color:#5A6560;background:#fff;border:1.5px solid #E3E1DA;border-radius:9px;padding:8px 14px;cursor:pointer">취소</button>
       <button onclick="unionTry()" style="font-size:11.5px;font-weight:800;color:#fff;background:#6D28D9;border:0;border-radius:9px;padding:8px 16px;cursor:pointer">열기</button>
     </div>`);
@@ -142,7 +165,8 @@ window.unionClose = async ()=>{
 
 /* ── ⚙ 설정 (슈퍼관리자) ── */
 window.unionSettings = async ()=>{
-  if(!(window.CU && window.CU.role==='super')) return;
+  const my = await whoami();
+  if(!my || my.role!=='super') return;
   const c = await loadCfg();
   modal(`
     <div style="font-size:15px;font-weight:900;color:#0F241F">⚙ 연합 설정</div>
@@ -165,7 +189,7 @@ window.unionSave = async ()=>{
   const code = (document.getElementById('us-code')?.value||'').trim();
   const uids = (document.getElementById('us-uids')?.value||'').split('\n').map(s=>s.trim()).filter(Boolean);
   const cur = await loadCfg();
-  const data = { uids, updatedAt: Timestamp.now(), byName: (window.CU&&window.CU.name)||'' };
+  const data = { uids, updatedAt: Timestamp.now(), byName: (_me && _me.name) || '' };
   if(code){
     if(code.length < 4){ if(msg) msg.textContent = '코드는 4자리 이상이어야 합니다'; return; }
     const salt = Math.random().toString(36).slice(2,10);
@@ -249,8 +273,10 @@ window.Union = { open: openDialog, close: ()=>window.unionClose(), isOpen: ()=> 
 /* ═══ 🤝 관리자 화면 패널 — admin.html 의 «연합» 탭이 여기에 붙는다 ═══ */
 window.unionAdminMount = async (elId)=>{
   const el = document.getElementById(elId); if(!el) return;
-  if(!(window.CU && window.CU.role === 'super')){
-    el.innerHTML = '<div style="padding:18px;color:#7C837E;font-size:13px">슈퍼관리자만 볼 수 있습니다.</div>'; return;
+  el.innerHTML = '<div style="padding:18px;color:#7C837E;font-size:13px">확인하는 중…</div>';
+  const my = await whoami();
+  if(!my || my.role !== 'super'){
+    el.innerHTML = `<div style="padding:18px;color:#7C837E;font-size:13px">슈퍼관리자만 볼 수 있습니다.${my?'':' (로그인 확인 실패 — 새로고침해 주세요)'}</div>`; return;
   }
   el.innerHTML = '<div style="padding:18px;color:#7C837E;font-size:13px">불러오는 중…</div>';
   _cfgTried = false; _cfg = null;
@@ -357,7 +383,7 @@ window.unionAdminSaveCode = async ()=>{
   const F = await fb(); if(!F) return;
   const salt = Math.random().toString(36).slice(2,10);
   try{ await setDoc(doc(F.db,'systemConfig','union'),
-      { salt, hash: await hash(code, salt), updatedAt: Timestamp.now(), byName: (window.CU&&window.CU.name)||'' }, { merge:true });
+      { salt, hash: await hash(code, salt), updatedAt: Timestamp.now(), byName: (_me && _me.name) || '' }, { merge:true });
     _cfgTried = false; _cfg = null;
     if(window.toast) toast('코드를 저장했습니다','ok'); else alert('코드를 저장했습니다');
     window.unionAdminMount('ca-union');
