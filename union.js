@@ -227,37 +227,68 @@ function paintBanner(){
    로고는 홈으로 가는 길이니 건드리지 않는다.
    누를 때마다 글자 배경이 한 단계씩 짙어져, 세 번째에 문이 열린다. */
 let _taps = 0, _tapAt = 0, _fade = null;
-const TAP_TINT = ['transparent', 'rgba(109,40,217,.28)', 'rgba(109,40,217,.55)'];
-function paintTap(el, n){
-  el.style.transition = 'background .18s, box-shadow .18s';
-  el.style.borderRadius = '7px';
-  el.style.padding = '2px 7px';
-  el.style.background = TAP_TINT[Math.min(n, TAP_TINT.length-1)];
-  el.style.boxShadow = n ? '0 0 0 1px rgba(109,40,217,.35)' : 'none';
+/* ═══ 🗝 천국 열쇠 — 상단 바 종 옆에 사는 문 ═══
+   · 로고와 «교사 선교사» 글자는 건드리지 않는다 (원래대로 홈으로 간다)
+   · 세 번 누르면 열리고, 누를 때마다 열쇠가 한 단계씩 또렷해진다
+   · 상단 바가 다시 그려져도 스스로 다시 붙는다 */
+const KEY_ID = 'union-key';
+function keyTint(el, n){
+  const lv = [
+    { o:'.42', bg:'transparent',               sc:'1'    },
+    { o:'.75', bg:'rgba(109,40,217,.14)',      sc:'1.08' },
+    { o:'1',   bg:'rgba(109,40,217,.34)',      sc:'1.16' },
+  ][Math.min(n, 2)];
+  el.style.opacity = lv.o;
+  el.style.background = lv.bg;
+  el.style.transform = `scale(${lv.sc})`;
 }
-/* 문은 «위임 방식»으로 단다 — 사이드바가 언제 그려지든, 다시 그려지든 항상 살아 있다 */
-let _doorArmed = false;
-function armDoor(){
-  if(_doorArmed) return;
-  _doorArmed = true;
-  document.addEventListener('click', (ev)=>{
-    const bt = ev.target && ev.target.closest ? ev.target.closest('.sb-bt') : null;
-    if(!bt) return;
-    ev.preventDefault();                 // 글자를 누를 때는 홈으로 가지 않는다
-    ev.stopPropagation();
+function makeKey(){
+  const b = document.createElement('button');
+  b.id = KEY_ID;
+  b.type = 'button';
+  b.title = '';                                    // 이름표를 두지 않는다 (숨은 문)
+  b.setAttribute('aria-label', '연합');
+  b.textContent = '🗝️';
+  b.style.cssText = `border:0;background:transparent;cursor:pointer;font-size:17px;line-height:1;
+    padding:6px;border-radius:8px;opacity:.42;transition:opacity .18s, background .18s, transform .18s;
+    display:flex;align-items:center;justify-content:center`;
+  b.addEventListener('click', (ev)=>{
+    ev.preventDefault(); ev.stopPropagation();
     const now = Date.now();
     _taps = (now - _tapAt < 1800) ? _taps + 1 : 1;
     _tapAt = now;
-    paintTap(bt, _taps);
+    keyTint(b, _taps);
     clearTimeout(_fade);
     if(_taps >= 3){
       _taps = 0;
-      setTimeout(()=>paintTap(bt, 0), 320);
+      setTimeout(()=>keyTint(b, 0), 320);
       openDialog();
       return;
     }
-    _fade = setTimeout(()=>{ _taps = 0; paintTap(bt, 0); }, 1800);
-  }, true);                              // 캡처 단계 — 링크의 기본 이동보다 먼저 잡는다
+    _fade = setTimeout(()=>{ _taps = 0; keyTint(b, 0); }, 1800);
+  });
+  return b;
+}
+function placeKey(){
+  const host = document.querySelector('.tb-right');
+  if(!host) return;
+  const old = document.getElementById(KEY_ID);
+  if(old && old.parentElement === host) return;    // 이미 제자리에 있다
+  const k = makeKey();
+  host.appendChild(k);                              // 종 오른쪽에 붙는다
+  if(window.orgCore && orgCore.unionOpen()) keyTint(k, 2);
+}
+let _keyWatch = false;
+function armDoor(){
+  placeKey();
+  if(_keyWatch) return;
+  _keyWatch = true;
+  // 상단 바는 배지 갱신 등으로 다시 그려진다 — 사라지면 곧바로 다시 붙인다
+  try{
+    new MutationObserver(()=>placeKey()).observe(document.body, { childList:true, subtree:true });
+  }catch(e){
+    setInterval(placeKey, 1000);
+  }
 }
 
 function boot(){
