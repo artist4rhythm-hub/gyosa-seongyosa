@@ -1064,11 +1064,27 @@ const CALS = {
   jihyebit: { label:'지혜빛 선교원 학사일정', short:'지혜빛', color:'#8E4EC6' },
 };
 const CAL_KEYS = ['all','daniel','jihyebit'];
+/* 🤝 연합 관문 — 잠긴 상태에서는 «내 기관 + DA 전체»만 보인다.
+   (‘DA 전체’는 두 기관 공통 일정이라 항상 남긴다) */
+function visibleCals(){
+  try{
+    if(window.orgCore && orgCore.unionOpen()) return CAL_KEYS.slice();
+    const mine = window.orgCore ? orgCore.myOrgs(CU,'academic') : null;
+    if(!mine || !mine.length) return CAL_KEYS.slice();
+    return ['all', ...CAL_KEYS.filter(k=>k!=='all' && mine.includes(k))];
+  }catch(e){ return CAL_KEYS.slice(); }
+}
 const ORGS = { all:'DA 전체', daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
 const ORG_ALL = '__all__';   // 세 캘린더를 겹쳐서 함께 보는 상태
 /* 예전에 'both' 로 넣어둔 일정은 «DA 전체»로 읽는다 */
 function calOf(e){ const o = (e && e.org) || 'daniel'; return o === 'both' ? 'all' : o; }
 /* 이 행사가 속한 캘린더 목록 — 복수 선택 지원 (옛 문서는 org 하나짜리) */
+/* 화면에 띄울 일정인가 — 연합이 잠겨 있으면 내 캘린더 것만 */
+function calVisible(e){
+  const vis = visibleCals();
+  if(vis.length === CAL_KEYS.length) return true;
+  return orgsOf(e).some(o => vis.includes(o === 'both' ? 'all' : o));
+}
 function orgsOf(e){
   if(e && Array.isArray(e.orgs) && e.orgs.length) return e.orgs;
   return [calOf(e)];
@@ -1391,7 +1407,7 @@ async function loadEvents(year, month, fresh){
 
 /* 지금 고른 기관의 행사만 보여준다 */
 function applyEventScope(){
-  if(ORG === ORG_ALL){ EVENTS = ALL_EVENTS.slice(); return; }   // 세 캘린더 겹쳐보기
+  if(ORG === ORG_ALL){ EVENTS = ALL_EVENTS.filter(calVisible); return; }   // 겹쳐보기 — 단, 연합이 잠겼으면 내 캘린더만
   if(ORG === 'all'){ EVENTS = ALL_EVENTS.filter(e => orgsOf(e).includes('all')); return; }
   // 기관 캘린더를 볼 때 «DA 전체»(정기휴가·창립일 등)도 함께 보여줄지는 고를 수 있다
   EVENTS = ALL_EVENTS.filter(e => {
@@ -4390,7 +4406,9 @@ function myOrgs(){ return orgCore.myOrgs(CU,'academic'); }   // 🏛 org-core �
 /* 캘린더 고르기 막대 */
 function renderCalBar(){
   const box = $I('org-bar'); if(!box) return;
-  const items = [[ORG_ALL,'🔗 모두 보기','#5A6560'], ...CAL_KEYS.map(k=>[k, CALS[k].label, CALS[k].color])];
+  const vis = visibleCals();
+  const items = [...(vis.length>1 ? [[ORG_ALL,'🔗 모두 보기','#5A6560']] : []),
+                 ...vis.map(k=>[k, CALS[k].label, CALS[k].color])];
   box.innerHTML = `<div class="cal-bar">
     <span class="cb-lab">📚 캘린더</span>
     ${items.map(([k,label,color])=>{
@@ -4535,7 +4553,9 @@ async function startShareView(){
     if(years.length && !years.includes(curYear)) curYear = years[0];
     if(!SHARE_MODE)try {
       const saved = localStorage.getItem('academic_cal_share');
-      ORG = (saved && (CALS[saved] || saved===ORG_ALL)) ? saved : ORG_ALL;
+      const vis = visibleCals();
+      ORG = (saved && (vis.includes(saved) || (saved===ORG_ALL && vis.length>1))) ? saved
+          : (vis.length>1 ? ORG_ALL : vis[0]);
     } catch(e){ ORG = ORG_ALL; }
 
     applyYearScope();
@@ -4659,7 +4679,7 @@ onAuthStateChanged(auth, async user => {
 <script src="timemachine.js"></script>
 <script src="holidays-kr.js"></script>
 <script src="sidebar.js"></script>
-<script type="module" src="union.js?v=56"></script>
+<script type="module" src="union.js?v=57"></script>
 
 <script>
 /* 학부모 사이트에서 넘어온 경우(pfrom=daniel|jihyebit) 맨 위에 «학부모 홈으로» 복귀 바 */

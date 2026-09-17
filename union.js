@@ -235,12 +235,14 @@ function paintTap(el, n){
   el.style.background = TAP_TINT[Math.min(n, TAP_TINT.length-1)];
   el.style.boxShadow = n ? '0 0 0 1px rgba(109,40,217,.35)' : 'none';
 }
+/* 문은 «위임 방식»으로 단다 — 사이드바가 언제 그려지든, 다시 그려지든 항상 살아 있다 */
+let _doorArmed = false;
 function armDoor(){
-  const bt = document.querySelector('.sb-bt');
-  if(!bt || bt.dataset.unionArmed) return;
-  bt.dataset.unionArmed = '1';
-  bt.style.cursor = 'pointer';
-  bt.addEventListener('click', (ev)=>{
+  if(_doorArmed) return;
+  _doorArmed = true;
+  document.addEventListener('click', (ev)=>{
+    const bt = ev.target && ev.target.closest ? ev.target.closest('.sb-bt') : null;
+    if(!bt) return;
     ev.preventDefault();                 // 글자를 누를 때는 홈으로 가지 않는다
     ev.stopPropagation();
     const now = Date.now();
@@ -254,15 +256,12 @@ function armDoor(){
       openDialog();
       return;
     }
-    _fade = setTimeout(()=>{ _taps = 0; paintTap(bt, 0); }, 1800);   // 시간이 지나면 처음부터
-  });
+    _fade = setTimeout(()=>{ _taps = 0; paintTap(bt, 0); }, 1800);
+  }, true);                              // 캡처 단계 — 링크의 기본 이동보다 먼저 잡는다
 }
 
 function boot(){
   try{ paintBanner(); armDoor(); }catch(e){ console.warn('[연합] 초기화 건너뜀', e); return; }
-  // 사이드바가 나중에 그려지는 화면을 위해 잠깐 지켜본다
-  let n = 0;
-  const t = setInterval(()=>{ try{ armDoor(); }catch(e){} if(++n > 20) clearInterval(t); }, 300);
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
 else boot();
