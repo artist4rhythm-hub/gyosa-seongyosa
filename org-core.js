@@ -27,11 +27,35 @@ window.orgCore = (function(){
       if(CU.role==='super' || UNIFIED_POS.includes(CU.position||'')) return DF.slice();
       return base(CU); },
   };
+  /* ── 🤝 연합 — 두 기관을 함께 보는 «열린 상태» ──
+     · sessionStorage라 «이 탭에서만» 유지된다 (탭을 닫으면 자동 잠김)
+     · 잠긴 상태가 기본이며, 그때는 어떤 화면도 한 기관만 본다 */
+  const UNION_KEY = 'gyosa_union';
+  function unionOpen(){ try{ return sessionStorage.getItem(UNION_KEY)==='1'; }catch(e){ return false; } }
+  function setUnion(on){
+    try{ on ? sessionStorage.setItem(UNION_KEY,'1') : sessionStorage.removeItem(UNION_KEY); }catch(e){}
+    if(!on){ try{ if(curOrg()==='all') localStorage.removeItem('gyosa_curorg'); }catch(e){} }
+    try{ window.dispatchEvent(new CustomEvent('unionchange', { detail:{ open:!!on } })); }catch(e){}
+  }
+  /* 주 소속 — 명부의 대표 기관(staff.org)이 곧 평소에 보는 기관 */
+  function primaryOrg(CU){
+    if(!CU) return '';
+    const b = base(CU);
+    const p = CU.primaryOrg || CU.org || '';
+    if((p==='daniel'||p==='jihyebit') && (!b.length || b.includes(p))) return p;
+    return b[0] || '';
+  }
+
   function myOrgs(CU, key){
     const full = (POLICY[key] || POLICY.std)(CU);
     const g = curOrg();                                   // 🧭 전역 스위처: 단일 기관을 고르면
     if((g==='daniel'||g==='jihyebit') && full.includes(g)) return [g];   //    전 화면의 스코프가 그 기관으로 좁혀진다
-    return full;                                          // '함께(all)'·미지정·권한 밖 = 원래 정책 그대로
+    if(!unionOpen()){                                     // 🔒 연합이 잠겨 있으면 «반드시» 한 기관
+      const p = primaryOrg(CU);
+      if(p && full.includes(p)) return [p];
+      return full.slice(0,1);
+    }
+    return full;                                          // 🔓 연합 열림 = 원래 정책(양기관) 그대로
   }
 
   /* ── 🧭 전역 기관 컨텍스트 (3단계) ── */
@@ -54,12 +78,12 @@ window.orgCore = (function(){
       if(Array.isArray(j)) return j; }catch(e){}
     return DEFAULT_COMBINED.slice();
   }
-  const combinedHas = k => combined().includes(k);
+  const combinedHas = k => unionOpen() && combined().includes(k);   // 🤝 연합이 열려야 «전체 기관»이 뜬다
   function applyLocalOrgView(list){
     if(!Array.isArray(list)) return;
     try{ localStorage.setItem('gyosa_orgview', JSON.stringify(list)); }catch(e){}
   }
 
-  return { myOrgs, POLICY, UNIFIED_POS, JF, DF,
+  return { myOrgs, POLICY, UNIFIED_POS, JF, DF, unionOpen, setUnion, primaryOrg,
            curOrg, setCurOrg, combined, combinedHas, applyLocalOrgView, DEFAULT_COMBINED };
 })();

@@ -4936,7 +4936,11 @@ function renderRoomList(){
 // ═══════════════════════════════════════════
 // LESSONS = [{id, org, subject, grades:[], teacherUids:[], hours, bundle, roomId}]
 let LESSONS = [];
-let lessonOrg = 'daniel';
+let lessonOrg = (function(){                       // 🤝 연합 관문 경유 — 잠겨 있으면 내 기관 하나
+  try{ const o = window.orgCore ? orgCore.myOrgs(window.CU,'std') : null;
+    if(o && o.length) return o[0]; }catch(e){}
+  return 'daniel';
+})();
 let editingLessonId = null;
 let dlgGrades = new Set();      // 다이얼로그 선택 상태
 let dlgTeachers = new Set();
@@ -4960,7 +4964,13 @@ async function saveLessons(silent){
   } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
 }
 
-window.onLessonOrg = function(){ lessonOrg = $I('lesson-org').value; renderLessons(); };
+window.onLessonOrg = function(){
+  const v = $I('lesson-org').value;
+  try{ const allow = window.orgCore ? orgCore.myOrgs(window.CU,'std') : null;
+    if(allow && allow.length && !allow.includes(v)){    // 잠긴 상태에서 남의 기관은 고를 수 없다
+      $I('lesson-org').value = lessonOrg; return; } }catch(e){}
+  lessonOrg = v; renderLessons();
+};
 
 // 시수 + 묶음 → 카드 구성 계산 (예: 4시수 묶음2 → [2,2])
 function bundleGroups(hours, bundle){
@@ -6621,6 +6631,7 @@ window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.re
 <script src="menu.js"></script>
 <script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
+<script type="module" src="union.js"></script>
 <div id="printArea"></div>
 </body>
 </html>
