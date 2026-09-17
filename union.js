@@ -57,8 +57,11 @@ async function loadCfg(){
 async function canUnion(){
   await fb();
   const u = me(); if(!u) return false;
+  const pre = await loadCfg();
+  if(pre && pre.enabled === false && !(window.CU && window.CU.role === 'super')) return false;
   if(window.CU && window.CU.role === 'super') return true;
   const c = await loadCfg();
+  if(c && c.enabled === false) return false;             // 관리자 화면에서 «사용 안 함»으로 꺼둔 상태
   return !!(c && Array.isArray(c.uids) && c.uids.includes(u.uid));
 }
 async function logUnion(result, extra){
@@ -196,18 +199,38 @@ function paintBanner(){
   document.body.style.paddingBottom = '40px';
 }
 
-/* ── 숨은 문: 로고 3번 ── */
-let _taps = 0, _tapAt = 0;
+/* ── 숨은 문: «교사 선교사» 글자를 3번 ──
+   로고는 홈으로 가는 길이니 건드리지 않는다.
+   누를 때마다 글자 배경이 한 단계씩 짙어져, 세 번째에 문이 열린다. */
+let _taps = 0, _tapAt = 0, _fade = null;
+const TAP_TINT = ['transparent', 'rgba(109,40,217,.28)', 'rgba(109,40,217,.55)'];
+function paintTap(el, n){
+  el.style.transition = 'background .18s, box-shadow .18s';
+  el.style.borderRadius = '7px';
+  el.style.padding = '2px 7px';
+  el.style.background = TAP_TINT[Math.min(n, TAP_TINT.length-1)];
+  el.style.boxShadow = n ? '0 0 0 1px rgba(109,40,217,.35)' : 'none';
+}
 function armDoor(){
-  const logo = document.querySelector('.sb-logo') || document.querySelector('.sb-brand');
-  if(!logo || logo.dataset.unionArmed) return;
-  logo.dataset.unionArmed = '1';
-  logo.style.cursor = 'pointer';
-  logo.addEventListener('click', ()=>{
+  const bt = document.querySelector('.sb-bt');
+  if(!bt || bt.dataset.unionArmed) return;
+  bt.dataset.unionArmed = '1';
+  bt.style.cursor = 'pointer';
+  bt.addEventListener('click', (ev)=>{
+    ev.preventDefault();                 // 글자를 누를 때는 홈으로 가지 않는다
+    ev.stopPropagation();
     const now = Date.now();
-    _taps = (now - _tapAt < 1500) ? _taps + 1 : 1;
+    _taps = (now - _tapAt < 1800) ? _taps + 1 : 1;
     _tapAt = now;
-    if(_taps >= 3){ _taps = 0; openDialog(); }
+    paintTap(bt, _taps);
+    clearTimeout(_fade);
+    if(_taps >= 3){
+      _taps = 0;
+      setTimeout(()=>paintTap(bt, 0), 320);
+      openDialog();
+      return;
+    }
+    _fade = setTimeout(()=>{ _taps = 0; paintTap(bt, 0); }, 1800);   // 시간이 지나면 처음부터
   });
 }
 
@@ -221,3 +244,130 @@ if(document.readyState === 'loading') document.addEventListener('DOMContentLoade
 else boot();
 window.addEventListener('unionchange', paintBanner);
 window.Union = { open: openDialog, close: ()=>window.unionClose(), isOpen: ()=> !!(window.orgCore && orgCore.unionOpen()) };
+
+
+/* ═══ 🤝 관리자 화면 패널 — admin.html 의 «연합» 탭이 여기에 붙는다 ═══ */
+window.unionAdminMount = async (elId)=>{
+  const el = document.getElementById(elId); if(!el) return;
+  if(!(window.CU && window.CU.role === 'super')){
+    el.innerHTML = '<div style="padding:18px;color:#7C837E;font-size:13px">슈퍼관리자만 볼 수 있습니다.</div>'; return;
+  }
+  el.innerHTML = '<div style="padding:18px;color:#7C837E;font-size:13px">불러오는 중…</div>';
+  _cfgTried = false; _cfg = null;
+  const c = await loadCfg();
+  const F = await fb();
+  let staff = [];
+  try{ const { getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const snap = await getDocs(collection(F.db,'staff'));
+    staff = snap.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>!x.deleted && x.status!=='퇴직')
+      .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
+  }catch(e){}
+  let logs = [];
+  try{ const { getDocs, query, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const snap = await getDocs(query(collection(F.db,'unionLogs'), orderBy('at','desc'), limit(30)));
+    logs = snap.docs.map(d=>d.data());
+  }catch(e){}
+  const on = !(c && c.enabled === false);
+  const picked = new Set((c && c.uids) || []);
+  const RES = { open:['열림','#166534','#DCFCE7'], close:['잠금','#5A6560','#F2F0EB'], fail:['코드 오류','#C0392B','#FDECEA'] };
+  const when = t => { try{ const d = t.toDate ? t.toDate() : new Date(t);
+    const p=n=>String(n).padStart(2,'0');
+    return `${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }catch(e){ return ''; } };
+
+  el.innerHTML = `
+  <div class="asc">
+    <div class="acard">
+      <h3 class="actitle">🤝 연합 — 두 기관 함께 보기</h3>
+      <p class="adesc">평소에는 모든 화면이 <b>주 소속 기관 하나만</b> 보여줍니다.
+        아래에서 허락한 분이 사이드바의 «교사 선교사» 글자를 <b>세 번</b> 누르고 코드를 넣으면,
+        <b>그 탭에서만</b> 두 기관이 함께 보입니다. 탭을 닫으면 자동으로 잠깁니다.</p>
+
+      <div style="display:flex;align-items:center;gap:10px;background:var(--iv);border-radius:11px;padding:12px 14px;margin:12px 0">
+        <div style="flex:1">
+          <div style="font-size:13.5px;font-weight:900;color:var(--gd)">${on?'🔓 연합 기능 사용 중':'🔒 연합 기능 꺼둠'}</div>
+          <div style="font-size:11.5px;color:var(--ts);margin-top:2px">
+            ${on?'허락한 분들이 코드로 열 수 있습니다.':'아무도 열 수 없습니다 (슈퍼관리자는 예외).'}</div>
+        </div>
+        <button onclick="unionToggleEnabled(${on?'false':'true'})"
+          style="font-size:12px;font-weight:800;border-radius:9px;padding:9px 16px;cursor:pointer;border:0;
+          background:${on?'#fff':'#1E3932'};color:${on?'#5A6560':'#fff'};border:1.5px solid ${on?'#E3E1DA':'#1E3932'}">
+          ${on?'끄기':'켜기'}</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-size:12.5px;font-weight:900;color:var(--gd);margin-bottom:6px">🗝 코드</div>
+          <div style="font-size:11.3px;color:var(--tl);line-height:1.7;margin-bottom:6px">
+            ${c&&c.hash?`설정되어 있습니다${c.byName?` · 마지막 변경 ${esc(c.byName)}`:''}`:'<b style="color:#C0392B">아직 설정되지 않았습니다</b>'}</div>
+          <input id="ua-code" type="text" inputmode="numeric" autocomplete="off" placeholder="새 코드 (4자리 이상)"
+            style="width:100%;height:40px;padding:0 11px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--iv);font-family:inherit;font-size:13px">
+          <button onclick="unionAdminSaveCode()" style="margin-top:7px;width:100%;padding:9px;border:0;border-radius:9px;
+            background:#6D28D9;color:#fff;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">코드 저장</button>
+          <div style="font-size:10.8px;color:var(--tl);margin-top:6px;line-height:1.7">
+            코드는 변환해서 저장되며 원문은 남지 않습니다. 3회 틀리면 1분간 잠깁니다.</div>
+        </div>
+        <div>
+          <div style="font-size:12.5px;font-weight:900;color:var(--gd);margin-bottom:6px">👤 열 수 있는 사람</div>
+          <input id="ua-q" placeholder="이름 검색" oninput="unionFilterStaff(this.value)"
+            style="width:100%;height:36px;padding:0 11px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--iv);font-family:inherit;font-size:12.5px;margin-bottom:6px">
+          <div id="ua-list" style="max-height:190px;overflow:auto;border:1.5px solid var(--ivd);border-radius:9px;padding:6px;background:#fff"></div>
+          <button onclick="unionAdminSaveUids()" style="margin-top:7px;width:100%;padding:9px;border:0;border-radius:9px;
+            background:#1E3932;color:#fff;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">명단 저장</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle">📜 열람 기록 <span style="font-size:11.5px;font-weight:600;color:var(--tl)">· 최근 30건</span></h3>
+      ${logs.length ? `<table class="otable" style="margin-top:8px"><tr><th>시각</th><th>사람</th><th>결과</th><th>화면</th></tr>
+        ${logs.map(l=>{ const r = RES[l.result] || [l.result||'', '#5A6560', '#F2F0EB'];
+          return `<tr><td>${when(l.at)}</td><td><b>${esc(l.name||'')}</b></td>
+            <td><span class="sbadge" style="background:${r[2]};color:${r[1]}">${r[0]}</span></td>
+            <td style="color:var(--tl);font-size:11.5px">${esc(l.page||'')}</td></tr>`; }).join('')}
+        </table>` : '<p class="empty">아직 기록이 없습니다.</p>'}
+    </div>
+  </div>`;
+
+  window.__uaStaff = staff; window.__uaPicked = picked;
+  window.unionFilterStaff = (q)=>{
+    const list = (window.__uaStaff||[]).filter(s=>!q || String(s.name||'').includes(q)).slice(0,80);
+    document.getElementById('ua-list').innerHTML = list.map(s=>`
+      <label style="display:flex;align-items:center;gap:7px;padding:5px 4px;font-size:12.5px;font-weight:700;cursor:pointer">
+        <input type="checkbox" ${window.__uaPicked.has(s.uid)?'checked':''} data-uid=""${s.uid}" style="width:15px;height:15px">
+        ${esc(s.name||'')} <span style="color:#93A09A;font-size:10.8px">${esc(s.position||s.role||'')}</span></label>`).join('')
+      || '<div style="font-size:11.5px;color:#93A09A;padding:6px">검색 결과 없음</div>';
+    document.getElementById('ua-list').querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.addEventListener('change', ()=>{ const u = cb.dataset.uid;
+        cb.checked ? window.__uaPicked.add(u) : window.__uaPicked.delete(u); });
+    });
+  };
+  window.unionFilterStaff('');
+};
+window.unionToggleEnabled = async (on)=>{
+  const F = await fb(); if(!F) return;
+  try{ await setDoc(doc(F.db,'systemConfig','union'), { enabled: !!on }, { merge:true });
+    _cfgTried = false; _cfg = null;
+    if(window.toast) toast(on?'연합 기능을 켰습니다':'연합 기능을 껐습니다','ok');
+    window.unionAdminMount('ca-union');
+  }catch(e){ alert('저장 실패 — 보안 규칙(systemConfig/union) 게시가 필요합니다'); }
+};
+window.unionAdminSaveCode = async ()=>{
+  const code = (document.getElementById('ua-code')?.value||'').trim();
+  if(code.length < 4){ alert('코드는 4자리 이상이어야 합니다'); return; }
+  const F = await fb(); if(!F) return;
+  const salt = Math.random().toString(36).slice(2,10);
+  try{ await setDoc(doc(F.db,'systemConfig','union'),
+      { salt, hash: await hash(code, salt), updatedAt: Timestamp.now(), byName: (window.CU&&window.CU.name)||'' }, { merge:true });
+    _cfgTried = false; _cfg = null;
+    if(window.toast) toast('코드를 저장했습니다','ok'); else alert('코드를 저장했습니다');
+    window.unionAdminMount('ca-union');
+  }catch(e){ alert('저장 실패 — 보안 규칙(systemConfig/union) 게시가 필요합니다'); }
+};
+window.unionAdminSaveUids = async ()=>{
+  const F = await fb(); if(!F) return;
+  try{ await setDoc(doc(F.db,'systemConfig','union'),
+      { uids: [...(window.__uaPicked||[])], updatedAt: Timestamp.now() }, { merge:true });
+    _cfgTried = false; _cfg = null;
+    if(window.toast) toast('명단을 저장했습니다','ok'); else alert('명단을 저장했습니다');
+  }catch(e){ alert('저장 실패 — 보안 규칙(systemConfig/union) 게시가 필요합니다'); }
+};
