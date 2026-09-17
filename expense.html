@@ -2532,7 +2532,7 @@ async function renderList(){
                 : e.mode==='group' ? `<b style="color:var(--gm)">👥 그룹 균등</b> · ${(e.groups||[]).map(g=>`${g.label} ${g.count}명×₩${won(g.per)}`).join(' · ')} · 합계 <b style="color:var(--gm)">₩${won(e.total)}</b>`
                 : `<b style="color:var(--gm)">₩${won(e.total)}</b> ÷ ${e.count}${e.schoolQty?`+${e.schoolQty}`:''} = <b style="color:var(--gm)">₩${won(e.per)}/인</b>`}${e.payer==='school'?' <span style="font-size:10px;font-weight:900;background:#E5EDFC;color:#1D4ED8;border-radius:7px;padding:1px 7px">📚 학교</span>':''}
               </div>
-              ${e.paid&&e.paidAt?`<div style="font-size:11.5px;color:var(--ok);margin-top:3px">💰 ${esc(e.paidByName||'')} · ${esc(fmtDateTime(e.paidAt))} 입금 확인</div>`:''}
+              ${e.paid&&e.paidAt?`<div style="font-size:11.5px;color:var(--ok);margin-top:3px">${isBack(e)?'↩️':'💰'} ${esc(e.paidByName||'')} · ${esc(fmtDateTime(e.paidAt))} ${payWord(e,'done')}</div>`:''}
             </div>
             <button class="bm" onclick="viewExpense('${e.id}')">상세보기</button>
             ${e.deleted ? `
@@ -2540,8 +2540,8 @@ async function renderList(){
               ${(CU.role==='super'||isExpManager(e.org))?`<button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="purgeExpense('${e.id}')">영구 삭제</button>`:''}
             ` : `
               ${isExpManager(e.org) ? (e.paid
-                ? `<button class="bm" style="background:var(--danger-bg);color:var(--warn)" onclick="togglePaid('${e.id}',false)">입금확인 취소</button>`
-                : `<button class="bm" style="background:var(--ok-bg);color:var(--ok);font-weight:700" onclick="togglePaid('${e.id}',true)">💰 입금 확인</button>`) : ''}
+                ? `<button class="bm" style="background:var(--danger-bg);color:var(--warn)" onclick="togglePaid('${e.id}',false)">${payWord(e,'cancel')}</button>`
+                : `<button class="bm" style="background:var(--ok-bg);color:var(--ok);font-weight:700" title="${isBack(e)?'선생님이 반환한 남은 회비를 예치금으로 받았음을 확인합니다':'선생님께 지급을 완료했음을 표시합니다'}" onclick="togglePaid('${e.id}',true)">${payWord(e,'btn')}</button>`) : ''}
               ${canEditExpense(e) ? `<button class="bm" onclick="editExpense('${e.id}')">✏️ 수정</button>` : ''}
               ${(isExpManager(e.org) && canEditExpense(e)) ? `<button class="bm" style="background:var(--danger-bg);color:var(--warn)" onclick="delExpense('${e.id}')">🗑️ 삭제</button>` : ''}
               ${canUnlockExpense(e) ? `<button class="bm" onclick="unlockExpense('${e.id}')">🔓 잠금 해제</button>` : ''}
@@ -2775,6 +2775,16 @@ function fmtDateTime(ts){
   } catch(e){ return ''; }
 }
 
+/* ↩️ 반환 건은 돈의 방향이 반대다.
+   청구: 관리자 → 선생님 (지급)   ·   반환: 선생님 → 관리자 (수령)
+   같은 «정산 완료» 표시를 쓰되, 문구만 방향에 맞게 바꾼다. */
+const isBack = e => (e && e.mode === 'refund');
+const payWord = (e, k) => isBack(e)
+  ? ({btn:'↩️ 수령 확인', cancel:'수령확인 취소', done:'수령 확인', doing:'수령 확인 처리 중…',
+      ttl:'반환금 수령 완료', toast:'수령 완료로 표시했습니다. 선생님께 쪽지를 보냈습니다.'})[k]
+  : ({btn:'💰 입금 확인', cancel:'입금확인 취소', done:'입금 확인', doing:'입금 확인 처리 중…',
+      ttl:'입금 완료', toast:'입금 완료로 표시했습니다. 신청자에게 쪽지를 보냈습니다.'})[k];
+
 // 입금 확인 체크/취소 (경비 관리자·슈퍼만)
 /* ═══════════════════════════════════════════
    신청 이력 — 상신·승인·반려·지급·수정·공유·의견을 시간순으로 남긴다
@@ -2782,8 +2792,8 @@ function fmtDateTime(ts){
    ═══════════════════════════════════════════ */
 const HIST_LABEL = {
   created:'작성',        submitted:'상신',     approved:'승인',
-  rejected:'반려',       resubmitted:'재상신', paid:'입금 확인',
-  unpaid:'입금 확인 취소', edited:'내용 수정',   shared:'공유',
+  rejected:'반려',       resubmitted:'재상신', paid:'정산 완료',
+  unpaid:'정산 완료 취소', edited:'내용 수정',   shared:'공유',
   comment:'의견',        locked:'수정 잠금',   unlocked:'잠금 해제',
   reverted:'이전 기록 보관',
 };
@@ -2820,10 +2830,12 @@ async function togglePaid(id, paid){
     toast(`${semKor(e.semester)}가 마감되어 바꿀 수 없습니다.`,'err'); return;
   }
   if(!isExpManager(e.org)){ toast('경비 관리자만 입금 확인을 할 수 있습니다.','err'); return; }
-  if(paid && !confirm(`"${e.subject}" (${e.teacher||e.createdByName}) 건을 입금 완료로 표시할까요?\n신청한 선생님께 입금 안내 쪽지가 발송됩니다.`)) return;
-  if(!paid && !confirm('입금 확인을 취소할까요?')) return;
+  if(paid && !confirm(isBack(e)
+      ? `"${e.subject}" (${e.teacher||e.createdByName}) 건의 반환금 ₩${won(e.total)}을 받으셨나요?\n예치금으로 들어온 것으로 기록하고, 선생님께 수령 안내 쪽지가 발송됩니다.`
+      : `"${e.subject}" (${e.teacher||e.createdByName}) 건을 입금 완료로 표시할까요?\n신청한 선생님께 입금 안내 쪽지가 발송됩니다.`)) return;
+  if(!paid && !confirm(`${payWord(e,'done')}을 취소할까요?`)) return;
   try {
-    window.showLoading && window.showLoading(paid?'입금 확인 처리 중…':'취소 처리 중…');
+    window.showLoading && window.showLoading(paid?payWord(e,'doing'):'취소 처리 중…');
     // 입금이 확인되면 잠근다 — 이미 나간 돈의 내용이 바뀌면 회계 기록을 믿을 수 없게 되므로
     const upd = paid
       ? { paid:true, paidAt:Timestamp.now(), paidByUid:CU.uid, paidByName:CU.name||'', locked:true }
@@ -2835,12 +2847,15 @@ async function togglePaid(id, paid){
     if(paid && e.createdByUid){
       await sendMsg(
         [e.createdByUid],
-        `[입금 완료] ${e.subject} 수행성 경비`,
-        `${ORGS[e.org]||e.org} · ${e.semester?semKor(e.semester):''}\n과목: ${e.subject}\n${e.mode==='refund'?'반환':'청구'} 합계: ₩${won(e.total)}\n\n신청하신 수행성 경비가 입금 처리되었습니다.\n입금 확인: ${CU.name||''} · ${fmtDateTime(upd.paidAt)}`
+        isBack(e) ? `[반환금 수령 완료] ${e.subject} 수행성 경비`
+                  : `[입금 완료] ${e.subject} 수행성 경비`,
+        isBack(e)
+          ? `${ORGS[e.org]||e.org} · ${e.semester?semKor(e.semester):''}\n과목: ${e.subject}\n반환 합계: ₩${won(e.total)}\n\n남겨 주신 회비를 수행성 경비 예치금으로 받았습니다.\n따로 보내주실 것은 없으며, 학생별 반환 내역은 학기말 정산에 반영됩니다.\n수령 확인: ${CU.name||''} · ${fmtDateTime(upd.paidAt)}`
+          : `${ORGS[e.org]||e.org} · ${e.semester?semKor(e.semester):''}\n과목: ${e.subject}\n청구 합계: ₩${won(e.total)}\n\n신청하신 수행성 경비가 입금 처리되었습니다.\n입금 확인: ${CU.name||''} · ${fmtDateTime(upd.paidAt)}`
       );
     }
     window.hideLoading && window.hideLoading();
-    toast(paid?'입금 완료로 표시했습니다. 신청자에게 쪽지를 보냈습니다.':'입금 확인을 취소했습니다.','ok');
+    toast(paid?payWord(e,'toast'):`${payWord(e,'done')}을 취소했습니다.`,'ok');
     renderList();
   } catch(err){ window.hideLoading && window.hideLoading(); toast('처리 실패: '+err.message,'err'); }
 }
