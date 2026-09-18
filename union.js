@@ -335,8 +335,17 @@ window.unionAdminMount = async (elId)=>{
     <div class="acard">
       <h3 class="actitle">🤝 연합 — 두 기관 함께 보기</h3>
       <p class="adesc">평소에는 모든 화면이 <b>주 소속 기관 하나만</b> 보여줍니다.
-        아래에서 허락한 분이 사이드바의 «교사 선교사» 글자를 <b>세 번</b> 누르고 코드를 넣으면,
-        <b>그 탭에서만</b> 두 기관이 함께 보입니다. 탭을 닫으면 자동으로 잠깁니다.</p>
+        아래에서 켠 분이 화면 오른쪽 위 <b>🗝 열쇠를 세 번</b> 누르고 코드를 넣으면,
+        <b>그 탭에서만</b> 잠금이 풀립니다. 탭을 닫으면 자동으로 잠깁니다.</p>
+      <div style="display:flex;gap:9px;align-items:flex-start;background:#F7F3FE;border:1.5px solid #D6C2F7;
+        border-radius:11px;padding:11px 13px;margin:10px 0 2px">
+        <span style="font-size:17px;line-height:1.2">🔑</span>
+        <div style="font-size:11.8px;color:#4C1D95;line-height:1.8">
+          <b>열쇠는 «권한»을 주지 않습니다.</b> 두 가지가 모두 있어야 다른 기관이 보입니다 —
+          ① <b>접근 권한</b>(교직원 명부의 «접근 기관», 페이지별 접근 권한)으로 <b>볼 자격</b>을 먼저 주고,
+          ② <b>열쇠</b>로 그 자격을 <b>지금 드러냅니다</b>.
+          그래서 다른 기관 접근 권한이 없는 분은 열쇠를 열어도 화면이 그대로입니다.</div>
+      </div>
 
       <div style="display:flex;align-items:center;gap:10px;background:var(--iv);border-radius:11px;padding:12px 14px;margin:12px 0">
         <div style="flex:1">
@@ -363,14 +372,16 @@ window.unionAdminMount = async (elId)=>{
             코드는 변환해서 저장되며 원문은 남지 않습니다. 3회 틀리면 1분간 잠깁니다.</div>
         </div>
         <div>
-          <div style="font-size:12.5px;font-weight:900;color:var(--gd);margin-bottom:6px">👤 열 수 있는 사람</div>
-          <input id="ua-q" placeholder="이름 검색" oninput="unionFilterStaff(this.value)"
+          <div style="font-size:12.5px;font-weight:900;color:var(--gd);margin-bottom:6px">👤 열 수 있는 사람
+            <span id="ua-count" style="font-size:11px;font-weight:800;color:#6D28D9;background:#F1EBFD;border-radius:100px;padding:1px 9px;margin-left:5px"></span>
+            <span id="ua-saved" style="font-size:10.8px;font-weight:700;color:#166534;margin-left:6px"></span></div>
+          <div id="ua-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px"></div>
+          <input id="ua-q" placeholder="이름 검색 — 눌러서 켜고 끕니다" oninput="unionFilterStaff(this.value)"
             style="width:100%;height:36px;padding:0 11px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--iv);font-family:inherit;font-size:12.5px;margin-bottom:6px">
-          <div id="ua-list" style="max-height:190px;overflow:auto;border:1.5px solid var(--ivd);border-radius:9px;padding:6px;background:#fff"></div>
-          <button onclick="unionAdminSaveUids()" style="margin-top:7px;width:100%;padding:9px;border:0;border-radius:9px;
-            background:#1E3932;color:#fff;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">명단 저장</button>
+          <div id="ua-list" style="max-height:230px;overflow:auto;border:1.5px solid var(--ivd);border-radius:9px;padding:6px;background:#fff"></div>
+          <div style="font-size:10.8px;color:var(--tl);margin-top:6px;line-height:1.7">
+            누르면 <b>바로 저장</b>됩니다. 켜진 분은 상단 🗝 열쇠를 세 번 눌러 코드를 넣으면 두 기관을 함께 볼 수 있어요.</div>
         </div>
-      </div>
     </div>
 
     <div class="acard">
@@ -385,18 +396,84 @@ window.unionAdminMount = async (elId)=>{
   </div>`;
 
   window.__uaStaff = staff; window.__uaPicked = picked;
-  window.unionFilterStaff = (q)=>{
-    const list = (window.__uaStaff||[]).filter(s=>!q || String(s.name||'').includes(q)).slice(0,80);
-    document.getElementById('ua-list').innerHTML = list.map(s=>`
-      <label style="display:flex;align-items:center;gap:7px;padding:5px 4px;font-size:12.5px;font-weight:700;cursor:pointer">
-        <input type="checkbox" ${window.__uaPicked.has(s.uid)?'checked':''} data-uid=""${s.uid}" style="width:15px;height:15px">
-        ${esc(s.name||'')} <span style="color:#93A09A;font-size:10.8px">${esc(s.position||s.role||'')}</span></label>`).join('')
-      || '<div style="font-size:11.5px;color:#93A09A;padding:6px">검색 결과 없음</div>';
-    document.getElementById('ua-list').querySelectorAll('input[type=checkbox]').forEach(cb=>{
-      cb.addEventListener('change', ()=>{ const u = cb.dataset.uid;
-        cb.checked ? window.__uaPicked.add(u) : window.__uaPicked.delete(u); });
-    });
+
+  const nameOf = uid => (window.__uaStaff||[]).find(s=>s.uid===uid)?.name || uid.slice(0,6)+'…';
+  const ORGL = { daniel:'다니엘', jihyebit:'지혜빛' };
+  /* 그 사람이 «볼 자격»을 가진 기관 — 명부의 접근 기관(orgs)이 진실 */
+  const orgsOfStaff = st => (st && st.role==='super') ? ['jihyebit','daniel']
+    : ((st && st.orgs && st.orgs.length) ? st.orgs.slice() : (st && st.org ? [st.org] : []));
+  const staffOf = uid => (window.__uaStaff||[]).find(s=>s.uid===uid);
+  const orgBadges = st => orgsOfStaff(st).map(o=>
+    `<span style="font-size:10px;font-weight:800;background:#E9F2EE;color:#2F5D4C;border-radius:6px;padding:1px 6px">${ORGL[o]||o}</span>`).join(' ');
+  const needsPerm = st => orgsOfStaff(st).length < 2;
+  const paintChips = ()=>{
+    const arr = [...window.__uaPicked];
+    const cnt = document.getElementById('ua-count');
+    const live = arr.filter(u=>!needsPerm(staffOf(u))).length;
+    if(cnt) cnt.textContent = (arr.length && live < arr.length)
+      ? `${arr.length}명 켜짐 · ${arr.length-live}명은 접근 권한 부족`
+      : `${arr.length}명 켜짐`;
+    const box = document.getElementById('ua-chips'); if(!box) return;
+    box.innerHTML = arr.length ? arr.map(u=>`
+      <span style="display:inline-flex;align-items:center;gap:5px;background:${needsPerm(staffOf(u))?'#FFF4E5':'#F1EBFD'};
+        border:1.5px solid ${needsPerm(staffOf(u))?'#F0D9A8':'#D6C2F7'};
+        color:${needsPerm(staffOf(u))?'#7C4A03':'#5B21B6'};border-radius:100px;padding:3px 6px 3px 10px;font-size:11.5px;font-weight:800"
+        title="${needsPerm(staffOf(u))?'접근 기관이 한 곳뿐이라 열쇠를 열어도 달라지지 않습니다':'접근 기관 두 곳 — 열쇠가 작동합니다'}">
+        ${needsPerm(staffOf(u))?'⚠️':'🗝'} ${esc(nameOf(u))}
+        <button onclick="unionToggleUid('${u}')" title="끄기"
+          style="border:0;background:#fff;color:#7C3AED;border-radius:100px;width:17px;height:17px;
+          line-height:1;cursor:pointer;font-weight:900;font-size:11px">×</button></span>`).join('')
+      : '<span style="font-size:11.5px;color:#93A09A;font-weight:700">아직 아무도 켜지 않았습니다 — 아래에서 고르세요</span>';
   };
+  let _saveT = null;
+  window.__uaSave = ()=>{
+    clearTimeout(_saveT);
+    const tag = document.getElementById('ua-saved');
+    if(tag) tag.textContent = '저장 중…';
+    _saveT = setTimeout(async ()=>{
+      const F = await fb(); if(!F) return;
+      try{
+        await setDoc(doc(F.db,'systemConfig','union'),
+          { uids: [...window.__uaPicked], updatedAt: Timestamp.now() }, { merge:true });
+        _cfgTried = false; _cfg = null;
+        if(tag){ tag.textContent = '✓ 저장됨'; setTimeout(()=>{ if(tag) tag.textContent=''; }, 2200); }
+      }catch(e){
+        if(tag) tag.textContent = '';
+        alert('저장 실패 — 보안 규칙(systemConfig/union) 게시가 필요합니다');
+      }
+    }, 350);
+  };
+  window.unionToggleUid = (uid)=>{
+    window.__uaPicked.has(uid) ? window.__uaPicked.delete(uid) : window.__uaPicked.add(uid);
+    paintChips(); window.unionFilterStaff(document.getElementById('ua-q')?.value || '');
+    window.__uaSave();
+  };
+  window.unionFilterStaff = (q)=>{
+    const all = window.__uaStaff || [];
+    const list = all.filter(s=>!q || String(s.name||'').includes(q))
+      .sort((a,b)=>(window.__uaPicked.has(b.uid)?1:0)-(window.__uaPicked.has(a.uid)?1:0)
+        || String(a.name||'').localeCompare(String(b.name||''),'ko'))
+      .slice(0,80);
+    const box = document.getElementById('ua-list'); if(!box) return;
+    box.innerHTML = list.map(s=>{
+      const on = window.__uaPicked.has(s.uid);
+      return `<button onclick="unionToggleUid('${s.uid}')"
+        style="display:flex;width:100%;align-items:center;gap:8px;padding:7px 8px;margin-bottom:3px;cursor:pointer;
+        border:1.5px solid ${on?'#D6C2F7':'transparent'};background:${on?'#F7F3FE':'transparent'};
+        border-radius:9px;font-family:inherit;font-size:12.5px;font-weight:700;text-align:left">
+        <span style="width:34px;height:19px;border-radius:100px;flex:none;position:relative;
+          background:${on?'#6D28D9':'#D7DBD7'};transition:background .18s">
+          <i style="position:absolute;top:2px;left:${on?'17px':'2px'};width:15px;height:15px;border-radius:50%;
+            background:#fff;transition:left .18s;display:block"></i></span>
+        <b style="color:${on?'#4C1D95':'#2A2E2B'}">${esc(s.name||'')}</b>
+        <span style="color:#93A09A;font-size:10.8px;font-weight:700">${esc(s.position||s.role||'')}</span>
+        <span style="display:inline-flex;gap:3px;margin-left:4px">${orgBadges(s)}</span>
+        ${on && needsPerm(s) ? '<span style="margin-left:auto;font-size:10.2px;font-weight:900;color:#B45309;background:#FFF4E5;border-radius:6px;padding:1px 7px">접근 권한 먼저</span>'
+          : (on?'<span style="margin-left:auto;font-size:10.5px;font-weight:900;color:#6D28D9">켜짐</span>':'')}
+      </button>`;
+    }).join('') || '<div style="font-size:11.5px;color:#93A09A;padding:6px">검색 결과 없음</div>';
+  };
+  paintChips();
   window.unionFilterStaff('');
 };
 window.unionToggleEnabled = async (on)=>{
@@ -419,11 +496,4 @@ window.unionAdminSaveCode = async ()=>{
     window.unionAdminMount('ca-union');
   }catch(e){ alert('저장 실패 — 보안 규칙(systemConfig/union) 게시가 필요합니다'); }
 };
-window.unionAdminSaveUids = async ()=>{
-  const F = await fb(); if(!F) return;
-  try{ await setDoc(doc(F.db,'systemConfig','union'),
-      { uids: [...(window.__uaPicked||[])], updatedAt: Timestamp.now() }, { merge:true });
-    _cfgTried = false; _cfg = null;
-    if(window.toast) toast('명단을 저장했습니다','ok'); else alert('명단을 저장했습니다');
-  }catch(e){ alert('저장 실패 — 보안 규칙(systemConfig/union) 게시가 필요합니다'); }
-};
+
