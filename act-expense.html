@@ -1796,7 +1796,39 @@ function buildReportShare(){
   const exp = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=>({cat:c, sum:v}));
   const RU = window._rndUnit || 1;
   const per = paidN ? Math.floor((bsIncTotal-expSum)/paidN/RU)*RU : 0;
+  /* 🧾 사람별 환급 — 화면·인쇄와 같은 값을 공유에도 싣는다.
+     · 마감됐으면 마감 순간 고정한 명단(refundSnap)을 그대로 쓴다
+     · 공유 링크는 로그인 없이 열리므로 불참자 이름은 가리고(김○○), 사유는 분류만 남긴다(«질병 (입원)» → «질병») */
+  let refund = null;
+  try{
+    const fixed = isLocked() && CUR.refundSnap && Array.isArray(CUR.refundSnap.rows);
+    let rows, lines;
+    if(fixed){ rows = CUR.refundSnap.rows; lines = CUR.refundSnap.lines || []; }
+    else {
+      const SH = shareTable(paidM, conf, RU);
+      rows = SH.rows.map(r=>({ ...r, bear: Math.round(r.bear) }));
+      lines = SH.lines.map(l=>({ ...l, per: Math.round(l.per) }));
+    }
+    const use = rows.some(r=>r.attend==='no') || lines.some(l=>(l.mode||'all')!=='all');
+    if(use){
+      const mask = n => { const t = String(n||'').trim(); if(!t) return '○○'; return t.charAt(0) + '○'.repeat(Math.max(1, Math.min(2, t.length-1))); };
+      const kind = r => String(r||'').trim().split(/[\s(（·,]/)[0] || '';
+      const grp = {};
+      rows.filter(r=>r.attend!=='no').forEach(r=>{
+        const k = String(r.refund);
+        (grp[k] = grp[k] || { refund:r.refund, bear:r.bear, n:0 }).n++;
+      });
+      const sumRefund = rows.reduce((t,r)=>t+(Number(r.refund)||0),0);
+      refund = {
+        use:true, fixed: !!fixed, sumRefund, rem: bsIncTotal - expSum - sumRefund,
+        absentees: rows.filter(r=>r.attend==='no').map(r=>({ name: mask(r.name), reason: kind(r.reason), bear:r.bear, refund:r.refund })),
+        groups: Object.values(grp).sort((a,b)=>b.n-a.n),
+        lines: lines.map(l=>({ cat:l.cat||'', item:l.item||'', mode:l.mode||'all', n:l.n||0, per:l.per||0 }))
+      };
+    }
+  }catch(e){ console.warn('[공유 환급] 건너뜀', e); }
   return {
+    refund,
     type:'actReport', org: CUR.org||'', name:CUR.name||'', startDs:CUR.startDs||'', endDs:CUR.endDs||'',
     closed: isLocked(), closedDs: CUR.closedDs||'',
     paidN, waitN: MEMBERS.length - paidN, incSum, extra: bsExtras, extraSum: bsExtraSum, incTotal: bsIncTotal, expSum, inc, exp,

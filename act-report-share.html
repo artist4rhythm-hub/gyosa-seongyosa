@@ -162,6 +162,7 @@ function render(d){
     </div>
   </div>
 
+  ${(d.refund && d.refund.use) ? refundPanel(d, bal, incTotal) : `
   <div class="panel">
     <div class="pt">잔액 · 환급 정리</div>
     <div class="calc">
@@ -179,10 +180,48 @@ function render(d){
       <tr class="sumrow"><td>실제 환급 합계 · 단수 ${fmt(rem)}원 별도 정리</td>
         <td class="r">${fmt(per*paidN)}</td></tr>
     </table>
-  </div>
+  </div>`}
 
   <div class="foot">작성 ${esc(d.byName||'')}${upStr?` · 마지막 갱신 ${upStr}`:''}<br>
     ${ORGN ? esc(ORGN) + ' — ' : ''}활동 경비 회계 보고</div>`;
+}
+/* 🧾 불참·부과 조정이 있을 때의 환급 — 앱의 회계 보고·인쇄본과 같은 구성 */
+const CHG_LABEL = { all:'전원', att:'참석자만', pick:'직접 고르기', one:'특정인 전액' };
+function refundPanel(d, bal, incTotal){
+  const R = d.refund;
+  const paidN = d.paidN || 0;
+  return `
+  <div class="panel">
+    <div class="pt">잔액 · 환급 정리 ${R.fixed?'<span style="font-size:11px;font-weight:700;color:#8a6d1d;background:#FBF3DC;border-radius:6px;padding:1px 7px;margin-left:4px">🔒 마감 때 확정된 값</span>':''}</div>
+    <div class="calc">
+      <b>산출 과정</b><br>
+      ① 총수입 ${fmt(incTotal)} − 지출 ${fmt(d.expSum)} = <b>잔액 ${fmt(bal)}원</b><br>
+      ② 지출 줄마다 정한 <b>부과 대상</b>으로 사람별 부담액을 구하고, 낸 회비에서 빼서 환급액을 냅니다<br>
+      ③ 검산 — 총수입 <b>${fmt(incTotal)}</b> = 총지출 <b>${fmt(d.expSum)}</b> + 환급 합계 <b>${fmt(R.sumRefund)}</b>${R.rem?` + 단수 <b>${fmt(R.rem)}</b>`:''}
+      ${R.rem?' · 단수는 센터 입금 등으로 정리':' ✓'}</div>
+    <table>
+      <tr><th style="text-align:left">구분</th><th class="c">인원</th><th class="r">1인 환급</th><th class="r">소계</th></tr>
+      ${(R.absentees||[]).map(a=>`<tr>
+        <td><b>${esc(a.name)}</b> <span style="font-size:10.5px;font-weight:800;color:#C0392B;background:#FDECEA;border-radius:6px;padding:1px 6px">불참</span>
+          ${a.reason?`<span style="font-size:11px;color:#6b7280;margin-left:4px">${esc(a.reason)}</span>`:''}
+          <div style="font-size:10.8px;color:#9ca3af">부담 ${fmt(a.bear)}원</div></td>
+        <td class="c">1</td><td class="r">${fmt(a.refund)}</td><td class="r"><b>${fmt(a.refund)}</b></td></tr>`).join('')}
+      ${(R.groups||[]).map(g=>`<tr>
+        <td><b>참석자</b> <span style="font-size:11px;color:#9ca3af">부담 ${fmt(g.bear)}원</span></td>
+        <td class="c">${g.n}</td><td class="r">${fmt(g.refund)}</td><td class="r"><b>${fmt(g.refund*g.n)}</b></td></tr>`).join('')}
+      <tr class="sumrow"><td>환급 합계</td><td class="c">${paidN}</td><td class="r"></td><td class="r">${fmt(R.sumRefund)}</td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="pt">항목별 부과 기준</div>
+    <table>
+      <tr><th style="text-align:left">구분 · 품목</th><th class="c">부과 대상</th><th class="c">나눈 인원</th><th class="r">1인 몫</th></tr>
+      ${(R.lines||[]).map(l=>`<tr><td>${esc(l.cat)}${l.item?` · ${esc(l.item)}`:''}</td>
+        <td class="c">${CHG_LABEL[l.mode]||'전원'}</td><td class="c">${l.n}</td><td class="r">${fmt(l.per)}</td></tr>`).join('')}
+    </table>
+    <div style="font-size:11px;color:#9ca3af;margin-top:8px;line-height:1.7">
+      불참자가 쓰지 않은 항목(숙박·식사 등)은 참석자끼리 나누므로, 참석자 환급은 전원 균등일 때보다 조금 줄어듭니다.</div>
+  </div>`;
 }
 main();
 </script>
