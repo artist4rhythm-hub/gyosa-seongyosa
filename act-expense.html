@@ -1523,7 +1523,20 @@ window.unpayExpense = async function(id){
 const PAL = ['#2F5D4B','#7C8C43','#E0A93F','#C05B33','#5B7A99','#8B6FA8','#A8555E',
   '#4E8577','#B08D3C','#6E6E6E'];
 
+/* ⛑ 보고서 그리기 안전망 — 어떤 오류가 나도 빈 화면 대신 안내를 띄운다 */
 function renderReport(){
+  try{ return renderReportCore(); }
+  catch(err){
+    console.error('[회계 보고] 그리기 실패', err);
+    const tb = document.getElementById('tab-body');
+    if(tb) tb.innerHTML = `<div class="panel" style="padding:22px">
+      <div class="ptitle" style="color:#B91C1C">⚠️ 회계 보고를 그리는 중 문제가 생겼습니다</div>
+      <div style="font-size:12.5px;color:var(--ts);margin-top:8px;line-height:1.8">
+        자료는 안전하게 저장되어 있습니다. 새로고침해도 같으면 아래 문구를 캡처해 알려주세요.<br>
+        <code style="display:inline-block;margin-top:6px;background:var(--iv);padding:4px 9px;border-radius:7px;font-size:11.5px">${String(err && err.message || err)}</code></div></div>`;
+  }
+}
+function renderReportCore(){
   const paidM = MEMBERS.filter(m=>m.paid);
   const paidN = paidM.length;
   const incSum = paidM.reduce((n,m)=>n+(Number(m.fee)||0),0);
@@ -1579,9 +1592,9 @@ function renderReport(){
   const per = paidN ? Math.floor(rawPer / RU) * RU : 0;
   const rem = bal - per*paidN;              // 단수 (개인 지급 후 남는 돈)
   /* 🧾 부담 배분 — 불참자가 있거나 부과 대상을 손본 지출이 있으면 사람별로 계산한다 */
-  const SH = shareTable(paidM, AC, RU);
+  const SH = shareTable(paidM, conf, RU);
   const absentees = SH.rows.filter(r=>r.attend==='no');
-  const tailored = AC.some(e=>(e.chargeMode||'all')!=='all');
+  const tailored = conf.some(e=>(e.chargeMode||'all')!=='all');
   const useShare = absentees.length > 0 || tailored;
   const grp = {};                            // 환불액이 같은 사람끼리 묶는다
   SH.rows.filter(r=>r.attend!=='no').forEach(r=>{ (grp[r.refund] = grp[r.refund] || []).push(r); });
