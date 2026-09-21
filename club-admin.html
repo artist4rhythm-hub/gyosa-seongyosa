@@ -170,6 +170,9 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
 .mxc.bad{border-color:#DC2626;box-shadow:0 0 0 1.5px #FCA5A5;background:#FEF0F0;color:#B91C1C}
 .mxc.warn{border-color:#D97706;box-shadow:0 0 0 1.5px #F5D48A}
 .rm2{font-style:normal;cursor:pointer;font-size:11px;opacity:.5;margin-left:2px}.rm2:hover{opacity:1}
+.pc{background:var(--iv,#F3F1EA);border-radius:11px;padding:10px 8px;text-align:center}
+.pc b{display:block;font-size:18px;font-weight:900;color:var(--gd,#0F241F)}
+.pc span{font-size:11px;font-weight:800;color:var(--tl,#7C837E)}
 </style>
 </head>
 <body>
@@ -212,6 +215,7 @@ tr.blocked td{color:#B91C1C;background:#FEF2F2}
       <button onclick="showTab('apps')">📥 신청 취합</button>
       <button onclick="showTab('grid')">🗓 요일·시간 그리드</button>
       <button onclick="showTab('enroll')">👨‍👩‍👧 신청 현황·배정</button>
+      <button onclick="showTab('pay')">💰 강사 정산</button>
     </div>
 
     <div id="body"><div class="small">학기를 선택하거나 새로 만드세요.</div></div>
@@ -449,12 +453,12 @@ window.setStatus = async (st)=>{
 };
 window.showTab = (t)=>{ TAB=t;
   if(VIEW_ONLY){ paintStatus(); render(); return; }
-  document.querySelectorAll('#tabs button').forEach((b,i)=>b.classList.toggle('on', ['set','block','q','link','apps','grid','enroll'][i]===t)); render(); };
+  document.querySelectorAll('#tabs button').forEach((b,i)=>b.classList.toggle('on', ['set','block','q','link','apps','grid','enroll','pay'][i]===t)); render(); };
 
 function render(){
   if(!SEM){ $I('body').innerHTML='<div class="small">학기를 선택하거나 새로 만드세요.</div>'; return; }
   if(VIEW_ONLY && !['apps','grid','enroll'].includes(TAB)) TAB='apps';
-  ({ set:renderSet, block:renderBlock, q:renderQ, link:renderLink, apps:renderApps, grid:renderGrid, enroll:renderEnroll })[TAB]();
+  ({ set:renderSet, block:renderBlock, q:renderQ, link:renderLink, apps:renderApps, grid:renderGrid, enroll:renderEnroll, pay:renderPay })[TAB]();
 }
 
 /* ── ⚙️ 설정 ── */
@@ -839,6 +843,8 @@ function renderApps(){
     return;
   }
   $I('body').innerHTML = `<div class="row" style="margin-bottom:10px"><span class="small">총 ${L.length}건 · 동아리 ${L.filter(a=>a.type!=='joy').length} · 조이클래스 ${L.filter(a=>a.type==='joy').length} · 📝 작성중 ${L.filter(a=>a.status==='draft').length}</span>
+    <button class="bs" style="margin-left:8px" onclick="printPosters('all')">🖨 안내문 전체 출력</button>
+    <button class="bs" onclick="pickPosters()">☑ 골라서 출력</button>
     ${VIEW_ONLY?'':`<button class="bs" style="margin-left:auto;color:#B91C1C" onclick="SHOW_TRASH=true; renderApps()">🗑 휴지통 ${T.length}</button>`}
     <button class="bs" ${VIEW_ONLY?'style="margin-left:auto"':''} onclick="reloadApps()">새로고침</button></div>` +
   (L.length ? L.map(a=>`<div class="ap">
@@ -850,16 +856,265 @@ function renderApps(){
     <div class="m">🗓 ${(a.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·')} ${a.start||''} · ${a.durMin||0}분 · ${liveCount(a)}회 · 🎯 ${esc((a.gradeSel&&a.gradeSel.length)?a.gradeSel.join('·'):(a.grades||'전체'))} · 👥 ${a.minN||0}~${a.maxN||0}명 · 💰 1회 ${feeOf(a).toLocaleString()}원 → 학기 ${semTotal(a).toLocaleString()}원 · 📍 희망 ${esc(a.place||'미정')}</div>
     <div class="act">${VIEW_ONLY
       ? `<span class="small">📍 ${esc(a.room||'교실 미배정')} · ${a.published?'📣 공고 노출됨':'공고 전'}</span>
-         <button class="bs" onclick="viewApp('${a.id}')">상세 보기</button>`
+         <button class="bs" onclick="viewApp('${a.id}')">상세 보기</button>
+         <button class="bs" onclick="printPosters('${a.id}')">🖨 안내문</button>`
       : `상태 <select onchange="setApp('${a.id}',{status:this.value})">${Object.entries(AST).map(([k,v])=>`<option value="${k}"${a.status===k?' selected':''}>${v}</option>`).join('')}</select>
       교실 <select onchange="setApp('${a.id}',{room:this.value})"><option value="">(미배정)</option>${(SEM.rooms||[]).map(r=>`<option${a.room===r?' selected':''}>${esc(r)}</option>`).join('')}</select>
       <label style="font-size:12px"><input type="checkbox" ${a.published?'checked':''} onchange="setApp('${a.id}',{published:this.checked})"> 학부모 공고에 노출</label>
       <button class="bs" onclick="viewApp('${a.id}')">상세 보기</button>
+      <button class="bs" onclick="printPosters('${a.id}')">🖨 안내문</button>
       <button class="bs" onclick="window.open('${PORTAL}?sem=${SEM.id}&edit=${a.id}','_blank')">✏️ 관리자 수정</button>
       <button class="bs" style="color:#B91C1C" onclick="softDelete('${a.id}')">🗑 삭제</button>`}
     </div></div>`).join('') : '<div class="small">아직 접수된 신청서가 없습니다.</div>');
 }
 window.reloadApps = async ()=>{ await loadApps(); renderApps(); };
+/* ═══ 🖨 출력 공통 — 새 창에 A4 문서를 만들어 인쇄(=PDF 저장) ═══ */
+function openPrintWin(title, body, extraCss){
+  const w = window.open('', '_blank');
+  if(!w){ toast('팝업이 막혔어요 — 브라우저 주소창 오른쪽에서 팝업을 허용해 주세요','err'); return; }
+  w.document.open();
+  w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(title)}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
+  <style>
+    @page{ size:A4 portrait; margin:12mm 12mm 14mm }
+    *{ box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact }
+    body{ margin:0; font-family:'Noto Sans KR','Malgun Gothic',sans-serif; color:#222; font-size:10.5pt; line-height:1.6 }
+    .pg{ page-break-after:always; break-after:page }
+    .pg:last-child{ page-break-after:auto; break-after:auto }
+    table{ width:100%; border-collapse:collapse }
+    tr{ break-inside:avoid; page-break-inside:avoid }
+    .bar{ display:none }
+    @media screen{ body{ background:#EDEBE4; padding:18px } .pg{ background:#fff; max-width:186mm; margin:0 auto 16px; padding:12mm; box-shadow:0 4px 18px rgba(0,0,0,.12) }
+      .bar{ display:flex; gap:8px; justify-content:center; margin-bottom:14px }
+      .bar button{ font-family:inherit; font-size:13px; font-weight:800; padding:9px 18px; border-radius:10px; border:0; background:#1E3932; color:#fff; cursor:pointer } }
+    ${extraCss||''}
+  </style></head><body>
+  <div class="bar"><button onclick="window.print()">🖨 인쇄 · PDF 저장</button><button onclick="window.close()" style="background:#fff;color:#5A6560;border:1.5px solid #E3E1DA">닫기</button></div>
+  ${body}
+  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),450));<\/script>
+  </body></html>`);
+  w.document.close();
+}
+
+/* ── 🖨 동아리 안내문 — 한 동아리 = A4 한 장 (연락처·계좌 같은 내부 정보는 싣지 않는다) ── */
+const POSTER_CSS = `
+  .ph{ border-radius:10px; padding:14px 16px; color:#fff; position:relative; overflow:hidden }
+  .ph .k{ font-size:8pt; letter-spacing:.14em; font-weight:800; opacity:.88 }
+  .ph .t{ font-size:21pt; font-weight:900; line-height:1.25; margin:3px 0 2px }
+  .ph .s{ font-size:10pt; opacity:.92 }
+  .ph:after{ content:''; position:absolute; right:-40px; top:-40px; width:130px; height:130px; border-radius:50%; background:rgba(255,255,255,.12) }
+  .intro{ margin:10px 0 2px; color:#444 }
+  .info{ margin-top:10px; border:1px solid #E3DFD3; border-radius:8px; overflow:hidden }
+  .info td{ padding:6px 10px; border-bottom:1px solid #EFECE4; vertical-align:top }
+  .info tr:last-child td{ border-bottom:0 }
+  .info td.k{ width:26%; background:#F5F2E9; font-weight:800; color:#3b3b3b; white-space:nowrap }
+  .qa{ margin-top:9px; border:1px solid #E3DFD3; border-radius:8px; padding:8px 11px; break-inside:avoid }
+  .qa .q{ font-weight:900; color:#3E2E7A; margin-bottom:3px; font-size:10pt }
+  .qa .a{ white-space:pre-wrap; color:#333; font-size:9.8pt }
+  .plan{ margin-top:10px; font-size:9pt }
+  .plan th{ background:#EEF0EC; font-weight:900; padding:5px 6px; text-align:left; border-bottom:1.5px solid #D6D2C6 }
+  .plan td{ padding:4px 6px; border-bottom:1px solid #EFECE4; vertical-align:top }
+  .plan tr.off td{ color:#aaa }
+  .ft{ margin-top:12px; padding-top:6px; border-top:1px solid #E3DFD3; display:flex; justify-content:space-between; color:#999; font-size:8pt }`;
+function posterPrintHTML(a, idx, total){
+  const qs = (SEM.questions||[]).filter(q=>q.forType==='both'||q.forType===a.type);
+  const wd = (a.weekdays||[]).filter(w=>WD[w]).map(w=>WD[w]).join('·') || '요일 미정';
+  const grad = a.type==='joy' ? 'linear-gradient(135deg,#2F6FB0,#1E4E86)' : 'linear-gradient(135deg,#6D5BA8,#4B3C85)';
+  const bkm = bkSet();
+  const rows = (a.sessions||[]).map(ss=>{
+    const off = ss.skip || (!ss.extra && !ss.override && (ss.blocked || bkm[ss.date]));
+    const act = off ? (ss.skip ? '강사 휴강' : '학사 휴강') : ((ss.ctitle ? ss.ctitle + (ss.content?' — ':'') : '') + (ss.content||''));
+    return `<tr class="${off?'off':''}"><td>${off?'—':(ss.no||'')}</td><td style="white-space:nowrap">${esc(ss.date||'')}</td><td>${esc(act)}</td><td>${esc(ss.materials||'')}</td></tr>`;
+  }).join('');
+  return `<div class="pg">
+    <div class="ph" style="background:${grad}">
+      <div class="k">${a.type==='joy'?'JOY CLASS · 조이클래스':'AFTER SCHOOL · 동아리'}</div>
+      <div class="t">${esc(a.title||'')}</div>
+      <div class="s">강사 ${esc(a.instructorName||'')}${a.coInstructors?' · '+esc(a.coInstructors):''}</div>
+    </div>
+    ${a.intro?`<div class="intro">💬 ${esc(a.intro)}</div>`:''}
+    <table class="info">
+      <tr><td class="k">🎯 대상</td><td>${esc((a.gradeSel&&a.gradeSel.length)?sortG(a.gradeSel).join(' · '):(a.grades||'전체'))}${(a.minN||a.maxN)?` · 정원 ${a.minN||''}~${a.maxN||''}명`:''}</td></tr>
+      <tr><td class="k">🗓 기간 · 시간</td><td>${esc(a.startDate||SEM.rangeFrom||'')} ~ ${esc(a.endDate||SEM.rangeTo||'')} · <b>${wd} ${esc(a.start||'')}</b> · ${a.durMin||0}분 · 총 ${liveCount(a)}회</td></tr>
+      <tr><td class="k">📍 장소</td><td>${esc(a.room||a.place||'추후 안내')}</td></tr>
+      ${a.materials?`<tr><td class="k">🎒 준비물</td><td>${esc(a.materials)}</td></tr>`:''}
+      <tr><td class="k">💰 회비</td><td>1회 ${feeOf(a).toLocaleString()}원 기준 · <b>학기 1인 ${semTotal(a).toLocaleString()}원</b></td></tr>
+    </table>
+    ${qs.map(q=>{ const v=(a.answers||{})[q.id]||''; return v?`<div class="qa"><div class="q">${esc(q.label)}</div><div class="a">${esc(v)}</div></div>`:''; }).join('')}
+    ${rows?`<table class="plan"><tr><th style="width:7%">회</th><th style="width:14%">수업일</th><th>활동 내용</th><th style="width:20%">준비물</th></tr>${rows}</table>`:''}
+    <div class="ft"><span>${esc(ORGS[SEM.org]||SEM.org||'')} · ${esc(SEM.name||SEM.title||'')} 방과후 ${a.type==='joy'?'조이클래스':'동아리'}</span><span>${idx} / ${total}</span></div>
+  </div>`;
+}
+window.printPosters = (which)=>{
+  const pool = LIVE().filter(a=>a.status==='approved' && !a.cancelled);
+  let list = which==='all' ? pool
+    : Array.isArray(which) ? pool.filter(a=>which.includes(a.id))
+    : LIVE().filter(a=>a.id===which);
+  if(!list.length){ toast(which==='all'?'승인된 동아리가 없습니다':'출력할 동아리를 찾지 못했습니다','err'); return; }
+  list = list.slice().sort((x,y)=>String(x.title||'').localeCompare(String(y.title||''),'ko'));
+  openPrintWin(list.length===1 ? `${list[0].title} 안내문` : `동아리 안내문 ${list.length}개`,
+    list.map((a,i)=>posterPrintHTML(a, i+1, list.length)).join(''), POSTER_CSS);
+};
+window.pickPosters = ()=>{
+  const pool = LIVE().filter(a=>a.status==='approved' && !a.cancelled)
+    .sort((x,y)=>String(x.title||'').localeCompare(String(y.title||''),'ko'));
+  const bg = document.createElement('div'); bg.className='modal-bg'; bg.onclick=(e)=>{ if(e.target===bg) bg.remove(); };
+  bg.innerHTML = `<div class="modal" style="max-width:460px">
+    <h3 style="margin:0 0 6px">☑ 출력할 동아리 고르기</h3>
+    <div class="small" style="margin-bottom:10px">승인된 동아리 ${pool.length}개 · 고른 순서와 무관하게 이름순으로 나옵니다</div>
+    <div class="row" style="gap:6px;margin-bottom:8px"><button class="bs" onclick="this.closest('.modal').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=true)">모두 선택</button>
+      <button class="bs" onclick="this.closest('.modal').querySelectorAll('input[type=checkbox]').forEach(c=>c.checked=false)">모두 해제</button></div>
+    <div style="max-height:320px;overflow:auto;border:1.5px solid var(--ivd);border-radius:10px;padding:6px">
+      ${pool.map(a=>`<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;font-weight:700;cursor:pointer">
+        <input type="checkbox" value="${a.id}" style="width:16px;height:16px"> ${esc(a.title||'')}
+        <span class="small">${esc(a.instructorName||'')}</span></label>`).join('') || '<div class="small">승인된 동아리가 없습니다</div>'}
+    </div>
+    <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px">
+      <button class="bs" onclick="this.closest('.modal-bg').remove()">취소</button>
+      <button class="bp" onclick="(function(b){ const ids=[...b.closest('.modal').querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value); if(!ids.length){ toast('한 개 이상 고르세요','err'); return; } b.closest('.modal-bg').remove(); printPosters(ids); })(this)">🖨 출력</button>
+    </div></div>`;
+  document.body.appendChild(bg);
+};
+
+/* ═══ 💰 강사 정산 ═══
+   강사 지급액 = 1인 학기 회비(휴강 뺀 실제 차시) × 최종 확정 인원
+   최종 확정 인원 = 1차 확정 중 취소 안 된 학생 + 2차 배정 학생 — «배정 명단 박제»와 같은 기준.
+   그래서 취합 화면에서 취소(제외)하면 정산표에서도 자동으로 빠진다. */
+function finalRosterOf(cid){
+  return ENR.filter(e=> [...r1LiveSet(e)].includes(cid)
+    || (e.result2||[]).some(r=>r.clubId===cid && r.state==='assigned' && !((e.r2Cancel||{})[cid])));
+}
+let PAY_BANK = {}, PAY_BANK_AT = 0;
+async function loadPayBanks(apps){
+  if(Date.now() - PAY_BANK_AT < 60000) return;
+  const uids = [...new Set(apps.map(a=>a.uid).filter(Boolean))];
+  await Promise.all(uids.map(async u=>{
+    try{ const p = await getDoc(doc(db,'clubInstructors',u)); PAY_BANK[u] = p.exists() ? p.data() : null; }catch(e){ PAY_BANK[u] = null; }
+  }));
+  PAY_BANK_AT = Date.now();
+}
+function payRows(){
+  const clubs = LIVE().filter(a=>a.status==='approved' && !a.cancelled);
+  return clubs.map(a=>{
+    const n = finalRosterOf(a.id).length;
+    const per = semTotal(a);
+    const b = PAY_BANK[a.uid] || (a.bank && (a.bank.account||a.bank.bank) ? a.bank : null);
+    const paid = (SEM.payouts||{})[a.id] || null;
+    return { id:a.id, title:a.title||'', type:a.type||'club', teacher:a.instructorName||'', uid:a.uid||'',
+      sessions: liveCount(a), durMin:a.durMin||0, per, n, total: per*n,
+      bank: b && (b.account||b.bank) ? `${b.bank||''} ${b.account||''} ${b.holder||''}`.trim() : '',
+      paidAt: paid && paid.at ? paid.at : '', paidBy: paid && paid.by ? paid.by : '' };
+  }).sort((x,y)=>String(x.title).localeCompare(String(y.title),'ko'));
+}
+function renderPay(){
+  if(VIEW_ONLY){ TAB='apps'; render(); return; }
+  try{ subEnr(); }catch(e){}
+  const snap = SEM.payoutSnap || null;
+  const live = payRows();
+  const rows = snap ? snap.rows : live;
+  const sumN = rows.reduce((t,r)=>t+r.n,0), sumT = rows.reduce((t,r)=>t+r.total,0);
+  const noBank = [...new Set(rows.filter(r=>!r.bank).map(r=>r.teacher))].length;
+  const byT = {};
+  rows.forEach(r=>{ const k = r.teacher || '(강사 미상)'; (byT[k] = byT[k] || { n:0, total:0, clubs:[] }); byT[k].n += r.n; byT[k].total += r.total; byT[k].clubs.push(r.title); });
+  const multi = Object.entries(byT).filter(([,v])=>v.clubs.length>1);
+  const fmt = n => (Number(n)||0).toLocaleString('ko-KR');
+  $I('body').innerHTML = `
+  <div class="card f">
+    <h3 style="margin:0">💰 강사 정산 <span class="small">— 회비는 전액 강사에게 · 출석과 무관 · 학기 말 일괄</span></h3>
+    <div class="small" style="margin:6px 0 10px;line-height:1.8">강사 지급액 = <b>1인 학기 회비</b>(휴강 뺀 실제 차시) × <b>최종 확정 인원</b>.
+      취합 화면에서 학생을 취소(제외)하면 여기서도 <b>자동으로 빠집니다</b>.${ENR.length?'':' <span style="color:#B45309">· 신청 명단을 불러오는 중…</span>'}</div>
+    ${snap?`<div style="background:#FBF3DC;border:1px solid #EFD9A0;border-radius:10px;padding:9px 12px;font-size:12.5px;margin-bottom:10px">
+      🔒 <b>정산 확정됨</b> · ${esc(snap.at||'')} ${esc(snap.byName||'')} — 확정 순간의 표입니다. 이후 명단이 바뀌어도 이 표는 그대로예요.
+      <button class="bs" style="margin-left:8px" onclick="unlockPayout()">확정 풀기</button></div>`:''}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">
+      <div class="pc"><b>${rows.length}</b><span>개설 동아리</span></div>
+      <div class="pc"><b>${fmt(sumN)}</b><span>확정 인원</span></div>
+      <div class="pc"><b>${fmt(sumT)}</b><span>총 지급액 (원)</span></div>
+      <div class="pc"><b style="color:${noBank?'#B45309':'#166534'}">${noBank}</b><span>계좌 미등록 강사</span></div>
+    </div>
+    <div class="row" style="gap:6px;margin-bottom:10px">
+      <button class="bs" onclick="printPayout()">🖨 정산표 출력</button>
+      <button class="bs" onclick="csvPayout()">📗 엑셀(CSV)</button>
+      ${snap?'':`<button class="bp" onclick="lockPayout()">🔒 정산 확정</button>`}
+      <button class="bs" style="margin-left:auto" onclick="PAY_BANK_AT=0; loadPayBanks(LIVE()).then(renderPay)">↻ 계좌 새로 읽기</button>
+    </div>
+    <div style="overflow-x:auto"><table class="tb">
+      <tr><th>동아리</th><th>강사</th><th style="text-align:center">차시</th><th style="text-align:right">1인 학기 회비</th><th style="text-align:center">확정 인원</th><th style="text-align:right">지급액</th><th>계좌</th><th style="text-align:center">지급</th></tr>
+      ${rows.map(r=>`<tr>
+        <td><b>${esc(r.title)}</b>${r.type==='joy'?' <span class="pill st-lottery" style="font-size:10px">조이</span>':''}${r.durMin&&r.durMin!==60?` <span class="small">${r.durMin}분</span>`:''}</td>
+        <td>${esc(r.teacher)}</td>
+        <td style="text-align:center">${r.sessions}</td>
+        <td style="text-align:right">${fmt(r.per)}</td>
+        <td style="text-align:center">${r.n}</td>
+        <td style="text-align:right"><b>${fmt(r.total)}</b></td>
+        <td>${r.bank?`<span class="small">${esc(r.bank)}</span>`:'<span class="pill" style="background:#FFF4E5;color:#B45309">미등록</span>'}</td>
+        <td style="text-align:center"><label style="cursor:pointer;font-size:12px"><input type="checkbox" ${r.paidAt?'checked':''} onchange="togglePayout('${r.id}',this.checked)" style="width:16px;height:16px;vertical-align:middle">
+          ${r.paidAt?`<div class="small">${esc(r.paidAt)}</div>`:''}</label></td></tr>`).join('')
+        || '<tr><td colspan="8" class="small" style="text-align:center;padding:18px">승인된 동아리가 없습니다</td></tr>'}
+      ${rows.length?`<tr style="background:#E8F3EF;font-weight:900"><td colspan="4">합계 · ${rows.length}개 동아리</td><td style="text-align:center">${fmt(sumN)}</td><td style="text-align:right">${fmt(sumT)}</td><td></td><td></td></tr>`:''}
+    </table></div>
+    ${multi.length?`<h4 style="margin:14px 0 6px">👤 강사별 합계 <span class="small">— 여러 동아리를 맡은 강사 (이체는 사람 단위)</span></h4>
+      <table class="tb"><tr><th>강사</th><th>맡은 동아리</th><th style="text-align:center">인원</th><th style="text-align:right">합계</th></tr>
+      ${multi.map(([t,v])=>`<tr><td><b>${esc(t)}</b></td><td class="small">${v.clubs.map(esc).join(' · ')}</td><td style="text-align:center">${v.n}</td><td style="text-align:right"><b>${fmt(v.total)}</b></td></tr>`).join('')}</table>`:''}
+  </div>`;
+  if(!snap && Date.now() - PAY_BANK_AT >= 60000){ loadPayBanks(LIVE()).then(()=>{ if(TAB==='pay') renderPay(); }); }
+}
+window.togglePayout = async (id, on)=>{
+  const at = new Date().toLocaleDateString('ko-KR');
+  const cur = { ...(SEM.payouts||{}) };
+  if(on) cur[id] = { at, by: CU.name||'' }; else delete cur[id];
+  try{ await updateDoc(doc(db,'clubSemesters',SEM.id), { payouts: cur }); SEM.payouts = cur;
+    if(SEM.payoutSnap){ SEM.payoutSnap.rows.forEach(r=>{ if(r.id===id){ r.paidAt = on?at:''; } });
+      await updateDoc(doc(db,'clubSemesters',SEM.id), { payoutSnap: SEM.payoutSnap }); }
+    renderPay(); }catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+};
+window.lockPayout = async ()=>{
+  const rows = payRows();
+  if(!confirm(`정산을 확정할까요?\n지금 표(${rows.length}개 동아리 · 합계 ${rows.reduce((t,r)=>t+r.total,0).toLocaleString('ko-KR')}원)가 고정되고,\n이후 명단이 바뀌어도 이 표는 그대로 남습니다.`)) return;
+  const snap = { at: new Date().toLocaleString('ko-KR'), byName: CU.name||'', rows };
+  try{ await updateDoc(doc(db,'clubSemesters',SEM.id), { payoutSnap: snap }); SEM.payoutSnap = snap; renderPay(); toast('정산을 확정했습니다','ok'); }
+  catch(e){ toast('확정 실패: '+(e.message||''),'err'); }
+};
+window.unlockPayout = async ()=>{
+  if(!confirm('정산 확정을 풀까요?\n표가 다시 지금 명단 기준으로 살아 움직입니다.')) return;
+  try{ await updateDoc(doc(db,'clubSemesters',SEM.id), { payoutSnap: null }); SEM.payoutSnap = null; renderPay(); }
+  catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+window.csvPayout = ()=>{
+  const rows = SEM.payoutSnap ? SEM.payoutSnap.rows : payRows();
+  const q = v => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const out = [['동아리','구분','강사','차시','1인 학기 회비','확정 인원','지급액','계좌','지급일'].map(q).join(',')];
+  rows.forEach(r=>out.push([r.title, r.type==='joy'?'조이클래스':'동아리', r.teacher, r.sessions, r.per, r.n, r.total, r.bank, r.paidAt].map(q).join(',')));
+  out.push(['합계','','','','', rows.reduce((t,r)=>t+r.n,0), rows.reduce((t,r)=>t+r.total,0),'',''].map(q).join(','));
+  const blob = new Blob(['\uFEFF'+out.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `강사정산_${(SEM.name||SEM.title||SEM.id)}.csv`.replace(/[\\/:*?"<>|]/g,''); a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+};
+window.printPayout = ()=>{
+  const snap = SEM.payoutSnap || null;
+  const rows = snap ? snap.rows : payRows();
+  const fmt = n => (Number(n)||0).toLocaleString('ko-KR');
+  const sumN = rows.reduce((t,r)=>t+r.n,0), sumT = rows.reduce((t,r)=>t+r.total,0);
+  const body = `<div class="pg">
+    <div style="background:#1E3932;color:#fff;border-radius:10px;padding:12px 16px">
+      <div style="font-size:16pt;font-weight:900">💰 강사 정산표</div>
+      <div style="font-size:9.5pt;opacity:.88">${esc(ORGS[SEM.org]||SEM.org||'')} · ${esc(SEM.name||SEM.title||'')} · ${snap?`🔒 확정 ${esc(snap.at)} ${esc(snap.byName||'')}`:`출력 ${new Date().toLocaleDateString('ko-KR')} (미확정)`}</div>
+    </div>
+    <div style="margin:8px 0;font-size:9.5pt;color:#555">강사 지급액 = 1인 학기 회비(휴강 뺀 실제 차시) × 최종 확정 인원 · 회비는 전액 강사에게 · 출석과 무관</div>
+    <table style="font-size:9.5pt">
+      <tr style="background:#E8F3EF"><th style="text-align:left;padding:6px">동아리</th><th style="text-align:left;padding:6px">강사</th><th style="padding:6px">차시</th><th style="text-align:right;padding:6px">1인 회비</th><th style="padding:6px">인원</th><th style="text-align:right;padding:6px">지급액</th><th style="padding:6px">지급</th></tr>
+      ${rows.map(r=>`<tr style="border-bottom:1px solid #EFECE4"><td style="padding:5px 6px"><b>${esc(r.title)}</b>${r.type==='joy'?' (조이)':''}</td><td style="padding:5px 6px">${esc(r.teacher)}</td>
+        <td style="text-align:center">${r.sessions}</td><td style="text-align:right;padding:5px 6px">${fmt(r.per)}</td><td style="text-align:center">${r.n}</td>
+        <td style="text-align:right;padding:5px 6px"><b>${fmt(r.total)}</b></td><td style="text-align:center">${r.paidAt?'✔ '+esc(r.paidAt):'☐'}</td></tr>`).join('')}
+      <tr style="background:#E8F3EF;font-weight:900"><td colspan="4" style="padding:6px">합계 · ${rows.length}개 동아리</td><td style="text-align:center">${fmt(sumN)}</td><td style="text-align:right;padding:6px">${fmt(sumT)}</td><td></td></tr>
+    </table>
+    <div style="margin-top:22px;display:flex;justify-content:flex-end;gap:30px;font-size:10pt">
+      <span>담당 ______________ (인)</span><span>확인 ______________ (인)</span></div>
+  </div>`;
+  openPrintWin(`강사 정산표`, body);
+};
+
 window.setApp = async (id, upd)=>{ await snapApps('신청서 변경 전'); try{ await updateDoc(doc(db,'clubApplications',id), {...upd, adminAt:Timestamp.now()}); Object.assign(APPS.find(a=>a.id===id), upd); toast('저장'); if(upd.room!==undefined) renderApps(); }catch(e){ toast('실패: '+(e.message||'')); } };
 const PTHEMES = { navy:['#0C2A44','#1E4B74','#D8B45A'], forest:['#1E3932','#2E5A47','#EAD9A0'],
   plum:['#5E4B8B','#8A6FC0','#F6EDFF'], sunset:['#B4530A','#E28413','#FFF3DF'], ink:['#22262B','#4A5560','#E8E4DA'] };
@@ -936,6 +1191,7 @@ function subEnr(){
   ENR_UNSUB = onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
     setENR(snap.docs.map(d=>({id:d.id, ...d.data()})));
     if(TAB==='enroll') paintEnroll();
+    if(TAB==='pay') renderPay();                  // 💰 취합에서 취소하면 정산표도 즉시 따라온다
   });
 }
 async function loadEnr(){
