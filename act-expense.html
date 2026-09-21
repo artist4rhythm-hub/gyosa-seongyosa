@@ -1227,8 +1227,9 @@ function renderExpenses(){
       <td class="c no-print" style="white-space:nowrap">
         ${!lock && mgr && e.status==='req' ? `<button class="btn sm" onclick="payExpense('${e.id}')">입금 ✓</button> ` : ''}
         ${!lock && mgr && e.status==='paid' ? `<button class="btn gray sm" onclick="unpayExpense('${e.id}')" title="신청자가 다시 고칠 수 있게 대기로 되돌립니다">↩ 대기로</button> ` : ''}
-        ${canEdit ? `<button class="btn gray sm" onclick="openExpForm('${e.id}')">고치기</button>
-          <button class="btn red sm" onclick="delExpense('${e.id}')">지우기</button>` : ''}
+        ${canEdit ? `<button class="btn gray sm" onclick="openExpForm('${e.id}')">고치기</button>` : ''}
+        ${!lock && (mgr || (mine && e.status==='req')) ? `<button class="btn gray sm" onclick="dupExpense('${e.id}')" title="영수증까지 그대로 복제합니다 — 한 영수증을 여러 줄로 나눌 때">⧉ 복제</button>` : ''}
+        ${canEdit ? `<button class="btn red sm" onclick="delExpense('${e.id}')">지우기</button>` : ''}
       </td>
     </tr>`;
   };
@@ -1414,6 +1415,42 @@ window.saveExpense = async function(id, mode){
     toast(status==='direct' ? '기록했습니다' : '신청했습니다 — 담당자 입금 후 쪽지로 알려드려요');
   }
   sortExpenses(); closeModal(); await pushSums(); renderDetail();
+};
+
+/* ⧉ 복제 — 영수증까지 그대로. 한 영수증을 두 줄로 «나눌» 때 쓴다.
+   · 입금이 끝난 건을 복제하면 «직접 기록»으로 만든다 (두 번 입금되는 일을 막기 위해)
+   · 대기 중인 신청을 복제하면 대기 그대로 — 입금할 때 두 줄을 각각 확인하면 된다
+   · 영수증 사진은 기록 안에 담겨 있어 원본을 지워도 사본은 남는다 */
+window.dupExpense = async function(id){
+  if(isLocked()) return lockedToast();
+  const e = EXPENSES.find(x=>x.id===id); if(!e) return;
+  const mgr = canMgr(CUR);
+  if(!(mgr || (e.requesterUid===CU.uid && e.status==='req'))){ toast('복제할 권한이 없습니다','err'); return; }
+  if(!confirm(`「${e.item}」 ${fmt(e.subtotal)}원을 영수증까지 복제할까요?\n\n복제하면 합계에 같은 금액이 한 번 더 잡힙니다.\n원본과 사본의 금액을 나눠 고쳐주세요.`)) return;
+  const status = (e.status === 'req') ? 'req' : 'direct';
+  const copy = {
+    ledgerId: e.ledgerId || CUR.id,
+    cat: e.cat || '', item: (e.item || '') + ' (복제)', detail: e.detail || '',
+    amount: e.amount ?? 0, qty: e.qty ?? 1, unit: e.unit || '', note: e.note || '',
+    subtotal: e.subtotal ?? 0,
+    items: Array.isArray(e.items) ? e.items.map(r=>({ ...r })) : [],
+    receiptImg: e.receiptImg || '',
+    chargeMode: e.chargeMode || 'all', chargeIds: Array.isArray(e.chargeIds) ? e.chargeIds.slice() : [],
+    requesterUid: e.requesterUid || CU.uid, requesterName: e.requesterName || CU.name || '',
+    status,
+    createdAt: Timestamp.now(),
+    paidAt: status==='direct' ? Timestamp.now() : null,
+    paidByUid: status==='direct' ? CU.uid : '', paidByName: status==='direct' ? (CU.name||'') : '',
+    dupOf: e.id, dupByUid: CU.uid, dupByName: CU.name || ''
+  };
+  try{
+    const ref = await addDoc(collection(db,'actExpenses'), copy);
+    EXPENSES.push({ id: ref.id, ...copy });
+    logAct('지출 복제', `${e.item||''} ${fmt(e.subtotal)}원 → 사본 만듦 (영수증 포함)`);
+    sortExpenses(); await pushSums(); renderDetail();
+    toast('복제했습니다 — 사본을 열어드릴게요. 금액을 나눠 고쳐주세요','ok');
+    setTimeout(()=>{ try{ openExpForm(ref.id); }catch(_){} }, 250);
+  }catch(err){ toast('복제 실패: '+(err.message||''),'err'); }
 };
 
 window.payExpense = async function(id){
