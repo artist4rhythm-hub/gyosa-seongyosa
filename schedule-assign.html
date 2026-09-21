@@ -1693,6 +1693,8 @@ onAuthStateChanged(auth, async user => {
     if(!sdoc.exists()){ $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return; }
     CU = { uid:user.uid, ...sdoc.data() };
     window.ORGS = ORGS;
+    try{ applyLessonOrgGate(); }catch(e){}
+    setTimeout(()=>{ try{ applyLessonOrgGate(); }catch(e){} }, 800);   // 화면이 늦게 그려져도 한 번 더
     if(window.guardPage && !guardPage(CU, 'timetable')){ /* 권한 없으면 guardPage가 처리 */ }
     if(window.renderShell) renderShell('timetable', CU);
 
@@ -4937,11 +4939,24 @@ function renderRoomList(){
 // ═══════════════════════════════════════════
 // LESSONS = [{id, org, subject, grades:[], teacherUids:[], hours, bundle, roomId}]
 let LESSONS = [];
-let lessonOrg = (function(){                       // 🤝 연합 관문 경유 — 잠겨 있으면 내 기관 하나
-  try{ const o = window.orgCore ? orgCore.myOrgs(window.CU,'std') : null;
-    if(o && o.length) return o[0]; }catch(e){}
-  return 'daniel';
-})();
+/* 🔒 시간표 배정은 두 기관 권한 화면 — 연합은 그 위에 잠금만 건다 */
+function lessonOrgsAllowed(){
+  try{ if(window.orgCore && CU) return orgCore.lockTo(CU, ['daniel','jihyebit']); }catch(e){}
+  return [ (CU && (CU.primaryOrg || CU.org)) || 'daniel' ];
+}
+function applyLessonOrgGate(){            // 로그인 뒤 한 번 — 선택지와 시작 기관을 맞춘다
+  const allow = lessonOrgsAllowed();
+  if(!allow.includes(lessonOrg)) lessonOrg = allow[0];
+  const sel = document.getElementById('lesson-org');
+  if(sel){
+    [...sel.options].forEach(op=>{ const ok = allow.includes(op.value); op.hidden = !ok; op.disabled = !ok; });
+    sel.value = lessonOrg;
+    const wrap = sel.closest('label') || sel.parentElement;
+    if(allow.length < 2 && sel) sel.style.display = 'none';        // 한 기관뿐이면 선택 자체를 감춘다
+    else if(sel) sel.style.display = '';
+  }
+}
+let lessonOrg = 'daniel';
 let editingLessonId = null;
 let dlgGrades = new Set();      // 다이얼로그 선택 상태
 let dlgTeachers = new Set();
@@ -4967,9 +4982,8 @@ async function saveLessons(silent){
 
 window.onLessonOrg = function(){
   const v = $I('lesson-org').value;
-  try{ const allow = window.orgCore ? orgCore.myOrgs(window.CU,'std') : null;
-    if(allow && allow.length && !allow.includes(v)){    // 잠긴 상태에서 남의 기관은 고를 수 없다
-      $I('lesson-org').value = lessonOrg; return; } }catch(e){}
+  const allow = lessonOrgsAllowed();
+  if(!allow.includes(v)){ $I('lesson-org').value = lessonOrg; return; }   // 잠긴 상태에서 남의 기관은 고를 수 없다
   lessonOrg = v; renderLessons();
 };
 
@@ -6633,7 +6647,7 @@ window.addEventListener('beforeunload', e=>{ if(dirty){ e.preventDefault(); e.re
 <script src="timemachine.js"></script>
 <script src="org-core.js"></script>
 <script src="sidebar.js"></script>
-<script type="module" src="union.js?v=61"></script>
+<script type="module" src="union.js?v=62"></script>
 <div id="printArea"></div>
 </body>
 </html>

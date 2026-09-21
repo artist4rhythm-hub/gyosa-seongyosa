@@ -46,21 +46,24 @@ window.orgCore = (function(){
     return b[0] || '';
   }
 
+  /* 🔒 lockTo — 모든 화면이 통과하는 «단 하나의» 잠금 함수
+     · list  = 그 기능이 스스로 계산한 «볼 자격이 있는 기관» (권한은 각 기능이 정한다)
+     · 연합 잠김 → 그중 주 소속 하나만 / 연합 열림 → list 그대로
+     연합은 권한을 넓히지도, 좁히지도 않는다. 잠금만 건다. */
+  function lockTo(CU, list){
+    const L = (list || []).filter(o => o==='daniel' || o==='jihyebit');
+    if(!L.length) return [];
+    const g = curOrg();                                   // 전역 스위처로 한 기관을 골랐다면 그것
+    if((g==='daniel'||g==='jihyebit') && L.includes(g)) return [g];
+    if(unionOpen()) return L;
+    const p = primaryOrg(CU);
+    if(p && L.includes(p)) return [p];
+    return L.slice(0,1);
+  }
+
   function myOrgs(CU, key){
     const full = (POLICY[key] || POLICY.std)(CU);
-    const g = curOrg();                                   // 🧭 전역 스위처: 단일 기관을 고르면
-    if((g==='daniel'||g==='jihyebit') && full.includes(g)) return [g];   //    전 화면의 스코프가 그 기관으로 좁혀진다
-    if(!unionOpen()){                                     // 🔒 연합이 잠겨 있으면 «반드시» 한 기관
-      const p = primaryOrg(CU);
-      if(p && full.includes(p)) return [p];
-      return full.slice(0,1);
-    }
-    /* 🔓 연합 열림 — «권한 안에서만» 드러낸다.
-       연합 키는 권한을 새로 주지 않는다. 두 겹의 AND 구조:
-         ① 권한(접근 기관·페이지 권한) = 볼 «자격»          ← 관리자가 일일이 설정
-         ② 연합 키                     = 지금 «드러낼지»     ← 주 소속 밖을 여는 스위치
-       그래서 다른 기관 접근 권한이 없는 분은 키를 열어도 달라지는 게 없다. */
-    return full;
+    return lockTo(CU, full);                              // 🔒 잠금은 lockTo 한 곳에서만
   }
 
   /* ── 🧭 전역 기관 컨텍스트 (3단계) ── */
@@ -89,6 +92,6 @@ window.orgCore = (function(){
     try{ localStorage.setItem('gyosa_orgview', JSON.stringify(list)); }catch(e){}
   }
 
-  return { myOrgs, POLICY, UNIFIED_POS, JF, DF, unionOpen, setUnion, primaryOrg,
+  return { myOrgs, lockTo, POLICY, UNIFIED_POS, JF, DF, unionOpen, setUnion, primaryOrg,
            curOrg, setCurOrg, combined, combinedHas, applyLocalOrgView, DEFAULT_COMBINED };
 })();

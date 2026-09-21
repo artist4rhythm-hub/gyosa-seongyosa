@@ -344,7 +344,9 @@ window.unionAdminMount = async (elId)=>{
           <b>열쇠는 «권한»을 주지 않습니다.</b> 두 가지가 모두 있어야 다른 기관이 보입니다 —
           ① <b>접근 권한</b>(교직원 명부의 «접근 기관», 페이지별 접근 권한)으로 <b>볼 자격</b>을 먼저 주고,
           ② <b>열쇠</b>로 그 자격을 <b>지금 드러냅니다</b>.
-          그래서 다른 기관 접근 권한이 없는 분은 열쇠를 열어도 화면이 그대로입니다.</div>
+          그래서 다른 기관 권한이 없는 화면은 열쇠를 열어도 그대로입니다.<br>
+          <span style="opacity:.85">· <b>🗝 보라</b> = 계정 소속이 두 기관 → 모든 화면에서 작동 &nbsp;·&nbsp;
+          <b>⚠️ 주황</b> = 계정 소속 한 곳 → 두 기관 권한을 준 기능(예: 경비 지급 요청서 담당)에서만 작동</span></div>
       </div>
 
       <div style="display:flex;align-items:center;gap:10px;background:var(--iv);border-radius:11px;padding:12px 14px;margin:12px 0">
@@ -411,14 +413,14 @@ window.unionAdminMount = async (elId)=>{
     const cnt = document.getElementById('ua-count');
     const live = arr.filter(u=>!needsPerm(staffOf(u))).length;
     if(cnt) cnt.textContent = (arr.length && live < arr.length)
-      ? `${arr.length}명 켜짐 · ${arr.length-live}명은 접근 권한 부족`
+      ? `${arr.length}명 켜짐 · ${arr.length-live}명은 기능별 권한에서만`
       : `${arr.length}명 켜짐`;
     const box = document.getElementById('ua-chips'); if(!box) return;
     box.innerHTML = arr.length ? arr.map(u=>`
       <span style="display:inline-flex;align-items:center;gap:5px;background:${needsPerm(staffOf(u))?'#FFF4E5':'#F1EBFD'};
         border:1.5px solid ${needsPerm(staffOf(u))?'#F0D9A8':'#D6C2F7'};
         color:${needsPerm(staffOf(u))?'#7C4A03':'#5B21B6'};border-radius:100px;padding:3px 6px 3px 10px;font-size:11.5px;font-weight:800"
-        title="${needsPerm(staffOf(u))?'접근 기관이 한 곳뿐이라 열쇠를 열어도 달라지지 않습니다':'접근 기관 두 곳 — 열쇠가 작동합니다'}">
+        title="${needsPerm(staffOf(u))?'계정 소속이 한 곳 — 두 기관 권한을 준 기능(예: 경비 담당)에서만 열쇠가 작동합니다':'접근 기관 두 곳 — 모든 화면에서 열쇠가 작동합니다'}">
         ${needsPerm(staffOf(u))?'⚠️':'🗝'} ${esc(nameOf(u))}
         <button onclick="unionToggleUid('${u}')" title="끄기"
           style="border:0;background:#fff;color:#7C3AED;border-radius:100px;width:17px;height:17px;
@@ -468,7 +470,7 @@ window.unionAdminMount = async (elId)=>{
         <b style="color:${on?'#4C1D95':'#2A2E2B'}">${esc(s.name||'')}</b>
         <span style="color:#93A09A;font-size:10.8px;font-weight:700">${esc(s.position||s.role||'')}</span>
         <span style="display:inline-flex;gap:3px;margin-left:4px">${orgBadges(s)}</span>
-        ${on && needsPerm(s) ? '<span style="margin-left:auto;font-size:10.2px;font-weight:900;color:#B45309;background:#FFF4E5;border-radius:6px;padding:1px 7px">접근 권한 먼저</span>'
+        ${on && needsPerm(s) ? '<span style="margin-left:auto;font-size:10.2px;font-weight:900;color:#B45309;background:#FFF4E5;border-radius:6px;padding:1px 7px" title="계정 소속이 한 곳 — 두 기관 권한을 준 기능에서만 열쇠가 작동합니다">기능별 권한만</span>'
           : (on?'<span style="margin-left:auto;font-size:10.5px;font-weight:900;color:#6D28D9">켜짐</span>':'')}
       </button>`;
     }).join('') || '<div style="font-size:11.5px;color:#93A09A;padding:6px">검색 결과 없음</div>';
