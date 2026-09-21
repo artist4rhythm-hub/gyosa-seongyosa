@@ -437,6 +437,51 @@ function renderDetail(){
 window.setTab = t => { TAB = t; renderDetail(); };
 
 /* ── 👥 참가자 · 회비 ── */
+/* ═══ 🧾 부담 배분 엔진 ═══
+   지출 한 줄마다 «누가 나눠 낼지»를 정해 두면, 환불은 계산이 아니라 «남는 값»으로 떨어진다.
+     한 사람 부담액 = 그가 대상인 줄들의 몫 합계
+     한 사람 환불액 = 낸 회비 − 부담액
+   부과 대상 네 가지: all 전원 · att 참석자만 · pick 직접 고르기 · one 특정인 전액
+   (기록에 chargeMode가 없으면 «전원» — 기존 자료는 그대로 동작한다) */
+const chargeOf = e => ({ mode: e.chargeMode || 'all', ids: e.chargeIds || [] });
+const CHG_LABEL = { all:'전원', att:'참석자만', pick:'직접 고르기', one:'특정인 전액' };
+const isAbsent = m => m.attend === 'no';
+
+function chargeTargets(e, paidM){
+  const { mode, ids } = chargeOf(e);
+  if(mode === 'att')  return paidM.filter(m=>!isAbsent(m));
+  if(mode === 'pick' || mode === 'one') return paidM.filter(m=>ids.includes(m.id));
+  return paidM.slice();                                   // all
+}
+/* 사람별 부담·환불 — 회계 보고와 마감 스냅샷이 같은 값을 쓴다 */
+function shareTable(paidM, exps, RU){
+  const bear = {}; paidM.forEach(m=>bear[m.id]=0);
+  const lines = [];
+  exps.forEach(e=>{
+    const amt = Number(e.subtotal ?? e.amount) || 0;
+    const tg = chargeTargets(e, paidM);
+    const n = tg.length;
+    lines.push({ id:e.id, cat:e.cat||'', item:e.item||'', amount:amt,
+      mode: chargeOf(e).mode, n, per: n ? amt/n : 0, orphan: !n && amt>0 });
+    if(!n) return;
+    const per = amt / n;
+    tg.forEach(m=> bear[m.id] += per);
+  });
+  const unit = RU || 1;
+  const rows = paidM.map(m=>{
+    const fee = Number(m.fee)||0;
+    const b = bear[m.id] || 0;
+    const rawRefund = fee - b;
+    const refund = Math.max(0, Math.floor(rawRefund / unit) * unit);
+    return { id:m.id, name:m.name||'', kind:m.kind||'', grade:m.grade||'',
+      attend: isAbsent(m) ? 'no' : 'yes', reason: m.absentReason || '',
+      fee, bear: b, bearR: Math.round(b), rawRefund, refund };
+  });
+  const sumRefund = rows.reduce((t,r)=>t+r.refund,0);
+  const sumFee = rows.reduce((t,r)=>t+r.fee,0);
+  return { rows, lines, sumRefund, sumFee };
+}
+
 function renderMembers(){
   const mgr = canMgr(CUR);
   const paid = MEMBERS.filter(m=>m.paid);
@@ -463,6 +508,10 @@ function renderMembers(){
     <td class="c">${esc(m.grade||'')}</td>
     <td class="c">${esc(m.className||'')}</td>
     <td class="r" ${mgr?`style="cursor:pointer" title="눌러서 개별 회비 고치기" onclick="editFee('${m.id}')"`:''}>${fmt(m.fee)}</td>
+    <td class="c">${(()=>{ const ab=isAbsent(m);
+      return `<span class="pill ${mgr&&!isLocked()?'click':''}" style="${ab?'background:#FDECEA;color:#C0392B':'background:#DCFCE7;color:#166534'};font-weight:900"
+        ${mgr&&!isLocked()?`onclick="toggleAttend('${m.id}')" title="참석 여부를 바꿉니다"`:''}>${ab?'불참':'참석'}</span>${
+        ab && m.absentReason ? `<div style="font-size:10.5px;color:var(--tl);margin-top:2px">${esc(m.absentReason)}</div>` : ''}`; })()}</td>
     <td class="c">${m.paid
       ? `<span class="pill ok ${mgr?'click':''}" ${mgr?`onclick="togglePaid('${m.id}')"`:''}>✓ ${esc(sd(m.paidDs)||'입금')}</span>`
       : `<span class="pill req ${mgr?'click':''}" ${mgr?`onclick="togglePaid('${m.id}')"`:''}>대기</span>`}</td>
@@ -519,7 +568,7 @@ function renderMembers(){
       <tr>${mgr&&!isLocked()?`<th class="c no-print" style="width:34px"><input type="checkbox" id="msel-all"
           onchange="mSelAll(this.checked)" title="보이는 인원 전체 선택" style="width:16px;height:16px"></th>`:''}
         <th>이름</th><th class="c">구분</th><th class="c">학년</th><th class="c">반</th>
-        <th class="r">회비</th><th class="c">입금</th><th>메모</th>${mgr?'<th class="c no-print"></th>':''}</tr>
+        <th class="r">회비</th><th class="c">참석</th><th class="c">입금</th><th>메모</th>${mgr?'<th class="c no-print"></th>':''}</tr>
       ${rows || `<tr><td colspan="9" style="text-align:center;color:var(--tl);padding:20px">
         참가자가 없습니다${mgr?' — 위의 「담기」 버튼으로 불러오세요':''}</td></tr>`}
       ${list.length?`<tr class="sumrow"><td colspan="4">보이는 ${list.length}명 · 입금 ${list.filter(m=>m.paid).length}명</td>
@@ -1060,6 +1109,81 @@ window.delIncome = async function(id){
   }catch(err){ toast('삭제 실패: '+(err.message||''),'err'); }
 };
 
+/* ── 부과 대상 고르기 ── */
+window.toggleAttend = async (mid)=>{
+  const m = MEMBERS.find(x=>x.id===mid); if(!m) return;
+  const goAbsent = !isAbsent(m);
+  let reason = m.absentReason || '';
+  if(goAbsent){
+    reason = prompt(`${m.name} 님을 «불참»으로 바꿉니다.\n사유를 적어주세요 (회계 보고서에 실립니다)`, reason || '');
+    if(reason === null) return;
+  }
+  try{
+    const upd = goAbsent ? { attend:'no', absentReason:(reason||'').trim() } : { attend:'yes', absentReason:'' };
+    await updateDoc(doc(db,'actMembers',mid), upd);
+    Object.assign(m, upd);
+    renderMembers();
+    toast(goAbsent?'불참으로 표시했습니다':'참석으로 되돌렸습니다','ok');
+  }catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+};
+
+window.openCharge = (eid)=>{
+  const e = EXPENSES.find(x=>x.id===eid); if(!e) return;
+  const P = MEMBERS.filter(m=>m.paid);
+  const c = chargeOf(e);
+  const sel = new Set(c.ids && c.ids.length ? c.ids : P.filter(m=>!isAbsent(m)).map(m=>m.id));
+  window.__chgSel = sel; window.__chgId = eid;
+  const abs = P.filter(isAbsent);
+  const box = (mode,label,desc)=>`
+    <label style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border:1.5px solid ${c.mode===mode?'var(--gm)':'var(--ivd)'};
+      border-radius:11px;margin-bottom:7px;cursor:pointer;background:${c.mode===mode?'#F6FBF8':'#fff'}">
+      <input type="radio" name="chg" value="${mode}" ${c.mode===mode?'checked':''}
+        onchange="document.getElementById('chg-pick').style.display=(this.value==='pick'||this.value==='one')?'block':'none'"
+        style="width:16px;height:16px;margin-top:2px">
+      <span><b style="font-size:12.8px;color:var(--gd)">${label}</b>
+        <div style="font-size:11.3px;color:var(--ts);line-height:1.65">${desc}</div></span></label>`;
+  openModal(`
+    <div class="mtitle">🧾 부과 대상 — ${esc(e.item||e.cat||'')}</div>
+    <div class="msub">이 지출을 <b>누가 나눠 낼지</b> 정합니다. 여기서 빠진 분은 그만큼 환불을 더 받습니다.
+      ${abs.length?`<br>현재 불참 ${abs.length}명: ${abs.map(m=>esc(m.name)).join(' · ')}`:'<br>아직 불참자가 없습니다 (참가자 탭에서 등록)'}</div>
+    ${box('all','전원 부담','취소해도 그대로 나가는 돈 — 전세버스·예약금처럼 불참자도 함께 부담합니다.')}
+    ${box('att','참석자만','간 사람만 쓴 돈 — 숙박·식사·간식. 불참자는 빠집니다.')}
+    ${box('pick','직접 고르기','일부만 참여한 프로그램 — 아래에서 사람을 고릅니다.')}
+    ${box('one','특정인 전액','그 사람 때문에 생긴 비용(위약금 등) — 한 명이 전부 부담합니다.')}
+    <div id="chg-pick" style="display:${(c.mode==='pick'||c.mode==='one')?'block':'none'};margin-top:4px">
+      <input id="chg-q" placeholder="이름 검색" oninput="drawChgList(this.value)"
+        style="width:100%;height:36px;padding:0 11px;border:1.5px solid var(--ivd);border-radius:9px;
+        background:var(--iv);font-family:inherit;font-size:12.5px;margin-bottom:6px">
+      <div id="chg-list" style="max-height:200px;overflow:auto;border:1.5px solid var(--ivd);border-radius:9px;padding:6px;background:#fff"></div>
+    </div>
+    <div class="mfoot"><button class="btn gray" onclick="closeModal()">취소</button>
+      <button class="btn" onclick="saveCharge()">저장</button></div>`);
+  window.drawChgList = (q)=>{
+    const list = P.filter(m=>!q || String(m.name||'').includes(q)).slice(0,120);
+    $I('chg-list').innerHTML = list.map(m=>`
+      <label style="display:flex;align-items:center;gap:7px;padding:5px 4px;font-size:12.5px;font-weight:700;cursor:pointer">
+        <input type="checkbox" ${window.__chgSel.has(m.id)?'checked':''} data-mid="${m.id}"
+          onchange="this.checked?window.__chgSel.add('${m.id}'):window.__chgSel.delete('${m.id}')"
+          style="width:15px;height:15px">
+        ${esc(m.name||'')} <span style="color:var(--tl);font-size:10.8px">${esc(m.grade||m.kind||'')}</span>
+        ${isAbsent(m)?'<span class="pill" style="background:#FDECEA;color:#C0392B;font-size:9.5px">불참</span>':''}</label>`).join('')
+      || '<div style="font-size:11.5px;color:var(--tl);padding:6px">검색 결과 없음</div>';
+  };
+  drawChgList('');
+};
+window.saveCharge = async ()=>{
+  const mode = document.querySelector('input[name=chg]:checked')?.value || 'all';
+  const ids = (mode==='pick'||mode==='one') ? [...window.__chgSel] : [];
+  if((mode==='pick'||mode==='one') && !ids.length){ toast('대상을 한 명 이상 고르세요','err'); return; }
+  if(mode==='one' && ids.length>1){ toast('특정인 전액은 한 명만 고를 수 있습니다','err'); return; }
+  try{
+    await updateDoc(doc(db,'actExpenses',window.__chgId), { chargeMode:mode, chargeIds:ids });
+    const e = EXPENSES.find(x=>x.id===window.__chgId);
+    if(e){ e.chargeMode=mode; e.chargeIds=ids; }
+    closeModal(); renderExpenses(); toast('부과 대상을 저장했습니다','ok');
+  }catch(err){ toast('저장 실패: '+(err.message||''),'err'); }
+};
+
 function renderExpenses(){
   const mgr = canMgr(CUR);
   const conf = confirmedExp(), pend = pendingExp();
@@ -1079,6 +1203,13 @@ function renderExpenses(){
       <td>${esc(e.cat||'')}</td>
       <td><b>${esc(e.item||'')}</b>${e.detail?`<div style="font-size:11px;color:var(--ts)">${esc(e.detail)}</div>`:''}${lines}</td>
       <td class="r"><b>${fmt(e.subtotal)}</b></td>
+      <td class="c">${(()=>{ const c=chargeOf(e), P=MEMBERS.filter(m=>m.paid);
+          const n=chargeTargets(e,P).length;
+          const col={all:'#166534;background:#DCFCE7',att:'#1D4ED8;background:#E5EDFC',
+                     pick:'#6D28D9;background:#F1EBFD',one:'#B45309;background:#FFF4E5'}[c.mode];
+          return `<span class="pill ${!lock&&mgr?'click':''}" style="color:${col};font-weight:900"
+            ${!lock&&mgr?`onclick="openCharge('${e.id}')" title="누가 나눠 낼지 정합니다"`:''}
+            >${CHG_LABEL[c.mode]} ${n}명</span>`; })()}</td>
       <td class="c">${esc(e.requesterName||'')}</td>
       <td class="c" style="white-space:nowrap;font-size:11px;color:var(--ts)">${dtStr(e.createdAt)}</td>
       <td class="c">${
@@ -1118,7 +1249,7 @@ function renderExpenses(){
       그 순간 쪽지가 자동으로 갑니다. 대기 중인 신청은 회계 합계에 잡히지 않습니다.</div>
     <div class="tblwrap"><table class="acttbl" style="min-width:840px">
       <tr><th class="c">NO</th><th>구분</th><th>품목 · 지출 줄</th>
-        <th class="r">소계</th><th class="c">신청·담당</th><th class="c">신청 일시</th><th class="c">영수증</th><th class="c">상태</th><th class="c no-print"></th></tr>
+        <th class="r">소계</th><th class="c">부과 대상</th><th class="c">신청·담당</th><th class="c">신청 일시</th><th class="c">영수증</th><th class="c">상태</th><th class="c no-print"></th></tr>
       ${AC1.map((e,i)=>row(e,i,true)).join('')}
       ${AC1.length?`<tr class="sumrow"><td colspan="3">확정 지출 합계 (${AC1.length}건)</td>
         <td class="r">${fmt(confSum)}</td><td colspan="5"></td></tr>`:''}
@@ -1410,6 +1541,14 @@ function renderReport(){
   const rawPer = paidN ? bal/paidN : 0;
   const per = paidN ? Math.floor(rawPer / RU) * RU : 0;
   const rem = bal - per*paidN;              // 단수 (개인 지급 후 남는 돈)
+  /* 🧾 부담 배분 — 불참자가 있거나 부과 대상을 손본 지출이 있으면 사람별로 계산한다 */
+  const SH = shareTable(paidM, AC, RU);
+  const absentees = SH.rows.filter(r=>r.attend==='no');
+  const tailored = AC.some(e=>(e.chargeMode||'all')!=='all');
+  const useShare = absentees.length > 0 || tailored;
+  const grp = {};                            // 환불액이 같은 사람끼리 묶는다
+  SH.rows.filter(r=>r.attend!=='no').forEach(r=>{ (grp[r.refund] = grp[r.refund] || []).push(r); });
+  const shRem = bal - SH.sumRefund;
   const memN = paidM.filter(m=>m.kind!=='teacher').length;
   const teaN = paidM.filter(m=>m.kind==='teacher').length;
 
@@ -1468,7 +1607,37 @@ function renderReport(){
       <tr class="sumrow"><td>실제 환급 합계 (${paidN}명 × ${fmt(per)}원)</td>
         <td class="r">${fmt(per*paidN)}</td>
         <td style="font-size:11.5px">단수 ${fmt(rem)}원 → 센터 입금 등으로 정리</td></tr>
+    </table></div>`
+    + (!useShare ? '' : `
+    <div class="tblwrap" style="margin-top:14px"><table class="acttbl" style="min-width:0">
+      <tr><th colspan="4">🧾 불참·부과 조정 반영 환급 <span style="font-weight:600;font-size:11px">— 이 표가 실제 지급 기준입니다</span></th></tr>
+      <tr><td colspan="4" style="background:var(--gp);font-size:11.5px;color:var(--gd);line-height:1.9">
+        지출 줄마다 정해 둔 «부과 대상»으로 사람별 부담액을 구하고, 낸 회비에서 빼서 환급액을 냅니다.<br>
+        <b>총수입 ${fmt(totalIn)} = 총지출 ${fmt(expSum)} + 환급 합계 ${fmt(SH.sumRefund)}${shRem?` + 단수 ${fmt(shRem)}`:''}</b>
+        ${shRem?' · 단수는 센터 입금 등으로 정리':' ✓ 딱 맞음'}</td></tr>
+      <tr><th>구분</th><th class="c">인원</th><th class="r">1인 환급</th><th class="r">소계</th></tr>
+      ${absentees.map(r=>`<tr>
+        <td><b>${esc(r.name)}</b> <span class="pill" style="background:#FDECEA;color:#C0392B;font-size:9.5px">불참</span>
+          ${r.reason?`<div style="font-size:11px;color:var(--ts)">${esc(r.reason)}</div>`:''}
+          <div style="font-size:10.8px;color:var(--tl)">부담 ${fmt(r.bearR)}원</div></td>
+        <td class="c">1</td><td class="r">${fmt(r.refund)}</td><td class="r"><b>${fmt(r.refund)}</b></td></tr>`).join('')}
+      ${Object.entries(grp).sort((a,b)=>b[1].length-a[1].length).map(([amt,list])=>`<tr>
+        <td><b>참석자</b> <span style="color:var(--tl);font-size:11px">부담 ${fmt(Math.round(list[0].bear))}원</span>
+          ${list.length<=6?`<div style="font-size:10.8px;color:var(--tl)">${list.map(r=>esc(r.name)).join(' · ')}</div>`:''}</td>
+        <td class="c">${list.length}</td><td class="r">${fmt(Number(amt))}</td>
+        <td class="r"><b>${fmt(Number(amt)*list.length)}</b></td></tr>`).join('')}
+      <tr class="sumrow"><td>환급 합계</td><td class="c">${paidN}</td><td class="r"></td>
+        <td class="r">${fmt(SH.sumRefund)}</td></tr>
     </table></div>
+    ${SH.lines.some(l=>l.orphan)?`<div style="margin-top:8px;font-size:11.5px;color:#B91C1C;font-weight:700">
+      ⚠ 부과 대상이 비어 있는 지출이 있습니다 — 그 금액은 아무에게도 배분되지 않습니다.</div>`:''}
+    <div class="tblwrap" style="margin-top:12px"><table class="acttbl" style="min-width:0">
+      <tr><th colspan="4">📋 항목별 부과 기준</th></tr>
+      <tr><th>구분 · 품목</th><th class="c">부과 대상</th><th class="c">나눈 인원</th><th class="r">1인 몫</th></tr>
+      ${SH.lines.map(l=>`<tr><td>${esc(l.cat)} · ${esc(l.item)}</td>
+        <td class="c">${CHG_LABEL[l.mode]}</td><td class="c">${l.n}</td>
+        <td class="r">${fmt(Math.round(l.per))}</td></tr>`).join('')}
+    </table></div>`) + `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:13px;align-items:center" class="no-print">
       ${canMgr(CUR) ? (
         isLocked()
@@ -1502,7 +1671,22 @@ window.closeLedger = async function(){
       await TM.snapBundle('actExpenses', {ledgerId:CUR.id}, '회계 마감 직전 — 지출');
     }
   } catch(e){}
+  /* 🧾 환급 명단을 이 순간의 값으로 «고정»한다 — 이후 지출이 바뀌어도 지급 기준은 그대로 */
+  let refundSnap = null;
+  try{
+    const paidM = MEMBERS.filter(m=>m.paid);
+    const SH = shareTable(paidM, confirmedExp(), window._rndUnit || 1);
+    refundSnap = {
+      at: todayDs(),
+      unit: window._rndUnit || 1,
+      totalRefund: SH.sumRefund,
+      rows: SH.rows.map(r=>({ id:r.id, name:r.name, attend:r.attend, reason:r.reason,
+        fee:r.fee, bear:Math.round(r.bear), refund:r.refund })),
+      lines: SH.lines.map(l=>({ cat:l.cat, item:l.item, amount:l.amount, mode:l.mode, n:l.n, per:Math.round(l.per) }))
+    };
+  }catch(e){ console.warn('[환급 스냅샷] 건너뜀', e); }
   const upd = { status:'closed', closedDs:todayDs(), closedByUid:CU.uid, closedByName:CU.name||'' };
+  if(refundSnap) upd.refundSnap = refundSnap;
   await updateDoc(doc(db,'actLedgers',CUR.id), upd);
   Object.assign(CUR, upd);
   logAct('회계 마감', `잔액 ${fmt((Number(CUR.incSum)||0)-(Number(CUR.expSum)||0))}원으로 확정`);
