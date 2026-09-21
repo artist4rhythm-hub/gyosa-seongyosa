@@ -117,11 +117,22 @@
 }
 /* 인쇄: 보고서만 */
 @media print{
+  @page{ size:A4 portrait; margin:11mm 10mm }
   body.pr *{visibility:hidden}
   body.pr #panel-rep, body.pr #panel-rep *{visibility:visible}
   body.pr #panel-rep{position:absolute;left:0;top:0;width:100%;border:none;box-shadow:none}
   body.pr .no-print{display:none !important}
+  /* 🎨 배경색을 빼지 말 것 — 표 제목줄(짙은 바탕·흰 글씨)과 원형 그래프가 사라지지 않게 */
+  body.pr #panel-rep, body.pr #panel-rep *{
+    -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
+  /* ✂️ 줄이 페이지 경계에서 반으로 잘리지 않게 */
+  body.pr #panel-rep .acttbl tr{ break-inside:avoid; page-break-inside:avoid; }
+  body.pr #panel-rep .tblwrap{ overflow:visible !important; }
+  body.pr #panel-rep .pie-box{ break-inside:avoid; page-break-inside:avoid; }
+  /* 📄 공식 문서엔 «실제 지급 기준» 표 하나만 — 조정 전 참고표는 인쇄에서 뺀다 */
+  body.pr #panel-rep .superseded{ display:none !important; }
 }
+.superseded{opacity:.6}
 .acttbl tr.selrow td{background:var(--gp) !important}
 .acttbl.gsum th{font-size:11px;padding:6px 4px}
 .acttbl.gsum td{font-size:12px;padding:6px 4px}
@@ -1625,15 +1636,15 @@ function renderReportCore(){
           <tr class="sumrow"><td>합계</td><td class="r">${fmt(expSum)}</td>
             <td class="r">${paidN?fmt(Math.round(expSum/paidN)):'—'}</td><td class="r">100%</td></tr>
         </table></div>
-        ${cats.length?`<div style="display:flex;align-items:center;gap:15px;margin-top:10px;
+        ${cats.length?`<div class="pie-box" style="display:flex;align-items:center;gap:15px;margin-top:10px;
           background:var(--iv);border-radius:10px;padding:11px">
           <div class="pie" style="${pieCSS}"></div>
           <div class="legend">${legend}</div>
         </div>`:''}
       </div>
     </div>
-    <div class="tblwrap" style="margin-top:12px"><table class="acttbl" style="min-width:0">
-      <tr><th colspan="3">잔액 · 환급 정리</th></tr>
+    <div class="tblwrap ${useShare?'superseded':''}" style="margin-top:12px"><table class="acttbl" style="min-width:0">
+      <tr><th colspan="3">잔액 · 환급 정리${useShare?' <span style="font-weight:600;font-size:11px;opacity:.9">— 참고: 조정 전(전원 균등) 계산 · 실제 지급은 아래 표 · 인쇄에서는 빠집니다</span>':''}</th></tr>
       <tr><td colspan="3" style="background:var(--gp);font-size:11.5px;color:var(--gd);line-height:1.9">
         <b>산출 과정</b><br>
         ① 총수입 ${fmt(totalIn)}${extraSum?` (회비 ${fmt(incSum)} + 추가 ${fmt(extraSum)})`:''} − 지출 ${fmt(expSum)} = <b style="${bal<0?'color:#B91C1C':''}">잔액 ${fmt(bal)}원${bal<0?' ⚠ 부족':''}</b><br>
