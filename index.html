@@ -295,7 +295,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="org-core.js"></script>
 <script src="menu.js"></script>
 <script src="sidebar.js"></script>
-<script type="module" src="union.js?v=62"></script>
+<script type="module" src="union.js?v=63"></script>
 <script type="module" src="badges.js"></script>
 </head>
 <body>
@@ -1033,7 +1033,7 @@ async function getAllRows(sd, ed, orgFilter, uidFilter) {
   });
 
   // 자동 정상출근 계산
-  const staffSnap = await getDocs(collection(db,'staff'));
+  const staffSnap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
   const staffList = [];
   staffSnap.forEach(d => {
     const s = {uid:d.id,...d.data()};
@@ -1119,7 +1119,7 @@ async function loadStat() {
   const el=$I('stat-table'); if(!el) return;
   el.innerHTML='<p class="empty">불러오는 중...</p>';
   const rows=await getAllRows(`${year}-01-01`,`${year}-12-31`,org,'');
-  const staffSnap=await getDocs(collection(db,'staff'));
+  const staffSnap=await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
   const byUid={};
   const allowed=myOrgs();
   staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};const sOrgs=s.orgs&&s.orgs.length?s.orgs:[s.org];if(!sOrgs.some(o=>allowed.includes(o)))return;if(org&&!sOrgs.includes(org))return;byUid[s.uid]={name:s.name,org:s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{byUid[s.uid].counts[p.k]=0;p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
@@ -1154,7 +1154,7 @@ function dlCSV(filename,rows){const bom='\uFEFF';const csv=bom+toCSV(rows);const
 async function dlStatExcel(){
   const org=$I('st-org')?.value||'',year=Number($I('st-year')?.value||TY);
   const rows=await getAllRows(`${year}-01-01`,`${year}-12-31`,org,'');
-  const staffSnap=await getDocs(collection(db,'staff'));
+  const staffSnap=await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
   const byUid={};
   staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};if(org&&s.org!==org)return;byUid[s.uid]={name:s.name,org:ORGS[s.org]||s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
   rows.forEach(r=>{if(byUid[r.uid]&&byUid[r.uid].counts[r.sub]!==undefined)byUid[r.uid].counts[r.sub]++;});
@@ -3621,7 +3621,7 @@ async function loadHomeBirthdays(){
     const studSnap = await getDocs(collection(db,'students'));
     const students = [];
     studSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if(myOrgList.includes(s.org)) students.push(s); });
-    const staffSnap = await getDocs(collection(db,'staff'));
+    const staffSnap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
     const teachers = [];
     staffSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if((s.acStatus||'active')==='active'){
       const sOrgs = s.role==='super'?['jihyebit','daniel']:(s.orgs&&s.orgs.length?s.orgs:[s.org]);
@@ -4031,7 +4031,7 @@ function renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt){
 // 교직원 캐시 새로고침 (권한 필터 적용)
 async function reloadStaffCache(){
   try {
-    const snap = await getDocs(collection(db,'staff'));
+    const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
     STAFF_CACHE = {};
     const allowed = myOrgs();
     snap.forEach(d => {

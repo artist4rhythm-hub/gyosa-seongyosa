@@ -92,6 +92,14 @@ window.orgCore = (function(){
     try{ localStorage.setItem('gyosa_orgview', JSON.stringify(list)); }catch(e){}
   }
 
+  /* 🧪 테스트 계정은 어떤 명단에도 나타나지 않는다 (명부·결재선·쪽지·출퇴근·강사 목록…) */
+  function hideTest(snap){
+    if(!snap || !snap.docs) return snap;
+    const docs = snap.docs.filter(d=>{ try{ return !((d.data()||{}).isTest); }catch(e){ return true; } });
+    return { docs, size: docs.length, empty: !docs.length,
+      forEach: (fn, t)=>docs.forEach(fn, t), metadata: snap.metadata, query: snap.query };
+  }
+  window.hideTest = hideTest;
   return { myOrgs, lockTo, POLICY, UNIFIED_POS, JF, DF, unionOpen, setUnion, primaryOrg,
            curOrg, setCurOrg, combined, combinedHas, applyLocalOrgView, DEFAULT_COMBINED };
 })();

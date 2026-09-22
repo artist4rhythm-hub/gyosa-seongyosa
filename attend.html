@@ -120,7 +120,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="menu.js"></script>
 <script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
-<script type="module" src="union.js?v=62"></script>
+<script type="module" src="union.js?v=63"></script>
 <script src="org-bar.js"></script>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
@@ -717,7 +717,7 @@ function canEditClass(c){
     return c.org===CU.org && c.dept===CU.dept;
   }
   // 교사: 담임이거나 대리로 지정된 반
-  if(c.teacherUid===CU.uid || (c.deputies||[]).includes(CU.uid)) return true;
+  if(c.teacherUid===CU.uid || (c.deputies||[]).includes(CU.uid) || (c.shadowUids||[]).includes(CU.uid)) return true;
   // 학년별 담당: 담당 학년 학생이 있는 반
   return classGrades(c).some(g => (GRADE_ASSIGN[c.org+'|'+g]||[]).includes(CU.uid));
 }
@@ -1403,7 +1403,7 @@ async function sendAbsenceAlert(c, dateStr, studs){
     const targets = new Set();
     if(c.teacherUid) targets.add(c.teacherUid);
     (c.deputies||[]).forEach(u=>targets.add(u));
-    const snap = await getDocs(collection(db,'staff'));
+    const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
     snap.forEach(d=>{
       const st = d.data();
       if((st.acStatus||'active')!=='active') return;
@@ -2209,7 +2209,7 @@ async function loadGaStaff(){
   const box = $I('ga-box'); if(!box) return;
   if(!GA_STAFF){
     try {
-      const snap = await getDocs(collection(db,'staff'));
+      const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
       GA_STAFF = [];
       snap.forEach(d=>{ const s={uid:d.id, ...d.data()};
         if(!s.noAuth && (s.acStatus||'active')==='active') GA_STAFF.push(s); });
@@ -2236,7 +2236,7 @@ function stickyBtnHTML(target){
 function homeroomGrades(uid, org){
   const set = new Set();
   CLASSES.filter(c=>c.org===org && (c.teacherUid===uid || c.teacher===uid ||
-    (Array.isArray(c.subTeachers)&&c.subTeachers.includes(uid)) || c.subTeacherUid===uid))
+    (Array.isArray(c.subTeachers)&&c.subTeachers.includes(uid)) || c.subTeacherUid===uid || (Array.isArray(c.shadowUids)&&c.shadowUids.includes(uid))))
     .forEach(c=>classGrades(c).forEach(g=>set.add(g)));
   return set;
 }

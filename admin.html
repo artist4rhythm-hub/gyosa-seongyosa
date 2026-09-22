@@ -238,7 +238,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="timemachine.js"></script>
 <script src="holidays-kr.js"></script>
 <script src="sidebar.js"></script>
-<script type="module" src="union.js?v=62"></script>
+<script type="module" src="union.js?v=63"></script>
+<script type="module" src="clone-test.js?v=1"></script>
 <script type="module" src="badges.js"></script>
 </head>
 <body>
@@ -309,6 +310,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       <button class="subtbtn active" id="sa-sys" onclick="showAdmTab('sys')">🏢 통합관리</button>
       <button class="subtbtn" id="sa-acc" onclick="showAdmTab('acc')" style="display:none">🔐 접근 권한</button>
       <button class="subtbtn" id="sa-union" onclick="showAdmTab('union')" style="display:none">🤝 연합</button>
+      <button class="subtbtn" id="sa-clone" onclick="showAdmTab('clone')" style="display:none">🧪 권한 테스트</button>
       <button class="subtbtn" id="sa-hr" onclick="showAdmTab('hr')" style="display:none">📇 인사정보</button>
       <button class="subtbtn" id="sa-org" onclick="showAdmTab('org')" style="display:none">🏷 부서·새 학년도</button>
       <button class="subtbtn" id="sa-att" onclick="showAdmTab('att')" style="display:none">📋 출근부 설정</button>
@@ -323,6 +325,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <div id="ca-hr" class="tc" style="display:none"></div>
     <div id="ca-acc" class="tc" style="display:none"></div>
     <div id="ca-union" class="tc" style="display:none"></div>
+    <div id="ca-clone" class="tc" style="display:none"></div>
     <div id="ca-sec" class="tc" style="display:none"></div>
     <div id="ca-log" class="tc" style="display:none"></div>
     <div id="ca-act" class="tc" style="display:none"></div>
@@ -1141,7 +1144,7 @@ async function getAllRows(sd, ed, orgFilter, uidFilter) {
   });
 
   // 자동 정상출근 계산
-  const staffSnap = await getDocs(collection(db,'staff'));
+  const staffSnap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
   const staffList = [];
   staffSnap.forEach(d => {
     const s = {uid:d.id,...d.data()};
@@ -1227,7 +1230,7 @@ async function loadStat() {
   const el=$I('stat-table'); if(!el) return;
   el.innerHTML='<p class="empty">불러오는 중...</p>';
   const rows=await getAllRows(`${year}-01-01`,`${year}-12-31`,org,'');
-  const staffSnap=await getDocs(collection(db,'staff'));
+  const staffSnap=await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
   const byUid={};
   const allowed=myOrgs();
   staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};const sOrgs=s.orgs&&s.orgs.length?s.orgs:[s.org];if(!sOrgs.some(o=>allowed.includes(o)))return;if(org&&!sOrgs.includes(org))return;byUid[s.uid]={name:s.name,org:s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{byUid[s.uid].counts[p.k]=0;p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
@@ -1262,7 +1265,7 @@ function dlCSV(filename,rows){const bom='\uFEFF';const csv=bom+toCSV(rows);const
 async function dlStatExcel(){
   const org=$I('st-org')?.value||'',year=Number($I('st-year')?.value||TY);
   const rows=await getAllRows(`${year}-01-01`,`${year}-12-31`,org,'');
-  const staffSnap=await getDocs(collection(db,'staff'));
+  const staffSnap=await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
   const byUid={};
   staffSnap.forEach(d=>{const s={uid:d.id,...d.data()};if(org&&s.org!==org)return;byUid[s.uid]={name:s.name,org:ORGS[s.org]||s.org,dept:s.dept,counts:{}};TREE.forEach(p=>{p.s.forEach(s2=>{byUid[s.uid].counts[s2.k]=0;});});});
   rows.forEach(r=>{if(byUid[r.uid]&&byUid[r.uid].counts[r.sub]!==undefined)byUid[r.uid].counts[r.sub]++;});
@@ -1442,7 +1445,7 @@ function renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt){
 // 교직원 캐시 새로고침 (권한 필터 적용)
 async function reloadStaffCache(){
   try {
-    const snap = await getDocs(collection(db,'staff'));
+    const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
     STAFF_CACHE = {};
     const allowed = myOrgs();
     snap.forEach(d => {
@@ -2335,7 +2338,8 @@ function renderStat(){
 const ADM_TABS = {
   sys:{grp:'acct', roles:['super','org_admin','tab_admin']},   // 통합관리
   acc:{grp:'acct', roles:['super']},                            // 접근 권한
-  union:{grp:'acct', roles:['super']},                          // 🤝 연합 (두 기관 함께 보기)
+  union:{grp:'acct', roles:['super']},
+  clone:{grp:'acct', roles:['super']},                          // 🧪 권한 테스트 (그 선생님 눈으로 보기)                          // 🤝 연합 (두 기관 함께 보기)
   hr: {grp:'org',  roles:['super','org_admin']},                // 인사정보
   org:{grp:'org',  roles:['super','org_admin']},                // 부서·새 학년도
   att:{grp:'work', roles:['super','org_admin','tab_admin']},    // 출근부 설정
@@ -2372,13 +2376,14 @@ function showAdmTab(sub){
   refreshAdmBars();
   document.querySelectorAll('#adm-subbar .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act','ca-org','ca-tm','ca-views','ca-union'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act','ca-org','ca-tm','ca-views','ca-union','ca-clone'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
   if(sub==='hr') renderHRStatus();
   if(sub==='acc') renderAccessCtl();
   if(sub==='union') window.unionAdminMount && unionAdminMount('ca-union');
+  if(sub==='clone') window.cloneTestMount && cloneTestMount('ca-clone');
   if(sub==='sec') renderSecurity();
   if(sub==='log') renderLoginLog();
   if(sub==='act') renderActivityLog();

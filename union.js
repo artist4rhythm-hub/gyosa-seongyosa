@@ -53,7 +53,7 @@ async function whoami(){
   try{
     const s = await getDoc(doc(F.db,'staff',u.uid));
     const d = s.exists() ? s.data() : {};
-    _me = { uid:u.uid, name: d.name || '', role: d.role || '' };
+    _me = { uid:u.uid, name: d.name || '', role: d.role || '', isTest: !!d.isTest, cloneOf: d.cloneOf || null };
   }catch(e){ _me = { uid:u.uid, name:'', role:'' }; }
   return _me;
 }
@@ -291,8 +291,26 @@ function armDoor(){
   }
 }
 
+/* 🧪 테스트 계정 표식 — 실제 선생님 화면과 절대 헷갈리지 않게 */
+function paintTestBadge(me){
+  document.getElementById('clone-badge')?.remove();
+  if(!me || !me.isTest) return;
+  const c = me.cloneOf || {};
+  const b = document.createElement('div');
+  b.id = 'clone-badge';
+  b.style.cssText = `position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:2600;
+    background:linear-gradient(90deg,#C2410C,#EA580C);color:#fff;border-radius:100px;padding:5px 14px;
+    font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:800;box-shadow:0 3px 14px rgba(194,65,12,.35);
+    white-space:nowrap;pointer-events:auto;cursor:default`;
+  b.title = '권한 테스트용 계정입니다 — 저장·체크 같은 동작은 실제 자료에 반영되니 조심하세요';
+  b.textContent = c.name ? `🧪 테스트 계정 · 지금 ${c.name}${c.position?` (${c.position})`:''} 권한으로 보는 중`
+                         : '🧪 테스트 계정 · 아직 복제된 권한이 없습니다';
+  document.body.appendChild(b);
+}
+
 function boot(){
   try{ paintBanner(); armDoor(); }catch(e){ console.warn('[연합] 초기화 건너뜀', e); return; }
+  whoami().then(paintTestBadge).catch(()=>{});
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
 else boot();
@@ -315,7 +333,7 @@ window.unionAdminMount = async (elId)=>{
   let staff = [];
   try{ const { getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
     const snap = await getDocs(collection(F.db,'staff'));
-    staff = snap.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>!x.deleted && x.status!=='퇴직')
+    staff = snap.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>!x.deleted && x.status!=='퇴직' && !x.isTest)
       .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
   }catch(e){}
   let logs = [];
@@ -409,7 +427,7 @@ window.unionAdminMount = async (elId)=>{
     `<span style="font-size:10px;font-weight:800;background:#E9F2EE;color:#2F5D4C;border-radius:6px;padding:1px 6px">${ORGL[o]||o}</span>`).join(' ');
   const needsPerm = st => orgsOfStaff(st).length < 2;
   const paintChips = ()=>{
-    const arr = [...window.__uaPicked];
+    const arr = [...window.__uaPicked].filter(u=>staffOf(u));   // 명단에 없는(테스트) 계정은 칩으로 드러내지 않는다
     const cnt = document.getElementById('ua-count');
     const live = arr.filter(u=>!needsPerm(staffOf(u))).length;
     if(cnt) cnt.textContent = (arr.length && live < arr.length)
