@@ -299,7 +299,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="menu.js"></script>
 <script src="org-core.js"></script>
 <script src="sidebar.js"></script>
-<script type="module" src="union.js?v=63"></script>
+<script type="module" src="union.js?v=64"></script>
 <script type="module" src="badges.js"></script>
 <script type="module" src="presence.js"></script>
 </head>
@@ -1078,6 +1078,7 @@ async function submitPayReq(){
   }
 
   window.showLoading && window.showLoading('저장하는 중…');
+  let __step = '요청서 저장';          // 🔎 어느 단계에서 막혔는지 알려주기 위해
   try {
     // 항목에서 영수증 분리 (payReceipts에 별도 저장)
     const rowsForSave = rows.map((r,idx)=>({
@@ -1131,7 +1132,7 @@ async function submitPayReq(){
       const rcs=rows[i].receipts||[];
       for(let j=0;j<rcs.length;j++){
         saved++; window.setLoadStep && window.setLoadStep(`영수증 업로드 중… (${saved}/${totalRc})`, 30+Math.round(saved/Math.max(1,totalRc)*60));
-        await addDoc(collection(db,'payReceipts'), {
+        __step='영수증 저장'; await addDoc(collection(db,'payReceipts'), {
           requestId:reqId, rowIdx:i, idx:j+1, dataUrl:rcs[j],
           org:prOrg, date, createdByUid:CU.uid, createdAt:Timestamp.now()
         });
@@ -1157,13 +1158,13 @@ async function submitPayReq(){
         `정정 ${prCorrectSeq}차 — ₩${won(prOrigTotal)} → ₩${won(total)} (차액 ${diff>=0?'+':''}₩${won(Math.abs(diff))})`,
         { correctionId:reqId, seq:prCorrectSeq, diff });
     } else {
-      await pushHistory(reqId, 'submitted', prNote || '', { total, needApproval });
+      __step='처리 이력'; await pushHistory(reqId, 'submitted', prNote || '', { total, needApproval });
     }
 
     // 쪽지: 결재 필요하면 첫 결재자에게, 아니면 회계 담당자에게
     if(prMode==='expense' && !isEdit){
       if(needApproval && chain[0]){
-        await sendMsg([chain[0].uid], `[경비 결재 요청] ${name} · ₩${won(total)}`,
+        __step='알림 쪽지'; await sendMsg([chain[0].uid], `[경비 결재 요청] ${name} · ₩${won(total)}`,
           `${ORGS[prOrg]||prOrg} · ${dept}\n용도: ${purpose}\n금액: ₩${won(total)}\n\n결재함에서 승인/반려해주세요.`);
       } else {
         await sendMsg(payManagerUids(), `[경비 지급 상신] ${name} · ₩${won(total)}`,
@@ -1178,7 +1179,9 @@ async function submitPayReq(){
     prNote=''; prCorrectOf=null; prCorrectSeq=0; prOrigTotal=0;
     await loadPayRequests();
     showTab('list');
-  } catch(e){ window.hideLoading && window.hideLoading(); toast('저장 실패: '+(e.message||''),'err'); }
+  } catch(e){ window.hideLoading && window.hideLoading(); const pd = String(e.code||'').includes('permission') || /insufficient permissions/i.test(e.message||'');
+    toast(pd ? `저장되지 않았어요 (${__step} 단계 · 권한 오류) — 다른 탭에서 로그아웃했거나 다른 계정으로 로그인했을 수 있어요. 새로고침 후 다시 시도해 주세요.`
+             : `저장 실패 (${__step} 단계): ${e.message||''}`, 'err'); }
 }
 window.submitPayReq = submitPayReq;
 

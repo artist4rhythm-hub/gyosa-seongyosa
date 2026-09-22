@@ -291,6 +291,38 @@ function armDoor(){
   }
 }
 
+/* 🔐 계정 바뀜 감지
+   같은 브라우저의 탭들은 로그인을 공유한다. 다른 탭에서 로그아웃하거나 다른 계정으로 들어가면
+   이 탭은 화면엔 예전 이름이 보이면서 실제 요청은 «다른 계정»으로 나간다 → 저장이 막히거나 엉뚱한 이름으로 기록.
+   처음 들어온 계정과 달라지는 순간 붉은 띠로 알리고 새로고침을 권한다. */
+let _firstUid;                              // undefined = 아직 모름
+async function watchAuth(){
+  const F = await fb(); if(!F) return;
+  onAuthStateChanged(F.auth, u=>{
+    const uid = u ? u.uid : null;
+    if(_firstUid === undefined){ _firstUid = uid; return; }
+    if(_firstUid === null){ _firstUid = uid; return; }          // 로그인 화면에서 막 들어온 경우는 정상
+    if(uid === _firstUid){ document.getElementById('auth-switch')?.remove(); return; }
+    setTimeout(()=>{ if(!document.hidden || true) paintAuthSwitch(u); }, 350);
+  });
+}
+function paintAuthSwitch(u){
+  document.getElementById('auth-switch')?.remove();
+  const b = document.createElement('div');
+  b.id = 'auth-switch';
+  b.style.cssText = `position:fixed;left:0;right:0;top:0;z-index:4000;background:#B91C1C;color:#fff;
+    font-family:'Noto Sans KR',sans-serif;padding:10px 16px;display:flex;align-items:center;gap:12px;
+    box-shadow:0 4px 16px rgba(185,28,28,.35);font-size:13px;font-weight:700`;
+  const who = u ? (String(u.email||'').split('@')[0] || '다른 계정') : '';
+  b.innerHTML = `<span style="font-size:18px">⚠️</span>
+    <span style="flex:1;line-height:1.55">${u ? `다른 탭에서 <b>«${esc(who)}»</b> 계정으로 로그인이 바뀌었습니다.` : '다른 탭에서 <b>로그아웃</b>되었습니다.'}
+      <span style="font-weight:500;opacity:.92">이 화면에서 저장하면 막히거나 그 계정 이름으로 기록돼요. 새로고침해 주세요.
+      (테스트 계정은 꼭 <b>시크릿 창</b>에서만 로그인하세요)</span></span>
+    <button onclick="location.reload()" style="background:#fff;color:#B91C1C;border:0;border-radius:9px;padding:7px 14px;font-weight:900;cursor:pointer;font-family:inherit;white-space:nowrap">새로고침</button>`;
+  document.body.appendChild(b);
+}
+window.__authSwitched = ()=> !!document.getElementById('auth-switch');
+
 /* 🧪 테스트 계정 표식 — 실제 선생님 화면과 절대 헷갈리지 않게 */
 function paintTestBadge(me){
   document.getElementById('clone-badge')?.remove();
@@ -311,6 +343,7 @@ function paintTestBadge(me){
 function boot(){
   try{ paintBanner(); armDoor(); }catch(e){ console.warn('[연합] 초기화 건너뜀', e); return; }
   whoami().then(paintTestBadge).catch(()=>{});
+  watchAuth().catch(()=>{});
 }
 if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
 else boot();

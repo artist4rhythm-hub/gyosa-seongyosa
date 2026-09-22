@@ -9,6 +9,7 @@
    ═══════════════════════════════════════════════════════════ */
 import { getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFunctions, httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js';
 import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where,
   arrayUnion, arrayRemove, deleteField, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -134,10 +135,32 @@ async function findTraces(F, uid){
 }
 
 /* ═══ 관리자 화면 ═══ */
+const idOf = e => String(e||'').split('@')[0];
+const ORG_L = o => o==='daniel'?'다니엘':o==='jihyebit'?'지혜빛':(o||'');
+const orgsTxt = s => ((s.orgs&&s.orgs.length?s.orgs:[s.org]).filter(Boolean).map(ORG_L).join('·')) || '—';
+const looksTest = s => s.isTest || /테스트|test/i.test(String(s.name||'')+' '+String(s.email||''));
+async function homeCount(F, uid, field){
+  try{
+    if(field==='shadow'){ const q = await getDocs(query(collection(F.db,'classes'), where('shadowUids','array-contains',uid))); return q.docs.map(d=>`${d.data().grade||''} ${d.data().name||''}`.trim()); }
+    const a = await getDocs(query(collection(F.db,'classes'), where('teacherUid','==',uid)));
+    const b = await getDocs(query(collection(F.db,'classes'), where('deputies','array-contains',uid)));
+    const m = new Map(); [...a.docs,...b.docs].forEach(d=>m.set(d.id, `${d.data().grade||''} ${d.data().name||''}`.trim())); return [...m.values()];
+  }catch(e){ return []; }
+}
+async function permCount(F, uid){
+  let n = 0; const labels = [];
+  for(const [c,d,label] of PERM_DOCS){
+    try{ const x = await getDoc(doc(F.db,c,d)); if(!x.exists()) continue;
+      if(JSON.stringify(x.data()).includes(`"${uid}"`)){ n++; labels.push(label); } }catch(e){}
+  }
+  return { n, labels };
+}
+const cell = (a,b) => { const A = JSON.stringify(a??''), B = JSON.stringify(b??''); return A===B ? '<b style="color:#166534">✓</b>' : '<b style="color:#B91C1C">✗</b>'; };
+
 window.cloneTestMount = async (elId)=>{
   const el = document.getElementById(elId); if(!el) return;
   try{
-    el.innerHTML = '<div style="padding:18px;color:#7C837E;font-size:13px">불러오는 중…</div>';
+    el.innerHTML = '<div style="padding:18px;color:#7C837E;font-size:13px">테스트 계정 상태를 확인하는 중…</div>';
     const F = await fb(); if(!F){ el.innerHTML='<div style="padding:18px">연결하지 못했습니다.</div>'; return; }
     const u = F.auth.currentUser; if(!u){ el.innerHTML='<div style="padding:18px">로그인이 필요합니다.</div>'; return; }
     const meSnap = await getDoc(doc(F.db,'staff',u.uid)); const me = { uid:u.uid, ...(meSnap.data()||{}) };
@@ -146,67 +169,175 @@ window.cloneTestMount = async (elId)=>{
     const staff = await allStaff(F);
     const test = cfg && cfg.uid ? staff.find(s=>s.uid===cfg.uid) : null;
     const pickable = staff.filter(s=>!s.isTest && s.role!=='super' && s.status!=='퇴직');
-    const c = (cfg && cfg.cloneOf) || null;
+    const c = (test && test.cloneOf) || (cfg && cfg.cloneOf) || null;
+    const target = c && c.uid ? staff.find(s=>s.uid===c.uid) : null;
     const when = t => { try{ const d=t.toDate?t.toDate():new Date(t); return d.toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ return ''; } };
+    const candidates = staff.filter(looksTest);
 
-    el.innerHTML = `<div class="asc"><div class="acard">
+    // 비교표 재료
+    let cmp = '';
+    if(test && target){
+      const [tH, xH, tP, xP] = await Promise.all([homeCount(F,target.uid,'real'), homeCount(F,test.uid,'shadow'), permCount(F,target.uid), permCount(F,test.uid)]);
+      const rows = [
+        ['역할', ROLE_L[target.role]||target.role||'—', ROLE_L[test.role]||test.role||'—', cell(target.role,test.role)],
+        ['접근 기관', orgsTxt(target), orgsTxt(test), cell(orgsTxt(target),orgsTxt(test))],
+        ['주 소속', ORG_L(target.primaryOrg||target.org)||'—', ORG_L(test.primaryOrg||test.org)||'—', cell(target.primaryOrg||target.org, test.primaryOrg||test.org)],
+        ['직위', target.position||'—', test.position||'—', cell(target.position||'',test.position||'')],
+        ['부서', target.dept||'—', test.dept||'—', cell(target.dept||'',test.dept||'')],
+        ['페이지 차단', (target.pageDeny||[]).join(', ')||'없음', (test.pageDeny||[]).join(', ')||'없음', cell(target.pageDeny||[], test.pageDeny||[])],
+        ['담임 반', tH.join(', ')||'없음', xH.join(', ')||'없음', cell(tH.length, xH.length)],
+        ['담당 명단', tP.labels.join(', ')||'없음', xP.labels.join(', ')||'없음', cell(tP.n, xP.n)],
+      ];
+      cmp = `<div class="acard"><h3 class="actitle">🔍 지금 테스트 계정 = <span style="color:#C2410C">${esc(target.name||'')}</span> 선생님
+          <span style="font-size:12px;color:var(--tl);font-weight:500">· 두 칸이 같으면 ✓</span></h3>
+        <div style="overflow-x:auto"><table class="otable" style="margin-top:6px">
+          <tr><th style="width:15%">항목</th><th>${esc(target.name||'')} 선생님 (원본)</th><th>테스트 계정 (복제본)</th><th style="width:7%;text-align:center">일치</th></tr>
+          ${rows.map(r=>`<tr><td><b>${r[0]}</b></td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td style="text-align:center">${r[3]}</td></tr>`).join('')}
+        </table></div>
+        <div style="font-size:11.5px;color:var(--tl);margin-top:7px;line-height:1.75">담임 반은 반편성 화면에 드러나지 않는 칸에만 들어가 있어요 ·
+          결재선·결재 규칙·근무 설정과 개인 항목(쪽지함·결재함·본인 신청)은 일부러 복제하지 않습니다.</div></div>`;
+    }
+
+    el.innerHTML = `<div class="asc">
+    <div class="acard">
       <h3 class="actitle">🧪 권한 테스트 — «그 선생님 눈으로 보기»</h3>
-      <p class="adesc">테스트 계정에 선생님의 권한을 통째로 복제합니다. <b>시크릿 창</b>에서 테스트 계정으로 들어가면 그 선생님이 보는 화면 그대로예요.
-        다른 선생님으로 바꾸면 이전 복제는 자동으로 걷어낸 뒤 새로 복제합니다.</p>
+      <p class="adesc">테스트 계정에 선생님의 권한을 통째로 복제합니다. <b>시크릿 창(또는 다른 브라우저)</b>에서 테스트 계정으로 들어가면 그 선생님이 보는 화면 그대로예요.
+        <b style="color:#B91C1C">같은 창의 다른 탭에서 로그인하면 안 됩니다</b> — 같은 브라우저의 탭들은 로그인을 공유해서, 관리자 탭들까지 테스트 계정으로 바뀌어요.</p>
       ${test ? `
-      <div style="display:flex;align-items:center;gap:10px;background:#FFF1E6;border:1.5px solid #F4C7A1;border-radius:12px;padding:11px 13px;margin:10px 0">
-        <span style="font-size:22px">🧪</span>
-        <div style="flex:1"><b style="font-size:13px;color:#7C2D12">테스트 계정 · ${esc(test.name||'')} <span style="font-weight:600;font-size:11.5px">${esc(test.email||'')}</span></b>
-          <div style="font-size:11.5px;color:#9A3412">${c?`지금 <b>${esc(c.name)}${c.position?` (${esc(c.position)})`:''}</b> 권한으로 복제됨 · ${when(c.at)}`:'아직 복제된 권한이 없습니다'}</div></div>
-        <button class="bs" onclick="cloneWipe()" style="white-space:nowrap">권한 비우기</button>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 14px;background:#FFF1E6;border:1.5px solid #F4C7A1;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:12.8px">
+        <span style="color:#9A3412;font-weight:800">테스트 계정</span><span><b>${esc(test.name||'')}</b></span>
+        <span style="color:#9A3412;font-weight:800">로그인 아이디</span><span><b style="font-family:ui-monospace,Menlo,monospace;background:#fff;border-radius:6px;padding:1px 7px">${esc(idOf(test.email))}</b>
+          <button class="bs" style="font-size:11px;padding:2px 8px;margin-left:4px" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(idOf(test.email))}');window.toast&&toast('아이디를 복사했습니다','ok')">복사</button></span>
+        <span style="color:#9A3412;font-weight:800">비밀번호</span><span>누구도 볼 수 없게 저장됩니다 (관리자 포함) — 모르면 <button class="bs" style="font-size:11px;padding:2px 9px" onclick="ctResetPw()">🔑 새로 정하기</button></span>
+        <span style="color:#9A3412;font-weight:800">상태</span><span>테스트 지정됨 · <b>모든 명단에서 숨김</b>${test.acStatus&&test.acStatus!=='active'?` · 계정 상태 ${esc(test.acStatus)}`:''}</span>
+        <span style="color:#9A3412;font-weight:800">지금 권한</span><span>${c?`<b>${esc(c.name)}${c.position?` (${esc(c.position)})`:''}</b> 선생님과 같게 · ${when(c.at)} 복제`:'<b>아직 복제 안 됨</b> — 아래에서 선생님을 고르세요'}</span>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-        <select id="ct-target" style="flex:1;min-width:220px;height:40px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 10px;font-family:inherit;font-size:13px;background:var(--iv)">
-          <option value="">— 선생님 고르기 —</option>
-          ${pickable.map(s=>`<option value="${s.uid}"${c&&c.uid===s.uid?' selected':''}>${esc(s.name||'')} · ${esc(s.position||ROLE_L[s.role]||s.role||'')}${(s.orgs&&s.orgs.length>1)?' · 두 기관':''}</option>`).join('')}
-        </select>
-        <button class="bp" style="background:#C2410C;border-color:#C2410C;white-space:nowrap" onclick="cloneDo()">이 선생님 권한으로 복제</button>
-      </div>
-      <div id="ct-result">${cfg && cfg.items && cfg.items.length ? resultHTML(cfg.items, c) : ''}</div>
-      <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--ivd)">
-        <div style="font-size:13px;font-weight:900;color:var(--gd);margin-bottom:4px">🧹 테스트 흔적</div>
-        <div style="font-size:11.8px;color:var(--ts);line-height:1.75;margin-bottom:8px">테스트 계정으로 <b>새로 만든</b> 신청·쪽지·기록을 찾아 지웁니다.
-          테스트 계정으로 <b>기존 자료를 고친 것</b>은 되돌리지 못하니, 출석 체크·결재 같은 실제 업무 버튼은 테스트 계정으로 누르지 마세요.</div>
-        <button class="bs" onclick="cloneTraces()">흔적 찾기</button> <span id="ct-trace" style="font-size:12px;color:var(--ts)"></span>
-      </div>
-      <div style="margin-top:12px;font-size:11.5px;color:var(--tl)">테스트 계정 바꾸기: <button class="bs" style="font-size:11px;padding:3px 9px" onclick="cloneDesignate(true)">다른 계정으로 지정</button> · <button class="bs" style="font-size:11px;padding:3px 9px;color:#B91C1C" onclick="cloneRelease()">지정 해제</button></div>
-      ` : `
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="bs" onclick="cloneWipe()">권한 비우기</button>
+        <button class="bs" onclick="cloneDesignate(true)">다른 계정으로 지정</button>
+        <button class="bs" style="color:#B91C1C" onclick="cloneRelease()">지정 해제</button>
+      </div>` : `
       <div style="background:var(--iv);border-radius:12px;padding:13px 14px;margin-top:10px">
         <div style="font-size:13px;font-weight:900;color:var(--gd);margin-bottom:6px">① 테스트 계정 지정</div>
-        <div style="font-size:12px;color:var(--ts);line-height:1.75;margin-bottom:8px">«계정·권한 → 통합관리»에서 평소처럼 교직원 계정을 하나 만든 뒤(예: 테스트 · test@…), 여기서 지정하세요.
-          이미 만들어 두신 «테스트-…» 계정을 골라도 됩니다. 지정하는 순간 그 계정은 <b>모든 명단에서 숨겨집니다</b>.</div>
+        <div style="font-size:12px;color:var(--ts);line-height:1.75;margin-bottom:8px">아래 «테스트용 계정» 목록에서 고르거나, «통합관리»에서 새 계정을 만든 뒤 여기서 지정하세요. 지정하는 순간 그 계정은 <b>모든 명단에서 숨겨집니다</b>.</div>
         <button class="bp" onclick="cloneDesignate(false)">테스트 계정 고르기</button>
       </div>`}
-    </div></div>`;
+    </div>
 
-    window.__ct = { F, me, staff, test, pickable };
+    ${cmp}
+
+    ${test ? `<div class="acard">
+      <h3 class="actitle">👥 누구의 화면으로 볼까요? <span style="font-size:12px;color:var(--tl);font-weight:500">· ${pickable.length}명</span></h3>
+      <input id="ct-q" placeholder="이름·직위 검색" oninput="ctFilter(this.value)" style="width:100%;height:38px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 11px;font-family:inherit;font-size:13px;background:var(--iv);margin:6px 0 8px">
+      <div id="ct-list" style="max-height:360px;overflow:auto;border:1px solid var(--ivd);border-radius:11px"></div>
+      <div id="ct-result" style="margin-top:10px">${cfg && cfg.items && cfg.items.length ? resultHTML(cfg.items, c) : ''}</div>
+    </div>
+
+    <div class="acard">
+      <h3 class="actitle">🧹 테스트 흔적</h3>
+      <div style="font-size:11.8px;color:var(--ts);line-height:1.75;margin-bottom:8px">테스트 계정으로 <b>새로 만든</b> 신청·쪽지·기록을 찾아 지웁니다.
+        기존 자료를 <b>고친 것</b>은 되돌리지 못하니, 출석 체크·결재 같은 실제 업무 버튼은 테스트 계정으로 누르지 마세요.</div>
+      <button class="bs" onclick="cloneTraces()">흔적 찾기</button> <span id="ct-trace" style="font-size:12px;color:var(--ts)"></span>
+    </div>` : ''}
+
+    <div class="acard">
+      <h3 class="actitle">🗂 테스트용 계정 <span style="font-size:12px;color:var(--tl);font-weight:500">· 이름이나 아이디에 «테스트/test»가 들어간 계정 · 명단에서 숨겨진 것도 보입니다</span></h3>
+      ${candidates.length ? `<table class="otable" style="margin-top:6px"><tr><th>이름</th><th>로그인 아이디</th><th>역할</th><th>상태</th><th></th></tr>
+        ${candidates.map(s=>`<tr><td><b>${esc(s.name||'')}</b></td><td style="font-family:ui-monospace,Menlo,monospace">${esc(idOf(s.email))}</td>
+          <td>${esc(ROLE_L[s.role]||s.role||'')}</td>
+          <td>${s.isTest?'<span class="sbadge" style="background:#FFF1E6;color:#C2410C">🧪 테스트 지정</span>':'<span class="sbadge">일반 (명단에 보임)</span>'}</td>
+          <td>${(test&&test.uid===s.uid)?'<span style="font-size:11px;color:var(--tl)">사용 중</span>':(s.role==='super'?'':`<button class="bs" style="font-size:11px;padding:3px 9px" onclick="ctUse('${s.uid}')">이 계정 쓰기</button>`)}</td></tr>`).join('')}
+      </table>` : '<p class="empty">아직 없습니다.</p>'}
+      <div style="background:var(--iv);border-radius:11px;padding:11px 13px;margin-top:10px;font-size:12px;color:var(--ts);line-height:1.8">
+        <b style="color:var(--gd)">«이미 사용 중인 아이디입니다»가 뜰 때</b><br>
+        로그인 아이디는 교직원 명단과 별개로 <b>인증 장부</b>에 남습니다. 명단에서 숨긴 테스트 계정이거나, 예전에 만들다 만 계정이 인증 장부에만 남아 있는 경우예요.
+        <div style="display:flex;gap:6px;margin-top:7px;align-items:center;flex-wrap:wrap">
+          <input id="ct-idq" placeholder="확인할 아이디 (예: 테스트)" style="height:34px;border:1.5px solid var(--ivd);border-radius:9px;padding:0 10px;font-family:inherit;font-size:12.5px;background:#fff">
+          <button class="bs" onclick="ctCheckId()">확인</button> <span id="ct-idr" style="font-size:12px"></span></div>
+      </div>
+    </div>
+    </div>`;
+
+    window.__ct = { F, me, staff, test, pickable, cfg };
+    if(test) window.ctFilter('');
   }catch(e){
     console.error('[권한 테스트]', e);
     el.innerHTML = `<div style="padding:18px;color:#B91C1C">불러오는 중 문제가 생겼습니다: ${esc(e.message||e)}</div>`;
   }
 };
+window.ctFilter = (q)=>{
+  const X = window.__ct; if(!X) return;
+  const cur = X.test && X.test.cloneOf ? X.test.cloneOf.uid : (X.cfg && X.cfg.cloneOf ? X.cfg.cloneOf.uid : '');
+  const list = X.pickable.filter(s=>!q || (String(s.name||'')+String(s.position||'')).includes(q));
+  const box = document.getElementById('ct-list'); if(!box) return;
+  box.innerHTML = list.map(s=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 11px;border-bottom:1px solid #F0EDE6;${s.uid===cur?'background:#FFF1E6':''}">
+      <b style="min-width:70px">${esc(s.name||'')}</b>
+      <span style="font-size:11.5px;color:var(--ts)">${esc(s.position||'')}${s.position?' · ':''}${esc(ROLE_L[s.role]||s.role||'')} · ${esc(orgsTxt(s))}${s.dept?` · ${esc(s.dept)}`:''}</span>
+      ${s.uid===cur?'<span style="margin-left:auto;font-size:11px;font-weight:900;color:#C2410C">🧪 지금 이 권한</span>'
+        :`<button class="bs" style="margin-left:auto;font-size:11px;padding:4px 10px;white-space:nowrap" onclick="cloneDo('${s.uid}')">이 선생님으로 복제</button>`}</div>`).join('')
+    || '<div style="padding:12px;font-size:12px;color:var(--tl)">검색 결과 없음</div>';
+};
+window.ctUse = async (uid)=>{
+  const X = window.__ct; if(!X) return;
+  const s = X.staff.find(x=>x.uid===uid); if(!s) return;
+  if(!confirm(`«${s.name}» (아이디 ${idOf(s.email)}) 계정을 테스트 계정으로 쓸까요?\n모든 명단에서 숨겨집니다.`)) return;
+  try{
+    if(X.test && X.test.uid!==uid){ await wipe(X.F, X.test.uid); await updateDoc(doc(X.F.db,'staff',X.test.uid), { isTest:false, cloneOf:deleteField() }); }
+    await updateDoc(doc(X.F.db,'staff',uid), { isTest:true });
+    await setDoc(doc(X.F.db,'systemConfig','testClone'), { uid, name:s.name||'', email:s.email||'', cloneOf:null, items:[] });
+    await window.cloneTestMount('ca-clone'); window.toast && toast(`«${s.name}» 계정을 테스트 계정으로 지정했습니다`,'ok');
+  }catch(e){ alert('지정 실패: '+(e.message||e)); }
+};
+window.ctCheckId = ()=>{
+  const X = window.__ct; if(!X) return;
+  const id = (document.getElementById('ct-idq')?.value||'').trim(); const out = document.getElementById('ct-idr'); if(!id||!out) return;
+  const hit = X.staff.find(s=>idOf(s.email)===id);
+  out.innerHTML = hit
+    ? `✓ 교직원 기록이 있습니다 — <b>${esc(hit.name||'')}</b>${hit.isTest?' <span style="color:#C2410C">(🧪 테스트로 지정돼 명단에서 숨김)</span>':''}. 비밀번호를 모르면 이 계정을 쓰고 «🔑 새로 정하기»를 누르세요.${hit.isTest||hit.role==='super'?'':` <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctUse('${hit.uid}')">이 계정 쓰기</button>`}`
+    : `⚠️ 교직원 기록이 없습니다 — <b>인증 장부에만 남은 계정</b>이에요. 다른 아이디(예: ${esc(id)}01)로 만들거나, Firebase 콘솔 → Authentication에서 «${esc(id)}@gyosa-seongyosa.staff»를 지우면 다시 쓸 수 있습니다.`;
+};
+window.ctResetPw = ()=>{
+  const X = window.__ct; if(!X || !X.test) return;
+  const sug = 'test' + Math.floor(1000 + Math.random()*9000);
+  const bg = document.createElement('div');
+  bg.style.cssText='position:fixed;inset:0;background:rgba(16,22,26,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px';
+  bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
+  bg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:18px;max-width:380px;width:100%">
+    <div style="font-size:15px;font-weight:900;color:#0F241F">🔑 테스트 계정 비밀번호 새로 정하기</div>
+    <div style="font-size:12px;color:#5A6560;margin:5px 0 10px">아이디 <b>${esc(idOf(X.test.email))}</b> · 6자 이상 · 저장 후엔 다시 볼 수 없으니 적어두세요.</div>
+    <input id="ct-pw" value="${sug}" style="width:100%;height:42px;border:1.5px solid #E3E1DA;border-radius:10px;padding:0 12px;font-family:ui-monospace,Menlo,monospace;font-size:15px;font-weight:800">
+    <div id="ct-pwr" style="font-size:12px;margin-top:8px"></div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px">
+      <button onclick="this.closest('div[style*=fixed]').remove()" style="font-family:inherit;font-weight:800;border:1.5px solid #E3E1DA;background:#fff;border-radius:9px;padding:8px 14px;cursor:pointer">닫기</button>
+      <button id="ct-pw-ok" style="font-family:inherit;font-weight:800;border:0;background:#C2410C;color:#fff;border-radius:9px;padding:8px 16px;cursor:pointer">정하기</button></div></div>`;
+  document.body.appendChild(bg);
+  document.getElementById('ct-pw-ok').onclick = async ()=>{
+    const pw = (document.getElementById('ct-pw')?.value||'').trim(); const r = document.getElementById('ct-pwr');
+    if(pw.length < 6){ r.innerHTML = '<span style="color:#B91C1C">6자 이상이어야 합니다</span>'; return; }
+    r.textContent = '정하는 중…';
+    try{
+      const call = httpsCallable(getFunctions(getApp(), 'asia-northeast3'), 'adminResetPassword');
+      await call({ targetUid: X.test.uid, newPassword: pw });
+      r.innerHTML = `<span style="color:#166534;font-weight:800">✓ 완료 — 아이디 ${esc(idOf(X.test.email))} · 비밀번호 ${esc(pw)}</span><br><span style="color:#5A6560">시크릿 창에서 이 정보로 로그인하세요.</span>`;
+      try{ window.logActivity && window.logActivity('보안','비밀번호','테스트 계정 비밀번호 재설정'); }catch(e){}
+    }catch(e){ r.innerHTML = `<span style="color:#B91C1C">실패: ${esc(e.message||e)}</span>`; }
+  };
+};
 function resultHTML(items, c){
-  return `<div style="font-size:12.5px;font-weight:900;color:var(--gd);margin:4px 0 6px">✓ 복제된 항목${c?` — ${esc(c.name)} 선생님 기준`:''}</div>
+  return `<div style="font-size:12.5px;font-weight:900;color:var(--gd);margin:4px 0 6px">✓ 마지막 복제 결과${c?` — ${esc(c.name)} 선생님 기준`:''}</div>
     <div style="border:1px solid var(--ivd);border-radius:11px;overflow:hidden">${items.map(it=>`
       <div style="display:flex;gap:9px;align-items:center;padding:7px 11px;border-bottom:1px solid #EFECE4;font-size:12px">
         <span style="width:18px;text-align:center">${it.ic}</span><span>${esc(it.t)}</span>
-        <span style="margin-left:auto;font-size:10.5px;color:var(--tl);font-weight:700">${esc(it.w)}</span></div>`).join('')}</div>
-    <div style="font-size:11.3px;color:var(--tl);margin-top:7px;line-height:1.75">결재선·결재 규칙·근무 설정은 실제 업무가 바뀌므로 복제하지 않습니다 ·
-      그 선생님의 쪽지함·결재함·본인 신청 같은 개인 항목도 따라오지 않아요 · 이제 시크릿 창에서 테스트 계정을 <b>새로고침</b>하세요.</div>`;
+        <span style="margin-left:auto;font-size:10.5px;color:var(--tl);font-weight:700">${esc(it.w)}</span></div>`).join('')}</div>`;
 }
-window.cloneDo = async ()=>{
+window.cloneDo = async (pickedUid)=>{
   const X = window.__ct; if(!X || !X.test) return;
-  const uid = document.getElementById('ct-target')?.value;
+  const uid = pickedUid || document.getElementById('ct-target')?.value;
   if(!uid){ alert('선생님을 골라주세요'); return; }
   const target = X.pickable.find(s=>s.uid===uid); if(!target) return;
   if(target.role==='super'){ alert('슈퍼관리자 권한은 복제할 수 없습니다'); return; }
   if(!confirm(`테스트 계정에 «${target.name}» 선생님의 권한을 복제할까요?\n이전 복제는 먼저 걷어냅니다.`)) return;
-  const box = document.getElementById('ct-result'); if(box) box.innerHTML = '<div style="padding:10px;color:#7C837E;font-size:12.5px">복제하는 중… (권한 지도를 훑고 있어요)</div>';
+  const box = document.getElementById('ct-result'); if(box) box.innerHTML = '<div style="padding:10px;color:#7C837E;font-size:12.5px">복제하는 중… (권한 지도를 훑고 있어요 · 10초쯤 걸립니다)</div>';
   try{ const items = await cloneFrom(X.F, X.test, target, X.me); await window.cloneTestMount('ca-clone');
     if(window.toast) toast(`«${target.name}» 권한으로 복제했습니다 — 시크릿 창을 새로고침하세요`,'ok'); }
   catch(e){ alert('복제 실패: '+(e.message||e)); await window.cloneTestMount('ca-clone'); }
