@@ -135,7 +135,7 @@ async function findTraces(F, uid){
 }
 
 /* ═══ 관리자 화면 ═══ */
-const idOf = e => String(e||'').split('@')[0];
+const idOf = x => (x && typeof x==='object') ? (x.id || String(x.email||'').split('@')[0]) : String(x||'').split('@')[0];
 const ORG_L = o => o==='daniel'?'다니엘':o==='jihyebit'?'지혜빛':(o||'');
 const orgsTxt = s => ((s.orgs&&s.orgs.length?s.orgs:[s.org]).filter(Boolean).map(ORG_L).join('·')) || '—';
 const looksTest = s => s.isTest || /테스트|test/i.test(String(s.name||'')+' '+String(s.email||''));
@@ -206,8 +206,8 @@ window.cloneTestMount = async (elId)=>{
       ${test ? `
       <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 14px;background:#FFF1E6;border:1.5px solid #F4C7A1;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:12.8px">
         <span style="color:#9A3412;font-weight:800">테스트 계정</span><span><b>${esc(test.name||'')}</b></span>
-        <span style="color:#9A3412;font-weight:800">로그인 아이디</span><span><b style="font-family:ui-monospace,Menlo,monospace;background:#fff;border-radius:6px;padding:1px 7px">${esc(idOf(test.email))}</b>
-          <button class="bs" style="font-size:11px;padding:2px 8px;margin-left:4px" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(idOf(test.email))}');window.toast&&toast('아이디를 복사했습니다','ok')">복사</button></span>
+        <span style="color:#9A3412;font-weight:800">로그인 아이디</span><span><b style="font-family:ui-monospace,Menlo,monospace;background:#fff;border-radius:6px;padding:1px 7px">${esc(idOf(test))}</b>
+          <button class="bs" style="font-size:11px;padding:2px 8px;margin-left:4px" onclick="navigator.clipboard&&navigator.clipboard.writeText('${esc(idOf(test))}');window.toast&&toast('아이디를 복사했습니다','ok')">복사</button></span>
         <span style="color:#9A3412;font-weight:800">비밀번호</span><span>누구도 볼 수 없게 저장됩니다 (관리자 포함) — 모르면 <button class="bs" style="font-size:11px;padding:2px 9px" onclick="ctResetPw()">🔑 새로 정하기</button></span>
         <span style="color:#9A3412;font-weight:800">상태</span><span>테스트 지정됨 · <b>모든 명단에서 숨김</b>${test.acStatus&&test.acStatus!=='active'?` · 계정 상태 ${esc(test.acStatus)}`:''}</span>
         <span style="color:#9A3412;font-weight:800">지금 권한</span><span>${c?`<b>${esc(c.name)}${c.position?` (${esc(c.position)})`:''}</b> 선생님과 같게 · ${when(c.at)} 복제`:'<b>아직 복제 안 됨</b> — 아래에서 선생님을 고르세요'}</span>
@@ -241,12 +241,15 @@ window.cloneTestMount = async (elId)=>{
     </div>` : ''}
 
     <div class="acard">
-      <h3 class="actitle">🗂 테스트용 계정 <span style="font-size:12px;color:var(--tl);font-weight:500">· 이름이나 아이디에 «테스트/test»가 들어간 계정 · 명단에서 숨겨진 것도 보입니다</span></h3>
-      ${candidates.length ? `<table class="otable" style="margin-top:6px"><tr><th>이름</th><th>로그인 아이디</th><th>역할</th><th>상태</th><th></th></tr>
-        ${candidates.map(s=>`<tr><td><b>${esc(s.name||'')}</b></td><td style="font-family:ui-monospace,Menlo,monospace">${esc(idOf(s.email))}</td>
+      <h3 class="actitle">🗂 테스트용 계정 <span style="font-size:12px;color:var(--tl);font-weight:500">· 이름이나 아이디에 «테스트/test»가 들어간 계정 · 두 기관 모두 · 숨겨진 것까지 보입니다</span></h3>
+      <div style="font-size:11.5px;color:var(--tl);margin:2px 0 4px">교직원 목록은 연합이 잠기면 주 소속 기관만 보여줘요. 여기 보이는데 목록에 없다면 <b>다른 기관 소속이라 가려진 것</b>이지 지워진 게 아닙니다.</div>
+      ${candidates.length ? `<table class="otable" style="margin-top:6px"><tr><th>이름</th><th>로그인 아이디</th><th>기관</th><th>역할</th><th>상태</th><th></th></tr>
+        ${candidates.map(s=>`<tr><td><b>${esc(s.name||'')}</b></td><td style="font-family:ui-monospace,Menlo,monospace">${esc(idOf(s))||'<span style="color:#B91C1C">없음</span>'}</td>
+          <td>${esc(orgsTxt(s))}</td>
           <td>${esc(ROLE_L[s.role]||s.role||'')}</td>
           <td>${s.isTest?'<span class="sbadge" style="background:#FFF1E6;color:#C2410C">🧪 테스트 지정</span>':'<span class="sbadge">일반 (명단에 보임)</span>'}</td>
-          <td>${(test&&test.uid===s.uid)?'<span style="font-size:11px;color:var(--tl)">사용 중</span>':(s.role==='super'?'':`<button class="bs" style="font-size:11px;padding:3px 9px" onclick="ctUse('${s.uid}')">이 계정 쓰기</button>`)}</td></tr>`).join('')}
+          <td>${(test&&test.uid===s.uid)?'<span style="font-size:11px;color:var(--tl)">사용 중</span>':(s.role==='super'?'':`<button class="bs" style="font-size:11px;padding:3px 9px" onclick="ctUse('${s.uid}')">이 계정 쓰기</button>`)}
+            ${(test&&test.uid===s.uid)||s.role==='super'?'':`<button class="bs" style="font-size:11px;padding:3px 9px;color:#B91C1C" onclick="ctDelete('${s.uid}')">🗑 삭제</button>`}</td></tr>`).join('')}
       </table>` : '<p class="empty">아직 없습니다.</p>'}
       <div style="background:var(--iv);border-radius:11px;padding:11px 13px;margin-top:10px;font-size:12px;color:var(--ts);line-height:1.8">
         <b style="color:var(--gd)">«이미 사용 중인 아이디입니다»가 뜰 때</b><br>
@@ -280,7 +283,7 @@ window.ctFilter = (q)=>{
 window.ctUse = async (uid)=>{
   const X = window.__ct; if(!X) return;
   const s = X.staff.find(x=>x.uid===uid); if(!s) return;
-  if(!confirm(`«${s.name}» (아이디 ${idOf(s.email)}) 계정을 테스트 계정으로 쓸까요?\n모든 명단에서 숨겨집니다.`)) return;
+  if(!confirm(`«${s.name}» (아이디 ${idOf(s)}) 계정을 테스트 계정으로 쓸까요?\n모든 명단에서 숨겨집니다.`)) return;
   try{
     if(X.test && X.test.uid!==uid){ await wipe(X.F, X.test.uid); await updateDoc(doc(X.F.db,'staff',X.test.uid), { isTest:false, cloneOf:deleteField() }); }
     await updateDoc(doc(X.F.db,'staff',uid), { isTest:true });
@@ -288,10 +291,36 @@ window.ctUse = async (uid)=>{
     await window.cloneTestMount('ca-clone'); window.toast && toast(`«${s.name}» 계정을 테스트 계정으로 지정했습니다`,'ok');
   }catch(e){ alert('지정 실패: '+(e.message||e)); }
 };
-window.ctCheckId = ()=>{
+window.ctDelete = async (uid)=>{
+  if(!window.deleteStaff){ alert('교직원 삭제 기능을 찾지 못했습니다'); return; }
+  await window.deleteStaff(uid);                    // 확인창 → 보관 기록 → 삭제 (교직원 목록과 같은 절차)
+  await window.cloneTestMount('ca-clone');
+};
+window.ctCheckId = async ()=>{
   const X = window.__ct; if(!X) return;
   const id = (document.getElementById('ct-idq')?.value||'').trim(); const out = document.getElementById('ct-idr'); if(!id||!out) return;
-  const hit = X.staff.find(s=>idOf(s.email)===id);
+  out.textContent = '확인 중…';
+  const r = window.findStaffById ? await window.findStaffById(id) : { live: X.staff.find(s=>idOf(s)===id)||null, arch:null };
+  if(r.live){ const hit = r.live;
+    out.innerHTML = `✓ 교직원 기록이 있습니다 — <b>${esc(hit.name||'')}</b>${hit.isTest?' <span style="color:#C2410C">(🧪 테스트로 지정돼 명단에서 숨김)</span>':''}. 비밀번호를 모르면 이 계정을 쓰고 «🔑 새로 정하기»를 누르세요.${hit.isTest||hit.role==='super'?'':` <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctUse('${hit.uid}')">이 계정 쓰기</button>`}`;
+    return; }
+  if(r.arch){
+    out.innerHTML = `🗂 <b>${esc(r.arch.name||'')}</b>의 <b>삭제된 계정</b>이 보관함에 있어요. <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctRestore('${r.arch.uid}','${esc(id)}')">🔁 되살리기</button>`;
+    return; }
+  out.innerHTML = `⚠️ 명단에도 보관함에도 없어요 — <b>예전에 지운 계정이 인증 장부에만 남은</b> 경우입니다.
+    <a href="https://console.firebase.google.com/project/daniel-amatz/authentication/users" target="_blank" rel="noopener">Firebase 콘솔 → Authentication</a>에서
+    <b style="font-family:ui-monospace,Menlo,monospace">${esc(id)}@gyosa-seongyosa.staff</b>를 검색해 ⋮ → 계정 삭제 후 다시 만드세요. (급하면 다른 아이디로)`;
+};
+window.ctRestore = async (uid, id)=>{
+  const pw = prompt(`«${id}» 계정을 되살립니다.\n새 비밀번호(6자 이상)를 정해 주세요:`, 'test' + Math.floor(1000+Math.random()*9000));
+  if(!pw) return; if(pw.length<6){ alert('6자 이상이어야 합니다'); return; }
+  try{ if(await window.restoreStaff(uid, pw)){ alert(`되살렸습니다 — 아이디 ${id} · 비밀번호 ${pw}`); await window.cloneTestMount('ca-clone'); } }
+  catch(e){ alert('되살리기 실패: '+(e.message||e)); }
+};
+window.__ctCheckIdOld = ()=>{
+  const X = window.__ct; if(!X) return;
+  const id = (document.getElementById('ct-idq')?.value||'').trim(); const out = document.getElementById('ct-idr'); if(!id||!out) return;
+  const hit = X.staff.find(s=>idOf(s)===id);
   out.innerHTML = hit
     ? `✓ 교직원 기록이 있습니다 — <b>${esc(hit.name||'')}</b>${hit.isTest?' <span style="color:#C2410C">(🧪 테스트로 지정돼 명단에서 숨김)</span>':''}. 비밀번호를 모르면 이 계정을 쓰고 «🔑 새로 정하기»를 누르세요.${hit.isTest||hit.role==='super'?'':` <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctUse('${hit.uid}')">이 계정 쓰기</button>`}`
     : `⚠️ 교직원 기록이 없습니다 — <b>인증 장부에만 남은 계정</b>이에요. 다른 아이디(예: ${esc(id)}01)로 만들거나, Firebase 콘솔 → Authentication에서 «${esc(id)}@gyosa-seongyosa.staff»를 지우면 다시 쓸 수 있습니다.`;
@@ -304,7 +333,7 @@ window.ctResetPw = ()=>{
   bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
   bg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:18px;max-width:380px;width:100%">
     <div style="font-size:15px;font-weight:900;color:#0F241F">🔑 테스트 계정 비밀번호 새로 정하기</div>
-    <div style="font-size:12px;color:#5A6560;margin:5px 0 10px">아이디 <b>${esc(idOf(X.test.email))}</b> · 6자 이상 · 저장 후엔 다시 볼 수 없으니 적어두세요.</div>
+    <div style="font-size:12px;color:#5A6560;margin:5px 0 10px">아이디 <b>${esc(idOf(X.test))}</b> · 6자 이상 · 저장 후엔 다시 볼 수 없으니 적어두세요.</div>
     <input id="ct-pw" value="${sug}" style="width:100%;height:42px;border:1.5px solid #E3E1DA;border-radius:10px;padding:0 12px;font-family:ui-monospace,Menlo,monospace;font-size:15px;font-weight:800">
     <div id="ct-pwr" style="font-size:12px;margin-top:8px"></div>
     <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:10px">
@@ -318,7 +347,7 @@ window.ctResetPw = ()=>{
     try{
       const call = httpsCallable(getFunctions(getApp(), 'asia-northeast3'), 'adminResetPassword');
       await call({ targetUid: X.test.uid, newPassword: pw });
-      r.innerHTML = `<span style="color:#166534;font-weight:800">✓ 완료 — 아이디 ${esc(idOf(X.test.email))} · 비밀번호 ${esc(pw)}</span><br><span style="color:#5A6560">시크릿 창에서 이 정보로 로그인하세요.</span>`;
+      r.innerHTML = `<span style="color:#166534;font-weight:800">✓ 완료 — 아이디 ${esc(idOf(X.test))} · 비밀번호 ${esc(pw)}</span><br><span style="color:#5A6560">시크릿 창에서 이 정보로 로그인하세요.</span>`;
       try{ window.logActivity && window.logActivity('보안','비밀번호','테스트 계정 비밀번호 재설정'); }catch(e){}
     }catch(e){ r.innerHTML = `<span style="color:#B91C1C">실패: ${esc(e.message||e)}</span>`; }
   };

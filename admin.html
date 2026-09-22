@@ -239,7 +239,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="holidays-kr.js"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="union.js?v=64"></script>
-<script type="module" src="clone-test.js?v=2"></script>
+<script type="module" src="clone-test.js?v=3"></script>
 <script type="module" src="badges.js"></script>
 </head>
 <body>
@@ -675,7 +675,7 @@ async function createAcc() {
     if ($I('nm-daniel')) $I('nm-daniel').checked = false;
     await loadStaff();
   } catch(e) {
-    if (e.code === 'auth/email-already-in-use') toast('이미 사용 중인 아이디입니다.', 'err');
+    if (e.code === 'auth/email-already-in-use') { window.idTakenHelp ? idTakenHelp(id, pw) : toast('이미 사용 중인 아이디입니다.', 'err'); }
     else toast('발급 실패: ' + e.message, 'err');
   }
 }
@@ -804,13 +804,74 @@ async function deleteStaff(uid) {
   const snap = await getDoc(doc(db, 'staff', uid));
   if (!snap.exists()) return;
   const s = snap.data();
-  if (!confirm(`${s.name} (${s.id}) 선생님 계정을 삭제할까요?\n출근 기록은 유지됩니다.`)) return;
+  if (!confirm(`${s.name} (${s.id}) 선생님 계정을 삭제할까요?\n출근 기록은 유지됩니다.\n\n※ 로그인 아이디(${s.id})는 보관함에 남아, 나중에 같은 아이디로 «되살리기»할 수 있어요.`)) return;
+  try{ await setDoc(doc(db, 'staffArchive', uid), { ...s, uid, deletedAt: Timestamp.now(), deletedByName: CU.name||'' }); }
+  catch(e){ console.warn('[보관] 실패', e); }            // 보관이 실패해도 삭제는 진행 (기존 동작 유지)
   await deleteDoc(doc(db, 'staff', uid));
   logActivity('삭제', '계정', `${s.name} (${s.id}) 계정 삭제`);
   toast(`${s.name} 선생님 계정이 삭제되었습니다.`, 'ok');
   await loadStaff();
 }
 window.deleteStaff = deleteStaff;
+
+/* 🔁 «이미 사용 중인 아이디» 해결사
+   인증 장부(로그인 아이디)는 화면에서 지울 수 없다. 그래서 세 경우로 나눠 안내한다:
+   ① 지금 쓰는 교직원 계정  ② 보관함에 있는 삭제 계정 → 되살리기  ③ 인증 장부에만 남은 옛 계정 → 콘솔에서 삭제 */
+async function findById(id){
+  const [a, b] = await Promise.all([
+    getDocs(query(collection(db,'staff'), where('id','==',id))).catch(()=>null),
+    getDocs(query(collection(db,'staffArchive'), where('id','==',id))).catch(()=>null) ]);
+  return { live: a && a.docs[0] ? { uid:a.docs[0].id, ...a.docs[0].data() } : null,
+           arch: b && b.docs[0] ? { uid:b.docs[0].id, ...b.docs[0].data() } : null };
+}
+window.findStaffById = findById;
+async function restoreStaff(uid, newPw){
+  if(!CU || CU.role!=='super'){ toast('슈퍼관리자만 되살릴 수 있습니다.','err'); return false; }
+  const a = await getDoc(doc(db,'staffArchive',uid));
+  if(!a.exists()){ toast('보관 기록이 없습니다.','err'); return false; }
+  const d = { ...a.data() }; delete d.deletedAt; delete d.deletedByName; delete d.uid;
+  await setDoc(doc(db,'staff',uid), { ...d, restoredAt: Timestamp.now(), restoredByName: CU.name||'' });
+  if(newPw){
+    const call = httpsCallable(getFunctions(app,'asia-northeast3'), 'adminResetPassword');
+    await call({ targetUid: uid, newPassword: newPw });
+  }
+  await deleteDoc(doc(db,'staffArchive',uid));
+  logActivity('입력','계정',`${d.name||''} (${d.id||''}) 계정 되살리기`);
+  return true;
+}
+window.restoreStaff = restoreStaff;
+window.idTakenHelp = async (id, pw)=>{
+  const r = await findById(id);
+  const bg = document.createElement('div');
+  bg.style.cssText='position:fixed;inset:0;background:rgba(16,22,26,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px';
+  bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
+  const email = korEmail(id);
+  const body = r.live
+    ? `<b>${esc(r.live.name||'')}</b> 선생님이 지금 쓰고 있는 아이디입니다${r.live.isTest?' <span style="color:#C2410C">(🧪 테스트 계정 — 명단에서 숨김)</span>':''}.
+       <div style="margin-top:6px">다른 아이디로 만들거나, 기존 계정의 비밀번호를 «🔑 비번»으로 새로 정해 쓰세요.</div>`
+    : r.arch
+    ? `<b>${esc(r.arch.name||'')}</b> 선생님의 <b>삭제된 계정</b>이 보관함에 있습니다.
+       <div style="margin-top:6px">«되살리기»를 누르면 같은 아이디로 다시 쓸 수 있고, 비밀번호는 지금 입력하신 것으로 정해집니다.</div>
+       <div style="margin-top:10px"><button id="it-restore" class="bp">🔁 되살리기</button></div>`
+    : `교직원 명단에도, 삭제 보관함에도 없는 아이디입니다 — <b>예전에 지운 계정이 인증 장부에만 남아 있는</b> 경우예요.
+       <ol style="margin:8px 0 0 18px;padding:0;line-height:1.9">
+         <li><a href="https://console.firebase.google.com/project/daniel-amatz/authentication/users" target="_blank" rel="noopener">Firebase 콘솔 → Authentication</a> 열기</li>
+         <li>검색창에 <b style="font-family:ui-monospace,Menlo,monospace">${esc(email)}</b> 입력</li>
+         <li>오른쪽 <b>⋮</b> → <b>계정 삭제</b></li>
+         <li>여기로 돌아와 같은 아이디로 다시 만들기</li></ol>
+       <div style="margin-top:6px;color:#7C837E">바로 필요하시면 다른 아이디(예: ${esc(id)}01)로 만드셔도 됩니다.</div>`;
+  bg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:18px;max-width:460px;width:100%;font-size:13px;color:#2A2E2B;line-height:1.75">
+    <div style="font-size:15px;font-weight:900;color:#0F241F;margin-bottom:6px">«${esc(id)}» — 이미 사용 중인 아이디</div>${body}
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><button onclick="this.closest('div[style*=fixed]').remove()" class="bs">닫기</button></div></div>`;
+  document.body.appendChild(bg);
+  const b = document.getElementById('it-restore');
+  if(b) b.onclick = async ()=>{
+    if(!pw || pw.length<6){ toast('되살릴 때 쓸 비밀번호(6자 이상)를 입력칸에 먼저 넣어주세요.','err'); return; }
+    b.disabled = true; b.textContent = '되살리는 중…';
+    try{ if(await restoreStaff(r.arch.uid, pw)){ bg.remove(); toast(`${r.arch.name} 계정을 되살렸습니다 — 아이디 ${id} · 비밀번호는 방금 입력한 것`,'ok'); try{ await loadStaff(); }catch(e){} } }
+    catch(e){ toast('되살리기 실패: '+(e.message||''),'err'); b.disabled=false; b.textContent='🔁 되살리기'; }
+  };
+};
 
 // ── 교직원 목록 로드 (Firebase) ──────────────
 async function loadStaff() {
@@ -821,12 +882,14 @@ async function loadStaff() {
   let q = collection(db, 'staff');
   const snap = await getDocs(q);
   const list = [];
+  window.__hiddenByUnion = 0;
   snap.forEach(d => {
     const s = { ...d.data(), uid: d.id };
+    if (s.isTest) return;                          // 🧪 테스트 계정은 «권한 테스트» 탭에서만 관리
     // 이 선생님이 속한 기관들 (단수 org + 복수 orgs 합침)
     const sOrgs = s.orgs && s.orgs.length ? s.orgs : [s.org];
     // 권한 필터: 내 관리 기관과 겹치는 선생님만
-    if (!sOrgs.some(o => allowed.includes(o))) return;
+    if (!sOrgs.some(o => allowed.includes(o))) { window.__hiddenByUnion = (window.__hiddenByUnion||0) + 1; return; }
     // 드롭다운 필터
     if (orgFilter && !sOrgs.includes(orgFilter)) return;
     list.push(s);
@@ -854,6 +917,9 @@ async function loadStaff() {
       </div>
     </div>`;
   }).join('') : '<p class="empty">교직원이 없습니다.</p>';
+  if (window.__hiddenByUnion) el.insertAdjacentHTML('afterbegin',
+    `<div style="background:#F7F3FE;border:1.5px solid #D6C2F7;border-radius:10px;padding:9px 12px;margin-bottom:8px;font-size:12.5px;color:#4C1D95">
+      🔒 연합이 잠겨 있어 <b>다른 기관 교직원 ${window.__hiddenByUnion}명</b>은 이 목록에 보이지 않습니다 — 지운 게 아니에요. 오른쪽 위 🗝 열쇠로 열면 함께 보입니다.</div>`);
 }
 window.loadStaff = loadStaff;
 
@@ -3176,7 +3242,7 @@ async function makeAccount(oldUid){
     renderHRStatus();
   } catch(e){
     window.hideLoading && window.hideLoading();
-    if(e.code === 'auth/email-already-in-use') toast('이미 사용 중인 아이디입니다.','err');
+    if (e.code === 'auth/email-already-in-use') { window.idTakenHelp ? idTakenHelp(id, pw) : toast('이미 사용 중인 아이디입니다.', 'err'); }
     else toast('발급 실패: '+(e.message||''),'err');
   }
 }
