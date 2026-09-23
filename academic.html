@@ -1176,7 +1176,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b7';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b8';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -4619,37 +4619,41 @@ onAuthStateChanged(auth, async user => {
     if(window.renderShell) renderShell('calendar', CU);
     if(window.setCrumb) setCrumb(['학사일정']);
 
-    gateStep(25, '담당자 정보 받는 중…');
-    await loadEditors();
-    gateStep(38, '교직원 명단 받는 중…');
-    await loadStaffList();
-    gateStep(48, '부서 정보 받는 중…');
-    await loadDepts();
-    gateStep(55, '공유 설정 받는 중…');
-    await loadShares();
-    gateStep(60, '보기 설정 이어받는 중…');
-    await loadCloudVP();   // 💾 계정에 담아둔 칸 높이·글자 % — 이 기기 종류 것만
+    /* ⚡ v74 — 서로 기다릴 필요가 없는 것들은 «한꺼번에» 받는다.
+       (예전: 담당자→명단→부서→공유→보기설정→학년도… 를 하나씩 차례로 — 9번 왕복)
+       순서가 꼭 필요한 것만 뒤로 남겼습니다:
+         · 공유 설정(loadShares)은 담당자 명단이 있어야 «고칠 수 있는지»를 판단
+         · 학년도 뼈대(loadYear)는 학년도 목록(loadYears)이 있어야 함 */
 
     // 캘린더 고르기 — 세 캘린더를 개별로 보거나 겹쳐 볼 수 있다
+    // (서버에 묻지 않는 설정이므로 먼저 정해두고, 학년도 목록을 이 기준으로 추린다)
     try {
       const saved = localStorage.getItem('academic_cal');
       if(saved && (CALS[saved] || saved===ORG_ALL)) ORG = saved;
       else ORG = (CU.org && CALS[CU.org]) ? CU.org : 'daniel';
     } catch(e){ ORG = 'daniel'; }
-    refreshCanEdit();
     curOrg = ORG;
 
-    gateStep(70, '학년도 목록 받는 중…');
-    await loadYears();
+    gateStep(35, '기본 정보 받는 중…');
+    await Promise.allSettled([
+      loadEditors(),      // 담당자
+      loadStaffList(),    // 교직원 명단 (수퍼만)
+      loadDepts(),        // 부서
+      loadCloudVP(),      // 💾 계정에 담아둔 칸 높이·글자 % — 이 기기 종류 것만
+      loadYears()         // 학년도 목록 + 학기 원장
+    ]);
+    refreshCanEdit();
 
     // 만들어 둔 학년도가 있으면 올해에 가장 가까운 것으로 시작
     if(YEARS.length && !YEARS.some(y=>String(y.year)===String(curYear))){
       curYear = YEARS[0].year;
     }
-    gateStep(80, '학년도 뼈대 받는 중…');
-    await loadYear(curYear);
-    gateStep(90, '행사 받는 중…');
-    await loadEvents(curYear, curMonth, true);
+    gateStep(70, '학년도 · 행사 받는 중…');
+    await loadYear(curYear);          // 받아둔 목록에서 골라내는 계산 (서버 왕복 없음)
+    await Promise.allSettled([
+      loadShares(),                                // 공유 설정 (담당자 확인 후)
+      loadEvents(curYear, curMonth, true)          // 행사 + 쉬는 날
+    ]);
     gateStep(100, '달력 그리는 중…');
 
     if(!canEditAny()){

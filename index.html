@@ -3621,7 +3621,7 @@ async function loadHomeBirthdays(){
     const studSnap = await getDocs(collection(db,'students'));
     const students = [];
     studSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if(myOrgList.includes(s.org)) students.push(s); });
-    const staffSnap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    const staffSnap = await staffSnapOnce().then(s=>(window.hideTest?hideTest(s):s));
     const teachers = [];
     staffSnap.forEach(d=>{ const s={id:d.id,...d.data()}; if((s.acStatus||'active')==='active'){
       const sOrgs = s.role==='super'?['jihyebit','daniel']:(s.orgs&&s.orgs.length?s.orgs:[s.org]);
@@ -3931,57 +3931,62 @@ async function loadHomeNotices(){
 
 // ── 메인 알림: 결재할 문서 + 안 읽은 쪽지 ──
 async function loadNotifications(){
-  let approvalCnt = 0, msgCnt = 0;
-  try {
-    const snap = await getDocs(collection(db,'approvals'));
-    snap.forEach(d=>{
-      const a = d.data();
-      if(a.status==='progress'){
-        const step = (a.line||[])[a.currentStep];
-        if(step && step.uid===CU.uid) approvalCnt++;
-      }
-    });
-  } catch(e){}
-  try {
-    const snap = await getDocs(collection(db,'messages'));
-    snap.forEach(d=>{
-      const m = d.data();
-      if((m.toUids||[]).includes(CU.uid) && !(m.readBy||[]).includes(CU.uid)) msgCnt++;
-    });
-  } catch(e){}
-  let boardCnt = 0;
-  try {
-    const snap = await getDocs(collection(db,'boardNotifs'));
-    snap.forEach(d=>{ const n=d.data(); if(n.toUid===CU.uid && !n.read) boardCnt++; });
-  } catch(e){}
+  let approvalCnt = 0, msgCnt = 0, boardCnt = 0, newPostCnt = 0, payCnt = 0, payWaitCnt = 0;
+
+  /* ⚡ v74 — 다섯 가지를 «동시에», 그리고 «나에게 해당하는 문서만» 묻는다.
+     (예전: 다섯 컬렉션을 통째로, 하나씩 차례로 읽었음 — 자료가 쌓일수록 느려짐)
+     세는 기준은 예전과 똑같습니다. */
+  const lastSeen = CU.lastBoardSeen?.toMillis?.() || 0;
+  const myOrgList = (window.orgCore ? orgCore.myOrgs(CU,'std') : (CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org])));
+
+  const [apvR, msgR, bnR, bpR, payR, mgrR] = await Promise.allSettled([
+    getDocs(query(collection(db,'approvals'),  where('status','==','progress'))),
+    getDocs(query(collection(db,'messages'),   where('toUids','array-contains', CU.uid))),
+    getDocs(query(collection(db,'boardNotifs'),where('toUid','==', CU.uid))),
+    lastSeen
+      ? getDocs(query(collection(db,'boardPosts'), where('createdAt','>', Timestamp.fromMillis(lastSeen))))
+      : getDocs(collection(db,'boardPosts')),
+    getDocs(query(collection(db,'payRequests'),where('status','in',['approving','submitted']))),
+    getDoc(doc(db,'payConfig','managers'))
+  ]);
+
+  if(apvR.status==='fulfilled') apvR.value.forEach(d=>{
+    const a = d.data();
+    if(a.status==='progress'){
+      const step = (a.line||[])[a.currentStep];
+      if(step && step.uid===CU.uid) approvalCnt++;
+    }
+  });
+
+  if(msgR.status==='fulfilled') msgR.value.forEach(d=>{
+    const m = d.data();
+    if((m.toUids||[]).includes(CU.uid) && !(m.readBy||[]).includes(CU.uid)) msgCnt++;
+  });
+
+  if(bnR.status==='fulfilled') bnR.value.forEach(d=>{
+    const n = d.data();
+    if(n.toUid===CU.uid && !n.read) boardCnt++;
+  });
+
   // 새 게시글 (마지막 방문 이후 올라온 남의 글, 내가 볼 수 있는 게시판)
-  let newPostCnt = 0;
-  try {
-    const lastSeen = CU.lastBoardSeen?.toMillis?.() || 0;
-    const myOrgList = (window.orgCore ? orgCore.myOrgs(CU,'std') : (CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org])));
-    const snap = await getDocs(collection(db,'boardPosts'));
-    snap.forEach(d=>{
-      const p = d.data();
-      const t = p.createdAt?.toMillis?.() || 0;
-      const visible = p.board==='all' || myOrgList.includes(p.board);
-      if(visible && p.authorUid!==CU.uid && t > lastSeen) newPostCnt++;
-    });
-  } catch(e){}
+  if(bpR.status==='fulfilled') bpR.value.forEach(d=>{
+    const p = d.data();
+    const t = p.createdAt?.toMillis?.() || 0;
+    const visible = p.board==='all' || myOrgList.includes(p.board);
+    if(visible && p.authorUid!==CU.uid && t > lastSeen) newPostCnt++;
+  });
+
   // 경비 지급 요청서: 내가 결재할 건 + (회계면) 지급 대기
-  let payCnt = 0, payWaitCnt = 0;
-  try {
-    const [reqSnap, mgrSnap] = await Promise.all([
-      getDocs(collection(db,'payRequests')),
-      getDoc(doc(db,'payConfig','managers')).catch(()=>null)
-    ]);
+  if(payR.status==='fulfilled'){
+    const mgrSnap = (mgrR.status==='fulfilled') ? mgrR.value : null;
     const mgrList = (mgrSnap && mgrSnap.exists()) ? (mgrSnap.data().list||[]) : [];
     const isPayMgr = CU.role==='super' || mgrList.includes(CU.uid);
-    reqSnap.forEach(d=>{
+    payR.value.forEach(d=>{
       const r = d.data();
       if(r.status==='approving' && r.chain && r.chain[r.chainIndex]?.uid===CU.uid) payCnt++;
       if(isPayMgr && !r.paid && r.status==='submitted') payWaitCnt++;
     });
-  } catch(e){}
+  }
 
   renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt);
   window.__notif = {approvalCnt, msgCnt, boardCnt, newPostCnt, payCnt, payWaitCnt};
@@ -4028,10 +4033,23 @@ function renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt){
   }
 }
 
+/* ⚡ v74 — 교직원 명부 «한 번만» 받아서 나눠 쓴다.
+   홈이 뜰 때 교직원 캐시와 생일 위젯이 같은 명부를 각각 따로 받고 있었다.
+   30초 안에 다시 찾으면 방금 받은 것을 그대로 준다 (각자 거르는 방식은 그대로). */
+let __staffSnapP = null, __staffSnapAt = 0;
+function staffSnapOnce(fresh){
+  const now = Date.now();
+  if(fresh || !__staffSnapP || now - __staffSnapAt > 30000){
+    __staffSnapAt = now;
+    __staffSnapP = getDocs(collection(db,'staff')).catch(e=>{ __staffSnapP = null; throw e; });
+  }
+  return __staffSnapP;
+}
+
 // 교직원 캐시 새로고침 (권한 필터 적용)
 async function reloadStaffCache(){
   try {
-    const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    const snap = await staffSnapOnce(true).then(s=>(window.hideTest?hideTest(s):s));
     STAFF_CACHE = {};
     const allowed = myOrgs();
     snap.forEach(d => {
