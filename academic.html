@@ -142,6 +142,19 @@
   .cw-nm{ margin-left:auto; font-size:9px; font-weight:800; color:#16A34A;
     background:rgba(22,163,74,.12); border-radius:4px; padding:1px 5px; line-height:1.4; }
   .cw-nm.part{ color:#3F6212; background:rgba(101,163,13,.14); }
+  /* 🆕 학년 막대 — 수업하는 학년은 초록으로 채우고, 쉬는 학년은 빈 칸 */
+  .gbar{ display:flex; gap:1.5px; margin:3px 0 0; }
+  .gbar .gb-c{ flex:1 1 0; min-width:3px; height:6px; border-radius:1.5px; display:block; }
+  .gb-on{ background:#2E7D57; }
+  .gb-part{ background:#A8D5BF; }
+  .gb-off{ background:#EAE7DE; }
+  .gbar-t{ font-size:8.5px; font-weight:700; color:#4A514A; margin-top:2px; line-height:1.3;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  body.dark .gb-off{ background:#3A3F3A; }
+  body.dark .gbar-t{ color:#C2C8C2; }
+  .gbar-t.solo{ font-size:9px; margin-top:3px; color:#8A5A1F; }
+  body.dark .gbar-t.solo{ color:#E0B678; }
+  @media (max-width:640px){ .gbar .gb-c{ height:5px; } .gbar-t{ display:none; } .gbar-t.solo{ display:block; font-size:8px; } }
   /* 지난달·다음달 날짜 — 맥락만 보이게 흐리게 */
   .cwb.outmonth{ background:var(--iv); }
   .cw-n.out{ opacity:.42; }
@@ -1176,7 +1189,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b8';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b9';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -1542,6 +1555,102 @@ function noClassEvent(e){
   if(e.noClass === true) return true;
   if(e.noClass === false) return false;
   return e.category==='closed' || e.category==='break';   // 기본: 휴교·방학만 수업 없음
+}
+
+/* ═══ 🆕 일정 «성격» 3종 ═══
+   staff  = 교사 일정   — 학부모 비공개, 수업 영향 없음 (묻지 않음)
+   student= 학생 일정   — 학부모 공개, 학년별 수업 여부를 정함
+   all    = 전체 통합   — 체육대회처럼 모두가 참여, 전 학년 수업 없음 + 교사 전원
+   ※ 예전 자료에는 kind가 없으므로 공개 대상으로 미루어 읽습니다 (기존 표시 그대로 유지) */
+function evKind(e){
+  if(e && e.kind) return e.kind;
+  if(e && e.audience === 'teacher') return 'staff';
+  return 'student';
+}
+/* 기관의 학년 칸 — 다니엘은 1~12학년, 지혜빛은 4~7세 */
+function gradeSlots(org){
+  const k = (org && org !== 'all' && org !== ORG_ALL) ? org : ((ORG===ORG_ALL) ? 'daniel' : ORG);
+  return GRADE_ORDER[k] || GRADE_ORDER.daniel || [];
+}
+/* 지혜빛은 «수업»이 아니라 «등원·활동»이라고 부릅니다 */
+function classWord(org){
+  const k = (org && org !== 'all' && org !== ORG_ALL) ? org : ((ORG===ORG_ALL) ? 'daniel' : ORG);
+  return (k === 'jihyebit') ? '등원' : '수업';
+}
+
+/* 🆕 이 행사가 그 학년의 수업을 어떻게 하는가 — 'on'(수업함) | 'part'(일부만) | 'off'(없음)
+   ① 담당이 학년별로 정해 두었으면 그대로
+   ② 아니면 예전 방식대로: 교사 일정은 영향 없음, 수업 없음 행사는 «대상 학년»만 없음 */
+function classStateOf(e, grade){
+  const ci = e && e.classImpact;
+  if(ci && ci.grades && typeof ci.grades === 'object'){
+    return ci.grades[grade] || 'on';
+  }
+  if(evKind(e) === 'staff') return 'on';                 // 교사 일정은 수업과 무관
+  if(!noClassEvent(e)) return 'on';
+  return evHitsGrade(e, grade) ? 'off' : 'on';
+}
+
+/* 🆕 그날 학년별 종합 상태 — 여러 행사가 겹치면 «더 강한 쪽»(off > part > on)을 따릅니다 */
+function dayGradeStates(ds, dayInfo, org){
+  const slots = gradeSlots(org);
+  const out = {};
+  const dow = new Date(ds+'T00:00:00').getDay();
+  const closedAll = (dow===0 || dow===6)
+    || (dayInfo && dayInfo.holName && dayInfo.holWho !== 'staff')
+    || !!breakOf(ds) || !termOf(ds);
+  if(closedAll){ slots.forEach(g=> out[g] = 'none'); return { states:out, closedAll:true, slots }; }
+  const evs = eventsOn(ds);
+  const rank = { on:0, part:1, off:2 };
+  slots.forEach(g=>{
+    let st = 'on';
+    evs.forEach(e=>{
+      const s = classStateOf(e, g);
+      if(rank[s] > rank[st]) st = s;
+    });
+    out[g] = st;
+  });
+  return { states:out, closedAll:false, slots };
+}
+
+/* 🆕 학년 막대 — 수업하는 학년을 브랜드 초록으로 채우고, 쉬는 학년은 칸을 비웁니다.
+   («있는 것이 진하고 없는 것이 비어 있다» — 붉은색은 공휴일에만 씁니다) */
+function gradeBarHTML(ds, dayInfo, org){
+  const r = dayGradeStates(ds, dayInfo, org);
+  if(r.closedAll) return '';
+  const word = classWord(org);
+  const offs = r.slots.filter(g=> r.states[g]==='off');
+  const parts= r.slots.filter(g=> r.states[g]==='part');
+  if(!offs.length && !parts.length) return '';           // 평소대로면 막대를 그리지 않습니다
+  const cells = r.slots.map(g=>{
+    const st = r.states[g];
+    const cls = st==='off' ? 'gb-off' : (st==='part' ? 'gb-part' : 'gb-on');
+    return `<i class="gb-c ${cls}" title="${esc(g)} — ${st==='off'?word+' 없음':(st==='part'?'일부만':word+'함')}"></i>`;
+  }).join('');
+  const say = [];
+  if(offs.length) say.push(`${gradeRangeText(offs)} ${word} 없음`);
+  if(parts.length) say.push(`${gradeRangeText(parts)} 일부`);
+
+  /* 학년을 골랐거나 학부모용 화면이면 — 막대 대신 «내 아이» 한 줄로 */
+  if(GRADE_FILTER){
+    const st = r.states[GRADE_FILTER];
+    if(!st || st === 'on') return '';
+    return `<div class="gbar-t solo">${esc(GRADE_FILTER)} ${st==='off' ? word+' 없음' : '일부만'}</div>`;
+  }
+  if(curView === 'parent'){
+    return `<div class="gbar-t solo">${esc(say.join(' · '))}</div>`;
+  }
+  return `<div class="gbar" title="${esc(say.join(' · '))}">${cells}</div>
+          <div class="gbar-t">${esc(say.join(' · '))}</div>`;
+}
+/* 학년 목록을 «7~9학년»처럼 줄여서 적습니다 */
+function gradeRangeText(list){
+  const runs = gradeRuns(list||[]);
+  const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
+  return runs.map(r=> r.n>=3
+    ? `${gradeNum(r.start)}~${gradeNum(r.end)}${/세$/.test(r.end)?'세':'학년'}`
+    : Array.from({length:r.n},(_,k)=> order[r.endIdx-r.n+1+k]).join('·')
+  ).join(', ');
 }
 
 function targetLabel(e){
@@ -1959,7 +2068,8 @@ function render(){
         x.holName && !x.holCont
           ? `<span class="cw-hn ${x.holWho==='staff'?'stf':''}">${esc(x.holName)}</span>`
           : ''}${
-        classBadge(x)}</div>`;
+        classBadge(x)}</div>${
+        (!x.out && !x.holName) ? gradeBarHTML(x.ds, x, ORG) : ''}`;
     }).join('') + '</div>';
 
     // 종일 · 오전 · 오후 띠
@@ -2501,6 +2611,17 @@ window.openEventDlg = function(id, ds, slot){
       <div class="mtitle">${e?'행사 고치기':'행사 추가'}</div>
       <div class="msub">기간·시간대·대상을 정하면 달력에 그대로 표시됩니다.</div>
 
+      <label class="fld-label">이 일정의 성격</label>
+      <div class="chips" id="ev-kind">
+        ${[['staff','🔒 교사 일정','학부모 비공개 · 수업 영향 없음'],
+           ['student','🎒 학생 일정','학부모 공개 · 학년별 수업 여부를 정함'],
+           ['all','🏛 전체 통합','모두 참여 · 전 학년 수업 없음']].map(([k,label])=>{
+          const on = (e ? evKind(e) : 'student') === k;
+          return `<button type="button" class="chip ${on?'on':''}" data-kind="${k}" onclick="pickKind('${k}')">${label}</button>`;
+        }).join('')}
+      </div>
+      <div id="ev-kind-note" style="font-size:11px;color:var(--tl,#93A09A);margin-top:5px;line-height:1.6"></div>
+
       <label class="fld-label">어느 캘린더에 넣을까요?</label>
       <div class="chips" id="ev-org">
         ${CAL_KEYS.filter(canEditCal).map(k=>`<button type="button" class="chip ${dlgOrgs.has(k)?'on':''}"
@@ -2559,9 +2680,25 @@ window.openEventDlg = function(id, ds, slot){
         <input type="checkbox" id="ev-wp" style="width:17px;height:17px">
         출근부 <b>방학기간</b>으로도 등록 <span style="font-weight:400;color:var(--tl)">(평일이 자동 정기휴가로)</span>
       </label>
-      <label id="ev-nc-row" style="display:flex;align-items:center;gap:8px;margin:10px 0 2px;font-size:13px;font-weight:600;color:var(--gd);cursor:pointer">
+      <div id="ev-impact-box" style="display:none;margin:12px 0 2px;padding:13px 14px;border:1px solid var(--ln,#E4E2D9);border-radius:12px;background:var(--iv,#FBFAF6)">
+        <div style="font-size:13px;font-weight:800;color:var(--gd)">이 시간에 <b>수업</b>은 어떻게 되나요</div>
+        <div style="font-size:11px;color:var(--tl,#93A09A);margin-top:3px;line-height:1.55">학부모가 가장 먼저 찾는 내용입니다 · 학년을 누르면 <b>수업함 → 일부만 → 없음</b>으로 바뀝니다</div>
+        <div class="chips" style="margin:10px 0 8px">
+          <button type="button" class="chip" onclick="impactPreset('target')">대상 학년만 없음</button>
+          <button type="button" class="chip" onclick="impactPreset('alloff')">전 학년 없음</button>
+          <button type="button" class="chip" onclick="impactPreset('none')">영향 없음</button>
+        </div>
+        <div id="ev-impact-grid"></div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:9px;flex-wrap:wrap">
+          <span style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#2F6A4C"><i style="width:13px;height:13px;border-radius:4px;background:#2E7D57;display:inline-block"></i>수업함</span>
+          <span style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#4E8E6E"><i style="width:13px;height:13px;border-radius:4px;background:#A8D5BF;display:inline-block"></i>일부만</span>
+          <span style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:#7B827B"><i style="width:13px;height:13px;border-radius:4px;background:#EAE7DE;display:inline-block"></i>없음</span>
+          <span id="ev-impact-say" style="margin-left:auto;font-size:11.5px;font-weight:700;color:var(--gd)"></span>
+        </div>
+      </div>
+      <label id="ev-nc-row" style="display:none;align-items:center;gap:8px;margin:10px 0 2px;font-size:13px;font-weight:600;color:var(--gd);cursor:pointer">
         <input type="checkbox" id="ev-nc" style="width:17px;height:17px">
-        이날은 <b>수업 없음</b> <span style="font-weight:400;color:var(--tl)">(체크하면 달력의 초록 «수업» 표시가 사라져요)</span>
+        이날은 <b>수업 없음</b>
       </label>
       <div id="ev-closed-note" style="display:none;margin:10px 0 2px;padding:8px 11px;background:var(--gp);border-radius:8px;font-size:12px;color:var(--gm);line-height:1.5">
         🔗 휴교·휴일은 저장하면 <b>출석부·출근부의 쉬는 날</b>에도 자동으로 함께 등록돼요. (지우면 함께 지워집니다)
@@ -2591,9 +2728,94 @@ window.openEventDlg = function(id, ds, slot){
   renderTargetPicker();
   const wp = $I('ev-wp'); if(wp) wp.checked = !!(e && (e.wpIds||[]).length);
   const nc = $I('ev-nc'); if(nc) nc.checked = e ? noClassEvent(e) : false;
+  // 🆕 성격 · 학년별 수업 여부 채우기 (예전 자료는 지금 보이던 그대로 읽어 옵니다)
+  dlgKind = e ? evKind(e) : 'student';
+  dlgImpact = {};
+  if(e && e.classImpact && e.classImpact.grades){
+    Object.entries(e.classImpact.grades).forEach(([g,st])=>{ if(st==='off'||st==='part') dlgImpact[g]=st; });
+  } else if(e){
+    gradeSlots(dlgKindOrg()).forEach(g=>{ const s = classStateOf(e,g); if(s!=='on') dlgImpact[g]=s; });
+  }
+  refreshImpact();
   updateCatExtras();
 };
 window.closeEventDlg = function(){ $I('ev-mod')?.remove(); };
+
+/* ═══ 🆕 성격 · 학년별 수업 여부 ═══ */
+let dlgKind = 'student';
+let dlgImpact = {};          // { '3학년':'off', ... } — 'on'이면 담지 않습니다
+
+function dlgKindOrg(){
+  const o = dlgOrgPrimary();
+  return (o === 'all' || o === ORG_ALL) ? ((ORG===ORG_ALL) ? 'daniel' : ORG) : o;
+}
+window.pickKind = function(k){
+  dlgKind = k;
+  document.querySelectorAll('#ev-kind .chip').forEach(b=>b.classList.toggle('on', b.dataset.kind===k));
+  if(k === 'staff'){
+    dlgImpact = {};                                   // 교사 일정은 수업과 무관
+    const aud = document.querySelectorAll('#ev-aud .chip');
+    aud.forEach(b=>b.classList.toggle('on', b.dataset.aud==='teacher'));
+  } else if(k === 'all'){
+    gradeSlots(dlgKindOrg()).forEach(g=> dlgImpact[g] = 'off');   // 전 학년 수업 없음
+    document.querySelectorAll('#ev-aud .chip').forEach(b=>b.classList.toggle('on', b.dataset.aud==='both'));
+  } else {
+    document.querySelectorAll('#ev-aud .chip').forEach(b=>b.classList.toggle('on', b.dataset.aud==='both'));
+  }
+  refreshImpact();
+};
+window.impactPreset = function(mode){
+  const slots = gradeSlots(dlgKindOrg());
+  dlgImpact = {};
+  if(mode === 'alloff'){ slots.forEach(g=> dlgImpact[g]='off'); }
+  else if(mode === 'target'){
+    const tg = (dlgScope==='all') ? slots
+             : expandTargets([...dlgTargets], dlgKindOrg());
+    slots.forEach(g=>{ if(tg.includes(g)) dlgImpact[g]='off'; });
+  }
+  refreshImpact();
+};
+window.cycleImpact = function(g){
+  const cur = dlgImpact[g] || 'on';
+  const next = cur==='on' ? 'off' : (cur==='off' ? 'part' : 'on');
+  if(next === 'on') delete dlgImpact[g]; else dlgImpact[g] = next;
+  refreshImpact();
+};
+function refreshImpact(){
+  const box = $I('ev-impact-box'); if(!box) return;
+  const note = $I('ev-kind-note');
+  if(note) note.innerHTML = dlgKind==='staff'
+    ? '교사끼리 보는 일정입니다 — 학부모에게 나가지 않고, 학년별 수업 여부도 묻지 않습니다.'
+    : (dlgKind==='all'
+      ? '체육대회·개교기념일처럼 <b>모두가 참여</b>하는 날입니다 — 전 학년 수업 없음과 교사 전원 참석이 미리 채워집니다.'
+      : '학부모에게 공개되는 학생 일정입니다 — 아래에서 학년별 수업 여부를 정해 주세요.');
+  box.style.display = (dlgKind === 'staff') ? 'none' : 'block';
+  if(dlgKind === 'staff') return;
+
+  const org = dlgKindOrg();
+  const slots = gradeSlots(org);
+  const word = classWord(org);
+  const grid = $I('ev-impact-grid');
+  if(grid){
+    grid.style.cssText = `display:grid;grid-template-columns:repeat(${Math.min(slots.length,12)},minmax(0,1fr));gap:5px`;
+    grid.innerHTML = slots.map(g=>{
+      const st = dlgImpact[g] || 'on';
+      const bg = st==='off' ? '#EAE7DE' : (st==='part' ? '#A8D5BF' : '#2E7D57');
+      const fg = st==='off' ? '#8A918A' : (st==='part' ? '#235F42' : '#FFFFFF');
+      return `<button type="button" onclick="cycleImpact('${esc(g)}')"
+        title="${esc(g)}" style="border:none;background:${bg};color:${fg};font-family:inherit;
+        font-size:12.5px;font-weight:800;padding:11px 0;border-radius:9px;cursor:pointer">${esc(gradeNum(g)||g)}</button>`;
+    }).join('');
+  }
+  const offs = slots.filter(g=> dlgImpact[g]==='off');
+  const parts= slots.filter(g=> dlgImpact[g]==='part');
+  const say = [];
+  if(offs.length) say.push(`${gradeRangeText(offs)} ${word} 없음`);
+  if(parts.length) say.push(`${gradeRangeText(parts)} 일부`);
+  const sayEl = $I('ev-impact-say');
+  if(sayEl) sayEl.textContent = say.length ? say.join(' · ') : `전 학년 평소대로 ${word}`;
+}
+window.refreshImpact = refreshImpact;
 
 window.pickSlot = function(k){
   document.querySelectorAll('#ev-slot .chip').forEach(b=>b.classList.toggle('on', b.dataset.slot===k));
@@ -2781,7 +3003,14 @@ window.saveEvent = async function(){
     orgs: [...dlgOrgs],             // ✅ 이 행사가 들어갈 캘린더들 (복수)
     category: cat,
     color: dlgColor || '',
-    noClass: (cat==='closed' || cat==='break') ? true : !!$I('ev-nc')?.checked,   // 이날 수업 없음
+    noClass: (cat==='closed' || cat==='break') ? true
+      : (dlgKind==='staff' ? false
+        : Object.values(dlgImpact).some(v=>v==='off')),   // 🆕 학년별 판에서 끌어냅니다 (옛 화면 호환용)
+    kind: dlgKind,                                        // 🆕 성격 — staff | student | all
+    classImpact: (dlgKind==='staff' || !Object.keys(dlgImpact).length)
+      ? null                                              // 영향 없음이면 담지 않습니다
+      : { scope:'day', grades:{ ...dlgImpact } },         // 🆕 학년별 수업 여부
+    staffAll: dlgKind === 'all',                          // 🆕 교사 전원 참석
     audience: aud,
     memo: $I('ev-memo').value.trim(),
     order: editingEventId ? ordOf(EVENTS.find(x=>x.id===editingEventId)) : 500,
