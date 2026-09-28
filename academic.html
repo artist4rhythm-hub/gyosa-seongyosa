@@ -1237,7 +1237,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b11';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b12';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -2444,7 +2444,7 @@ async function wkSaveTime(id, st, et){
       updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
     });
     toast(`${e.title} — ${st} ~ ${et}로 옮겼어요`);
-    gcalNudge();
+    gcalNudge(id);
   } catch(err){
     e.startTime = prevS; e.endTime = prevE;
     if(src){ src.startTime = prevS; src.endTime = prevE; }
@@ -3370,6 +3370,7 @@ window.saveEvent = async function(){
      (되돌리기 보관도 화면에 이미 있는 자료로 만들어 서버를 다시 읽지 않는다) */
   const editId = editingEventId;
   const snapDocs = ALL_EVENTS.map(x=>({ ...x }));   // 저장 직전 상태 (보관용)
+  let newEvId = null;                              // 새로 만든 행사의 번호 (구글 반영용)
 
   // ① 화면 먼저 반영
   const tempId = editId || ('tmp-' + Date.now());
@@ -3409,11 +3410,12 @@ window.saveEvent = async function(){
         data.createdByUid = CU?.uid||''; data.createdByName = CU?.name||'';
         data.createdAt = Timestamp.now();
         const ref = await addDoc(collection(db,'academicEvents'), data);
+        newEvId = ref.id;
         const i = ALL_EVENTS.findIndex(x=>x.id===tempId);
         if(i>=0) ALL_EVENTS[i] = { id: ref.id, ...data };
         render();   // 임시 번호를 진짜 번호로 바꿔 그린다 (바로 눌러 고칠 수 있게)
       }
-      gcalNudge();   // 🔄 구글 캘린더에도 조용히 반영 (연결해 두었을 때만)
+      gcalNudge(editId || newEvId);   // 🔄 구글 캘린더에도 조용히 반영 (바뀐 행사 하나만)
     } catch(e){
       toast('저장이 서버에 닿지 못했어요: '+(e.message||'')+' — 화면을 원래대로 되돌립니다','err');
       try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){}
@@ -3434,6 +3436,7 @@ window.delEvent = async function(id){
   if(idx>=0) ALL_EVENTS.splice(idx,1);
   closeEventDlg(); render();
   toast('지웠습니다 ✓','ok');
+  gcalNudge(id);          // 🆕 구글 캘린더에서도 함께 지웁니다
   (async () => {
     try {
       if(window.TM){
@@ -4493,11 +4496,16 @@ window.gcalSync = async function(only, dry){
     if(box) box.innerHTML = `<div style="padding:10px 12px;background:#FDECEA;border-radius:8px;font-size:12.5px;color:#A8483C">맞추지 못했습니다 — ${esc(e.message||'')}</div>`;
   }
 };
-/* 행사를 저장·삭제한 뒤 조용히 한 번 맞춥니다 (실패해도 화면은 그대로) */
-function gcalNudge(){
+/* 행사를 저장·삭제한 뒤 조용히 한 번 맞춥니다 (실패해도 화면은 그대로)
+   · 설정 탭을 한 번도 열지 않았어도 스스로 연결 설정을 읽어옵니다
+   · 바뀐 행사 «하나만» 보내므로 몇 초가 아니라 곧바로 반영됩니다 */
+async function gcalNudge(evId){
   try {
-    if(!GCAL_CFG || !(GCAL_CFG.url||'').trim()) return;
-    const u = gcalCall({ action:'sync' }); if(!u) return;
+    await loadGcalCfg();                                  // 🆕 없으면 지금 읽어온다
+    if(!GCAL_CFG || !(GCAL_CFG.url||'').trim()) return;    // 연결 안 해두었으면 조용히 끝
+    const p = { action:'sync' };
+    if(evId) p.ev = String(evId);                          // 🆕 이 행사 하나만
+    const u = gcalCall(p); if(!u) return;
     fetch(u, { method:'POST', keepalive:true }).catch(()=>{});
   } catch(_){}
 }
