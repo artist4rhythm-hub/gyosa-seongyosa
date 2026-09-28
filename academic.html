@@ -1237,7 +1237,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b10';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b11';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -2444,6 +2444,7 @@ async function wkSaveTime(id, st, et){
       updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
     });
     toast(`${e.title} — ${st} ~ ${et}로 옮겼어요`);
+    gcalNudge();
   } catch(err){
     e.startTime = prevS; e.endTime = prevE;
     if(src){ src.startTime = prevS; src.endTime = prevE; }
@@ -3412,6 +3413,7 @@ window.saveEvent = async function(){
         if(i>=0) ALL_EVENTS[i] = { id: ref.id, ...data };
         render();   // 임시 번호를 진짜 번호로 바꿔 그린다 (바로 눌러 고칠 수 있게)
       }
+      gcalNudge();   // 🔄 구글 캘린더에도 조용히 반영 (연결해 두었을 때만)
     } catch(e){
       toast('저장이 서버에 닿지 못했어요: '+(e.message||'')+' — 화면을 원래대로 되돌립니다','err');
       try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){}
@@ -4317,6 +4319,7 @@ async function renderIcsPanel(){
   if(!canEditAny() || curTab !== 'set'){ p.style.display='none'; return; }
   p.style.display='';
   await loadIcsCfg();
+  await loadGcalCfg();
   const url = (ICS_CFG?.url||'').trim();
   const row = (label, cal, aud) => {
     const u = icsSubUrl(cal, aud);
@@ -4357,8 +4360,149 @@ async function renderIcsPanel(){
       <button class="btn btn-sm" onclick="findDupEvents()">🧹 겹친 일정 찾기</button>
       <input type="file" id="ics-file" accept=".ics,text/calendar" style="display:none" onchange="importIcsFile(this)">
       <span style="font-size:11.5px;color:var(--tl)">— 구글 캘린더 <b>설정 → 내보내기</b>로 받은 파일을 올리면, 이미 있는 일정은 건너뛰고 새 일정만 담아 옵니다.</span>
+    </div>
+
+    <div style="margin-top:18px;padding-top:16px;border-top:2px solid var(--ivd)">
+      <div style="font-size:14px;font-weight:800;color:var(--gd);margin-bottom:3px">🔄 즉시 반영 연결 <span style="font-size:11px;font-weight:600;color:var(--tl)">(구독보다 빠릅니다)</span></div>
+      <div style="font-size:11.5px;color:var(--tl);line-height:1.6;margin-bottom:11px">
+        위쪽 <b>구독 주소</b>는 구글이 몇 시간에 한 번만 들여다봅니다. 아래로 연결해 두면 <b>저장하는 즉시</b> 구글 캘린더에 반영됩니다.
+        원본은 언제나 교사 선교사이고, 구글은 거울입니다.
+      </div>
+      ${gcalPanelHTML()}
     </div>`;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   🔄 구글 캘린더 «즉시 반영» 연결 (academic-gcal 함수)
+   · 구독(ICS)은 구글이 몇 시간마다 들여다보지만, 이쪽은 저장하는 즉시 반영됩니다.
+   · 학부모 캘린더는 «나가기»만 합니다 — 구글에서 쓴 글이 학부모에게 새어 나갈 수 없습니다.
+   ═══════════════════════════════════════════════════════════════ */
+let GCAL_CFG = null;
+const GCAL_TARGETS = [
+  { id:'daniel_teacher',   cal:'daniel',   aud:'teacher', label:'🏫 다니엘 아마츠 · 교사' },
+  { id:'daniel_parent',    cal:'daniel',   aud:'parent',  label:'👨‍👩‍👧 다니엘 아마츠 · 학부모' },
+  { id:'jihyebit_teacher', cal:'jihyebit', aud:'teacher', label:'🌱 지혜빛 선교원 · 교사' },
+  { id:'jihyebit_parent',  cal:'jihyebit', aud:'parent',  label:'👨‍👩‍👧 지혜빛 선교원 · 학부모' },
+  { id:'all_teacher',      cal:'all',      aud:'teacher', label:'🏛 DA 전체 · 교사' },
+];
+async function loadGcalCfg(force){
+  if(GCAL_CFG !== null && !force) return;
+  try { const g = await getDoc(doc(db,'academicConfig','gcal')); GCAL_CFG = g.exists() ? (g.data()||{}) : {}; }
+  catch(e){ GCAL_CFG = {}; }
+}
+function gcalTargetOf(id){
+  return ((GCAL_CFG?.targets)||[]).find(t=> (t.id || `${t.cal}_${t.aud}`) === id) || {};
+}
+function gcalPanelHTML(){
+  const url = (GCAL_CFG?.url||'').trim();
+  const last = GCAL_CFG?.lastSyncAt ? new Date(GCAL_CFG.lastSyncAt) : null;
+  const rows = GCAL_TARGETS.map(t=>{
+    const cur = gcalTargetOf(t.id);
+    const on = cur.on !== false && !!cur.calendarId;
+    return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px;flex-wrap:wrap">
+      <label style="flex:none;width:170px;font-size:12.5px;font-weight:700;color:var(--gd);display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="gc-on-${t.id}" ${on?'checked':''} style="width:15px;height:15px">${t.label}</label>
+      <input id="gc-id-${t.id}" value="${esc(cur.calendarId||'')}" placeholder="캘린더 ID (…@group.calendar.google.com)"
+        style="flex:1;min-width:220px;height:32px;border:1px solid var(--ivd);border-radius:7px;padding:0 8px;font-size:11.5px;font-family:inherit">
+      ${url && cur.calendarId ? `<button class="btn btn-sm" onclick="gcalSync('${t.id}')">맞추기</button>` : ''}
+    </div>`;
+  }).join('');
+  return `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <span style="flex:none;font-size:13px;font-weight:700;color:var(--ts)">동기화 주소</span>
+      <input id="gc-url" value="${esc(url)}" placeholder="academic-gcal 함수 주소를 붙여넣기 (한 번만)"
+        style="flex:1;min-width:220px;height:36px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:12.5px;font-family:inherit">
+      <button class="btn btn-sm" onclick="gcalHealth()">연결 확인</button>
+      <button class="btn btn-sm btn-p" onclick="saveGcalCfg()">저장</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--tl);line-height:1.6;margin-bottom:10px">
+      먼저 <b>연결 확인</b>을 눌러 나오는 <b>서비스 계정 이메일</b>을, 구글 캘린더 → 그 캘린더 → 설정과 공유 →
+      «특정 사용자와 공유»에 <b>변경 및 공유 관리</b> 권한으로 넣어 주세요. 그 다음 같은 화면 아래
+      «캘린더 통합»의 <b>캘린더 ID</b>를 복사해 아래에 붙여넣습니다.
+    </div>
+    ${rows}
+    <div style="margin-top:10px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-sm btn-p" onclick="gcalSync('')">🔄 지금 전부 맞추기</button>
+      <button class="btn btn-sm" onclick="gcalSync('',true)">🔍 무엇이 바뀌는지만 보기</button>
+      <span style="font-size:11.5px;color:var(--tl)">${last?`마지막으로 맞춘 때 · ${last.toLocaleString('ko-KR')}`:'아직 맞춘 적이 없습니다'}</span>
+    </div>
+    <div id="gc-log" style="margin-top:9px"></div>`;
+}
+window.saveGcalCfg = async function(){
+  if(!needEdit()) return;
+  const url = $I('gc-url').value.trim();
+  const targets = GCAL_TARGETS.map(t=>({
+    id:t.id, cal:t.cal, aud:t.aud,
+    calendarId: ($I('gc-id-'+t.id)?.value||'').trim(),
+    on: !!$I('gc-on-'+t.id)?.checked,
+  })).filter(t=> t.calendarId || t.on);
+  try {
+    await setDoc(doc(db,'academicConfig','gcal'),
+      { url, targets, months: 14, updatedByUid:CU?.uid||'', updatedByName:CU?.name||'', updatedAt:Timestamp.now() },
+      { merge:true });
+    await loadGcalCfg(true);
+    toast('저장했습니다 ✓','ok');
+    renderIcsPanel();
+  } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+};
+function gcalCall(params){
+  const base = (GCAL_CFG?.url||'').trim();
+  if(!base) { toast('먼저 동기화 주소를 저장해 주세요.','err'); return null; }
+  const sep = base.includes('?') ? '&' : '?';
+  const q = new URLSearchParams(params);
+  if(GCAL_CFG?.key) q.set('key', GCAL_CFG.key);
+  return base + sep + q.toString();
+}
+window.gcalHealth = async function(){
+  const u = gcalCall({ action:'health' }); if(!u) return;
+  const box = $I('gc-log'); if(box) box.innerHTML = '<div style="font-size:12px;color:var(--tl)">확인 중…</div>';
+  try {
+    const r = await fetch(u); const j = await r.json();
+    if(box) box.innerHTML = `<div style="padding:10px 12px;background:var(--gp);border-radius:8px;font-size:12.5px;line-height:1.7">
+      <b>서비스 계정</b><br><code style="font-size:12px;word-break:break-all">${esc(j.serviceAccount||'')}</code>
+      <div style="margin-top:6px;color:var(--gm)">${esc(j.hint||'')}</div></div>`;
+  } catch(e){
+    if(box) box.innerHTML = `<div style="padding:10px 12px;background:#FDECEA;border-radius:8px;font-size:12.5px;color:#A8483C">연결하지 못했습니다 — 주소를 다시 확인해 주세요. (${esc(e.message||'')})</div>`;
+  }
+};
+window.gcalSync = async function(only, dry){
+  const p = { action:'sync' };
+  if(only) p.only = only;
+  if(dry) p.dry = '1';
+  const u = gcalCall(p); if(!u) return;
+  const box = $I('gc-log');
+  if(box) box.innerHTML = '<div style="font-size:12px;color:var(--tl)">맞추는 중…</div>';
+  try {
+    const r = await fetch(u, { method:'POST' });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'알 수 없는 오류');
+    const lines = (j.results||[]).map(x=>{
+      if(x.error) return `<div style="color:#A8483C">• ${esc(x.id)} — ${esc(x.error)}</div>`;
+      const bits = [];
+      if(x.added) bits.push(`새로 ${x.added}건`);
+      if(x.updated) bits.push(`고침 ${x.updated}건`);
+      if(x.removed) bits.push(`지움 ${x.removed}건`);
+      if(!bits.length) bits.push('바뀐 것 없음');
+      const sk = (x.skipped||[]).length ? ` <span style="color:#A8483C">· 건너뜀 ${x.skipped.length}건</span>` : '';
+      return `<div>• <b>${esc(x.id)}</b> — ${bits.join(' · ')}${sk}</div>`;
+    }).join('');
+    if(box) box.innerHTML = `<div style="padding:10px 12px;background:var(--gp);border-radius:8px;font-size:12.5px;line-height:1.7">
+      ${dry?'<b>미리보기</b> — 실제로 쓰지 않았습니다<br>':''}${lines||'맞출 대상이 없습니다'}</div>`;
+    if(!dry){ await loadGcalCfg(true); toast('구글 캘린더에 반영했습니다 ✓','ok'); }
+  } catch(e){
+    if(box) box.innerHTML = `<div style="padding:10px 12px;background:#FDECEA;border-radius:8px;font-size:12.5px;color:#A8483C">맞추지 못했습니다 — ${esc(e.message||'')}</div>`;
+  }
+};
+/* 행사를 저장·삭제한 뒤 조용히 한 번 맞춥니다 (실패해도 화면은 그대로) */
+function gcalNudge(){
+  try {
+    if(!GCAL_CFG || !(GCAL_CFG.url||'').trim()) return;
+    const u = gcalCall({ action:'sync' }); if(!u) return;
+    fetch(u, { method:'POST', keepalive:true }).catch(()=>{});
+  } catch(_){}
+}
+window.gcalNudge = gcalNudge;
+
 window.saveIcsUrl = async function(){
   if(!needEdit()) return;
   const url = $I('ics-url').value.trim();
