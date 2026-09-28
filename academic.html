@@ -123,6 +123,24 @@
   .cw-sec.one{ min-height:38px; }
   /* 🆕 막대 앞 시각 — 종일 일정에는 붙지 않습니다 */
   .eb-h{ font-weight:800; opacity:.72; margin-right:4px; font-variant-numeric:tabular-nums; }
+  /* 🔔 실시간 갱신 띠 — 창을 열어두고 작업 중일 때만 나타납니다 */
+  #live-bar{ position:fixed; left:50%; bottom:26px; transform:translate(-50%, 130%);
+    display:flex; align-items:center; gap:10px; z-index:9000;
+    background:var(--gd,#1E3932); color:#fff; border-radius:100px; padding:10px 12px 10px 18px;
+    box-shadow:0 10px 30px rgba(0,0,0,.24); font-size:13px; font-weight:700;
+    opacity:0; pointer-events:none; transition:transform .28s cubic-bezier(.2,.8,.3,1), opacity .22s; }
+  #live-bar.on{ transform:translate(-50%, 0); opacity:1; pointer-events:auto; }
+  #live-bar .lb-dot{ width:8px; height:8px; border-radius:50%; background:#7ED9A8; flex:none;
+    animation:lbPulse 1.8s ease-in-out infinite; }
+  @keyframes lbPulse{ 0%,100%{ opacity:1 } 50%{ opacity:.35 } }
+  #live-bar .lb-t b{ font-weight:800; opacity:.85; }
+  #live-bar button{ border:none; background:#fff; color:var(--gd,#1E3932); font-family:inherit;
+    font-size:12.5px; font-weight:800; padding:7px 14px; border-radius:100px; cursor:pointer; }
+  #live-bar button.lb-x{ background:transparent; color:#fff; opacity:.6; padding:7px 9px; font-size:12px; }
+  #live-bar button.lb-x:hover{ opacity:1; }
+  @media (max-width:640px){ #live-bar{ left:12px; right:12px; bottom:70px; transform:translate(0,130%);
+    justify-content:center; padding:10px 12px; }
+    #live-bar.on{ transform:translate(0,0); } }
   .cw-lab{ position:absolute; left:3px; top:1px; font-size:8px; font-weight:700;
     color:var(--tl); opacity:.5; pointer-events:none; z-index:2; }
   /* 레인 묶음은 클릭을 통과시키고, 실제 띠만 클릭을 받는다 (빈 곳은 아래 판이 받음) */
@@ -932,7 +950,7 @@
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, addDoc, updateDoc, serverTimestamp,
-  collection, getDocs, orderBy, query, where, Timestamp }
+  collection, getDocs, orderBy, query, where, Timestamp, onSnapshot }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const __cfg = ({
@@ -1249,7 +1267,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b14';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b15';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -1476,6 +1494,81 @@ async function loadEvents(year, month, fresh){
   if(!(y in EV_YEAR_CACHE)) { /* 실패는 캐시하지 않음 — 다음 시도에 재조회 */ }
   await loadLedgerHolidays(y);
   applyEventScope();
+  watchEvents(y);          // 🔔 그 해를 실시간으로 지켜봅니다
+}
+
+/* ═══════════════════════════════════════════════════════════
+   🔔 실시간 갱신 — 다른 곳에서 일정이 바뀌면 알려줍니다
+   · 옆자리 선생님이 고쳤을 때, 또는 구글 캘린더에서 들어왔을 때
+   · 내가 방금 한 변경은 알리지 않습니다 (이미 화면에 있으니까)
+   · 창을 열어두고 작업 중이면 함부로 바꾸지 않고 «새로고침» 띠만 띄웁니다
+   ═══════════════════════════════════════════════════════════ */
+let EV_WATCH = null, EV_WATCH_YEAR = null, EV_WATCH_FIRST = true, EV_PENDING = null;
+
+/* 지금 화면을 바로 갈아끼워도 괜찮은가 — 창이 떠 있거나 끌고 있으면 기다립니다 */
+function liveSafeNow(){
+  if(document.querySelector('.mov')) return false;          // 어떤 창이든 열려 있음
+  if(document.body.classList.contains('dragging')) return false;
+  return true;
+}
+function liveApply(docs){
+  EV_YEAR_CACHE[EV_WATCH_YEAR] = docs;
+  ALL_EVENTS = docs;
+  applyEventScope();
+  render();
+}
+function liveBar(n, docs){
+  EV_PENDING = docs;
+  let el = $I('live-bar');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'live-bar';
+    el.innerHTML = `<span class="lb-dot"></span>
+      <span class="lb-t">일정이 바뀌었어요<b id="live-n"></b></span>
+      <button type="button" onclick="liveRefresh()">새로고침</button>
+      <button type="button" class="lb-x" onclick="liveDismiss()" aria-label="닫기">✕</button>`;
+    document.body.appendChild(el);
+  }
+  const nb = $I('live-n'); if(nb) nb.textContent = n > 1 ? ` · ${n}건` : '';
+  el.classList.add('on');
+}
+window.liveRefresh = function(){
+  if(EV_PENDING) liveApply(EV_PENDING);
+  EV_PENDING = null;
+  $I('live-bar')?.classList.remove('on');
+};
+window.liveDismiss = function(){ $I('live-bar')?.classList.remove('on'); };
+
+function watchEvents(year){
+  if(typeof shareId !== 'undefined' && shareId) return;     // 공유 링크는 감시하지 않습니다
+  const y = Number(year);
+  if(EV_WATCH && EV_WATCH_YEAR === y) return;               // 이미 그 해를 보고 있음
+  if(EV_WATCH){ try{ EV_WATCH(); }catch(_){} EV_WATCH = null; }
+  EV_WATCH_YEAR = y; EV_WATCH_FIRST = true;
+  try {
+    EV_WATCH = onSnapshot(
+      query(collection(db,'academicEvents'), where('year','==',y)),
+      snap=>{
+        if(EV_WATCH_FIRST){ EV_WATCH_FIRST = false; return; }   // 처음 한 번은 «지금 상태»일 뿐
+        if(snap.metadata.hasPendingWrites) return;              // 내 저장이 아직 올라가는 중
+        const docs = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+        // 내가 한 변경인지 — 남이 바꾼 것만 알립니다
+        const mine = CU?.uid || '';
+        const others = snap.docChanges().filter(c=>{
+          const d = c.doc.data() || {};
+          return String(d.updatedByUid||'') !== mine;
+        });
+        if(!others.length){ EV_YEAR_CACHE[y] = docs; ALL_EVENTS = docs; applyEventScope(); return; }
+        if(liveSafeNow()){
+          liveApply(docs);
+          toast(`다른 곳에서 일정이 바뀌어 새로 불러왔어요${others.length>1?` (${others.length}건)`:''}`,'ok');
+        } else {
+          liveBar(others.length, docs);
+        }
+      },
+      ()=>{ /* 끊기면 조용히 — 다음에 화면을 열 때 다시 읽습니다 */ }
+    );
+  } catch(_){}
 }
 
 /* 지금 고른 기관의 행사만 보여준다 */
