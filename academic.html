@@ -1267,7 +1267,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b16';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b17';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -1504,6 +1504,7 @@ async function loadEvents(year, month, fresh){
    · 창을 열어두고 작업 중이면 함부로 바꾸지 않고 «새로고침» 띠만 띄웁니다
    ═══════════════════════════════════════════════════════════ */
 let EV_WATCH = null, EV_WATCH_YEAR = null, EV_WATCH_FIRST = true, EV_PENDING = null;
+const LIVE_GONE = new Set();       // 이 창에서 지우는 중인 행사 — 실시간 갱신이 되살리지 않게
 
 /* 지금 화면을 바로 갈아끼워도 괜찮은가 — 창이 떠 있거나 끌고 있으면 기다립니다 */
 function liveSafeNow(){
@@ -1511,9 +1512,34 @@ function liveSafeNow(){
   if(document.body.classList.contains('dragging')) return false;
   return true;
 }
+/* 화면에 보이는 것과 «내용이» 같은지 견주는 열쇠 — 누가·언제 고쳤는지는 빼고 봅니다 */
+function liveKey(o){
+  const skip = { id:1, updatedAt:1, updatedByUid:1, updatedByName:1, holidayIds:1, wpIds:1 };
+  const norm = (v, top) => {
+    if(v && typeof v === 'object'){
+      if(typeof v.toMillis === 'function') return v.toMillis();
+      if(Array.isArray(v)) return v.map(x=>norm(x));
+      const out = {};
+      Object.keys(v).sort().forEach(k=>{
+        if(top && (skip[k] || k.charAt(0) === '_')) return;
+        if(v[k] === undefined) return;
+        out[k] = norm(v[k]);
+      });
+      return out;
+    }
+    return v;
+  };
+  try { return JSON.stringify(norm(o||{}, true)); } catch(_){ return String(Math.random()); }
+}
+/* 서버 목록 + 이 창에서 아직 저장 중인 것 − 이 창에서 지우는 중인 것 */
+function liveMerge(docs){
+  const temps = (ALL_EVENTS||[]).filter(x=> x && x._saving);
+  return docs.filter(d=> !LIVE_GONE.has(d.id)).concat(temps);
+}
 function liveApply(docs){
-  EV_YEAR_CACHE[EV_WATCH_YEAR] = docs;
-  ALL_EVENTS = docs;
+  const list = liveMerge(docs);
+  EV_YEAR_CACHE[EV_WATCH_YEAR] = list;
+  ALL_EVENTS = list;
   applyEventScope();
   render();
 }
@@ -1550,20 +1576,43 @@ function watchEvents(year){
       query(collection(db,'academicEvents'), where('year','==',y)),
       snap=>{
         if(EV_WATCH_FIRST){ EV_WATCH_FIRST = false; return; }   // 처음 한 번은 «지금 상태»일 뿐
-        if(snap.metadata.hasPendingWrites) return;              // 내 저장이 아직 올라가는 중
         const docs = snap.docs.map(d=>({ id:d.id, ...d.data() }));
-        // 내가 한 변경인지 — 남이 바꾼 것만 알립니다
-        const mine = CU?.uid || '';
+        /* 🔎 «이 창 밖에서» 바뀐 것만 알립니다 (v-83)
+           · 예전에는 «내 계정»이 바꾼 것을 다 빼서, 같은 선생님의 다른 창·다른 기기에서
+             바꾼 것은 알림도 없고 화면도 안 바뀌었습니다
+           · 이제는 이 창에서 방금 쓴 것(아직 올라가는 중)과, 화면과 내용이 같은 것만 뺍니다 */
+        const base = (EV_WATCH_YEAR === curYear) ? ALL_EVENTS : (EV_YEAR_CACHE[y] || []);
+        const shown = new Map((base||[]).map(x=>[x.id, x]));
         const others = snap.docChanges().filter(c=>{
-          const d = c.doc.data() || {};
-          return String(d.updatedByUid||'') !== mine;
+          const id = c.doc.id;
+          if(c.doc.metadata && c.doc.metadata.hasPendingWrites) return false;   // 이 창에서 방금 쓴 것
+          if(LIVE_GONE.has(id)) return false;                                   // 이 창에서 지우는 중
+          const cur = shown.get(id);
+          if(c.type === 'removed') return !!cur;                                // 이미 화면에서 지웠으면 조용히
+          return !cur || liveKey(cur) !== liveKey(c.doc.data());                // 화면과 같으면 알릴 것 없음
         });
-        if(!others.length){ EV_YEAR_CACHE[y] = docs; ALL_EVENTS = docs; applyEventScope(); return; }
-        const fromG = others.every(ch=> String((ch.doc.data()||{}).updatedByUid||'') === 'gcal');
+        if(!others.length){
+          if(!snap.metadata.hasPendingWrites){                                  // 조용히 최신으로만
+            const list = liveMerge(docs);
+            EV_YEAR_CACHE[y] = list;
+            if(EV_WATCH_YEAR === curYear){ ALL_EVENTS = list; applyEventScope(); }
+          }
+          return;
+        }
+        const mine = CU?.uid || '';
+        const by = others.map(c=> String((c.doc.data()||{}).updatedByUid||''));
+        const fromG  = by.every(u=> u === 'gcal');
+        const fromMe = !fromG && !!mine && by.every(u=> u === mine);
+        const types = new Set(others.map(c=> c.type));
+        const verb = types.size > 1 ? '반영됐어요'
+                   : types.has('added') ? '들어왔어요' : types.has('removed') ? '지워졌어요' : '바뀌었어요';
+        const cnt = others.length > 1 ? ` (${others.length}건)` : '';
+        const msg = fromG  ? `📥 구글 캘린더에서 일정이 ${verb}${cnt}`
+                  : fromMe ? `🔔 다른 창에서 바꾼 일정을 불러왔어요${cnt}`
+                  :          `🔔 다른 곳에서 일정이 ${verb}${cnt}`;
         if(liveSafeNow()){
           liveApply(docs);
-          toast(fromG ? `📥 구글 캘린더에서 일정이 들어왔어요${others.length>1?` (${others.length}건)`:''}`
-                      : `다른 곳에서 일정이 바뀌어 새로 불러왔어요${others.length>1?` (${others.length}건)`:''}`,'ok');
+          toast(msg,'ok');
         } else {
           liveBar(others.length, docs);
         }
@@ -3504,6 +3553,7 @@ window.saveEvent = async function(){
   } else {
     ALL_EVENTS.push({ id: tempId, ...data, _saving:true });
   }
+  applyEventScope();   // 🩹 v-83: 화면이 보는 목록도 새로 — 빠져 있어서 저장한 일정이 새로고침 전까지 안 보였음
   closeEventDlg(); render();
   toast(cat==='closed' ? '적용했습니다 ✓ 쉬는 날에도 함께 등록돼요' :
         wantWp ? '적용했습니다 ✓ 출근부 방학기간에도 등록돼요' : '적용했습니다 ✓','ok');
@@ -3529,13 +3579,17 @@ window.saveEvent = async function(){
         await updateDoc(doc(db,'academicEvents', editId), data);
         const i = ALL_EVENTS.findIndex(x=>x.id===editId);
         if(i>=0) ALL_EVENTS[i] = { ...ALL_EVENTS[i], holidayIds:data.holidayIds, wpIds:data.wpIds };
+        applyEventScope();
       } else {
         data.createdByUid = CU?.uid||''; data.createdByName = CU?.name||'';
         data.createdAt = Timestamp.now();
         const ref = await addDoc(collection(db,'academicEvents'), data);
         newEvId = ref.id;
         const i = ALL_EVENTS.findIndex(x=>x.id===tempId);
-        if(i>=0) ALL_EVENTS[i] = { id: ref.id, ...data };
+        const has = ALL_EVENTS.some(x=>x.id===ref.id);     // 실시간 갱신이 먼저 넣어 두었을 수도
+        if(i>=0){ if(has) ALL_EVENTS.splice(i,1); else ALL_EVENTS[i] = { id: ref.id, ...data }; }
+        else if(!has) ALL_EVENTS.push({ id: ref.id, ...data });
+        applyEventScope();
         render();   // 임시 번호를 진짜 번호로 바꿔 그린다 (바로 눌러 고칠 수 있게)
       }
       gcalNudge(editId || newEvId);   // 🔄 구글 캘린더에도 조용히 반영 (바뀐 행사 하나만)
@@ -3557,6 +3611,8 @@ window.delEvent = async function(id){
   const snapDocs = ALL_EVENTS.map(x=>({ ...x }));
   const idx = ALL_EVENTS.findIndex(x=>x.id===id);
   if(idx>=0) ALL_EVENTS.splice(idx,1);
+  LIVE_GONE.add(id);   // 지우는 동안 실시간 갱신이 되살리지 않게
+  applyEventScope();   // 🩹 v-83: 화면이 보는 목록도 새로 — 빠져 있어서 지운 일정이 그대로 보였음
   closeEventDlg(); render();
   toast('지웠습니다 ✓','ok');
   (async () => {
@@ -3571,8 +3627,10 @@ window.delEvent = async function(id){
       }
       await clearEventLinks(e);   // 🔗 연결된 쉬는 날·방학기간도 함께 정리
       await deleteDoc(doc(db,'academicEvents', id));
+      LIVE_GONE.delete(id);
       gcalNudge(id);              // 🔄 지운 «뒤»에 구글에도 알립니다 (v-82에서 순서 바로잡음)
     } catch(err){
+      LIVE_GONE.delete(id);
       toast('삭제가 서버에 닿지 못했어요: '+(err.message||'')+' — 화면을 원래대로 되돌립니다','err');
       try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){}
     }
@@ -3731,6 +3789,7 @@ window.openEvInfo = function(id){
           : `<span class="evi-tag lite">${esc(ORGS[org]||'')}</span>`}
         ${e.audience==='teacher'?'<span class="evi-tag lite">교사만</span>':''}
         ${e.gcalFrom?'<span class="evi-tag lite" title="구글 캘린더에서 들어온 일정 — 여기서 고치거나 지우면 구글 원본도 함께 바뀝니다">📥 구글에서 들어옴</span>':''}
+        ${(!e.gcalFrom && e.updatedByUid==='gcal')?'<span class="evi-tag lite" title="구글 캘린더에서 고친 제목·날짜·시각이 반영된 일정입니다">✏️ 구글에서 고침</span>':''}
         ${e.audience==='parent'?'<span class="evi-tag lite">학부모 공개</span>':''}
       </div>
 
@@ -4535,11 +4594,18 @@ function gcalPanelHTML(){
       ${url && cur.calendarId ? `<button class="btn btn-sm" onclick="gcalSync('${t.id}')">맞추기</button>` : ''}
       ${t.aud === 'teacher'
         ? `<label style="flex:none;display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:var(--gm,#2c6e54);cursor:pointer"
-             title="켜면 이 구글 캘린더에 직접 쓴 일정도 학사일정으로 들어옵니다 (교사만 · 켠 뒤에 쓴 것부터)">
-             <input type="checkbox" id="gc-in-${t.id}" ${cur.inbound?'checked':''} style="width:14px;height:14px">↔ 구글에서 쓴 것도 받기</label>`
+             title="켜면 ① 이 구글 캘린더에 새로 쓴 일정이 학사일정으로 들어오고(교사만) ② 교사 일정은 구글에서 고친 제목·날짜·시각도 반영됩니다. 학부모에게도 보이는 일정은 학사일정에서만 고칠 수 있어요.">
+             <input type="checkbox" id="gc-in-${t.id}" ${cur.inbound?'checked':''} style="width:14px;height:14px">↔ 구글에서 쓴 것도 받기</label>
+           ${cur.inbound && pulledAt(t.id) ? `<span style="flex:none;font-size:10.5px;color:var(--tl)">받아온 때 ${pulledAt(t.id)}</span>` : ''}`
         : `<span style="flex:none;font-size:11px;color:var(--tl)" title="학부모 캘린더는 내보내기만 합니다">→ 내보내기만</span>`}
     </div>`;
   }).join('');
+  function pulledAt(id){
+    const a = GCAL_CFG?.pullState?.[id]?.at;
+    if(!a) return '';
+    const d = new Date(a); if(isNaN(d)) return '';
+    return d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' });
+  }
   return `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
       <span style="flex:none;font-size:13px;font-weight:700;color:var(--ts)">동기화 주소</span>
@@ -4554,8 +4620,14 @@ function gcalPanelHTML(){
       «캘린더 통합»의 <b>캘린더 ID</b>를 복사해 아래에 붙여넣습니다.
     </div>
     ${rows}
+    <div style="font-size:11.5px;color:var(--tl);line-height:1.65;margin-top:4px;padding:8px 10px;background:var(--iv,#F7F5EE);border-radius:8px">
+      <b style="color:var(--gd)">↔ 받기를 켠 교사 캘린더</b> — 구글에서 <b>새로 쓴 일정</b>은 학사일정에 «교사 일정 · 교사만»으로 들어오고,
+      <b>교사 일정</b>은 구글에서 고친 제목·날짜·시각도 반영됩니다.<br>
+      학부모에게도 보이는 일정(학생 일정·전체 통합)은 구글에서 고치면 원래대로 돌아갑니다 — 학사일정에서 고쳐 주세요.
+    </div>
     <div style="margin-top:10px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-sm btn-p" onclick="gcalSync('')">🔄 지금 전부 맞추기</button>
+      ${gcalHasInbound() ? `<button class="btn btn-sm" onclick="gcalPullNow()">📥 구글에서 지금 받아오기</button>` : ''}
       <button class="btn btn-sm" onclick="gcalSync('',true)">🔍 무엇이 바뀌는지만 보기</button>
       <span style="font-size:11.5px;color:var(--tl)">${last?`마지막으로 맞춘 때 · ${last.toLocaleString('ko-KR')}`:'아직 맞춘 적이 없습니다'}</span>
     </div>
@@ -4583,6 +4655,7 @@ window.saveGcalCfg = async function(){
     await loadGcalCfg(true);
     toast('저장했습니다 ✓','ok');
     renderIcsPanel();
+    startGcalPull();          // 📥 받기를 방금 켰으면 새로고침 없이 바로 받아오기 시작 (v-83)
   } catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
 };
 function gcalCall(params){
@@ -4598,9 +4671,14 @@ window.gcalHealth = async function(){
   const box = $I('gc-log'); if(box) box.innerHTML = '<div style="font-size:12px;color:var(--tl)">확인 중…</div>';
   try {
     const r = await fetch(u); const j = await r.json();
+    const ins = (j.targets||[]).filter(t=> t.inbound).map(t=> t.id);
     if(box) box.innerHTML = `<div style="padding:10px 12px;background:var(--gp);border-radius:8px;font-size:12.5px;line-height:1.7">
       <b>서비스 계정</b><br><code style="font-size:12px;word-break:break-all">${esc(j.serviceAccount||'')}</code>
-      <div style="margin-top:6px;color:var(--gm)">${esc(j.hint||'')}</div></div>`;
+      <div style="margin-top:6px;color:var(--gm)">${esc(j.hint||'')}</div>
+      <div style="margin-top:6px">함수 버전 · ${j.version
+        ? `<b>${esc(j.version)}</b>`
+        : `<b style="color:#A8483C">예전 버전 — Cloud Shell에서 다시 배포해 주세요</b>`}</div>
+      <div>구글에서 받기 · ${ins.length ? `<b>${esc(ins.join(', '))}</b>` : '켜진 교사 캘린더 없음'}</div></div>`;
   } catch(e){
     if(box) box.innerHTML = `<div style="padding:10px 12px;background:#FDECEA;border-radius:8px;font-size:12.5px;color:#A8483C">연결하지 못했습니다 — 주소를 다시 확인해 주세요. (${esc(e.message||'')})</div>`;
   }
@@ -4615,12 +4693,10 @@ window.gcalSync = async function(only, dry, force){
   const box = $I('gc-log');
   if(box) box.innerHTML = '<div style="font-size:12px;color:var(--tl)">맞추는 중…</div>';
   try {
-    const r = await fetch(u, { method:'POST' });
-    const j = await r.json();
-    if(!j.ok) throw new Error(j.error||'알 수 없는 오류');
-    // 📥 이어서 받아오기 — 받기를 켠 교사 캘린더가 있을 때만
+    // 📥 «먼저» 받아오기 — 구글에서 고친 교사 일정을 먼저 들여와야, 맞추기가 그걸 덮어쓰지 않습니다
+    //    (v-82까지는 맞춘 «뒤»에 받아와서, 구글에서 고친 것이 지워질 수 있었습니다)
     let pulled = [];
-    if(!only && gcalHasInbound()){
+    if(gcalHasInbound()){
       try {
         const pq = { action:'pull', manual:'1' }; if(dry) pq.dry = '1'; if(force) pq.force = '1';
         const pr = await fetch(gcalCall(pq), { method:'POST' });
@@ -4628,29 +4704,52 @@ window.gcalSync = async function(only, dry, force){
         if(pj.ok) pulled = pj.results || [];
       } catch(_){}
     }
-    j.results = (j.results||[]).concat(pulled);
-    const lines = (j.results||[]).map(x=>{
-      if(x.error) return `<div style="color:#A8483C">• ${esc(x.id)} — ${esc(x.error)}${
-        String(x.error).includes('force=1')
-          ? ` <button class="btn btn-sm" style="margin-left:6px" onclick="gcalSync('${esc(only||'')}',false,true)">그래도 진행</button>` : ''}</div>`;
-      const bits = [];
-      if(x.added) bits.push(`새로 ${x.added}건`);
-      if(x.updated) bits.push(`고침 ${x.updated}건`);
-      if(x.pushedBack) bits.push(`구글 원본에 되돌려 씀 ${x.pushedBack}건`);
-      if(x.removed) bits.push(`지움 ${x.removed}건`);
-      if(!bits.length) bits.push('바뀐 것 없음');
-      const sk = (x.skipped||[]).length
-        ? ` <span style="color:#A8483C" title="${esc((x.skipped||[]).join('\n'))}">· 건너뜀 ${x.skipped.length}건</span>` : '';
-      const dir = x.dir === 'in' ? '← 받아옴' : '→ 내보냄';
-      return `<div>• <b>${esc(x.id)}</b> <span style="color:var(--tl);font-size:11px">${dir}</span> — ${bits.join(' · ')}${sk}</div>`;
-    }).join('');
-    if(box) box.innerHTML = `<div style="padding:10px 12px;background:var(--gp);border-radius:8px;font-size:12.5px;line-height:1.7">
-      ${dry?'<b>미리보기</b> — 실제로 쓰지 않았습니다<br>':''}${lines||'맞출 대상이 없습니다'}</div>`;
-    if(!dry){ await loadGcalCfg(true); toast('구글 캘린더에 반영했습니다 ✓','ok'); }
+    const r = await fetch(u, { method:'POST' });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error||'알 수 없는 오류');
+    if(box) box.innerHTML = gcalLogHTML(pulled.concat(j.results||[]), only, dry);
+    if(!dry){ await loadGcalCfg(true); toast('구글 캘린더와 맞췄습니다 ✓','ok'); }
   } catch(e){
     if(box) box.innerHTML = `<div style="padding:10px 12px;background:#FDECEA;border-radius:8px;font-size:12.5px;color:#A8483C">맞추지 못했습니다 — ${esc(e.message||'')}</div>`;
   }
 };
+/* 맞추기·받아오기 결과를 한 줄씩 */
+function gcalLogHTML(results, only, dry){
+  const lines = (results||[]).map(x=>{
+    if(x.error) return `<div style="color:#A8483C">• ${esc(x.id)} — ${esc(x.error)}${
+      String(x.error).includes('force=1')
+        ? ` <button class="btn btn-sm" style="margin-left:6px" onclick="gcalSync('${esc(only||'')}',false,true)">그래도 진행</button>` : ''}</div>`;
+    const bits = [];
+    if(x.added) bits.push(`새로 ${x.added}건`);
+    if(x.updated) bits.push(`고침 ${x.updated}건`);
+    if(x.pushedBack) bits.push(`구글 원본에 되돌려 씀 ${x.pushedBack}건`);
+    if(x.reverted) bits.push(`<span title="${esc((x.revertedWhy||[]).join('\n'))}" style="text-decoration:underline dotted;cursor:help">구글에서 고친 것 되돌림 ${x.reverted}건</span>`);
+    if(x.removed) bits.push(`지움 ${x.removed}건`);
+    if(!bits.length) bits.push('바뀐 것 없음');
+    const sk = (x.skipped||[]).length
+      ? ` <span style="color:#A8483C" title="${esc((x.skipped||[]).join('\n'))}">· 건너뜀 ${x.skipped.length}건</span>` : '';
+    const dir = x.dir === 'in' ? '← 받아옴' : '→ 내보냄';
+    const why = (x.revertedWhy||[]).length
+      ? `<div style="font-size:11px;color:var(--tl);margin:1px 0 3px 12px">${(x.revertedWhy||[]).map(esc).join('<br>')}</div>` : '';
+    return `<div>• <b>${esc(x.id)}</b> <span style="color:var(--tl);font-size:11px">${dir}</span> — ${bits.join(' · ')}${sk}</div>${why}`;
+  }).join('');
+  return `<div style="padding:10px 12px;background:var(--gp);border-radius:8px;font-size:12.5px;line-height:1.7">
+    ${dry?'<b>미리보기</b> — 실제로 쓰지 않았습니다<br>':''}${lines||'맞출 대상이 없습니다'}</div>`;
+}
+/* 📥 구글에서 지금 받아오기 — 기다리지 않고 바로 (시험해 볼 때) */
+window.gcalPullNow = async function(){
+  const box = $I('gc-log');
+  if(box) box.innerHTML = '<div style="font-size:12px;color:var(--tl)">구글에서 받아오는 중…</div>';
+  const j = await gcalPull(true);
+  const err = m => { if(box) box.innerHTML = `<div style="padding:10px 12px;background:#FDECEA;border-radius:8px;font-size:12.5px;color:#A8483C">${m}</div>`; };
+  if(!j) return err('받아오지 못했습니다 — 동기화 주소가 저장돼 있고 «↔ 구글에서 쓴 것도 받기»가 켜져 있는지 확인해 주세요.');
+  if(!j.ok) return err('받아오지 못했습니다 — ' + esc(j.error||''));
+  if(!j.version) return err('함수가 예전 버전입니다 — Cloud Shell에서 academic-gcal 을 다시 배포해 주세요.');
+  if(box) box.innerHTML = (j.results||[]).length ? gcalLogHTML(j.results, '', false)
+    : `<div style="padding:10px 12px;background:var(--gp);border-radius:8px;font-size:12.5px">${esc(j.note||'받아올 것이 없습니다')}</div>`;
+  await loadGcalCfg(true);
+};
+
 /* 행사를 저장·삭제한 뒤 조용히 한 번 맞춥니다 (실패해도 화면은 그대로)
    · 설정 탭을 한 번도 열지 않았어도 스스로 연결 설정을 읽어옵니다
    · 바뀐 행사 «하나만» 보내므로 몇 초가 아니라 곧바로 반영됩니다 */
@@ -4673,14 +4772,27 @@ function gcalHasInbound(){
   return ((GCAL_CFG?.targets)||[]).some(t=> t.aud==='teacher' && t.inbound && t.calendarId);
 }
 window.gcalHasInbound = gcalHasInbound;
+let GCAL_PULL_RETRY = null, GCAL_PULL_LAST = 0;
 async function gcalPull(manual){
   try {
+    // 탭 전환·창 전환이 한꺼번에 오면 한 번만
+    if(!manual && Date.now() - GCAL_PULL_LAST < 3000) return null;
+    if(!manual) GCAL_PULL_LAST = Date.now();
     await loadGcalCfg();
     if(!GCAL_CFG || !(GCAL_CFG.url||'').trim() || !gcalHasInbound()) return null;
     const p = { action:'pull' }; if(manual) p.manual = '1';
     const u = gcalCall(p); if(!u) return null;
     const r = await fetch(u, { method:'POST' });
-    return await r.json();
+    const j = await r.json();
+    // 방금 다른 창이 받아와서 쉬는 중이면 — 쉬는 시간이 끝나자마자 한 번 더 (v-83)
+    if(j && j.throttled && !manual && !GCAL_PULL_RETRY){
+      const wait = Math.min(60000, Math.max(3000, Number(j.retryInMs) || 30000)) + 800;
+      GCAL_PULL_RETRY = setTimeout(()=>{
+        GCAL_PULL_RETRY = null;
+        if(document.visibilityState === 'visible') gcalPull(false);
+      }, wait);
+    }
+    return j;
   } catch(_){ return null; }
 }
 window.gcalPull = gcalPull;
@@ -4692,10 +4804,11 @@ function startGcalPull(){
     gcalPull(false);                                              // 화면을 열 때 한 번
     GCAL_PULL_TIMER = setInterval(()=>{
       if(document.visibilityState === 'visible') gcalPull(false);
-    }, 2 * 60 * 1000);                                            // 열어두면 2분마다
+    }, 60 * 1000);                                                // 열어두면 1분마다 (v-83: 2분 → 1분)
     document.addEventListener('visibilitychange', ()=>{
       if(document.visibilityState === 'visible') gcalPull(false); // 탭으로 돌아오면
     });
+    window.addEventListener('focus', ()=> gcalPull(false));       // 옆 창(구글 캘린더)에서 돌아오면
   });
 }
 window.startGcalPull = startGcalPull;
