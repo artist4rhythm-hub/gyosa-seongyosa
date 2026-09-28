@@ -120,7 +120,9 @@
 
   /* 시간대 구역 */
   .cw-sec{ position:relative; z-index:1; padding:1px 0 2px; }
-  .cw-sec.am, .cw-sec.pm{ border-top:1px dashed var(--ivd); min-height:34px; }
+  .cw-sec.one{ min-height:38px; }
+  /* 🆕 막대 앞 시각 — 종일 일정에는 붙지 않습니다 */
+  .eb-h{ font-weight:800; opacity:.72; margin-right:4px; font-variant-numeric:tabular-nums; }
   .cw-lab{ position:absolute; left:3px; top:1px; font-size:8px; font-weight:700;
     color:var(--tl); opacity:.5; pointer-events:none; z-index:2; }
   /* 레인 묶음은 클릭을 통과시키고, 실제 띠만 클릭을 받는다 (빈 곳은 아래 판이 받음) */
@@ -866,7 +868,7 @@
     <div class="vw-bar" id="vw-bar"></div>
     <div class="gf-bar" id="gf-bar"></div>
     <div id="edit-hint" style="display:none">
-      <div class="ed-hint">✏️ <b>편집 중</b> — 달력의 <b>오전·오후 칸을 누르면</b> 그 날짜로 행사를 넣을 수 있어요.
+      <div class="ed-hint">✏️ <b>편집 중</b> — 달력의 <b>빈 칸을 누르면</b> 그 날짜로 행사를 넣을 수 있어요.
         이미 있는 행사를 누르면 고치기 창이 열립니다.<br>
         🖐 <b>옮기기</b>를 켜면 — 행사를 <b>옆으로 끌면 날짜가</b> 바뀌고, <b>위아래로 끌면 순서가</b> 바뀝니다.</div>
     </div>
@@ -979,7 +981,13 @@ const CATEGORIES = {
      법정 공휴일은 자동으로 들어가고, 임시공휴일·재량휴업 같은 건 여기에 넣는다. */
   closed:{label:'휴교·휴일',color:'#DE94A8'},
 };
-const TIME_SLOTS = { am:'오전', pm:'오후', allday:'종일' };
+const TIME_SLOTS = { am:'오전', pm:'오후', allday:'종일' };   // 옛 자료를 읽을 때만 남겨둡니다
+/* 🆕 일정의 시간 표기 — 시각이 있으면 «09:00 – 10:30», 없으면 «종일»
+   (오전·오후 구분은 없앴습니다. 예전에 오전/오후로 넣어둔 일정도 그냥 종일로 보입니다) */
+function evTimeLabel(e){
+  const a = (e && e.startTime) || '', b = (e && e.endTime) || '';
+  return (a && b) ? `${a} – ${b}` : '종일';
+}
 
 /* 🎨 색상 컨셉 — 보는 사람이 고른다.
    «저장한 색» 은 행사마다 정해둔 색을 그대로 쓰고,
@@ -1241,7 +1249,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b13';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b14';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -1736,7 +1744,7 @@ function catColor(cat){
    📅 달력 그리기 — 주 단위 «띠» 방식
    여러 날에 걸친 같은 행사는 구글 캘린더처럼 하나의 가로 띠로 잇는다.
    한 주를 이렇게 쌓는다:
-     [날짜 줄] → [종일 띠] → [오전 띠] → [오후 띠]
+     [날짜 줄] → [일정 띠]   (오전·오후 구분 없이 한 칸)
    ═══════════════════════════════════════════════ */
 
 /* 한 주(7칸)에서 각 행사가 차지하는 «가로 구간»을 만든다.
@@ -1744,26 +1752,27 @@ function catColor(cat){
 /* 달력에서 위아래 순서 — 작을수록 위. 정해두지 않았으면 가운데(500) */
 function ordOf(e){ const n = Number(e && e.order); return isFinite(n) ? n : 500; }
 
-function weekBars(days, slot){
+/* 🆕 오전·오후 구분을 없앴습니다 — 이제 «시각이 있는 일정»과 «종일 일정»뿐입니다.
+   시각이 있으면 이른 것부터 위로, 종일은 그 아래로 놓입니다. */
+function weekBars(days){
   const bars = [];
   const seen = new Set();
   days.forEach((cell, i)=>{
     if(!cell) return;
     eventsOn(cell.ds).forEach(e=>{
-      if((e.timeOfDay||'am') !== slot) return;
       if(e.category === 'closed' && cell.closedName === e.title) return;  // 날짜 옆에 이미 보임
       const key = e.id;
       if(seen.has(key+'@'+i)) return;
       // 이 자리에서 시작하는 구간인지 (앞 칸에 같은 행사가 없으면 시작)
       const prev = days[i-1];
-      const startsHere = !prev || !eventsOn(prev.ds).some(x=>x.id===e.id && (x.timeOfDay||'am')===slot);
+      const startsHere = !prev || !eventsOn(prev.ds).some(x=>x.id===e.id);
       if(!startsHere) return;
       // 몇 칸 이어지는지
       let span = 1;
       for(let j=i+1; j<7; j++){
         const nx = days[j];
         if(!nx) break;
-        if(!eventsOn(nx.ds).some(x=>x.id===e.id && (x.timeOfDay||'am')===slot)) break;
+        if(!eventsOn(nx.ds).some(x=>x.id===e.id)) break;
         span++; seen.add(key+'@'+j);
       }
       bars.push({ ev:e, start:i, span });
@@ -1787,10 +1796,14 @@ function weekBars(days, slot){
   };
   bars.forEach(b=>{ b._low = lowOf(b); b._w = widthOf(b); });
 
-  // 전체 대상 → 넓은 학년 묶음 → 낮은 학년 → 정해둔 순서 → 시작 이른 것
+  // 전체 대상 → 넓은 학년 묶음 → 낮은 학년 → 정해둔 순서 → 이른 시각 → 시작 이른 것
+  // 🆕 오전·오후 대신, 시각이 있는 일정을 이른 것부터 위에 둡니다 (종일은 그 아래)
+  const hourOf = b => (b.ev.startTime && b.ev.endTime) ? b.ev.startTime : 'zz';
   bars.sort((a,b)=>
     (a._low - b._low) || (b._w - a._w) ||
-    (ordOf(a.ev)-ordOf(b.ev)) || (a.start-b.start) || (b.span-a.span));
+    (ordOf(a.ev)-ordOf(b.ev)) ||
+    (hourOf(a) < hourOf(b) ? -1 : hourOf(a) > hourOf(b) ? 1 : 0) ||
+    (a.start-b.start) || (b.span-a.span));
 
   /* 겹치지 않게 층(줄)을 나눈다.
      같은 학년 묶음(예: 1~4학년)의 행사는 날짜가 달라도 «같은 가로줄»에 모은다.
@@ -1921,7 +1934,9 @@ function barHTML(b, days){
     ${canDrag?`draggable="true" ondragstart="onBarDrag(event,'${e.id}','${fromDs}')"`:''}
     style="grid-column:${b.start+1} / span ${b.span};background:${evColor(e)}"
     title="${esc(e.title)}${e.subtitle?' · '+esc(e.subtitle):''}${canDrag?'\n끌어서 날짜를 옮길 수 있어요':''}"
-    onclick="onEvClick('${e.id}', event)">${orgMark(e)}<span class="eb-t">${esc(e.title)}</span>${
+    onclick="onEvClick('${e.id}', event)">${orgMark(e)}${
+    (e.startTime && e.endTime) ? `<span class="eb-h">${esc(e.startTime)}</span>` : ''
+    }<span class="eb-t">${esc(e.title)}</span>${
     e.subtitle && b.span>1 ? `<span class="eb-s">${esc(e.subtitle)}</span>` : ''}${targetDots(e)}</div>`;
 }
 
@@ -2125,15 +2140,13 @@ function render(){
         (!x.out && !x.holName) ? gradeBarHTML(x.ds, x, ORG) : ''}`;
     }).join('') + '</div>';
 
-    // 종일 · 오전 · 오후 띠
-    [['allday',''],['am','오전'],['pm','오후']].forEach(([slot,label])=>{
-      const lanes = weekBars(days, slot);
-      if(slot==='allday' && !lanes.length) return;      // 종일은 있을 때만 자리를 쓴다
-      html += `<div class="cw-sec ${slot}">`;
-      if(label) html += `<span class="cw-lab">${label}</span>`;
-      // 빈 곳 아무 데나 눌러도 그 날짜·시간대로 행사를 넣을 수 있게 (칸마다 투명한 판)
+    // 🆕 일정 띠 — 한 칸으로 합쳤습니다 (오전·오후 구분 없음)
+    {
+      const lanes = weekBars(days);
+      html += `<div class="cw-sec one">`;
+      // 빈 곳 아무 데나 눌러도 그 날짜로 행사를 넣을 수 있게 (칸마다 투명한 판)
       html += '<div class="cw-hit">' + days.map(x=>
-        x ? `<i onclick="addOn('${x.ds}','${slot==='allday'?'am':slot}',event)"></i>` : '<i></i>'
+        x ? `<i onclick="addOn('${x.ds}','',event)"></i>` : '<i></i>'
       ).join('') + '</div>';
       html += '<div class="cw-lanes">';
       if(lanes.length){
@@ -2144,7 +2157,7 @@ function render(){
         html += '<div class="cw-lane empty"></div>';
       }
       html += '</div></div>';
-    });
+    }
 
     html += '</div>';   // cw-body
 
@@ -2980,24 +2993,22 @@ window.openEventDlg = function(id, ds, slot, pre){
           <input type="date" class="fld-input" id="ev-end" value="${esc(e?e.endDate:(ds||''))}"></div>
       </div>
 
-      <label class="fld-label">시간대</label>
-      <div class="chips" id="ev-slot">
-        ${Object.entries(TIME_SLOTS).map(([k,v])=>{
-          const on = e ? e.timeOfDay===k : (slot||'am')===k;
-          return `<button type="button" class="chip ${on?'on':''}" data-slot="${k}" onclick="pickSlot('${k}')">${v}</button>`;
-        }).join('')}
+      ${(()=>{
+        const t1 = e ? (e.startTime||'') : ((pre&&pre.startTime)||'');
+        const t2 = e ? (e.endTime||'')   : ((pre&&pre.endTime)||'');
+        const timed = !!(t1 && t2);
+        return `
+      <label class="fld-label">시간</label>
+      <div class="chips" id="ev-timed">
+        <button type="button" class="chip ${timed?'':'on'}" data-timed="0" onclick="pickTimed(0)">종일</button>
+        <button type="button" class="chip ${timed?'on':''}" data-timed="1" onclick="pickTimed(1)">시각 지정</button>
       </div>
-
-      <label class="fld-label">시각 <span style="font-weight:400;color:var(--tl)">(선택 · 넣으면 주간 보기에서 그 시간 칸에 놓입니다)</span></label>
-      <div class="fld-row">
-        <div style="flex:1"><input type="time" class="fld-input" id="ev-t1" step="300"
-          value="${esc(e ? (e.startTime||'') : ((pre&&pre.startTime)||''))}"></div>
+      <div class="fld-row" id="ev-time-row" style="display:${timed?'':'none'};margin-top:7px">
+        <div style="flex:1"><input type="time" class="fld-input" id="ev-t1" step="300" value="${esc(t1)}"></div>
         <div style="flex:0 0 18px;text-align:center;color:var(--tl);padding-top:9px">–</div>
-        <div style="flex:1"><input type="time" class="fld-input" id="ev-t2" step="300"
-          value="${esc(e ? (e.endTime||'') : ((pre&&pre.endTime)||''))}"></div>
-        <button type="button" class="btn btn-sm" style="flex:0 0 auto;margin-top:2px"
-          onclick="clearEvTime()">지우기</button>
-      </div>
+        <div style="flex:1"><input type="time" class="fld-input" id="ev-t2" step="300" value="${esc(t2)}"></div>
+      </div>`;
+      })()}
 
       <label class="fld-label">요일 <span style="font-weight:400;color:var(--tl)">(고르지 않으면 기간 내내)</span></label>
       <div class="chips" id="ev-dow">
@@ -3086,7 +3097,16 @@ window.openEventDlg = function(id, ds, slot, pre){
   updateCatExtras();
 };
 window.closeEventDlg = function(){ $I('ev-mod')?.remove(); };
-window.clearEvTime = function(){ const a=$I('ev-t1'), b=$I('ev-t2'); if(a) a.value=''; if(b) b.value=''; };
+/* 🆕 종일 ↔ 시각 지정 — 오전·오후 대신 이 둘로만 나눕니다 */
+window.pickTimed = function(on){
+  document.querySelectorAll('#ev-timed .chip').forEach(b=>b.classList.toggle('on', b.dataset.timed === String(on)));
+  const row = $I('ev-time-row');
+  if(row) row.style.display = on ? '' : 'none';
+  const a = $I('ev-t1'), b = $I('ev-t2');
+  if(!on){ if(a) a.value=''; if(b) b.value=''; }
+  else if(a && b && !a.value && !b.value){ a.value = '09:00'; b.value = '10:00'; }   // 기본값
+};
+window.clearEvTime = function(){ window.pickTimed(0); };
 
 /* ═══ 🆕 성격 · 학년별 수업 여부 ═══ */
 let dlgKind = 'student';
@@ -3164,9 +3184,8 @@ function refreshImpact(){
 }
 window.refreshImpact = refreshImpact;
 
-window.pickSlot = function(k){
-  document.querySelectorAll('#ev-slot .chip').forEach(b=>b.classList.toggle('on', b.dataset.slot===k));
-};
+/* 옛 이름 — 휴교일 추가 등에서 부르던 것을 «종일»로 넘깁니다 */
+window.pickSlot = function(){ try{ window.pickTimed(0); }catch(_){} };
 window.pickAud = function(k){
   document.querySelectorAll('#ev-aud .chip').forEach(b=>b.classList.toggle('on', b.dataset.aud===k));
 };
@@ -3332,7 +3351,12 @@ window.saveEvent = async function(){
   if(start > end){ toast('시작일이 종료일보다 뒤입니다.','err'); return; }
   if(dlgScope!=='all' && !dlgTargets.size){ toast('대상을 하나 이상 골라 주세요.','err'); return; }
 
-  const slot = document.querySelector('#ev-slot .chip.on')?.dataset.slot || 'am';
+  const timedOn = document.querySelector('#ev-timed .chip.on')?.dataset.timed === '1';
+  const t1 = timedOn ? ($I('ev-t1')?.value || '') : '';
+  const t2 = timedOn ? ($I('ev-t2')?.value || '') : '';
+  if(timedOn && (!t1 || !t2)){ toast('시작과 끝 시각을 모두 정해 주세요.','err'); return; }
+  if(timedOn && t1 >= t2){ toast('끝 시각이 시작보다 빨라요.','err'); return; }
+  const slot = t1 ? (t1 < '12:00' ? 'am' : 'pm') : 'allday';   // 옛 화면 호환용으로만 남김
   const cat = document.querySelector('#ev-cat .chip.on')?.dataset.cat || 'event';
   const aud = document.querySelector('#ev-aud .chip.on')?.dataset.aud || 'both';
 
@@ -3350,8 +3374,8 @@ window.saveEvent = async function(){
     orgs: [...dlgOrgs],             // ✅ 이 행사가 들어갈 캘린더들 (복수)
     category: cat,
     color: dlgColor || '',
-    startTime: ($I('ev-t1')?.value || ''),      // 🆕 시각 (없으면 예전처럼 오전·오후만)
-    endTime:   ($I('ev-t2')?.value || ''),
+    startTime: t1,                             // 🆕 비어 있으면 «종일» 일정입니다
+    endTime:   t2,
     noClass: (cat==='closed' || cat==='break') ? true
       : (dlgKind==='staff' ? false
         : Object.values(dlgImpact).some(v=>v==='off')),   // 🆕 학년별 판에서 끌어냅니다 (옛 화면 호환용)
@@ -3470,7 +3494,7 @@ function showEventInfo(e){
       <div class="msub">${esc(e.subtitle||'')}</div>
       <div style="font-size:12.5px;line-height:2;color:var(--ts,#5A6560)">
         <div>📅 ${esc(e.startDate)} ~ ${esc(e.endDate)}</div>
-        <div>🕐 ${esc(TIME_SLOTS[e.timeOfDay]||'')}</div>
+        <div>🕐 ${esc(evTimeLabel(e))}</div>
         ${targetLabel(e)?`<div>🎯 ${esc(targetLabel(e))}</div>`:''}
         ${e.memo?`<div>📝 ${esc(e.memo)}</div>`:''}
       </div>
@@ -3606,7 +3630,7 @@ window.openEvInfo = function(id){
 
       <div class="evi-tags">
         <span class="evi-tag" style="background:${cat.color}">${cat.label}</span>
-        <span class="evi-tag lite">${TIME_SLOTS[e.timeOfDay]||''}</span>
+        <span class="evi-tag lite">${esc(evTimeLabel(e))}</span>
         ${org==='all'
           ? '<span class="evi-tag lite">🤝 두 기관 공통</span>'
           : `<span class="evi-tag lite">${esc(ORGS[org]||'')}</span>`}
@@ -4674,7 +4698,7 @@ window.runIcsImport = async function(){
         year:Number(e.start.slice(0,4)),
         title:e.title, subtitle:'',
         startDate:e.start, endDate:e.end,
-        timeOfDay:'am', weekdays:[], scope:'all', targets:[],
+        timeOfDay:'allday', startTime:'', endTime:'', weekdays:[], scope:'all', targets:[],
         org, category:cat, color:'',
         noClass:(cat==='closed'||cat==='break'),
         audience:'both', memo:e.memo||'',
