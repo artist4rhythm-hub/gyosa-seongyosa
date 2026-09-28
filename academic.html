@@ -173,6 +173,27 @@
   body.dark .gb-off{ background:#3A3F3A; }
   body.dark .gbar-t{ color:#C2C8C2; }
   .gbar-t.solo{ font-size:9px; margin-top:3px; color:#8A5A1F; }
+  /* 📋 붙여넣기 띠 (v-85) */
+  #clip-bar{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:390;
+    display:flex; align-items:center; gap:10px; max-width:calc(100vw - 32px); box-sizing:border-box;
+    background:#1E3932; color:#fff; border-radius:14px; padding:9px 10px 9px 14px;
+    box-shadow:0 12px 32px rgba(20,40,30,.28); font-size:13px; line-height:1.4; }
+  #clip-bar .clb-ic{ font-size:16px; flex:none; }
+  #clip-bar .clb-t{ min-width:0; }
+  #clip-bar .clb-t b{ font-weight:800; }
+  #clip-bar .clb-t i{ font-style:normal; opacity:.7; font-size:12px; margin-left:4px; }
+  #clip-bar button{ flex:none; border:none; border-radius:9px; padding:7px 12px; font-family:inherit;
+    font-size:12.5px; font-weight:800; cursor:pointer; }
+  #clip-bar .clb-u{ background:rgba(255,255,255,.14); color:#fff; }
+  #clip-bar .clb-x{ background:#fff; color:#1E3932; }
+  body.pasting .cw-hit i, body.pasting .cw-n, body.pasting .wk-cell, body.pasting .wk-ad{ cursor:copy !important; }
+  body.pasting .cw-hit i:hover{ background:rgba(46,125,87,.10); box-shadow:inset 0 0 0 2px rgba(46,125,87,.5); }
+  body.pasting .wk-ad:hover, body.pasting .wk-cell:hover{ background-color:rgba(46,125,87,.06); }
+  body.pasting #live-bar{ bottom:84px; }
+  @media (max-width:640px){ #clip-bar{ left:12px; right:12px; transform:none; bottom:70px; }
+    #clip-bar .clb-t i{ display:none; } }
+  /* 날짜 칸 안에서는 날짜 줄 아래로 한 줄을 통째로 씁니다 (v-85) */
+  .cw-n .gbar, .cw-n .gbar-t{ flex:0 0 100%; width:100%; min-width:0; box-sizing:border-box; }
   /* ═══ 🆕 주간 보기 ═══ */
   .wk-wrap{ background:var(--cd,#fff); border:1px solid var(--ln,#E4E2D9); border-radius:14px; overflow:hidden; }
   .wk-nav{ display:flex; align-items:center; gap:7px; padding:10px 12px; border-bottom:1px solid var(--ln,#E4E2D9); background:var(--iv,#FBFAF6); }
@@ -214,7 +235,7 @@
   .wk-ghost{ position:absolute; left:3px; right:3px; box-sizing:border-box;
     background:rgba(20,107,69,.10); border:1.5px dashed #146B45; border-radius:8px;
     font-size:11.5px; font-weight:800; color:#0F5636; padding:4px 7px; pointer-events:none; }
-  .wk-now{ position:absolute; left:52px; right:0; height:1.5px; background:#E8897C; z-index:3; }
+  .wk-now{ position:absolute; left:52px; right:0; height:1.5px; background:#E8897C; z-index:3; pointer-events:none; }  /* 지금 선 위를 눌러도 그 칸이 눌리게 (v-85) */
   .wk-mode button{ min-width:36px; }
   body.dark .wk-b, body.dark .wk-ad-b{ background:var(--cd); }
   @media (max-width:640px){
@@ -1267,7 +1288,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b18';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b19';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -1505,6 +1526,7 @@ async function loadEvents(year, month, fresh){
    ═══════════════════════════════════════════════════════════ */
 let EV_WATCH = null, EV_WATCH_YEAR = null, EV_WATCH_FIRST = true, EV_PENDING = null;
 const LIVE_GONE = new Set();       // 이 창에서 지우는 중인 행사 — 실시간 갱신이 되살리지 않게
+let CLIP = null, CLIP_LAST = [], CLIP_PT = null;   // 📋 복사·붙여넣기 (v-85) — 아래 «복사 · 붙여넣기» 참고
 
 /* 지금 화면을 바로 갈아끼워도 괜찮은가 — 창이 떠 있거나 끌고 있으면 기다립니다 */
 function liveSafeNow(){
@@ -2057,6 +2079,10 @@ function orgMark(e){
 /* 칸의 행사를 눌렀을 때 — 보기 탭이면 상세 카드, 편집 탭이면 편집 창 */
 window.onEvClick = function(id, ev){
   if(ev) ev.stopPropagation();
+  if(CLIP && ev && ev.clientX != null){                 // 📋 붙여넣기 중 — 막대를 눌러도 그 아래 날짜에 붙입니다
+    const hit = clipHitAt({ x: ev.clientX, y: ev.clientY });
+    if(hit.ds){ pasteAt(hit.ds, hit.min); return; }
+  }
   if(curTab === 'edit' && CAN_EDIT) openEventDlg(id);
   else openEvInfo(id);
 };
@@ -2274,14 +2300,16 @@ function render(){
       if(!x) return '<div class="cw-n"></div>';
       const dcls = (x.holName ? (x.holWho==='staff' ? 'stf' : 'hol')
                     : (i===0 ? 'sun' : i===6 ? 'sat' : '')) + (x.isToday?' today':'');
-      return `<div class="cw-n ${dcls}${x.out?' out':''}" onclick="${
+      // 🩹 v-85: 학년 막대를 «날짜 칸 안»에 넣습니다 — 칸 밖에 두었더니 7칸 격자에서 자리를 하나씩 차지해
+      //         뒤 날짜가 밀려 16일이 일요일 밑으로, 17일이 월요일 밑으로 내려가 있었습니다
+      return `<div class="cw-n ${dcls}${x.out?' out':''}" data-ds="${x.ds}" onclick="${
         x.out?`goMonthOf('${x.ds}')`:`addOn('${x.ds}','am',event)`}">
         <b>${x.d}</b>${x.isToday?'<span class="cw-td">오늘</span>':''}${
         x.holName && !x.holCont
           ? `<span class="cw-hn ${x.holWho==='staff'?'stf':''}">${esc(x.holName)}</span>`
           : ''}${
-        classBadge(x)}</div>${
-        (!x.out && !x.holName) ? gradeBarHTML(x.ds, x, ORG) : ''}`;
+        classBadge(x)}${
+        (!x.out && !x.holName) ? gradeBarHTML(x.ds, x, ORG) : ''}</div>`;
     }).join('') + '</div>';
 
     // 🆕 일정 띠 — 한 칸으로 합쳤습니다 (오전·오후 구분 없음)
@@ -2290,7 +2318,7 @@ function render(){
       html += `<div class="cw-sec one">`;
       // 빈 곳 아무 데나 눌러도 그 날짜로 행사를 넣을 수 있게 (칸마다 투명한 판)
       html += '<div class="cw-hit">' + days.map(x=>
-        x ? `<i onclick="addOn('${x.ds}','',event)"></i>` : '<i></i>'
+        x ? `<i data-ds="${x.ds}" onclick="addOn('${x.ds}','',event)"></i>` : '<i></i>'
       ).join('') + '</div>';
       html += '<div class="cw-lanes">';
       if(lanes.length){
@@ -2422,9 +2450,9 @@ function renderWeekGrid(){
   let allday = `<div class="wk-row wk-allday"><div class="wk-gut">종일</div>`;
   days.forEach(x=>{
     const list = eventsOn(x.ds).filter(e=>!wkTimed(e));
-    allday += `<div class="wk-col wk-ad" data-ds="${x.ds}">` + list.map(e=>{
+    allday += `<div class="wk-col wk-ad" data-ds="${x.ds}" onclick="addOn('${x.ds}','',event)">` + list.map(e=>{
       const c = evColor(e);
-      return `<div class="wk-ad-b" style="border-left-color:${c}" onclick="openEvInfo('${e.id}')"
+      return `<div class="wk-ad-b" data-ev="${e.id}" style="border-left-color:${c}" onclick="event.stopPropagation();onEvClick('${e.id}', event)"
         title="${esc(e.title)}">${esc(e.title)}</div>`;
     }).join('') + `</div>`;
   });
@@ -2499,12 +2527,16 @@ function renderWeekGrid(){
 function wkBindDrag(){
   const mount = $I('cal-mount');
   if(!mount || !CAN_EDIT || SHARE_MODE) return;
+  // 🩹 v-85: 한 번만 겁니다 — 예전에는 그릴 때마다 또 걸려서, 저장한 뒤 끌면 창이 겹겹이 떴습니다
+  if(mount.dataset.wkBound === '1') return;
+  mount.dataset.wkBound = '1';
   let mode = null, startY = 0, cell = null, ghost = null, block = null, base = null;
 
   const cellOf = t => t.closest ? t.closest('.wk-cell') : null;
 
   mount.addEventListener('mousedown', ev=>{
     if(ev.button !== 0) return;
+    if(!WEEK_MODE || !CAN_EDIT || SHARE_MODE) return;       // 월간 보기에서는 쓰지 않습니다
     const rz = ev.target.closest('.wk-rz');
     const bl = ev.target.closest('.wk-b');
     const cl = cellOf(ev.target);
@@ -2513,6 +2545,7 @@ function wkBindDrag(){
     const r = cell.getBoundingClientRect();
     startY = ev.clientY - r.top;
 
+    if(CLIP){ mode = 'paste'; ev.preventDefault(); return; }     // 📋 붙여넣기 중 — 누른 시각에 붙입니다
     if(rz && bl){                                   // 길이 조절
       mode='resize'; block=bl;
       base = { s:wkParse(EVENTS.find(x=>x.id===bl.dataset.id)?.startTime), top:parseFloat(bl.style.top) };
@@ -2566,6 +2599,11 @@ function wkBindDrag(){
   const finish = ev=>{
     if(!mode) return;
     const ds = cell?.dataset.ds;
+    if(mode === 'paste'){
+      mode = null; cell = null;
+      if(ds) pasteAt(ds, wkYToMin(startY));
+      return;
+    }
     if(mode === 'new'){
       const r = cell.getBoundingClientRect();
       const a = wkYToMin(startY), b = wkYToMin((ev.clientY||0) - r.top);
@@ -2581,6 +2619,9 @@ function wkBindDrag(){
       const txt = block.querySelector('.wk-b-s').textContent.split('–').map(v=>v.trim());
       block.classList.remove('dragging');
       mode = null; cell = null; block = null;
+      // 🩹 v-85: 움직이지 않고 누르기만 했으면 그 일정을 엽니다 (예전에는 아무 일도 없었습니다)
+      const cur = EVENTS.find(x=>x.id===id) || ALL_EVENTS.find(x=>x.id===id);
+      if(cur && txt.length === 2 && txt[0] === cur.startTime && txt[1] === cur.endTime){ onEvClick(id); return; }
       if(txt.length === 2) wkSaveTime(id, txt[0], txt[1]);
       return;
     }
@@ -3064,8 +3105,9 @@ window.pickEvOrg = function(o){
 
 /* 빈 칸을 누르면 그 날짜·시간대로 새 행사 */
 window.addOn = function(ds, slot, ev){
-  if(ev && ev.target.closest('.ev-chip')) return;   // 행사를 누른 것이면 그쪽으로
+  if(ev && ev.target.closest('.ev-chip, .wk-ad-b')) return;   // 행사를 누른 것이면 그쪽으로
   if(!CAN_EDIT || SHARE_MODE) return;               // ⚡ 보기 화면에서도 날짜를 누르면 바로 입력
+  if(CLIP){ pasteAt(ds); return; }                  // 📋 붙여넣기 중이면 그 날짜에 붙입니다
   openEventDlg(null, ds, slot);
 };
 
@@ -3220,7 +3262,9 @@ window.openEventDlg = function(id, ds, slot, pre){
       <input class="fld-input" id="ev-memo" value="${esc(e?(e.memo||''):'')}" placeholder="자세한 내용">
 
       <div class="mact">
-        ${e?`<button class="btn btn-dg" style="margin-right:auto" onclick="delEvent('${e.id}')">🗑 삭제</button>`:''}
+        ${e?`<button class="btn btn-dg" onclick="delEvent('${e.id}')">🗑 삭제</button>`:''}
+        ${e && clipCopyable(e)?`<button class="btn" onclick="copyEvent('${e.id}')" title="저장된 내용을 복사해 다른 날짜에 붙여 넣어요">📋 복사</button>`:''}
+        <span style="margin-right:auto"></span>
         <button class="btn" onclick="closeEventDlg()">취소</button>
         <button class="btn btn-p" onclick="saveEvent()">저장</button>
       </div>
@@ -3241,6 +3285,189 @@ window.openEventDlg = function(id, ds, slot, pre){
   updateCatExtras();
 };
 window.closeEventDlg = function(){ $I('ev-mod')?.remove(); };
+
+/* ═══════════════════════════════════════════════════════════
+   📋 복사 · 붙여넣기 (v-85)
+   · 자세히·고치기 창의 «📋 복사», 또는 일정 위에 마우스를 두고 ⌘C (윈도우 Ctrl+C)
+   · 아래 띠가 떠 있는 동안 날짜를 누르면 그날에 똑같이 복사됩니다 — 여러 번 붙일 수 있어요
+   · 주간 보기에서는 누른 «시각»에 붙습니다 (길이는 그대로)
+   · 날짜 위에 마우스를 두고 ⌘V 로도 붙일 수 있어요 · Esc 로 끝냅니다
+   · 붙인 일정은 새 일정입니다 — 원본과 따로 고치고 지울 수 있고, 구글 교사 캘린더에도 곧바로 나갑니다
+   ═══════════════════════════════════════════════════════════ */
+function clipCopyable(e){
+  if(!e || !CAN_EDIT || SHARE_MODE) return false;
+  const os = orgsOf(e).filter(k=> CAL_KEYS.includes(k));
+  return os.length > 0 && os.every(k=> canEditCal(k));
+}
+/* 복사할 내용 — 번호·연결·구글 원본 표시·누가 언제는 빼고 새로 붙입니다 */
+function clipData(e){
+  const drop = { id:1, holidayIds:1, wpIds:1, gcalId:1, gcalFrom:1, gcalTid:1,
+                 createdAt:1, createdByUid:1, createdByName:1, updatedAt:1, updatedByUid:1, updatedByName:1 };
+  const o = {};
+  Object.keys(e||{}).forEach(k=>{ if(!drop[k] && k.charAt(0) !== '_' && e[k] !== undefined) o[k] = e[k]; });
+  return JSON.parse(JSON.stringify(o));
+}
+function clipDayDiff(a, b){ return Math.round((Date.parse(b+'T00:00:00Z') - Date.parse(a+'T00:00:00Z')) / 86400000); }
+function clipDayAdd(ds, n){ const t = new Date(ds+'T00:00:00Z'); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
+function clipDsLabel(ds){ const d = new Date(ds+'T00:00:00'); return `${d.getMonth()+1}/${d.getDate()} (${'일월화수목금토'[d.getDay()]})`; }
+
+/* 복사한 일정을 그 날짜(·시각)에 놓았을 때의 모습 — 기간 길이·시각 길이는 그대로 */
+function clipPlace(src, ds, atMin){
+  const span = Math.max(0, clipDayDiff(src.startDate, src.endDate || src.startDate));
+  const data = JSON.parse(JSON.stringify(src));
+  data.startDate = ds;
+  data.endDate = clipDayAdd(ds, span);
+  data.year = Number(ds.slice(0,4));
+  const s0 = wkParse(src.startTime), t0 = wkParse(src.endTime);
+  if(atMin != null && s0 != null && t0 != null && t0 > s0 && span === 0){   // 주간 보기에서 시각을 눌렀을 때
+    const dur = t0 - s0;
+    const s = Math.max(0, Math.min(atMin, 24*60 - dur));
+    data.startTime = wkHHMM(s); data.endTime = wkHHMM(s + dur);
+    data.timeOfDay = s < 12*60 ? 'am' : 'pm';
+  }
+  return data;
+}
+
+window.copyEvent = function(id){
+  const e = ALL_EVENTS.find(x=>x.id===id) || EVENTS.find(x=>x.id===id);
+  if(!e) return;
+  if(!clipCopyable(e)){ toast('이 일정을 복사할 권한이 없습니다.','err'); return; }
+  CLIP = { data: clipData(e), title: String(e.title||''), hadWp: !!(e.wpIds||[]).length, snapped: false };
+  CLIP_LAST = [];
+  closeEvInfo(); closeEventDlg();
+  document.body.classList.add('pasting');
+  renderClipBar();
+};
+function renderClipBar(){
+  let el = $I('clip-bar');
+  if(!CLIP){ if(el) el.remove(); return; }
+  if(!el){ el = document.createElement('div'); el.id = 'clip-bar'; el.setAttribute('role','status'); document.body.appendChild(el); }
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+  el.innerHTML = `<span class="clb-ic">📋</span>
+    <span class="clb-t"><b>「${esc(CLIP.title)}」</b> 붙여넣기 — 날짜를 누르면 그날에 복사돼요
+      <i>주간 보기에서는 누른 시각에 · ${mac?'⌘':'Ctrl+'}V 도 돼요 · Esc 끝내기</i></span>
+    ${CLIP_LAST.length ? `<button type="button" class="clb-u" onclick="undoPaste()">↩ 방금 것 취소</button>` : ''}
+    <button type="button" class="clb-x" onclick="endPaste()">끝내기</button>`;
+}
+window.endPaste = function(){
+  CLIP = null; CLIP_LAST = [];
+  document.body.classList.remove('pasting');
+  renderClipBar();
+};
+
+async function pasteAt(ds, atMin){
+  const clip = CLIP;
+  if(!clip || !ds || !CAN_EDIT || SHARE_MODE) return;
+  const data = clipPlace(clip.data, ds, atMin);
+  const now = Timestamp.now();
+  Object.assign(data, {
+    holidayIds: [], wpIds: [],
+    createdByUid: CU?.uid||'', createdByName: CU?.name||'', createdAt: now,
+    updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: now,
+  });
+  const title = data.title || '';
+
+  // ① 화면 먼저
+  const tempId = 'tmp-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
+  const snapDocs = clip.snapped ? null : ALL_EVENTS.map(x=>({ ...x }));   // 되돌리기 보관은 이번 복사에서 처음 붙일 때 한 번
+  clip.snapped = true;
+  ALL_EVENTS.push({ id: tempId, ...data, _saving:true });
+  applyEventScope(); render();
+
+  // ② 서버 저장
+  try {
+    if(window.TM && snapDocs){
+      if(window.TM.snapData) window.TM.snapData('academicEvents', {year:curYear}, `행사 붙여넣기: ${title}`, snapDocs);
+      else await window.TM.snapBundle('academicEvents', {year:curYear}, `행사 붙여넣기: ${title}`);
+    }
+    const wantWp = data.category === 'break' && clip.hadWp;
+    if(data.category === 'closed' || wantWp){                // 휴교·방학은 쉬는 날·출근부에도 함께
+      if(window.TM){
+        await window.TM.snapBundle('holidays', {}, `붙여넣기 연동 전: ${title}`);
+        if(wantWp) await window.TM.snapBundle('workPeriods', {}, `붙여넣기 연동 전: ${title}`);
+      }
+      const links = await buildEventLinks(data, wantWp);
+      data.holidayIds = links.holidayIds; data.wpIds = links.wpIds;
+    }
+    const ref = await addDoc(collection(db,'academicEvents'), data);
+    const i = ALL_EVENTS.findIndex(x=>x.id===tempId);
+    const has = ALL_EVENTS.some(x=>x.id===ref.id);
+    if(i>=0){ if(has) ALL_EVENTS.splice(i,1); else ALL_EVENTS[i] = { id: ref.id, ...data }; }
+    else if(!has) ALL_EVENTS.push({ id: ref.id, ...data });
+    applyEventScope(); render();
+    if(CLIP === clip){ CLIP_LAST.push(ref.id); renderClipBar(); }
+    toast(`붙였어요 ✓ ${clipDsLabel(ds)}${data.startTime && data.endTime ? ' · ' + data.startTime : ''}`,'ok');
+    gcalNudge(ref.id);                                        // 🔄 구글 교사 캘린더에도
+  } catch(err){
+    const i = ALL_EVENTS.findIndex(x=>x.id===tempId); if(i>=0) ALL_EVENTS.splice(i,1);
+    applyEventScope(); render();
+    toast('붙여넣기가 서버에 닿지 못했어요: '+(err.message||''),'err');
+  }
+}
+window.pasteAt = pasteAt;
+
+/* ↩ 방금 붙인 것 취소 — 이번 붙여넣기에서 붙인 것만, 하나씩 거꾸로 */
+window.undoPaste = async function(){
+  const id = CLIP_LAST.pop();
+  renderClipBar();
+  if(!id) return;
+  const e = ALL_EVENTS.find(x=>x.id===id);
+  const i = ALL_EVENTS.findIndex(x=>x.id===id); if(i>=0) ALL_EVENTS.splice(i,1);
+  LIVE_GONE.add(id);
+  applyEventScope(); render();
+  try {
+    if(e) await clearEventLinks(e);
+    await deleteDoc(doc(db,'academicEvents', id));
+    LIVE_GONE.delete(id);
+    gcalNudge(id);
+    toast('방금 붙인 일정을 지웠어요','ok');
+  } catch(err){
+    LIVE_GONE.delete(id);
+    toast('취소하지 못했어요: '+(err.message||''),'err');
+    try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){}
+  }
+};
+
+/* 마우스 아래에 무엇이 있나 — 일정 번호, 날짜, (주간 보기면) 시각 */
+function clipHitAt(pt){
+  const out = { ev:'', ds:'', min:null };
+  if(!pt || !document.elementsFromPoint) return out;
+  const els = document.elementsFromPoint(pt.x, pt.y) || [];
+  for(const el of els){
+    if(el.closest && el.closest('.mov, #clip-bar, #live-bar')) break;    // 창이 떠 있으면 그 아래는 보지 않음
+    if(!out.ev && el.closest){
+      const b = el.closest('[data-ev], .wk-b[data-id]');
+      if(b) out.ev = b.dataset.ev || b.dataset.id || '';
+    }
+    if(!out.ds && el.dataset && el.dataset.ds){
+      out.ds = el.dataset.ds;
+      if(el.classList.contains('wk-cell')){ const r = el.getBoundingClientRect(); out.min = wkYToMin(pt.y - r.top); }
+    }
+  }
+  return out;
+}
+window.clipHitAt = clipHitAt;
+document.addEventListener('mousemove', ev=>{ CLIP_PT = { x: ev.clientX, y: ev.clientY }; }, { passive:true });
+document.addEventListener('keydown', ev=>{
+  const t = ev.target;
+  const typing = !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable));
+  if(ev.key === 'Escape' && CLIP && !document.querySelector('.mov')){ endPaste(); return; }
+  if(!(ev.metaKey || ev.ctrlKey) || ev.altKey || ev.shiftKey || typing) return;
+  if(!CAN_EDIT || SHARE_MODE) return;
+  // 한글 입력 중이어도 되게 — 글자(ㅊ·ㅍ) 대신 자판 자리로 봅니다
+  const k = ev.code === 'KeyC' ? 'c' : ev.code === 'KeyV' ? 'v' : String(ev.key||'').toLowerCase();
+  if(k === 'c'){
+    if(String(window.getSelection ? window.getSelection() : '').length) return;   // 글자를 고른 중이면 평소 복사
+    const info = $I('ev-info');
+    const id = (info && info.dataset.ev) || (!document.querySelector('.mov') ? clipHitAt(CLIP_PT).ev : '');
+    if(id){ ev.preventDefault(); copyEvent(id); }
+  } else if(k === 'v'){
+    if(!CLIP || document.querySelector('.mov')) return;
+    const hit = clipHitAt(CLIP_PT);
+    if(hit.ds){ ev.preventDefault(); pasteAt(hit.ds, hit.min); }
+    else toast('붙일 날짜 위에 마우스를 올리고 눌러 주세요');
+  }
+});
 /* 🆕 종일 ↔ 시각 지정 — 오전·오후 대신 이 둘로만 나눕니다 */
 window.pickTimed = function(on){
   document.querySelectorAll('#ev-timed .chip').forEach(b=>b.classList.toggle('on', b.dataset.timed === String(on)));
@@ -3816,10 +4043,12 @@ window.openEvInfo = function(id){
         : '달력에서 이 행사가 <b>반짝이고</b> 있어요.'}</div>
 
       ${CAN_EDIT?`<div class="mact">
+        ${clipCopyable(e)?`<button class="btn" style="margin-right:auto" onclick="copyEvent('${e.id}')" title="다른 날짜에 똑같이 붙여 넣을 수 있어요">📋 복사</button>`:''}
         <button class="btn" onclick="closeEvInfo()">닫기</button>
         <button class="btn btn-p" onclick="closeEvInfo();openEventDlg('${e.id}')">✏️ 고치기</button>
       </div>`:`<div class="mact"><button class="btn btn-p" onclick="closeEvInfo()">확인</button></div>`}
     </div>`;
+  ov.dataset.ev = e.id;               // ⌘C 로 복사할 때 어떤 일정인지
   document.body.appendChild(ov);
   evGlow(id);
 };
@@ -4583,7 +4812,8 @@ function gcalTargetOf(id){
 function gcalPanelHTML(){
   const url = (GCAL_CFG?.url||'').trim();
   const last = GCAL_CFG?.lastSyncAt ? new Date(GCAL_CFG.lastSyncAt) : null;
-  const rows = GCAL_TARGETS.map(t=>{
+  // 학부모에게는 구글 캘린더가 아니라 «공유 링크»로 알립니다 — 학부모 줄은 이미 연결해 둔 경우에만 보입니다 (v-85)
+  const rows = GCAL_TARGETS.filter(t=> t.aud === 'teacher' || !!gcalTargetOf(t.id).calendarId).map(t=>{
     const cur = gcalTargetOf(t.id);
     const on = cur.on !== false && !!cur.calendarId;
     return `<div style="display:flex;gap:8px;align-items:center;margin-bottom:7px;flex-wrap:wrap">
