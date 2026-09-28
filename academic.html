@@ -1267,7 +1267,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b17';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b18';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -4623,7 +4623,8 @@ function gcalPanelHTML(){
     <div style="font-size:11.5px;color:var(--tl);line-height:1.65;margin-top:4px;padding:8px 10px;background:var(--iv,#F7F5EE);border-radius:8px">
       <b style="color:var(--gd)">↔ 받기를 켠 교사 캘린더</b> — 구글에서 <b>새로 쓴 일정</b>은 학사일정에 «교사 일정 · 교사만»으로 들어오고,
       <b>교사 일정</b>은 구글에서 고친 제목·날짜·시각도 반영됩니다.<br>
-      학부모에게도 보이는 일정(학생 일정·전체 통합)은 구글에서 고치면 원래대로 돌아갑니다 — 학사일정에서 고쳐 주세요.
+      학부모에게도 보이는 일정(학생 일정·전체 통합)은 구글에서 고치면 원래대로 돌아갑니다 — 학사일정에서 고쳐 주세요.<br>
+      구글에서 <b>복사·붙여넣기</b>로 만든 일정은 하나씩 따로 들어옵니다. 구글의 <b>«반복» 설정</b>으로 만든 일정은 받지 않아요.
     </div>
     <div style="margin-top:10px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-sm btn-p" onclick="gcalSync('')">🔄 지금 전부 맞추기</button>
@@ -4772,7 +4773,7 @@ function gcalHasInbound(){
   return ((GCAL_CFG?.targets)||[]).some(t=> t.aud==='teacher' && t.inbound && t.calendarId);
 }
 window.gcalHasInbound = gcalHasInbound;
-let GCAL_PULL_RETRY = null, GCAL_PULL_LAST = 0;
+let GCAL_PULL_RETRY = null, GCAL_PULL_LAST = 0, GCAL_PULL_WARNED = false;
 async function gcalPull(manual){
   try {
     // 탭 전환·창 전환이 한꺼번에 오면 한 번만
@@ -4784,6 +4785,12 @@ async function gcalPull(manual){
     const u = gcalCall(p); if(!u) return null;
     const r = await fetch(u, { method:'POST' });
     const j = await r.json();
+    // ⛔ 한꺼번에 너무 많이 들어오려 해서 안전장치가 멈췄으면 — 조용히 멈춰 있지 않게 한 번 알립니다 (v-84)
+    if(j && !manual && !GCAL_PULL_WARNED && Array.isArray(j.results)
+       && j.results.some(x=> x && x.error && String(x.error).includes('force=1'))){
+      GCAL_PULL_WARNED = true;
+      toast('📥 구글에서 한꺼번에 많이 들어오려 해서 받아오기를 멈췄어요 — 보기·설정 › 구글 캘린더에서 «지금 전부 맞추기»를 눌러 확인해 주세요','err');
+    }
     // 방금 다른 창이 받아와서 쉬는 중이면 — 쉬는 시간이 끝나자마자 한 번 더 (v-83)
     if(j && j.throttled && !manual && !GCAL_PULL_RETRY){
       const wait = Math.min(60000, Math.max(3000, Number(j.retryInMs) || 30000)) + 800;
