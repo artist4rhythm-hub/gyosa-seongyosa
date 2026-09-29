@@ -372,6 +372,35 @@
     color:var(--danger,#C0392B); font-family:inherit; font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
   .evs-skip:hover{ background:rgba(192,57,43,.07); }
   .evc-acts{ display:flex; flex-direction:column; gap:8px; margin:14px 0 10px; }
+  /* 📝 날마다 메모 (v-89) */
+  .evs-dm-row{ flex-basis:100%; display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-top:1px dashed var(--line-soft,#EEECE6); margin-top:2px; }
+  .evs-dm-n{ font-style:normal; font-size:11.5px; font-weight:800; color:var(--gm,#00704A); background:var(--gp,#E8F3EF); border-radius:100px; padding:2px 8px; }
+  .evs-dm-fill{ display:flex; flex-direction:column; gap:6px; padding:6px 0 8px; }
+  .evs-dm-fill textarea{ width:100%; box-sizing:border-box; min-height:52px; resize:vertical; padding:8px 10px; border:1px solid var(--ivd,#E3E1DA);
+    border-radius:9px; background:var(--wh,#fff); color:var(--ink,#1F2320); font-family:inherit; font-size:13px; line-height:1.5; }
+  .evs-dm-fa{ display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+  .evs-dm-fa select.evs-in{ height:30px; font-size:12.5px; padding:0 6px; }
+  .evs-dm-fa .evs-sp{ flex:1; }
+  .evs-dm-list{ display:flex; flex-direction:column; gap:3px; max-height:238px; overflow-y:auto; padding:2px 2px 2px 0; }
+  .evs-dm-it{ display:flex; align-items:center; gap:8px; padding:2px 6px; border-radius:8px; }
+  .evs-dm-it > span{ flex:none; width:78px; font-size:12px; font-weight:700; color:var(--ts,#5A6560); }
+  .evs-dm-it input{ flex:1; min-width:0; height:30px; padding:0 9px; border:1px solid var(--ivd,#E3E1DA); border-radius:8px;
+    background:var(--wh,#fff); color:var(--ink,#1F2320); font-family:inherit; font-size:12.5px; font-weight:600; }
+  .evs-dm-it input:focus{ outline:none; border-color:var(--gm,#00704A); box-shadow:0 0 0 3px rgba(0,112,74,.12); }
+  .evs-dm-it.has > span{ color:var(--gm,#00704A); }
+  .evs-dm-it.cur{ background:var(--gp,#E8F3EF); }
+  .evi-dm{ display:flex; gap:6px; flex:1; min-width:0; align-items:center; }
+  .evi-dm input{ flex:1; min-width:0; height:30px; padding:0 9px; border:1px solid var(--ivd,#E3E1DA); border-radius:8px;
+    background:var(--wh,#fff); color:var(--ink,#1F2320); font-family:inherit; font-size:12.5px; font-weight:600; }
+  .evi-listt em{ font-style:normal; font-weight:600; font-size:11px; color:var(--tl,#93A09A); }
+  .evi-day{ cursor:pointer; position:relative; }
+  .evi-day.more{ cursor:default; }
+  .evi-day.has-m::after{ content:''; position:absolute; top:2px; right:2px; width:5px; height:5px; border-radius:50%; background:var(--gm,#00704A); }
+  .evi-day.cur.has-m::after{ background:#fff; }
+  .ev-bar .eb-dm{ flex-basis:100%; font-size:calc(9px * var(--acf)); font-weight:600; opacity:.92;
+    white-space:normal; overflow-wrap:anywhere; word-break:keep-all; line-height:1.3; }
+  #cal-mount.slim .eb-dm{ display:none; }
+  .wk-b-m{ font-size:10.5px; font-weight:700; color:var(--gm,#00704A); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .evc-acts .btn{ width:100%; justify-content:center; height:40px; }
   .evi-day.cur{ background:var(--gd,#1E3932); color:#fff; }
   .evi-day.cur i{ color:rgba(255,255,255,.75); }
@@ -839,6 +868,9 @@
   .sh-url{flex:1;min-width:200px;font-family:inherit;font-size:11.5px;padding:7px 10px;
     border:1px solid var(--ivd,#E3E1DA);border-radius:8px;background:var(--wh,#fff);color:var(--ts,#5A6560)}
   .sh-acts{display:flex;gap:5px;flex-wrap:wrap}
+  .sh-cals{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:-2px}
+  .sh-cal{display:inline-flex;align-items:center;gap:5px;font-weight:700;color:var(--ts,#5A6560)}
+  .sh-cal > i{width:8px;height:8px;border-radius:50%;display:inline-block}
 
   /* 공유 링크로 들어온 화면 — 편집 자리는 다 감춘다 */
   body.share-mode #topTabs,
@@ -1385,6 +1417,7 @@ const CAL_KEYS = ['all','daniel','jihyebit'];
    (‘DA 전체’는 두 기관 공통 일정이라 항상 남긴다) */
 function visibleCals(){
   try{
+    if(inShare() && SHARE_ALLCAL) return CAL_KEYS.slice();   // 🔗 (v-89) 선생님용 링크는 담긴 일정이 곧 볼 범위 — 지혜빛이 안 나오던 것
     if(window.orgCore && orgCore.unionOpen()) return CAL_KEYS.slice();
     const mine = window.orgCore ? orgCore.myOrgs(CU,'academic') : null;
     if(!mine || !mine.length) return CAL_KEYS.slice();
@@ -1493,7 +1526,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b22';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b23';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -1544,6 +1577,29 @@ function refreshCanEdit(){
       onRestored: async ()=>{ await loadEvents(curYear, curMonth, true); render(); gcalNudge(); }   // 🔄 되돌린 것도 구글에
     });
   }
+}
+/* ✏️ (v-89) 모두 보기에서도 «일정»은 고칠 수 있게 — 일정마다 그 캘린더 권한으로 따집니다
+   · 학기·방학·학년도처럼 기관마다 따로인 것은 지금처럼 캘린더를 하나 골라야 고칩니다 (CAN_EDIT) */
+function inShare(){ try { return !!SHARE_MODE; } catch(_){ return false; } }
+let SHARE_ALLCAL = false;   // 🔗 (v-89) 선생님용 공유 링크 — 담긴 두 기관 일정을 모두 (학부모 링크는 예전대로)
+function evEditOn(){ return !inShare() && (ORG === ORG_ALL ? canEditAny() : CAN_EDIT); }
+function evEditable(e){
+  if(!e || !evEditOn()) return false;
+  if(ORG !== ORG_ALL) return true;
+  return orgsOf(e).some(o => canEditCal(o === 'both' ? 'all' : o));
+}
+function needEditEv(e){
+  if(ORG !== ORG_ALL) return needEdit();
+  if(!canEditAny()){ toast('학사일정을 고칠 권한이 없습니다. 관리자에게 문의해 주세요.','err'); return false; }
+  if(e && !evEditable(e)){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); return false; }
+  return true;
+}
+/* 새 일정이 먼저 들어갈 캘린더 — 보고 있는 캘린더 → 내 기관 → 고칠 수 있는 첫 캘린더 */
+function dlgDefaultOrg(){
+  if(ORG !== ORG_ALL && canEditCal(ORG)) return ORG;
+  let p = ''; try { p = (window.orgCore && orgCore.primaryOrg) ? orgCore.primaryOrg(CU) : ''; } catch(_){}
+  if(p && canEditCal(p)) return p;
+  return ['daniel','jihyebit','all'].find(canEditCal) || 'daniel';
 }
 function needEdit(){
   if(ORG === ORG_ALL){
@@ -2314,13 +2370,13 @@ window.onEvClick = function(id, ev){
     const hit = clipHitAt({ x: ev.clientX, y: ev.clientY });
     if(hit.ds){ pasteAt(hit.ds, hit.min); return; }
   }
-  if(curTab === 'edit' && CAN_EDIT) openEventDlg(id);
+  if(curTab === 'edit' && evEditable(EVENTS.find(x=>x.id===id) || ALL_EVENTS.find(x=>x.id===id))) openEventDlg(id);
   else openEvInfo(id);
 };
 
 function barHTML(b, days){
   const e = b.ev;
-  const canDrag = DRAG_ON && CAN_EDIT && canEditCal(calOf(e));
+  const canDrag = DRAG_ON && evEditOn() && canEditCal(calOf(e));
   const fromDs = (days && days[b.start]) ? days[b.start].ds : '';
   const dim = (GRADE_FILTER && !evHitsGrade(e, GRADE_FILTER)) ? ' dim' : '';
   // 📱 폰에서 글자가 한 줄로 흐를 때의 방향 — 끝나는 요일 기준
@@ -2331,14 +2387,16 @@ function barHTML(b, days){
   const endCol = b.start + b.span - 1;
   const side = endCol >= 4 ? ' flow-left' : (endCol === 3 ? ' flow-center' : ' flow-right');
   const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'') + dim + side;
+  const dmv = (curView === 'teacher' && b.span === 1 && fromDs && e.dayMemos) ? String(e.dayMemos[fromDs] || '') : '';   // 📝 (v-89) 그날 메모
   return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}" data-lane="${b.lane==null?0:b.lane}" data-endcol="${endCol}"
     ${canDrag?`draggable="true" ondragstart="onBarDrag(event,'${e.id}','${fromDs}')"`:''}
     style="grid-column:${b.start+1} / span ${b.span};background:${evColor(e)}"
-    title="${esc(e.title)}${e.subtitle?' · '+esc(e.subtitle):''}${canDrag?'\n끌어서 날짜를 옮길 수 있어요':''}"
+    title="${esc(e.title)}${e.subtitle?' · '+esc(e.subtitle):''}${dmv?'\n📝 '+esc(dmv):''}${canDrag?'\n끌어서 날짜를 옮길 수 있어요':''}"
     onclick="onEvClick('${e.id}', event)">${orgMark(e)}${
     (e.startTime && e.endTime) ? `<span class="eb-h">${esc(e.startTime)}</span>` : ''
     }<span class="eb-t">${esc(e.title)}</span>${
-    e.subtitle && b.span>1 ? `<span class="eb-s">${esc(e.subtitle)}</span>` : ''}${targetDots(e)}</div>`;
+    e.subtitle && b.span>1 ? `<span class="eb-s">${esc(e.subtitle)}</span>` : ''}${targetDots(e)}${
+    dmv ? `<span class="eb-dm">${esc(dmv)}</span>` : ''}</div>`;
 }
 
 function render(){
@@ -2346,7 +2404,7 @@ function render(){
   const y=curYear, m=curMonth;
   $I('ym-main').textContent = `${y}년 ${m}월`;
   $I('ym-sub').textContent = `${ORG===ORG_ALL?'두 기관':(ORGS[ORG]||'')} · ${curView==='teacher'?'교사용':'학부모용'}${SHARE_MODE?` · v${AC_BUILD}`:''}`;
-  document.body.classList.toggle('can-edit', CAN_EDIT && curTab==='edit');
+  document.body.classList.toggle('can-edit', evEditOn() && curTab==='edit');
 
   // 앞뒤 달·연속 보기에서 다른 해 날짜도 나오므로 인접 연도까지 함께 담는다
   const holidays = Object.assign({}, holInfoMap(y-1), holInfoMap(y), holInfoMap(y+1));
@@ -2658,7 +2716,7 @@ function renderWeekGrid(){
   const first = days[0], last = days[days.length-1];
   $I('ym-main').textContent = `${first.ds.slice(0,4)}년 ${Number(first.ds.slice(5,7))}월`;
   $I('ym-sub').textContent = `${ORG===ORG_ALL?'두 기관':(ORGS[ORG]||'')} · 주간 · ${first.ds.slice(5).replace('-','. ')} – ${last.ds.slice(5).replace('-','. ')}`;
-  document.body.classList.toggle('can-edit', CAN_EDIT && curTab==='edit');
+  document.body.classList.toggle('can-edit', evEditOn() && curTab==='edit');
 
   const holidays = Object.assign({}, holInfoMap(curYear-1), holInfoMap(curYear), holInfoMap(curYear+1));
   const today = todayStr();
@@ -2717,7 +2775,8 @@ function renderWeekGrid(){
       body += `<div class="wk-b" data-id="${b.e.id}"
         style="top:${top}px;height:${Math.max(22,h)}px;left:calc(${lf}% + 3px);width:calc(${w}% - 6px);border-left-color:${c}">
         <div class="wk-b-t">${staff?'🔒 ':''}${esc(b.e.title)}</div>
-        <div class="wk-b-s">${wkHHMM(b.t.s)} – ${wkHHMM(b.t.t)}</div>
+        <div class="wk-b-s">${wkHHMM(b.t.s)} – ${wkHHMM(b.t.t)}</div>${
+        (curView === 'teacher' && b.e.dayMemos && b.e.dayMemos[x.ds]) ? `<div class="wk-b-m">📝 ${esc(b.e.dayMemos[x.ds])}</div>` : ''}
         <i class="wk-rz"></i></div>`;
     });
     body += `</div>`;
@@ -2738,7 +2797,7 @@ function renderWeekGrid(){
          <button class="btn btn-sm" onclick="wkShift(-1)">‹ 지난 주</button>
          <button class="btn btn-sm" onclick="wkToday()">이번 주</button>
          <button class="btn btn-sm" onclick="wkShift(1)">다음 주 ›</button>
-         <span class="wk-hint">${CAN_EDIT && !SHARE_MODE ? '빈 곳을 끌면 새 행사 · 블록을 끌면 시간 이동 · 아래 끝을 끌면 길이 조절' : ''}</span>
+         <span class="wk-hint">${evEditOn() ? '빈 곳을 끌면 새 행사 · 블록을 끌면 시간 이동 · 아래 끝을 끌면 길이 조절' : ''}</span>
        </div>
        ${head}${allday}
        <div class="wk-scroll">${body.replace('<div class="wk-row wk-body">', '<div class="wk-row wk-body">'+nowLine)}</div>
@@ -2757,7 +2816,7 @@ function renderWeekGrid(){
 /* ── 끌기: 빈 곳에서 새로 만들기 / 블록 옮기기 / 아래 끝 늘리기 ── */
 function wkBindDrag(){
   const mount = $I('cal-mount');
-  if(!mount || !CAN_EDIT || SHARE_MODE) return;
+  if(!mount || !evEditOn()) return;
   // 🩹 v-85: 한 번만 겁니다 — 예전에는 그릴 때마다 또 걸려서, 저장한 뒤 끌면 창이 겹겹이 떴습니다
   if(mount.dataset.wkBound === '1') return;
   mount.dataset.wkBound = '1';
@@ -2767,7 +2826,7 @@ function wkBindDrag(){
 
   mount.addEventListener('mousedown', ev=>{
     if(ev.button !== 0) return;
-    if(!WEEK_MODE || !CAN_EDIT || SHARE_MODE) return;       // 월간 보기에서는 쓰지 않습니다
+    if(!WEEK_MODE || !evEditOn()) return;       // 월간 보기에서는 쓰지 않습니다
     const rz = ev.target.closest('.wk-rz');
     const bl = ev.target.closest('.wk-b');
     const cl = cellOf(ev.target);
@@ -2777,6 +2836,9 @@ function wkBindDrag(){
     startY = ev.clientY - r.top;
 
     if(CLIP){ mode = 'paste'; ev.preventDefault(); return; }     // 📋 붙여넣기 중 — 누른 시각에 붙입니다
+    if(bl && !evEditable(EVENTS.find(x=>x.id===bl.dataset.id))){   // ✏️ (v-89) 모두 보기에서 고칠 수 없는 캘린더 것 — 옮기기·길이 조절 없이 보기만
+      cell = null; onEvClick(bl.dataset.id, ev); return;
+    }
     if(rz && bl){                                   // 길이 조절
       mode='resize'; block=bl;
       base = { s:wkParse(EVENTS.find(x=>x.id===bl.dataset.id)?.startTime), top:parseFloat(bl.style.top) };
@@ -2866,6 +2928,7 @@ function wkBindDrag(){
 async function wkSaveTime(id, st, et){
   const e = EVENTS.find(x=>x.id===id) || ALL_EVENTS.find(x=>x.id===id);
   if(!e) return;
+  if(!evEditable(e)){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); render(); return; }
   if(e.startTime === st && e.endTime === et) return;
   const prevS = e.startTime, prevE = e.endTime;
   e.startTime = st; e.endTime = et;
@@ -3315,6 +3378,7 @@ let dlgTargets = new Set();
 let dlgWeekdays = new Set();
 let dlgSkips = new Set();    // 🗑 (v-88) 이 일정에서 «이날만 빼기»로 뺀 날
 let DLG_OCC = null;          // 🗑 (v-88) 입력 창을 연 날짜 { id, ds } — 삭제할 때 «이날만 빼기»를 물어봅니다
+let dlgDayMemos = {};        // 📝 (v-89) 날마다 메모 { 'YYYY-MM-DD': '김보미 인도' } — 교사만 · 구글 교사 캘린더 그날 칸에도
 let dlgColor = '';
 let dlgScope = 'all';
 let dlgOrg = 'daniel';               // 대표 캘린더 (학년 목록 등 내부 계산용)
@@ -3339,7 +3403,7 @@ window.pickEvOrg = function(o){
 /* 빈 칸을 누르면 그 날짜·시간대로 새 행사 */
 window.addOn = function(ds, slot, ev){
   if(ev && ev.target.closest('.ev-chip, .wk-ad-b')) return;   // 행사를 누른 것이면 그쪽으로
-  if(!CAN_EDIT || SHARE_MODE) return;               // ⚡ 보기 화면에서도 날짜를 누르면 바로 입력
+  if(!evEditOn()) return;               // ⚡ 보기 화면에서도 날짜를 누르면 바로 입력
   if(CLIP){ pasteAt(ds); return; }                  // 📋 붙여넣기 중이면 그 날짜에 붙입니다
   openEventDlg(null, ds, slot);
 };
@@ -3414,18 +3478,14 @@ window.evsDateFix = function(which){
 };
 
 window.openEventDlg = function(id, ds, slot, pre){
-  // 두 기관을 겹쳐 보는 중에는 어느 기관 것인지 모호해 고칠 수 없다
-  if(ORG === ORG_ALL){
-    if(id) openEvInfo(id);
-    else toast('두 기관을 겹쳐 보는 중에는 넣을 수 없습니다. 기관을 하나 골라주세요.','err');
-    return;
-  }
-  if(!CAN_EDIT){
+  // ✏️ (v-89) 모두 보기에서도 엽니다 — 그 일정의 캘린더를 고칠 수 있으면
+  const eHit = id ? (EVENTS.find(x=>x.id===id) || ALL_EVENTS.find(x=>x.id===id)) : null;
+  if(!evEditOn() || (id && !evEditable(eHit))){
     if(id) openEvInfo(id);
     return;
   }
   if(event) event.stopPropagation();
-  const e = id ? EVENTS.find(x=>x.id===id) : null;
+  const e = eHit;
   editingEventId = e ? e.id : null;
   // 예전에 부서와 학년이 섞여 저장된 자료는 학년으로 풀어서 보여준다
   dlgTargets = new Set(e
@@ -3434,10 +3494,12 @@ window.openEventDlg = function(id, ds, slot, pre){
   dlgWeekdays = new Set(e ? (e.weekdays||[]) : []);
   dlgSkips = new Set(e ? (e.skipDates||[]) : []);
   DLG_OCC = (e && EV_OCC && EV_OCC.id === e.id) ? EV_OCC : null;
+  dlgDayMemos = Object.assign({}, (e && e.dayMemos && typeof e.dayMemos === 'object') ? e.dayMemos : {});
+  DM_SIG = '';
   dlgScope = e ? (e.scope||'all') : 'all';
   dlgColor = e ? (e.color||'') : '';
   dlgOrgs = new Set(e ? orgsOf(e).filter(k=>CAL_KEYS.includes(k))
-                      : [ (canEditCal(ORG) && ORG !== ORG_ALL) ? ORG : (CAL_KEYS.find(canEditCal) || 'daniel') ]);
+                      : [ dlgDefaultOrg() ]);
   if(!dlgOrgs.size) dlgOrgs = new Set(['daniel']);
   dlgOrg = dlgOrgPrimary();
   curOrg = ORG;
@@ -3570,6 +3632,11 @@ window.openEventDlg = function(id, ds, slot, pre){
             <div class="evs-rc">
               <input id="ev-memo" class="evs-memo" value="${esc(e?(e.memo||''):'')}" placeholder="메모 — 준비물·인솔·장소 안내…" aria-label="메모" autocomplete="off">
               <span class="evs-tag">교사만 봐요</span>
+              <div id="ev-dm-row" class="evs-dm-row" style="display:none">
+                <button type="button" class="evs-link" id="ev-dm-btn" onclick="evsDayMemoToggle()"></button>
+                <span class="evs-note">그날그날 다른 메모 — 구글 교사 캘린더 그날 칸에도 들어가요</span>
+                <div id="ev-dm-wrap" class="evs-sub" style="display:${(e && e.dayMemos && Object.keys(e.dayMemos).length) ? '' : 'none'}"></div>
+              </div>
             </div>
           </div>
 
@@ -3669,8 +3736,97 @@ function evsSkipsRender(){
     <span class="evs-note">누르면 되살아나요 — 저장해야 반영돼요</span>` : '';
 }
 window.unskipDay = function(d){ dlgSkips.delete(d); evsPreview(); };
+
+/* 📝 (v-89) 날마다 메모 — 반복·여러 날 일정의 그날그날 메모
+   · 한 줄씩 적거나, «김다훈 - 김보미 - 김윤경»처럼 한꺼번에 붙여 넣으면 날짜 차례대로 들어갑니다
+   · 저장하면 달력 그날 칸 · 자세히 창 · 구글 교사 캘린더의 그날 일정에 보입니다 (학부모에게는 나가지 않아요) */
+const DM_MAX = 300;
+let DM_SIG = '';
+function evsDmDays(){
+  const s = ($I('ev-start')?.value || ''), en0 = ($I('ev-end')?.value || s);
+  if(!s) return [];
+  return evOccDays({ startDate:s, endDate:(en0 < s ? s : en0), weekdays:[...dlgWeekdays], skipDates:[...dlgSkips] }, 400);
+}
+function evsDmCount(days){ return days.filter(d=> String(dlgDayMemos[d]||'').trim()).length; }
+function evsDmBtn(days){
+  const b = $I('ev-dm-btn'); if(!b) return;
+  const n = evsDmCount(days);
+  b.innerHTML = `📝 날마다 메모${n ? ` <em class="evs-dm-n">${n}일 적음</em>` : ''} ${evsIco('down',14)}`;
+}
+function evsDayMemoRender(force){
+  const row = $I('ev-dm-row'); if(!row) return;
+  const days = evsDmDays();
+  row.style.display = days.length > 1 ? '' : 'none';
+  evsDmBtn(days);
+  const wrap = $I('ev-dm-wrap');
+  if(!wrap || wrap.style.display === 'none' || days.length < 2){ DM_SIG = ''; return; }
+  const sig = days.join(',');
+  if(!force && sig === DM_SIG) return;               // 쓰는 중에는 다시 그리지 않습니다 (날짜가 바뀔 때만)
+  DM_SIG = sig;
+  const occ = (DLG_OCC && days.includes(DLG_OCC.ds)) ? DLG_OCC.ds : '';
+  const today = todayStr();
+  const from0 = occ || days.find(d=> d >= today) || days[0];
+  wrap.innerHTML = `
+    <div class="evs-dm-fill">
+      <textarea id="ev-dm-bulk" rows="2" placeholder="한꺼번에 넣기 — 예: 김다훈 - 김보미 - 김윤경 (줄마다 · 쉼표 · - 로 나누면 날짜 차례대로 들어가요)"></textarea>
+      <div class="evs-dm-fa">
+        <select id="ev-dm-from" class="evs-in" aria-label="어느 날부터">${days.map(d=>
+          `<option value="${d}"${d===from0?' selected':''}>${esc(clipDsLabel(d))}</option>`).join('')}</select>
+        <span class="evs-note">부터</span>
+        <label class="evs-check"><input type="checkbox" id="ev-dm-loop"> 끝날까지 돌려 채우기</label>
+        <span class="evs-sp"></span>
+        <button type="button" class="btn btn-sm btn-p" onclick="evsDayMemoFill()">채우기</button>
+        <button type="button" class="btn btn-sm" onclick="evsDayMemoClear()">모두 비우기</button>
+      </div>
+    </div>
+    <div id="ev-dm-list" class="evs-dm-list">${days.map(d=>{ const v = String(dlgDayMemos[d]||'');
+      return `<label class="evs-dm-it${d===occ?' cur':''}${v.trim()?' has':''}"><span>${esc(clipDsLabel(d))}</span>
+        <input data-ds="${d}" value="${esc(v)}" maxlength="${DM_MAX}" placeholder="이날 메모" autocomplete="off" oninput="evsDayMemoIn(this)"></label>`; }).join('')}</div>`;
+  if(occ) setTimeout(()=>{ const it = wrap.querySelector('.evs-dm-it.cur'); if(it && it.scrollIntoView) it.scrollIntoView({ block:'nearest' }); }, 30);
+}
+window.evsDayMemoToggle = function(){
+  const w = $I('ev-dm-wrap'); if(!w) return;
+  w.style.display = (w.style.display === 'none') ? '' : 'none';
+  evsDayMemoRender(true);
+};
+window.evsDayMemoIn = function(inp){
+  const d = inp.dataset.ds, v = inp.value;
+  if(v.trim()) dlgDayMemos[d] = v; else delete dlgDayMemos[d];
+  if(inp.parentElement) inp.parentElement.classList.toggle('has', !!v.trim());
+  evsPreview();          // 버튼의 «N일 적음»과 오른쪽 «저장하면»까지 (목록은 다시 그리지 않아 쓰던 칸 그대로)
+};
+/* 붙여 넣은 글을 날짜별 메모로 나눕니다 — «< 전체 기도 인도 순서 >» 같은 머리말은 뺍니다 */
+function evsDmSplit(txt){
+  const lines = String(txt||'').split(/\r?\n/)
+    .map(l=> l.replace(/^\s*[<《〈][^>》〉]*[>》〉]\s*/, '').trim()).filter(Boolean);
+  const parts = lines.length > 1 ? lines
+    : (lines[0] ? lines[0].split(/\s*(?:[,，、·•/|→]|[-–—])\s*/) : []);
+  return parts.map(x=> x.trim()).filter(Boolean).map(x=> x.slice(0, DM_MAX));
+}
+window.__evsDmSplit = evsDmSplit;   // 점검용
+window.evsDayMemoFill = function(){
+  const items = evsDmSplit($I('ev-dm-bulk')?.value);
+  if(!items.length){ toast('넣을 메모를 적어 주세요 — 예: 김다훈 - 김보미 - 김윤경','err'); return; }
+  const days = evsDmDays();
+  const from = $I('ev-dm-from')?.value || days[0];
+  const rest = days.slice(Math.max(0, days.indexOf(from)));
+  const loop = !!$I('ev-dm-loop')?.checked;
+  const n = loop ? rest.length : Math.min(rest.length, items.length);
+  for(let i = 0; i < n; i++) dlgDayMemos[rest[i]] = items[i % items.length];
+  evsDayMemoRender(true); evsPreview();
+  const left = (!loop && items.length > rest.length) ? ` — 날이 모자라 ${items.length - rest.length}개는 못 넣었어요` : '';
+  toast(`${n}일에 메모를 넣었어요 (저장해야 반영돼요)${left}`,'ok');
+};
+window.evsDayMemoClear = function(){
+  const days = evsDmDays(); const n = evsDmCount(days);
+  if(!n) return;
+  if(!confirm(`날마다 메모 ${n}개를 모두 비울까요?\n(저장해야 반영돼요)`)) return;
+  days.forEach(d=> delete dlgDayMemos[d]);
+  evsDayMemoRender(true); evsPreview();
+};
 function evsPreview(){
   evsSkipsRender();
+  evsDayMemoRender();
   const box = $I('ev-pv'); if(!box) return;
   const v = id => ($I(id)?.value || '').trim();
   const title = v('ev-title') || '제목';
@@ -3749,6 +3905,8 @@ function evsPreview(){
   if(parentVisible && shareOrgs.length) outs.push(['link', '학부모 링크에는 «지금 내용으로 올리기» 할 때 나가요']);
   if(cat === 'closed') outs.push(['check', '출석부·출근부의 쉬는 날에도 함께 들어가요']);
   if(cat === 'break' && $I('ev-wp')?.checked) outs.push(['check', '출근부 방학기간으로도 들어가요']);
+  { const dmN = evsDmCount(evsDmDays());
+    if(dmN) outs.push(['check', `날마다 메모 ${dmN}일 — 달력 그날 칸${gn.length ? '과 구글 교사 캘린더 그날 일정' : ''}에 보여요 (교사만)`]); }
   if(editingEventId) outs.push(['hist', '바뀌기 전 모습은 타임머신에 남아요']);
 
   box.innerHTML = `<div class="pv-lab">달력에서</div>${cell}${parent}
@@ -3768,7 +3926,7 @@ window.closeEventDlg = function(){ $I('ev-mod')?.remove(); };
    · 붙인 일정은 새 일정입니다 — 원본과 따로 고치고 지울 수 있고, 구글 교사 캘린더에도 곧바로 나갑니다
    ═══════════════════════════════════════════════════════════ */
 function clipCopyable(e){
-  if(!e || !CAN_EDIT || SHARE_MODE) return false;
+  if(!e || !evEditOn()) return false;
   const os = orgsOf(e).filter(k=> CAL_KEYS.includes(k));
   return os.length > 0 && os.every(k=> canEditCal(k));
 }
@@ -3794,6 +3952,10 @@ function clipPlace(src, ds, atMin){
   if(Array.isArray(src.skipDates) && src.skipDates.length){         // 🗑 뺀 날도 같은 자리로 (v-88)
     const dd = clipDayDiff(src.startDate, ds);
     data.skipDates = src.skipDates.map(x=> clipDayAdd(x, dd));
+  }
+  if(src.dayMemos && typeof src.dayMemos === 'object' && Object.keys(src.dayMemos).length){   // 📝 날마다 메모도 같은 자리로 (v-89)
+    const dd = clipDayDiff(src.startDate, ds);
+    data.dayMemos = Object.fromEntries(Object.entries(src.dayMemos).map(([x,v])=> [clipDayAdd(x, dd), v]));
   }
   const s0 = wkParse(src.startTime), t0 = wkParse(src.endTime);
   if(atMin != null && s0 != null && t0 != null && t0 > s0 && span === 0){   // 주간 보기에서 시각을 눌렀을 때
@@ -3834,7 +3996,7 @@ window.endPaste = function(){
 
 async function pasteAt(ds, atMin){
   const clip = CLIP;
-  if(!clip || !ds || !CAN_EDIT || SHARE_MODE) return;
+  if(!clip || !ds || !evEditOn()) return;
   const data = clipPlace(clip.data, ds, atMin);
   const now = Timestamp.now();
   Object.assign(data, {
@@ -3930,7 +4092,7 @@ document.addEventListener('keydown', ev=>{
   const typing = !!(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable));
   if(ev.key === 'Escape' && CLIP && !document.querySelector('.mov')){ endPaste(); return; }
   if(!(ev.metaKey || ev.ctrlKey) || ev.altKey || ev.shiftKey || typing) return;
-  if(!CAN_EDIT || SHARE_MODE) return;
+  if(!evEditOn()) return;
   // 한글 입력 중이어도 되게 — 글자(ㅊ·ㅍ) 대신 자판 자리로 봅니다
   const k = ev.code === 'KeyC' ? 'c' : ev.code === 'KeyV' ? 'v' : String(ev.key||'').toLowerCase();
   if(k === 'c'){
@@ -4211,7 +4373,7 @@ async function buildEventLinks(ev, wantWp){
 }
 
 window.saveEvent = async function(){
-  if(!needEdit()) return;
+  if(!needEditEv(editingEventId ? (EVENTS.find(x=>x.id===editingEventId) || ALL_EVENTS.find(x=>x.id===editingEventId)) : null)) return;
   const title = $I('ev-title').value.trim();
   if(!title){ toast('제목을 입력해 주세요.','err'); return; }
   const start = $I('ev-start').value, end = $I('ev-end').value;
@@ -4264,6 +4426,13 @@ window.saveEvent = async function(){
     && (!dlgWeekdays.size || dlgWeekdays.has(new Date(d+'T00:00:00').getDay()))).sort();
   if(skipKeep.length || (prev && Array.isArray(prev.skipDates) && prev.skipDates.length)) data.skipDates = skipKeep;
   if(skipKeep.length && !evOccDays(data, 1).length){ toast('남는 날이 없어요 — 빠진 날을 되살리거나 기간을 바꿔 주세요.','err'); return; }
+  // 📝 (v-89) 날마다 메모 — 기간·요일 안의 것만 남깁니다 (메모가 없던 일정은 칸을 새로 만들지 않습니다)
+  const dmKeep = {};
+  Object.keys(dlgDayMemos).sort().forEach(d=>{
+    const v = String(dlgDayMemos[d]||'').trim().slice(0, DM_MAX);
+    if(v && d >= start && d <= end && (!dlgWeekdays.size || dlgWeekdays.has(new Date(d+'T00:00:00').getDay()))) dmKeep[d] = v;
+  });
+  if(Object.keys(dmKeep).length || (prev && prev.dayMemos && Object.keys(prev.dayMemos).length)) data.dayMemos = dmKeep;
   const wantWp = cat==='break' && !!$I('ev-wp')?.checked;
   const syncTouched = cat==='closed' || wantWp || !!(prev && ((prev.holidayIds||[]).length || (prev.wpIds||[]).length));
 
@@ -4360,8 +4529,8 @@ function askRepeatDelete(e, occ){
 }
 /* 🗑 (v-88) 이날만 빼기 — 그날만 달력·학부모 링크·구글 캘린더에서 빠집니다 (다른 날은 그대로) */
 window.skipOccurrence = async function(id, ds){
-  if(!needEdit()) return;
   const e = ALL_EVENTS.find(x=>x.id===id) || EVENTS.find(x=>x.id===id); if(!e) return;
+  if(!needEditEv(e)) return;
   if(!canEditCal(calOf(e))){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); return; }
   const days = evOccDays(e, 4000);
   if(!days.includes(ds)) return;
@@ -4405,8 +4574,8 @@ window.skipOccurrence = async function(id, ds){
   })();
 };
 window.delEvent = async function(id, sure){
-  if(!needEdit()) return;
   const e = EVENTS.find(x=>x.id===id) || ALL_EVENTS.find(x=>x.id===id); if(!e) return;
+  if(!needEditEv(e)) return;
   if(!sure){
     const occ = (DLG_OCC && DLG_OCC.id === id) ? DLG_OCC.ds : ((EV_OCC && EV_OCC.id === id) ? EV_OCC.ds : '');
     const days = evOccDays(e, 4000);
@@ -4539,7 +4708,14 @@ window.openEvInfo = function(id){
   const skips = evSkipsIn(e);
   // 🗑 (v-88) 달력에서 누른 그날 — 여러 날짜 일정이면 «이날만 빼기»
   const occ = (EV_OCC && EV_OCC.id === id && days.includes(EV_OCC.ds)) ? EV_OCC.ds : '';
-  const canSkip = !!(CAN_EDIT && !SHARE_MODE && occ && days.length > 1 && canEditCal(calOf(e)));
+  const canEd = evEditable(e);
+  const canSkip = !!(canEd && occ && days.length > 1 && canEditCal(calOf(e)));
+  // 📝 (v-89) 날마다 메모 — 누른 날의 메모를 보고, 고칠 수 있으면 바로 고칩니다
+  const dm = (e.dayMemos && typeof e.dayMemos === 'object') ? e.dayMemos : {};
+  const dmOn = days.length > 1 && !!occ && (!!dm[occ] || canEd);
+  const occLab = occ ? `${Number(occ.slice(5,7))}/${Number(occ.slice(8,10))}` : '';
+  // 이날 칩 — 누른 날이 뒤쪽이어도 보이게 창을 옮겨 둡니다
+  const i0 = occ ? Math.max(0, Math.min(days.indexOf(occ) - 12, days.length - 40)) : 0;
 
   const cat = CATEGORIES[e.category] || CATEGORIES.event;
   const org = e.org || 'daniel';
@@ -4612,20 +4788,26 @@ window.openEvInfo = function(id){
                return `${dd.getMonth()+1}/${dd.getDate()}(${['일','월','화','수','목','금','토'][dd.getDay()]})`; }).join(' · ')}</span></div>` : ''}
         <div class="evi-line"><span class="evi-k">🎯 대상</span>${tgtHTML}</div>
         ${e.memo?`<div class="evi-line"><span class="evi-k">📝 메모</span><span class="evi-v">${esc(e.memo)}</span></div>`:''}
+        ${dmOn ? `<div class="evi-line evi-dmline"><span class="evi-k">📝 ${occLab} 메모</span>${canEd
+          ? `<span class="evi-v evi-dm"><input id="evi-dm-in" value="${esc(dm[occ]||'')}" maxlength="300" autocomplete="off"
+               placeholder="${occLab} 이날만의 메모 — 예: 김보미 인도"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();saveDayMemo('${e.id}','${occ}')}"><button class="btn btn-sm" onclick="saveDayMemo('${e.id}','${occ}')">저장</button></span>`
+          : `<span class="evi-v">${esc(dm[occ])}</span>`}</div>` : ''}
       </div>
 
-      ${days.length>1?`<div class="evi-listt">📆 이 행사가 있는 날</div>
-      <div class="evi-days">${days.slice(0,40).map(d=>{
+      ${days.length>1?`<div class="evi-listt">📆 이 행사가 있는 날${Object.keys(dm).length ? ' <em>· 점 찍힌 날은 메모가 있어요 — 누르면 봐요</em>' : ''}</div>
+      <div class="evi-days">${i0>0?`<span class="evi-day more">앞 ${i0}일</span>`:''}${days.slice(i0,i0+40).map(d=>{
         const dd = new Date(d+'T00:00:00');
-        return `<span class="evi-day${d===occ?' cur':''}">${dd.getMonth()+1}/${dd.getDate()}
+        return `<span class="evi-day${d===occ?' cur':''}${dm[d]?' has-m':''}" onclick="evInfoDay('${e.id}','${d}')"
+          title="${esc(dm[d] ? dm[d] : '누르면 이날로')}">${dd.getMonth()+1}/${dd.getDate()}
           <i>${['일','월','화','수','목','금','토'][dd.getDay()]}</i></span>`;
-      }).join('')}${days.length>40?`<span class="evi-day more">외 ${days.length-40}일</span>`:''}</div>`:''}
+      }).join('')}${days.length>i0+40?`<span class="evi-day more">외 ${days.length-i0-40}일</span>`:''}</div>`:''}
 
       <div class="evi-note">${days.length>1
         ? `달력에서 이 행사 <b>${days.length}칸</b>이 함께 <b>반짝이고</b> 있어요.`
         : '달력에서 이 행사가 <b>반짝이고</b> 있어요.'}</div>
 
-      ${CAN_EDIT?`<div class="mact">
+      ${canEd?`<div class="mact">
         ${clipCopyable(e)?`<button class="btn" ${canSkip?'':'style="margin-right:auto"'} onclick="copyEvent('${e.id}')" title="다른 날짜에 똑같이 붙여 넣을 수 있어요">📋 복사</button>`:''}
         ${canSkip?`<button class="btn" style="margin-right:auto;color:var(--danger,#C0392B)" onclick="skipOccurrence('${e.id}','${occ}')"
           title="이 일정에서 이날만 빼요 — 다른 날은 그대로, 구글 캘린더에서도 그날만 빠져요">🗑 ${Number(occ.slice(5,7))}/${Number(occ.slice(8,10))} 이날만 빼기</button>`:''}
@@ -4641,6 +4823,38 @@ window.openEvInfo = function(id){
 document.addEventListener('keydown', e=>{
   if(e.key === 'Escape' && document.getElementById('ev-info')) closeEvInfo();
 });
+/* 📆 자세히 창의 날짜 칩 — 누르면 그날로 (그날 메모 보기·고치기 · 이날만 빼기) */
+window.evInfoDay = function(id, ds){ EV_OCC = { id, ds }; openEvInfo(id); };
+/* 📝 (v-89) 자세히 창에서 그날 메모만 바로 저장 — 화면 먼저, 서버·구글은 뒤이어 */
+window.saveDayMemo = async function(id, ds){
+  const e = ALL_EVENTS.find(x=>x.id===id) || EVENTS.find(x=>x.id===id); if(!e) return;
+  if(!needEditEv(e)) return;
+  const v = String($I('evi-dm-in')?.value || '').trim().slice(0, 300);
+  const map = Object.assign({}, (e.dayMemos && typeof e.dayMemos === 'object') ? e.dayMemos : {});
+  if(String(map[ds]||'') === v){ toast('바뀐 것이 없어요','ok'); return; }
+  if(v) map[ds] = v; else delete map[ds];
+  const snapDocs = ALL_EVENTS.map(x=>({ ...x }));
+  const i = ALL_EVENTS.findIndex(x=>x.id===id);
+  if(i>=0) ALL_EVENTS[i] = { ...ALL_EVENTS[i], dayMemos: map };
+  applyEventScope(); render();
+  EV_OCC = { id, ds }; openEvInfo(id);         // 창은 그대로 — 저장한 메모로 다시
+  toast(v ? `${clipDsLabel(ds)} 메모를 저장했어요 ✓` : `${clipDsLabel(ds)} 메모를 지웠어요`,'ok');
+  (async () => {
+    try {
+      if(window.TM){
+        const label = `이날 메모: ${e.title} (${ds})`;
+        if(window.TM.snapData) window.TM.snapData('academicEvents', {year:curYear}, label, snapDocs);
+        else await window.TM.snapBundle('academicEvents', {year:curYear}, label);
+      }
+      await updateDoc(doc(db,'academicEvents', id), { dayMemos: map,
+        updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now() });
+      gcalNudge(id);          // 🔄 구글 교사 캘린더의 그날 일정에도
+    } catch(err){
+      toast('저장이 서버에 닿지 못했어요: '+(err.message||'')+' — 화면을 원래대로 되돌립니다','err');
+      try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){}
+    }
+  })();
+};
 
 /* ═══════════════════════════════════════════════
    🖐 끌어서 날짜 옮기기
@@ -4660,7 +4874,7 @@ window.toggleShowAll = function(){
 };
 
 window.toggleDrag = function(){
-  if(!CAN_EDIT){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); return; }
+  if(!evEditOn()){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); return; }
   DRAG_ON = !DRAG_ON;
   document.body.classList.toggle('drag-on', DRAG_ON);
   renderViewBar(); render();
@@ -4736,6 +4950,8 @@ window.onWeekDrop = async function(ev){
   };
   const ns = shift(e.startDate, delta), ne = shift(e.endDate, delta);
   const nsk = (Array.isArray(e.skipDates) && e.skipDates.length) ? e.skipDates.map(d=> shift(d, delta)) : null;   // 🗑 뺀 날도 같이
+  const ndm = (e.dayMemos && typeof e.dayMemos === 'object' && Object.keys(e.dayMemos).length)                     // 📝 날마다 메모도 같이 (v-89)
+    ? Object.fromEntries(Object.entries(e.dayMemos).map(([d,v])=> [shift(d, delta), v])) : null;
 
   try {
     // 🔗 연결된 쉬는 날·방학기간이 있으면 새 날짜로 따라간다
@@ -4754,6 +4970,7 @@ window.onWeekDrop = async function(ev){
       startDate: ns, endDate: ne,
       year: Number(ns.slice(0,4)),
       ...(nsk ? { skipDates: nsk } : {}),
+      ...(ndm ? { dayMemos: ndm } : {}),
       ...linkPatch,
       updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
     });
@@ -4869,7 +5086,7 @@ function renderViewBar(){
       <button class="${curView==='teacher'?'on':''}" onclick="setView('teacher')">교사용</button>
       <button class="${curView==='parent'?'on':''}" onclick="setView('parent')">학부모용</button>
     </div>
-    ${(CAN_EDIT && !WEEK_MODE)?`<button class="vw-drag ${DRAG_ON?'on':''}" onclick="toggleDrag()"
+    ${(evEditOn() && !WEEK_MODE)?`<button class="vw-drag ${DRAG_ON?'on':''}" onclick="toggleDrag()"
       title="켜면 행사를 끌어서 날짜를 옮길 수 있어요">🖐 옮기기 ${DRAG_ON?'켬':'끔'}</button>`:''}`;
   const extraHtml = `
     <button class="vw-fb ${(CD_ALL||CD_OPEN.size)?'on':''}" onclick="toggleAllCd()"
@@ -5445,7 +5662,9 @@ function gcalPanelHTML(){
       <b style="color:var(--gd)">🔁 요일 반복</b>(예: 매주 화·목)과 <b>여러 날 + 시각</b> 일정은 구글에 <b>«반복 일정»</b>으로 들어가 그날그날 한 칸씩 보여요.
       반복 일정은 학사일정에서만 고쳐 주세요 — 구글에서 고치면 학사일정대로 되돌아갑니다.<br>
       <b style="color:var(--gd)">🗑 이날만 빼기</b> — 달력에서 그날 일정을 눌러 «이날만 빼기»(또는 삭제 → 이날만 빼기). 구글에서도 그날만 빠져요.
-      받기를 켠 교사 캘린더에서 <b>교사 일정</b>을 «이 일정만 삭제»하면 학사일정에서도 그날이 빠지고, 학부모에게도 보이는 일정은 되돌아가요.
+      받기를 켠 교사 캘린더에서 <b>교사 일정</b>을 «이 일정만 삭제»하면 학사일정에서도 그날이 빠지고, 학부모에게도 보이는 일정은 되돌아가요.<br>
+      <b style="color:var(--gd)">📝 날마다 메모</b> — 반복·여러 날 일정의 그날그날 메모(예: 기도 인도 순서)는 구글 <b>교사</b> 캘린더의 그날 일정 설명에 «📝 이날: …»로 들어가요.
+      학부모 캘린더·학부모 링크에는 나가지 않아요. 메모는 학사일정에서 고쳐 주세요.
     </div>
     <div style="margin-top:10px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-sm btn-p" onclick="gcalSync('')">🔄 지금 전부 맞추기</button>
@@ -5575,6 +5794,7 @@ window.gcalPullNow = async function(){
 /* 행사를 저장·삭제한 뒤 조용히 한 번 맞춥니다 (실패해도 화면은 그대로)
    · 설정 탭을 한 번도 열지 않았어도 스스로 연결 설정을 읽어옵니다
    · 바뀐 행사 «하나만» 보내므로 몇 초가 아니라 곧바로 반영됩니다 */
+const NUDGE_Q = {};   // 📝 (v-89) 일정마다 { run, again } — 메모를 잇달아 저장해도 앞의 맞추기가 뒤의 것을 덮지 않게
 async function gcalNudge(evId){
   try {
     await loadGcalCfg();                                  // 🆕 없으면 지금 읽어온다
@@ -5582,7 +5802,13 @@ async function gcalNudge(evId){
     const p = { action:'sync' };
     if(evId) p.ev = String(evId);                          // 🆕 이 행사 하나만
     const u = gcalCall(p); if(!u) return;
-    fetch(u, { method:'POST', keepalive:true }).catch(()=>{});
+    if(!evId){ fetch(u, { method:'POST', keepalive:true }).catch(()=>{}); return; }
+    const q = NUDGE_Q[p.ev] || (NUDGE_Q[p.ev] = { run:false, again:false });
+    if(q.run){ q.again = true; return; }                   // 돌고 있으면 끝난 뒤 한 번 더
+    q.run = true;
+    try {
+      do { q.again = false; await fetch(u, { method:'POST', keepalive:true }).catch(()=>{}); } while(q.again);
+    } finally { q.run = false; }
   } catch(_){}
 }
 window.gcalNudge = gcalNudge;
@@ -5930,7 +6156,7 @@ async function buildSnapshot(audience, range){
   } catch(e){}
   if(audience === 'parent'){
     events = events.filter(e => (e.audience||'both') !== 'teacher');
-    events = events.map(e => { const { memo, ...rest } = e; return rest; });   // 교사 메모는 뺀다
+    events = events.map(e => { const { memo, dayMemos, ...rest } = e; return rest; });   // 교사 메모·날마다 메모는 뺀다
     // 🏫 기관 완전 분리 — 그 기관 일정(+두 기관 공통)만 담는다
     if(range && range.org){
       const O = range.org;
@@ -6114,9 +6340,9 @@ window.stopShare = async function(kind){
   } catch(e){ toast('실패: '+(e.message||''),'err'); }
 };
 
-window.copyShare = function(kind){
+window.copyShare = function(kind, cal){
   const cur = SHARES[kind]; if(!cur) return;
-  const url = shareURL(cur.id);
+  const url = shareURL(cur.id) + (cal ? '&cal=' + cal : '');
   (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
     .then(()=>toast('링크를 복사했습니다 ✓','ok'))
     .catch(()=>{ prompt('아래 링크를 복사하세요', url); });
@@ -6171,10 +6397,18 @@ function renderSharePanel(){
   const ins = (html, kind) => html.includes('sh-row')
     ? html.replace('<div class="sh-row">', rangeUI(kind) + '<div class="sh-row">')
     : html.replace('<button class="btn btn-sm btn-p" onclick="makeShare', rangeUI(kind) + '<button class="btn btn-sm btn-p" onclick="makeShare');
+  /* 🔗 (v-89) 선생님용 — 같은 링크를 기관별 첫 화면으로 나눠 보낼 수 있게 (담긴 일정은 같고, 위 막대로 바꿔 볼 수 있어요) */
+  const tcBlock = block('teacher','선생님용','두 기관·교사 전용 일정까지 모두 보입니다. 처음엔 «모두 보기»로 열려요.','#2F6FD0');
+  const tcCal = SHARES.teacher ? `<div class="sh-d sh-cals">기관별로 열리는 링크 —
+      ${[['daniel','다니엘 아마츠','#2FB344'],['jihyebit','지혜빛 선교원','#8E4EC6']].map(([k,l,c])=>
+        `<span class="sh-cal"><i style="background:${c}"></i>${l}
+          <button class="btn btn-sm" onclick="copyShare('teacher','${k}')">📋 복사</button>
+          <a class="btn btn-sm" href="${esc(shareURL(SHARES.teacher.id))}&cal=${k}" target="_blank" style="text-decoration:none">↗</a></span>`).join('')}
+    </div>` : '';
   $I('share-list').innerHTML =
     ins(pdBlock,'parent_daniel') +
     ins(pjBlock,'parent_jihyebit') +
-    block('teacher','선생님용','두 기관·교사 전용 일정까지 모두 보입니다.','#2F6FD0');
+    (tcCal ? tcBlock.replace('<div class="sh-acts">', tcCal + '<div class="sh-acts">') : tcBlock);
   setTimeout(fillShareCounts, 0);
 }
 async function fillShareCounts(){
@@ -6262,7 +6496,7 @@ window.toggleEditor = async function(cal, uid){
 /* 학사일정은 두 기관이 서로의 일정을 볼 수 있어야 한다.
    (한 건물에서 함께 지내니 서로 언제 행사·방학인지 알아야 하므로)
    그래서 보기는 모든 기관을 열어주고, 고치는 권한만 따로 관리한다. */
-function myOrgs(){ return orgCore.myOrgs(CU,'academic'); }   // 🏛 org-core 원장 위임
+function myOrgs(){ return (inShare() && SHARE_ALLCAL) ? ['daniel','jihyebit'] : orgCore.myOrgs(CU,'academic'); }   // 🏛 org-core 원장 위임 (선생님용 링크는 두 기관 모두)
 
 /* 캘린더 고르기 막대 */
 function renderCalBar(){
@@ -6281,7 +6515,7 @@ function renderCalBar(){
     ${(ORG==='daniel'||ORG==='jihyebit')?`<button class="cb-with ${SHOW_ALL_CAL?'on':''}"
       onclick="toggleShowAll()" title="정기휴가·창립일처럼 두 기관 공통 일정을 함께 볼지 정합니다"
       >${SHOW_ALL_CAL?'☑':'☐'} DA 전체 함께</button>`:''}
-    <span class="cb-note">${ORG===ORG_ALL ? '세 캘린더를 겹쳐 보는 중 — 고치려면 하나를 골라주세요'
+    <span class="cb-note">${ORG===ORG_ALL ? (canEditAny() && !inShare() ? '세 캘린더를 겹쳐 보는 중 — ✏️ 캘린더의 일정은 여기서도 고칠 수 있어요 (학기·방학은 하나를 골라서)' : '세 캘린더를 겹쳐 보는 중')
       : (CAN_EDIT ? '이 캘린더를 고칠 수 있습니다' : '보기만 할 수 있습니다')}</span>
   </div>`;
 }
@@ -6289,9 +6523,9 @@ function renderCalBar(){
 /* 캘린더를 바꾸면 그 캘린더의 학년도·행사로 갈아 끼운다 */
 async function switchOrg(o){
   ORG = o; curOrg = (o===ORG_ALL || o==='all') ? 'daniel' : o;
-  try { localStorage.setItem('academic_cal', o); } catch(e){}
+  try { localStorage.setItem(inShare() ? 'academic_cal_share' : 'academic_cal', o); } catch(e){}
   refreshCanEdit();
-  if(curTab==='edit' && !CAN_EDIT) curTab = 'view';
+  if(curTab==='edit' && !evEditOn()) curTab = 'view';
   applyYearScope();
   // 이 기관에 그 학년도가 없으면 가장 가까운 것으로
   if(YEARS.length && !YEARS.some(y=>String(y.year)===String(curYear))){
@@ -6299,6 +6533,7 @@ async function switchOrg(o){
   }
   await loadYear(curYear);
   await loadEvents(curYear, curMonth, true);
+  if(inShare()) applyEventScope();     // 🔗 (v-89) 공유 링크는 서버를 다시 읽지 않으니 담긴 일정에서 골라 보여줍니다
   renderCalBar();
   renderTabs();
   renderYearBar();
@@ -6412,11 +6647,15 @@ async function startShareView(){
 
     const years = [...new Set(ALL_YEARS.map(y=>y.year))].sort((a,b)=>b-a);
     if(years.length && !years.includes(curYear)) curYear = years[0];
-    if(!SHARE_MODE)try {
+    /* 🔗 (v-89) 선생님용 링크 — 처음엔 «모두 보기», 링크 끝에 &cal=daniel · &cal=jihyebit 을 붙이면 그 기관으로 열림
+       (예전에는 이 줄이 돌지 않아 다니엘만 보였습니다) · 고른 캘린더는 이 기기에 기억 */
+    SHARE_ALLCAL = (d.audience === 'teacher') && !d.shareOrg;
+    if(SHARE_ALLCAL) try {
+      const q = new URLSearchParams(location.search).get('cal');
       const saved = localStorage.getItem('academic_cal_share');
       const vis = visibleCals();
-      ORG = (saved && (vis.includes(saved) || (saved===ORG_ALL && vis.length>1))) ? saved
-          : (vis.length>1 ? ORG_ALL : vis[0]);
+      const ok = k => !!k && (vis.includes(k) || (k===ORG_ALL && vis.length>1));
+      ORG = ok(q) ? q : ok(saved) ? saved : (vis.length>1 ? ORG_ALL : vis[0]);
     } catch(e){ ORG = ORG_ALL; }
 
     applyYearScope();

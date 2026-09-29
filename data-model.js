@@ -61,6 +61,7 @@ const eventSchema = {
   timeOfDay: 'allday',                 // 'am' | 'pm' | 'allday'
   weekdays: null,                      // null=기간 내내, [1,2,3,4]=월~목만 (0=일 … 6=토)
   skipDates: [],                       // «이날만 빼기»로 뺀 날 ['2026-10-09', …] — 그날만 안 보임 (v-88)
+  dayMemos: {},                        // 날마다 메모 { '2026-10-09':'김보미 인도' } — 교사만 · 구글 교사 캘린더 그날 칸에도 (v-89)
 
   scope: 'all',                        // 'all' | 'dept' | 'grade'
   targets: [],                         // scope=dept면 ['유쓰센터','리더센터'], grade면 ['이레','로이1']
