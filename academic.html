@@ -366,6 +366,18 @@
     .evs-rc > .evs-note, .evs-card > .evs-note{ display:none; }
   }
 
+  /* 🗑 이날만 빼기 (v-88) */
+  .evs-skips{ flex-basis:100%; display:flex; gap:5px; flex-wrap:wrap; align-items:center; padding-top:4px; }
+  .evs-skip{ height:28px; padding:0 8px 0 10px; border:1px dashed var(--danger,#C0392B); border-radius:9px; background:transparent;
+    color:var(--danger,#C0392B); font-family:inherit; font-size:12px; font-weight:700; display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+  .evs-skip:hover{ background:rgba(192,57,43,.07); }
+  .evc-acts{ display:flex; flex-direction:column; gap:8px; margin:14px 0 10px; }
+  .evc-acts .btn{ width:100%; justify-content:center; height:40px; }
+  .evi-day.cur{ background:var(--gd,#1E3932); color:#fff; }
+  .evi-day.cur i{ color:rgba(255,255,255,.75); }
+  html[data-theme="dark"] .evi-day.cur{ color:#08100D; }
+  html[data-theme="dark"] .evi-day.cur i{ color:rgba(8,16,13,.7); }
+
   /* 📋 붙여넣기 띠 (v-85) */
   #clip-bar{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); z-index:390;
     display:flex; align-items:center; gap:10px; max-width:calc(100vw - 32px); box-sizing:border-box;
@@ -1481,7 +1493,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b21';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b22';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -1719,6 +1731,7 @@ async function loadEvents(year, month, fresh){
    ═══════════════════════════════════════════════════════════ */
 let EV_WATCH = null, EV_WATCH_YEAR = null, EV_WATCH_FIRST = true, EV_PENDING = null;
 const LIVE_GONE = new Set();       // 이 창에서 지우는 중인 행사 — 실시간 갱신이 되살리지 않게
+let EV_OCC = null;                                   // 🗑 (v-88) 방금 누른 일정과 그 날짜 { id, ds } — «이날만 빼기»용
 let CLIP = null, CLIP_LAST = [], CLIP_PT = null;   // 📋 복사·붙여넣기 (v-85) — 아래 «복사 · 붙여넣기» 참고
 
 /* 지금 화면을 바로 갈아끼워도 괜찮은가 — 창이 떠 있거나 끌고 있으면 기다립니다 */
@@ -1878,11 +1891,30 @@ function eventsOn(ds){
   return EVENTS.filter(e=>{
     if(ds < e.startDate || ds > e.endDate) return false;
     if(Array.isArray(e.weekdays) && e.weekdays.length && !e.weekdays.includes(dow)) return false;
+    if(Array.isArray(e.skipDates) && e.skipDates.length && e.skipDates.includes(ds)) return false;   // 🗑 이날만 빼기
     if(curView==='parent' && !(e.audience==='parent'||e.audience==='both')) return false;
     return true;
   });
 }
 
+/* 🗑 (v-88) 이 행사가 실제로 놓이는 날들 — 기간 · 요일 · «이날만 빼기»까지 */
+function evOccDays(e, cap){
+  const out = []; if(!e || !e.startDate || !e.endDate) return out;
+  const sk = new Set(Array.isArray(e.skipDates) ? e.skipDates : []);
+  const d = new Date(e.startDate+'T00:00:00'), end = new Date(e.endDate+'T00:00:00');
+  const lim = cap || 400;
+  for(let i = 0; d <= end && out.length < lim && i < 4000; i++){
+    const ds = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    if(!(Array.isArray(e.weekdays) && e.weekdays.length && !e.weekdays.includes(d.getDay())) && !sk.has(ds)) out.push(ds);
+    d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+/* 기간 안에서 뺀 날 (차례대로) */
+function evSkipsIn(e){
+  const sk = (e && Array.isArray(e.skipDates)) ? e.skipDates : [];
+  return sk.filter(d=> d >= e.startDate && d <= e.endDate).sort();
+}
 /* 이 행사가 그 학년에 걸리나 — 전체 대상이면 언제나 참 */
 function evHitsGrade(e, grade){
   if(!grade) return true;
@@ -2272,6 +2304,12 @@ function orgMark(e){
 /* 칸의 행사를 눌렀을 때 — 보기 탭이면 상세 카드, 편집 탭이면 편집 창 */
 window.onEvClick = function(id, ev){
   if(ev) ev.stopPropagation();
+  // 🗑 (v-88) 어느 날짜 위에서 눌렀는지 — «이날만 빼기»에 씁니다 (주간 보기 블록은 마우스 자리로)
+  try {
+    const pt = (ev && ev.clientX != null) ? { x: ev.clientX, y: ev.clientY } : CLIP_PT;
+    const at = (!CLIP && pt) ? clipHitAt(pt) : null;
+    EV_OCC = (at && at.ds) ? { id, ds: at.ds } : null;
+  } catch(_){ EV_OCC = null; }
   if(CLIP && ev && ev.clientX != null){                 // 📋 붙여넣기 중 — 막대를 눌러도 그 아래 날짜에 붙입니다
     const hit = clipHitAt({ x: ev.clientX, y: ev.clientY });
     if(hit.ds){ pasteAt(hit.ds, hit.min); return; }
@@ -3275,6 +3313,8 @@ window.delTerm = async function(kind, idx){
    ═══════════════════════════════════════════════ */
 let dlgTargets = new Set();
 let dlgWeekdays = new Set();
+let dlgSkips = new Set();    // 🗑 (v-88) 이 일정에서 «이날만 빼기»로 뺀 날
+let DLG_OCC = null;          // 🗑 (v-88) 입력 창을 연 날짜 { id, ds } — 삭제할 때 «이날만 빼기»를 물어봅니다
 let dlgColor = '';
 let dlgScope = 'all';
 let dlgOrg = 'daniel';               // 대표 캘린더 (학년 목록 등 내부 계산용)
@@ -3392,6 +3432,8 @@ window.openEventDlg = function(id, ds, slot, pre){
     ? ((e.scope==='grade') ? expandTargets(e.targets||[], e.org) : (e.targets||[]))
     : []);
   dlgWeekdays = new Set(e ? (e.weekdays||[]) : []);
+  dlgSkips = new Set(e ? (e.skipDates||[]) : []);
+  DLG_OCC = (e && EV_OCC && EV_OCC.id === e.id) ? EV_OCC : null;
   dlgScope = e ? (e.scope||'all') : 'all';
   dlgColor = e ? (e.color||'') : '';
   dlgOrgs = new Set(e ? orgsOf(e).filter(k=>CAL_KEYS.includes(k))
@@ -3460,6 +3502,7 @@ window.openEventDlg = function(id, ds, slot, pre){
                 <div class="evs-dows" id="ev-dow">${['일','월','화','수','목','금','토'].map((w,i)=>
                   `<button type="button" class="${dlgWeekdays.has(i)?'on':''}" onclick="toggleDow(${i})">${w}</button>`).join('')}</div>
               </div>
+              <div id="ev-skips" class="evs-skips" style="display:none"></div>
             </div>
           </div>
 
@@ -3593,14 +3636,16 @@ function evsGcalNames(){
 }
 /* 🔁 구글에 어떤 모양으로 나가나 — 구글 연동 함수(academic-gcal v-87)와 같은 판단
    · 'rep' 반복 일정 (요일 반복 · 여러 날 + 시각) · 'one' 한 건 · 'none' 보일 날이 없음 */
-function evsGcalShape(s, en, timed, wds){
+function evsGcalShape(s, en, timed, wds, skips){
   if(!s) return 'one';
   const wd = [...wds].map(Number).filter(n=> n >= 0 && n <= 6);
   const all = !wd.length || wd.length === 7;
+  const sk = skips || new Set();
   let n = 0, first = null, last = null;
   const d = new Date(s + 'T00:00:00'), end = new Date((en || s) + 'T00:00:00');
-  for(let i = 0; d <= end && i < 800; i++, d.setDate(d.getDate() + 1)){
-    if(all || wd.includes(d.getDay())){ n++; if(first == null) first = i; last = i; }
+  for(let i = 0; d <= end && i < 4000; i++, d.setDate(d.getDate() + 1)){
+    const ds = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    if((all || wd.includes(d.getDay())) && !sk.has(ds)){ n++; if(first == null) first = i; last = i; }
   }
   if(!n) return 'none';
   if(n === 1) return 'one';
@@ -3609,7 +3654,23 @@ function evsGcalShape(s, en, timed, wds){
 }
 
 /* 👀 오른쪽 미리보기 — 무엇을 고치든 바로 따라 바뀝니다 */
+/* 🗑 (v-88) 뺀 날 칩 — 누르면 되살아납니다 (저장해야 반영) */
+function evsSkipList(){
+  const s = ($I('ev-start')?.value || ''), en = ($I('ev-end')?.value || s);
+  return [...dlgSkips].filter(d=> d >= s && d <= en
+    && (!dlgWeekdays.size || dlgWeekdays.has(new Date(d+'T00:00:00').getDay()))).sort();
+}
+function evsSkipsRender(){
+  const box = $I('ev-skips'); if(!box) return;
+  const list = evsSkipList();
+  box.style.display = list.length ? '' : 'none';
+  box.innerHTML = list.length ? `<span class="evs-lab">빠진 날</span>${list.map(d=>
+      `<button type="button" class="evs-skip" onclick="unskipDay('${d}')" title="누르면 이날이 다시 들어가요">${esc(evsFmtDay(d))}${evsIco('x',12)}</button>`).join('')}
+    <span class="evs-note">누르면 되살아나요 — 저장해야 반영돼요</span>` : '';
+}
+window.unskipDay = function(d){ dlgSkips.delete(d); evsPreview(); };
 function evsPreview(){
+  evsSkipsRender();
   const box = $I('ev-pv'); if(!box) return;
   const v = id => ($I(id)?.value || '').trim();
   const title = v('ev-title') || '제목';
@@ -3645,7 +3706,8 @@ function evsPreview(){
         <div class="gbar-t">${esc(say)}</div>` : ''}
       <div class="pv-bar" style="background:${color}">${dlgKind==='staff' ? evsIco('lock',12) : ''}${(t1 && t2 && !multi) ? `<em>${esc(t1)}</em>` : ''}<span>${esc(title)}</span></div>
       ${(multi || dlgWeekdays.size) ? `<div class="pv-span">${multi ? `${esc(evsFmtDay(s))} ~ ${esc(evsFmtDay(en))} · ${nDays}일` : ''}${
-        dlgWeekdays.size ? `${multi ? ' · ' : ''}${esc(evsDowLabel())}` : ''}</div>` : ''}
+        dlgWeekdays.size ? `${multi ? ' · ' : ''}${esc(evsDowLabel())}` : ''}${
+        evsSkipList().length ? ` · ${evsSkipList().length}일 빠짐` : ''}</div>` : ''}
     </div>`;
 
   const parentVisible = aud !== 'teacher';
@@ -3678,7 +3740,7 @@ function evsPreview(){
                     : (anyImpact && !closedLike) ? `달력과 ${unit} 막대에 바로 보여요` : '달력에 바로 보여요']);
   const gn = evsGcalNames();
   if(gn.length){
-    const gs = evsGcalShape(s, en, !!(t1 && t2 && t2 > t1), dlgWeekdays);
+    const gs = evsGcalShape(s, en, !!(t1 && t2 && t2 > t1), dlgWeekdays, new Set(evsSkipList()));
     if(gs === 'rep') outs.push(['g', `구글 교사 캘린더(${gn.join(' · ')})에 «반복 일정»으로 곧바로 들어가요`]);
     else if(gs === 'one') outs.push(['g', `구글 교사 캘린더(${gn.join(' · ')})에 곧바로 들어가요`]);
   }
@@ -3729,6 +3791,10 @@ function clipPlace(src, ds, atMin){
   data.startDate = ds;
   data.endDate = clipDayAdd(ds, span);
   data.year = Number(ds.slice(0,4));
+  if(Array.isArray(src.skipDates) && src.skipDates.length){         // 🗑 뺀 날도 같은 자리로 (v-88)
+    const dd = clipDayDiff(src.startDate, ds);
+    data.skipDates = src.skipDates.map(x=> clipDayAdd(x, dd));
+  }
   const s0 = wkParse(src.startTime), t0 = wkParse(src.endTime);
   if(atMin != null && s0 != null && t0 != null && t0 > s0 && span === 0){   // 주간 보기에서 시각을 눌렀을 때
     const dur = t0 - s0;
@@ -4103,12 +4169,13 @@ window.pickOrg = function(k){ curOrg = k; renderTargetPicker(); };
 /* ═══ 🔗 쉬는 날 원장 동기화 ═══
    «휴교·휴일» 행사 → holidays (날짜별) · «방학»+체크 → workPeriods (기간)
    행사에 연결 id(holidayIds·wpIds)를 함께 저장해 수정·이동·삭제 때 따라간다. */
-function eventDays(s, e, weekdays){
+function eventDays(s, e, weekdays, skips){
   const out = []; const d = new Date(s+'T00:00:00'); const end = new Date(e+'T00:00:00');
+  const sk = new Set(skips || []);                 // 🗑 (v-88) «이날만 빼기»로 뺀 날은 쉬는 날로도 넣지 않습니다
   let n = 0;
   while(d <= end && n < 93){   // 안전 상한: 한 행사 최대 93일
     const ds = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-    if(!weekdays || !weekdays.length || weekdays.includes(d.getDay())) out.push(ds);
+    if((!weekdays || !weekdays.length || weekdays.includes(d.getDay())) && !sk.has(ds)) out.push(ds);
     d.setDate(d.getDate()+1); n++;
   }
   return out;
@@ -4120,7 +4187,7 @@ async function clearEventLinks(ev){
 async function buildEventLinks(ev, wantWp){
   const out = { holidayIds: [], wpIds: [] };
   if(ev.category === 'closed'){
-    const days = eventDays(ev.startDate, ev.endDate, ev.weekdays);
+    const days = eventDays(ev.startDate, ev.endDate, ev.weekdays, ev.skipDates);
     for(const date of days){
       const r = await addDoc(collection(db,'holidays'), {
         date, name: ev.title, org: ev.org==='all' ? 'all' : ev.org,
@@ -4192,6 +4259,11 @@ window.saveEvent = async function(){
   };
 
   const prev = editingEventId ? EVENTS.find(x=>x.id===editingEventId) : null;
+  // 🗑 (v-88) 뺀 날 — 기간·요일 안의 것만 남깁니다 (뺀 날이 없던 일정은 칸을 새로 만들지 않습니다)
+  const skipKeep = [...dlgSkips].filter(d=> d >= start && d <= end
+    && (!dlgWeekdays.size || dlgWeekdays.has(new Date(d+'T00:00:00').getDay()))).sort();
+  if(skipKeep.length || (prev && Array.isArray(prev.skipDates) && prev.skipDates.length)) data.skipDates = skipKeep;
+  if(skipKeep.length && !evOccDays(data, 1).length){ toast('남는 날이 없어요 — 빠진 날을 되살리거나 기간을 바꿔 주세요.','err'); return; }
   const wantWp = cat==='break' && !!$I('ev-wp')?.checked;
   const syncTouched = cat==='closed' || wantWp || !!(prev && ((prev.holidayIds||[]).length || (prev.wpIds||[]).length));
 
@@ -4260,10 +4332,90 @@ window.saveEvent = async function(){
 document.addEventListener('keydown', e=>{
   if(e.key==='Enter' && e.target && e.target.id==='ev-title' && typeof window.saveEvent==='function'){ e.preventDefault(); saveEvent(); }
 });
-window.delEvent = async function(id){
+/* 🗑 (v-88) 여러 날짜 일정을 지울 때 — 구글 캘린더처럼 «이날만 / 전체»를 고릅니다 */
+function askRepeatDelete(e, occ){
+  return new Promise(res=>{
+    document.getElementById('ev-choice')?.remove();
+    const rep = Array.isArray(e.weekdays) && e.weekdays.length;
+    const ov = document.createElement('div'); ov.className = 'mov'; ov.id = 'ev-choice';
+    ov.innerHTML = `<div class="mbk"></div>
+      <div class="mbox" role="dialog" aria-modal="true" style="max-width:380px">
+        <div class="mtitle">${rep ? '반복되는 일정이에요' : '여러 날에 걸친 일정이에요'}</div>
+        <div class="msub">「${esc(e.title)}」 — 어느 것을 지울까요?</div>
+        <div class="evc-acts">
+          <button type="button" class="btn btn-p" data-a="one">${esc(evsFmtDay(occ))} 이날만 빼기</button>
+          <button type="button" class="btn btn-dg" data-a="all">${rep ? '반복 일정 전체 지우기' : '일정 전체 지우기'}</button>
+          <button type="button" class="btn" data-a="">취소</button>
+        </div>
+        <div class="evs-note">이날만 빼면 다른 날은 그대로 남고, 구글 캘린더에서도 그날만 빠져요.</div>
+      </div>`;
+    const onKey = ev=>{ if(ev.key === 'Escape'){ ev.stopPropagation(); done(''); } };
+    const done = a=>{ document.removeEventListener('keydown', onKey, true); ov.remove(); res(a); };
+    ov.querySelector('.mbk').onclick = ()=> done('');
+    ov.querySelectorAll('[data-a]').forEach(b=> b.onclick = ()=> done(b.dataset.a));
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(ov);
+    setTimeout(()=> ov.querySelector('[data-a="one"]')?.focus(), 30);
+  });
+}
+/* 🗑 (v-88) 이날만 빼기 — 그날만 달력·학부모 링크·구글 캘린더에서 빠집니다 (다른 날은 그대로) */
+window.skipOccurrence = async function(id, ds){
   if(!needEdit()) return;
-  const e = EVENTS.find(x=>x.id===id); if(!e) return;
-  if(!confirm(`"${e.title}"을(를) 지울까요?\n되돌릴 수 없습니다.`)) return;
+  const e = ALL_EVENTS.find(x=>x.id===id) || EVENTS.find(x=>x.id===id); if(!e) return;
+  if(!canEditCal(calOf(e))){ toast('이 캘린더를 고칠 권한이 없습니다.','err'); return; }
+  const days = evOccDays(e, 4000);
+  if(!days.includes(ds)) return;
+  if(days.length <= 1){
+    if(confirm(`"${e.title}"은 이날 하루만 남아 있어요.\n일정을 지울까요?`)) delEvent(id, true);
+    return;
+  }
+  const skips = [...new Set([...(e.skipDates||[]), ds])].sort();
+  const snapDocs = ALL_EVENTS.map(x=>({ ...x }));
+  const i = ALL_EVENTS.findIndex(x=>x.id===id);
+  if(i>=0) ALL_EVENTS[i] = { ...ALL_EVENTS[i], skipDates: skips };
+  applyEventScope(); closeEvInfo(); closeEventDlg(); render();
+  toast(`${evsFmtDay(ds)} — 이날만 뺐어요 ✓ 되살리려면 일정 고치기 창의 «빠진 날»을 눌러요`,'ok');
+  (async () => {
+    try {
+      const hasLinks = (e.holidayIds||[]).length || (e.wpIds||[]).length || e.category==='closed';
+      if(window.TM){
+        const label = `이날만 빼기: ${e.title} (${ds})`;
+        if(window.TM.snapData) window.TM.snapData('academicEvents', {year:curYear}, label, snapDocs);
+        else await window.TM.snapBundle('academicEvents', {year:curYear}, label);
+        if(hasLinks){
+          await window.TM.snapBundle('holidays', {}, `이날만 빼기 연동 전: ${e.title}`);
+          if((e.wpIds||[]).length) await window.TM.snapBundle('workPeriods', {}, `이날만 빼기 연동 전: ${e.title}`);
+        }
+      }
+      let linkPatch = {};
+      if(hasLinks){     // 🔗 휴교·휴일이면 그날의 쉬는 날도 함께 빠집니다
+        await clearEventLinks(e);
+        const links = await buildEventLinks({ ...e, skipDates: skips }, (e.wpIds||[]).length > 0);
+        linkPatch = { holidayIds: links.holidayIds, wpIds: links.wpIds };
+        const j = ALL_EVENTS.findIndex(x=>x.id===id);
+        if(j>=0) ALL_EVENTS[j] = { ...ALL_EVENTS[j], ...linkPatch };
+      }
+      await updateDoc(doc(db,'academicEvents', id), { skipDates: skips, ...linkPatch,
+        updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now() });
+      gcalNudge(id);          // 🔄 구글 캘린더에서도 그날만 빠지게
+    } catch(err){
+      toast('저장이 서버에 닿지 못했어요: '+(err.message||'')+' — 화면을 원래대로 되돌립니다','err');
+      try{ await loadEvents(curYear, curMonth, true); render(); }catch(_){}
+    }
+  })();
+};
+window.delEvent = async function(id, sure){
+  if(!needEdit()) return;
+  const e = EVENTS.find(x=>x.id===id) || ALL_EVENTS.find(x=>x.id===id); if(!e) return;
+  if(!sure){
+    const occ = (DLG_OCC && DLG_OCC.id === id) ? DLG_OCC.ds : ((EV_OCC && EV_OCC.id === id) ? EV_OCC.ds : '');
+    const days = evOccDays(e, 4000);
+    if(days.length > 1 && occ && days.includes(occ) && canEditCal(calOf(e))){
+      const a = await askRepeatDelete(e, occ);
+      if(a === 'one'){ skipOccurrence(id, occ); return; }
+      if(a !== 'all') return;
+    } else if(!confirm(`"${e.title}"을(를) 지울까요?\n되돌릴 수 없습니다.`)) return;
+  }
   /* ⚡ 바로 적용 — 화면에서 먼저 지우고, 서버 정리는 뒤에서 */
   const snapDocs = ALL_EVENTS.map(x=>({ ...x }));
   const idx = ALL_EVENTS.findIndex(x=>x.id===id);
@@ -4369,7 +4521,8 @@ window.setView = function(v){
 function evGlow(id){
   document.querySelectorAll('.ev-glow').forEach(el=>el.classList.remove('ev-glow'));
   if(!id) return;
-  document.querySelectorAll(`[data-ev="${CSS.escape(id)}"]`)
+  // 🩹 (v-88) 자세히 창(#ev-info)도 data-ev를 달고 있어 같이 반짝이며 «떠 있는 창»이 아니게 되던 것 — 창은 빼고
+  document.querySelectorAll(`[data-ev="${CSS.escape(id)}"]:not(.mov)`)
     .forEach(el=>el.classList.add('ev-glow'));
 }
 
@@ -4381,16 +4534,12 @@ window.closeEvInfo = function(){
 window.openEvInfo = function(id){
   const e = EVENTS.find(x=>x.id===id); if(!e) return;
 
-  // 이 행사가 실제로 놓이는 날들 (요일 반복까지 반영)
-  const days = [];
-  let cur = new Date(e.startDate+'T00:00:00');
-  const end = new Date(e.endDate+'T00:00:00');
-  while(cur <= end && days.length < 400){
-    const ds = `${cur.getFullYear()}-${pad(cur.getMonth()+1)}-${pad(cur.getDate())}`;
-    const dow = cur.getDay();
-    if(!(Array.isArray(e.weekdays) && e.weekdays.length && !e.weekdays.includes(dow))) days.push(ds);
-    cur.setDate(cur.getDate()+1);
-  }
+  // 이 행사가 실제로 놓이는 날들 (요일 반복 · 이날만 빼기까지 반영)
+  const days = evOccDays(e, 400);
+  const skips = evSkipsIn(e);
+  // 🗑 (v-88) 달력에서 누른 그날 — 여러 날짜 일정이면 «이날만 빼기»
+  const occ = (EV_OCC && EV_OCC.id === id && days.includes(EV_OCC.ds)) ? EV_OCC.ds : '';
+  const canSkip = !!(CAN_EDIT && !SHARE_MODE && occ && days.length > 1 && canEditCal(calOf(e)));
 
   const cat = CATEGORIES[e.category] || CATEGORIES.event;
   const org = e.org || 'daniel';
@@ -4428,7 +4577,7 @@ window.openEvInfo = function(id){
   const ov = document.createElement('div');
   ov.id = 'ev-info'; ov.className = 'mov';
   ov.innerHTML = `<div class="mbk" onclick="closeEvInfo()"></div>
-    <div class="mbox" style="max-width:420px;--ec:${evColor(e)}">
+    <div class="mbox" style="max-width:${canSkip ? 470 : 420}px;--ec:${evColor(e)}">
       <button class="evi-x" onclick="closeEvInfo()" aria-label="닫기">✕</button>
       <div class="evi-head">
         <span class="evi-bar"></span>
@@ -4457,6 +4606,10 @@ window.openEvInfo = function(id){
         ${(Array.isArray(e.weekdays)&&e.weekdays.length)
           ? `<div class="evi-line"><span class="evi-k">🔁 반복</span>
              <span class="evi-v">매주 ${e.weekdays.map(i=>['일','월','화','수','목','금','토'][i]).join('·')}요일</span></div>` : ''}
+        ${skips.length
+          ? `<div class="evi-line"><span class="evi-k">🗑 빠진 날</span>
+             <span class="evi-v">${skips.map(d=>{ const dd = new Date(d+'T00:00:00');
+               return `${dd.getMonth()+1}/${dd.getDate()}(${['일','월','화','수','목','금','토'][dd.getDay()]})`; }).join(' · ')}</span></div>` : ''}
         <div class="evi-line"><span class="evi-k">🎯 대상</span>${tgtHTML}</div>
         ${e.memo?`<div class="evi-line"><span class="evi-k">📝 메모</span><span class="evi-v">${esc(e.memo)}</span></div>`:''}
       </div>
@@ -4464,7 +4617,7 @@ window.openEvInfo = function(id){
       ${days.length>1?`<div class="evi-listt">📆 이 행사가 있는 날</div>
       <div class="evi-days">${days.slice(0,40).map(d=>{
         const dd = new Date(d+'T00:00:00');
-        return `<span class="evi-day">${dd.getMonth()+1}/${dd.getDate()}
+        return `<span class="evi-day${d===occ?' cur':''}">${dd.getMonth()+1}/${dd.getDate()}
           <i>${['일','월','화','수','목','금','토'][dd.getDay()]}</i></span>`;
       }).join('')}${days.length>40?`<span class="evi-day more">외 ${days.length-40}일</span>`:''}</div>`:''}
 
@@ -4473,7 +4626,9 @@ window.openEvInfo = function(id){
         : '달력에서 이 행사가 <b>반짝이고</b> 있어요.'}</div>
 
       ${CAN_EDIT?`<div class="mact">
-        ${clipCopyable(e)?`<button class="btn" style="margin-right:auto" onclick="copyEvent('${e.id}')" title="다른 날짜에 똑같이 붙여 넣을 수 있어요">📋 복사</button>`:''}
+        ${clipCopyable(e)?`<button class="btn" ${canSkip?'':'style="margin-right:auto"'} onclick="copyEvent('${e.id}')" title="다른 날짜에 똑같이 붙여 넣을 수 있어요">📋 복사</button>`:''}
+        ${canSkip?`<button class="btn" style="margin-right:auto;color:var(--danger,#C0392B)" onclick="skipOccurrence('${e.id}','${occ}')"
+          title="이 일정에서 이날만 빼요 — 다른 날은 그대로, 구글 캘린더에서도 그날만 빠져요">🗑 ${Number(occ.slice(5,7))}/${Number(occ.slice(8,10))} 이날만 빼기</button>`:''}
         <button class="btn" onclick="closeEvInfo()">닫기</button>
         <button class="btn btn-p" onclick="closeEvInfo();openEventDlg('${e.id}')">✏️ 고치기</button>
       </div>`:`<div class="mact"><button class="btn btn-p" onclick="closeEvInfo()">확인</button></div>`}
@@ -4580,6 +4735,7 @@ window.onWeekDrop = async function(ev){
     return `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
   };
   const ns = shift(e.startDate, delta), ne = shift(e.endDate, delta);
+  const nsk = (Array.isArray(e.skipDates) && e.skipDates.length) ? e.skipDates.map(d=> shift(d, delta)) : null;   // 🗑 뺀 날도 같이
 
   try {
     // 🔗 연결된 쉬는 날·방학기간이 있으면 새 날짜로 따라간다
@@ -4591,12 +4747,13 @@ window.onWeekDrop = async function(ev){
     let linkPatch = {};
     if(hasLinks){
       await clearEventLinks(e);
-      const links = await buildEventLinks({...e, startDate:ns, endDate:ne}, (e.wpIds||[]).length>0);
+      const links = await buildEventLinks({...e, startDate:ns, endDate:ne, ...(nsk ? { skipDates:nsk } : {})}, (e.wpIds||[]).length>0);
       linkPatch = { holidayIds: links.holidayIds, wpIds: links.wpIds };
     }
     await updateDoc(doc(db,'academicEvents', e.id), {
       startDate: ns, endDate: ne,
       year: Number(ns.slice(0,4)),
+      ...(nsk ? { skipDates: nsk } : {}),
       ...linkPatch,
       updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
     });
@@ -5286,7 +5443,9 @@ function gcalPanelHTML(){
       학부모에게도 보이는 일정(학생 일정·전체 통합)은 구글에서 고치면 원래대로 돌아갑니다 — 학사일정에서 고쳐 주세요.<br>
       구글에서 <b>복사·붙여넣기</b>로 만든 일정은 하나씩 따로 들어옵니다. 구글의 <b>«반복» 설정</b>으로 만든 일정은 받지 않아요.<br>
       <b style="color:var(--gd)">🔁 요일 반복</b>(예: 매주 화·목)과 <b>여러 날 + 시각</b> 일정은 구글에 <b>«반복 일정»</b>으로 들어가 그날그날 한 칸씩 보여요.
-      반복 일정은 학사일정에서만 고쳐 주세요 — 구글에서 고치거나 하루만 지우면 학사일정대로 되돌아갑니다.
+      반복 일정은 학사일정에서만 고쳐 주세요 — 구글에서 고치면 학사일정대로 되돌아갑니다.<br>
+      <b style="color:var(--gd)">🗑 이날만 빼기</b> — 달력에서 그날 일정을 눌러 «이날만 빼기»(또는 삭제 → 이날만 빼기). 구글에서도 그날만 빠져요.
+      받기를 켠 교사 캘린더에서 <b>교사 일정</b>을 «이 일정만 삭제»하면 학사일정에서도 그날이 빠지고, 학부모에게도 보이는 일정은 되돌아가요.
     </div>
     <div style="margin-top:10px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-sm btn-p" onclick="gcalSync('')">🔄 지금 전부 맞추기</button>

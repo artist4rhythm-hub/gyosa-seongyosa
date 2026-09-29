@@ -643,7 +643,10 @@ function dayItems(ds){
   const out = [], seen = new Set();
   const push = (t,hol)=>{ const k=String(t).replace(/\s+/g,''); if(seen.has(k)) return; seen.add(k); out.push({t,hol}); };
   AC.holidays.filter(h=>h.date===ds).forEach(h=>push(h.name||'공휴일', true));
-  AC.events.filter(e=>ds>=e.startDate && ds<=e.endDate).forEach(e=>push(e.title||'행사', false));
+  AC.events.filter(e=>ds>=e.startDate && ds<=e.endDate
+      && !(Array.isArray(e.weekdays) && e.weekdays.length && !e.weekdays.includes(new Date(ds+'T00:00:00').getDay()))   // 요일 반복
+      && !(Array.isArray(e.skipDates) && e.skipDates.includes(ds)))                                                      // 이날만 빼기 (v-88)
+    .forEach(e=>push(e.title||'행사', false));
   return out;
 }
 async function renderBlock(){
