@@ -1481,7 +1481,7 @@ async function loadCloudVP(){
     try { localStorage.setItem('ac_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
-const AC_BUILD = 'b20';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
+const AC_BUILD = 'b21';   // 🔖 공유 화면 하단에 표시 — 배포 확인용
 let ORG = 'daniel';       // 지금 보고 있는 기관 (기관마다 학사일정이 다르다)
 let curOrg = 'daniel';    // 학년 대상을 고를 때 쓰는 기관
 
@@ -3591,6 +3591,22 @@ function evsGcalNames(){
     .filter(t=> t.aud === 'teacher' && t.on !== false && t.calendarId && dlgOrgs.has(t.cal))
     .map(t=> EVS_CAL_NAME[t.cal] || t.cal);
 }
+/* 🔁 구글에 어떤 모양으로 나가나 — 구글 연동 함수(academic-gcal v-87)와 같은 판단
+   · 'rep' 반복 일정 (요일 반복 · 여러 날 + 시각) · 'one' 한 건 · 'none' 보일 날이 없음 */
+function evsGcalShape(s, en, timed, wds){
+  if(!s) return 'one';
+  const wd = [...wds].map(Number).filter(n=> n >= 0 && n <= 6);
+  const all = !wd.length || wd.length === 7;
+  let n = 0, first = null, last = null;
+  const d = new Date(s + 'T00:00:00'), end = new Date((en || s) + 'T00:00:00');
+  for(let i = 0; d <= end && i < 800; i++, d.setDate(d.getDate() + 1)){
+    if(all || wd.includes(d.getDay())){ n++; if(first == null) first = i; last = i; }
+  }
+  if(!n) return 'none';
+  if(n === 1) return 'one';
+  if(!timed && last - first + 1 === n) return 'one';          // 이어진 종일 — 긴 막대 하나
+  return 'rep';
+}
 
 /* 👀 오른쪽 미리보기 — 무엇을 고치든 바로 따라 바뀝니다 */
 function evsPreview(){
@@ -3661,7 +3677,11 @@ function evsPreview(){
   outs.push(['check', cat === 'closed' ? '달력에 쉬는 날(빨간 날)로 바로 보여요'
                     : (anyImpact && !closedLike) ? `달력과 ${unit} 막대에 바로 보여요` : '달력에 바로 보여요']);
   const gn = evsGcalNames();
-  if(gn.length) outs.push(['g', `구글 교사 캘린더(${gn.join(' · ')})에 곧바로 들어가요`]);
+  if(gn.length){
+    const gs = evsGcalShape(s, en, !!(t1 && t2 && t2 > t1), dlgWeekdays);
+    if(gs === 'rep') outs.push(['g', `구글 교사 캘린더(${gn.join(' · ')})에 «반복 일정»으로 곧바로 들어가요`]);
+    else if(gs === 'one') outs.push(['g', `구글 교사 캘린더(${gn.join(' · ')})에 곧바로 들어가요`]);
+  }
   const shareOrgs = ['daniel','jihyebit'].filter(o=> (dlgOrgs.has(o) || dlgOrgs.has('all'))
     && typeof SHARES !== 'undefined' && SHARES && SHARES['parent_'+o]);
   if(parentVisible && shareOrgs.length) outs.push(['link', '학부모 링크에는 «지금 내용으로 올리기» 할 때 나가요']);
@@ -5264,7 +5284,9 @@ function gcalPanelHTML(){
       <b style="color:var(--gd)">↔ 받기를 켠 교사 캘린더</b> — 구글에서 <b>새로 쓴 일정</b>은 학사일정에 «교사 일정 · 교사만»으로 들어오고,
       <b>교사 일정</b>은 구글에서 고친 제목·날짜·시각도 반영됩니다.<br>
       학부모에게도 보이는 일정(학생 일정·전체 통합)은 구글에서 고치면 원래대로 돌아갑니다 — 학사일정에서 고쳐 주세요.<br>
-      구글에서 <b>복사·붙여넣기</b>로 만든 일정은 하나씩 따로 들어옵니다. 구글의 <b>«반복» 설정</b>으로 만든 일정은 받지 않아요.
+      구글에서 <b>복사·붙여넣기</b>로 만든 일정은 하나씩 따로 들어옵니다. 구글의 <b>«반복» 설정</b>으로 만든 일정은 받지 않아요.<br>
+      <b style="color:var(--gd)">🔁 요일 반복</b>(예: 매주 화·목)과 <b>여러 날 + 시각</b> 일정은 구글에 <b>«반복 일정»</b>으로 들어가 그날그날 한 칸씩 보여요.
+      반복 일정은 학사일정에서만 고쳐 주세요 — 구글에서 고치거나 하루만 지우면 학사일정대로 되돌아갑니다.
     </div>
     <div style="margin-top:10px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-sm btn-p" onclick="gcalSync('')">🔄 지금 전부 맞추기</button>
@@ -5362,7 +5384,7 @@ function gcalLogHTML(results, only, dry){
         ? ` <button class="btn btn-sm" style="margin-left:6px" onclick="gcalSync('${esc(only||'')}',false,true)">그래도 진행</button>` : ''}</div>`;
     const bits = [];
     if(x.added) bits.push(`새로 ${x.added}건`);
-    if(x.updated) bits.push(`고침 ${x.updated}건`);
+    if(x.updated) bits.push(`고침 ${x.updated}건${x.remade ? ` (그중 🔁 반복 일정으로 새로 만듦 ${x.remade}건)` : ''}`);
     if(x.pushedBack) bits.push(`구글 원본에 되돌려 씀 ${x.pushedBack}건`);
     if(x.reverted) bits.push(`<span title="${esc((x.revertedWhy||[]).join('\n'))}" style="text-decoration:underline dotted;cursor:help">구글에서 고친 것 되돌림 ${x.reverted}건</span>`);
     if(x.removed) bits.push(`지움 ${x.removed}건`);
