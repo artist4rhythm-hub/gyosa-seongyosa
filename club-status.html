@@ -102,6 +102,10 @@ body.share-mode #tb,body.share-mode #sb{display:none!important}
 .sit b{font-size:12.5px;font-weight:900}
 .sit .no{font-size:10px;font-weight:900;color:#fff;border-radius:6px;padding:1px 6px;flex:none}
 .sit .t{font-size:10.8px;color:var(--cs-ink2);font-weight:700;margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sit .mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sit .l1{display:flex;align-items:center;gap:6px;min-width:0}
+.sit .l1 b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sit .l2{font-size:10.5px;font-weight:600;color:var(--cs-ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sit.ac{background:#FAFBFC;cursor:pointer}
 .sit.ac b{color:var(--ac-ink)}
 .sit.ac .bar{background:var(--ac-line)}
@@ -172,6 +176,7 @@ import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebase
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, onSnapshot, Timestamp, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { instrOf, openClubRoster } from './club-roster.js';   // 🎨 (v-92) 홈과 같은 담당·명단 창
 
 const __cfg = ({
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -238,7 +243,7 @@ function rosterOf(cid){
     const a1 = e.r1Final ? r1.has(cid)
       : (e.result||[]).some(r=>r.clubId===cid && r.state==='assigned' && (e.final||{})[r.clubId]!==false);
     const a2 = (e.result2||[]).some(r=>r.clubId===cid && r.state==='assigned');
-    if(a1||a2) out.push({ n:e.studentName||'', g:e.grade||'', c:e.className||'' });
+    if(a1||a2) out.push({ id:e.studentId||'', n:e.studentName||'', g:e.grade||'', c:e.className||'' });
   });
   return out.sort((a,b)=> (parseInt(a.g)||99)-(parseInt(b.g)||99) || String(a.n).localeCompare(String(b.n),'ko'));
 }
@@ -330,6 +335,7 @@ async function logShareView(kind, shareId, title){
   }catch(_){/* 무시 */}
 }
     await loadClubs();
+    pickTodayIfAny();
     logShareView('clubStatus', SHARE_ID, `${(ORGS[SNAP.org]||SNAP.org||'')} 동아리 현황`);
     $I('ms').style.display='block'; render(); window.hideLoading&&hideLoading();
     document.addEventListener('visibilitychange', async ()=>{ if(document.hidden) return;
@@ -365,6 +371,7 @@ async function reloadSem(){
   ACID = SNAP?.acShareId || await pickAcadId();
   if(ACID) ACAD = await loadAcad(ACID);
   await loadClubs();
+  pickTodayIfAny();
   if(window.__enrUn){ try{ __enrUn(); }catch(e){} }
   window.__enrUn = onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
     ENR = snap.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>!e.deleted);   // 🔗 단일 진실원: 관리 화면에서 바꾸면 여기도 즉시
@@ -500,7 +507,7 @@ function render(){
     h += `<div class="ccard${open?' open':''}" onclick="togC('${c.id}')">
       <b><span class="dot" style="background:${col}"></span>${esc(c.title||'')}</b>
       <div class="m">${days} ${esc(c.start||'')}${c.start?`–${addMin(c.start,c.durMin||60)}`:''}${roomOf(c)?` · <span class="rm">🏫 ${esc(roomOf(c))}</span>`:''}</div>
-      <div class="n">👥 <em>${r.length}명</em>${c.instr?` · ${esc(c.instr)} 강사`:''} · 총 ${ses.length?ses[0].total:0}차시</div>
+      <div class="n">👥 <em>${r.length}명</em>${instrOf(c)?` · 👤 ${esc(instrOf(c))}`:''} · 총 ${ses.length?ses[0].total:0}차시</div>
       ${open?`<div class="roster">${r.length? r.map(s=>`<span class="stu">${esc(s.n)}<i>${esc(String(s.g).replace('학년',''))}${s.c?'·'+esc(String(s.c).replace('반','')):''}</i></span>`).join('')
         : `<span class="none">${SHARE?'명단은 게시 이후 표시됩니다':'확정된 참여자가 아직 없어요'}</span>`}</div>`:''}
     </div>`;
@@ -558,8 +565,9 @@ function sheetHTML(ds, secs){
   let h = `<div class="sheet"><div class="sh">${dLabel(ds)}<span>탭한 날짜</span></div>`;
   ac.forEach((a,i)=> h += `<div class="sit ac" onclick="popAc(${i},'${ds}')"><span class="bar"></span><b>${esc(a.t)}</b><span class="t">${a.from===a.to?'하루':`${a.from.slice(5).replace('-','.')}–${a.to.slice(5).replace('-','.')}`}</span></div>`);
   ses.forEach(x=> h += `<div class="sit" onclick="popSes('${x.c.id}','${x.s.date}')"><span class="bar" style="background:${colorOf(x.c.id)}"></span>
-    <b>${esc(x.c.title||'')}</b><span class="no" style="background:${colorOf(x.c.id)}">${x.s.no}/${x.s.total}차시</span>
-    <span class="t">${x.s.time}–${x.s.end}${x.c.loc?` · ${esc(x.c.loc)}`:''}</span></div>`);
+    <span class="mid"><span class="l1"><b>${esc(x.c.title||'')}</b><span class="no" style="background:${colorOf(x.c.id)}">${x.s.no}/${x.s.total}차시</span></span>
+    <span class="l2">🏫 ${roomOf(x.c)?esc(roomOf(x.c)):'교실 미정'}${instrOf(x.c)?` · 👤 ${esc(instrOf(x.c))}`:''} · 👥 ${rosterOf(x.c.id).length}명</span></span>
+    <span class="t">${x.s.time}–${x.s.end}</span></div>`);
   if(!ac.length && !ses.length) h += `<div class="sit none">${bk?`동아리 휴강 — ${esc(bk)}`:'이날은 학사·동아리 일정이 없어요'}</div>`;
   else if(bk && !ses.length) h += `<div class="sit none">동아리 휴강 — ${esc(bk)}</div>`;
   return h+`</div>`;
@@ -592,6 +600,11 @@ function weekHTML(secs){
   return h || `<div class="empty">이 달에는 표시할 일정이 없어요.</div>`;
 }
 
+/* 📅 (v-92) 오늘 수업이 있으면 처음부터 오늘 목록을 펼쳐 둡니다 */
+function pickTodayIfAny(){
+  if(SELD) return;
+  if(MON === todayS.slice(0,7) && CLUBS.some(c=> liveSessions(c).some(s=> s.date === todayS))) SELD = todayS;
+}
 /* ── 상호작용 ── */
 window.togC = id=>{ OPENC.has(id)?OPENC.delete(id):OPENC.add(id); render(); };
 window.togAll = ()=>{ if(OPENC.size===CLUBS.length) OPENC.clear(); else CLUBS.forEach(c=>OPENC.add(c.id)); render(); };
@@ -610,9 +623,14 @@ window.popAc = (i, ds)=>{ const a=acadItemsOf(ds)[i]; if(!a) return;
 window.popSes = (cid, ds)=>{ const c=CLUBS.find(x=>x.id===cid); if(!c) return;
   const s=liveSessions(c).find(x=>x.date===ds); if(!s) return;
   const r=rosterOf(cid);
+  if(!SHARE && CU){   // 👥 (v-92) 누가 참여하는지 + 그날 출석부 · 동아리 출석 — 학생 안전·귀가 확인
+    openClubRoster({ db, fs:{ doc, getDoc, getDocs, collection, query, where }, club:c, sem:SEM, session:s,
+      roster:r, color:colorOf(cid), org:SEM.org });
+    return;
+  }
   popBG(`<div class="pop"><div class="pt" style="background:${colorOf(cid)}">${esc(c.title||'')} · ${s.no}/${s.total}차시</div>
     <div class="pb"><b>${dLabel(ds)} ${s.time} – ${s.end}</b>${roomOf(c)?` · 🏫 ${esc(roomOf(c))}`:''}<br>
-    ${c.instr?`${esc(c.instr)} 강사 · `:''}참여 ${r.length}명</div>
+    ${instrOf(c)?`👤 ${esc(instrOf(c))} · `:''}참여 ${r.length}명</div>
     <div class="foot">보강·시간 변경은 강사 입력 즉시 이 달력에 반영됩니다</div></div>`); };
 
 window.doLogin = async ()=>{

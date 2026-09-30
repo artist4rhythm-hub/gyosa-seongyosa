@@ -170,14 +170,79 @@ function paintAttOrg(o){
   el.innerHTML = h;
 }
 
-/* ── 🎨 동아리 실황 위젯 ── */
+/* ── 🎨 동아리 실황 위젯 ──
+   (v-92) 운영 중이면 «오늘 수업» 목록을 동아리 현황의 그날 목록 모양 그대로 —
+   교실 · 담당 강사 · 인원까지, 날마다 저절로 (자정이 지나면 다음 날 것으로 바뀝니다)
+   동아리를 누르면 참여 학생 + 오늘 출석부(결석·지각·조퇴) + 동아리 출석(강사 기록) */
+const CLUB_ST = {};          // 기관별 { sm, apps, enr, cols, orgNm, ts }
+let _clubTick = null, _clubLoadedAt = 0, _clubDay = '';
+function clubCss(){
+  if(document.getElementById('hwc-css')) return;
+  const st = document.createElement('style'); st.id = 'hwc-css';
+  st.textContent = `
+  .hwc{background:var(--wh);border:1px solid var(--ivd);border-radius:14px;overflow:hidden;margin-bottom:8px}
+  .hwc-h{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--iv);border-bottom:1px solid var(--ivd);font-size:12.5px}
+  .hwc-h b{font-weight:900;color:var(--gd)}
+  .hwc-h span{font-size:11.5px;font-weight:700;color:var(--ts)}
+  .hwc-h a{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--gm);text-decoration:none;white-space:nowrap}
+  .hwc-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
+  .hwc-it{display:flex;align-items:center;gap:10px;padding:10px 14px;border:0;border-bottom:1px solid var(--ivd);background:transparent;
+    text-align:left;font-family:inherit;color:inherit;cursor:pointer;min-width:0}
+  .hwc-it:hover{background:var(--gp)}
+  .hwc-it .bar{width:4px;align-self:stretch;border-radius:3px;flex:none}
+  .hwc-it .mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .hwc-it .l1{display:flex;align-items:center;gap:6px;min-width:0}
+  .hwc-it .l1 b{font-size:13px;font-weight:900;color:var(--gd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hwc-it .no{font-size:10px;font-weight:900;color:#fff;border-radius:6px;padding:1px 6px;flex:none}
+  .hwc-it .nowb{font-size:10px;font-weight:900;color:#fff;background:var(--gm);border-radius:6px;padding:1px 6px;flex:none}
+  .hwc-it .l2{font-size:11.2px;font-weight:600;color:var(--ts);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hwc-it .l2 em{font-style:normal;font-weight:800;color:var(--gm)}
+  .hwc-it .t{font-size:11.5px;font-weight:800;color:var(--ts);font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+  .hwc-it.done{opacity:.55}
+  .hwc-it.now{background:linear-gradient(90deg,rgba(0,112,74,.07),transparent)}
+  @media (max-width:640px){ .hwc-list{grid-template-columns:1fr} }`;
+  document.head.appendChild(st);
+}
+function hwToday(){ const n = new Date(); const p = x => String(x).padStart(2,'0'); return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`; }
+function clubTodayHTML(o){
+  const S = CLUB_ST[o]; if(!S) return '';
+  const now = new Date(); const p = x => String(x).padStart(2,'0');
+  const hm = `${p(now.getHours())}:${p(now.getMinutes())}`;
+  const items = CR.sessionsOn(S.apps, S.sm, S.ts);
+  const d = new Date(S.ts + 'T00:00:00');
+  return `<div class="hwc"><div class="hwc-h"><b>${esc(S.orgNm)}</b><span>${Number(S.ts.slice(5,7))}월 ${Number(S.ts.slice(8,10))}일 (${'일월화수목금토'[d.getDay()]}) · 오늘 동아리 ${items.length}개</span>
+      <a href="club-status.html">동아리 현황 ›</a></div>
+    <div class="hwc-list">${items.map(({ c, s })=>{
+      const col = S.cols[c.id] || '#00704A', n = CR.rosterOf(S.enr, c.id).length;
+      const room = CR.roomOf(c), who = CR.instrOf(c);
+      const st = (hm >= s.time && hm < s.end) ? 'now' : (hm >= s.end ? 'done' : '');
+      return `<button type="button" class="hwc-it ${st}" onclick="hwClubRoster('${o}','${c.id}')" title="누르면 참여 학생을 볼 수 있어요">
+        <span class="bar" style="background:${col}"></span>
+        <span class="mid"><span class="l1"><b>${esc(c.title||'')}</b><span class="no" style="background:${col}">${s.no}/${s.total}차시</span>${st==='now'?'<span class="nowb">● 진행 중</span>':''}</span>
+          <span class="l2">🏫 ${room ? esc(room) : '교실 미정'}${who ? ` · 👤 ${esc(who)}` : ''} · 👥 <em>${n}명</em></span></span>
+        <span class="t">${esc(s.time)}–${esc(s.end)}</span></button>`; }).join('')}</div></div>`;
+}
+function paintClubToday(){
+  Object.keys(CLUB_ST).forEach(o=>{ const el = document.getElementById('hwc-' + o); if(el) el.innerHTML = clubTodayHTML(o); });
+}
+window.hwClubRoster = (o, cid)=>{
+  const S = CLUB_ST[o]; if(!S) return;
+  const c = S.apps.find(x=>x.id===cid); if(!c) return;
+  const s = CR.liveSessions(c, S.sm).find(x=>x.date===S.ts) || null;
+  CR.openClubRoster({ db, fs:{ doc, getDoc, getDocs, collection, query, where }, club:c, sem:S.sm, session:s,
+    roster: CR.rosterOf(S.enr, cid), color: S.cols[cid], org:o, link:'club-status.html' });
+};
 async function loadClubWidget(){
   const box = $I('w-club'); if(!box) return;
   const orgs = attHomeOrgs(); if(!orgs.length){ box.innerHTML=''; return; }
+  const ts = hwToday();
   const today = new Date(); const p=x=>String(x).padStart(2,'0');
-  const ts = `${today.getFullYear()}-${p(today.getMonth()+1)}-${p(today.getDate())}`;
   const WDK = ['일','월','화','수','목','금','토'];
+  _clubLoadedAt = Date.now(); _clubDay = ts;
+  Object.keys(CLUB_ST).forEach(k=> delete CLUB_ST[k]);
   try{
+    if(!CR) CR = await import('./club-roster.js');
+    clubCss();
     const ss = await getDocs(collection(db,'clubSemesters'));
     const sems = ss.docs.map(d=>({id:d.id, ...d.data()}));
     const rows = [];
@@ -196,35 +261,47 @@ async function loadClubWidget(){
         rows.push(`<a class="hw-line" href="club-admin.html"><span class="hw-ic">🎯</span>
           <b>${esc(orgNm)} — 학부모 신청 진행 중 · ${n}명${dd}</b><span class="hw-go">›</span></a>`);
       } else {
-        const as = await getDocs(query(collection(db,'clubApplications'), where('semId','==',sm.id)));
+        const [as, es, shd] = await Promise.all([
+          getDocs(query(collection(db,'clubApplications'), where('semId','==',sm.id))),
+          getDocs(query(collection(db,'clubEnrollments'), where('semId','==',sm.id))).catch(()=>null),
+          getDoc(doc(db,'clubStatusShare', sm.id)).catch(()=>null),
+        ]);
         const apps = as.docs.map(d=>({id:d.id, ...d.data()}))
           .filter(c=>!c.deleted && !c.cancelled && c.status==='approved' && (c.sessions||[]).length);
-        const bm = {}; (sm.blocked||[]).forEach(bk=>{ if(bk.date) bm[bk.date]=1; });
-        const off = x => x.skip || (!x.extra && !x.override && (x.blocked || bm[x.date]));
-        const am = (hm,mn)=>{ const [h,mi]=String(hm||'0:0').split(':').map(Number); const t=h*60+mi+(Number(mn)||60);
-          return `${p(Math.floor(t/60)%24)}:${p(t%60)}`; };
-        const todays=[], future=[];
-        apps.forEach(c=>{
-          const arr=(c.sessions||[]).filter(x=>x&&x.date&&!off(x))
-            .sort((a,b)=>a.date===b.date?String(a.time||c.start||'').localeCompare(String(b.time||c.start||'')):a.date.localeCompare(b.date));
-          arr.forEach((x,i)=>{ const it={t:c.title||'',time:x.time||c.start||'',no:i+1,tot:arr.length,date:x.date};
-            if(x.date===ts) todays.push(it); else if(x.date>ts) future.push(it); });
-        });
-        todays.sort((a,b)=>a.time.localeCompare(b.time)); future.sort((a,b)=>a.date===b.date?a.time.localeCompare(b.time):a.date.localeCompare(b.date));
+        const enr = es ? es.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>!e.deleted) : [];
+        const cols = CR.colorMap(apps, (shd && shd.exists()) ? (shd.data().colors || null) : null);
+        const todays = CR.sessionsOn(apps, sm, ts);
         if(todays.length){
-          const two = todays.slice(0,2).map(x=>`${esc(x.t)} ${x.time} <i>(${x.no}/${x.tot}차시)</i>`).join(' · ');
-          rows.push(`<a class="hw-line" href="club-status.html"><span class="hw-ic">🎨</span>
-            <b>${esc(orgNm)} — 오늘 동아리 ${todays.length}개 · ${two}${todays.length>2?' 외':''}</b><span class="hw-go">›</span></a>`);
-        } else if(future.length){
-          const nx=future[0]; const d=new Date(nx.date+'T00:00:00');
-          rows.push(`<a class="hw-line" href="club-status.html"><span class="hw-ic">🎨</span>
-            <b>${esc(orgNm)} — 다음 수업 ${Number(nx.date.slice(5,7))}/${Number(nx.date.slice(8,10))}(${WDK[d.getDay()]}) ${esc(nx.t)} ${nx.time} <i>(${nx.no}/${nx.tot}차시)</i></b><span class="hw-go">›</span></a>`);
+          CLUB_ST[o] = { sm, apps, enr, cols, orgNm, ts };
+          rows.push(`<div id="hwc-${o}">${clubTodayHTML(o)}</div>`);
+        } else {
+          const future = [];
+          apps.forEach(c=> CR.liveSessions(c, sm).forEach(x=>{ if(x.date > ts) future.push({ c, x }); }));
+          future.sort((a,b)=> a.x.date===b.x.date ? a.x.time.localeCompare(b.x.time) : a.x.date.localeCompare(b.x.date));
+          if(future.length){
+            const { c, x } = future[0]; const d=new Date(x.date+'T00:00:00');
+            const room = CR.roomOf(c);
+            rows.push(`<a class="hw-line" href="club-status.html"><span class="hw-ic">🎨</span>
+              <b>${esc(orgNm)} — 오늘은 동아리가 없어요 · 다음 수업 ${Number(x.date.slice(5,7))}/${Number(x.date.slice(8,10))}(${WDK[d.getDay()]}) ${esc(c.title||'')} ${x.time} <i>(${x.no}/${x.total}차시${room?' · '+esc(room):''})</i></b><span class="hw-go">›</span></a>`);
+          }
         }
       }
     }
     box.innerHTML = rows.join('') || `<div class="hw-dim">진행 중인 동아리 학기가 없어요.</div>`;
   }catch(e){ box.innerHTML = `<div class="hw-dim">동아리 정보를 불러오지 못했어요.</div>`; }
+  /* ⏱ 1분마다 «진행 중»을 다시 칠하고, 날짜가 바뀌면 다음 날 것으로 새로 읽습니다 · 탭으로 돌아오면 새로 */
+  if(!_clubTick){
+    _clubTick = setInterval(()=>{
+      if(!$I('w-club')) return;
+      if(hwToday() !== _clubDay) loadClubWidget(); else paintClubToday();
+    }, 60000);
+    document.addEventListener('visibilitychange', ()=>{
+      if(document.visibilityState !== 'visible' || !$I('w-club')) return;
+      if(hwToday() !== _clubDay || Date.now() - _clubLoadedAt > 5*60000) loadClubWidget(); else paintClubToday();
+    });
+  }
 }
+let CR = null;   // club-roster.js (처음 쓸 때 불러옵니다)
 
 /* ── 📅 학사 D-Day 위젯 ── */
 async function loadAcdday(){
