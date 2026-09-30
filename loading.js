@@ -492,3 +492,83 @@
 
   window.addEventListener('pageshow', function(){ window.hideLoading(); });
 })();
+
+/* 🔐 (v-91) 교직원이 아닌 계정으로 로그인된 채 교사 화면을 열었을 때 — 멈춘 화면 대신 까닭과 다시 로그인
+   · 학부모 사이트(같은 주소 artist4rhythm-hub.github.io)와 교사 선교사는 «로그인 한 자리»를 함께 씁니다.
+     같은 브라우저에서 학부모 계정으로 로그인하면 교사 화면도 그 계정으로 열리고,
+     보안 규칙이 교직원 명부(staff) 읽기를 막아 화면이 «권한 없음»으로 멈췄습니다.
+   · «권한 없음»이 났을 때 지금 계정이 교직원인지 한 번만 확인하고, 아니면 안내 카드를 띄웁니다.
+     (교직원이면 아무것도 하지 않습니다 — 다른 자료 권한 문제는 각 화면이 처리) */
+(function(){
+  var FB = 'https://www.gstatic.com/firebasejs/10.12.0/';
+  var state = '';            // '' 아직 · 'busy' 확인 중 · 'staff' 교직원 확인됨 · 'shown' 카드 띄움
+  function isPerm(r){ return !!r && (r.code === 'permission-denied' || /insufficient permissions/i.test(String(r.message || ''))); }
+  function esc(s){ return String(s || '').replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function trigger(){
+    if(state) return;
+    try { if(new URLSearchParams(location.search).get('share')) return; } catch(e){}   // 공유 링크 보기는 로그인과 상관없음
+    state = 'busy';
+    check().catch(function(){ state = ''; });
+  }
+  var PERM_TXT = /insufficient permissions|permission-denied/i;
+  // ① 붙잡지 않은 오류 (홈·교직원 명부처럼 멈춰 버리던 화면)
+  window.addEventListener('unhandledrejection', function(ev){ if(isPerm(ev && ev.reason)) trigger(); });
+  // ② 붙잡아서 화면 글로 보여 주는 화면 — «오류: Missing or insufficient permissions» (학사일정·출근부 gate, 연혁 위 띠 등)
+  function watchText(){
+    if(!window.MutationObserver || !document.body) return;
+    var until = Date.now() + 30000;          // 화면을 여는 동안만 봅니다
+    var mo = new MutationObserver(function(list){
+      if(state && state !== 'busy'){ mo.disconnect(); return; }
+      if(Date.now() > until){ mo.disconnect(); return; }
+      for(var i = 0; i < list.length; i++){
+        var m = list[i], t = m.type === 'characterData' ? (m.target.textContent || '') : '';
+        if(!t) for(var j = 0; j < m.addedNodes.length; j++){ t += (m.addedNodes[j].textContent || ''); if(t.length > 2000) break; }
+        if(PERM_TXT.test(t)){ mo.disconnect(); trigger(); return; }
+      }
+    });
+    var g = document.getElementById('gate-msg');
+    if(g) mo.observe(g, { childList:true, characterData:true, subtree:true });
+    mo.observe(document.body, { childList:true });   // 맨 위에 끼워 넣는 오류 띠
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchText, { once:true }); else watchText();
+  async function check(){
+    var mods = await Promise.all([import(FB + 'firebase-app.js'), import(FB + 'firebase-auth.js'), import(FB + 'firebase-firestore.js')]);
+    var AP = mods[0], AU = mods[1], FS = mods[2];
+    var app; try { app = AP.getApp(); } catch(e){ state = ''; return; }
+    var auth = AU.getAuth(app);
+    var u = auth.currentUser;
+    if(!u){ state = ''; return; }
+    try { await FS.getDoc(FS.doc(FS.getFirestore(app), 'staff', u.uid)); state = 'staff'; return; }
+    catch(e){ if(!isPerm(e)){ state = ''; return; } }
+    state = 'shown';
+    show(u.email || '', function(){ return AU.signOut(auth); });
+  }
+  function show(email, doSignOut){
+    try { window.__BOOT_OK = true; window.__markAlive && window.__markAlive(); } catch(e){}
+    try { window.hideLoading && window.hideLoading(); } catch(e){}
+    var old = document.getElementById('bootFix'); if(old) old.remove();
+    var d = document.createElement('div'); d.id = 'staffGate';
+    d.innerHTML = '<div style="position:fixed;inset:0;background:#F2F0EB;display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;font-family:-apple-system,\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif">'
+      + '<div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.08)">'
+      + '<div style="font-size:34px">🔐</div>'
+      + '<div style="font-weight:900;font-size:16px;margin:10px 0 8px;color:#1E3932">교직원 계정이 아니에요</div>'
+      + '<div style="font-size:13px;color:#3F4A45;line-height:1.7">지금 이 브라우저는<br><b style="color:#00704A;word-break:break-all">' + esc(email || '(이메일 없는 계정)') + '</b><br>계정으로 로그인되어 있어요.<br>이 계정은 교직원 명부에 없어서 교사 선교사를 열 수 없어요.</div>'
+      + '<div style="font-size:11.5px;color:#5A6560;line-height:1.65;background:#F2F0EB;border-radius:10px;padding:10px 12px;margin-top:12px;text-align:left">'
+      + '같은 브라우저에서 <b>학부모 사이트</b>에 학부모 계정으로 로그인하면, 교사 선교사도 그 계정으로 열려요. (두 사이트가 로그인 한 자리를 함께 써요)</div>'
+      + '<button id="sgOut" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;background:#00704A;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">🔑 로그아웃하고 교직원 계정으로 로그인</button>'
+      + '<a href="' + location.origin + '/daniel-parents/" style="display:block;margin-top:8px;width:100%;box-sizing:border-box;padding:11px;border:1.5px solid #E3E1DA;border-radius:10px;background:#fff;color:#5A6560;font-weight:700;font-size:12.5px;text-decoration:none">학부모 사이트로 가기</a>'
+      + '<div style="font-size:10.5px;color:#9AA29D;margin-top:10px;line-height:1.6">학부모 계정으로 확인할 때는 Chrome <b>시크릿 창</b>에서 열면 교사 로그인과 섞이지 않아요.</div>'
+      + '</div></div>';
+    var put = function(){
+      document.body.appendChild(d);
+      var b = document.getElementById('sgOut');
+      if(b) b.onclick = async function(){
+        b.disabled = true; b.textContent = '로그아웃하는 중…';
+        try { await doSignOut(); } catch(e){}
+        var base = location.pathname.replace(/[^\/]*$/, '');
+        location.replace(base + 'index.html');
+      };
+    };
+    if(document.body) put(); else document.addEventListener('DOMContentLoaded', put, { once:true });
+  }
+})();
