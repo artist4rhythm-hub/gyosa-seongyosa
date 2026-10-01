@@ -285,20 +285,30 @@ const isSuper = () => CU && CU.role === 'super';
 const canWrite = o => WRITE.includes(o);
 const canSee = o => SEE.includes(o);
 const orgTag = o => `<span class="mt-otag" style="background:${MCOLOR[o] || '#555'}">${esc(C.MORG_SHORT[o] || o)}</span>`;
-const typesOf = o => {
-  const s = new Set([...(CFG.types[o] || C.DEF_TYPES[o] || [])]);
-  LIST.filter(m => m.org === o && m.type).forEach(m => s.add(m.type));
-  return [...s];
-};
+/* (v-95) 회의 종류 = 목록에 있는 것만 (쓰는 화면에서 넣고 뺀다) — 예전 회의록의 종류는 그 회의록에만 남는다 */
+const typesOf = o => (CFG.types[o] || C.DEF_TYPES[o] || []).slice();
+async function saveTypes(o, list){
+  const clean = [...new Set((list || []).map(t => String(t || '').trim()).filter(Boolean))].slice(0, 30);
+  await setDoc(doc(db, 'minutesConfig', 'types'), { [o]: clean, updatedAt: serverTimestamp(), updatedByName: CU.name || '' }, { merge: true });
+  CFG.types = { ...CFG.types, [o]: clean };
+  return clean;
+}
+let DEPTS = { daniel: ['초등부', '중고등부', '행정실'], jihyebit: ['전체'] };   // 교직원 명부 «부서 관리»와 같은 원본 (adminConfig/depts)
 
 /* ── 불러오기 ── */
 async function loadCfg(){
-  try{
-    const s = await getDoc(doc(db, 'minutesConfig', 'main'));
-    const d = s.exists() ? s.data() : {};
-    CFG = { types: { ...C.DEF_TYPES, ...(d.types || {}) }, absence: Array.isArray(d.absence) && d.absence.length ? d.absence : C.DEF_ABS.slice(),
-            viewers: d.viewers || {} };
-  }catch(e){ CFG = { types: { ...C.DEF_TYPES }, absence: C.DEF_ABS.slice(), viewers: {} }; }
+  const [mS, tS, dS] = await Promise.all([
+    getDoc(doc(db, 'minutesConfig', 'main')).catch(() => null),
+    getDoc(doc(db, 'minutesConfig', 'types')).catch(() => null),
+    getDoc(doc(db, 'adminConfig', 'depts')).catch(() => null)]);
+  const d = mS && mS.exists() ? mS.data() : {};
+  const td = tS && tS.exists() ? tS.data() : null;
+  /* 회의 종류: 새 목록(types)이 있으면 그것 · 없으면 예전 설정에서 «훈련센터» 같은 안 쓰는 이름을 빼고 */
+  const base = td ? {} : Object.fromEntries(Object.entries(d.types || {}).map(([o, l]) => [o, (l || []).filter(t => !C.OLD_TYPES.includes(t))]));
+  const types = { ...C.DEF_TYPES, ...base };
+  if(td) for(const o of MORDER) if(Array.isArray(td[o])) types[o] = td[o].slice();
+  CFG = { types, absence: Array.isArray(d.absence) && d.absence.length ? d.absence : C.DEF_ABS.slice(), viewers: d.viewers || {} };
+  if(dS && dS.exists()){ const x = dS.data(); for(const o of ['daniel', 'jihyebit']) if(Array.isArray(x[o]) && x[o].length) DEPTS[o] = x[o].slice(); }
 }
 async function loadStaff(){
   try{
@@ -415,7 +425,7 @@ function confirmLeave(){ return Promise.resolve(confirm('저장하지 않은 내
 function edCtx(){
   return { db, FS, C, STORE, CU, STAFF, SMAP, CFG, WRITE, SEE, LIST, TASKS, toast, modal, popMenu,
     defaultOrg: (ORG && ORG !== 'all' && WRITE.includes(ORG)) ? ORG : (WRITE.find(o => o !== 'da') || 'da'),
-    typesOf, nameOf,
+    typesOf, saveTypes, DEPTS, nameOf,
     onSaved: id => go({ m: id }, true),
     onCancel: id => { if(id) go({ m: id }, true); else go({ org: ORG }, true); } };
 }
@@ -972,7 +982,7 @@ async function openSettings(tab){
     const tabs = [['types', '회의 종류'], ['abs', '불참 사유'], ['view', '열람 기관'], ['import', '예전 회의록 넣기'], ['trash', '휴지통']];
     let h = `<div class="set-tabs">${tabs.map(([k, l]) => `<button class="mt-chip${tab === k ? ' on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
     if(tab === 'types'){
-      h += `<div class="dv-hint" style="margin-bottom:10px">회의록을 쓸 때 고르는 회의 종류예요. 쓰는 사람이 새 종류를 적으면 그 기관 목록에 저절로 붙어요.</div>`;
+      h += `<div class="dv-hint" style="margin-bottom:10px">회의록을 쓸 때 고르는 회의 종류예요. 회의록 쓰는 화면에서도 선생님들이 바로 넣고 뺄 수 있어요. 목록에서 빼도 이미 쓴 회의록은 그대로예요.</div>`;
       for(const o of MORDER){
         h += `<div class="fld"><label>${esc(MORG[o])}</label><div>${(draft.types[o] || []).map((t, i) => `<span class="tg">${esc(t)}<button data-del-type="${o}|${i}" aria-label="빼기">✕</button></span>`).join('')}</div>
           <div style="display:flex;gap:6px;margin-top:4px"><input type="text" placeholder="새 회의 종류" data-add-type-in="${o}" style="flex:1"><button class="mt-btn sm" data-add-type="${o}">＋ 넣기</button></div></div>`;
@@ -1017,6 +1027,7 @@ async function openSettings(tab){
   md.box.querySelector('#st-save').onclick = async () => {
     try{
       await setDoc(doc(db, 'minutesConfig', 'main'), { types: draft.types, absence: draft.absence, viewers: draft.viewers, updatedAt: serverTimestamp(), updatedBy: CU.name || '' });
+      await setDoc(doc(db, 'minutesConfig', 'types'), { ...Object.fromEntries(MORDER.map(o => [o, draft.types[o] || []])), updatedAt: serverTimestamp(), updatedByName: CU.name || '' });
       CFG = { ...CFG, ...draft }; computeOrgs(); toast('설정을 저장했어요'); md.close();
       if(VIEW === 'list') renderList();
     }catch(e){ toast('저장하지 못했어요 — ' + (e.code || e.message), 'err'); }

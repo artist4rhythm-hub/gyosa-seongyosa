@@ -11,9 +11,10 @@ export const MORG_SHORT = { daniel:'다니엘', jihyebit:'지혜빛', da:'DA전�
 export const MORDER = ['daniel', 'jihyebit', 'da'];
 export const MCOLOR = { daniel:'#00704A', jihyebit:'#B7791F', da:'#2B5797' };
 
-/* 처음 설정값 — 수퍼 관리자가 «설정»에서 바꿀 수 있고, 회의록에 새로 쓴 종류는 저절로 목록에 붙는다 */
+/* 처음 설정값 — 회의록 쓰는 화면에서 바로 넣고 뺄 수 있다 (minutesConfig/types) */
+export const OLD_TYPES = ['훈련센터 회의'];
 export const DEF_TYPES = {
-  daniel:   ['훈련센터 회의', '다니엘 아마츠 학교 회의'],
+  daniel:   ['다니엘 아마츠 학교 회의'],                  // (v-95) «훈련센터»는 더 쓰지 않음 — 예전 회의록 제목은 그대로
   jihyebit: ['지혜빛 선교원 교사 회의'],
   da:       ['DA 전체 회의'],
 };
@@ -267,15 +268,28 @@ export function renderBlock(b, label, ctx){
   return '';
 }
 /* 사진이 이어지면 한 줄에 나란히 */
+/* 지난 회의에서 가져온 줄(from)은 회색 상자로 묶고, 그 뒤 새로 쓴 줄 앞에 «이번 회의»를 붙인다 */
 export function renderBody(body, ctx){
   const labels = numberBody(body);
-  let out = '', imgs = '';
+  const segs = [];
   (body || []).forEach((b, i) => {
-    if(b.k === 'img' && !(ctx && ctx.opts && ctx.opts.img === false)){ imgs += renderBlock(b, '', ctx); return; }
-    if(imgs){ out += `<div class="md-imgs">${imgs}</div>`; imgs = ''; }
-    out += renderBlock(b, labels[i], ctx);
+    const f = b.from || '';
+    const last = segs[segs.length - 1];
+    if(last && last.from === f) last.items.push([b, i]); else segs.push({ from: f, items: [[b, i]] });
   });
-  if(imgs) out += `<div class="md-imgs">${imgs}</div>`;
+  const hasPrev = segs.some(g => g.from);
+  let out = '';
+  segs.forEach((g, gi) => {
+    let inner = '', imgs = '';
+    for(const [b, i] of g.items){
+      if(b.k === 'img' && !(ctx && ctx.opts && ctx.opts.img === false)){ imgs += renderBlock(b, '', ctx); continue; }
+      if(imgs){ inner += `<div class="md-imgs">${imgs}</div>`; imgs = ''; }
+      inner += renderBlock(b, labels[i], ctx);
+    }
+    if(imgs) inner += `<div class="md-imgs">${imgs}</div>`;
+    if(g.from) out += `<div class="md-prev"><div class="md-prev-h">↩ ${esc(fmtMD(g.from))} 회의에서 이어진 내용</div>${inner}</div>`;
+    else out += (hasPrev && gi > 0 ? `<div class="md-new-h">✎ 이번 회의</div>` : '') + inner;
+  });
   return out;
 }
 export function statusChip(st, can, key){
@@ -403,6 +417,12 @@ button.md-st{cursor:pointer}
 .md-lk{font-family:inherit;font-size:12px;font-weight:800;color:#00704A;background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
 .md-empty{color:#93A09A;font-size:13px;padding:20px 0;text-align:center}
 .md-hit{font-style:normal;background:#FFE08A;border-radius:3px;box-shadow:0 0 0 1px #F2C94C}
+.md-prev{margin:4px 0 6px 18px;padding:5px 0 6px;background:#F3F5F4;border-left:3px solid #BFCCC6;border-radius:0 8px 8px 0;color:#5E6A64}
+.md-prev .md-l{color:#5E6A64}.md-prev .md-l>i{color:#8A958F}
+.md-prev .md-l1{padding-left:8px}.md-prev .md-l2{padding-left:34px}.md-prev .md-l3{padding-left:60px}.md-prev .md-l4{padding-left:86px}
+.md-prev .md-tbl,.md-prev .md-imgs,.md-prev .md-pdf,.md-prev .md-file,.md-prev .md-link,.md-prev .md-cap{margin-left:8px}
+.md-prev-h{font-size:11px;font-weight:800;color:#7A8A82;padding:0 0 2px 8px}
+.md-new-h{font-size:11px;font-weight:900;color:#00704A;margin:8px 0 1px 26px}
 @media (max-width:700px){
   .md-title{font-size:20px;letter-spacing:.1em}
   .md-l1{padding-left:12px}.md-l2{padding-left:30px}.md-l3{padding-left:48px}.md-l4{padding-left:66px}

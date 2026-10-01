@@ -32,7 +32,32 @@ const CSS = `
 .ed-cont{margin-top:12px;display:flex;align-items:center;gap:10px;background:#F3F8FF;border:1px solid #C9DCF5;border-radius:12px;padding:10px 14px;font-size:13px;color:#1E3A5F}
 html[data-theme="dark"] .ed-cont{background:var(--info-bg);border-color:#2B4A72;color:var(--info)}
 .ed-cont b{font-weight:900}
-.at-g{font-size:11.5px;font-weight:800;color:var(--ink-3);margin:8px 0 4px}
+.at-grp{margin-bottom:10px}
+.at-g{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);margin:8px 0 5px;padding-bottom:4px;border-bottom:1px dashed var(--line)}
+.at-g b{font-size:12.5px;font-weight:900;color:var(--ink)}
+.at-gin{margin-left:auto;font-family:inherit;font-size:11.5px;font-weight:800;color:var(--sb-green);background:transparent;border:0;cursor:pointer;padding:2px 4px}
+.tchip{display:inline-flex;align-items:center;gap:0}
+.tchip .tdel{font-family:inherit;border:1px solid #F3B4AC;background:#FDECEA;color:#B42318;border-radius:100px;width:22px;height:22px;margin-left:-6px;cursor:pointer;font-size:11px;font-weight:900;position:relative;top:-9px}
+.mt-chip.ghost{border-style:dashed}.mt-chip small{font-weight:600;color:var(--ink-3)}
+.ol.prev,.ob.prev{background:#F3F5F4;border-left:3px solid #BFCCC6}
+.ol.prev .ol-t{color:#5E6A64}
+html[data-theme="dark"] .ol.prev,html[data-theme="dark"] .ob.prev{background:#16241E;border-left-color:#2E463B}
+html[data-theme="dark"] .ol.prev .ol-t{color:#A9BDB4}
+.ol.cap,.ol.newcap{flex-wrap:wrap;margin-top:8px}
+.ol.cap::before,.ol.newcap::before{flex-basis:100%;font-size:11px;font-weight:800;line-height:1.6;user-select:none}
+.ol.cap::before{content:attr(data-cap);color:#7A8A82}
+.ol.newcap::before{content:'✎ 이번 회의';color:#00704A;font-weight:900}
+.ob.cap::before{content:attr(data-cap);display:block;font-size:11px;font-weight:800;color:#7A8A82;padding:4px 8px 0}
+.ob.newcap{margin-top:22px}.ob.newcap::before{content:'✎ 이번 회의';display:block;font-size:11px;font-weight:900;color:#00704A;margin:-20px 0 4px}
+.pk-top{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.pk-top input[type=search]{flex:1;min-width:220px;font-family:inherit;font-size:13.5px;height:38px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--surface);color:var(--ink)}
+.pk-m{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:8px}
+.pk-m.pre{border-color:#9CCBB6;background:var(--sb-mint-2)}
+.pk-mh{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}
+.pk-t{display:flex;align-items:baseline;gap:7px;font-size:13px;padding:5px 2px;cursor:pointer;flex-wrap:wrap}
+.pk-t input{accent-color:var(--sb-green);position:relative;top:2px}
+.pk-t span{font-weight:700}.pk-t small{color:var(--ink-3);font-size:11.5px}.pk-t small em{font-style:normal;color:#B45309;font-weight:800}
+.pk-t .md-hit{font-style:normal;background:#FFE08A;border-radius:3px}
 .at-list{display:flex;flex-wrap:wrap;gap:6px}
 .at{font-family:inherit;font-size:13px;font-weight:700;border:1px solid var(--line);background:var(--surface);color:var(--ink-3);border-radius:10px;padding:6px 11px;cursor:pointer;display:inline-flex;gap:5px;align-items:center}
 .at.o{background:#E8F3EF;border-color:#9CCBB6;color:#00704A}
@@ -132,7 +157,7 @@ export async function openEditor(ctx, m, opts){
     id: m ? m.id : X.FS.doc(X.FS.collection(X.db, 'meetings')).id,
     isNew, baseRev: m ? (m.rev || 0) : 0, base: m ? JSON.parse(JSON.stringify(m)) : null,
     org,
-    type: m ? (m.type || '') : (prev ? prev.type || '' : (X.typesOf(org)[0] || '')),
+    type: m ? (m.type || '') : (prev && X.typesOf(org).includes(prev.type) ? prev.type : (X.typesOf(org)[0] || '')),
     title: m ? (m.title || '') : '',
     date: m ? m.date : C.todayStr(),
     time: m ? (m.time || '') : (prev ? prev.time || '' : ''),
@@ -146,7 +171,7 @@ export async function openEditor(ctx, m, opts){
     topics: m ? JSON.parse(JSON.stringify(m.topics || [])) : [],
     dirty: false, saving: false, from,
   };
-  if(from) ED.topics = carryTopics(from, from.topics || [], false);
+  if(from) ED.topics = carryTopics(from, from.topics || [], true);
   if(!ED.topics.length) ED.topics = [blankTopic()];
   window.__mtDirty = false;
   paint();
@@ -163,18 +188,24 @@ function rosterFrom(prev){
   return att;
 }
 const blankTopic = () => ({ id: uid6('t'), title: '', body: [{ k: 'l', lv: 1, h: '' }], dec: [], tasks: [] });
-/* 지난 회의 주제를 «이어 쓰는 주제»로 — 못 끝낸 임무는 첫 줄로 적어 둔다 */
-function carryTopics(pm, topics, withTasks){
+/* 지난 회의 주제를 «이어 쓰는 주제»로 — 지난 내용·결정·못 끝낸 임무는 회색(from)으로, 그 아래부터 이번 회의
+   tasks = { key: 임무 문서 } (상태 확인용) */
+function carryTopics(pm, topics, withContent, tasks){
   const C = X.C;
+  tasks = tasks || X.TASKS;
   return topics.map(t => {
     const body = [];
-    if(withTasks !== false) (t.tasks || []).forEach(k => {
-      const d = X.TASKS[C.taskKey(pm.id, k.id)] || {};
+    if(withContent !== false){
+      (t.body || []).forEach(b => { if(b && b.k !== 'wait') body.push({ ...b, from: b.from || pm.date }); });
+      (t.dec || []).filter(d => C.textOf(d.h).trim()).forEach(d => body.push({ k: 'l', lv: 1, h: '· 지난 결정: ' + d.h, from: pm.date }));
+    }
+    (t.tasks || []).forEach(k => {
+      const d = tasks[C.taskKey(pm.id, k.id)] || {};
       if(d.status === 'done') return;
       const who = (k.uids || []).map(u => (k.names || {})[u] || '').filter(Boolean).join(', ');
-      body.push({ k: 'l', lv: 1, h: esc(`지난 임무: ${C.textOf(k.h)}${who ? ' · ' + who : ''} (${(C.STATUS[d.status] || C.STATUS.todo).l})`) });
+      body.push({ k: 'l', lv: 1, h: esc(`· 지난 임무: ${C.textOf(k.h)}${who ? ' · ' + who : ''} (${(C.STATUS[d.status] || C.STATUS.todo).l})`), from: pm.date });
     });
-    if(!body.length) body.push({ k: 'l', lv: 1, h: '' });
+    body.push({ k: 'l', lv: 1, h: '' });                    // 이번 회의 내용은 여기부터
     return { id: uid6('t'), title: t.title || '', thr: t.thr || `${pm.id}:${t.id}`, thrFrom: pm.date, body, dec: [], tasks: [] };
   });
 }
@@ -197,8 +228,7 @@ function paint(){
     <section class="ed-sec"><div class="ed-sh"><i>1</i>회의</div>
       <div class="ed-grid">
         <div class="ed-f w4"><label>기관</label>${orgSeg}</div>
-        <div class="ed-f w4"><label>회의 종류</label><div class="ed-chips" id="ed-types">${types.map(t => `<button type="button" class="mt-chip${ED.type === t ? ' on' : ''}" data-e="type" data-v="${esc(t)}">${esc(t)}</button>`).join('')}
-          <button type="button" class="mt-chip" data-e="newtype">＋ 새 종류</button></div></div>
+        <div class="ed-f w4"><label>회의 종류</label><div class="ed-chips" id="ed-types">${typeChipsHTML()}</div></div>
         <div class="ed-f w2"><label>제목 <span style="font-weight:600;color:var(--ink-3)">(비우면 «${esc(C.titleOf({ type: ED.type }))}»)</span></label><input id="ed-title" value="${esc(ED.title)}" placeholder="${esc(C.titleOf({ type: ED.type }))}"></div>
         <div class="ed-f"><label>날짜</label><input type="date" id="ed-date" value="${esc(ED.date)}"></div>
         <div class="ed-f"><label>시각</label><input type="time" id="ed-time" value="${esc(ED.time)}"></div>
@@ -212,12 +242,24 @@ function paint(){
       <div class="ed-f" style="margin-top:12px"><label>그 외 참석 (손님 · 외부 강사 등)</label><input id="ed-guests" value="${esc(ED.guests)}" placeholder="예: 김○○ 대표님"></div></section>
     <section class="ed-sec"><div class="ed-sh"><i>3</i>주제 <span>Tab 들여쓰기 · Shift+Tab 내어쓰기 — 번호는 (1) → 1) → I. → (I) 로 저절로 · Pages · 한글에서 복사해 붙여도 번호를 알아봐요</span></div>
       <div id="ed-topics">${ED.topics.map(topicHTML).join('')}</div>
-      <button type="button" class="addb" data-e="addtopic">＋ 주제 추가</button></section>
+      <button type="button" class="addb" data-e="addtopic">＋ 주제 추가</button> <button type="button" class="addb" data-e="pick">↩ 이전 회의 주제 가져오기</button></section>
     <div class="ed-foot"><span id="ed-note" style="flex:1"></span><button class="mt-btn p" data-e="save">저장</button></div>
   </div>`;
   ED.topics.forEach(t => { const el = R.querySelector(`.et[data-tid="${t.id}"]`); if(el) hydrate(el, t); });
   paintAtt(); paintCont(); renumAll(); note();
   bind();
+}
+function typeChipsHTML(){
+  const list = X.typesOf(ED.org);
+  const types = list.slice(); if(ED.type && !types.includes(ED.type)) types.push(ED.type);
+  return types.map(t => `<span class="tchip${ED.type === t ? ' on' : ''}"><button type="button" class="mt-chip${ED.type === t ? ' on' : ''}" data-e="type" data-v="${esc(t)}">${esc(t)}${list.includes(t) ? '' : ' <small>(이 회의록만)</small>'}</button>${ED.typeEdit && list.includes(t) ? `<button type="button" class="tdel" data-e="deltype" data-v="${esc(t)}" aria-label="${esc(t)} 빼기">✕</button>` : ''}</span>`).join('')
+    + `<button type="button" class="mt-chip" data-e="newtype">＋ 새 종류</button>`
+    + `<button type="button" class="mt-chip ghost${ED.typeEdit ? ' on' : ''}" data-e="typeedit">${ED.typeEdit ? '✓ 고치기 끝' : '✎ 목록 고치기'}</button>`;
+}
+function paintTypes(){
+  const box = R.querySelector('#ed-types'); if(box) box.innerHTML = typeChipsHTML();
+  const t = R.querySelector('#ed-title');
+  if(t){ t.placeholder = X.C.titleOf({ type: ED.type }); t.previousElementSibling.innerHTML = `제목 <span style="font-weight:600;color:var(--ink-3)">(비우면 «${esc(X.C.titleOf({ type: ED.type }))}»)</span>`; }
 }
 function topicHTML(t){
   return `<div class="et" data-tid="${esc(t.id)}">
@@ -238,14 +280,15 @@ function topicHTML(t){
 function hydrate(el, t){
   el._thr = t.thr || ''; el._thrFrom = t.thrFrom || ''; el._ed = t.ed || null;
   const body = el.querySelector('.et-body');
-  (t.body && t.body.length ? t.body : [{ k: 'l', lv: 1, h: '' }]).forEach(b => body.appendChild(b.k === 'l' ? lineEl(b.lv, b.h) : blockEl(b)));
+  (t.body && t.body.length ? t.body : [{ k: 'l', lv: 1, h: '' }]).forEach(b => body.appendChild(b.k === 'l' ? lineEl(b.lv, b.h, b.from) : blockEl(b)));
   const decs = el.querySelector('.et-decs');
   (t.dec || []).forEach(d => decs.appendChild(decEl(d)));
   const tasks = el.querySelector('.et-tasks');
   (t.tasks || []).forEach(k => tasks.appendChild(taskEl(k)));
 }
-function lineEl(lv, h){
+function lineEl(lv, h, from){
   const d = document.createElement('div'); d.className = 'ol'; d.dataset.lv = X.C.clampLv(lv);
+  if(from) d.dataset.from = from;
   d.innerHTML = `<span class="ol-n"></span><div class="ol-t" contenteditable="true" spellcheck="false" data-ph="내용을 적어 주세요"></div>`;
   d.querySelector('.ol-t').innerHTML = cleanInlineCached(h || '');
   return d;
@@ -311,6 +354,27 @@ function poolOf(org){
   const inOrg = s => { const b = new Set([...(s.orgs || []), s.org]); return org === 'da' || b.has(org); };
   return X.STAFF.filter(s => s.role !== 'partner' && inOrg(s));
 }
+/* 부서별로 — 교직원 명부 «부서 관리» 순서 (부서 없음 · «전체»는 맨 앞 «관리 · 공통») · 부서 안에서는 직책 → 이름 순 */
+const POS_ORDER = { '원장':1, '교장':2, '교감':3, '행정실장':4, '실장':4, '초등부장':5, '중고등부장':6, '부장':6, '주임':6.5, '주임교사':6.5, '교사':7 };
+function attGroups(org, pool){
+  const C = X.C;
+  const primary = s => (s.org && s.org !== 'all') ? s.org : ((s.orgs || [])[0] || '');
+  const orgs = org === 'da' ? ['daniel', 'jihyebit'] : [org];
+  const sortP = (a, b) => (POS_ORDER[a.position] || 9) - (POS_ORDER[b.position] || 9) || (a.name || '').localeCompare(b.name || '', 'ko');
+  const out = [];
+  for(const o of orgs){
+    const mem = org === 'da' ? pool.filter(s => primary(s) === o) : pool;
+    if(!mem.length) continue;
+    const order = ((X.DEPTS || {})[o] || []).filter(d => d && d !== '전체');
+    const by = new Map();
+    for(const s of mem){ const d = s.dept && s.dept !== '전체' ? s.dept : ''; if(!by.has(d)) by.set(d, []); by.get(d).push(s); }
+    const keys = [...by.keys()].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : 0) || ((order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)) || a.localeCompare(b, 'ko'));
+    const pre = org === 'da' ? C.MORG[o] + ' · ' : '';
+    for(const k of keys) out.push({ label: pre + (k || (by.size === 1 ? (org === 'da' ? '선생님' : C.MORG[o] + ' 선생님') : '관리 · 공통')), list: by.get(k).sort(sortP) });
+  }
+  if(org === 'da'){ const rest = pool.filter(s => !orgs.includes(primary(s))); if(rest.length) out.push({ label: '그 밖의 선생님', list: rest.sort(sortP) }); }
+  return out;
+}
 function paintAtt(){
   const box = R.querySelector('#ed-att'); if(!box) return;
   const pool = poolOf(ED.org);
@@ -322,14 +386,13 @@ function paintAtt(){
   };
   const nm = u => X.nameOf(u) || ED.attNames[u] || '?';
   let h = '';
-  if(ED.org === 'da'){
-    for(const o of ['daniel', 'jihyebit']){
-      const g = pool.filter(s => (s.org || (s.orgs || [])[0]) === o);
-      if(g.length) h += `<div class="at-g">${esc(X.C.MORG[o])}</div><div class="at-list">${g.map(s => chip(s.uid, s.name || '')).join('')}</div>`;
-    }
-    const rest = pool.filter(s => !['daniel', 'jihyebit'].includes(s.org || (s.orgs || [])[0]));
-    if(rest.length) h += `<div class="at-list" style="margin-top:6px">${rest.map(s => chip(s.uid, s.name || '')).join('')}</div>`;
-  } else h += `<div class="at-list">${pool.map(s => chip(s.uid, s.name || '')).join('')}</div>`;
+  for(const g of attGroups(ED.org, pool)){
+    const ids = g.list.map(s => s.uid);
+    const on = ids.filter(u => ED.att[u] && ED.att[u].s === 'o').length;
+    h += `<div class="at-grp"><div class="at-g"><b>${esc(g.label)}</b><span>${ids.length}명${on ? ` · 참석 ${on}` : ''}</span>
+        ${on < ids.length ? `<button type="button" class="at-gin" data-e="grpin" data-g="${esc(ids.join(','))}">이 부서 모두 참석</button>` : ''}</div>
+      <div class="at-list">${g.list.map(s => chip(s.uid, s.name || '')).join('')}</div></div>`;
+  }
   if(extra.length) h += `<div class="at-g">다른 사람</div><div class="at-list">${extra.map(u => chip(u, nm(u))).join('')}</div>`;
   const on = Object.values(ED.att).filter(a => a.s === 'o').length, off = Object.values(ED.att).filter(a => a.s === 'x').length;
   box.innerHTML = `<div style="font-size:12.5px;color:var(--ink-2);margin-bottom:6px">참석 <b style="color:#00704A">${on}</b> · 불참 <b style="color:#B42318">${off}</b></div>` + h;
@@ -348,6 +411,17 @@ function renum(el){
   const body = rows.map(r => r.classList.contains('ol') ? { k: 'l', lv: +r.dataset.lv, h: r.querySelector('.ol-t').innerHTML } : { k: 'x' });
   const labels = C.numberBody(body);
   rows.forEach((r, i) => { if(r.classList.contains('ol')) r.querySelector('.ol-n').textContent = labels[i]; });
+  const fromOf = r => r.classList.contains('ol') ? (r.dataset.from || '') : ((r._b && r._b.from) || '');
+  const hasPrev = rows.some(r => fromOf(r));
+  let pf = '';
+  rows.forEach(r => {
+    const f = fromOf(r);
+    r.classList.toggle('prev', !!f);
+    r.classList.toggle('cap', !!f && f !== pf);
+    r.classList.toggle('newcap', hasPrev && !f && !!pf);
+    if(f && f !== pf) r.dataset.cap = `↩ ${C.fmtMD(f)} 회의에서 가져온 내용`;
+    pf = f;
+  });
   const nl = rows.filter(r => r.classList.contains('ol') && r.querySelector('.ol-t').textContent.trim()).length;
   el.querySelector('.et-sum').textContent = `내용 ${nl}줄 · 결정 ${el.querySelectorAll('.dl').length} · 임무 ${el.querySelectorAll('.kr').length}`;
 }
@@ -444,15 +518,24 @@ async function onClick(e){
     case 'org': if(!ED.isNew) return; ED.org = b.dataset.v; if(!X.typesOf(ED.org).includes(ED.type)) ED.type = X.typesOf(ED.org)[0] || '';
       { const keep = collect(); ED.topics = keep.topics.length ? keep.topics : [blankTopic()]; ED.title = keep.title; ED.place = keep.place; ED.time = keep.time; ED.guests = keep.guests; ED.date = keep.date; }
       ED.att = {}; paint(); dirty(); return;
-    case 'type': ED.type = b.dataset.v; R.querySelectorAll('#ed-types .mt-chip').forEach(x => x.classList.toggle('on', x === b));
-      { const t = R.querySelector('#ed-title'); t.placeholder = C.titleOf({ type: ED.type }); t.previousElementSibling.innerHTML = `제목 <span style="font-weight:600;color:var(--ink-3)">(비우면 «${esc(C.titleOf({ type: ED.type }))}»)</span>`; }
+    case 'type': ED.type = b.dataset.v; paintTypes();
       if(ED.isNew){ const pm = lastOf(ED.org, ED.type); if(pm){ const p = R.querySelector('#ed-place'), tm = R.querySelector('#ed-time'); if(!p.value) p.value = pm.place || ''; if(!tm.value) tm.value = pm.time || ''; if(!Object.keys(ED.att).length){ ED.att = rosterFrom(pm); ED.attNames = { ...(pm.attNames || {}) }; paintAtt(); } } }
       paintCont(); dirty(); return;
-    case 'newtype': { const v = prompt('새 회의 종류 이름 (예: 교사 연수 회의)'); if(!v || !v.trim()) return; ED.type = v.trim();
-      const box = R.querySelector('#ed-types'); box.querySelectorAll('.mt-chip').forEach(x => x.classList.remove('on'));
-      b.insertAdjacentHTML('beforebegin', `<button type="button" class="mt-chip on" data-e="type" data-v="${esc(ED.type)}">${esc(ED.type)}</button>`);
-      const t = R.querySelector('#ed-title'); t.placeholder = C.titleOf({ type: ED.type }); paintCont(); dirty(); return; }
-    case 'cont': return openCont(b.dataset.mid);
+    case 'newtype': { const v0 = prompt(`${C.MORG[ED.org]} 회의 종류에 새로 넣을 이름 (예: 교사 연수 회의)\n넣으면 다음부터 모든 선생님 목록에 보여요.`); const v = (v0 || '').trim(); if(!v) return;
+      const list = X.typesOf(ED.org);
+      if(!list.includes(v)){ try{ await X.saveTypes(ED.org, [...list, v]); X.toast(`«${v}»을(를) 회의 종류에 넣었어요`); }
+        catch(e){ X.toast('목록에 저장하지 못했어요 — 이 회의록에만 쓸게요 (보안 규칙 v24 게시 확인)', 'err'); } }
+      ED.type = v; paintTypes(); paintCont(); dirty(); return; }
+    case 'typeedit': ED.typeEdit = !ED.typeEdit; paintTypes(); return;
+    case 'deltype': { const v = b.dataset.v;
+      if(!confirm(`«${v}»을(를) ${C.MORG[ED.org]} 회의 종류 목록에서 뺄까요?\n이미 쓴 회의록은 그대로예요.`)) return;
+      try{ await X.saveTypes(ED.org, X.typesOf(ED.org).filter(t => t !== v)); X.toast(`«${v}»을(를) 목록에서 뺐어요`); }
+      catch(e){ X.toast('빼지 못했어요 — ' + (e.code || e.message), 'err'); return; }
+      if(ED.type === v && ED.isNew) ED.type = X.typesOf(ED.org)[0] || '';
+      paintTypes(); paintCont(); return; }
+    case 'cont': return openPicker(b.dataset.mid);
+    case 'pick': return openPicker('');
+    case 'grpin': { const ids = (b.dataset.g || '').split(','); ids.forEach(u => { if(u && !ED.att[u]){ ED.att[u] = { s: 'o' }; ED.attNames[u] = X.nameOf(u); } }); paintAtt(); dirty(); return; }
     case 'att': { const u = b.dataset.u; const a = ED.att[u]; const s = a ? a.s : '';
       if(!s) ED.att[u] = { s: 'o' }; else if(s === 'o') ED.att[u] = { s: 'x', r: '' }; else delete ED.att[u];
       const nm = X.nameOf(u); if(nm) ED.attNames[u] = nm;
@@ -743,25 +826,81 @@ function pickPeople(anchor, o){
   const off = e => { if(!p.contains(e.target)) done(); };
   setTimeout(() => document.addEventListener('mousedown', off, true), 0);
 }
-/* 지난 회의에서 이어오기 */
-function openCont(mid){
-  const pm = X.LIST.find(x => x.id === mid); if(!pm) return;
-  const C = X.C;
-  const md = X.modal(`↩ ${esc(C.fmtMD(pm.date))} ${esc(C.titleOf(pm))}에서 이어오기`, `<div class="dv-hint" style="margin-bottom:8px">고른 주제가 «이어 쓰는 주제»로 들어가요. 못 끝낸 임무는 첫 줄에 적어 둬요 (임무 자체는 원래 회의록에 그대로).</div>
-    ${(pm.topics || []).map((t, i) => { const open = (t.tasks || []).filter(k => (X.TASKS[C.taskKey(pm.id, k.id)] || {}).status !== 'done').length;
-      return `<label class="ck"><input type="checkbox" value="${esc(t.id)}"${open ? ' checked' : ''}>${i + 1}. ${esc(t.title || '')}${open ? ` <span style="color:#B45309;font-size:12px;font-weight:800">못 끝낸 임무 ${open}</span>` : ''}</label>`; }).join('')}
-    <label class="ck" style="margin-top:8px;border-top:1px solid var(--line);padding-top:10px"><input type="checkbox" id="ct-att" checked>참석 명단도 같은 사람들로</label>`,
-    `<button class="mt-btn" data-c="x">닫기</button><button class="mt-btn p" data-c="ok">불러오기</button>`);
+/* ↩ 이전 회의 주제 가져오기 — 같은 기관의 지난 회의록에서 주제를 골라 «이어 쓰는 주제»로
+   · 찾기: 주제 · 내용으로 걸러 보기 (회의록이 많아도)
+   · 가져온 내용은 회색 상자(↩ M/D 회의에서 가져온 내용), 그 아래 새로 적는 줄은 «✎ 이번 회의» */
+async function openPicker(preMid){
+  const C = X.C, FS = X.FS, db = X.db;
+  const md = X.modal('↩ 이전 회의 주제 가져오기', `<div class="dv-hint">불러오는 중…</div>`, `<span class="dv-hint" id="pk-n" style="margin-right:auto"></span><button class="mt-btn" data-c="x">닫기</button><button class="mt-btn p" data-c="ok" disabled>가져오기</button>`, 'wide');
   md.box.querySelector('[data-c="x"]').onclick = md.close;
+  let ms = [], tk = {};
+  try{
+    const [a, b] = await Promise.all([
+      FS.getDocs(FS.query(FS.collection(db, 'meetings'), FS.where('org', '==', ED.org))),
+      FS.getDocs(FS.query(FS.collection(db, 'meetingTasks'), FS.where('org', '==', ED.org))).catch(() => null)]);
+    ms = a.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => !m.deleted && m.id !== (ED && ED.id) && (m.topics || []).length)
+      .sort((x, y) => String(y.date).localeCompare(String(x.date)) || String(y.time || '').localeCompare(String(x.time || '')));
+    if(b) b.forEach(d => tk[d.id] = d.data());
+  }catch(e){ md.box.querySelector('.mm-b').innerHTML = `<div class="dv-hint">지난 회의록을 불러오지 못했어요 — ${esc(e.code || e.message)}</div>`; return; }
+  if(!ED){ md.close(); return; }
+  if(!ms.length){ md.box.querySelector('.mm-b').innerHTML = `<div class="dv-hint">${esc(C.MORG[ED.org])}에 가져올 지난 회의록이 아직 없어요.</div>`; return; }
+  const sel = new Map();                                   // 'mid|tid' → true
+  const openTasks = (m, t) => (t.tasks || []).filter(k => C.textOf(k.h).trim() && (tk[C.taskKey(m.id, k.id)] || {}).status !== 'done').length;
+  if(preMid){ const pm = ms.find(m => m.id === preMid); if(pm) (pm.topics || []).forEach(t => { if(openTasks(pm, t)) sel.set(pm.id + '|' + t.id, true); }); }
+  let lim = 8, q = '';
+  const body = md.box.querySelector('.mm-b');
+  body.innerHTML = `<div class="pk-top"><input type="search" id="pk-q" placeholder="주제 · 내용으로 찾기 (예: 신발장, 종업식)">
+      <label class="ck"><input type="checkbox" id="pk-body" checked>지난 내용 · 결정도 함께</label>
+      <label class="ck"><input type="checkbox" id="pk-att"${Object.keys(ED.att).length ? '' : ' checked'}>참석 명단도 그 회의와 같게</label></div>
+    <div class="dv-hint" style="margin:6px 0 10px">가져온 내용은 회색 상자에 <b>«↩ 9/28 회의에서 가져온 내용»</b>으로, 새로 적는 줄은 <b>«✎ 이번 회의»</b> 아래에 보여서 한눈에 구분돼요. 못 끝낸 임무도 한 줄로 따라와요.</div>
+    <div id="pk-list"></div>`;
+  const list = body.querySelector('#pk-list');
+  const hitT = (t) => { if(!q) return true; const L = (t.title + '\n' + C.topicText(t)).toLowerCase(); return q.split(/\s+/).filter(Boolean).every(w => L.includes(w)); };
+  const draw = () => {
+    const rows = ms.map(m => ({ m, ts: (m.topics || []).map((t, i) => ({ t, i })).filter(x => hitT(x.t)) })).filter(r => r.ts.length);
+    const show = q ? rows.slice(0, 40) : rows.slice(0, lim);
+    if(preMid && !q){ const i = show.findIndex(r => r.m.id === preMid); if(i > 0){ const [x] = show.splice(i, 1); show.unshift(x); } }
+    list.innerHTML = show.map(({ m, ts }) => `<div class="pk-m${preMid === m.id ? ' pre' : ''}">
+        <div class="pk-mh"><b>${esc(C.fmtMD(m.date))}</b> ${esc(C.titleOf(m))}${m.imported ? ' <span class="md-imp">PDF에서 옮김</span>' : ''}<span class="mt-sp"></span>
+          <button type="button" class="mt-btn sm ghost" data-pkall="${esc(m.id)}">${ts.every(x => sel.has(m.id + '|' + x.t.id)) ? '모두 빼기' : '모두 고르기'}</button></div>
+        ${ts.map(({ t, i }) => { const k = m.id + '|' + t.id, ot = openTasks(m, t);
+          const nl = (t.body || []).filter(b => b.k === 'l').length, nd = (t.dec || []).length;
+          return `<label class="pk-t"><input type="checkbox" data-pk="${esc(k)}"${sel.has(k) ? ' checked' : ''}><b>${i + 1}.</b><span>${q ? C.hlText(t.title || '(제목 없음)', q) : esc(t.title || '(제목 없음)')}</span>
+            <small>${nl ? `내용 ${nl}줄` : ''}${nd ? ` · 결정 ${nd}` : ''}${ot ? ` · <em>못 끝낸 임무 ${ot}</em>` : ''}${t.thrFrom ? ` · ↩ ${esc(C.fmtMD(t.thrFrom))}부터 이어짐` : ''}</small></label>`; }).join('')}
+      </div>`).join('') + (!q && rows.length > lim ? `<button type="button" class="addb" data-pkmore>지난 회의 ${Math.min(8, rows.length - lim)}개 더 보기 (모두 ${rows.length}개)</button>` : '')
+      + (!rows.length ? `<div class="dv-hint">찾는 말이 든 주제가 없어요.</div>` : '');
+    const n = sel.size;
+    md.box.querySelector('#pk-n').textContent = n ? `고른 주제 ${n}개` : '가져올 주제를 골라 주세요';
+    const ok = md.box.querySelector('[data-c="ok"]'); ok.disabled = !n; ok.textContent = n ? `주제 ${n}개 가져오기` : '가져오기';
+  };
+  body.addEventListener('change', e => { const c = e.target.closest('[data-pk]'); if(!c) return; c.checked ? sel.set(c.dataset.pk, true) : sel.delete(c.dataset.pk); draw(); });
+  body.addEventListener('click', e => {
+    const a = e.target.closest('[data-pkall]');
+    if(a){ const m = ms.find(x => x.id === a.dataset.pkall); const ts = (m.topics || []).filter(hitT); const all = ts.every(t => sel.has(m.id + '|' + t.id));
+      ts.forEach(t => all ? sel.delete(m.id + '|' + t.id) : sel.set(m.id + '|' + t.id, true)); draw(); return; }
+    if(e.target.closest('[data-pkmore]')){ lim += 8; draw(); }
+  });
+  let qt = null;
+  body.querySelector('#pk-q').addEventListener('input', e => { clearTimeout(qt); const v = e.target.value; qt = setTimeout(() => { q = v.trim().toLowerCase(); draw(); }, 180); });
+  draw();
   md.box.querySelector('[data-c="ok"]').onclick = () => {
-    const ids = new Set([...md.box.querySelectorAll('input[type=checkbox]:checked')].map(c => c.value));
-    const tps = carryTopics(pm, (pm.topics || []).filter(t => ids.has(t.id)), true);
-    if(md.box.querySelector('#ct-att').checked){ const r = rosterFrom(pm); for(const u in r) if(!ED.att[u]) ED.att[u] = r[u]; Object.assign(ED.attNames, pm.attNames || {}); paintAtt(); }
+    if(!ED) { md.close(); return; }
+    const withBody = md.box.querySelector('#pk-body').checked;
+    const picked = ms.filter(m => (m.topics || []).some(t => sel.has(m.id + '|' + t.id))).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    let tps = [];
+    for(const m of picked) tps = tps.concat(carryTopics(m, (m.topics || []).filter(t => sel.has(m.id + '|' + t.id)), withBody, tk));
+    if(md.box.querySelector('#pk-att').checked && picked.length){
+      const last = picked[picked.length - 1];
+      if(!last.imported){ const r = rosterFrom(last); for(const u in r) if(!ED.att[u]) ED.att[u] = r[u]; Object.assign(ED.attNames, last.attNames || {}); paintAtt(); }
+    }
     const box = R.querySelector('#ed-topics');
     const ets = [...box.querySelectorAll('.et')];
-    if(ets.length === 1 && !ets[0].querySelector('.et-title').value.trim() && ![...ets[0].querySelectorAll('.ol-t')].some(x => x.textContent.trim())) ets[0].remove();
+    if(ets.length === 1 && !ets[0].querySelector('.et-title').value.trim() && ![...ets[0].querySelectorAll('.ol-t')].some(x => x.textContent.trim()) && !ets[0].querySelector('.ob,.dl,.kr')) ets[0].remove();
     tps.forEach(t => { box.insertAdjacentHTML('beforeend', topicHTML(t)); hydrate(box.lastElementChild, t); });
-    renumAll(); dirty(); md.close(); X.toast(`주제 ${tps.length}개를 불러왔어요`);
+    renumAll(); dirty(); md.close();
+    X.toast(`주제 ${tps.length}개를 가져왔어요 — 회색 상자 아래 «이번 회의»에 새 내용을 적어 주세요`);
+    const firstNew = box.querySelectorAll('.et')[box.querySelectorAll('.et').length - tps.length];
+    if(firstNew){ firstNew.scrollIntoView({ block: 'start', behavior: 'smooth' }); const l = [...firstNew.querySelectorAll('.et-body > .ol:not(.prev) .ol-t')].pop(); if(l) setTimeout(() => caretAt(l, true), 300); }
   };
 }
 
@@ -774,7 +913,7 @@ function collect(){
     [...el.querySelector('.et-body').children].forEach(r => {
       if(r.classList.contains('ol')){
         const h = sanitizeInline(r.querySelector('.ol-t').innerHTML);
-        if(C.textOf(h).trim()) body.push({ k: 'l', lv: C.clampLv(r.dataset.lv), h });
+        if(C.textOf(h).trim()){ const ln = { k: 'l', lv: C.clampLv(r.dataset.lv), h }; if(r.dataset.from) ln.from = r.dataset.from; body.push(ln); }
       } else if(r.classList.contains('ob') && r._b && r._b.k !== 'wait'){
         const b = { ...r._b };
         const cap = r.querySelector('.ob-cap'); b.cap = cap ? cap.value.trim() : (b.cap || '');

@@ -232,12 +232,21 @@ export function buildDocx(list, opts, ctx){
     (m.topics || []).forEach((tp, ti) => {
       body += para(run(`${ti + 1}.`, { b: true }) + tabRun({}) + run(tp.title || '', { b: true, hl: true }), { left: 440, hanging: 440, before: 160, after: 60, keep: true });
       const labels = C.numberBody(tp.body);
+      const hasPrev = (tp.body || []).some(b => b.from);
+      let pf = '';
       (tp.body || []).forEach((b, bi) => {
+        /* 지난 회의에서 가져온 줄은 회색 + «↩ M/D 회의에서 이어진 내용», 새 줄 앞에 «✎ 이번 회의» */
+        const f = b.from || '';
+        if(f && f !== pf) body += para(run(`↩ ${C.fmtMD(f)} 회의에서 이어진 내용`, { b: true, color: '#7A8A82', sz: 17 }), { left: 440, before: 60, after: 0, shd: 'F3F5F4' });
+        else if(!f && pf && hasPrev) body += para(run('✎ 이번 회의', { b: true, color: '#00704A', sz: 17 }), { left: 440, before: 80, after: 0 });
+        pf = f;
+        const gray = f ? { color: '#6B7670' } : {};
         if(b.k === 'l'){
           const lv = C.clampLv(b.lv), left = 440 + lv * 420;
           const lab = labels[bi];
-          body += lab ? para(run(lab) + tabRun() + inlineRuns(b.h), { left, hanging: 480, after: 20 })
-                      : para(inlineRuns(b.h), { left: left - 60, after: 20 });
+          const sh = f ? { shd: 'F3F5F4' } : {};
+          body += lab ? para(run(lab, gray) + tabRun() + inlineRuns(b.h, gray), { left, hanging: 480, after: 20, ...sh })
+                      : para(inlineRuns(b.h, gray), { left: left - 60, after: 20, ...sh });
         } else if(b.k === 'tbl' && opts.img !== false){
           body += tableXml(b.h, BODY_W - 440);
           if(b.cap) body += para(run(b.cap, { color: '#6B7670', sz: 18 }), { left: 440 });
