@@ -439,7 +439,6 @@ function renderList(){
   root.innerHTML = `${headHTML()}
     <div class="mt-filt">
       <div class="mt-seg" role="group" aria-label="기관">${orgBtns}</div>
-      <span id="mt-types"></span>
       <select class="mt-sel" id="mt-sem" aria-label="학기">${sems.map(s => `<option value="${s}"${s === SEM ? ' selected' : ''}>${C.semLabel(s)}</option>`).join('')}<option value=""${!SEM ? ' selected' : ''}>전체 학기</option></select>
       <div class="mt-sp"></div>
       <label class="mt-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--ink-3)"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -457,14 +456,10 @@ function paintMineBar(){
   const un = NOTIFS.filter(n => !n.read).length;
   el.innerHTML = (open.length || un) ? `<div class="mt-mine" data-act="mine">📌 내가 맡은 임무 <b>${open.length}건</b>${over ? ` · <span class="mt-new">${over}건 기한 지남</span>` : ''}${un ? ` · 새 소식 <b>${un}</b>` : ''}<span class="go">모두 보기 ›</span></div>` : '';
 }
-function filtered(){ return LIST.filter(m => !TYPE || m.type === TYPE); }
+/* (v-94) 회의 종류 칩(전체 · 훈련센터 회의 · 학교 회의)은 없앴다 — 기관을 고르면 그 기관 회의록이 한 목록으로 */
+function filtered(){ return LIST.slice(); }
 function paintRows(){
   const box = $I('mt-rows'); if(!box) return;
-  const tbox = $I('mt-types');
-  if(tbox){
-    const types = ORG === 'all' ? [...new Set(LIST.map(m => m.type).filter(Boolean))] : typesOf(ORG);
-    tbox.innerHTML = types.length > 1 || TYPE ? `<button class="mt-chip${!TYPE ? ' on' : ''}" data-type="">전체</button>` + types.map(t => `<button class="mt-chip${TYPE === t ? ' on' : ''}" data-type="${esc(t)}">${esc(t)}</button>`).join(' ') : '';
-  }
   const list = filtered();
   const sum = $I('mt-sum');
   if(Q){ paintSearch(list); return; }
@@ -1108,8 +1103,6 @@ document.addEventListener('click', async e => {
   if(VIEW === 'edit') return;                                      // 쓰기 화면은 편집기가 맡는다
   const orgB = e.target.closest('[data-org]');
   if(orgB){ ORG = orgB.dataset.org; TYPE = ''; try{ localStorage.setItem('mtg_org', ORG); }catch(_){} subscribeList(); renderList(); go({ org: ORG }, true); return; }
-  const tyB = e.target.closest('[data-type]');
-  if(tyB && VIEW === 'list'){ TYPE = tyB.dataset.type; paintRows(); return; }
   const a = e.target.closest('[data-act]'); if(!a) return;
   const act = a.dataset.act;
   if(act !== 'outmenu' && act !== 'moremenu') document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open'));
