@@ -1054,24 +1054,45 @@ async function paintTrash(box){
     if(p && confirm('완전히 지우면 되돌릴 수 없어요 (수정 이력은 남아요). 지울까요?')){ await deleteDoc(doc(db, 'meetings', p.dataset.purge)); toast('지웠어요'); paintTrash(box); }
   };
 }
-/* 예전 회의록 넣기 — 함께 담아 둔 «PDF에서 옮긴 파일» 또는 직접 고른 .json */
+/* 예전 회의록 넣기 — 함께 담아 둔 «PDF에서 옮긴 파일»들 또는 직접 고른 .json
+   (v-96) 옮김 파일이 여러 개 — 학기별로 골라 보기 · PDF를 고르면 «Claude에게 보내 주세요» 안내 */
+const IMPORT_PACKS = [
+  { file: 'minutes-import-2026-2.json', label: '2026 2학기' },
+  { file: 'minutes-import-2026-1.json', label: '2026 1학기' },
+];
 async function paintImport(box){
-  let pack = null;
-  try{ const r = await fetch('minutes-import-2026-1.json?_=' + Date.now(), { cache: 'no-store' }); if(r.ok) pack = await r.json(); }catch(e){}
+  const packs = [];
+  for(const p of IMPORT_PACKS){
+    try{ const r = await fetch(p.file + '?_=' + Date.now(), { cache: 'no-store' }); if(r.ok){ const j = await r.json(); if(j && Array.isArray(j.meetings)) packs.push({ label: p.label, pk: j }); } }catch(e){}
+  }
+  let cur = 0;
   const draw = async (pk) => {
     const ms = (pk && pk.meetings) || [];
     const exists = new Set();
     for(const m of ms){ try{ const s = await getDoc(doc(db, 'meetings', m.id)); if(s.exists()) exists.add(m.id); }catch(e){} }
-    box.innerHTML = `<div class="dv-hint" style="margin-bottom:10px">${pk ? `<b>${esc(pk.source || '')}</b>에서 옮긴 회의록 ${ms.length}건이에요. ${esc(pk.note || '')}` : '함께 담긴 옮김 파일이 없어요.'}
+    const own = pk && !packs.some(p => p.pk === pk);
+    const tabs = packs.length > 1 || own ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${packs.map((p, i) =>
+      `<button class="mt-btn sm${!own && i === cur ? ' p' : ''}" data-pk="${i}">${esc(p.label)} · ${p.pk.meetings.length}건</button>`).join('')}${own ? `<button class="mt-btn sm p" disabled>고른 파일 · ${ms.length}건</button>` : ''}</div>` : '';
+    box.innerHTML = tabs + `<div class="dv-hint" style="margin-bottom:10px">${pk ? `<b>${esc(pk.source || '')}</b>에서 옮긴 회의록 ${ms.length}건이에요. ${esc(pk.note || '')}` : '함께 담긴 옮김 파일이 없어요.'}
         참석 · 임무는 비워 두고, 번호 개요 · 노란 주제 · 표를 살려 넣어요. 이미 넣은 회의록은 건너뛰어요.</div>
       ${ms.length ? `<label class="ck"><input type="checkbox" id="imp-all" checked>모두 고르기</label>
       <table class="vt"><tbody>${ms.map(m => `<tr><td><label class="ck" style="padding:0"><input type="checkbox" class="imp-ck" value="${esc(m.id)}"${exists.has(m.id) ? ' disabled' : ' checked'}>
         ${esc(C.fmtLong(m.date, m.time))} · <b>${esc(C.titleOf(m))}</b> · ${esc(MORG[m.org] || m.org)} · 주제 ${(m.topics || []).length}개</label></td>
         <td style="text-align:right;color:var(--ink-3);font-size:12px">${exists.has(m.id) ? '이미 넣음' : ''}${m.warn ? ' ⚠ ' + esc(m.warn) : ''}</td></tr>`).join('')}</tbody></table>
       <div style="display:flex;gap:8px;margin-top:12px;align-items:center"><button class="mt-btn p" id="imp-go">고른 회의록 넣기</button><span class="dv-hint" id="imp-st"></span></div>` : ''}
-      <div style="margin-top:16px" class="dv-hint">다른 옮김 파일(.json)이 있으면: <input type="file" id="imp-file" accept=".json,application/json"></div>`;
+      <div style="margin-top:16px" class="dv-hint">다른 옮김 파일(.json)이 있으면: <input type="file" id="imp-file" accept=".json,application/json,.pdf,application/pdf"></div>
+      <div class="dv-hint" id="imp-pdf" style="display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:#FFF8E1;color:#7A5B00">
+        📕 <b>PDF는 여기서 바로 넣을 수 없어요.</b> PDF마다 번호 · 표 · 글꼴이 달라서 그대로 읽으면 글자가 깨지거나 순서가 섞여요.<br>
+        Claude에게 PDF를 보내 주시면 «옮김 파일»로 만들어 이 목록에 함께 담아 드려요. 올린 뒤 여기서 «넣기»만 누르면 돼요.</div>`;
+    box.querySelectorAll('[data-pk]').forEach(b => b.onclick = () => { cur = +b.dataset.pk; draw(packs[cur].pk); });
     const all = box.querySelector('#imp-all'); if(all) all.onchange = () => box.querySelectorAll('.imp-ck:not(:disabled)').forEach(c => c.checked = all.checked);
-    box.querySelector('#imp-file').onchange = async e => { const f = e.target.files[0]; if(!f) return; try{ draw(JSON.parse(await f.text())); }catch(err){ toast('파일을 읽지 못했어요.', 'err'); } };
+    box.querySelector('#imp-file').onchange = async e => {
+      const f = e.target.files[0]; if(!f) return;
+      if(/\.pdf$/i.test(f.name) || f.type === 'application/pdf'){ box.querySelector('#imp-pdf').style.display = ''; e.target.value = ''; return; }
+      let j = null; try{ j = JSON.parse(await f.text()); }catch(err){}
+      if(!j || !Array.isArray(j.meetings)){ toast('회의록 옮김 파일(.json)이 아니에요.', 'err'); e.target.value = ''; return; }
+      draw(j);
+    };
     const go = box.querySelector('#imp-go');
     if(go) go.onclick = async () => {
       const ids = new Set([...box.querySelectorAll('.imp-ck:checked')].map(c => c.value));
@@ -1084,7 +1105,7 @@ async function paintImport(box){
       toast(`${n}건을 넣었어요`); draw(pk);
     };
   };
-  draw(pack);
+  draw(packs.length ? packs[0].pk : null);
 }
 async function importOne(m, source){
   const ref = doc(db, 'meetings', m.id);
