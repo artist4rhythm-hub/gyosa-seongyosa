@@ -74,6 +74,11 @@ html[data-theme="dark"] .mt-mine{background:var(--gold-bg);border-color:var(--go
 .sg-l{font-size:13px;line-height:1.6;color:var(--ink)}
 .sg-l div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sg-l .c{color:var(--ink-2)}
+.sg-yr{padding:10px 0 2px;margin-left:-14px}
+.sg-yr:first-child{padding-top:0}
+.sg-yr span{display:inline-block;font-size:11px;font-weight:900;color:#fff;background:var(--sb-house);border-radius:100px;padding:2px 10px;line-height:1.4}
+html[data-theme="dark"] .sg-yr span{background:var(--sb-green)}
+.sg-span{font-size:11.5px;font-weight:900;color:var(--sb-green);background:var(--sb-mint-2);border-radius:100px;padding:1px 9px;margin-left:4px}
 .sg-l .md-hit,.sg-h .md-hit{font-style:normal;background:#FFE08A;border-radius:3px;color:#1F2320}
 /* 문서 보기 */
 .dv-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;position:sticky;top:0;z-index:5;background:var(--bg);padding:6px 0}
@@ -252,6 +257,7 @@ html[data-theme="dark"] .tc-go i{color:var(--gold)}
 .mb-when{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 .mb-when b{font-size:28px;font-weight:900;letter-spacing:-.01em}
 .mb-when span{font-size:15px;font-weight:700;opacity:.85}
+.mb-when b em{font-style:normal;font-size:.62em;font-weight:800;opacity:.8;margin-right:2px}
 .mb-ttl{margin:0;font-size:17px;font-weight:800;letter-spacing:0;text-align:left;opacity:.95}
 .mb-pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
 .mb-pill{font-family:inherit;font-size:12px;font-weight:800;border-radius:100px;padding:4px 11px;background:rgba(255,255,255,.14);color:#fff;border:0}
@@ -686,7 +692,7 @@ function pinsHTML(){
   const mine = PINS.filter(p => SEE.includes(p.org));
   const items = mine.map(p => {
     const nx = C.laterDates(LIST, p);
-    return `<div class="tc-pk"><button type="button" class="go" data-act="topic" data-mid="${esc(p.mid)}" data-tid="${esc(p.tid)}"><b>${esc(p.title || '(제목 없음)')}</b><small>${esc(C.fmtMD(p.date, false))}${p.dec ? ' · 결정: ' + esc(p.dec) : p.mt ? ' · ' + esc(p.mt) : ''}</small>${nx.length ? `<small class="nx">↪ ${nx.slice(0, 3).map(d => esc(C.fmtMD(d, false))).join(', ')}${nx.length > 3 ? ' …' : ''}에도 이어짐</small>` : ''}</button><button type="button" class="x" data-act="unpin" data-k="${esc(p.k)}" aria-label="모아 둔 것에서 빼기">✕</button></div>`;
+    return `<div class="tc-pk"><button type="button" class="go" data-act="topic" data-mid="${esc(p.mid)}" data-tid="${esc(p.tid)}"><b>${esc(p.title || '(제목 없음)')}</b><small>${esc(C.fmtMDY(p.date, false))}${p.dec ? ' · 결정: ' + esc(p.dec) : p.mt ? ' · ' + esc(p.mt) : ''}</small>${nx.length ? `<small class="nx">↪ ${nx.slice(0, 3).map(d => esc(C.fmtMDY(d, false))).join(', ')}${nx.length > 3 ? ' …' : ''}에도 이어짐</small>` : ''}</button><button type="button" class="x" data-act="unpin" data-k="${esc(p.k)}" aria-label="모아 둔 것에서 빼기">✕</button></div>`;
   }).join('');
   return `<div class="h">☆ 모아 둔 주제 <small>(나만 보기${mine.length ? ' · ' + mine.length : ''})</small></div>${items || `<div class="note">주제 옆 ☆를 누르면 여기에 모여요. 학기를 바꿔도 그대로 남아요.</div>`}<div class="note tip">모아 둔 주제는 새 회의록을 쓸 때 «↩ 이전 회의 주제 가져오기» 맨 위에서 바로 고를 수 있어요.</div>`;
 }
@@ -738,12 +744,19 @@ async function paintSearch(list){
   }
   const groups = C.searchMeetings(list, Q, ORGCMTS);
   const n = groups.reduce((s, g) => s + g.rows.length, 0);
-  if(sum) sum.innerHTML = `«<b>${esc(Q)}</b>» — 주제 <b>${groups.length}갈래</b> · <b>${n}번</b> 나왔어요 ${SEM ? `<span style="color:var(--ink-3)">(지금은 ${esc(C.semLabel(SEM))}에서만 찾아요 — 학기를 «전체 학기»로 바꾸면 모두)</span>` : ''}`;
+  /* (v-101) 몇 년도 것인지 — 찾은 회의가 여러 해에 걸치거나 올해가 아니면 해 표시를 붙인다 */
+  const yrs = [...new Set(groups.flatMap(g => g.rows.map(r => String(r.m.date).slice(0, 4))))].sort();
+  const multi = yrs.length > 1 || (yrs.length === 1 && yrs[0] !== TODAY.slice(0, 4));
+  const dL = ds => multi ? C.fmtYMD(ds) : C.fmtMD(ds);
+  const yrTxt = !yrs.length ? '' : yrs.length > 1 ? `${yrs[0]} ~ ${yrs[yrs.length - 1]}년` : `${yrs[0]}년`;
+  if(sum) sum.innerHTML = `«<b>${esc(Q)}</b>» — 주제 <b>${groups.length}갈래</b> · <b>${n}번</b> 나왔어요${multi ? ` <b class="sg-span">${esc(yrTxt)}</b>` : ''} ${SEM ? `<span style="color:var(--ink-3)">(지금은 ${esc(C.semLabel(SEM))}에서만 찾아요 — 학기를 «전체 학기»로 바꾸면 모두)</span>` : ''}`;
   if(!groups.length){ box.innerHTML = `<div class="mt-empty">찾는 말이 들어간 주제가 없어요.</div>`; return; }
   const hq = s => C.hlText(s, Q);
+  const yrLine = (r, i, rows) => { const y = String(r.m.date).slice(0, 4);
+    return multi && (i === 0 || String(rows[i - 1].m.date).slice(0, 4) !== y) ? `<div class="sg-yr"><span>${y}년</span></div>` : ''; };
   box.innerHTML = groups.map(g => `<div class="sg">
-      <div class="sg-h">${g.key === '__q__' ? `<b>${hq(g.title)}</b><span style="color:var(--ink)">주제 흐름 (제목에 들어간 주제)</span>` : `<b>${hq(g.title)}</b>`}<span>${g.rows.length > 1 ? `${g.rows.length}주에 걸쳐 — ${C.fmtMD(g.rows[0].m.date)} → ${C.fmtMD(g.rows[g.rows.length - 1].m.date)}` : C.fmtMD(g.rows[0].m.date)}</span></div>
-      <div class="sg-flow">${g.rows.map(r => `<div class="sg-r" data-act="${r.t ? 'topic' : 'open'}" data-mid="${esc(r.m.id)}" data-tid="${r.t ? esc(r.t.id) : ''}">
+      <div class="sg-h">${g.key === '__q__' ? `<b>${hq(g.title)}</b><span style="color:var(--ink)">주제 흐름 (제목에 들어간 주제)</span>` : `<b>${hq(g.title)}</b>`}<span>${g.rows.length > 1 ? `회의 ${g.rows.length}번에 걸쳐 — ${dL(g.rows[0].m.date)} → ${dL(g.rows[g.rows.length - 1].m.date)}` : dL(g.rows[0].m.date)}</span></div>
+      <div class="sg-flow">${g.rows.map((r, i, rows) => `${yrLine(r, i, rows)}<div class="sg-r" data-act="${r.t ? 'topic' : 'open'}" data-mid="${esc(r.m.id)}" data-tid="${r.t ? esc(r.t.id) : ''}">
         <div class="sg-d">${esc(C.fmtMD(r.m.date))}<small>${esc(C.titleOf(r.m))}${ORG === 'all' ? ' · ' + esc(C.MORG_SHORT[r.m.org]) : ''}</small></div>
         <div class="sg-l">${r.t ? `<div><b>${r.i + 1}.</b> ${hq(r.t.title || '')}</div>` : ''}${r.lines.map(l => `<div>${hq(l)}</div>`).join('')}
           ${r.cmts.map(c => `<div class="c">💬 ${esc(c.name)}: ${hq(c.text)}</div>`).join('')}</div></div>`).join('')}</div></div>`).join('');
@@ -999,7 +1012,7 @@ async function setTaskStatus(key, st){
 
 /* ═══ 수정 이력 ═══ */
 async function openHistory(m, focus){
-  const md = modal(`🕘 수정 이력 — ${esc(C.fmtMD(m.date))} ${esc(C.titleOf(m))}`, `<div class="mt-empty" style="border:0">불러오는 중…</div>`, '', 'wide');
+  const md = modal(`🕘 수정 이력 — ${esc(C.fmtMDY(m.date))} ${esc(C.titleOf(m))}`, `<div class="mt-empty" style="border:0">불러오는 중…</div>`, '', 'wide');
   let vs = [];
   try{
     const s = await getDocs(query(collection(db, 'meetingVersions'), where('meetingId', '==', m.id), where('org', '==', m.org)));
@@ -1147,7 +1160,7 @@ function printDoc(list, opts, ctx, name){
     sumHtml = `<section class="pg"><h1 class="md-title" style="letter-spacing:.05em">${esc(opts.title)}</h1>
       <div style="text-align:center;font-size:12px;color:#5A6560;margin-bottom:14px">${esc(C.fmtLong(list[0].date))} ~ ${esc(C.fmtLong(list[list.length - 1].date))} · ${list.length}건</div>
       ${rows.length ? `<table class="sumt"><thead><tr><th style="width:62px">날짜</th><th style="width:28%">주제</th><th>결정</th><th style="width:34%">임무 (담당 · 기한 · 상태)</th></tr></thead><tbody>
-      ${rows.map(r => `<tr><td>${esc(C.fmtMD(r.m.date))}</td><td>${r.i + 1}. ${esc(r.t.title || '')}</td><td>${r.dec.map(esc).join('<br>')}</td>
+      ${rows.map(r => `<tr><td>${esc(C.fmtMDY(r.m.date))}</td><td>${r.i + 1}. ${esc(r.t.title || '')}</td><td>${r.dec.map(esc).join('<br>')}</td>
         <td>${r.tk.map(k => `${esc(k.h)}${k.who ? ' · <b>' + esc(k.who) + '</b>' : ''}${k.due ? ' · ' + esc(C.fmtMD(k.due)) + '까지' : ''} · ${(C.STATUS[k.st] || C.STATUS.todo).l}`).join('<br>')}</td></tr>`).join('')}</tbody></table>`
       : '<p style="text-align:center;color:#5A6560">이 기간에는 적힌 결정 · 임무가 없어요.</p>'}</section>`;
   }
@@ -1206,7 +1219,7 @@ function paintMine(){
     const st = t.status || 'todo';
     return `<div class="mk${st === 'done' ? ' done' : ''}">
       <div class="tx" data-act="mtask" data-mid="${esc(t.meetingId)}" data-kid="${esc(t.id)}"><b>${esc(t.h || '')}</b>
-        <span>${esc(C.MORG_SHORT[t.org] || '')} · ${esc(C.fmtMD(t.date))} ${esc(t.mtitle || '')} · ${esc((t.topicNo ? t.topicNo + '. ' : '') + (t.topicTitle || ''))}${(t.uids || []).length > 1 ? ' · 함께: ' + esc((t.uids || []).filter(u => u !== CU.uid).map(u => (t.names || {})[u] || '').join(', ')) : ''}${+t.cmt ? ' · 💬 ' + (+t.cmt) : ''}</span></div>
+        <span>${esc(C.MORG_SHORT[t.org] || '')} · ${esc(C.fmtMDY(t.date))} ${esc(t.mtitle || '')} · ${esc((t.topicNo ? t.topicNo + '. ' : '') + (t.topicTitle || ''))}${(t.uids || []).length > 1 ? ' · 함께: ' + esc((t.uids || []).filter(u => u !== CU.uid).map(u => (t.names || {})[u] || '').join(', ')) : ''}${+t.cmt ? ' · 💬 ' + (+t.cmt) : ''}</span></div>
       ${t.due ? `<span class="due${di && di.over && st !== 'done' ? ' over' : di && di.soon && st !== 'done' ? ' soon' : ''}">${esc(C.fmtMD(t.due))}까지${st !== 'done' && di ? ' · ' + esc(di.label) : ''}</span>` : ''}
       <div class="mk-st">${['todo', 'doing', 'done'].map(s => `<button class="${st === s ? 'on ' + s : ''}" data-act="mkst" data-kid="${esc(t.id)}" data-st="${s}">${C.STATUS[s].l}</button>`).join('')}</div></div>`;
   };
@@ -1218,7 +1231,7 @@ function paintMine(){
     <div class="mt-mon" style="margin-top:22px;display:flex;align-items:center">🔔 새 소식 ${NOTIFS.filter(n => !n.read).length ? `<button class="mt-btn sm" data-act="readall" style="margin-left:auto">모두 읽음</button>` : ''}</div>
     <div style="background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px">${un.length ? un.map(n => `<div class="nt${n.read ? '' : ' unread'}" data-act="nopen" data-nid="${esc(n.id)}">
       <span>${n.kind === 'task' ? '📌' : n.kind === 'reply' ? '↩️' : '💬'}</span><div><b>${esc(n.fromName || '')}</b> ${n.kind === 'task' ? '님이 임무를 맡겼어요' : n.kind === 'reply' ? '님이 답글을 달았어요' : '님이 댓글을 남겼어요'} — ${esc(n.text || '')}
-      <small>${esc(C.fmtMD(n.date))} ${esc(n.mtitle || '')}${n.where ? ' · ' + esc(n.where) : ''} · ${esc(C.fmtStamp(C.tsMs(n.at)))}</small></div></div>`).join('') : '<div class="dv-hint" style="padding:10px">새 소식이 없어요.</div>'}</div>`;
+      <small>${esc(C.fmtMDY(n.date))} ${esc(n.mtitle || '')}${n.where ? ' · ' + esc(n.where) : ''} · ${esc(C.fmtStamp(C.tsMs(n.at)))}</small></div></div>`).join('') : '<div class="dv-hint" style="padding:10px">새 소식이 없어요.</div>'}</div>`;
 }
 
 /* ═══ 설정 (수퍼) ═══ */
@@ -1296,7 +1309,7 @@ async function paintTrash(box){
   const out = [];
   for(const o of SEE){ try{ const s = await getDocs(query(collection(db, 'meetings'), where('org', '==', o), where('deleted', '==', true))); s.forEach(d => out.push({ id: d.id, ...d.data() })); }catch(e){} }
   if(!out.length){ box.innerHTML = `<div class="dv-hint">휴지통이 비었어요.</div>`; return; }
-  box.innerHTML = `<table class="vt"><tbody>${out.map(m => `<tr><td>${esc(C.fmtMD(m.date))} ${esc(C.titleOf(m))} <span style="color:var(--ink-3)">${esc(C.MORG_SHORT[m.org])} · ${esc(m.deletedByName || '')}</span></td>
+  box.innerHTML = `<table class="vt"><tbody>${out.map(m => `<tr><td>${esc(C.fmtMDY(m.date))} ${esc(C.titleOf(m))} <span style="color:var(--ink-3)">${esc(C.MORG_SHORT[m.org])} · ${esc(m.deletedByName || '')}</span></td>
     <td style="text-align:right"><button class="mt-btn sm" data-restore="${esc(m.id)}">되살리기</button> <button class="mt-btn sm" data-purge="${esc(m.id)}" style="color:#C0392B">완전히 지우기</button></td></tr>`).join('')}</tbody></table>`;
   box.onclick = async e => {
     const r = e.target.closest('[data-restore]'), p = e.target.closest('[data-purge]');
@@ -1355,8 +1368,8 @@ async function paintImport(box){
       const pickd = ms.filter(m => ids.has(m.id)); if(!pickd.length) return;
       go.disabled = true; let n = 0;
       for(const m of pickd){
-        box.querySelector('#imp-st').textContent = `${n + 1}/${pickd.length} — ${C.fmtMD(m.date)} 넣는 중…`;
-        try{ await importOne(m, pk.source || ''); n++; }catch(err){ console.error(err); toast(`${C.fmtMD(m.date)} 회의록을 넣지 못했어요 — ${err.code || err.message}`, 'err'); }
+        box.querySelector('#imp-st').textContent = `${n + 1}/${pickd.length} — ${C.fmtMDY(m.date)} 넣는 중…`;
+        try{ await importOne(m, pk.source || ''); n++; }catch(err){ console.error(err); toast(`${C.fmtMDY(m.date)} 회의록을 넣지 못했어요 — ${err.code || err.message}`, 'err'); }
       }
       toast(`${n}건을 넣었어요`); draw(pk);
     };

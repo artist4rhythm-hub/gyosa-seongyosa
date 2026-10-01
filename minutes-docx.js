@@ -194,7 +194,7 @@ export function buildDocx(list, opts, ctx){
         <w:tblGrid>${cols.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>
         <w:tr><w:trPr><w:tblHeader/></w:trPr>${hcell('날짜', cols[0])}${hcell('주제', cols[1])}${hcell('결정', cols[2])}${hcell('임무 (담당 · 기한 · 상태)', cols[3])}</w:tr>`;
       for(const r of rows){
-        t += '<w:tr>' + cell(para(run(C.fmtMD(r.m.date), { sz: 19 }), { after: 0 }), cols[0])
+        t += '<w:tr>' + cell(para(run(C.fmtMDY(r.m.date), { sz: 19 }), { after: 0 }), cols[0])
           + cell(para(run(`${r.i + 1}. ${r.t.title || ''}`, { sz: 19 }), { after: 0 }), cols[1])
           + cell(r.dec.map(d => para(run(d, { sz: 19 }), { after: 0 })).join(''), cols[2])
           + cell(r.tk.map(k => para(run(`${k.h}${k.who ? ' · ' + k.who : ''}${k.due ? ' · ' + C.fmtMD(k.due) + '까지' : ''} · ${(C.STATUS[k.st] || C.STATUS.todo).l}`, { sz: 19 }), { after: 0 })).join(''), cols[3])
@@ -237,7 +237,7 @@ export function buildDocx(list, opts, ctx){
       (tp.body || []).forEach((b, bi) => {
         /* 지난 회의에서 가져온 줄은 회색 + «↩ M/D 회의에서 이어진 내용», 새 줄 앞에 «✎ 이번 회의» */
         const f = b.from || '';
-        if(f && f !== pf) body += para(run(`↩ ${C.fmtMD(f)} 회의에서 이어진 내용`, { b: true, color: '#7A8A82', sz: 17 }), { left: 440, before: 60, after: 0, shd: 'F3F5F4' });
+        if(f && f !== pf) body += para(run(`↩ ${C.fmtMDY(f)} 회의에서 이어진 내용`, { b: true, color: '#7A8A82', sz: 17 }), { left: 440, before: 60, after: 0, shd: 'F3F5F4' });
         else if(!f && pf && hasPrev) body += para(run('✎ 이번 회의', { b: true, color: '#00704A', sz: 17 }), { left: 440, before: 80, after: 0 });
         pf = f;
         const gray = f ? { color: '#6B7670' } : {};

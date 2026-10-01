@@ -222,7 +222,7 @@ function paint(){
     : `<div style="font-size:14px;font-weight:800;padding:9px 0">${esc(C.MORG[ED.org])} <span style="font-size:11.5px;color:var(--ink-3);font-weight:600">(만든 뒤엔 바꿀 수 없어요)</span></div>`;
   R.innerHTML = `<div class="ed">
     <div class="ed-top"><button class="mt-btn" data-e="cancel">‹ 취소</button>
-      <div class="tt"><b>${ED.isNew ? '새 회의록' : '회의록 고치기'}</b><span id="ed-saved">${ED.isNew ? '쓰는 동안 이 기기에 임시 저장돼요' : `${esc(C.fmtMD(ED.date))} ${esc(C.titleOf(ED))} · ${ED.baseRev}번째 모습에서 고치는 중`}</span></div>
+      <div class="tt"><b>${ED.isNew ? '새 회의록' : '회의록 고치기'}</b><span id="ed-saved">${ED.isNew ? '쓰는 동안 이 기기에 임시 저장돼요' : `${esc(C.fmtMDY(ED.date))} ${esc(C.titleOf(ED))} · ${ED.baseRev}번째 모습에서 고치는 중`}</span></div>
       <div class="mt-sp"></div>
       <button class="mt-btn" data-e="preview">문서로 미리보기</button>
       <button class="mt-btn p" data-e="save">저장</button></div>
@@ -266,7 +266,7 @@ function paintTypes(){
 function topicHTML(t){
   return `<div class="et" data-tid="${esc(t.id)}">
     <div class="et-h"><span class="et-no"></span><input class="et-title" value="${esc(t.title || '')}" placeholder="주제 제목">
-      ${t.thrFrom ? `<span class="et-thr">↩ ${esc(X.C.fmtMD(t.thrFrom))} 회의에서 이어짐</span>` : ''}<span class="et-sum"></span>
+      ${t.thrFrom ? `<span class="et-thr">↩ ${esc(X.C.fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : ''}<span class="et-sum"></span>
       <button type="button" class="ib" data-e="tup" title="위로">↑</button><button type="button" class="ib" data-e="tdown" title="아래로">↓</button>
       <button type="button" class="ib" data-e="tfold" title="접기">접기</button><button type="button" class="ib" data-e="tdel" title="주제 빼기">✕</button></div>
     <div class="et-in">
@@ -342,13 +342,13 @@ function blockEl(b){
 }
 function paintCont(){
   const box = R.querySelector('#ed-cont'); if(!box) return;
-  if(!ED.isNew || ED.from){ box.innerHTML = ED.from ? `<div class="ed-cont">📋 <span><b>${esc(X.C.fmtMD(ED.from.date))} ${esc(X.C.titleOf(ED.from))}</b>의 주제 ${(ED.from.topics || []).length}개를 이어 쓰는 주제로 불러왔어요.</span></div>` : ''; return; }
+  if(!ED.isNew || ED.from){ box.innerHTML = ED.from ? `<div class="ed-cont">📋 <span><b>${esc(X.C.fmtMDY(ED.from.date))} ${esc(X.C.titleOf(ED.from))}</b>의 주제 ${(ED.from.topics || []).length}개를 이어 쓰는 주제로 불러왔어요.</span></div>` : ''; return; }
   const pm = X.LIST.filter(x => x.org === ED.org && x.type === ED.type && !x.deleted && x.date <= ED.date)
     .sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
   if(!pm){ box.innerHTML = ''; return; }
   let open = 0;
   (pm.topics || []).forEach(t => (t.tasks || []).forEach(k => { if((X.TASKS[X.C.taskKey(pm.id, k.id)] || {}).status !== 'done') open++; }));
-  box.innerHTML = `<div class="ed-cont">↩ <span>지난 회의(<b>${esc(X.C.fmtMD(pm.date))}</b>)에서 이어오기 — 주제 ${(pm.topics || []).length}개${open ? ` · 못 끝낸 임무 <b>${open}</b>` : ''}</span>
+  box.innerHTML = `<div class="ed-cont">↩ <span>지난 회의(<b>${esc(X.C.fmtMDY(pm.date))}</b>)에서 이어오기 — 주제 ${(pm.topics || []).length}개${open ? ` · 못 끝낸 임무 <b>${open}</b>` : ''}</span>
     <div class="mt-sp"></div><button type="button" class="mt-btn sm" data-e="cont" data-mid="${esc(pm.id)}">골라서 불러오기</button></div>`;
 }
 function poolOf(org){
@@ -421,7 +421,7 @@ function renum(el){
     r.classList.toggle('prev', !!f);
     r.classList.toggle('cap', !!f && f !== pf);
     r.classList.toggle('newcap', hasPrev && !f && !!pf);
-    if(f && f !== pf) r.dataset.cap = `↩ ${C.fmtMD(f)} 회의에서 가져온 내용`;
+    if(f && f !== pf) r.dataset.cap = `↩ ${C.fmtMDY(f)} 회의에서 가져온 내용`;
     pf = f;
   });
   const nl = rows.filter(r => r.classList.contains('ol') && r.querySelector('.ol-t').textContent.trim()).length;
@@ -864,18 +864,18 @@ async function openPicker(preMid){
   ms.forEach(m => (m.topics || []).forEach((t, i) => { if(pinK.has(m.id + '|' + t.id)) pinned.push({ m, t, i }); }));
   const pinBlock = () => !q && pinned.length ? `<div class="pk-m pk-pin"><div class="pk-mh"><b>☆ 모아 둔 주제 ${pinned.length}</b><span class="dv-hint" style="margin-left:6px">목차에서 ☆로 모아 둔 것</span></div>
       ${pinned.map(({ m, t, i }) => { const k = m.id + '|' + t.id;
-        return `<label class="pk-t"><input type="checkbox" data-pk="${esc(k)}"${sel.has(k) ? ' checked' : ''}><b>${esc(C.fmtMD(m.date, false))}</b><span>${i + 1}. ${esc(t.title || '(제목 없음)')}</span><small>${esc(C.titleOf(m))}</small></label>`; }).join('')}</div>` : '';
+        return `<label class="pk-t"><input type="checkbox" data-pk="${esc(k)}"${sel.has(k) ? ' checked' : ''}><b>${esc(C.fmtMDY(m.date, false))}</b><span>${i + 1}. ${esc(t.title || '(제목 없음)')}</span><small>${esc(C.titleOf(m))}</small></label>`; }).join('')}</div>` : '';
   const draw = () => {
     const rows = ms.map(m => ({ m, ts: (m.topics || []).map((t, i) => ({ t, i })).filter(x => hitT(x.t)) })).filter(r => r.ts.length);
     const show = q ? rows.slice(0, 40) : rows.slice(0, lim);
     if(preMid && !q){ const i = show.findIndex(r => r.m.id === preMid); if(i > 0){ const [x] = show.splice(i, 1); show.unshift(x); } }
     list.innerHTML = pinBlock() + show.map(({ m, ts }) => `<div class="pk-m${preMid === m.id ? ' pre' : ''}">
-        <div class="pk-mh"><b>${esc(C.fmtMD(m.date))}</b> ${esc(C.titleOf(m))}${m.imported ? ' <span class="md-imp">PDF에서 옮김</span>' : ''}<span class="mt-sp"></span>
+        <div class="pk-mh"><b>${esc(C.fmtMDY(m.date))}</b> ${esc(C.titleOf(m))}${m.imported ? ' <span class="md-imp">PDF에서 옮김</span>' : ''}<span class="mt-sp"></span>
           <button type="button" class="mt-btn sm ghost" data-pkall="${esc(m.id)}">${ts.every(x => sel.has(m.id + '|' + x.t.id)) ? '모두 빼기' : '모두 고르기'}</button></div>
         ${ts.map(({ t, i }) => { const k = m.id + '|' + t.id, ot = openTasks(m, t);
           const nl = (t.body || []).filter(b => b.k === 'l').length, nd = (t.dec || []).length;
           return `<label class="pk-t"><input type="checkbox" data-pk="${esc(k)}"${sel.has(k) ? ' checked' : ''}><b>${i + 1}.</b><span>${q ? C.hlText(t.title || '(제목 없음)', q) : esc(t.title || '(제목 없음)')}</span>
-            <small>${nl ? `내용 ${nl}줄` : ''}${nd ? ` · 결정 ${nd}` : ''}${ot ? ` · <em>못 끝낸 임무 ${ot}</em>` : ''}${t.thrFrom ? ` · ↩ ${esc(C.fmtMD(t.thrFrom))}부터 이어짐` : ''}</small></label>`; }).join('')}
+            <small>${nl ? `내용 ${nl}줄` : ''}${nd ? ` · 결정 ${nd}` : ''}${ot ? ` · <em>못 끝낸 임무 ${ot}</em>` : ''}${t.thrFrom ? ` · ↩ ${esc(C.fmtMDY(t.thrFrom))}부터 이어짐` : ''}</small></label>`; }).join('')}
       </div>`).join('') + (!q && rows.length > lim ? `<button type="button" class="addb" data-pkmore>지난 회의 ${Math.min(8, rows.length - lim)}개 더 보기 (모두 ${rows.length}개)</button>` : '')
       + (!rows.length ? `<div class="dv-hint">찾는 말이 든 주제가 없어요.</div>` : '');
     const n = sel.size;

@@ -64,6 +64,16 @@ export function fmtMD(ds, withDow){
   const [, m, d] = ds.split('-').map(Number);
   return `${m}/${d}${withDow === false ? '' : '(' + WD[dowOf(ds)] + ')'}`;
 }
+/* (v-101) 올해가 아닌 회의는 해를 붙인다 — «24년 3/4(월)» (전체 학기로 찾을 때 몇 년도 것인지 바로) */
+export function fmtMDY(ds, withDow, today){
+  const s = fmtMD(ds, withDow), y = String(ds || '').slice(0, 4), ty = String(today || todayStr()).slice(0, 4);
+  return s && /^\d{4}$/.test(y) && y !== ty ? `${y.slice(2)}년 ${s}` : s;
+}
+export function fmtYMD(ds){
+  if(!ds) return '';
+  const [y, m, d] = String(ds).split('-').map(Number);
+  return `${y}.${m}.${d}(${WD[dowOf(ds)]})`;
+}
 export function fmtStamp(ms){
   if(!ms) return '';
   const d = new Date(ms);
@@ -287,7 +297,7 @@ export function renderBody(body, ctx){
       inner += renderBlock(b, labels[i], ctx);
     }
     if(imgs) inner += `<div class="md-imgs">${imgs}</div>`;
-    if(g.from) out += `<div class="md-prev"><div class="md-prev-h">↩ ${esc(fmtMD(g.from))} 회의에서 이어진 내용</div>${inner}</div>`;
+    if(g.from) out += `<div class="md-prev"><div class="md-prev-h">↩ ${esc(fmtMDY(g.from))} 회의에서 이어진 내용</div>${inner}</div>`;
     else out += (hasPrev && gi > 0 ? `<div class="md-new-h">✎ 이번 회의</div>` : '') + inner;
   });
   return out;
@@ -306,7 +316,7 @@ export function renderTopic(m, t, i, ctx){
   const dec = (t.dec || []).filter(d => textOf(d.h).trim());
   const tasks = (t.tasks || []).filter(k => textOf(k.h).trim());
   const tc = num(cm['t:' + t.id]);
-  const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMD(t.thrFrom))} 회의에서 이어짐</span>` : '';
+  const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : '';
   let h = `<section class="md-t" id="t-${esc(t.id)}" data-tid="${esc(t.id)}">
     <div class="md-th"><i>${i + 1}.</i><b>${hl(esc(t.title || '(제목 없음)'), q)}</b>${thr}
       ${ctx.interactive ? `<button class="md-tc${tc ? ' on' : ''}" data-act="tcmt" data-tid="${esc(t.id)}">💬 ${tc || '댓글'}</button>` : ''}</div>
@@ -390,7 +400,7 @@ export function renderDocB(m, ctx){
   let h = `<article class="md-doc mb-doc" data-mid="${esc(m.id || '')}">
     <header class="mb-hd">
       <div class="mb-org">${esc(sub)}</div>
-      <div class="mb-when"><b>${mo ? `${mo}월 ${dd}일 ${WD[dowOf(m.date)]}요일` : ''}</b>${m.time ? `<span>${esc(m.time)}</span>` : ''}</div>
+      <div class="mb-when"><b>${mo ? `<em>${String(m.date).slice(0, 4)}년</em> ${mo}월 ${dd}일 ${WD[dowOf(m.date)]}요일` : ''}</b>${m.time ? `<span>${esc(m.time)}</span>` : ''}</div>
       <h1 class="mb-ttl">${hl(esc(titleOf(m)), q)}</h1>
       ${pills.length ? `<div class="mb-pills">${pills.join('')}</div>` : ''}
     </header>`;
@@ -410,7 +420,7 @@ export function renderDocB(m, ctx){
     const tks = (t.tasks || []).filter(k => textOf(k.h).trim());
     const tc = num(cm['t:' + t.id]);
     const folded = !!fold[t.id];
-    const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMD(t.thrFrom))} 회의에서 이어짐</span>` : '';
+    const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : '';
     const ed = t.ed && t.ed.name && !ctx.print
       ? `<button type="button" class="md-ed mb-ed" data-act="ed" data-tid="${esc(t.id)}" data-rev="${esc(t.ed.rev || '')}">✎ ${esc(t.ed.name)} ${esc(fmtStamp(t.ed.at))} 고침</button>` : '';
     const nl = (t.body || []).length;
