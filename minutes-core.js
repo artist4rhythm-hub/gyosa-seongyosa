@@ -361,6 +361,84 @@ export function renderDoc(m, ctx){
   </article>`;
 }
 
+/* ═══ (v-100) 문서 B — 결정 · 임무 먼저 (화면에서 보는 모양)
+   · 머리 띠(날짜 · 제목 · 장소 · 참석 · 수정 횟수) → 이번 회의 결정 · 임무 요약 → 주제 카드
+   · 주제 카드: 번호 · 제목 · 내용(번호 개요 그대로) · 결정 · 임무 · 댓글 — 접고 펼 수 있다
+   · 출력 · PDF · 워드는 지금처럼 renderDoc(문서 A — 종이 모양)을 쓴다
+   ctx = renderDoc과 같음 + { fold:{tid:true}, cmtLast:{tgt:ms} } ═══ */
+export function renderDocB(m, ctx){
+  ctx = ctx || {};
+  const q = ctx.hl || '', clean = ctx.clean || (x => x);
+  const tk = ctx.tasks || {}, cm = ctx.cmt || {}, lastAt = ctx.cmtLast || {}, fold = ctx.fold || {};
+  const { on, off } = attSplit(m);
+  const decs = [], tasks = [];
+  (m.topics || []).forEach((t, i) => {
+    (t.dec || []).filter(d => textOf(d.h).trim()).forEach(d => decs.push({ t, i, d }));
+    (t.tasks || []).filter(k => textOf(k.h).trim()).forEach(k => tasks.push({ t, i, k }));
+  });
+  const whoOf = k => (k.uids || []).map(u => (k.names || {})[u] || '').filter(Boolean);
+  const canOf = (k, doc) => !!(ctx.interactive && ctx.canStatus && ctx.canStatus(k, doc));
+  const [, mo, dd] = String(m.date || '').split('-').map(Number);
+  const pills = [];
+  if(m.place) pills.push(`<span class="mb-pill">${esc(m.place)}</span>`);
+  if(on.length || off.length) pills.push(`<button type="button" class="mb-pill" data-act="attall">참석 ${on.length} · 불참 ${off.length}</button>`);
+  if(m.writerName) pills.push(`<span class="mb-pill">쓴 사람 ${esc(m.writerName)}</span>`);
+  const rv = Math.max(0, (+m.rev || 1) - 1);
+  if(rv) pills.push(`<button type="button" class="mb-pill" data-act="hist">수정 ${rv}번</button>`);
+  if(m.imported) pills.push(`<span class="mb-pill y">PDF에서 옮김</span>`);
+  const sub = [MORG[m.org] || '', m.type && titleOf(m) !== m.type + '록' ? m.type : ''].filter(Boolean).join(' · ');
+  let h = `<article class="md-doc mb-doc" data-mid="${esc(m.id || '')}">
+    <header class="mb-hd">
+      <div class="mb-org">${esc(sub)}</div>
+      <div class="mb-when"><b>${mo ? `${mo}월 ${dd}일 ${WD[dowOf(m.date)]}요일` : ''}</b>${m.time ? `<span>${esc(m.time)}</span>` : ''}</div>
+      <h1 class="mb-ttl">${hl(esc(titleOf(m)), q)}</h1>
+      ${pills.length ? `<div class="mb-pills">${pills.join('')}</div>` : ''}
+    </header>`;
+  if(decs.length || tasks.length){
+    const dn = tasks.filter(x => (tk[taskKey(m.id, x.k.id)] || {}).status === 'done').length;
+    h += `<div class="mb-sum${decs.length && tasks.length ? '' : ' one'}">`;
+    if(decs.length) h += `<section class="mb-card"><h3><i class="g"></i>이번 회의 결정 ${decs.length}</h3>${decs.map(x =>
+      `<button type="button" class="mb-sr" data-act="goto" data-tid="${esc(x.t.id)}"><i>${x.i + 1}</i><span>${hl(clean(x.d.h || ''), q)}</span></button>`).join('')}</section>`;
+    if(tasks.length) h += `<section class="mb-card"><h3><i class="y"></i>임무 ${tasks.length}${dn ? ` <small>완료 ${dn}</small>` : ''}</h3>${tasks.map(x => {
+      const key = taskKey(m.id, x.k.id), doc = tk[key] || {}, st = doc.status || 'todo', who = whoOf(x.k);
+      return `<div class="mb-sr"><button type="button" class="mb-sl" data-act="gotok" data-kid="${esc(key)}" data-tid="${esc(x.t.id)}"><i>${x.i + 1}</i><span>${hl(clean(x.k.h || ''), q)}${who.length ? ` · <u>${esc(who.join(', '))}</u>` : ''}${x.k.due ? ` · ${esc(fmtMD(x.k.due))}까지` : ''}</span></button>${m.imported ? '' : statusChip(st, canOf(x.k, doc), key)}</div>`;
+    }).join('')}</section>`;
+    h += `</div>`;
+  }
+  (m.topics || []).forEach((t, i) => {
+    const dec = (t.dec || []).filter(d => textOf(d.h).trim());
+    const tks = (t.tasks || []).filter(k => textOf(k.h).trim());
+    const tc = num(cm['t:' + t.id]);
+    const folded = !!fold[t.id];
+    const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMD(t.thrFrom))} 회의에서 이어짐</span>` : '';
+    const ed = t.ed && t.ed.name && !ctx.print
+      ? `<button type="button" class="md-ed mb-ed" data-act="ed" data-tid="${esc(t.id)}" data-rev="${esc(t.ed.rev || '')}">✎ ${esc(t.ed.name)} ${esc(fmtStamp(t.ed.at))} 고침</button>` : '';
+    const nl = (t.body || []).length;
+    h += `<section class="md-t mb-t${folded ? ' fold' : ''}" id="t-${esc(t.id)}" data-tid="${esc(t.id)}">
+      <div class="mb-th"><span class="mb-n">${i + 1}</span><b>${hl(esc(t.title || '(제목 없음)'), q)}</b>${thr}${ed}
+        ${ctx.interactive && ctx.pinned ? (pin => `<button type="button" class="mb-pin${pin ? ' on' : ''}" data-act="pin" data-mid="${esc(m.id)}" data-tid="${esc(t.id)}" aria-pressed="${pin}" aria-label="${pin ? '모아 둔 것에서 빼기' : '모아 두기'}" title="${pin ? '모아 둔 주제에서 빼기' : '☆ 모아 두기 (나만 보기)'}">${pin ? '★' : '☆'}</button>`)(ctx.pinned.has(t.id)) : ''}
+        ${ctx.interactive && (nl || dec.length) ? `<button type="button" class="mb-fd" data-act="fold" data-tid="${esc(t.id)}" aria-expanded="${!folded}">${folded ? `펼치기 ▾` : '접기 ▴'}</button>` : ''}</div>`;
+    if(!folded && (nl || dec.length))
+      h += `<div class="mb-tb">${renderBody(t.body, ctx)}${dec.map(d => `<div class="md-dec"><b>결정</b><span>${hl(clean(d.h || ''), q)}</span></div>`).join('')}</div>`;
+    else if(folded) h += `<div class="mb-fdn">${nl ? `내용 ${nl}줄` : ''}${dec.length ? ` · 결정 ${dec.length}` : ''}</div>`;
+    const last = lastAt['t:' + t.id];
+    const krows = tks.map(k => {
+      const key = taskKey(m.id, k.id), doc = tk[key] || {}, st = doc.status || 'todo', who = whoOf(k);
+      const kc = num(cm['k:' + key] || doc.cmt);
+      return `<div class="md-task mb-k${st === 'done' ? ' done' : ''}" id="k-${esc(key)}"><b>임무</b>
+        <span class="md-kt">${hl(clean(k.h || ''), q)}${who.length ? ` · <u>${esc(who.join(', '))}</u>` : ''}${k.due ? ` · ${esc(fmtMD(k.due))}까지` : ''}</span>
+        ${m.imported ? '' : statusChip(st, canOf(k, doc), key)}
+        ${ctx.interactive ? `<button type="button" class="md-kc${kc ? ' on' : ''}" data-act="kcmt" data-kid="${esc(key)}">💬 ${kc}</button>` : ''}</div>`;
+    }).join('');
+    if(krows || ctx.interactive){
+      h += `<div class="mb-ft">${krows}${ctx.interactive ? `<button type="button" class="md-tc mb-tc${tc ? ' on' : ''}" data-act="tcmt" data-tid="${esc(t.id)}">💬 ${tc ? `댓글 ${tc}${last ? ' · 마지막 ' + esc(fmtStamp(last)) : ''}` : '댓글 남기기'} ›</button>` : ''}</div>`;
+    }
+    h += `</section>`;
+  });
+  if(!(m.topics || []).length) h += `<div class="md-empty">아직 적은 주제가 없어요.</div>`;
+  return h + `</article>`;
+}
+
 /* 문서 모양 — 화면 · 인쇄가 같은 규칙 */
 export const DOC_CSS = `
 .md-doc{font-family:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#1F2320;line-height:1.75;font-size:14px;word-break:keep-all;overflow-wrap:anywhere}
@@ -576,6 +654,17 @@ export function searchMeetings(list, q, comments){
   out.forEach(g => g.rows.sort((a, b) => String(a.m.date).localeCompare(String(b.m.date))));
   out.sort((a, b) => (b.key === '__q__') - (a.key === '__q__') || b.rows.length - a.rows.length || String(b.rows[b.rows.length-1].m.date).localeCompare(String(a.rows[a.rows.length-1].m.date)));
   return out;
+}
+
+/* (v-100) 모아 둔 주제가 뒤 회의에서 다시 나왔나 — 이어 쓴 주제(thr)거나 제목이 같으면 */
+export function laterDates(list, pin){
+  const key = normTitle(pin.title), thr = pin.thr || `${pin.mid}:${pin.tid}`;
+  const out = [];
+  for(const m of list || []){
+    if(m.id === pin.mid || String(m.date) <= String(pin.date || '')) continue;
+    if((m.topics || []).some(x => (x.thr && x.thr === thr) || (key && normTitle(x.title) === key))) out.push(m.date);
+  }
+  return [...new Set(out)].sort();
 }
 
 /* ═══ 결정 · 임무 요약표 (여러 건 출력 맨 앞) ═══ */

@@ -53,6 +53,8 @@ html[data-theme="dark"] .ol.prev .ol-t{color:#A9BDB4}
 .pk-top input[type=search]{flex:1;min-width:220px;font-family:inherit;font-size:13.5px;height:38px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--surface);color:var(--ink)}
 .pk-m{border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:8px}
 .pk-m.pre{border-color:#9CCBB6;background:var(--sb-mint-2)}
+.pk-m.pk-pin{border-color:#EADBA8;background:#FFFBEA}
+html[data-theme="dark"] .pk-m.pk-pin{background:var(--gold-bg);border-color:var(--gold-line)}
 .pk-mh{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:4px}
 .pk-t{display:flex;align-items:baseline;gap:7px;font-size:13px;padding:5px 2px;cursor:pointer;flex-wrap:wrap}
 .pk-t input{accent-color:var(--sb-green);position:relative;top:2px}
@@ -856,11 +858,18 @@ async function openPicker(preMid){
     <div id="pk-list"></div>`;
   const list = body.querySelector('#pk-list');
   const hitT = (t) => { if(!q) return true; const L = (t.title + '\n' + C.topicText(t)).toLowerCase(); return q.split(/\s+/).filter(Boolean).every(w => L.includes(w)); };
+  /* (v-100) ☆ 모아 둔 주제 — 목차에서 모아 둔 것을 맨 위에 */
+  const pinK = new Set(((X.pins && X.pins()) || []).filter(p => p.org === ED.org).map(p => p.mid + '|' + p.tid));
+  const pinned = [];
+  ms.forEach(m => (m.topics || []).forEach((t, i) => { if(pinK.has(m.id + '|' + t.id)) pinned.push({ m, t, i }); }));
+  const pinBlock = () => !q && pinned.length ? `<div class="pk-m pk-pin"><div class="pk-mh"><b>☆ 모아 둔 주제 ${pinned.length}</b><span class="dv-hint" style="margin-left:6px">목차에서 ☆로 모아 둔 것</span></div>
+      ${pinned.map(({ m, t, i }) => { const k = m.id + '|' + t.id;
+        return `<label class="pk-t"><input type="checkbox" data-pk="${esc(k)}"${sel.has(k) ? ' checked' : ''}><b>${esc(C.fmtMD(m.date, false))}</b><span>${i + 1}. ${esc(t.title || '(제목 없음)')}</span><small>${esc(C.titleOf(m))}</small></label>`; }).join('')}</div>` : '';
   const draw = () => {
     const rows = ms.map(m => ({ m, ts: (m.topics || []).map((t, i) => ({ t, i })).filter(x => hitT(x.t)) })).filter(r => r.ts.length);
     const show = q ? rows.slice(0, 40) : rows.slice(0, lim);
     if(preMid && !q){ const i = show.findIndex(r => r.m.id === preMid); if(i > 0){ const [x] = show.splice(i, 1); show.unshift(x); } }
-    list.innerHTML = show.map(({ m, ts }) => `<div class="pk-m${preMid === m.id ? ' pre' : ''}">
+    list.innerHTML = pinBlock() + show.map(({ m, ts }) => `<div class="pk-m${preMid === m.id ? ' pre' : ''}">
         <div class="pk-mh"><b>${esc(C.fmtMD(m.date))}</b> ${esc(C.titleOf(m))}${m.imported ? ' <span class="md-imp">PDF에서 옮김</span>' : ''}<span class="mt-sp"></span>
           <button type="button" class="mt-btn sm ghost" data-pkall="${esc(m.id)}">${ts.every(x => sel.has(m.id + '|' + x.t.id)) ? '모두 빼기' : '모두 고르기'}</button></div>
         ${ts.map(({ t, i }) => { const k = m.id + '|' + t.id, ot = openTasks(m, t);
