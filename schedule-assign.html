@@ -2592,17 +2592,54 @@ let drawingRoom = null;   // 그리는 중인 영역
    사진은 timetableFloorImages/{floorId} 에 한 장씩 담는다. */
 const FLOOR_IMG_COL = 'timetableFloorImages';
 
-async function loadFloorImage(floorId){
+/* 🗂 (v-98) 평면도도 «버전마다 따로»
+   · 층마다 imgId(사진 번호)를 가진다. 평면도를 올리거나 바꾸면 «새 번호»로 새 사진을 저장하고
+     지금 버전의 그 층만 새 번호를 가리킨다 → 지난 버전(세트·게시본)은 예전 사진을 그대로 본다
+   · 바꾸기 전까지는 이어받은 버전끼리 같은 사진을 함께 쓴다 (저장 공간이 늘지 않는다)
+   · 예전 방식(사진 번호 = 층 id)도 그대로 읽는다
+   · 사진은 지우지 않는다 — 지난 버전이 가리키고 있을 수 있으므로 */
+const imgKeyOf = f => (f && (f.imgId || (f.hasImage ? f.id : ''))) || '';
+let FLOOR_IMG_ERR = '';   // 사진을 읽다 막혔을 때의 이유 (화면 안내용)
+async function loadFloorImage(key){
+  if(!key) return '';
   try {
-    const s = await getDoc(doc(db, FLOOR_IMG_COL, floorId));
+    const s = await getDoc(doc(db, FLOOR_IMG_COL, key));
     return s.exists() ? (s.data().image || '') : '';
-  } catch(e){ return ''; }
+  } catch(e){ FLOOR_IMG_ERR = (e && (e.code || e.message)) || 'error'; return ''; }
 }
-
-async function saveFloorImage(floorId, dataUrl){
-  await setDoc(doc(db, FLOOR_IMG_COL, floorId), {
-    image: dataUrl || '', updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
+function newImgId(){ return 'fimg_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+async function saveNewFloorImage(dataUrl, meta){
+  const imgId = newImgId();
+  await setDoc(doc(db, FLOOR_IMG_COL, imgId), {
+    image: dataUrl || '', ...(meta||{}), createdAt: Timestamp.now(), createdByUid: CU?.uid||'', createdByName: CU?.name||''
   });
+  return imgId;
+}
+/* 저장 실패 이유를 사람 말로 */
+function floorImgErrText(e){
+  const m = String((e && (e.code || e.message)) || e || '');
+  if(/permission|insufficient/i.test(m)) return '평면도를 저장할 권한이 없어요 — Firebase 보안 규칙 v25를 게시했는지 확인해 주세요.';
+  if(/longer than|exceeds|too large|maximum/i.test(m)) return '사진이 너무 큽니다. 더 작은 이미지를 써 주세요.';
+  if(/unavailable|network|offline/i.test(m)) return '인터넷 연결이 불안정해요. 잠시 뒤 다시 올려 주세요.';
+  return '평면도 저장 실패: ' + m;
+}
+/* 작업본·세트에 담는 층 모양 — 사진 본문은 빼고 번호만.
+   keepEmbedded: 아직 보관함으로 옮기지 못한 예전 사진(문서 안에 박힌 것)은 그대로 둔다 (잃지 않게) */
+function lightFloor(f, keepEmbedded){
+  const o = { id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!(f.imgId || f.hasImage || f.image) };
+  if(f.imgId) o.imgId = f.imgId;
+  if(keepEmbedded && needsStore(f)) o.image = f.image;
+  return o;
+}
+// 화면에 사진은 있는데 보관함에 아직 없는 층 (예전에 문서 안에 박혀 있던 사진)
+const needsStore = f => !!(f && f.image && !f.imgId && !f._fromStore);
+// 보관함으로 옮긴다 — 실패하면 예외 (부른 쪽에서 저장을 멈춘다)
+async function storeEmbeddedImages(){
+  for(const f of FLOORS){
+    if(!needsStore(f)) continue;
+    f.imgId = await saveNewFloorImage(f.image, { floorName: f.name||'', from: 'embedded' });
+    f.hasImage = true; f._fromStore = true;
+  }
 }
 
 async function loadRooms(){
@@ -2612,18 +2649,13 @@ async function loadRooms(){
     else FLOORS = [];
   } catch(e){ loadFailed = true; FLOORS = []; }
 
-  // 층마다 보관된 사진을 붙인다 (예전에 한 문서에 같이 담겼던 것은 그대로 쓰고 옮겨준다)
-  let needMigrate = false;
+  // 층마다 보관된 사진을 붙인다
+  // 예전에 문서 안에 박혀 있던 사진은 화면에 그대로 쓰고, 다음 저장 때 보관함으로 옮긴다 (saveRooms)
+  // (v-98) 예전엔 옮기기가 실패해도 사진을 빼고 저장해 평면도가 사라졌다 — 이제 옮기기에 성공해야만 뺀다
   for(const f of FLOORS){
-    if(f.image){ needMigrate = true; continue; }   // 옛 방식 — 아래에서 옮긴다
-    if(f.hasImage) f.image = await loadFloorImage(f.id);
-  }
-  if(needMigrate){
-    for(const f of FLOORS){
-      if(!f.image) continue;
-      try { await saveFloorImage(f.id, f.image); f.hasImage = true; } catch(e){}
-    }
-    try { await saveRooms(true); } catch(e){}
+    if(f.image) continue;
+    const key = imgKeyOf(f);
+    if(key){ f.image = await loadFloorImage(key); if(f.image) f._fromStore = true; }
   }
 }
 
@@ -2632,10 +2664,11 @@ async function saveRooms(silent){
   if(!guardSave('교실 배치', (FLOORS||[]).length)) return;
   if(window.touched) touched();
   try {
-    // 사진은 빼고 저장 (사진은 층별 문서에 따로 들어 있다)
-    const light = FLOORS.map(f => ({
-      id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!f.image
-    }));
+    // (v-98) 아직 보관함에 없는 예전 사진이 있으면 먼저 옮긴다 — 못 옮기면 저장을 멈춰 사진을 지킨다
+    try { await storeEmbeddedImages(); }
+    catch(e){ toast(floorImgErrText(e) + ' (교실 배치는 저장하지 않았어요 — 예전 평면도를 지키기 위해)','err'); return; }
+    // 사진은 빼고 저장 (사진은 보관함에 따로 들어 있다 · 층은 사진 번호만 가진다)
+    const light = FLOORS.map(f => lightFloor(f, false));
     await window.TM.snapDoc('timetableRooms','main','강의실 저장 전');
     await setDoc(doc(db,'timetableRooms','main'), {
       floors: light, updatedAt: Timestamp.now(), updatedByUid: CU?.uid||''
@@ -2748,6 +2781,7 @@ function renderFloorContent(){
         <label class="btn" style="cursor:pointer">${f.image?'🖼 평면도 교체':'🖼 평면도 올리기'}
           <input type="file" accept="image/*" style="display:none" onchange="uploadFloorImage(event)">
         </label>
+        <button class="btn" onclick="openFindFloorImages()" title="예전에 올렸던 평면도를 찾아 이 층에 다시 넣어요">🔎 예전 평면도 찾기</button>
         <button class="btn" onclick="shiftFloor(-1)" title="이 층을 앞으로">◀ 앞으로</button>
         <button class="btn" onclick="shiftFloor(1)" title="이 층을 뒤로">뒤로 ▶</button>
         <button class="btn" onclick="renameFloor()">✏️ 층 이름</button>
@@ -2782,8 +2816,13 @@ function renderFloorContent(){
       </div>` : `
       <div class="fp-noimg">
         <div class="ico">🖼</div>
-        <div>이 층의 평면도를 올려주세요.</div>
-        <div style="font-size:12px;color:var(--tl);margin-top:4px">올린 뒤 이미지 위에 교실 영역을 그릴 수 있어요.</div>
+        ${imgKeyOf(f) || (f.rooms||[]).length ? `<div><b>이 층의 평면도를 불러오지 못했어요.</b></div>
+          <div style="font-size:12px;color:var(--tl);margin-top:4px;line-height:1.7">${/permission|insufficient/i.test(FLOOR_IMG_ERR)
+            ? '평면도를 읽을 권한이 없어요 — Firebase 보안 규칙 v25를 게시했는지 확인해 주세요.'
+            : '예전에 올린 평면도가 보관함에 없어요.'}<br>
+            <b>🔎 예전 평면도 찾기</b>로 지난 기록에서 찾아 넣거나, 평면도를 새로 올려 주세요. 그려 둔 교실은 그대로 있어요.</div>`
+        : `<div>이 층의 평면도를 올려주세요.</div>
+        <div style="font-size:12px;color:var(--tl);margin-top:4px">올린 뒤 이미지 위에 교실 영역을 그릴 수 있어요.</div>`}
       </div>`}
     <div class="room-list" id="room-list"></div>`;
 
@@ -2798,30 +2837,145 @@ window.uploadFloorImage = function(ev){
   const reader = new FileReader();
   reader.onload = e=>{
     const img = new Image();
-    img.onload = ()=>{
-      // 최대 폭 1400px로 축소 + JPEG 압축
-      const maxW = 1400;
-      let w = img.width, h = img.height;
-      if(w > maxW){ h = Math.round(h*maxW/w); w = maxW; }
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      let dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-      // 여전히 크면 더 압축
-      if(dataUrl.length > 900000){ dataUrl = canvas.toDataURL('image/jpeg', 0.65); }
-      const f = FLOORS.find(x=>x.id===curFloorId);
-      f.image = dataUrl;
-      f.hasImage = true;
-      saveFloorImage(f.id, dataUrl)
-        .then(()=>{ saveRooms(); renderFloorContent(); })
-        .catch(err=>{
-          toast('평면도 저장 실패: 사진이 너무 큽니다. 더 작은 이미지를 써주세요.','err');
-          f.image = ''; f.hasImage = false; renderFloorContent();
-        });
+    img.onload = async ()=>{
+      // 최대 폭 1400px로 축소 + JPEG 압축 — 문서 한도(1MB) 안에 확실히 들어가도록 단계적으로 줄인다
+      const make = (maxW, q)=>{
+        let w = img.width, h = img.height;
+        if(w > maxW){ h = Math.round(h*maxW/w); w = maxW; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);   // 투명 PNG가 검게 나오지 않게
+        ctx.drawImage(img, 0, 0, w, h);
+        return canvas.toDataURL('image/jpeg', q);
+      };
+      let dataUrl = '';
+      for(const [mw, q] of [[1400,.82],[1400,.65],[1200,.6],[1000,.55],[800,.5]]){
+        dataUrl = make(mw, q);
+        if(dataUrl.length <= 900000) break;
+      }
+      const f = FLOORS.find(x=>x.id===curFloorId); if(!f) return;
+      const prev = { image:f.image, imgId:f.imgId, hasImage:f.hasImage, fromStore:f._fromStore };
+      try {
+        // (v-98) 늘 «새 사진 번호»로 저장 — 이 버전의 이 층만 새 사진을 가리키고, 지난 버전은 예전 사진 그대로
+        const imgId = await saveNewFloorImage(dataUrl, { floorName: f.name||'', setId: curSetId||'', setName: curSetName||'' });
+        f.image = dataUrl; f.imgId = imgId; f.hasImage = true; f._fromStore = true;
+        await saveRooms(true);
+        toast(prev.image ? '평면도를 바꿨어요 ✓ (지난 버전은 예전 평면도 그대로)' : '평면도를 올렸어요 ✓','ok');
+      } catch(err){
+        console.warn('[평면도]', err);
+        toast(floorImgErrText(err),'err');
+        f.image = prev.image; f.imgId = prev.imgId; f.hasImage = prev.hasImage; f._fromStore = prev.fromStore;
+      }
+      renderFloorContent();
     };
+    img.onerror = ()=> toast('이미지를 읽지 못했어요. PNG·JPG 파일인지 확인해 주세요.','err');
     img.src = e.target.result;
   };
   reader.readAsDataURL(file);
+  ev.target.value = '';   // 같은 파일을 다시 골라도 동작하게
+};
+
+/* 🔎 (v-98) 예전 평면도 찾기 — 사라진 평면도를 지난 기록에서 찾아 다시 넣는다
+   찾는 곳: ① 평면도 보관함  ② 되돌리기 보관본(교실 배치 저장 전)  ③ 저장된 세트  ④ 세트 버전  ⑤ 게시한 완성 시간표
+   (예전에는 사진이 문서 안에 박혀 저장되던 때가 있어, 그때의 기록에 남아 있을 수 있다) */
+let FOUND_IMGS = [];
+window.openFindFloorImages = async function(){
+  if(!needEdit()) return;
+  document.getElementById('ffi-mod')?.remove();
+  const ov = document.createElement('div'); ov.className = 'mov'; ov.id = 'ffi-mod';
+  ov.innerHTML = `<div class="mbox" style="max-width:760px;width:96vw">
+    <div class="mtitle">🔎 예전 평면도 찾기</div>
+    <div id="ffi-body" style="font-size:13px;color:var(--tl,#93A09A);padding:26px 0;text-align:center">지난 기록을 살펴보는 중…</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px"><button class="btn" onclick="document.getElementById('ffi-mod').remove()">닫기</button></div>
+  </div>`;
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+  const say = t=>{ const b = $I('ffi-body'); if(b) b.textContent = t; };
+  const found = new Map();      // 같은 사진은 한 번만
+  const sig = s => s.length + ':' + s.slice(80, 160) + ':' + s.slice(-80);
+  const toMs = t => t ? (t.toMillis ? t.toMillis() : (t.seconds ? t.seconds*1000 : (typeof t==='number' ? t : 0))) : 0;
+  const add = (img, info)=>{
+    if(typeof img !== 'string' || !/^data:image\//.test(img) || img.length < 200) return;
+    const k = sig(img); const cur = found.get(k);
+    if(cur){ cur.srcs.push(info.src); if(!cur.imgId && info.imgId) cur.imgId = info.imgId; if((info.at||0) > (cur.at||0)) cur.at = info.at; return; }
+    found.set(k, { image: img, imgId: info.imgId||'', floorId: info.floorId||'', floorName: info.floorName||'', at: info.at||0, srcs: [info.src] });
+  };
+  const fromFloors = (floors, src, at)=> (floors||[]).forEach(f=>{ if(f && f.image) add(f.image, { src, at, floorId:f.id, floorName:f.name }); });
+  // 층 id → 층 이름 (보관함 사진에 이름 붙이기용)
+  const nameOf = {}; (FLOORS||[]).forEach(f=>{ nameOf[f.id] = f.name; if(f.imgId) nameOf[f.imgId] = f.name; });
+  try {
+    say('① 평면도 보관함을 보는 중…');
+    try { const s = await getDocs(collection(db, FLOOR_IMG_COL));
+      s.forEach(d=>{ const v = d.data(); add(v.image, { src:'평면도 보관함', imgId:d.id, at: toMs(v.createdAt||v.updatedAt), floorId: d.id, floorName: v.floorName || nameOf[d.id] || '' }); }); }
+    catch(e){ FLOOR_IMG_ERR = e.code || e.message || 'error'; }
+    say('② 되돌리기 보관본을 보는 중…');
+    try { const s = await getDocs(query(collection(db,'snapshots'), where('key','==','timetableRooms/main')));
+      s.forEach(d=>{ const v = d.data(); try { fromFloors((JSON.parse(v.data||'{}')||{}).floors, `되돌리기 보관본 (${v.label||'저장 전'})`, toMs(v.at)); } catch(e){} }); } catch(e){}
+    say('③ 저장된 세트를 보는 중…');
+    try { const s = await getDocs(collection(db,'timetableSets'));
+      s.forEach(d=>{ const v = d.data(); fromFloors(v.snapshot && v.snapshot.floors, `세트 «${v.name||''}»`, toMs(v.updatedAt||v.createdAt));
+        ((v.snapshot && v.snapshot.floors)||[]).forEach(f=>{ if(f && f.id && !nameOf[f.id]) nameOf[f.id] = f.name; if(f && f.imgId && !nameOf[f.imgId]) nameOf[f.imgId] = f.name; }); }); } catch(e){}
+    say('④ 세트 버전을 보는 중… (조금 걸릴 수 있어요)');
+    try { const s = await getDocs(collection(db,'timetableSetVersions'));
+      s.forEach(d=>{ const v = d.data(); fromFloors(v.snapshot && v.snapshot.floors, `«${v.name||''}» v${v.ver||''}`, toMs(v.createdAt)); }); } catch(e){}
+    say('⑤ 게시한 완성 시간표를 보는 중…');
+    try { const s = await getDocs(collection(db,'timetablePublishedData'));
+      s.forEach(d=>{ const v = d.data(); fromFloors(v.snapshot && v.snapshot.floors, '게시한 완성 시간표', 0); }); } catch(e){}
+  } catch(e){}
+  // 보관함 사진에 층 이름을 다시 붙인다 (세트에서 알아낸 이름)
+  found.forEach(x=>{ if(!x.floorName && nameOf[x.floorId]) x.floorName = nameOf[x.floorId]; });
+  FOUND_IMGS = [...found.values()].sort((a,b)=>(b.at||0)-(a.at||0));
+  paintFoundImgs();
+};
+function paintFoundImgs(){
+  const box = $I('ffi-body'); if(!box) return;
+  const f = FLOORS.find(x=>x.id===curFloorId);
+  const fmt = ms => { if(!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+  if(!FOUND_IMGS.length){
+    box.style.textAlign = 'left';
+    box.innerHTML = `<div style="padding:8px 0;line-height:1.8;color:var(--tx,#26302C)">
+      지난 기록에서 평면도 사진을 찾지 못했어요.<br>
+      ${/permission|insufficient/i.test(FLOOR_IMG_ERR) ? '<b style="color:#B91C1C">평면도 보관함을 읽을 권한이 없어요 — Firebase 보안 규칙 v25를 먼저 게시해 주세요.</b><br>' : ''}
+      <span style="color:var(--tl,#93A09A)">평면도를 새로 올려 주세요. 그려 둔 교실 영역은 그대로 위에 얹혀요.</span></div>`;
+    return;
+  }
+  box.style.textAlign = 'left'; box.style.padding = '6px 0 0';
+  const opts = FLOORS.map(x=>`<option value="${x.id}"${x.id===curFloorId?' selected':''}>${esc(x.name)}</option>`).join('');
+  box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;color:var(--tx,#26302C)">
+      찾은 평면도 <b>${FOUND_IMGS.length}장</b> · 넣을 층
+      <select id="ffi-floor" style="height:34px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:9px;padding:0 8px;font-family:inherit">${opts}</select>
+      <span style="font-size:11.5px;color:var(--tl,#93A09A)">지금 열린 버전의 그 층에만 들어가요 — 지난 버전은 그대로</span></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;max-height:58vh;overflow:auto">
+    ${FOUND_IMGS.map((x,i)=>{
+      const using = f && x.imgId && f.imgId===x.imgId;
+      const same = f && (x.floorId===f.id || (x.floorName && x.floorName===f.name));
+      return `<div style="border:1.5px solid ${same?'var(--gm,#2D6A4F)':'var(--ivd,#E3E1DA)'};border-radius:12px;padding:8px;background:#fff">
+        <div style="height:140px;display:flex;align-items:center;justify-content:center;background:#F7F6F2;border-radius:8px;overflow:hidden">
+          <img src="${x.image}" alt="" style="max-width:100%;max-height:140px"></div>
+        <div style="font-size:12.5px;font-weight:800;color:var(--gd,#1E3932);margin-top:6px">${esc(x.floorName||'(층 이름 없음)')}${same?' <span style="font-size:10.5px;color:var(--gm,#2D6A4F)">· 이 층 것</span>':''}</div>
+        <div style="font-size:11px;color:var(--tl,#93A09A);line-height:1.5;min-height:30px">${esc(x.srcs.slice(0,2).join(' · '))}${x.srcs.length>2?` 외 ${x.srcs.length-2}곳`:''}${x.at?`<br>${fmt(x.at)}`:''}</div>
+        <button class="btn" style="width:100%;margin-top:6px" ${using?'disabled':''} onclick="useFoundImg(${i})">${using?'지금 쓰는 평면도':'이 평면도 넣기'}</button>
+      </div>`; }).join('')}
+    </div>`;
+}
+window.useFoundImg = async function(i){
+  if(!needEdit()) return;
+  const x = FOUND_IMGS[i]; if(!x) return;
+  const fid = $I('ffi-floor')?.value || curFloorId;
+  const f = FLOORS.find(y=>y.id===fid); if(!f) return;
+  if(f.image && !confirm(`«${f.name}»에는 지금 평면도가 있어요. 이 평면도로 바꿀까요?\n(지난 버전은 예전 평면도 그대로예요)`)) return;
+  try {
+    // 보관함에 있는 사진이면 그 번호를 그대로 가리키고, 지난 기록 속 사진이면 보관함에 새로 담는다
+    const imgId = x.imgId || await saveNewFloorImage(x.image, { floorName: f.name||'', from: 'recovered', setId: curSetId||'' });
+    if(!x.imgId) x.imgId = imgId;
+    f.image = x.image; f.imgId = imgId; f.hasImage = true; f._fromStore = true;
+    curFloorId = f.id;
+    await saveRooms(true);
+    toast(`«${f.name}»에 평면도를 넣었어요 ✓`,'ok');
+    document.getElementById('ffi-mod')?.remove();
+    renderFloors();
+  } catch(e){ toast(floorImgErrText(e),'err'); }
 };
 
 window.renameFloor = function(){
@@ -3225,8 +3379,9 @@ function collectSetSnapshot(){
     frames: JSON.parse(JSON.stringify(FRAMES || [])),
     assignStaff: ASSIGN_UIDS.slice(),
     availability: availToPlain(),           // Set 은 그대로 저장되지 않으므로 배열로 바꾼다
-    // 사진은 빼고 층 구성과 교실 도형만 (사진은 층별 문서에 그대로 있다)
-    floors: (FLOORS||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage: !!f.image })),
+    // 사진은 빼고 층 구성·교실 도형·사진 번호만 (사진은 보관함에 있다 · v-98 버전마다 따로 가리킨다)
+    // 아직 보관함으로 못 옮긴 예전 사진은 잃지 않게 그대로 담는다
+    floors: (FLOORS||[]).map(f=>lightFloor(f, true)),
     lessons: JSON.parse(JSON.stringify(LESSONS || [])),
     place2: JSON.parse(JSON.stringify(PLACE2 || {})),          // 시각 기반 배치
     gradeDept: JSON.parse(JSON.stringify(GRADE_DEPT || {})),   // 학년별 부서
@@ -3249,14 +3404,78 @@ function setCounts(snap){
 }
 
 /* ── 저장 ── */
-window.saveSetAs = async function(){
+/* 📄 (v-98) 새 시간표 만들기 — «어느 버전에서 이어받을지» 고른다
+   · 기본: 지금 열린 버전 (없으면 지금 화면)
+   · 이어받으면 선생님 구성 · 수업 가능 시간 · 교실 배치(평면도 포함) · 수업 · 배치가 모두 넘어오고
+     새 시간표에서 고친 것은 이어받은 원래 시간표에 영향을 주지 않는다 */
+window.saveSetAs = function(){
   if(!needEdit()) return;
-  const def = curSetName || `${new Date().getFullYear()}학년도 시간표`;
-  const name = prompt('이 시간표 배정에 이름을 붙여주세요.\n(예: 2026학년도 2학기 시간표)', def);
-  if(name===null) return;
-  if(!name.trim()){ toast('이름을 입력해 주세요.','err'); return; }
-  const note = prompt('메모 (선택) — 나중에 알아보기 쉽게', '') || '';
-  await writeSet(null, name.trim(), note.trim());
+  document.getElementById('newset-mod')?.remove();
+  const cur = SETS.find(x=>x.id===curSetId);
+  const yr = new Date().getFullYear();
+  const def = cur ? `${cur.name} (새)` : `${yr}학년도 시간표`;
+  const others = SETS.filter(x=>x.id!==curSetId);
+  const opt = s => { const c = s.counts||{}; return `<option value="${s.id}">${esc(s.name)}${s.lastVer?` v${s.lastVer}`:''} · ${esc(fmtDT(s.updatedAt||s.createdAt)||'')} · 교실 ${c.rooms||0} · 수업 ${c.lessons||0}</option>`; };
+  const IN = 'width:100%;height:40px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:10px;padding:0 12px;font-family:inherit;font-size:14px;box-sizing:border-box';
+  const ov = document.createElement('div'); ov.className = 'mov'; ov.id = 'newset-mod';
+  ov.innerHTML = `<div class="mbox" style="max-width:560px;width:94vw">
+    <div class="mtitle">📄 새 시간표 만들기</div>
+    <div style="font-size:12.5px;color:var(--tl,#93A09A);margin:4px 0 14px;line-height:1.7">
+      고른 시간표의 <b>선생님 구성 · 수업 가능 시간 · 교실 배치(평면도) · 수업 · 배치</b>를 그대로 이어받아 시작해요.<br>
+      새 시간표에서 교실 이름이나 평면도를 바꿔도 <b>이어받은 시간표는 그대로</b>예요.</div>
+    <label style="font-size:12.5px;font-weight:800;color:var(--gd,#1E3932)">이름</label>
+    <input id="ns-name" value="${esc(def)}" placeholder="예: 2027학년도 1학기 시간표" style="${IN};margin:4px 0 10px">
+    <label style="font-size:12.5px;font-weight:800;color:var(--gd,#1E3932)">메모 (선택)</label>
+    <input id="ns-note" placeholder="나중에 알아보기 쉽게" style="${IN};margin:4px 0 14px">
+    <div style="font-size:12.5px;font-weight:800;color:var(--gd,#1E3932);margin-bottom:6px">어디서 이어받을까요?</div>
+    <label style="display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:10px;margin-bottom:6px;cursor:pointer">
+      <input type="radio" name="ns-base" value="cur" checked style="margin-top:3px">
+      <span><b>${cur ? `지금 열린 «${esc(cur.name)}»${cur.lastVer?` v${cur.lastVer}`:''}` : '지금 화면 그대로'}</b> <span style="font-size:11px;color:var(--gm,#2D6A4F);font-weight:800">기본</span>
+        <span style="display:block;font-size:11.5px;color:var(--tl,#93A09A)">지금 고쳐 둔 내용까지 그대로 담아요</span></span></label>
+    ${others.length ? `<label style="display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border:1.5px solid var(--ivd,#E3E1DA);border-radius:10px;cursor:pointer">
+      <input type="radio" name="ns-base" value="other" style="margin-top:3px">
+      <span style="flex:1;min-width:0"><b>다른 저장된 시간표에서</b>
+        <select id="ns-src" style="${IN};margin-top:6px;font-size:13px" onfocus="document.querySelector('input[name=ns-base][value=other]').checked=true">${others.map(opt).join('')}</select>
+        <span style="display:block;font-size:11.5px;color:var(--tl,#93A09A);margin-top:4px">그 시간표가 마지막으로 저장된 모습을 이어받아 화면에 펼쳐요</span></span></label>` : ''}
+    <div class="mact" style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button class="btn" onclick="document.getElementById('newset-mod').remove()">취소</button>
+      <button class="btn btn-p" id="ns-go" onclick="doNewSet()">새 시간표 만들기</button>
+    </div>
+  </div>`;
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+  document.body.appendChild(ov);
+  setTimeout(()=>{ const i = $I('ns-name'); if(i){ i.focus(); i.select(); } }, 30);
+};
+window.doNewSet = async function(){
+  const name = ($I('ns-name')?.value||'').trim();
+  const note = ($I('ns-note')?.value||'').trim();
+  if(!name){ toast('이름을 입력해 주세요.','err'); return; }
+  const base = document.querySelector('input[name=ns-base]:checked')?.value || 'cur';
+  const srcId = base==='other' ? ($I('ns-src')?.value||'') : '';
+  document.getElementById('newset-mod')?.remove();
+  if(!srcId){ await writeSet(null, name, note); return; }       // 지금 화면(열린 버전) 그대로
+  // 다른 시간표에서 — 그 저장본을 새 이름으로 담고, 화면에 펼친다
+  window.showLoading && window.showLoading('이어받는 중…');
+  try {
+    const d = await getDoc(doc(db,'timetableSets',srcId));
+    if(!d.exists()) throw new Error('고른 시간표를 찾을 수 없습니다');
+    const v = d.data();
+    const nid = 'ts_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    const nb = {
+      name, note, org: CU?.org||v.org||'', snapshot: v.snapshot||{}, counts: v.counts||null,
+      createdAt: Timestamp.now(), createdByUid: CU?.uid||'', createdByName: CU?.name||'',
+      updatedAt: Timestamp.now(), updatedByUid: CU?.uid||'', updatedByName: CU?.name||'',
+      copiedFrom: srcId, copiedFromName: v.name||''
+    };
+    await setDoc(doc(db,'timetableSets', nid), nb);
+    await writeSetIndex(nid, nb);
+    await loadSets();
+    window.hideLoading && window.hideLoading();
+    await window.loadSet(nid, { noConfirm: true });
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    toast('만들기 실패: '+(e.message||''),'err');
+  }
 };
 
 window.overwriteSet = async function(){
@@ -3354,16 +3573,24 @@ async function applySetSnapshot(snap, onStep){
   PLACE2 = JSON.parse(JSON.stringify(snap.place2||{}));
   GRADE_DEPT = JSON.parse(JSON.stringify(snap.gradeDept||{}));
   if(snap.gradeTypes) GRADE_TYPES = JSON.parse(JSON.stringify(snap.gradeTypes));
-  FLOORS = (snap.floors||[]).map(f=>({ id:f.id, name:f.name, rooms:f.rooms||[], hasImage:!!f.hasImage, image:'' }));
+  // (v-98) 지금 화면에 «아직 보관함에 없는 예전 사진»이 있으면, 다른 버전으로 바꾸기 전에 보관함에 담아 둔다 (잃지 않게)
+  if(CAN_EDIT){ try { await storeEmbeddedImages(); } catch(e){ console.warn('[평면도] 예전 사진 보관 실패', e); } }
+  // (v-98) 층마다 «이 버전이 가리키는 사진 번호»를 그대로 가져온다 · 예전 세트에 박혀 있던 사진도 살린다
+  FLOORS = (snap.floors||[]).map(f=>{
+    const o = { id:f.id, name:f.name, rooms:f.rooms||[], hasImage:!!(f.hasImage || f.imgId || f.image), image:'' };
+    if(f.imgId) o.imgId = f.imgId;
+    if(f.image && !f.imgId) o.image = f.image;   // 예전 방식 — 다음 저장 때 보관함으로 옮긴다
+    return o;
+  });
 
-  // 층 사진은 층별 문서에서 다시 붙인다 — 몇 장째인지 보여준다
-  const withImg = FLOORS.filter(f=>f.hasImage);
+  // 층 사진은 보관함에서 다시 붙인다 — 몇 장째인지 보여준다
+  const withImg = FLOORS.filter(f=>!f.image && imgKeyOf(f));
   let gi = 0;
-  for(const f of FLOORS){
-    if(!f.hasImage) continue;
+  for(const f of withImg){
     gi++;
     step(`평면도 사진 받는 중 (${gi}/${withImg.length})`, 30 + Math.round(15 * gi / withImg.length)); await breathe();
-    f.image = await loadFloorImage(f.id);
+    f.image = await loadFloorImage(imgKeyOf(f));
+    if(f.image) f._fromStore = true;
   }
   curFloorId = FLOORS.length ? FLOORS[0].id : null;
 
@@ -3390,12 +3617,12 @@ async function applySetSnapshot(snap, onStep){
 }
 
 /* ── 불러오기 ── */
-window.loadSet = async function(id){
+window.loadSet = async function(id, opt){
   if(!needEdit()) return;
   const s = SETS.find(x=>x.id===id); if(!s) return;
   const c = s.counts || {};
   const nowAv = Object.keys(AVAIL||{}).filter(u=>DAYS.some(d=>(AVAIL[u]||{})[d]&&AVAIL[u][d].size)).length;
-  if(!confirm(
+  if(!(opt && opt.noConfirm) && !confirm(
     `"${s.name}"을(를) 불러올까요?\n\n` +
     `이 세트: 선생님 ${c.staff||0} · 교실 ${c.rooms||0} · 수업 ${c.lessons||0} · 배치 ${c.placed||0}칸\n\n` +
     `지금 화면의 설정이 이 세트 내용으로 바뀝니다.\n` +
@@ -3740,7 +3967,7 @@ function renderSets(){
   box.innerHTML = `
     <div class="panel">
       <div class="ptitle">💾 저장된 시간표 배정
-        ${CAN_EDIT?`<span style="margin-left:auto"><button class="rm-modebtn" onclick="saveSetAs()">💾 지금 내용을 새로 저장</button></span>`:''}
+        ${CAN_EDIT?`<span style="margin-left:auto"><button class="rm-modebtn" onclick="saveSetAs()">📄 새 시간표 만들기</button></span>`:''}
       </div>
       <div class="pdesc">
         수업 가능 시간 · 교실 배치 · 수업 정의 · 배치를 <b>통째로 저장</b>합니다.
@@ -3749,14 +3976,15 @@ function renderSets(){
         <br>· <b>어느 탭에서 고치든 한꺼번에</b> 담깁니다 — 수업 가능 시간 · 교실 배치 · 수업 정의 · 배치 · 학년별 부서까지.
         <br>· 자동 저장이 켜져 있으면, 내가 만든 세트는 고칠 때마다 알아서 갱신됩니다.
         <br>· <b>💾 버전 저장</b>을 누를 때마다 그 순간이 <b>v1, v2…</b> 버전으로 남아, 🕘 버전에서 언제든 되돌릴 수 있어요.
-        <br>· 평면도 사진은 층마다 따로 보관되어 세트끼리 함께 씁니다.</span>
+        <br>· <b>📄 새 이름으로</b>를 누르면 지금 시간표(또는 고른 시간표)의 구성을 <b>이어받아</b> 새 시간표를 시작해요.
+        <br>· 교실 이름·평면도는 <b>시간표마다 따로</b> 남아요 — 새 시간표에서 바꿔도 지난 시간표는 그대로입니다.</span>
       </div>
       ${SETS.length ? `<div class="set-list">${rows}</div>`
         : (!setsLoaded
           ? `<div class="empty"><div class="ico">⏳</div><div class="t1">저장 목록을 불러오는 중…</div>
              <div>잠시만요 — 색인만 받아서 금방 떠요.</div></div>`
           : `<div class="empty"><div class="ico">💾</div><div class="t1">아직 저장된 시간표 배정이 없습니다</div>
-             <div>설정을 마친 뒤 <b>지금 내용을 새로 저장</b>을 눌러보세요.</div></div>`)}
+             <div>설정을 마친 뒤 <b>📄 새 시간표 만들기</b>를 눌러보세요.</div></div>`)}
     </div>`;
 }
 
