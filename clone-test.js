@@ -82,10 +82,33 @@ async function wipe(F, testUid){
   return out;
 }
 
+/* ── (v-97) «복제한 것만» 되돌리기 ──
+   예전 wipe는 그 계정의 uid를 담당자 명단 «모든 자리»에서 지웠다.
+   실제 선생님 계정이 테스트로 잘못 지정된 채 «지정 해제»를 누르면 그분의 진짜 권한(경비 담당 등)까지 사라졌다.
+   · 복제할 때 «더한 자리»를 적어 두고(cfg.added) 그 자리만 되돌린다
+   · 복제한 적이 없는 계정이면 아무것도 지우지 않는다
+   · 적어 둔 것이 없는 예전 복제만 예전 방식(전부 걷기) — 이미 권한이 덮어써진 테스트 계정이므로 */
+async function undoClone(F, testUid, cfg, testDoc){
+  const cloned = !!((cfg && cfg.cloneOf) || (testDoc && testDoc.cloneOf));
+  const a = cfg && cfg.added;
+  if(a && Array.isArray(a.perm)){
+    for(const p of a.perm){ try{ const [c,d] = p.split('/'); const r = doc(F.db,c,d); const s = await getDoc(r); if(!s.exists()) continue;
+      const cnt = {n:0}; const nv = scrub(s.data(), testUid, cnt); if(cnt.n) await setDoc(r, nv); }catch(e){} }
+    for(const p of (a.led||[])){ try{ const [c,d] = p.split('/'); await updateDoc(doc(F.db,c,d), { managers: arrayRemove(testUid) }); }catch(e){} }
+    for(const id of (a.cls||[])){ try{ await updateDoc(doc(F.db,'classes',id), { shadowUids: arrayRemove(testUid) }); }catch(e){} }
+    return;
+  }
+  if(cloned) await wipe(F, testUid);
+}
+/* 이름·아이디에 «테스트/test»가 들어간 계정만 테스트 계정으로 쓸 수 있다 — 실제 선생님 계정 보호 */
+const namedTest = s => /테스트|test/i.test(String(s.name||'')+' '+String(s.email||'')+' '+String(s.id||''));
+const NOT_TEST_MSG = s => `«${s.name||''}» 계정은 실제 선생님 계정처럼 보여요 (이름·아이디에 «테스트/test»가 없음).\n테스트 계정으로 지정하면 모든 명단(결재선·출석·회의 참석 등)에서 사라져요.\n\n«통합관리»에서 이름이나 아이디에 «테스트»가 들어간 계정을 만들어 그 계정을 쓰세요.`;
+
 /* ── 복제 ── */
 async function cloneFrom(F, test, target, me){
   const items = [];
-  await wipe(F, test.uid);
+  const added = { perm:[], led:[], cls:[] };            // (v-97) 이번 복제로 «더한 자리» — 되돌릴 때 이것만
+  await undoClone(F, test.uid, await readCfg(F), test);
   // ① 계정의 권한 필드
   const upd = { isTest:true, cloneOf:{ uid:target.uid, name:target.name||'', position:target.position||'', role:target.role||'', at:Timestamp.now() } };
   COPY_FIELDS.forEach(f=>{ upd[f] = (target[f]===undefined || target[f]===null) ? deleteField() : target[f]; });
@@ -97,13 +120,13 @@ async function cloneFrom(F, test, target, me){
   for(const [c,d,label] of PERM_DOCS){
     try{ const r = doc(F.db,c,d); const s = await getDoc(r); if(!s.exists()) continue;
       const hits = []; const nv = mirror(s.data(), target.uid, test.uid, hits, '');
-      if(hits.length){ await setDoc(r, nv); items.push({ ic:'✅', t:label, w:`${c}/${d}` }); }
+      if(hits.length){ await setDoc(r, nv); added.perm.push(`${c}/${d}`); items.push({ ic:'✅', t:label, w:`${c}/${d}` }); }
     }catch(e){ items.push({ ic:'⚠️', t:`${label} — 저장 권한이 없어 건너뜀`, w:`${c}/${d}` }); }
   }
   // ③ 장부별 담당 (이름 목록은 건드리지 않아 화면에 드러나지 않는다)
   for(const [col,label] of [['actLedgers','활동 경비 담당'],['bldLedgers','공사 경비 담당']]){
     try{ const s = await getDocs(query(collection(F.db,col), where('managers','array-contains',target.uid)));
-      if(s.size){ for(const d of s.docs) await updateDoc(d.ref, { managers: arrayUnion(test.uid) });
+      if(s.size){ for(const d of s.docs){ if(!(d.data().managers||[]).includes(test.uid)) added.led.push(`${col}/${d.id}`); await updateDoc(d.ref, { managers: arrayUnion(test.uid) }); }
         items.push({ ic:col==='actLedgers'?'🏕':'🏗', t:`${label} · ${s.docs.slice(0,2).map(d=>d.data().name||'').join(', ')}${s.size>2?` 외 ${s.size-2}건`:''}`, w:`장부 ${s.size}건` }); }
     }catch(e){}
   }
@@ -112,12 +135,12 @@ async function cloneFrom(F, test, target, me){
     const a = await getDocs(query(collection(F.db,'classes'), where('teacherUid','==',target.uid)));
     const b = await getDocs(query(collection(F.db,'classes'), where('deputies','array-contains',target.uid)));
     const seen = new Map(); [...a.docs, ...b.docs].forEach(d=>seen.set(d.id, d));
-    for(const d of seen.values()) await updateDoc(d.ref, { shadowUids: arrayUnion(test.uid) });
+    for(const d of seen.values()){ if(!(d.data().shadowUids||[]).includes(test.uid)) added.cls.push(d.id); await updateDoc(d.ref, { shadowUids: arrayUnion(test.uid) }); }
     if(seen.size) items.push({ ic:'🏫', t:`담임 반 · ${[...seen.values()].slice(0,3).map(d=>`${d.data().grade||''} ${d.data().name||''}`.trim()).join(', ')}${seen.size>3?` 외 ${seen.size-3}개`:''}`, w:'보이지 않게' });
   }catch(e){}
   await setDoc(doc(F.db,'systemConfig','testClone'), { uid:test.uid, name:test.name||'', email:test.email||'',
     cloneOf:{ uid:target.uid, name:target.name||'', position:target.position||'', role:target.role||'', at:Timestamp.now(), byName:me.name||'' },
-    items }, { merge:true });
+    items, added }, { merge:true });
   try{ window.logActivity && window.logActivity('권한', '권한 테스트', `테스트 계정에 ${target.name} 선생님 권한 복제`, `${items.length}개 항목`); }catch(e){}
   return items;
 }
@@ -212,6 +235,10 @@ window.cloneTestMount = async (elId)=>{
         <span style="color:#9A3412;font-weight:800">상태</span><span>테스트 지정됨 · <b>모든 명단에서 숨김</b>${test.acStatus&&test.acStatus!=='active'?` · 계정 상태 ${esc(test.acStatus)}`:''}</span>
         <span style="color:#9A3412;font-weight:800">지금 권한</span><span>${c?`<b>${esc(c.name)}${c.position?` (${esc(c.position)})`:''}</b> 선생님과 같게 · ${when(c.at)} 복제`:'<b>아직 복제 안 됨</b> — 아래에서 선생님을 고르세요'}</span>
       </div>
+      ${!namedTest(test)?`<div style="background:#FDECEC;border:1.5px solid #F3B4B4;border-radius:12px;padding:11px 14px;margin:0 0 10px;font-size:12.6px;color:#8E1B1B;line-height:1.7">
+        ⚠ <b>«${esc(test.name||'')}» 계정은 실제 선생님 계정처럼 보여요</b> (이름·아이디에 «테스트/test»가 없음).
+        지금 이 분은 결재선·출석·회의 참석·교직원 명부 같은 <b>모든 명단에서 숨겨져</b> 있고, 화면 위에 «테스트 계정» 표시가 떠요.<br>
+        실제 선생님이면 아래 <b>«지정 해제»</b>를 눌러 주세요. ${c?'복제해 넣었던 권한만 걷어내요.':'복제한 적이 없으니 그분의 권한은 하나도 지우지 않고 숨김만 풀어요.'}</div>`:''}
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="bs" onclick="cloneWipe()">권한 비우기</button>
         <button class="bs" onclick="cloneDesignate(true)">다른 계정으로 지정</button>
@@ -247,9 +274,12 @@ window.cloneTestMount = async (elId)=>{
         ${candidates.map(s=>`<tr><td><b>${esc(s.name||'')}</b></td><td style="font-family:ui-monospace,Menlo,monospace">${esc(idOf(s))||'<span style="color:#B91C1C">없음</span>'}</td>
           <td>${esc(orgsTxt(s))}</td>
           <td>${esc(ROLE_L[s.role]||s.role||'')}</td>
-          <td>${s.isTest?'<span class="sbadge" style="background:#FFF1E6;color:#C2410C">🧪 테스트 지정</span>':'<span class="sbadge">일반 (명단에 보임)</span>'}</td>
-          <td>${(test&&test.uid===s.uid)?'<span style="font-size:11px;color:var(--tl)">사용 중</span>':(s.role==='super'?'':`<button class="bs" style="font-size:11px;padding:3px 9px" onclick="ctUse('${s.uid}')">이 계정 쓰기</button>`)}
-            ${(test&&test.uid===s.uid)||s.role==='super'?'':`<button class="bs" style="font-size:11px;padding:3px 9px;color:#B91C1C" onclick="ctDelete('${s.uid}')">🗑 삭제</button>`}</td></tr>`).join('')}
+          <td>${s.isTest?'<span class="sbadge" style="background:#FFF1E6;color:#C2410C">🧪 테스트 지정</span>':'<span class="sbadge">일반 (명단에 보임)</span>'}
+            ${s.isTest&&!namedTest(s)?'<div style="font-size:11px;color:#B91C1C;font-weight:800;margin-top:3px">⚠ 실제 선생님 계정이 숨겨져 있어요</div>':''}</td>
+          <td>${(test&&test.uid===s.uid)?'<span style="font-size:11px;color:var(--tl)">사용 중</span>'
+              :(s.isTest?`<button class="bs" style="font-size:11px;padding:3px 9px" onclick="ctUnhide('${s.uid}')">숨김 풀기</button>`
+              :(s.role==='super'||!namedTest(s)?'':`<button class="bs" style="font-size:11px;padding:3px 9px" onclick="ctUse('${s.uid}')">이 계정 쓰기</button>`))}
+            ${(test&&test.uid===s.uid)||s.role==='super'||!namedTest(s)?'':`<button class="bs" style="font-size:11px;padding:3px 9px;color:#B91C1C" onclick="ctDelete('${s.uid}')">🗑 삭제</button>`}</td></tr>`).join('')}
       </table>` : '<p class="empty">아직 없습니다.</p>'}
       <div style="background:var(--iv);border-radius:11px;padding:11px 13px;margin-top:10px;font-size:12px;color:var(--ts);line-height:1.8">
         <b style="color:var(--gd)">«이미 사용 중인 아이디입니다»가 뜰 때</b><br>
@@ -283,13 +313,23 @@ window.ctFilter = (q)=>{
 window.ctUse = async (uid)=>{
   const X = window.__ct; if(!X) return;
   const s = X.staff.find(x=>x.uid===uid); if(!s) return;
+  if(!namedTest(s)){ alert(NOT_TEST_MSG(s)); return; }
   if(!confirm(`«${s.name}» (아이디 ${idOf(s)}) 계정을 테스트 계정으로 쓸까요?\n모든 명단에서 숨겨집니다.`)) return;
   try{
-    if(X.test && X.test.uid!==uid){ await wipe(X.F, X.test.uid); await updateDoc(doc(X.F.db,'staff',X.test.uid), { isTest:false, cloneOf:deleteField() }); }
+    if(X.test && X.test.uid!==uid){ await undoClone(X.F, X.test.uid, X.cfg, X.test); await updateDoc(doc(X.F.db,'staff',X.test.uid), { isTest:false, cloneOf:deleteField() }); }
     await updateDoc(doc(X.F.db,'staff',uid), { isTest:true });
     await setDoc(doc(X.F.db,'systemConfig','testClone'), { uid, name:s.name||'', email:s.email||'', cloneOf:null, items:[] });
     await window.cloneTestMount('ca-clone'); window.toast && toast(`«${s.name}» 계정을 테스트 계정으로 지정했습니다`,'ok');
   }catch(e){ alert('지정 실패: '+(e.message||e)); }
+};
+/* (v-97) 테스트 표시만 남은 계정의 숨김 풀기 — 권한은 건드리지 않는다 */
+window.ctUnhide = async (uid)=>{
+  const X = window.__ct; if(!X) return;
+  const s = X.staff.find(x=>x.uid===uid); if(!s) return;
+  if(!confirm(`«${s.name}» 계정의 테스트 표시를 지우고 다시 명단에 보이게 할까요?\n(권한·담당은 그대로 둡니다)`)) return;
+  try{ await updateDoc(doc(X.F.db,'staff',uid), { isTest:false });
+    await window.cloneTestMount('ca-clone'); window.toast && toast(`«${s.name}» 선생님이 다시 명단에 보여요`,'ok'); }
+  catch(e){ alert('실패: '+(e.message||e)); }
 };
 window.ctDelete = async (uid)=>{
   if(!window.deleteStaff){ alert('교직원 삭제 기능을 찾지 못했습니다'); return; }
@@ -302,7 +342,7 @@ window.ctCheckId = async ()=>{
   out.textContent = '확인 중…';
   const r = window.findStaffById ? await window.findStaffById(id) : { live: X.staff.find(s=>idOf(s)===id)||null, arch:null };
   if(r.live){ const hit = r.live;
-    out.innerHTML = `✓ 교직원 기록이 있습니다 — <b>${esc(hit.name||'')}</b>${hit.isTest?' <span style="color:#C2410C">(🧪 테스트로 지정돼 명단에서 숨김)</span>':''}. 비밀번호를 모르면 이 계정을 쓰고 «🔑 새로 정하기»를 누르세요.${hit.isTest||hit.role==='super'?'':` <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctUse('${hit.uid}')">이 계정 쓰기</button>`}`;
+    out.innerHTML = `✓ 교직원 기록이 있습니다 — <b>${esc(hit.name||'')}</b>${hit.isTest?' <span style="color:#C2410C">(🧪 테스트로 지정돼 명단에서 숨김)</span>':''}. 비밀번호를 모르면 이 계정을 쓰고 «🔑 새로 정하기»를 누르세요.${hit.isTest||hit.role==='super'||!namedTest(hit)?'':` <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctUse('${hit.uid}')">이 계정 쓰기</button>`}`;
     return; }
   if(r.arch){
     out.innerHTML = `🗂 <b>${esc(r.arch.name||'')}</b>의 <b>삭제된 계정</b>이 보관함에 있어요. <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctRestore('${r.arch.uid}','${esc(id)}')">🔁 되살리기</button>`;
@@ -322,7 +362,7 @@ window.__ctCheckIdOld = ()=>{
   const id = (document.getElementById('ct-idq')?.value||'').trim(); const out = document.getElementById('ct-idr'); if(!id||!out) return;
   const hit = X.staff.find(s=>idOf(s)===id);
   out.innerHTML = hit
-    ? `✓ 교직원 기록이 있습니다 — <b>${esc(hit.name||'')}</b>${hit.isTest?' <span style="color:#C2410C">(🧪 테스트로 지정돼 명단에서 숨김)</span>':''}. 비밀번호를 모르면 이 계정을 쓰고 «🔑 새로 정하기»를 누르세요.${hit.isTest||hit.role==='super'?'':` <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctUse('${hit.uid}')">이 계정 쓰기</button>`}`
+    ? `✓ 교직원 기록이 있습니다 — <b>${esc(hit.name||'')}</b>${hit.isTest?' <span style="color:#C2410C">(🧪 테스트로 지정돼 명단에서 숨김)</span>':''}. 비밀번호를 모르면 이 계정을 쓰고 «🔑 새로 정하기»를 누르세요.${hit.isTest||hit.role==='super'||!namedTest(hit)?'':` <button class="bs" style="font-size:11px;padding:2px 8px" onclick="ctUse('${hit.uid}')">이 계정 쓰기</button>`}`
     : `⚠️ 교직원 기록이 없습니다 — <b>인증 장부에만 남은 계정</b>이에요. 다른 아이디(예: ${esc(id)}01)로 만들거나, Firebase 콘솔 → Authentication에서 «${esc(id)}@gyosa-seongyosa.staff»를 지우면 다시 쓸 수 있습니다.`;
 };
 window.ctResetPw = ()=>{
@@ -365,6 +405,7 @@ window.cloneDo = async (pickedUid)=>{
   if(!uid){ alert('선생님을 골라주세요'); return; }
   const target = X.pickable.find(s=>s.uid===uid); if(!target) return;
   if(target.role==='super'){ alert('슈퍼관리자 권한은 복제할 수 없습니다'); return; }
+  if(!namedTest(X.test)){ alert(`지금 테스트 계정 «${X.test.name}»은 실제 선생님 계정처럼 보여요.\n복제하면 이 분의 역할·직책·부서가 덮어써집니다.\n\n먼저 «지정 해제» 후 «테스트»라는 이름의 계정을 지정해 주세요.`); return; }
   if(!confirm(`테스트 계정에 «${target.name}» 선생님의 권한을 복제할까요?\n이전 복제는 먼저 걷어냅니다.`)) return;
   const box = document.getElementById('ct-result'); if(box) box.innerHTML = '<div style="padding:10px;color:#7C837E;font-size:12.5px">복제하는 중… (권한 지도를 훑고 있어요 · 10초쯤 걸립니다)</div>';
   try{ const items = await cloneFrom(X.F, X.test, target, X.me); await window.cloneTestMount('ca-clone');
@@ -373,23 +414,25 @@ window.cloneDo = async (pickedUid)=>{
 };
 window.cloneWipe = async ()=>{
   const X = window.__ct; if(!X || !X.test) return;
+  if(!namedTest(X.test)){ alert(`«${X.test.name}» 계정은 실제 선생님 계정처럼 보여요 (이름·아이디에 «테스트/test»가 없음).\n권한 비우기를 하면 이 분의 역할·직책·부서가 지워집니다.\n\n실제 선생님 계정이면 «지정 해제»를 눌러 주세요 — 그분의 권한은 그대로 둡니다.`); return; }
   if(!confirm('테스트 계정의 권한을 모두 비울까요?\n아무 권한 없는 빈 교사 상태가 됩니다.')) return;
-  try{ await wipe(X.F, X.test.uid);
+  try{ await undoClone(X.F, X.test.uid, X.cfg, X.test);
     const upd = { cloneOf: deleteField(), role:'teacher', pageDeny:deleteField(), pageAllow:deleteField(), position:deleteField(), duty:deleteField(), dept:deleteField() };
     await updateDoc(doc(X.F.db,'staff',X.test.uid), upd);
-    await setDoc(doc(X.F.db,'systemConfig','testClone'), { cloneOf:null, items:[] }, { merge:true });
+    await setDoc(doc(X.F.db,'systemConfig','testClone'), { cloneOf:null, items:[], added:null }, { merge:true });
     await window.cloneTestMount('ca-clone'); if(window.toast) toast('테스트 계정 권한을 비웠습니다','ok'); }
   catch(e){ alert('실패: '+(e.message||e)); }
 };
 window.cloneDesignate = async (change)=>{
   const X = window.__ct; if(!X) return;
-  const cand = X.staff.filter(s=>s.role!=='super');
+  const cand = X.staff.filter(s=>s.role!=='super' && namedTest(s));   // (v-97) 이름·아이디에 «테스트/test»가 든 계정만
+  if(!cand.length){ alert('고를 수 있는 테스트용 계정이 없어요.\n«통합관리»에서 이름이나 아이디에 «테스트»가 들어간 계정을 먼저 만들어 주세요.\n(실제 선생님 계정은 테스트 계정으로 쓸 수 없어요)'); return; }
   const bg = document.createElement('div');
   bg.style.cssText='position:fixed;inset:0;background:rgba(16,22,26,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px';
   bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
   bg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:18px;max-width:420px;width:100%">
     <div style="font-size:15px;font-weight:900;color:#0F241F">🧪 테스트 계정 고르기</div>
-    <div style="font-size:12px;color:#5A6560;margin:5px 0 10px">슈퍼관리자 계정은 고를 수 없습니다. 고른 계정은 모든 명단에서 숨겨져요.</div>
+    <div style="font-size:12px;color:#5A6560;margin:5px 0 10px">이름·아이디에 «테스트/test»가 들어간 계정만 보여요. 고른 계정은 모든 명단에서 숨겨져요.</div>
     <select id="ct-des" style="width:100%;height:40px;border:1.5px solid #E3E1DA;border-radius:10px;padding:0 10px;font-family:inherit;font-size:13px">
       ${cand.map(s=>`<option value="${s.uid}">${esc(s.name||'')} · ${esc(s.email||'')}${s.isTest?' (지금 테스트 계정)':''}</option>`).join('')}</select>
     <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:12px">
@@ -398,8 +441,9 @@ window.cloneDesignate = async (change)=>{
   document.body.appendChild(bg);
   document.getElementById('ct-des-ok').onclick = async ()=>{
     const uid = document.getElementById('ct-des').value; const s = X.staff.find(x=>x.uid===uid); if(!s) return;
+    if(!namedTest(s)){ alert(NOT_TEST_MSG(s)); return; }
     try{
-      if(X.test && X.test.uid!==uid){ await wipe(X.F, X.test.uid); await updateDoc(doc(X.F.db,'staff',X.test.uid), { isTest:false, cloneOf:deleteField() }); }
+      if(X.test && X.test.uid!==uid){ await undoClone(X.F, X.test.uid, X.cfg, X.test); await updateDoc(doc(X.F.db,'staff',X.test.uid), { isTest:false, cloneOf:deleteField() }); }
       await updateDoc(doc(X.F.db,'staff',uid), { isTest:true });
       await setDoc(doc(X.F.db,'systemConfig','testClone'), { uid, name:s.name||'', email:s.email||'', cloneOf:null, items:[] });
       bg.remove(); await window.cloneTestMount('ca-clone'); if(window.toast) toast(`«${s.name}» 계정을 테스트 계정으로 지정했습니다`,'ok');
@@ -408,10 +452,11 @@ window.cloneDesignate = async (change)=>{
 };
 window.cloneRelease = async ()=>{
   const X = window.__ct; if(!X || !X.test) return;
-  if(!confirm(`«${X.test.name}» 계정의 테스트 지정을 해제할까요?\n복제된 권한을 모두 걷어내고, 다시 명단에 나타납니다.`)) return;
-  try{ await wipe(X.F, X.test.uid);
+  const cloned = !!(X.test.cloneOf || (X.cfg && X.cfg.cloneOf));
+  if(!confirm(`«${X.test.name}» 계정의 테스트 지정을 해제할까요?\n${cloned?'복제해 넣었던 권한만 걷어내고, ':'복제한 적이 없어 권한은 그대로 두고, '}다시 명단에 나타납니다.`)) return;
+  try{ await undoClone(X.F, X.test.uid, X.cfg, X.test);
     await updateDoc(doc(X.F.db,'staff',X.test.uid), { isTest:false, cloneOf:deleteField() });
-    await setDoc(doc(X.F.db,'systemConfig','testClone'), { uid:null, name:'', email:'', cloneOf:null, items:[] });
+    await setDoc(doc(X.F.db,'systemConfig','testClone'), { uid:null, name:'', email:'', cloneOf:null, items:[], added:null });
     await window.cloneTestMount('ca-clone'); }catch(e){ alert('실패: '+(e.message||e)); }
 };
 window.cloneTraces = async ()=>{

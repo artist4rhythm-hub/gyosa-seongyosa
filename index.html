@@ -3940,6 +3940,9 @@ async function loadHomeNotices(){
   }
 }
 
+// (v-97) «뒤로 가기»로 홈에 돌아오면 브라우저가 예전 화면(예전 숫자)을 그대로 꺼내 보여 줄 때가 있다 → 새로 읽기
+window.addEventListener('pageshow', e=>{ if(e.persisted) location.reload(); });
+
 // ── 메인 알림: 결재할 문서 + 안 읽은 쪽지 ──
 async function loadNotifications(){
   let approvalCnt = 0, msgCnt = 0, boardCnt = 0, newPostCnt = 0, payCnt = 0, payWaitCnt = 0, mtgCnt = 0;
@@ -3947,16 +3950,17 @@ async function loadNotifications(){
   /* ⚡ v74 — 다섯 가지를 «동시에», 그리고 «나에게 해당하는 문서만» 묻는다.
      (예전: 다섯 컬렉션을 통째로, 하나씩 차례로 읽었음 — 자료가 쌓일수록 느려짐)
      세는 기준은 예전과 똑같습니다. */
-  const lastSeen = CU.lastBoardSeen?.toMillis?.() || 0;
+  /* 📌 (v-97) «새 게시글» = 최근 30일 · 내가 볼 수 있는 게시판 · 남의 글 중 «아직 안 읽은 글» (게시판의 빨간 점과 같은 기준)
+     예전: «마지막으로 게시판에 들어간 시각»과 «글 쓴 시각»을 각자 컴퓨터 시계로 비교 → 시계가 다른 컴퓨터,
+           휴지통으로 간 글의 댓글 알림 때문에 다 읽어도 숫자가 남는 일이 있었다 */
+  const NEW_SINCE = Date.now() - 30*86400000;
   const myOrgList = (window.orgCore ? orgCore.myOrgs(CU,'std') : (CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org])));
 
   const [apvR, msgR, bnR, bpR, payR, mgrR, mtgR] = await Promise.allSettled([
     getDocs(query(collection(db,'approvals'),  where('status','==','progress'))),
     getDocs(query(collection(db,'messages'),   where('toUids','array-contains', CU.uid))),
     getDocs(query(collection(db,'boardNotifs'),where('toUid','==', CU.uid))),
-    lastSeen
-      ? getDocs(query(collection(db,'boardPosts'), where('createdAt','>', Timestamp.fromMillis(lastSeen))))
-      : getDocs(collection(db,'boardPosts')),
+    getDocs(query(collection(db,'boardPosts'), where('createdAt','>', Timestamp.fromMillis(NEW_SINCE)))),
     getDocs(query(collection(db,'payRequests'),where('status','in',['approving','submitted']))),
     getDoc(doc(db,'payConfig','managers')),
     getDocs(query(collection(db,'meetingTasks'),where('uids','array-contains', CU.uid)))   // 📝 v-93 회의 임무
@@ -3976,18 +3980,28 @@ async function loadNotifications(){
     if((m.toUids||[]).includes(CU.uid) && !(m.readBy||[]).includes(CU.uid)) msgCnt++;
   });
 
-  if(bnR.status==='fulfilled') bnR.value.forEach(d=>{
-    const n = d.data();
-    if(n.toUid===CU.uid && !n.read) boardCnt++;
+  // 새 게시글 — 아직 안 읽은 남의 글 (휴지통 글 제외)
+  const recent = {};
+  if(bpR.status==='fulfilled') bpR.value.forEach(d=>{
+    const p = d.data(); recent[d.id] = p;
+    const visible = p.board==='all' || myOrgList.includes(p.board);
+    if(visible && !p.deleted && p.authorUid!==CU.uid && !(p.readBy||[]).includes(CU.uid)) newPostCnt++;
   });
 
-  // 새 게시글 (마지막 방문 이후 올라온 남의 글, 내가 볼 수 있는 게시판)
-  if(bpR.status==='fulfilled') bpR.value.forEach(d=>{
-    const p = d.data();
-    const t = p.createdAt?.toMillis?.() || 0;
-    const visible = p.board==='all' || myOrgList.includes(p.board);
-    if(visible && p.authorUid!==CU.uid && t > lastSeen) newPostCnt++;
-  });
+  // 새 댓글·언급 알림 — 글이 남아 있는 것만 센다 (글이 휴지통·삭제면 알림을 조용히 정리)
+  if(bnR.status==='fulfilled'){
+    const unreadN = bnR.value.docs.filter(d=>{ const n=d.data(); return n.toUid===CU.uid && !n.read; });
+    const need = [...new Set(unreadN.map(d=>d.data().postId).filter(id=>id && !recent[id]))].slice(0, 30);
+    const got = await Promise.all(need.map(id=>getDoc(doc(db,'boardPosts',id)).then(s=>[id, s.exists()?s.data():null]).catch(()=>[id, undefined])));
+    got.forEach(([id, p])=>{ if(p !== undefined) recent[id] = p; });
+    unreadN.forEach(d=>{
+      const pid = d.data().postId;
+      if(!(pid in recent)) { boardCnt++; return; }          // 확인 못 함(30건 넘음·연결 문제) — 예전처럼 센다
+      const p = recent[pid];
+      if(p && !p.deleted) boardCnt++;
+      else updateDoc(doc(db,'boardNotifs',d.id), {read:true}).catch(()=>{});
+    });
+  }
 
   // 경비 지급 요청서: 내가 결재할 건 + (회계면) 지급 대기
   if(payR.status==='fulfilled'){

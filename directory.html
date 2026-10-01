@@ -2765,6 +2765,7 @@ function renderDirectory(){
           </div>` : ''}
       </div>
       <div style="display:flex;gap:5px;flex:none">
+        ${CU.role==='super'?`<button class="dir-b dir-ed" onclick="openDirEdit('${s.uid}')">✏️ 수정</button>`:''}
         ${s.phone?`<button class="dir-b" onclick="copyText('${telHref(s.phone)}')">복사</button>`:''}
         <button class="dir-b" onclick="sendDirMsg('${s.uid}','${esc(s.name||'')}')">쪽지</button>
       </div>
@@ -2796,6 +2797,7 @@ function renderDirectory(){
         .dir-priv{font-size:11.5px;color:var(--tl);margin-top:5px;background:var(--iv);padding:5px 9px;border-radius:10px;display:inline-block}
         .dir-b{padding:5px 11px;border:1px solid var(--ivd);border-radius:10px;background:var(--wh);font-size:11.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit}
         .dir-b:hover{border-color:var(--gm);color:var(--gm)}
+        .dir-ed{border-color:var(--gm);color:var(--gm);background:var(--gp)}
         .dir-gt{font-size:12.5px;font-weight:800;color:var(--gm);margin:14px 2px 8px}
         .dir-sec{font-size:14px;font-weight:800;color:var(--gd);margin:20px 2px 6px;padding-bottom:7px;border-bottom:2px solid var(--gp);display:flex;align-items:center;gap:7px}
         .dir-sec:first-of-type{margin-top:6px}
@@ -2839,6 +2841,74 @@ function sendDirMsg(uid, name){
   location.href = `message.html?to=${encodeURIComponent(uid)}`;
 }
 window.sendDirMsg = sendDirMsg;
+
+/* ✏️ (v-97) 수퍼 관리자 — 명부에서 바로 선생님 정보 고치기 (풀타임·협력 모두)
+   · 명부에 보이는 칸만: 이름 · 직책 · 부서 · 담당 · 휴대폰 · 이메일 · 생년월일 · 주소
+   · 권한·기관·계정 상태는 여기서 바꾸지 않는다 (관리자 → 교직원 관리) — 실수로 권한이 바뀌는 일을 막기 위해
+   · 바뀐 칸만 저장하고, 무엇이 바뀌었는지 활동 로그에 남긴다 */
+const DIR_FIELDS = [
+  ['name','이름'], ['position','직책'], ['dept','부서'], ['duty','담당'],
+  ['phone','휴대폰'], ['email','이메일'], ['birth','생년월일'], ['address','집 주소'],
+];
+function openDirEdit(uid){
+  if(CU.role!=='super') return toast('수퍼 관리자만 고칠 수 있습니다.','err');
+  const s = STAFF_CACHE[uid]; if(!s) return;
+  document.getElementById('dir-edit-mod')?.remove();
+  const IN = 'height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none;font-family:inherit;box-sizing:border-box';
+  const org = s.org || dirOrg;
+  const isPartner = (s.role||'')==='partner';
+  const el = document.createElement('div'); el.id = 'dir-edit-mod';
+  el.innerHTML = `
+    <div class="mov" style="align-items:center;padding:20px">
+      <div class="mbk" onclick="document.getElementById('dir-edit-mod').remove()"></div>
+      <div class="mbox" style="max-width:520px;border-radius:20px;max-height:90vh;overflow:auto">
+        <div class="mtitle" style="display:flex;align-items:center;gap:8px">✏️ ${esc(s.name||'')} 선생님 정보
+          <span class="${isPartner?'dir-pt':'dir-p'}" style="font-size:11px">${isPartner?'협력':'풀타임'}</span></div>
+        <div style="font-size:12px;color:var(--tl);margin:-4px 0 14px">${esc(ORGS[org]||org||'')} · 명부에 보이는 정보예요. 바꾼 칸만 저장돼요.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px 10px">
+          <div class="fgrp"><label>이름</label><input id="de-name" value="${esc(s.name||'')}" style="${IN}"></div>
+          <div class="fgrp"><label>직책</label><input id="de-position" list="de-pos-list" value="${esc(s.position||'')}" placeholder="예: 교사" style="${IN}">
+            <datalist id="de-pos-list">${['교사','초등부장','중고등부장','행정실장','교감','교장','원장','총괄생활장'].map(p=>`<option value="${p}">`).join('')}</datalist></div>
+          <div class="fgrp"><label>부서</label><select id="de-dept" style="${IN}"><option value=""${s.dept?'':' selected'}>(없음)</option>${deptOptsHTML(org, s.dept||'')}</select></div>
+          <div class="fgrp"><label>담당 (학년·과목)</label><input id="de-duty" value="${esc(s.duty||'')}" placeholder="예: 3학년 · 영어" style="${IN}"></div>
+          <div class="fgrp"><label>휴대폰</label><input id="de-phone" type="tel" value="${esc(s.phone||'')}" placeholder="010-1234-5678" style="${IN}"></div>
+          <div class="fgrp"><label>이메일</label><input id="de-email" type="email" value="${esc(s.email||'')}" placeholder="example@gmail.com" style="${IN}"></div>
+          <div class="fgrp"><label>생년월일 🔒</label><input id="de-birth" type="date" value="${esc(s.birth||'')}" style="${IN}"></div>
+          <div class="fgrp" style="grid-column:1/-1"><label>집 주소 🔒</label><input id="de-address" value="${esc(s.address||'')}" placeholder="경기도 용인시 ..." style="${IN}"></div>
+        </div>
+        <p style="font-size:11.5px;color:var(--tl);margin:12px 0 0;line-height:1.6">🔒 생년월일·주소는 본인과 관리자만 봐요. 권한·기관·계정 상태(재직·휴직)는 <b>관리자 → 교직원 관리</b>에서 바꿔요.</p>
+        <div class="mact" style="margin-top:14px">
+          <button class="bs" onclick="document.getElementById('dir-edit-mod').remove()">취소</button>
+          <button class="bp" id="de-save" onclick="saveDirEdit('${uid}')">저장</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+window.openDirEdit = openDirEdit;
+async function saveDirEdit(uid){
+  if(CU.role!=='super') return;
+  const s = STAFF_CACHE[uid]; if(!s) return;
+  const v = {};
+  DIR_FIELDS.forEach(([k])=>{ const e = $I('de-'+k); if(e) v[k] = (e.value||'').trim(); });
+  if(!v.name) return toast('이름을 입력하세요.','err');
+  if(v.phone && !/^01[016789][-\s]?\d{3,4}[-\s]?\d{4}$/.test(v.phone.replace(/\s/g,''))) return toast('휴대폰 번호 형식을 확인하세요. (예: 010-1234-5678)','err');
+  if(v.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email)) return toast('이메일 형식을 확인하세요.','err');
+  const upd = {}, changes = [];
+  DIR_FIELDS.forEach(([k,l])=>{ if((s[k]||'') !== v[k]){ upd[k] = v[k]; changes.push(`${l}: "${s[k]||'(없음)'}" → "${v[k]||'(삭제)'}"`); } });
+  if(!changes.length){ document.getElementById('dir-edit-mod')?.remove(); return toast('바뀐 내용이 없어요.'); }
+  const btn = $I('de-save'); if(btn) btn.disabled = true;
+  try {
+    await updateDoc(doc(db,'staff',uid), upd);
+    Object.assign(STAFF_CACHE[uid], upd);
+    if(uid===CU.uid) Object.assign(CU, upd);
+    logActivity('수정','교직원 명부', `${v.name} 선생님 정보`, changes.join(' / '));
+    toast(`${v.name} 선생님 정보를 고쳤어요 ✓`,'ok');
+    document.getElementById('dir-edit-mod')?.remove();
+    renderDirectory();
+  } catch(e){ if(btn) btn.disabled = false; toast('저장 실패: '+(e.message||''),'err'); }
+}
+window.saveDirEdit = saveDirEdit;
 
 // ══════════ 관리자 > 접속·보안 (슈퍼관리자) ══════════
 let SEC_TIMER = null;
