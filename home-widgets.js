@@ -373,8 +373,90 @@ async function loadMoneySums(){
   }catch(e){ el.textContent=''; }
 }
 
+/* ── 📝 회의에서 맡은 일 (v-93) — 회의록 «임무» 담당이 되면 바로 뜬다 · 진행 전 → 진행 중 → 완료 ── */
+let _mtgUn = [], _mtgT = [], _mtgN = [], _mtgUid = '';
+const MST = { todo:{ i:'○', l:'진행 전' }, doing:{ i:'◐', l:'진행 중' }, done:{ i:'✓', l:'완료' } };
+function mtgCss(){
+  if(document.getElementById('hwm-css')) return;
+  const s = document.createElement('style'); s.id = 'hwm-css';
+  s.textContent = `
+  .hwm{display:flex;align-items:center;gap:10px;background:var(--wh);border:1px solid var(--ivd);border-radius:12px;padding:9px 12px}
+  .hwm:hover{border-color:var(--gm)}
+  .hwm-ck{flex:none;width:30px;height:30px;border-radius:50%;border:1.5px solid var(--ivd);background:var(--wh);color:var(--tl);font-size:14px;font-weight:900;cursor:pointer;font-family:inherit}
+  .hwm-ck.doing{border-color:#E9B65A;color:#B45309;background:#FEF3C7}
+  .hwm-ck.done{border-color:var(--gm);color:#fff;background:var(--gm)}
+  .hwm-t{flex:1;min-width:0;text-decoration:none;color:inherit}
+  .hwm-t b{display:block;font-size:12.8px;font-weight:800;color:var(--gd);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hwm-t span{display:block;font-size:10.8px;color:var(--tl);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hwm-d{flex:none;font-size:10.8px;font-weight:900;color:var(--gm);background:var(--gp);border-radius:8px;padding:2px 8px;white-space:nowrap}
+  .hwm-d.over{color:#DC2626;background:#FDE8E8}.hwm-d.soon{color:#B45309;background:#FEF3C7}
+  .hwm.done{opacity:.55}.hwm.done .hwm-t b{text-decoration:line-through}
+  .hwm-n{display:flex;gap:8px;align-items:center;font-size:11.8px;color:var(--ts);text-decoration:none;padding:3px 4px}
+  .hwm-n b{color:var(--gd)}`;
+  document.head.appendChild(s);
+}
+function mtgDue(due){
+  if(!due) return null;
+  const n = new Date(); const p = x => String(x).padStart(2,'0');
+  const t = `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`;
+  const dd = Math.round((new Date(due+'T00:00:00') - new Date(t+'T00:00:00')) / 86400000);
+  return { dd, l: `${Number(due.slice(5,7))}/${Number(due.slice(8,10))}까지${dd < 0 ? ` · ${-dd}일 지남` : dd === 0 ? ' · 오늘' : ` · D-${dd}`}` };
+}
+function paintMtg(){
+  const box = $I('w-mtg'); if(!box) return;
+  mtgCss();
+  const recent = Date.now() - 2 * 86400000;
+  const ms = v => v && v.seconds ? v.seconds * 1000 : 0;
+  const rows = _mtgT.filter(t => (t.status || 'todo') !== 'done' || ms(t.doneAt) > recent)
+    .sort((a, b) => ((a.status === 'done') - (b.status === 'done')) || String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(b.date).localeCompare(String(a.date)));
+  const open = _mtgT.filter(t => (t.status || 'todo') !== 'done').length;
+  const un = _mtgN.filter(n => !n.read && n.kind !== 'task');
+  const cnt = $I('w-mtg-n'); if(cnt) cnt.textContent = open ? `${open}건` : '';
+  const show = rows.slice(0, 6);
+  let h = show.map(t => {
+    const st = t.status || 'todo', d = mtgDue(t.due);
+    const md = t.date ? `${Number(t.date.slice(5,7))}/${Number(t.date.slice(8,10))}` : '';
+    const mates = (t.uids || []).filter(u => u !== _mtgUid).map(u => (t.names || {})[u] || '').filter(Boolean);
+    return `<div class="hwm${st === 'done' ? ' done' : ''}">
+      <button class="hwm-ck ${st}" onclick="hwMtgSt('${esc(t.id)}')" title="${MST[st].l} — 누르면 ${MST[st === 'todo' ? 'doing' : st === 'doing' ? 'done' : 'todo'].l}">${MST[st].i}</button>
+      <a class="hwm-t" href="minutes.html?m=${encodeURIComponent(t.meetingId)}&k=${encodeURIComponent(t.id)}"><b>${esc(t.h || '')}</b>
+        <span>${esc(md)} ${esc(t.mtitle || '')} · ${esc((t.topicNo ? t.topicNo + '. ' : '') + (t.topicTitle || ''))}${mates.length ? ' · 함께 ' + esc(mates.join(', ')) : ''}${t.cmt ? ' · 💬' + t.cmt : ''}</span></a>
+      ${d && st !== 'done' ? `<span class="hwm-d${d.dd < 0 ? ' over' : d.dd <= 2 ? ' soon' : ''}">${esc(d.l)}</span>` : ''}</div>`;
+  }).join('');
+  if(!show.length) h = `<div class="hw-dim">회의에서 맡은 임무가 없어요 🎉</div>`;
+  if(rows.length > show.length) h += `<a class="hwm-n" href="minutes.html?mine=1">… ${rows.length - show.length}건 더 · <b>모두 보기 ›</b></a>`;
+  if(un.length) h += `<a class="hwm-n" href="minutes.html?mine=1">🔔 회의록 새 소식 <b>${un.length}</b> — ${esc(un[0].fromName || '')}: ${esc(String(un[0].text || '').slice(0, 40))} ›</a>`;
+  box.innerHTML = h;
+}
+window.hwMtgSt = async (key) => {
+  const t = _mtgT.find(x => x.id === key); if(!t) return;
+  const nx = (t.status || 'todo') === 'todo' ? 'doing' : t.status === 'doing' ? 'done' : 'todo';
+  const me = getCU() || {};
+  try{
+    await ctx.fs.updateDoc(doc(db, 'meetingTasks', key), { status: nx, updatedAt: Timestamp.now(),
+      doneAt: nx === 'done' ? Timestamp.now() : null, doneByUid: nx === 'done' ? me.uid : '', doneByName: nx === 'done' ? (me.name || '') : '' });
+    t.status = nx; if(nx === 'done') t.doneAt = Timestamp.now();
+    paintMtg();
+    try{ window.refreshBadges && refreshBadges(); }catch(e){}
+  }catch(e){ alert('바꾸지 못했어요 — ' + (e.code || e.message)); }
+};
+function loadMtgWidget(){
+  const box = $I('w-mtg'); if(!box) return;
+  const cu = getCU(); if(!cu) return;
+  if(_mtgUid === cu.uid && _mtgUn.length){ paintMtg(); return; }
+  _mtgUn.forEach(u => { try{ u(); }catch(e){} }); _mtgUn = []; _mtgUid = cu.uid;
+  try{
+    _mtgUn.push(onSnapshot(query(collection(db, 'meetingTasks'), where('uids', 'array-contains', cu.uid)),
+      s => { _mtgT = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(t => !t.deleted); paintMtg(); },
+      e => { _mtgT = []; const b = $I('w-mtg'); if(b) b.innerHTML = `<div class="hw-dim">회의록 임무를 아직 불러올 수 없어요 (보안 규칙 v23 게시 후 보여요).</div>`; }));
+    _mtgUn.push(onSnapshot(query(collection(db, 'mtgNotifs'), where('toUid', '==', cu.uid)),
+      s => { _mtgN = s.docs.map(d => ({ id: d.id, ...d.data() })); paintMtg(); }, e => {}));
+  }catch(e){ box.innerHTML = `<div class="hw-dim">회의록 임무를 불러오지 못했어요.</div>`; }
+}
+
   window.loadAttendWidget = loadAttendWidget;
   window.loadClubWidget = loadClubWidget;
   window.loadAcdday = loadAcdday;
   window.loadMoneySums = loadMoneySums;
+  window.loadMtgWidget = loadMtgWidget;
 }

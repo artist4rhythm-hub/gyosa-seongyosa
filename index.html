@@ -1270,7 +1270,7 @@ let __hwOn = false;
 function ensureHW(){
   if(__hwOn) return; __hwOn = true;
   installHomeWidgets({ db, getCU: ()=>CU,
-    fs: { doc, getDoc, getDocs, collection, query, where, orderBy, limit, onSnapshot, Timestamp },
+    fs: { doc, getDoc, getDocs, collection, query, where, orderBy, limit, onSnapshot, Timestamp, updateDoc },
     $I, esc, ORGS });
 }
 
@@ -1299,6 +1299,7 @@ function renderHome(){
     { label:'전자결재',     v:n.approvalCnt||0, icon:'🗂️', href:'approval.html', hint:'내 차례인 문서' },
     { label:'안 읽은 쪽지', v:n.msgCnt||0,      icon:'✉️', href:'message.html',  hint:'확인하지 않은 쪽지' },
     { label:'새 게시글',    v:(n.newPostCnt||0)+(n.boardCnt||0), icon:'📌', href:'board.html', hint:'새 글·댓글' },
+    { label:'회의 임무',    v:n.mtgCnt||0,      icon:'📝', href:'minutes.html?mine=1', hint:'회의에서 맡은 일' },
   ];
   const active = todos.filter(t=>t.v>0);
   const idle   = todos.filter(t=>t.v===0);
@@ -1356,6 +1357,9 @@ function renderHome(){
       ${active.length ? `<div class="hm-todos">${bigCards}</div>${idle.length?`<div class="hm-idles">${smallChips}</div>`:''}`
         : `<div class="hm-clear">🎉 <b>모두 처리했어요!</b><div style="font-size:12.5px;color:var(--ts);margin-top:5px">새로 온 결재·쪽지·게시글이 없습니다.</div>
            ${idle.length?`<div class="hm-idles" style="justify-content:center;margin-top:12px">${smallChips}</div>`:''}</div>`}` : '',
+    mtg: ()=> widgetOn('mtg') ? `<div class="hm-sec">📝 회의에서 맡은 일 <span class="hw-live" id="w-mtg-n"></span>
+        <a href="minutes.html?mine=1" style="margin-left:auto;font-size:11.5px;font-weight:800;color:var(--gm);text-decoration:none">모두 보기 ›</a></div>
+      <div id="w-mtg" class="hw-stack"><div class="hw-dim">불러오는 중…</div></div>` : '',
     club: ()=> widgetOn('club') ? `<div class="hm-sec">🎨 동아리 실황 <span class="hw-live">● 자동</span></div>
       <div id="w-club" class="hw-stack"><div class="hw-dim">불러오는 중…</div></div>` : '',
     appr: ()=> widgetOn('appr') ? `<div class="hm-sec">🧾 결재 서랍</div>
@@ -1934,6 +1938,7 @@ function renderHome(){
   startClock();
   ensureHW();
   window.loadAttendWidget();
+  window.loadMtgWidget && window.loadMtgWidget();
   window.loadClubWidget();
   window.loadAcdday();
   window.loadMoneySums();
@@ -1943,6 +1948,7 @@ function renderHome(){
     window.addEventListener('orgchange', ()=>{ try{
       renderHome(); ensureHW();
       window.loadAttendWidget(); window.loadClubWidget(); window.loadAcdday(); window.loadMoneySums();
+      window.loadMtgWidget && window.loadMtgWidget();
       window.updateHomeCounters && updateHomeCounters();
     }catch(e){} });
   }
@@ -1980,6 +1986,7 @@ const HOME_WIDGETS = [
   { key:'quick',  label:'빠른 이동',     hint:'자주 쓰는 화면 바로가기' },
   { key:'todo',   label:'지금 처리할 일', hint:'결재·쪽지·게시글' },
   { key:'attend', label:'오늘의 출결',    hint:'기관·반별 출결 실시간 현황' },
+  { key:'mtg',    label:'회의에서 맡은 일', hint:'회의록 임무 — 진행 전 → 진행 중 → 완료' },
   { key:'club',   label:'동아리 실황',    hint:'모집·운영 단계 자동 전환' },
   { key:'appr',   label:'결재 서랍',      hint:'내 차례 결재 건수' },
   { key:'money',  label:'경비 창구',      hint:'경비 결재·지급 대기' },
@@ -1989,6 +1996,7 @@ const HOME_WIDGETS = [
 const WBLOCKS = [
   { k:'attend', l:'오늘의 출결' },
   { k:'todo',   l:'지금 처리할 일' },
+  { k:'mtg',    l:'회의에서 맡은 일' },
   { k:'club',   l:'동아리 실황' },
   { k:'appr',   l:'결재 서랍' },
   { k:'money',  l:'경비 창구' },
@@ -2005,11 +2013,14 @@ function WORDER(){
   const base = WBLOCKS.map(x=>x.k);
   if(!Array.isArray(o)) return base.slice();
   const out = o.filter(k=>base.includes(k));
-  base.forEach(k=>{ if(!out.includes(k)) out.push(k); });
+  /* 새로 생긴 위젯은 맨 끝이 아니라 «원래 자리»(바로 앞 위젯 다음)에 끼운다 — 📝 v-93 */
+  base.forEach((k,i)=>{ if(out.includes(k)) return;
+    const j = i>0 ? out.indexOf(base[i-1]) : -1;
+    if(j>=0) out.splice(j+1, 0, k); else out.push(k); });
   return out;
 }
 function saveWorder(o){ try{ localStorage.setItem('gyosa_worder', JSON.stringify(o)); }catch(e){} }
-const WIDGET_DEFAULT = { clock:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1, attend:1, club:1, appr:1, money:1, acdday:1 };
+const WIDGET_DEFAULT = { clock:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1, attend:1, mtg:1, club:1, appr:1, money:1, acdday:1 };
 let WIDGET_ON = { ...WIDGET_DEFAULT };
 function loadWidgetPrefs(){
   try {
@@ -3931,7 +3942,7 @@ async function loadHomeNotices(){
 
 // ── 메인 알림: 결재할 문서 + 안 읽은 쪽지 ──
 async function loadNotifications(){
-  let approvalCnt = 0, msgCnt = 0, boardCnt = 0, newPostCnt = 0, payCnt = 0, payWaitCnt = 0;
+  let approvalCnt = 0, msgCnt = 0, boardCnt = 0, newPostCnt = 0, payCnt = 0, payWaitCnt = 0, mtgCnt = 0;
 
   /* ⚡ v74 — 다섯 가지를 «동시에», 그리고 «나에게 해당하는 문서만» 묻는다.
      (예전: 다섯 컬렉션을 통째로, 하나씩 차례로 읽었음 — 자료가 쌓일수록 느려짐)
@@ -3939,7 +3950,7 @@ async function loadNotifications(){
   const lastSeen = CU.lastBoardSeen?.toMillis?.() || 0;
   const myOrgList = (window.orgCore ? orgCore.myOrgs(CU,'std') : (CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org])));
 
-  const [apvR, msgR, bnR, bpR, payR, mgrR] = await Promise.allSettled([
+  const [apvR, msgR, bnR, bpR, payR, mgrR, mtgR] = await Promise.allSettled([
     getDocs(query(collection(db,'approvals'),  where('status','==','progress'))),
     getDocs(query(collection(db,'messages'),   where('toUids','array-contains', CU.uid))),
     getDocs(query(collection(db,'boardNotifs'),where('toUid','==', CU.uid))),
@@ -3947,8 +3958,10 @@ async function loadNotifications(){
       ? getDocs(query(collection(db,'boardPosts'), where('createdAt','>', Timestamp.fromMillis(lastSeen))))
       : getDocs(collection(db,'boardPosts')),
     getDocs(query(collection(db,'payRequests'),where('status','in',['approving','submitted']))),
-    getDoc(doc(db,'payConfig','managers'))
+    getDoc(doc(db,'payConfig','managers')),
+    getDocs(query(collection(db,'meetingTasks'),where('uids','array-contains', CU.uid)))   // 📝 v-93 회의 임무
   ]);
+  if(mtgR.status==='fulfilled') mtgR.value.forEach(d=>{ const t=d.data(); if(!t.deleted && (t.status||'todo')!=='done') mtgCnt++; });
 
   if(apvR.status==='fulfilled') apvR.value.forEach(d=>{
     const a = d.data();
@@ -3989,7 +4002,7 @@ async function loadNotifications(){
   }
 
   renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt);
-  window.__notif = {approvalCnt, msgCnt, boardCnt, newPostCnt, payCnt, payWaitCnt};
+  window.__notif = {approvalCnt, msgCnt, boardCnt, newPostCnt, payCnt, payWaitCnt, mtgCnt};
   try{ window.updateHomeCounters && updateHomeCounters(); }catch(e){}
   // 사이드바 뱃지는 badges.js가 담당 (모든 페이지 동일 기준)
   // 홈이 열려 있으면 숫자 갱신 (전체 재렌더 대신 타일만 — 편집 상태 유지)

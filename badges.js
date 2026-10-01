@@ -57,7 +57,7 @@ function clearCache(){ try { sessionStorage.removeItem(CACHE_KEY); } catch(e){} 
 window.clearBadgeCache = clearCache;
 
 async function computeBadges(db, uid){
-  const b = { message: 0, approval: 0, payreq: 0 };
+  const b = { message: 0, approval: 0, payreq: 0, minutes: 0 };
 
   /* 내 계정 + 회계 담당자 여부를 먼저 확인 (지급 대기 집계에 필요) */
   let me = null, isPayMgr = false;
@@ -71,15 +71,20 @@ async function computeBadges(db, uid){
   } catch(e){}
   if(me && me.role === 'super') isPayMgr = true;
 
-  /* 세 가지를 «동시에» 묻는다 (예전: 하나씩 차례로) */
-  const [msgR, apvR, payR] = await Promise.allSettled([
+  /* 세 가지를 «동시에» 묻는다 (예전: 하나씩 차례로) · 📝 (v-93) 회의록 임무·새 소식 두 가지 더 */
+  const [msgR, apvR, payR, mtR, mnR] = await Promise.allSettled([
     // 안 읽은 쪽지 — 받는 사람이 나인 것만
     getDocs(query(collection(db, 'messages'), where('toUids', 'array-contains', uid))),
     // 전자결재 — 진행 중인 것만
     getDocs(query(collection(db, 'approvals'), where('status', '==', 'progress'))),
     // 경비 지급 요청서 — 결재중·지급대기인 것만
-    getDocs(query(collection(db, 'payRequests'), where('status', 'in', ['approving', 'submitted'])))
+    getDocs(query(collection(db, 'payRequests'), where('status', 'in', ['approving', 'submitted']))),
+    // 📝 회의록 — 내가 담당인 임무 · 나에게 온 회의록 알림 (규칙 v23 게시 전에는 조용히 0)
+    getDocs(query(collection(db, 'meetingTasks'), where('uids', 'array-contains', uid))),
+    getDocs(query(collection(db, 'mtgNotifs'), where('toUid', '==', uid)))
   ]);
+  if(mtR.status === 'fulfilled') mtR.value.forEach(d => { const t = d.data(); if(!t.deleted && (t.status || 'todo') !== 'done') b.minutes++; });
+  if(mnR.status === 'fulfilled') mnR.value.forEach(d => { const n = d.data(); if(!n.read && n.kind !== 'task') b.minutes++; });
 
   if(msgR.status === 'fulfilled'){
     msgR.value.forEach(d => {
