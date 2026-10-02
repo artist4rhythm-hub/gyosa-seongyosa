@@ -116,6 +116,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="org-core.js"></script>
+<script src="student-status.js"></script>
 <script src="orgbar.js"></script>
 <script src="menu.js"></script>
 <script src="timemachine.js"></script>
@@ -340,7 +341,7 @@ async function loadReport(){
   }
   const org = term.org;
   const clsId = $I('rp-class')?.value || '';
-  let studs = Object.values(STUDENTS).filter(x=>x.org===org && (x.status||'active')==='active');
+  let studs = Object.values(STUDENTS).filter(x=>x.org===org && StuStatus.enrolled(x));
   if(clsId){ const c=CLASSES.find(x=>x.id===clsId); const set=new Set(c?.students||[]); studs=studs.filter(x=>set.has(x.id)); }
   const clsOf = sid => { const c=CLASSES.find(x=>x.org===org && (x.students||[]).includes(sid)); return c||null; };
   studs.sort((a,b)=>{
@@ -349,15 +350,19 @@ async function loadReport(){
       || (ca?.name||'').localeCompare(cb?.name||'','ko')
       || (a.name||'').localeCompare(b.name||'','ko');
   });
-  const schoolDays = calcSchoolDays(term).length;
+  const dayList = calcSchoolDays(term);
+  const schoolDays = dayList.length;
   const byStu = {};
   RPT.att.forEach(r=>{ if(r.org===org){ (byStu[r.studentId]=byStu[r.studentId]||[]).push(r); } });
   const rows = studs.map(st=>{
-    const t = tallyStudent(byStu[st.id]||[], term);
+    // 개인 수업일수 = 학기 수업일 − 본인 휴학 기간에 걸린 수업일 (출석 통계와 같은 기준). 휴학 중 기록은 세지 않는다
+    const lvDays = leaveDaysInSet(st, dayList);
+    const myDays = Math.max(0, schoolDays - lvDays);
+    const t = tallyStudent((byStu[st.id]||[]).filter(r=>!isOnLeave(st, r.date)), term);
     const c = clsOf(st.id);
-    const attended = Math.max(0, schoolDays - t.결석합);
-    return { st, c, t, attended };
-  });
+    const attended = Math.max(0, myDays - t.결석합);
+    return { st, c, t, attended, myDays, lvDays };
+  }).filter(r=> !(schoolDays>0 && r.lvDays>=schoolDays));   // 학기 내내 휴학이면 표에서 뺀다
   RPT.rows = rows; RPT.term = term; RPT.schoolDays = schoolDays;
 
   const cell = v => v ? `<b>${v}</b>` : '<span style="color:var(--ivd)">·</span>';
@@ -384,7 +389,7 @@ async function loadReport(){
         ${rows.map((r,i)=>`<tr style="${i%2?'background:#FAFAF7':''}">
           <td style="font-weight:800;text-align:left;padding-left:10px">${esc(r.st.name)}</td>
           <td>${esc(r.c?.name||'-')}</td><td>${esc(r.c?.grade||'-')}</td>
-          <td style="font-weight:900;color:var(--gd)">${r.attended} / ${schoolDays}</td>
+          <td style="font-weight:900;color:var(--gd)">${r.attended} / ${r.myDays}${r.lvDays?`<div style="font-size:10px;font-weight:600;color:var(--warn)">휴학 ${r.lvDays}일 제외</div>`:''}</td>
           <td>${cell(r.t.결석.질병)}</td><td>${cell(r.t.결석.무단)}</td><td>${cell(r.t.결석.기타)}</td>
           <td>${cell(r.t.지각.질병)}</td><td>${cell(r.t.지각.무단)}</td><td>${cell(r.t.지각.기타)}</td>
           <td>${cell(r.t.조퇴.질병)}</td><td>${cell(r.t.조퇴.무단)}</td><td>${cell(r.t.조퇴.기타)}</td>
@@ -403,7 +408,7 @@ async function loadReport(){
       .stickywrap .rpt-tbl tbody tr:nth-child(even) td:first-child{background:#FAFAF7}
     </style>
     ${note?`<p style="font-size:11.5px;color:var(--ts);margin-top:10px;line-height:1.7"><b>*휴교 사유</b> — ${esc(note)}</p>`:''}
-    <p style="font-size:11px;color:var(--tl);margin-top:6px">· 출석일수 = 수업일수 − 결석일수 (지각·조퇴·체험학습은 출석 인정) · 옛 «병결» 기록은 결석·질병으로 집계</p>
+    <p style="font-size:11px;color:var(--tl);margin-top:6px">· 출석일수 = 수업일수 − 결석일수 (지각·조퇴·체험학습은 출석 인정) · 옛 «병결» 기록은 결석·질병으로 집계 · 휴학 기간의 수업일은 그 학생의 수업일수에서 뺍니다</p>
   </div>`;
 }
 window.loadReport = loadReport;
@@ -430,7 +435,7 @@ window.printReport = function(){
           <th style="border:1px solid #26428B;padding:4px;font-size:10px">가족<br>대소사</th><th style="border:1px solid #26428B;padding:4px;font-size:10px">가족<br>여행</th><th style="border:1px solid #26428B;padding:5px">기타</th>
         </tr>
         <tr>
-          <td style="border:1.5px solid #26428B;padding:9px;font-weight:800">${r.attended}일 /<br>총 ${sd}일</td>
+          <td style="border:1.5px solid #26428B;padding:9px;font-weight:800">${r.attended}일 /<br>총 ${r.myDays}일${r.lvDays?`<div style="font-size:10px;font-weight:600">(휴학 ${r.lvDays}일 제외)</div>`:''}</td>
           ${['결석','지각','조퇴'].map(k=>['질병','무단','기타'].map(x=>`<td style="border:1px solid #26428B;padding:9px">${r.t[k][x]||'·'}</td>`).join('')).join('')}
           ${['가족 대소사','가족 여행','기타'].map(x=>`<td style="border:1px solid #26428B;padding:9px">${r.t.체험[x]||'·'}</td>`).join('')}
         </tr>
@@ -655,11 +660,11 @@ function calcSchoolDays(term){
 
 function fmtDate(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
 const TERM_NAMES = {1:'1학기', 2:'2학기'};
-// 특정 날짜에 휴학 중인지
-function isOnLeave(s, dateStr){
-  if(!s || !s.leaves || !s.leaves.length) return false;
-  return s.leaves.some(lv => lv.start && lv.end && dateStr>=lv.start && dateStr<=lv.end);
-}
+// 특정 날짜에 휴학 중인지 — 학생관리·반편성과 같은 규칙(student-status.js)
+//   휴학 기간 안이거나, 재적 상태가 «휴학»이면 휴학 (기간이 있으면 그 시작일부터)
+function isOnLeave(s, dateStr){ return StuStatus.onLeave(s, dateStr); }
+// 반 명단 — 학적이 살아 있는 학생(재학·휴학). 그날 휴학인지는 각 화면이 isOnLeave 로 나눈다
+function rollOf(c){ return ((c && c.students) || []).map(sid=>STUDENTS[sid]).filter(Boolean).filter(s=>StuStatus.enrolled(s)); }
 // 특정 날짜가 해당 기관의 등록된 학기 기간 안에 있는지
 // 반환: 속하면 학기객체, 안 속하면 null, 그 해 학기 자체가 없으면 'none'
 function termOfDate(dateStr, org){
@@ -683,26 +688,69 @@ function isAutoPresentDate(dateStr, org){
 function presentType(){ return TYPES.find(t=>t.isPresent) || TYPES.find(t=>t.name==='출석') || TYPES[0]; }
 
 // 학생의 휴학 기간과 수업일 집합의 교집합 일수 (통계 분모 제외용)
-function leaveDaysInSet(s, daySet){
-  if(!s || !s.leaves || !s.leaves.length) return 0;
-  let cnt = 0;
-  daySet.forEach(d=>{ if(isOnLeave(s, d)) cnt++; });
-  return cnt;
-}
+function leaveDaysInSet(s, daySet){ return StuStatus.leaveDays(s, daySet); }
 
 // ── 반·학생 로드 ──
 async function loadClasses(){
-  const snap = await getDocs(collection(db,'classes'));
-  const allowed = myOrgs();
-  CLASSES = [];
-  snap.forEach(d=>{ const c={id:d.id, ...d.data()}; if(c.year===curYear && allowed.includes(c.org)) CLASSES.push(c); });
-  CLASSES.sort((a,b)=> (a.org+a.dept+(a.grade||'')).localeCompare(b.org+b.dept+(b.grade||'')));
+  await liveCol('classes', docs=>{
+    const allowed = myOrgs();
+    CLASSES = docs.filter(c=>c.year===curYear && allowed.includes(c.org));
+    CLASSES.sort((a,b)=> (a.org+a.dept+(a.grade||'')).localeCompare(b.org+b.dept+(b.grade||'')));
+  }, c=>[c.id,c.name,c.org,c.year,c.dept,c.grade,c.gradeList,c.students,c.grades,c.teacherUid,c.deputies,c.shadowUids]);
 }
 async function loadStudents(){
-  const snap = await getDocs(collection(db,'students'));
-  const allowed = myOrgs();
-  STUDENTS = {};
-  snap.forEach(d=>{ const s={id:d.id, ...d.data()}; if(allowed.includes(s.org)) STUDENTS[d.id]=s; });
+  await liveCol('students', docs=>{
+    const allowed = myOrgs();
+    STUDENTS = {};
+    docs.forEach(s=>{ if(allowed.includes(s.org)) STUDENTS[s.id]=s; });
+  }, s=>[s.id,s.name,s.org,s.status,s.leaves,s.gender,s.studentNo]);
+}
+/* 🔁 실시간 연동 — 학생관리에서 휴학·자퇴를 바꾸거나 반편성에서 학생을 옮기면 출석부가 바로 따라 바뀐다.
+   처음 한 번은 받아 올 때까지 기다리고(getDocs 와 같은 읽기), 그 뒤로는 바뀐 문서만 들어온다.
+   출석부에 영향 있는 칸(이름·상태·휴학 기간·반 구성 등)이 바뀔 때만 다시 그린다 — 연락처 수정 같은 건 조용히 넘어간다. */
+const LIVE = {};
+function liveCol(name, apply, sigOf){
+  const L = LIVE[name];
+  if(L) return L.ready.then(()=>{ if(L.docs) apply(L.docs); });   // 이미 듣는 중(또는 처음 받는 중) → 받은 자료로
+  const E = LIVE[name] = { docs:null, sig:'', unsub:null, ready:null };
+  E.ready = new Promise((res, rej)=>{
+    let first = true;
+    E.unsub = onSnapshot(collection(db, name), snap=>{
+      const docs = []; snap.forEach(d=>docs.push({ id:d.id, ...d.data() }));
+      const sig = sigOf ? JSON.stringify(docs.map(sigOf).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))) : '';
+      const changed = !sigOf || sig !== E.sig;
+      E.docs = docs; E.sig = sig;
+      apply(docs);
+      if(first){ first = false; res(); }
+      else if(changed) liveRefresh();
+    }, err=>{
+      if(LIVE[name] === E) delete LIVE[name];   // 끊기면 다음 불러오기 때 새로 듣는다 (받은 자료는 그대로 쓴다)
+      if(first){ first = false; rej(err); }
+    });
+  });
+  return E.ready;
+}
+function liveRefresh(){
+  clearTimeout(liveRefresh._t);
+  liveRefresh._t = setTimeout(()=>{
+    try {
+      if(checkClassId && !CLASSES.some(c=>c.id===checkClassId)) checkClassId = '';
+      if(monthClassId && !CLASSES.some(c=>c.id===monthClassId)) monthClassId = '';
+      if(curTab==='check'){
+        if(!$I('ck-mode-body')){ if($I('c-check')) renderCheck(); return; }   // «편성된 반 없음» 화면이었으면 처음부터
+        if(checkMode==='daily') renderDailyCheck(true);
+        else {
+          if($I('month-menu') || dragging || BULK_BUSY){ liveRefresh(); return; }   // 고르는 중엔 끝난 뒤에
+          renderMonthCheck(true);
+        }
+      } else if(curTab==='stat'){
+        if(statView==='live'){ if(LIVE_PAINT) LIVE_PAINT(); }
+        else if($I('st-body')) buildStat();
+      } else if(curTab==='report'){
+        if($I('rp-body') && RPT.att) loadReport();
+      }
+    } catch(e){ console.warn('[live]', e); }
+  }, 200);
 }
 
 // 이 반의 출결을 기록할 권한이 있는지 (담임/대리/부서장/관리자)
@@ -747,6 +795,7 @@ let checkDate = fmtDate(new Date());  // 선택된 날짜
 let checkClassId = '';                 // 선택된 반
 let checkGradeFilter = '';             // 학년 필터 (빈값=전체)
 let checkRecords = {};                 // {studentId: {typeId, memo}}
+let checkKey = '';                     // checkRecords 가 어느 «반|날짜» 것인지
 let checkMode = 'daily';               // 'daily' | 'month'
 let monthClassId = '';                 // 월별 입력 선택 반
 let monthYM = '';                      // 월별 입력 YYYY-MM
@@ -776,7 +825,17 @@ window.renderCheck = renderCheck;
 function setCheckMode(m){ checkMode = m; renderCheck(); }
 window.setCheckMode = setCheckMode;
 
-function renderDailyCheck(){
+let _keepCk = null;   // 실시간 갱신 직전의 화면 상태 (스크롤·입력 중인 칸)
+function renderDailyCheck(keep){
+  // 🔁 실시간 갱신으로 다시 그릴 때: 화면을 갈아엎기 전에 메모·스크롤·입력 중인 칸을 챙겨 둔다
+  _keepCk = null;
+  if(keep && checkKey===checkClassId+'|'+checkDate){
+    document.querySelectorAll('#ck-body input[id^="memo-"]').forEach(el=>{
+      const sid = el.id.slice(5); if(checkRecords[sid]) checkRecords[sid].memo = el.value;
+    });
+    const a = document.activeElement;
+    _keepCk = { y: window.scrollY, focus: a && a.id, sel: (a && typeof a.selectionStart==='number') ? [a.selectionStart, a.selectionEnd] : null };
+  }
   const sortCls = sortClasses;
   const editable = sortClasses(CLASSES.filter(canEditClass));
   const viewable = sortClasses(CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)));
@@ -804,11 +863,14 @@ function renderDailyCheck(){
     </div>
     <div id="ck-body"></div>`;
   fillCheckGradeFilter();
-  loadCheckBody();
+  loadCheckBody(keep);
 }
 
 // ── 월별 입력 ──
-function renderMonthCheck(){
+let monthKey = '';     // monthData 가 어느 «반|월» 것인지
+function renderMonthCheck(keep){
+  const keepK = keep && monthKey===monthClassId+'|'+monthYM
+    ? { y: window.scrollY, x: ($I('m-body')?.firstElementChild?.scrollLeft)||0 } : null;
   const editable = sortClasses(CLASSES.filter(canEditClass));
   const viewable = sortClasses(CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)));
   if(!monthClassId && editable.length) monthClassId = editable[0].id;
@@ -835,7 +897,11 @@ function renderMonthCheck(){
       </div>
     </div>
     <div id="m-body"><div class="acard"><p class="empty">불러오는 중...</p></div></div>`;
-  loadMonthBody();
+  return loadMonthBody(!!keepK).then(()=>{
+    if(!keepK) return;
+    window.scrollTo(0, keepK.y);
+    const w = $I('m-body')?.firstElementChild; if(w) w.scrollLeft = keepK.x;
+  });
 }
 window.renderMonthCheck = renderMonthCheck;
 
@@ -844,30 +910,34 @@ window.onMonthCheckChange = onMonthCheckChange;
 function toggleMonthAllow(){ monthAllowBlocked=$I('m-allow').checked; loadMonthBody(); }
 window.toggleMonthAllow = toggleMonthAllow;
 
-async function loadMonthBody(){
+async function loadMonthBody(keep){
   const body = $I('m-body'); if(!body) return;
   try {
   const c = CLASSES.find(x=>x.id===monthClassId);
   if(!c){ body.innerHTML='<div class="acard"><p class="empty">반을 선택하세요.</p></div>'; return; }
-  await loadMonthLock(c);   // 🔒 이 달 잠금 여부
+  keep = !!keep && monthKey===monthClassId+'|'+monthYM;   // 🔁 학생·반만 바뀐 실시간 갱신 → 받은 출결 그대로 다시 그리기
+  if(!keep) await loadMonthLock(c);   // 🔒 이 달 잠금 여부
   const [y,m] = monthYM.split('-').map(Number);
   const daysInMonth = new Date(y, m, 0).getDate();
   const grades = c.grades || {};
-  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
-    .filter(s=>(s.status||'active')==='active')
-    .sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  const studs = rollOf(c).sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
   if(!studs.length){ body.innerHTML='<div class="acard"><p class="empty">이 반에 재학 중인 학생이 없습니다.</p></div>'; return; }
-  monthData = {};
   const prefix = `${y}-${pad(m)}`;
-  const snap = await getDocs(collection(db,'studentAttendance'));
-  snap.forEach(d=>{
-    const r=d.data();
-    if(r.classId===monthClassId && (r.date||'').startsWith(prefix)){
-      const day = Number(r.date.slice(8,10));
-      if(!monthData[r.studentId]) monthData[r.studentId]={};
-      monthData[r.studentId][day] = {id:d.id, typeIds:recTypes(r), reason:r.reason||''};
-    }
-  });
+  if(!keep){
+    const want = monthClassId+'|'+monthYM;
+    const snap = await getDocs(collection(db,'studentAttendance'));
+    const md = {};   // 다 받은 뒤에 한 번에 바꾼다 (받는 동안 누른 칸이 옛 기록을 잃지 않게)
+    snap.forEach(d=>{
+      const r=d.data();
+      if(r.classId===monthClassId && (r.date||'').startsWith(prefix)){
+        const day = Number(r.date.slice(8,10));
+        if(!md[r.studentId]) md[r.studentId]={};
+        md[r.studentId][day] = {id:d.id, typeIds:recTypes(r), reason:r.reason||''};
+      }
+    });
+    if(want !== monthClassId+'|'+monthYM) return;   // 받는 사이 반·월을 바꿨으면 버린다
+    monthData = md; monthKey = want;
+  }
   const dayInfo = [];
   for(let dd=1; dd<=daysInMonth; dd++){
     const dateStr = `${y}-${pad(m)}-${pad(dd)}`;
@@ -889,8 +959,10 @@ async function loadMonthBody(){
       const tids = rec ? (rec.typeIds||[]) : [];
       const t = tids.length ? TYPES.find(x=>x.id===tids[0]) : null;
       const tnames = tids.map(id=>TYPES.find(x=>x.id===id)?.name||'').filter(Boolean).join('·');
-      const blockedCls = di.blocked ? (monthAllowBlocked?'blocked allow':'blocked') : '';
-      const clickable = (!di.blocked || monthAllowBlocked) && canEditClass(c) && !MONTH_LOCK;   // 🔒 잠기면 클릭 불가
+      const lv = isOnLeave(s, di.dateStr);            // 휴학 중인 날 — 출결 대상이 아니다
+      const blk = di.blocked || lv;
+      const blockedCls = blk ? (monthAllowBlocked?'blocked allow':'blocked') : '';
+      const clickable = (!blk || monthAllowBlocked) && canEditClass(c) && !MONTH_LOCK;   // 🔒 잠기면 클릭 불가
       let bg='', label='', autoCls='';
       if(t){
         const rs = legacyByeong(t) ? '질병' : (rec.reason||'');   // 옛 «병결»은 결석·질병으로 본다
@@ -899,12 +971,16 @@ async function loadMonthBody(){
         bg=`background:${legacyByeong(t)?'#dc2626':t.color};color:#fff`;
         label = nm + sub + (tids.length>1?'⁺':'');
       }
+      else if(lv){ if(!di.blocked){ bg='color:var(--warn);font-size:10px'; label='휴'; } }   // 수업일에만 «휴» (주말·휴일은 비워 둔다)
       else if(di.autoPresent && pType){ // 자동 출석: 연한 초록 흐리게
         bg=`background:${pType.color}22;color:${pType.color}`; label='출'; autoCls='auto-present';
       }
-      return `<td class="dcell ${blockedCls} ${autoCls}" data-sid="${s.id}" data-day="${di.dd}" style="${bg}" ${clickable?`onmousedown="startDrag(event,'${s.id}',${di.dd})" onmouseenter="dragOver('${s.id}',${di.dd})"`:''} title="${di.dateStr}${t?' · '+tnames:di.autoPresent?' · 자동 출석':''}">${label}</td>`;
+      if(lv && t) bg += ';outline:1.5px dashed var(--warn);outline-offset:-2px';
+      return `<td class="dcell ${blockedCls} ${autoCls}" data-sid="${s.id}" data-day="${di.dd}" style="${bg}" ${clickable?`onmousedown="startDrag(event,'${s.id}',${di.dd})" onmouseenter="dragOver('${s.id}',${di.dd})"`:''} title="${di.dateStr}${lv?' · 휴학 중'+(t?' (기록은 통계에서 빠짐)':''):''}${t?' · '+tnames:(!lv&&di.autoPresent)?' · 자동 출석':''}">${label}</td>`;
     }).join('');
-    return `<tr><td class="nm" title="${esc(s.name)}">${esc(s.name)} <span style="color:${s.gender==='남'?'#2b6cb0':'#d53f8c'};font-size:10px">${s.gender||''}</span></td>${cells}</tr>`;
+    const lvDay = dayInfo.find(di=>isOnLeave(s, di.dateStr));     // 이 달에 휴학인 날이 있으면 이름 옆에 표시
+    const lvN = lvDay ? StuStatus.leaveNote(s, lvDay.dateStr) : '';
+    return `<tr><td class="nm" title="${esc(s.name)}${lvDay?' · 휴학 '+esc(lvN):''}">${esc(s.name)} <span style="color:${s.gender==='남'?'#2b6cb0':'#d53f8c'};font-size:10px">${s.gender||''}</span>${lvDay?' <span style="color:var(--warn);font-size:9.5px;font-weight:700">휴학</span>':''}</td>${cells}</tr>`;
   }).join('');
   body.innerHTML = `
     <div class="acard" style="overflow-x:auto">
@@ -918,7 +994,7 @@ async function loadMonthBody(){
       </div>
       <table class="mtab"><thead><tr><th class="nm">학생</th>${headDays}</tr></thead><tbody>${rows}</tbody></table>
       <p style="font-size:12px;color:var(--tl);margin-top:10px">
-        연한 초록 <b style="color:${pType?pType.color:'#16a34a'}">출</b> = 자동 출석 처리된 날입니다. 예외인 학생 칸만 클릭해 바꾸면 됩니다.<br>
+        연한 초록 <b style="color:${pType?pType.color:'#16a34a'}">출</b> = 자동 출석 처리된 날입니다. 예외인 학생 칸만 클릭해 바꾸면 됩니다. <b style="color:var(--warn)">휴</b> = 학생 관리에 등록된 휴학 기간 (출결·통계 제외)<br>
         칸을 <b>클릭</b>하거나 <b>마우스로 여러 칸을 드래그</b>한 뒤 상태를 고르면 한 번에 입력됩니다. 회색 칸(주말·공휴일·학기외)은 위 토글을 켜면 입력할 수 있습니다.<br>
         <b>⁺</b> 표시는 한 날에 항목이 두 개 이상 기록된 칸입니다 (예: 지각+조퇴). 하루에 여러 항목을 기록하려면 <b>일일 체크</b>를 쓰세요 — 여기서 상태를 고르면 그 항목 하나로 바뀝니다.
       </p>
@@ -1006,14 +1082,18 @@ window.showBulkReason = function(typeId){
     `<div class="sep"></div><button onclick="cancelBulk()" style="color:var(--tl)">취소</button>`;
 };
 
+let BULK_BUSY = false;   // 여러 칸을 한꺼번에 쓰는 중 (실시간 갱신은 끝난 뒤로)
 async function applyBulk(typeId, reason){
   closeMonthMenu();
   const cells = [...dragCells];
   clearDragSel(); dragCells=[];
   let ok=0;
-  for(const {sid, day} of cells){
-    try { await setMonthCell(sid, day, typeId, true, reason); ok++; } catch(e){}
-  }
+  BULK_BUSY = true;
+  try {
+    for(const {sid, day} of cells){
+      try { await setMonthCell(sid, day, typeId, true, reason); ok++; } catch(e){}
+    }
+  } finally { BULK_BUSY = false; }
   toast(`${ok}칸 입력 완료`,'ok');
 }
 window.applyBulk = applyBulk;
@@ -1022,9 +1102,12 @@ async function applyBulkClear(){
   closeMonthMenu();
   const cells = [...dragCells];
   clearDragSel(); dragCells=[];
-  for(const {sid, day} of cells){
-    try { await clearMonthCell(sid, day, true); } catch(e){}
-  }
+  BULK_BUSY = true;
+  try {
+    for(const {sid, day} of cells){
+      try { await clearMonthCell(sid, day, true); } catch(e){}
+    }
+  } finally { BULK_BUSY = false; }
   toast('삭제 완료','ok');
 }
 window.applyBulkClear = applyBulkClear;
@@ -1109,13 +1192,8 @@ async function clearMonthCell(sid, day, bulk){
 window.clearMonthCell = clearMonthCell;
 
 function updateMonthCellUI(sid, day, typeId){
-  const c = CLASSES.find(x=>x.id===monthClassId);
-  const studs = (c.students||[]).map(s=>STUDENTS[s]).filter(Boolean).filter(s=>(s.status||'active')==='active').sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
-  const idx = studs.findIndex(s=>s.id===sid);
-  if(idx<0) return;
-  const rows = $I('m-body').querySelectorAll('tbody tr');
-  const row = rows[idx]; if(!row) return;
-  const cell = row.querySelectorAll('td.dcell')[day-1]; if(!cell) return;
+  const c = CLASSES.find(x=>x.id===monthClassId); if(!c) return;
+  const cell = $I('m-body')?.querySelector(`td.dcell[data-sid="${sid}"][data-day="${day}"]`); if(!cell) return;
   const t = typeId ? TYPES.find(x=>x.id===typeId) : null;
   cell.classList.remove('auto-present');
   if(t){
@@ -1128,7 +1206,9 @@ function updateMonthCellUI(sid, day, typeId){
     const [y,m]=monthYM.split('-').map(Number);
     const dateStr=`${y}-${pad(m)}-${pad(day)}`;
     const pType = presentType();
-    if(isAutoPresentDate(dateStr, c.org) && pType){
+    cell.style.outline='';
+    if(isOnLeave(STUDENTS[sid], dateStr)){ cell.style.background=''; cell.style.color='var(--warn)'; cell.textContent = isAutoPresentDate(dateStr, c.org) ? '휴' : ''; }
+    else if(isAutoPresentDate(dateStr, c.org) && pType){
       cell.style.background=pType.color+'22'; cell.style.color=pType.color; cell.textContent='출';
       cell.classList.add('auto-present');
     } else { cell.style.background=''; cell.style.color=''; cell.textContent=''; }
@@ -1161,14 +1241,16 @@ function onCheckChange(){
 }
 window.onCheckChange = onCheckChange;
 
-async function loadCheckBody(){
+async function loadCheckBody(keep){
   const body = $I('ck-body'); if(!body) return;
+  // 🔁 실시간 갱신으로 다시 그릴 때: 저장 전 고른 항목·메모를 그대로 둔다 (다시 받아 오지 않는다)
+  keep = !!keep && !!_keepCk && checkKey===checkClassId+'|'+checkDate;
+  const K = keep ? _keepCk : null; _keepCk = null;
   const c = CLASSES.find(x=>x.id===checkClassId);
   if(!c){ body.innerHTML=''; return; }
   const editable = canEditClass(c);
   const grades = c.grades || {};
-  const allStuds = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
-    .filter(s=>(s.status||'active')==='active')
+  const allStuds = rollOf(c)
     .filter(s=>!checkGradeFilter || (grades[s.id]||'')===checkGradeFilter)  // 학년 필터
     .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   // 이 날짜에 휴학 중인 학생 분리
@@ -1180,12 +1262,14 @@ async function loadCheckBody(){
   const dow = new Date(checkDate+'T00:00:00').getDay();
   const isWeekend = dow===0||dow===6;
 
-  body.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
-
-  // 기존 기록 로드 (이 반·이 날짜)
-  const snap = await getDocs(collection(db,'studentAttendance'));
-  checkRecords = {};
-  snap.forEach(d=>{ const r=d.data(); if(r.classId===checkClassId && r.date===checkDate) checkRecords[r.studentId]={id:d.id, typeIds:recTypes(r), memo:r.memo||''}; });
+  if(!keep){
+    body.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
+    // 기존 기록 로드 (이 반·이 날짜)
+    const snap = await getDocs(collection(db,'studentAttendance'));
+    checkRecords = {};
+    snap.forEach(d=>{ const r=d.data(); if(r.classId===checkClassId && r.date===checkDate) checkRecords[r.studentId]={id:d.id, typeIds:recTypes(r), memo:r.memo||''}; });
+    checkKey = checkClassId+'|'+checkDate;
+  }
 
   // 기본 출석 타입 (isPresent=true 중 첫번째)
   const defType = TYPES.find(t=>t.isPresent) || TYPES[0];
@@ -1228,7 +1312,7 @@ async function loadCheckBody(){
         <span style="font-size:11px;color:var(--tl)">학번 ${s.studentNo||'-'}</span>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${typeButtons(s.id, curTypes)}</div>
-      <input type="text" id="memo-${s.id}" placeholder="메모 (선택)" value="${rec?.memo||''}" ${editable?'':'disabled'}
+      <input type="text" id="memo-${s.id}" placeholder="메모 (선택)" value="${esc(rec?.memo||'').replace(/"/g,'&quot;')}" ${editable?'':'disabled'}
         style="width:100%;height:34px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 10px;font-size:13px;background:${editable?'var(--iv)':'var(--iv)'};outline:none">
     </div>`;
   }).join('');
@@ -1238,7 +1322,7 @@ async function loadCheckBody(){
       <div style="font-size:13px;font-weight:700;color:var(--tl);margin-bottom:8px">휴학 중 (${leaveStuds.length}명) · 출결 제외</div>
       ${leaveStuds.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;opacity:.6">
         <span style="font-weight:600">${s.name}</span>
-        <span class="typebadge" style="background:var(--warn-bg);color:var(--warn)">휴학 중</span>
+        <span class="typebadge" style="background:var(--warn-bg);color:var(--warn)">휴학 중${StuStatus.leaveNote(s, checkDate)?' · '+esc(StuStatus.leaveNote(s, checkDate)):''}</span>
       </div>`).join('')}
     </div>` : '';
 
@@ -1286,6 +1370,11 @@ async function loadCheckBody(){
 
   // 초기 선택값 채우기 (기록 없으면 기본 출석)
   studs.forEach(s=>{ if(!checkRecords[s.id]) checkRecords[s.id]={typeIds: defType?[defType.id]:[], memo:''}; });
+  if(K){
+    window.scrollTo(0, K.y);
+    const f = K.focus && $I(K.focus);
+    if(f && f.focus) try { f.focus({preventScroll:true}); if(K.sel && f.setSelectionRange) f.setSelectionRange(K.sel[0], K.sel[1]); } catch(e){}
+  }
 }
 
 function setRec(sid, tid){
@@ -1352,8 +1441,7 @@ async function saveCheck(){
   if(term==='none') return toast('학기 일정이 등록되지 않았습니다.','err');
   if(term===null) return toast('학기 기간이 아닙니다. 출석을 기록할 수 없습니다.','err');
   const grades = c.grades || {};
-  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
-    .filter(s=>(s.status||'active')==='active')
+  const studs = rollOf(c)
     .filter(s=>!checkGradeFilter || (grades[s.id]||'')===checkGradeFilter)  // 화면에 보이는 학생만
     .filter(s=>!isOnLeave(s, checkDate));  // 휴학 중인 학생 제외
   toast('저장 중...');
@@ -1445,7 +1533,8 @@ let statGradeFilter = '';
 
 let liveUnsub = null;      // 실시간 구독 해제 손잡이
 let liveDate = '';         // 보고 있는 날짜 (기본 오늘)
-function stopLive(){ if(liveUnsub){ try{liveUnsub();}catch(e){} liveUnsub=null; } }
+let LIVE_PAINT = null;     // 학생·반이 바뀌면 마지막 표시로 다시 칠하기
+function stopLive(){ LIVE_PAINT = null; if(liveUnsub){ try{liveUnsub();}catch(e){} liveUnsub=null; } }
 
 /* ── 🔴 오늘 실시간 (기관 전체) — 담임이 표시하는 순간 화면이 그 자리에서 바뀐다 ──
    저장 구조가 «특이사항만 기록»이므로: 표시 없음 = 정상 출석.
@@ -1479,6 +1568,7 @@ function renderLive(){
   const qy = query(collection(db,'studentAttendance'), where('org','==',org), where('date','==',liveDate));
   liveUnsub = onSnapshot(qy, snap=>{
     const marks = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    LIVE_PAINT = ()=>{ if($I('lv-grid')) paintLive(org, marks, isToday); };
     paintLive(org, marks, isToday);
     const p = $I('lv-pulse');
     if(p){ p.innerHTML = isToday
@@ -1496,8 +1586,12 @@ function paintLive(org, marks, isToday){
   const typeOf = id => TYPES.find(t=>t.id===id) || null;
   let totRoster=0, totFlag=0, totAbsent=0;
   const cards = cls.map(c=>{
-    const roster = (c.students||[]).length;
-    const ms = byClass[c.id] || [];
+    // 출결 대상 = 학적이 살아 있고 그날 휴학이 아닌 학생 (출석 체크 명단과 같다)
+    const roll = rollOf(c);
+    const on = roll.filter(s=>!isOnLeave(s, liveDate));
+    const onIds = new Set(on.map(s=>s.id));
+    const roster = on.length, nLeave = roll.length - on.length;
+    const ms = (byClass[c.id] || []).filter(m=>onIds.has(m.studentId));
     // 학생별 대표 유형(복수면 첫 항목), 정상출석(isPresent) 표시는 특이에서 제외
     const flagged = {};
     ms.forEach(m=>{
@@ -1515,7 +1609,7 @@ function paintLive(org, marks, isToday){
     return `<div style="background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:13px;padding:13px 15px">
       <div style="display:flex;justify-content:space-between;align-items:baseline">
         <b style="font-size:14.5px;color:var(--gd)">${c.grade?'['+esc(c.grade)+'] ':''}${esc(c.name)}</b>
-        <span style="font-size:11px;color:var(--tl)">재적 ${roster}</span>
+        <span style="font-size:11px;color:var(--tl)">재적 ${roster}${nLeave?` <span style="color:var(--warn)">· 휴학 ${nLeave}</span>`:''}</span>
       </div>
       <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;min-height:24px">
         ${flagN ? chips : `<span style="font-size:11.5px;color:#16a34a;font-weight:800">✓ 특이사항 없음${isToday?' (전원 출석)':''}</span>`}
@@ -1680,13 +1774,14 @@ async function buildStat(){
     // 반 필터 적용
     if(statClassFilter && c.id!==statClassFilter) return;
     (c.students||[]).forEach(sid=>{
-      const s = STUDENTS[sid]; if(!s || (s.status||'active')!=='active') return;
+      const s = STUDENTS[sid]; if(!s || !StuStatus.enrolled(s)) return;
       const grade = (c.grades||{})[sid] || '';
       // 학년 필터 적용
       if(statGradeFilter && grade!==statGradeFilter) return;
       if(!byStud[sid]){
         // 개인 수업일수 = 전체 수업일 − 본인 휴학 기간에 걸린 수업일
         const leaveDays = leaveDaysInSet(s, schoolDaySet);
+        if(totalDays>0 && leaveDays>=totalDays) return;   // 기간 내내 휴학 → 집계에서 뺀다
         byStud[sid]={name:s.name, studentNo:s.studentNo||'', className:c.name, grade:grade||'(학년미지정)', dept:c.dept||'', classId:c.id, counts:{}, present:0, recorded:0, myTotal: Math.max(0, totalDays - leaveDays), leaveDays};
       }
     });
@@ -1869,7 +1964,7 @@ async function buildWeeklyStat(){
   // 이 주 출결 기록 로드
   const snap = await getDocs(collection(db,'studentAttendance'));
   const recs = [];
-  snap.forEach(d0=>{ const r=d0.data(); if(r.org===statOrg && r.date>=weekStart && r.date<=weekEnd) recs.push(r); });
+  snap.forEach(d0=>{ const r=d0.data(); if(r.org===statOrg && r.date>=weekStart && r.date<=weekEnd && !isOnLeave(STUDENTS[r.studentId], r.date)) recs.push(r); });
   const typeById={}; TYPES.forEach(t=>typeById[t.id]=t);
 
   // 반별 집계 (결석·지각 등 비출석만)
@@ -1965,9 +2060,7 @@ window.onMonthChange = onMonthChange;
 async function loadMonthlyBody(){
   const body = $I('mc-body'); if(!body) return;
   const c = CLASSES.find(x=>x.id===statMonthClassId); if(!c) return;
-  const studs = (c.students||[]).map(sid=>STUDENTS[sid]).filter(Boolean)
-    .filter(s=>(s.status||'active')==='active')
-    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  const studs = rollOf(c).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
 
   // 그 달의 날짜들
   const y = statYear, m = statMonth;
@@ -2016,9 +2109,12 @@ async function loadMonthlyBody(){
   const rows = studs.map(s=>{
     const rec = recMap[s.id] || {};
     let present=0;
+    // 개인 수업일 = 이 달 수업일 − 휴학인 날
+    const myTotal = totalSchool - schoolDays.filter(x=>isOnLeave(s, x.ds)).length;
     const cells = days.map(x=>{
       if(!x.inTerm) return `<td style="background:var(--gray-bg);border:1px solid var(--ivd)"></td>`;
       if(x.isWeekend || x.hol) return `<td style="background:${x.hol?'var(--danger-bg)':'var(--iv)'};border:1px solid var(--ivd)"></td>`;
+      if(isOnLeave(s, x.ds)) return `<td title="${x.ds} 휴학 중" style="border:1px solid var(--ivd);text-align:center;font-size:10px;color:var(--warn)">휴</td>`;
       // 기록 없으면 기본 출석
       const tids = rec[x.ds] || (defType?[defType.id]:[]);
       const isDefault = !rec[x.ds];
@@ -2029,9 +2125,11 @@ async function loadMonthlyBody(){
       const dot = dotSpans ? `<span title="${names}" style="display:inline-flex;gap:1px;vertical-align:middle">${dotSpans}</span>` : '';
       return `<td style="border:1px solid var(--ivd);text-align:center;padding:1px">${dot}</td>`;
     }).join('');
-    const rate = totalSchool? Math.round(present/totalSchool*100):0;
+    const rate = myTotal>0 ? Math.round(present/myTotal*100) : 0;
     // 월간 합계 막대
-    const bar = `<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;background:var(--ivd);border-radius:8px;height:10px;min-width:40px;overflow:hidden"><div style="width:${rate}%;height:100%;background:${rate>=90?'var(--ok)':rate>=70?'var(--warn)':'var(--danger)'}"></div></div><span style="font-size:11px;font-weight:700;color:${rate>=90?'var(--ok)':rate>=70?'var(--warn)':'var(--danger)'};white-space:nowrap">${present}/${totalSchool}</span></div>`;
+    const bar = myTotal>0
+      ? `<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;background:var(--ivd);border-radius:8px;height:10px;min-width:40px;overflow:hidden"><div style="width:${rate}%;height:100%;background:${rate>=90?'var(--ok)':rate>=70?'var(--warn)':'var(--danger)'}"></div></div><span style="font-size:11px;font-weight:700;color:${rate>=90?'var(--ok)':rate>=70?'var(--warn)':'var(--danger)'};white-space:nowrap">${present}/${myTotal}</span></div>`
+      : `<span style="font-size:11px;font-weight:700;color:var(--warn)">휴학</span>`;
     return `<tr>
       <td style="position:sticky;left:0;background:var(--wh);padding:4px 8px;font-size:13px;font-weight:600;white-space:nowrap;border-right:2px solid var(--ivd)">${s.name}${(c.grades&&c.grades[s.id])?`<span style="color:var(--gm);font-size:10px;font-weight:700;margin-left:4px">${c.grades[s.id]}</span>`:''}</td>
       ${cells}

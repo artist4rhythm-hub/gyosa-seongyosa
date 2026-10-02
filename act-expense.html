@@ -172,6 +172,7 @@
 <script src="loading.js"></script>
 <script src="menu.js"></script>
 <script src="org-core.js"></script>
+<script src="student-status.js"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="union.js?v=64"></script>
 <script src="timemachine.js"></script>
@@ -387,15 +388,12 @@ function sortMembers(){
 }
 const gnum = g => { const n = parseInt(String(g||'').replace(/[^0-9]/g,'')); return isNaN(n)?99:n; };
 
-/* ⏸ 활동 기간(fromDs~toDs)에 휴학과 겹치는지 — 출석부와 같은 기준(students.leaves) */
+/* ⏸ 활동 기간(fromDs~toDs)에 휴학과 겹치는지 — 학생관리·출석부와 같은 규칙(student-status.js)
+   휴학 기간(끝이 비면 복학일 미정)과 겹치거나, 재적 상태가 «휴학»이면 휴학 */
 function isOnLeaveDuring(st, fromDs, toDs){
   if(!st) return false;
   const from = fromDs || todayDs();
-  const to = toDs || from;
-  if(Array.isArray(st.leaves) && st.leaves.length){
-    return st.leaves.some(lv => lv.start && lv.end && lv.start <= to && from <= lv.end);
-  }
-  return (st.status || 'active') === 'leave'; // 기간 이력이 없는 옛 데이터는 상태로 판단
+  return StuStatus.leaveDuring(st, from, toDs || from);
 }
 /* 담긴 참가자(actMembers)가 활동 기간에 휴학인지 */
 function isMemberOnLeave(m){

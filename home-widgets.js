@@ -57,7 +57,7 @@ async function loadAttendWidget(){
         _attStu[o] = ss.docs.map(d=>{ const st={id:d.id, ...d.data()};
             const i = info[d.id] || {};
             return { ...st, className: st.className || i.className || '', classId: i.classId||'', grade: st.grade || i.grade || '' };
-          }).filter(x=>!x.deleted && (x.status||'active')==='active');
+          }).filter(x=>!x.deleted && (window.StuStatus ? StuStatus.status(x)==='active' : (x.status||'active')==='active'));   // 오늘 휴학(기간 포함)은 뺀다 — 출석부와 같은 규칙
       }
     }
   } catch(e){ box.innerHTML = `<div class="hw-dim">출결 정보를 불러오지 못했어요.</div>`; return; }

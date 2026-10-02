@@ -95,6 +95,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="org-core.js"></script>
+<script src="student-status.js"></script>
 <script src="menu.js"></script>
 <script src="timemachine.js"></script>
 <script src="sidebar.js"></script>
@@ -123,7 +124,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -190,6 +191,13 @@ function showQuitStu(s){
   if((s.status||'active') !== 'quit') return false;
   if(!s.quitDate) return true;
   return schoolYearOf(s.quitDate) >= schoolYearOf(new Date());
+}
+// 🔁 오늘 기준 실제 상태 — 학생관리·출석부와 같은 규칙(student-status.js)
+//    재적 상태가 «재학»이어도 휴학 기간 안이면 «휴학»
+const curSt = s => StuStatus.status(s);
+function leaveBadge(s){
+  const n = StuStatus.leaveNote(s);
+  return `<span style="font-size:10px;color:var(--warn);font-weight:700;background:var(--warn-bg);padding:1px 6px;border-radius:100px" title="학생 관리의 휴학 설정">휴학${n?' '+n:''}</span>`;
 }
 function quitBadgeCls(s){
   if(!s.quitDate) return '자퇴';
@@ -273,10 +281,38 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 async function loadStudents(){
-  const snap = await getDocs(collection(db,'students'));
-  const allowed = myOrgs();
-  STUDENTS = [];
-  snap.forEach(d=>{ const s={id:d.id,...d.data()}; if(allowed.includes(s.org)) STUDENTS.push(s); });
+  await liveCol('students', docs=>{
+    const allowed = myOrgs();
+    STUDENTS = docs.filter(s=>allowed.includes(s.org));
+  });
+}
+/* 🔁 실시간 연동 — 학생관리에서 휴학·자퇴 등을 바꾸거나 다른 선생님이 반을 고치면 이 화면이 바로 따라 바뀐다.
+   처음 한 번은 받아 올 때까지 기다리고(getDocs 와 같은 읽기), 그 뒤로는 바뀐 문서만 들어온다. */
+const LIVE = {};
+function liveCol(name, apply, sigOf){
+  const L = LIVE[name];
+  if(L) return L.ready.then(()=>{ if(L.docs) apply(L.docs); });   // 이미 듣는 중(또는 처음 받는 중) → 받은 자료로
+  const E = LIVE[name] = { docs:null, sig:'', unsub:null, ready:null };
+  E.ready = new Promise((res, rej)=>{
+    let first = true;
+    E.unsub = onSnapshot(collection(db, name), snap=>{
+      const docs = []; snap.forEach(d=>docs.push({ id:d.id, ...d.data() }));
+      const sig = sigOf ? JSON.stringify(docs.map(sigOf).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))) : '';
+      const changed = !sigOf || sig !== E.sig;
+      E.docs = docs; E.sig = sig;
+      apply(docs);
+      if(first){ first = false; res(); }
+      else if(changed) liveRefresh();
+    }, err=>{
+      if(LIVE[name] === E) delete LIVE[name];   // 끊기면 다음 불러오기 때 새로 듣는다 (받은 자료는 그대로 쓴다)
+      if(first){ first = false; rej(err); }
+    });
+  });
+  return E.ready;
+}
+function liveRefresh(){
+  clearTimeout(liveRefresh._t);
+  liveRefresh._t = setTimeout(()=>{ try { if($I('class-list')) renderClasses(); } catch(e){ console.warn('[live]', e); } }, 150);
 }
 async function loadStaff(){
   const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
@@ -285,10 +321,10 @@ async function loadStaff(){
   snap.forEach(d=>{ const s={uid:d.id,...d.data()}; const so=s.orgs&&s.orgs.length?s.orgs:[s.org]; if(so.some(o=>allowed.includes(o))) STAFF.push(s); });
 }
 async function loadClasses(){
-  const snap = await getDocs(collection(db,'classes'));
-  const allowed = myOrgs();
-  CLASSES = [];
-  snap.forEach(d=>{ const c={id:d.id,...d.data()}; if(c.year===curYear && allowed.includes(c.org)) CLASSES.push(c); });
+  await liveCol('classes', docs=>{
+    const allowed = myOrgs();
+    CLASSES = docs.filter(c=>c.year===curYear && allowed.includes(c.org));
+  });
 }
 
 // ── 메인 화면 ──
@@ -326,6 +362,7 @@ window.changeYear = changeYear;
 // ── 반 목록 렌더 ──
 function renderClasses(){
   const el = $I('class-list'); if(!el) return;
+  const wasOpen = new Set([...el.querySelectorAll('.clsbody.open')].map(b=>b.id));   // 다시 그려도 펼친 반은 그대로
   const fOrg = $I('flt-org')?.value || '';
   let list = CLASSES.filter(c => !fOrg || c.org===fOrg);
   // 정렬: 기관 → 학년 낮은 순(지혜빛 4세→7세, 다니엘 1학년→12학년) → 반 이름
@@ -345,6 +382,9 @@ function renderClasses(){
   el.innerHTML = '<div class="acard">' + list.map(c=>{
     const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(Boolean)
       .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const nLeave = studs.filter(s=>curSt(s)==='leave').length;
+    const nQuit = studs.filter(s=>(s.status||'active')==='quit').length;
+    const nGrad = studs.filter(s=>['grad','egrad'].includes(s.status)).length;
     const teacher = STAFF.find(s=>s.uid===c.teacherUid);
     const grades = c.grades || {};
     const studChips = studs.length
@@ -352,7 +392,8 @@ function renderClasses(){
           const g = grades[s.id];
           const gradeTag = g ? `<span style="background:var(--gp);color:var(--gm);font-size:10px;font-weight:700;padding:1px 6px;border-radius:100px">${g}</span>` : `<span style="color:var(--danger);font-size:10px">학년?</span>`;
           const isQuit = (s.status||'active')==='quit';
-          return `<span class="stud-chip" style="${isQuit?'background:var(--iv);border:1px dashed var(--gray-bg);color:var(--gray-tx)':''}">${s.name}${isQuit?`<span style="font-size:10px;color:var(--gray-tx);font-weight:700;background:var(--gray-bg);padding:1px 6px;border-radius:100px">${quitBadgeCls(s)}</span>`:''}${s.birth?`<span style="color:var(--tl);font-size:11px">${s.birth.slice(0,4)}</span>`:''}${gradeTag}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`;
+          const isLeave = curSt(s)==='leave';
+          return `<span class="stud-chip" style="${isQuit?'background:var(--iv);border:1px dashed var(--gray-bg);color:var(--gray-tx)':isLeave?'background:var(--iv);border:1px dashed var(--warn);opacity:.8':''}">${s.name}${isQuit?`<span style="font-size:10px;color:var(--gray-tx);font-weight:700;background:var(--gray-bg);padding:1px 6px;border-radius:100px">${quitBadgeCls(s)}</span>`:''}${isLeave?leaveBadge(s):''}${s.birth?`<span style="color:var(--tl);font-size:11px">${s.birth.slice(0,4)}</span>`:''}${gradeTag}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`;
         }).join('')
       : '<span style="font-size:13px;color:var(--tl)">배정된 학생이 없습니다.</span>';
     return `<div class="clscard">
@@ -360,7 +401,7 @@ function renderClasses(){
         <span class="clsname">${c.name}</span>
         <span class="clsmeta">${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' · '+c.dept:''} · ${c.grade||''}</span>
         ${teacher?`<span class="clsteacher">담임 ${teacher.name}</span>`:'<span class="clsteacher" style="background:var(--danger-bg);color:var(--danger)">담임 미지정</span>'}
-        <span class="clscount">학생 ${studs.length}명</span>
+        <span class="clscount">학생 ${studs.length-nQuit-nGrad}명${nLeave?` <span style="color:var(--warn)">(휴학 ${nLeave})</span>`:''}${nQuit?` <span style="color:var(--gray-tx)">· 자퇴 ${nQuit}</span>`:''}${nGrad?` <span style="color:var(--gray-tx)">· 졸업 ${nGrad}</span>`:''}</span>
       </div>
       <div class="clsbody" id="body-${c.id}">
         <div style="margin-bottom:10px">${studChips}</div>
@@ -373,6 +414,7 @@ function renderClasses(){
       </div>
     </div>`;
   }).join('') + '</div>';
+  wasOpen.forEach(id=>{ const b = $I(id); if(b) b.classList.add('open'); });
 }
 window.renderClasses = renderClasses;
 
@@ -510,9 +552,9 @@ function openAddStudent(classId){
   const assignedElsewhere = new Set();
   CLASSES.forEach(cl=>{ if(cl.id!==classId) (cl.students||[]).forEach(sid=>assignedElsewhere.add(sid)); });
   const already = new Set(c.students||[]);
-  // 후보: 같은 기관, 재학중 + 이번 학년도 자퇴생(수행성 경비 정산용), 아직 이 반에 없음
+  // 후보: 같은 기관, 재학·휴학생 + 이번 학년도 자퇴생(수행성 경비 정산용), 아직 이 반에 없음
   const candidates = STUDENTS.filter(s=>
-    s.org===c.org && ((s.status||'active')==='active' || showQuitStu(s)) && !already.has(s.id)
+    s.org===c.org && (StuStatus.enrolled(s) || showQuitStu(s)) && !already.has(s.id)
   );
   _addCtx = { classId, candidates, assignedElsewhere };
 
@@ -550,8 +592,8 @@ function renderAddList(){
   const sort = $I('add-sort')?.value || 'name-asc';
   const arr = [...candidates];
   arr.sort((a,b)=>{
-    const qa = (a.status||'active')==='quit' ? 1 : 0;   // 자퇴생은 항상 뒤로
-    const qb = (b.status||'active')==='quit' ? 1 : 0;
+    const rk = s => (s.status||'active')==='quit' ? 2 : curSt(s)==='leave' ? 1 : 0;   // 휴학생·자퇴생은 뒤로
+    const qa = rk(a), qb = rk(b);
     if(qa !== qb) return qa - qb;
     if(sort==='name-asc') return a.name.localeCompare(b.name,'ko');
     if(sort==='name-desc') return b.name.localeCompare(a.name,'ko');
@@ -565,9 +607,10 @@ function renderAddList(){
   el.innerHTML = arr.length ? arr.map(s=>{
     const elsewhere = assignedElsewhere.has(s.id);
     const isQuit = (s.status||'active')==='quit';
+    const isLeave = !isQuit && curSt(s)==='leave';
     const bi = birthInfo(s.birth);
-    return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer${isQuit?';background:var(--iv);border-style:dashed':''}">
-      <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name}${isQuit?` <span style="font-size:11px;color:var(--gray-tx);font-weight:700;background:var(--gray-bg);padding:1px 7px;border-radius:100px">${quitBadgeCls(s)}</span>`:''} <span style="color:var(--gm);font-size:12px;font-weight:600">${bi}</span> <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:var(--danger);font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
+    return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer${isQuit||isLeave?';background:var(--iv);border-style:dashed':''}">
+      <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name}${isQuit?` <span style="font-size:11px;color:var(--gray-tx);font-weight:700;background:var(--gray-bg);padding:1px 7px;border-radius:100px">${quitBadgeCls(s)}</span>`:''}${isLeave?' '+leaveBadge(s):''} <span style="color:var(--gm);font-size:12px;font-weight:600">${bi}</span> <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:var(--danger);font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
     </label>`;
   }).join('') : '<p class="empty">추가할 수 있는 학생이 없습니다.</p>';
   // 검색어 유지 적용
@@ -641,7 +684,7 @@ function openGradeAssign(classId){
       </div>
       <div style="max-height:340px;overflow-y:auto">
         ${studs.map(s=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--ivd)">
-          <span style="font-size:14px">${s.name} <span style="color:var(--tl);font-size:11px">${s.birth?s.birth.slice(0,4)+'년생':''}</span></span>
+          <span style="font-size:14px">${s.name} <span style="color:var(--tl);font-size:11px">${s.birth?s.birth.slice(0,4)+'년생':''}</span>${curSt(s)==='leave'?' '+leaveBadge(s):''}</span>
           <select class="grade-sel" data-sid="${s.id}" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px">${gradeOpts(grades[s.id])}</select>
         </div>`).join('')}
       </div>
@@ -685,7 +728,7 @@ function downloadClassTemplate(){
   const orgs = fOrg ? [fOrg] : myOrgs();
   const headers = ['학번','이름','생년월일','기관','배정할 반 이름'];
   const aoa = [headers];
-  STUDENTS.filter(s=>orgs.includes(s.org) && (s.status||'active')==='active')
+  STUDENTS.filter(s=>orgs.includes(s.org) && StuStatus.enrolled(s))
     .sort((a,b)=>(a.org+a.name).localeCompare(b.org+b.name,'ko'))
     .forEach(s=>{
       // 이미 올해 배정된 반 찾기
@@ -838,8 +881,8 @@ async function doPromote(prevYear){
     const prevClasses = [];
     snap.forEach(d=>{ const c={id:d.id,...d.data()}; if(c.year===prevYear && allowed.includes(c.org)) prevClasses.push(c); });
     if(!prevClasses.length){ toast(`${prevYear}년 반 편성이 없습니다.`,'err'); return; }
-    // 재학중 학생만 복제 대상
-    const activeIds = new Set(STUDENTS.filter(s=>(s.status||'active')==='active').map(s=>s.id));
+    // 재학·휴학생만 복제 대상 (휴학생도 학적이 살아 있어 반·학년을 이어 간다. 자퇴·졸업은 빠진다)
+    const activeIds = new Set(STUDENTS.filter(s=>StuStatus.enrolled(s)).map(s=>s.id));
     let cnt=0;
     for(const c of prevClasses){
       const studs = (c.students||[]).filter(sid=>activeIds.has(sid));

@@ -113,6 +113,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="loading.js"></script>
 <script src="modal-close.js"></script>
 <script src="org-core.js"></script>
+<script src="student-status.js"></script>
 <script src="orgbar.js"></script>
 <script src="menu.js"></script>
 <script src="timemachine.js"></script>
@@ -154,7 +155,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -177,6 +178,8 @@ const STATUS = {active:'재학', leave:'휴학', quit:'자퇴', grad:'졸업', e
 const STATUS_BADGE = {active:'b-active', leave:'b-leave', quit:'b-quit', grad:'b-grad', egrad:'b-grad'};
 let CU = null;          // 현재 로그인 유저
 let STUDENTS = [];      // 학생 캐시
+// 🔁 오늘 기준 실제 상태 (재학/휴학/자퇴/졸업) — 반편성·출석부와 같은 규칙(student-status.js)
+const curSt = s => StuStatus.status(s);
 
 function toast(msg, type=''){
   const t = $I('toast'); t.textContent = msg;
@@ -292,10 +295,8 @@ let STAFF = [];     // 교직원 (담임 이름 조회용)
 let studentTab = 'all';
 
 async function loadClasses(){
-  try {
-    const snap = await getDocs(collection(db,'classes'));
-    CLASSES = []; snap.forEach(d=>CLASSES.push({id:d.id, ...d.data()}));
-  } catch(e){ CLASSES = []; }
+  try { await liveCol('classes', docs=>{ CLASSES = docs; }); }
+  catch(e){ CLASSES = []; }
   try {
     const st = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
     STAFF = []; st.forEach(d=>STAFF.push({uid:d.id, ...d.data()}));
@@ -404,13 +405,47 @@ function fillBirthFilter(){
 
 // ── 학생 데이터 로드 ──
 async function loadStudents(){
-  const snap = await getDocs(collection(db,'students'));
-  const allowed = myOrgs();
-  STUDENTS = [];
-  snap.forEach(d => {
-    const s = { id:d.id, ...d.data() };
-    if(allowed.includes(s.org)) STUDENTS.push(s);
+  await liveCol('students', docs=>{
+    const allowed = myOrgs();
+    STUDENTS = docs.filter(s=>allowed.includes(s.org));
   });
+}
+/* 🔁 실시간 연동 — 학생·반 편성을 «듣고» 있다가, 다른 화면(반편성·출석부·다른 선생님)에서 바뀌면 지금 보는 탭을 바로 다시 그린다.
+   처음 한 번은 받아 올 때까지 기다리고(getDocs 와 같은 읽기), 그 뒤로는 바뀐 문서만 들어온다. */
+const LIVE = {};
+function liveCol(name, apply, sigOf){
+  const L = LIVE[name];
+  if(L) return L.ready.then(()=>{ if(L.docs) apply(L.docs); });   // 이미 듣는 중(또는 처음 받는 중) → 받은 자료로
+  const E = LIVE[name] = { docs:null, sig:'', unsub:null, ready:null };
+  E.ready = new Promise((res, rej)=>{
+    let first = true;
+    E.unsub = onSnapshot(collection(db, name), snap=>{
+      const docs = []; snap.forEach(d=>docs.push({ id:d.id, ...d.data() }));
+      const sig = sigOf ? JSON.stringify(docs.map(sigOf).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))) : '';
+      const changed = !sigOf || sig !== E.sig;
+      E.docs = docs; E.sig = sig;
+      apply(docs);
+      if(first){ first = false; res(); }
+      else if(changed) liveRefresh();
+    }, err=>{
+      if(LIVE[name] === E) delete LIVE[name];   // 끊기면 다음 불러오기 때 새로 듣는다 (받은 자료는 그대로 쓴다)
+      if(first){ first = false; rej(err); }
+    });
+  });
+  return E.ready;
+}
+function liveRefresh(){
+  clearTimeout(liveRefresh._t);
+  liveRefresh._t = setTimeout(()=>{
+    try {
+      if(studentTab==='all') renderList();
+      else if(studentTab==='roster') renderRoster();
+      else if(studentTab==='extract') renderExtract();
+      else if(studentTab==='stat') renderStat();
+      else if(studentTab==='birth') renderBirth();
+      else if(studentTab==='contact') renderContact();
+    } catch(e){ console.warn('[live]', e); }
+  }, 150);
 }
 
 // ── 학생 목록 렌더 ──
@@ -424,7 +459,7 @@ function renderList(){
   const fSearch = ($I('flt-search')?.value || '').trim();
   let list = STUDENTS.filter(s => {
     if(fOrg && s.org !== fOrg) return false;
-    if(fStatus && (s.status||'active') !== fStatus) return false;
+    if(fStatus && curSt(s) !== fStatus) return false;
     if(fBirth && (s.birth||'').slice(0,4) !== fBirth) return false;
     if(fGender && s.gender !== fGender) return false;
     if(fSearch && !s.name.includes(fSearch)) return false;
@@ -441,13 +476,13 @@ function renderList(){
   const cntEl = $I('list-count'); if(cntEl) cntEl.textContent = `${list.length}명`;
   if(!list.length){ el.innerHTML = '<p class="empty">조건에 맞는 학생이 없습니다.</p>'; return; }
   el.innerHTML = list.map(s => {
-    const st = s.status || 'active';
+    const st = curSt(s);
     let yearInfo = '';
     if(s.transferDate) yearInfo = `편입 ${s.transferDate.slice(0,4)}년`;
     else if(s.admitDate) yearInfo = `입학 ${s.admitDate.slice(0,4)}년`;
     else if(s.admitYear) yearInfo = `입학 ${s.admitYear}년`;
-    const onLeave = isOnLeave(s, todayStr());
-    const leaveBadge = onLeave ? ' <span class="badge b-leave">휴학 중</span>' : '';
+    const lvNote = st==='leave' ? StuStatus.leaveNote(s) : '';
+    const leaveBadge = lvNote ? ` <span style="font-size:11px;color:var(--warn);font-weight:600">${esc(lvNote)}</span>` : '';
     // 성별 색상
     const gc = s.gender==='남' ? 'var(--m-tx)' : s.gender==='여' ? 'var(--f-tx)' : 'var(--gm)';
     const gbg = s.gender==='남' ? 'var(--m-bg)' : s.gender==='여' ? 'var(--f-bg)' : 'var(--gp)';
@@ -472,6 +507,8 @@ const GRADE_ORDER = {
   jihyebit: ['4세','5세','6세','7세']
 };
 let rosterIncludeLeave = true;  // 재학생 명단에 휴학생 포함 여부
+// 명단에 넣을 학생인가 — 오늘 실제 상태로 판정 (재적 상태가 «재학»이어도 휴학 기간 안이면 휴학으로 본다)
+function inRoster(s){ const st = curSt(s); return st==='active' || (rosterIncludeLeave && st==='leave'); }
 let rosterOrgView = 'split';    // split(기관별) | all(총합)
 
 // ── 재학생 명단 (학년별 표) ──
@@ -503,7 +540,7 @@ window.renderRoster = renderRoster;
 // 휴학생 목록 (별도 카드)
 function rosterLeaveList(){
   const targetOrgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
-  const leaves = STUDENTS.filter(s=>s.status==='leave' && targetOrgs.includes(s.org))
+  const leaves = STUDENTS.filter(s=>curSt(s)==='leave' && targetOrgs.includes(s.org))
     .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(a.name||'').localeCompare(b.name||'','ko'));
   if(!leaves.length) return '';
   const rows = leaves.map(s=>{
@@ -512,13 +549,14 @@ function rosterLeaveList(){
       <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)} <span style="color:${s.gender==='남'?'var(--m-tx)':'var(--f-tx)'};font-size:11px">(${s.gender||'-'})</span></td>
       <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
       <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${g||'미지정'}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);color:var(--warn);font-weight:600">${esc(StuStatus.leaveNote(s))}</td>
     </tr>`;
   }).join('');
   return `
     <div class="acard">
       <h3 class="actitle" style="font-size:15px;color:var(--warn)">🏖️ 현재 휴학생 (${leaves.length}명)</h3>
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">이름</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">학년</th></tr></thead>
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">이름</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">학년</th><th style="padding:8px 10px;text-align:left">휴학 기간</th></tr></thead>
         <tbody>${rows}</tbody>
       </table></div>
     </div>`;
@@ -526,13 +564,12 @@ function rosterLeaveList(){
 
 // 재학생 명단 엑셀 다운로드
 function downloadRosterExcel(){
-  const statuses = rosterIncludeLeave ? ['active','leave'] : ['active'];
   const targetOrgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
   const aoa = [['이름','성별','기관','부서','학년','상태']];
-  STUDENTS.filter(s=>targetOrgs.includes(s.org) && statuses.includes(s.status||'active'))
+  STUDENTS.filter(s=>targetOrgs.includes(s.org) && inRoster(s))
     .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'))
     .forEach(s=>{
-      aoa.push([s.name, s.gender||'', ORGS[s.org]||s.org, s.dept||'', studentGrade(s.id)||'미지정', s.status==='leave'?'휴학':'재학']);
+      aoa.push([s.name, s.gender||'', ORGS[s.org]||s.org, s.dept||'', studentGrade(s.id)||'미지정', curSt(s)==='leave'?'휴학':'재학']);
     });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [{wch:12},{wch:6},{wch:14},{wch:10},{wch:10},{wch:8}];
@@ -563,7 +600,6 @@ function gradeToDept(grade){
 
 function rosterTable(orgKey){
   const isAll = orgKey==='__all__';
-  const statuses = rosterIncludeLeave ? ['active','leave'] : ['active'];
   const targetOrgs = isAll ? Object.keys(GRADE_ORDER).filter(myOrgsHas) : [orgKey];
   let grades = [];
   targetOrgs.forEach(o=>{ (GRADE_ORDER[o]||[]).forEach(g=>{ if(!grades.includes(g)) grades.push(g); }); });
@@ -571,7 +607,7 @@ function rosterTable(orgKey){
   const unset = [];
   STUDENTS.forEach(s=>{
     if(!targetOrgs.includes(s.org)) return;
-    if(!statuses.includes(s.status||'active')) return;
+    if(!inRoster(s)) return;
     const g = studentGrade(s.id);
     if(g && byGrade[g]) byGrade[g].push(s);
     else unset.push(s);
@@ -607,7 +643,8 @@ function rosterTable(orgKey){
   for(let i=0;i<maxRows;i++){
     rowsHtml += `<tr><td style="${lbl}">${i+1}</td>` + grades.map(g=>{
       const s = byGrade[g][i];
-      return `<td style="${bd};padding:4px 8px;font-size:12px;${s&&(s.status==='leave')?'opacity:.5':''}">${s?esc(s.name)+' '+genderTag(s):''}</td>`;
+      const lv = s && curSt(s)==='leave';
+      return `<td style="${bd};padding:4px 8px;font-size:12px;${lv?'opacity:.5':''}">${s?esc(s.name)+' '+genderTag(s)+(lv?' <span style="font-size:10px;color:var(--warn);font-weight:700">휴학</span>':''):''}</td>`;
     }).join('');
     if(unset.length) rowsHtml += `<td style="${bd};padding:4px 8px;font-size:12px;background:var(--iv)">${unset[i]?esc(unset[i].name)+' '+genderTag(unset[i]):''}</td>`;
     rowsHtml += '</tr>';
@@ -627,7 +664,7 @@ function rosterTable(orgKey){
   // 총원 표
   let totM=0, totF=0, totals={};
   targetOrgs.forEach(o=>{
-    const studs = STUDENTS.filter(s=>s.org===o && statuses.includes(s.status||'active'));
+    const studs = STUDENTS.filter(s=>s.org===o && inRoster(s));
     const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
     totals[o]={m,f,t:studs.length}; totM+=m; totF+=f;
   });
@@ -639,7 +676,7 @@ function rosterTable(orgKey){
     const dt = {};
     depts.forEach(d=>dt[d]={m:0,f:0,t:0});
     STUDENTS.forEach(s=>{
-      if(s.org!=='daniel' || !statuses.includes(s.status||'active')) return;
+      if(s.org!=='daniel' || !inRoster(s)) return;
       const d = gradeToDept(studentGrade(s.id));
       if(!dt[d]) return;
       if(s.gender==='남') dt[d].m++; else if(s.gender==='여') dt[d].f++;
@@ -673,12 +710,11 @@ function rosterTable(orgKey){
 
 // ── 재적 통계 ──
 function renderStat(){
-  const statuses = ['active'];
   let html = `<div class="acard"><h3 class="actitle">📈 재적 통계</h3><p class="adesc">현재 재학 중인 학생 기준입니다.</p>`;
   const orgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
   let gM=0,gF=0;
   orgs.forEach(o=>{
-    const studs = STUDENTS.filter(s=>s.org===o && statuses.includes(s.status||'active'));
+    const studs = STUDENTS.filter(s=>s.org===o && curSt(s)==='active');
     const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
     gM+=m; gF+=f;
     // 부서별
@@ -709,7 +745,7 @@ let birthOrg = '';  // '' = 전체
 function renderBirth(){
   const months = []; for(let m=1;m<=12;m++) months.push(m);
   const myo = myOrgs();
-  let list = STUDENTS.filter(s=>(s.status||'active')==='active' && s.birth && Number(s.birth.slice(5,7))===birthMonth);
+  let list = STUDENTS.filter(s=>curSt(s)==='active' && s.birth && Number(s.birth.slice(5,7))===birthMonth);
   if(birthOrg) list = list.filter(s=>s.org===birthOrg);
   list.sort((a,b)=>Number(a.birth.slice(8,10))-Number(b.birth.slice(8,10)));
   const orgOpts = `<option value="">전체 기관</option>` + myo.map(o=>`<option value="${o}"${birthOrg===o?' selected':''}>${ORGS[o]}</option>`).join('');
@@ -746,7 +782,7 @@ let contactOrg = '';     // '' = 전체
 let contactGrade = '';   // '' = 전체 학년
 function renderContact(){
   const myo = myOrgs();
-  let list = STUDENTS.filter(s=>(s.status||'active')==='active');
+  let list = STUDENTS.filter(s=>curSt(s)==='active');
   if(contactOrg) list = list.filter(s=>s.org===contactOrg);
   if(contactGrade) list = list.filter(s=>studentGrade(s.id)===contactGrade);
   list.sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'));
@@ -953,7 +989,7 @@ window.exReset = exReset;
 // 현재 필터로 걸러진 학생 목록
 function exGetFiltered(){
   return STUDENTS.filter(s=>{
-    const st = s.status||'active';
+    const st = curSt(s);
     if(exFilter.status!=='all' && st!==exFilter.status) return false;
     if(exFilter.orgs.length && !exFilter.orgs.includes(s.org)) return false;
     const g = studentGrade(s.id);
@@ -1046,7 +1082,7 @@ function renderExtractResult(){
         ${studs.map(s=>{
           const gc = s.gender==='남'?'var(--m-tx)':s.gender==='여'?'var(--f-tx)':'var(--ts)';
           const gbg = s.gender==='남'?'var(--m-bg)':s.gender==='여'?'var(--f-bg)':'var(--iv)';
-          const leave = (s.status||'active')==='leave';
+          const leave = curSt(s)==='leave';
           return `<span style="padding:5px 11px;border-radius:100px;background:${gbg};color:${gc};font-size:12.5px;font-weight:600;${leave?'opacity:.5;text-decoration:line-through':''}">${esc(s.name)}<span style="font-size:10px;opacity:.8"> ${s.gender||''}</span></span>`;
         }).join('')}
       </div>
@@ -1113,7 +1149,7 @@ function exBuildHTML(){
     const boys   = studs.filter(s=>s.gender==='남');
     const girls  = studs.filter(s=>s.gender==='여');
     const others = studs.filter(s=>s.gender!=='남' && s.gender!=='여');
-    const nameCell = (s,cls)=>`<span class="nm ${cls}${(s.status||'active')==='leave'?' leave':''}">${esc(s.name)}</span>`;
+    const nameCell = (s,cls)=>`<span class="nm ${cls}${curSt(s)==='leave'?' leave':''}">${esc(s.name)}</span>`;
     const sec = (list,tag,tcls,ncls)=> list.length
       ? `<div class="ex-gsec"><span class="ex-gtag ${tcls}">${tag} ${list.length}</span><div class="ex-ngrid">${list.map(s=>nameCell(s,ncls)).join('')}</div></div>`
       : '';
@@ -1244,7 +1280,7 @@ function exExcel(){
     const det=[['그룹','이름','성별','기관','학년','반','담임','상태']];
     gKeys.forEach(k=>{ const g=groups[k]; g.students.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko')).forEach(s=>{
       const c=studentClass(s.id);
-      det.push([g.label, s.name, s.gender||'', ORGS[s.org]||s.org, studentGrade(s.id)||'', c?c.name:'', c?classTeacherName(c):'', (s.status||'active')==='leave'?'휴학':'재학']);
+      det.push([g.label, s.name, s.gender||'', ORGS[s.org]||s.org, studentGrade(s.id)||'', c?c.name:'', c?classTeacherName(c):'', STATUS[curSt(s)]||'재학']);
     }); });
     const ws2=XLSX.utils.aoa_to_sheet(det); ws2['!cols']=[{wch:12},{wch:10},{wch:6},{wch:12},{wch:8},{wch:10},{wch:8},{wch:6}];
     XLSX.utils.book_append_sheet(wb, ws2, '전체 명단');
@@ -1281,7 +1317,7 @@ function exPreview(){
 window.exPreview = exPreview;
 
 function downloadContactExcel(){
-  let list = STUDENTS.filter(s=>(s.status||'active')==='active');
+  let list = STUDENTS.filter(s=>curSt(s)==='active');
   if(contactOrg) list = list.filter(s=>s.org===contactOrg);
   if(contactGrade) list = list.filter(s=>studentGrade(s.id)===contactGrade);
   list.sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'));
@@ -1295,11 +1331,8 @@ function downloadContactExcel(){
   toast('엑셀을 다운로드했습니다.','ok');
 }
 window.downloadContactExcel = downloadContactExcel;
-// 특정 날짜에 휴학 중인지 (leaves 배열 기준)
-function isOnLeave(s, dateStr){
-  if(!s.leaves || !s.leaves.length) return false;
-  return s.leaves.some(lv => lv.start && lv.end && dateStr>=lv.start && dateStr<=lv.end);
-}
+// 특정 날짜에 휴학 중인지 — 공용 규칙(student-status.js): 휴학 기간 안이거나 재적 상태가 «휴학»
+function isOnLeave(s, dateStr){ return StuStatus.onLeave(s, dateStr); }
 window.isOnLeave = isOnLeave;
 
 // ── 학번 일괄 재배정 (출생연도 기준) ──
@@ -1379,9 +1412,10 @@ function openStudentForm(editId){
         <div class="fgrp"><label>입학일</label><input type="date" id="f-admit" value="${s?.admitDate||''}"></div>
         <div class="fgrp"><label>편입일</label><input type="date" id="f-transfer" value="${s?.transferDate||''}"></div>
         <div class="fgrp"><label>자퇴일</label><input type="date" id="f-quit" value="${s?.quitDate||''}"></div>
-        <div class="fgrp"><label>재적 상태</label><select id="f-status">
-          ${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${(s?.status||'active')===k?' selected':''}>${v}</option>`).join('')}
-        </select></div>
+        <div class="fgrp"><label>재적 상태 <span style="font-weight:400;color:var(--tl);font-size:11px">(오늘 기준)</span></label><select id="f-status" onchange="onStatusPick()">
+          ${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${(s?curSt(s):'active')===k?' selected':''}>${v}</option>`).join('')}
+        </select>
+          <span id="f-status-hint" style="font-size:11px;color:var(--warn);margin-top:3px;line-height:1.5">${statusHint(s)}</span></div>
       </div>
 
       <div class="seclb">연락처</div>
@@ -1393,7 +1427,7 @@ function openStudentForm(editId){
         <div class="fgrp full"><label>주소</label><input id="f-addr" value="${s?.address||''}"></div>
       </div>
 
-      <div class="seclb">휴학 기간 <span style="font-weight:400;color:var(--tl);font-size:11px">(여러 번 가능 · 해당 기간은 출결·통계에서 자동 제외)</span></div>
+      <div class="seclb">휴학 기간 <span style="font-weight:400;color:var(--tl);font-size:11px">(여러 번 가능 · 복학일을 모르면 끝 날짜를 비워 두세요 · 기간 안에는 재학생 명단·반편성·출석부에서 «휴학»으로 바뀌고 출결·통계에서 빠져요)</span></div>
       <div id="leave-list"></div>
       <button type="button" class="bm" onclick="addLeaveRow()" style="margin-top:4px">＋ 휴학 기간 추가</button>
 
@@ -1407,9 +1441,56 @@ function openStudentForm(editId){
         <button class="bp" onclick="saveStudent('${s?.id||''}')">저장</button>
       </div>
     </div></div>`;
-  renderLeaveRows(s?.leaves || []);
+  _formStu = s || null;
+  renderLeaveRows(StuStatus.periods(s));
 }
 window.openStudentForm = openStudentForm;
+
+// 폼을 열 때 재적 상태 칸 아래 안내
+function statusHint(s){
+  if(!s || curSt(s)!=='leave') return '';
+  const lv = StuStatus.period(s);
+  if(lv && lv.end) return `휴학 기간 ~${Number(lv.end.slice(5,7))}/${Number(lv.end.slice(8,10))} — 지나면 저절로 «재학»으로 바뀌어요.`;
+  if(lv) return '복학일 미정 — 복학하면 «재학»으로 바꿔 주세요 (휴학 기간이 어제까지로 마감돼요).';
+  if(StuStatus.needsCheck(s)) return '휴학 기간 기록이 끝났는데 재적 상태가 «휴학»이라 계속 휴학으로 봐요. 복학했으면 «재학»으로 바꿔 주세요.';
+  return '휴학 기간 기록이 없어요 — 휴학 시작일을 아래에 넣어 두면 출결이 그날부터 정확히 빠져요.';
+}
+let _formStu = null;   // 폼을 연 학생 (재적 상태를 바꿀 때 원래 상태 참고)
+// 재적 상태를 «휴학»/«재학»으로 바꾸면 휴학 기간을 함께 맞춘다 (저장 전 화면에서만 — 고쳐서 저장하면 된다)
+function readLeaveRows(){
+  return Array.from(document.querySelectorAll('.leave-row')).map(r=>({
+    start:r.querySelector('.lv-start').value, end:r.querySelector('.lv-end').value
+  }));
+}
+function onStatusPick(){
+  const v = $I('f-status').value, T = StuStatus.today(), Y = StuStatus.addDays(T, -1);
+  const md = x => `${Number(x.slice(5,7))}/${Number(x.slice(8,10))}`;
+  let rows = readLeaveRows(), msg = '';
+  const covering = r => r.start && r.start<=T && (!r.end || r.end>=T);
+  if(v==='leave'){
+    if(!rows.some(covering)){
+      rows.push({start:T, end:''});
+      msg = `휴학 기간 ${md(T)}~ (복학일 미정)을 넣었어요. 시작일·복학일은 아래에서 고칠 수 있어요.`;
+    }
+  } else if(v==='active'){
+    let n = 0;
+    rows = rows.filter(r=>{
+      if(!covering(r)) return true;
+      n++;
+      if(r.start<=Y){ r.end = Y; return true; }
+      return false;                          // 오늘 시작한 휴학 → 지운다
+    });
+    if(n) msg = `걸쳐 있던 휴학 기간을 어제(${md(Y)})까지로 마쳤어요 — 오늘부터 재학.`;
+    else if(_formStu && (_formStu.status||'active')==='leave' && StuStatus.onLeave({status:'leave', leaves:rows.filter(r=>r.start)}, Y)){
+      // 기간 기록 없이 상태로만 휴학이던 학생 — 언제부터였는지 넣어야 지난 출결이 바르게 빠진다
+      rows.push({start:'', end:Y});
+      msg = `복학 처리: 휴학 기간 «? ~ ${md(Y)}»을 넣었어요. 휴학 시작일을 채워 주세요 (모르면 그 줄을 지우면 돼요 — 지난 날도 출석으로 셉니다).`;
+    }
+  }
+  renderLeaveRows(rows);
+  const h = $I('f-status-hint'); if(h) h.textContent = msg;
+}
+window.onStatusPick = onStatusPick;
 
 // ── 휴학 기간 행 관리 ──
 function renderLeaveRows(leaves){
@@ -1423,27 +1504,27 @@ function renderLeaveRows(leaves){
       <button type="button" class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="removeLeaveRow(${i})">삭제</button>
     </div>`).join('');
 }
+// 시작일이 있는 행만 (끝 날짜가 비면 «복학일 미정»)
 function collectLeaves(){
-  const rows = document.querySelectorAll('.leave-row');
-  const arr = [];
-  rows.forEach(r=>{
-    const s = r.querySelector('.lv-start').value, e = r.querySelector('.lv-end').value;
-    if(s && e) arr.push({start:s, end:e});
-  });
-  return arr;
+  return readLeaveRows().filter(r=>r.start).map(r=>({start:r.start, end:r.end||''}))
+    .sort((a,b)=>a.start.localeCompare(b.start));
+}
+// 저장 전에 휴학 기간이 말이 되는지
+function leaveRowsError(){
+  for(const r of readLeaveRows()){
+    if(!r.start && r.end) return '휴학 기간의 시작일을 넣어 주세요.';
+    if(r.start && r.end && r.end < r.start) return `휴학 기간 ${r.start} ~ ${r.end} — 끝 날짜가 시작일보다 빨라요.`;
+  }
+  return '';
 }
 function addLeaveRow(){
-  const cur = collectLeaves();
+  const cur = readLeaveRows();   // 쓰다 만 행도 그대로 둔다
   cur.push({start:'', end:''});
   renderLeaveRows(cur);
 }
 window.addLeaveRow = addLeaveRow;
 function removeLeaveRow(i){
-  const cur = collectLeaves();
-  // collectLeaves는 빈 행을 버리므로, 화면 기준으로 다시 수집
-  const rows = Array.from(document.querySelectorAll('.leave-row')).map(r=>({
-    start:r.querySelector('.lv-start').value, end:r.querySelector('.lv-end').value
-  }));
+  const rows = readLeaveRows();
   rows.splice(i,1);
   renderLeaveRows(rows);
 }
@@ -1460,20 +1541,22 @@ async function saveStudent(editId){
   if(!name) return toast('이름을 입력하세요.','err');
   if(!org) return toast('기관을 선택하세요.','err');
   if(!birth) return toast('생년월일을 입력하세요. (학번 부여에 필요합니다)','err');
+  const lvErr = leaveRowsError(); if(lvErr) return toast(lvErr,'err');
 
   const admitDate = $I('f-admit').value;
   const admitYear = admitDate ? Number(admitDate.slice(0,4)) : Number($I('f-admit-year').value);
   const birthYear = Number(birth.slice(0,4));
 
+  const leaves = collectLeaves();
   const newData = {
     name, org,
+    status: StuStatus.canonical($I('f-status').value, leaves),   // 날짜가 정해진 휴학은 «재학 + 기간»으로 저장 (그 기간만 휴학)
     gender: $I('f-gender').value,
     birth,
     admitDate, admitYear,
     transferDate: $I('f-transfer').value,
     quitDate: $I('f-quit').value,
-    status: $I('f-status').value,
-    leaves: collectLeaves(),
+    leaves,
     phone: $I('f-phone').value.trim(),
     email: $I('f-email').value.trim(),
     guardian: $I('f-guardian').value.trim(),
@@ -1494,6 +1577,8 @@ async function saveStudent(editId){
         if(k==='status'){ ovd = STATUS[ov]||ov; nvd = STATUS[nv]||nv; }
         if(ovd !== nvd) changes.push(`${fieldNames[k]}: ${ovd||'(없음)'} → ${nvd||'(없음)'}`);
       }
+      const lvStr = a => StuStatus.periods({leaves:a}).map(l=>`${l.start}~${l.end||'미정'}`).join(', ');
+      if(lvStr(old.leaves) !== lvStr(newData.leaves)) changes.push(`휴학기간: ${lvStr(old.leaves)||'(없음)'} → ${lvStr(newData.leaves)||'(없음)'}`);
       const hist = old.history || [];
       if(changes.length){
         hist.push({ at: Date.now(), by: CU.name, changes });
@@ -1641,7 +1726,7 @@ window.copyJoinCode = copyJoinCode;
 
 function openStudentDetail(id){
   const s = STUDENTS.find(x=>x.id===id); if(!s) return;
-  const st = s.status || 'active';
+  const st = curSt(s);
   // 형제 정보
   const sibs = (s.siblings||[]).map(sid => STUDENTS.find(x=>x.id===sid)).filter(Boolean);
   const sibHTML = sibs.length
@@ -1676,7 +1761,8 @@ function openStudentDetail(id){
       ${row('학생 연락처',s.phone)}${row('학생 이메일',s.email)}
       ${row('보호자',s.guardian)}${row('보호자 연락처',s.guardianPhone)}
       ${row('주소',s.address)}${row('특이사항',s.memo)}
-      ${(s.leaves&&s.leaves.length)?`<div class="seclb">휴학 기간</div>${s.leaves.map(lv=>`<div style="font-size:14px;padding:4px 0">${lv.start} ~ ${lv.end}${(todayStr()>=lv.start&&todayStr()<=lv.end)?' <span class="badge b-leave">현재 휴학 중</span>':''}</div>`).join('')}`:''}
+      ${StuStatus.periods(s).length?`<div class="seclb">휴학 기간</div>${StuStatus.periods(s).map(lv=>`<div style="font-size:14px;padding:4px 0">${lv.start} ~ ${lv.end||'복학일 미정'}${(todayStr()>=lv.start&&(!lv.end||todayStr()<=lv.end))?' <span class="badge b-leave">현재 휴학 중</span>':''}</div>`).join('')}`:''}
+      ${st==='leave'?`<div style="font-size:12px;color:var(--warn);margin-top:4px">${esc(statusHint(s))} 반편성·출석부·재학생 명단도 같은 기준이에요.</div>`:''}
 
       <div class="seclb">형제 / 자매 ${isAdmin()?`<button class="bm" style="margin-left:8px" onclick="openSiblingPicker('${s.id}')">＋ 연결</button>`:''}</div>
       <div class="sibrow">${sibHTML}</div>
