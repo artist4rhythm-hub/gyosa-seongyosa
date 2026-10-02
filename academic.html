@@ -334,6 +334,7 @@
   .pv-bar{ margin-top:2px; min-height:26px; border-radius:7px; display:flex; align-items:center; gap:6px; padding:3px 10px;
     color:#fff; font-size:12.5px; font-weight:800; }
   .pv-bar em{ font-style:normal; opacity:.85; font-variant-numeric:tabular-nums; }
+  .pv-bar{ flex-wrap:wrap; }   /* (v-102) 대상 학년 그래프가 제목 뒤에 붙는다 */
   .pv-span{ font-size:11.5px; color:var(--ts,#5A6560); font-weight:600; }
   .pv-card{ background:var(--wh,#fff); border:1px solid var(--ivd,#E3E1DA); border-radius:12px; padding:13px 14px 12px;
     display:flex; flex-direction:column; gap:4px; }
@@ -1997,6 +1998,12 @@ function expandTargets(list, org){
   });
   return [...new Set(out)];
 }
+/* (v-102) 이 행사의 대상 학년 — «학년별»이든 «부서별»이든 학년 목록으로 풀어서
+   (부서별 초등부 → 1~5학년) · 달력 막대 그래프 · 상세 카드 · 학년 범례가 같은 모양이 되게 */
+function evGrades(e){
+  if(!e || !e.scope || e.scope==='all') return [];
+  return expandTargets(e.targets||[], calOf(e));
+}
 /* 학년 → 부서 이름 (초등부·중등부·고등부) */
 function deptOfGrade(grade){
   const n = parseInt(gradeNum(grade),10) || 0;
@@ -2160,8 +2167,9 @@ function gradeRangeText(list){
 
 function targetLabel(e){
   if(!e.scope || e.scope==='all') return '';
-  const list = (e.scope==='grade') ? expandTargets(e.targets||[], e.org) : (e.targets||[]);
-  if(e.scope==='grade'){
+  const list = evGrades(e);
+  if(e.scope==='dept' && !list.length) return '〈'+(e.targets||[]).join('·')+'〉';
+  if(e.scope==='grade' || e.scope==='dept'){
     const runs = gradeRuns(list);
     return '〈' + runs.map(r=> r.n>=3 ? `${gradeNum(r.start)}~${gradeNum(r.end)}학년`
       : Array.from({length:r.n},(_,k)=>{
@@ -2342,9 +2350,10 @@ function gradeGauge(list, org){
 }
 function targetDots(e){
   if(!e.scope || e.scope==='all') return '';
-  const list = (e.scope==='grade') ? expandTargets(e.targets||[], e.org) : (e.targets||[]);
-  if(e.scope==='dept') return `<span class="ev-tgt">${esc('〈'+list.join('·')+'〉')}</span>`;
-  return gradeGauge(list, e.org);
+  const gs = evGrades(e);
+  /* (v-102) 부서별도 학년별과 똑같이 — 그 부서 학년을 무지개 그래프로 */
+  if(e.scope==='dept' && !gs.length) return `<span class="ev-tgt">${esc('〈'+(e.targets||[]).join('·')+'〉')}</span>`;   // 학년이 없는 부서 이름만
+  return gradeGauge(gs, calOf(e));
 }
 
 /* 두 기관을 겹쳐 볼 때 어느 기관 것인지 표시 */
@@ -3858,7 +3867,7 @@ function evsPreview(){
       ${(anyImpact && !closedLike) ? `<div class="gbar">${slots.map(g=>{ const st = stOf(g);
           return `<i class="gb-c ${st==='off'?'gb-off':(st==='part'?'gb-part':'gb-on')}"></i>`; }).join('')}</div>
         <div class="gbar-t">${esc(say)}</div>` : ''}
-      <div class="pv-bar" style="background:${color}">${dlgKind==='staff' ? evsIco('lock',12) : ''}${(t1 && t2 && !multi) ? `<em>${esc(t1)}</em>` : ''}<span>${esc(title)}</span></div>
+      <div class="pv-bar" style="background:${color}">${dlgKind==='staff' ? evsIco('lock',12) : ''}${(t1 && t2 && !multi) ? `<em>${esc(t1)}</em>` : ''}<span>${esc(title)}</span>${(tg && tg.size) ? gradeGauge([...tg], org) : ''}</div>
       ${(multi || dlgWeekdays.size) ? `<div class="pv-span">${multi ? `${esc(evsFmtDay(s))} ~ ${esc(evsFmtDay(en))} · ${nDays}일` : ''}${
         dlgWeekdays.size ? `${multi ? ' · ' : ''}${esc(evsDowLabel())}` : ''}${
         evsSkipList().length ? ` · ${evsSkipList().length}일 빠짐` : ''}</div>` : ''}
@@ -4720,11 +4729,11 @@ window.openEvInfo = function(id){
   /* 고른 순서가 아니라 «부서 → 학년 차례»로 가지런히 보여준다 */
   const tgtHTML = (!e.scope || e.scope==='all')
     ? '<span class="evi-v">전체</span>'
-    : (e.scope==='dept'
+    : ((e.scope==='dept' && !evGrades(e).length)
         ? `<span class="evi-v">${esc((e.targets||[]).join(', '))}</span>`
         : (()=>{
             const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
-            const list = expandTargets(e.targets||[], e.org)
+            const list = evGrades(e)
               .slice().sort((a,b)=>order.indexOf(a)-order.indexOf(b));
             // 부서별로 묶는다 (초등부 1~4학년 / 중등부 7·8학년 …)
             const groups = [];
@@ -5414,7 +5423,7 @@ function watchFlowScroll(){
 function renderGradeLegend(){
   const box = $I('grade-legend'); if(!box) return;
   const used = new Set();
-  EVENTS.forEach(e=>{ if(e.scope==='grade') (e.targets||[]).forEach(g=>used.add(g)); });
+  EVENTS.forEach(e=>{ if(e.scope==='grade' || e.scope==='dept') evGrades(e).forEach(g=>used.add(g)); });
   if(!used.size){ box.innerHTML=''; return; }
   const order = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
   const list = [...used].sort((a,b)=> order.indexOf(a) - order.indexOf(b));
