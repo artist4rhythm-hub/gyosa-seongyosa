@@ -45,6 +45,49 @@ function fold(line){   // 긴 줄 접기 (규격상 한 줄 75바이트 제한)
   out.push(s); return out.join('\r\n');
 }
 
+/* 🔁 (v-103) 기간 안에서 요일을 고른 일정 · 시각 일정 — 학사일정 달력과 같은 날·시각으로
+   예전엔 모든 일정을 «시작~끝 긴 막대(종일)»로 내보내서, 월·금만 고른 일정도 기간 내내 보였습니다 */
+const DOW_RR = ['SU','MO','TU','WE','TH','FR','SA'];
+function addD(ds, n){ const t = new Date(ds + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
+function dowOf(ds){ return new Date(ds + 'T00:00:00Z').getUTCDay(); }
+function hmOf(t){ const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); return m ? { h: +m[1], m: +m[2] } : null; }
+const p2 = n => String(n).padStart(2, '0');
+/* 그 행사가 놓이는 날 — 기간 안에서 고른 요일만 · «이날만 빼기»로 뺀 날은 빼고 */
+function occOf(e){
+  let wd = Array.isArray(e.weekdays) ? [...new Set(e.weekdays.map(Number).filter(n=> Number.isInteger(n) && n >= 0 && n <= 6))].sort() : [];
+  if(wd.length === 7) wd = [];
+  const sk = new Set(Array.isArray(e.skipDates) ? e.skipDates.map(String) : []);
+  const days = [];
+  for(let d = e.startDate, i = 0; d <= e.endDate && i < 4000; d = addD(d, 1), i++)
+    if((!wd.length || wd.includes(dowOf(d))) && !sk.has(d)) days.push(d);
+  return { wd, days, sk };
+}
+function timedOf(e){
+  const s = hmOf(e.startTime), t = hmOf(e.endTime);
+  return (s && t && (t.h * 60 + t.m) > (s.h * 60 + s.m)) ? { s, t } : null;
+}
+const localDT = (ds, x) => icsDate(ds) + 'T' + p2(x.h) + p2(x.m) + '00';
+/* 일정 하나의 날짜 줄들 — 한 건(종일 막대 · 하루 시각) 또는 반복(RRULE + 빠진 날 EXDATE) */
+function whenLines(e){
+  const o = occOf(e); if(!o.days.length) return null;
+  const tm = timedOf(e), first = o.days[0], last = o.days[o.days.length - 1];
+  const contiguous = o.days.length === Math.round((Date.parse(last + 'T00:00:00Z') - Date.parse(first + 'T00:00:00Z')) / 86400000) + 1;
+  const L = [];
+  if(tm){
+    L.push('DTSTART;TZID=Asia/Seoul:' + localDT(first, tm.s), 'DTEND;TZID=Asia/Seoul:' + localDT(first, tm.t));
+  } else {
+    L.push('DTSTART;VALUE=DATE:' + icsDate(first), 'DTEND;VALUE=DATE:' + nextDay(o.days.length > 1 && contiguous ? last : first));
+  }
+  if(o.days.length === 1 || (!tm && contiguous)) return L;            // 한 건
+  const rr = o.wd.length ? ['FREQ=WEEKLY', 'BYDAY=' + o.wd.map(i=> DOW_RR[i]).join(',')] : ['FREQ=DAILY'];
+  rr.push('UNTIL=' + (tm ? icsDate(last) + 'T145959Z' : icsDate(last)));      // 시각 일정은 마지막 날 밤 23:59:59(한국)까지
+  L.push('RRULE:' + rr.join(';'));
+  const ex = [...o.sk].filter(d=> d > first && d < last && (!o.wd.length || o.wd.includes(dowOf(d)))).sort();
+  if(ex.length) L.push(tm ? 'EXDATE;TZID=Asia/Seoul:' + ex.map(d=> localDT(d, tm.s)).join(',')
+                          : 'EXDATE;VALUE=DATE:' + ex.map(icsDate).join(','));
+  return L;
+}
+
 /* 행사 + 수동 휴일 → ICS 본문 */
 function buildIcs(events, holidays, opt){
   const cal = opt.cal || 'all', aud = opt.aud || 'teacher';
@@ -55,20 +98,23 @@ function buildIcs(events, holidays, opt){
   const L = [];
   L.push('BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//gyosa-seongyosa//academic//KR',
          'CALSCALE:GREGORIAN','METHOD:PUBLISH');
-  L.push('X-GYOSA-VER:2-pure-split');   // ← 이 줄이 보이면 «순수 분리» 새 버전이 살아있는 것
+  L.push('X-GYOSA-VER:3-weekdays');     // ← 이 줄이 보이면 «요일 반복» 새 버전이 살아있는 것 (v-103)
   L.push(fold('X-WR-CALNAME:' + icsEsc((CAL_NAME[cal] || cal) + ' 학사일정' + (aud === 'parent' ? ' (학부모)' : ''))));
   L.push('X-WR-TIMEZONE:Asia/Seoul');
+  L.push('BEGIN:VTIMEZONE','TZID:Asia/Seoul','BEGIN:STANDARD','DTSTART:19700101T000000',
+         'TZOFFSETFROM:+0900','TZOFFSETTO:+0900','TZNAME:KST','END:STANDARD','END:VTIMEZONE');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
 
   for(const e of events){
     if(!e.startDate || !e.endDate) continue;
     if(!orgsOf(e).includes(cal)) continue;
     if(!okAud(e.audience)) continue;
+    const when = whenLines(e);
+    if(!when) continue;                                   // 고른 요일이 기간 안에 하루도 없음 — 달력에도 안 보임
     L.push('BEGIN:VEVENT');
     L.push('UID:ev-' + e.id + '@daniel-amatz');
     L.push('DTSTAMP:' + stamp);
-    L.push('DTSTART;VALUE=DATE:' + icsDate(e.startDate));
-    L.push('DTEND;VALUE=DATE:' + nextDay(e.endDate));     // 종료 다음 날 (규격)
+    when.forEach(x=> L.push(x));
     L.push(fold('SUMMARY:' + icsEsc(e.title + (e.subtitle ? ' — ' + e.subtitle : ''))));
     const desc = [CAT_LABEL[e.category] || '', aud === 'teacher' ? (e.memo || '') : '']
       .filter(Boolean).join(' · ');
