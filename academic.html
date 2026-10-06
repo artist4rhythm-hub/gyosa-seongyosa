@@ -2216,16 +2216,20 @@ function weekBars(days){
       if(e.category === 'closed' && cell.closedName === e.title) return;  // 날짜 옆에 이미 보임
       const key = e.id;
       if(seen.has(key+'@'+i)) return;
-      // 이 자리에서 시작하는 구간인지 (앞 칸에 같은 행사가 없으면 시작)
+      /* 📝 (v-110) 그날 메모가 있는 날은 띠를 끊어 «그날 한 칸»으로 — 이어진 일정에서도 날마다 메모가 보이게.
+         메모 없는 날끼리는 지금처럼 한 띠로 잇는다 (학부모용은 메모를 안 보이므로 늘 잇는다) */
+      const memoOn = ds => curView === 'teacher' && !!(e.dayMemos && String(e.dayMemos[ds] || '').trim());
+      // 이 자리에서 시작하는 구간인지 (앞 칸에 같은 행사가 없거나, 앞 칸·이 칸에 그날 메모가 있으면 시작)
       const prev = days[i-1];
-      const startsHere = !prev || !eventsOn(prev.ds).some(x=>x.id===e.id);
+      const startsHere = !prev || !eventsOn(prev.ds).some(x=>x.id===e.id) || memoOn(cell.ds) || memoOn(prev.ds);
       if(!startsHere) return;
-      // 몇 칸 이어지는지
+      // 몇 칸 이어지는지 (그날 메모가 있는 칸에서 끊는다)
       let span = 1;
-      for(let j=i+1; j<7; j++){
+      if(!memoOn(cell.ds)) for(let j=i+1; j<7; j++){
         const nx = days[j];
         if(!nx) break;
         if(!eventsOn(nx.ds).some(x=>x.id===e.id)) break;
+        if(memoOn(nx.ds)) break;
         span++; seen.add(key+'@'+j);
       }
       bars.push({ ev:e, start:i, span });
