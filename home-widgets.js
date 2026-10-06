@@ -22,7 +22,7 @@ let ATT_STYLE = 'cls';
 window.getAttStyle = () => readAttStyle();
 window.setAttStyle = s => { if(!ATT_STYLES.includes(s)) return; ATT_STYLE = s; try{ localStorage.setItem(attStyleKey(), s); }catch(e){}
   syncAttSeg();
-  Object.keys(_attLast).forEach(o=>paintAttOrg(o)); };
+  attHomeOrgs().forEach(o=>paintAttOrg(o)); };
 
 /* 📅 오늘이 «수업일»인가 — 출석부(attend.html)와 똑같은 규칙
    학기(terms) 안 · 평일 · 휴일(holidays: 공휴일·대체공휴일·휴교)이 아님 · 방학(workPeriods vacation)이 아님 */
@@ -283,6 +283,29 @@ function attOffCss(){
   .att-evc i{font-style:normal;color:var(--tl);font-weight:700;margin-left:4px}
   .att-evc.more{color:var(--tl)}
   .att-stats.six{grid-template-columns:repeat(6,1fr)}
+  .acol-top{display:flex;flex-wrap:wrap;gap:4px 18px;margin:2px 2px 7px}
+  .acol-org{display:inline-flex;align-items:baseline;gap:7px}
+  .acol-org b{font-size:12.5px;font-weight:900;color:var(--gd)}.acol-org span{font-size:10.5px;color:var(--tl);font-weight:700}
+  .acol{display:grid;gap:10px;margin-bottom:8px;align-items:start;grid-template-columns:repeat(4,minmax(0,1fr))}
+  .acol.n1{grid-template-columns:minmax(0,1fr)}.acol.n2{grid-template-columns:repeat(2,minmax(0,1fr))}.acol.n3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .acol-c{background:var(--wh);border:1px solid var(--ivd);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+  .acol-h{display:block;padding:10px 12px 8px;border-bottom:1px solid var(--ivd);background:var(--iv);text-decoration:none;color:inherit}
+  .acol-h .t{display:flex;align-items:baseline;gap:6px}.acol-h b{font-size:13.5px;font-weight:900;color:var(--gd)}
+  .acol-h i{font-style:normal;font-size:10px;color:var(--tl);font-weight:700}
+  .acol-h .n{margin-left:auto;font-size:12px;font-weight:900;color:var(--gm);font-variant-numeric:tabular-nums}
+  .acol-bar{display:block;height:4px;border-radius:9px;background:var(--ivd);margin-top:7px;overflow:hidden}
+  .acol-bar i{display:block;height:100%;background:#16a34a;border-radius:9px}
+  .acol-r{display:block;padding:7px 12px;border-top:1px solid var(--ivd);text-decoration:none;color:inherit}
+  .acol-h + .acol-r{border-top:0}.acol-r:hover{background:var(--gp)}
+  .acol-r .l{display:flex;align-items:center;gap:6px;font-size:12.5px}
+  .acol-g{min-width:22px;height:20px;padding:0 4px;box-sizing:border-box;border-radius:6px;background:var(--gp);color:var(--gm);font-size:10.5px;font-weight:900;
+    display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .acol-r .l b{font-weight:800;color:var(--gd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .acol-r .l .c{margin-left:auto;font-weight:900;font-variant-numeric:tabular-nums;color:var(--gm);font-size:12px}
+  .acol-r .l .ok{color:#16a34a;font-size:11px;font-weight:900;margin-left:2px}
+  .acol-r .cs{display:flex;flex-wrap:wrap;gap:3px;margin:5px 0 1px 28px}
+  .acol-r.warn .l .c{color:#DC2626}
+  @media(max-width:760px){ .acol.n3,.acol.n4,.acol{grid-template-columns:repeat(2,minmax(0,1fr))} .acol.n1{grid-template-columns:minmax(0,1fr)} }
   .att-st.t b{color:#0E7490}.att-st.v b{color:#B45309}
   .att-card.note{border-color:#BFDDE4}
   @media(max-width:560px){ .att-stats.six{grid-template-columns:repeat(3,1fr)} }
@@ -334,7 +357,56 @@ function attOffHTML(orgList, D){
       ${marks?`<span class="ao-mk">출석부에 남은 기록 ${marks}건</span>`:''}</span>
     ${next}</a>`;
 }
+/* 🏛 반별 = «부서 칼럼» (v-108, 시안 A) — 초등부·중등부·고등부(·지혜빛)를 기둥으로, 반은 한 줄씩.
+   특이사항(결석·지각·조퇴·체험·휴학)이 있는 반 밑에만 이름 칩. 두 기관을 함께 보면 한 판에 나란히 */
+function attColumns(o, M, multi){
+  const go = `attend.html?stat=live&org=${o}`;
+  const groups = [];
+  const put = (name, v) => { let g = groups.find(x=>x.name===name); if(!g){ g = { name, cs:[] }; groups.push(g); } g.cs.push(v); };
+  if(o === 'daniel'){
+    const order = ['초등부','중등부','고등부','미지정'];
+    M.classes.forEach(v=>put(v.dept || '미지정', v));
+    groups.sort((a,b)=>order.indexOf(a.name)-order.indexOf(b.name));
+  } else if(o === 'jihyebit' && !multi){
+    M.classes.forEach(v=>put(v.grade || '미지정', v));            // 지혜빛만 볼 땐 나이별 기둥
+  } else {
+    M.classes.forEach(v=>put(M.orgNm, v));
+  }
+  const chip = f => `<span class="att-pc" style="background:${ATT_BK[f.bk].bg};color:${ATT_BK[f.bk].c}" title="${esc(f.type)}${f.memo?' · '+esc(f.memo):''}">${esc(f.short)} ${esc(f.name)}</span>`;
+  const lvChip = l => `<span class="att-pc" style="background:${ATT_BK.lv.bg};color:${ATT_BK.lv.c}" title="휴학${l.note?' '+esc(l.note):''}">휴학 ${esc(l.name)}</span>`;
+  const gTag = v => { const t = String(v.grade||''); return /세$/.test(t) ? t : t.replace('학년',''); };
+  return groups.map(gr=>{
+    const n = gr.cs.reduce((a,v)=>a+v.n,0), p = gr.cs.reduce((a,v)=>a+v.p,0);
+    const rate = n ? Math.round(p/n*100) : 100;
+    return `<div class="acol-c"><a class="acol-h" href="${go}"><span class="t"><b>${esc(gr.name)}</b><i>${gr.cs.length}반</i><span class="n">${p}/${n}</span></span>
+      <span class="acol-bar"><i style="width:${rate}%;${rate<100?'background:#f59e0b':''}"></i></span></a>
+      ${gr.cs.map(v=>{ const any = v.fl.length || v.lv.length;
+        return `<a class="acol-r${v.abs?' warn':''}" href="${go}"><span class="l"><span class="acol-g">${esc(gTag(v))}</span><b>${esc(v.name)}</b><span class="c">${v.p}/${v.n}</span>${any?'':'<span class="ok">✓</span>'}</span>
+          ${any?`<span class="cs">${v.fl.map(chip).join('')}${v.lv.map(lvChip).join('')}</span>`:''}</a>`; }).join('')}</div>`;
+  });
+}
+function paintAttCols(){
+  const orgs = attHomeOrgs(); if(!orgs.length) return;
+  const el = $I('att-row-'+orgs[0]); if(!el) return;
+  orgs.slice(1).forEach(o=>{ const e = $I('att-row-'+o); if(e) e.innerHTML = ''; });
+  const offOrgs = orgs.filter(o=>_attDayInfo[o] && !_attDayInfo[o].school);
+  let off = '';
+  if(_attMerge) off = attOffHTML(_attMerge, _attDayInfo[_attMerge[0]]);
+  else offOrgs.forEach(o=>{ off += attOffHTML([o], _attDayInfo[o]); });
+  const on = orgs.filter(o=>!offOrgs.includes(o));
+  const multi = orgs.length > 1;
+  const heads = [], cols = [], evs = [];
+  on.forEach(o=>{
+    const M = attModel(o); if(!M) return;
+    heads.push(`<span class="acol-org"><b>${esc(M.orgNm)}</b><span>${M.present}/${M.roster} 출석 · ${M.rate}%${M.cnt.lv?` · 휴학 ${M.cnt.lv}`:''}</span></span>`);
+    (_attEv[o]||[]).forEach(e=>{ if(!evs.some(x=>x.id===e.id)) evs.push(e); });
+    cols.push(...attColumns(o, M, multi));
+  });
+  const evl = evs.length ? `<div class="att-evl"><span class="att-evh">📅 오늘 학사일정</span>${attEvChips(evs, 4)}</div>` : '';
+  el.innerHTML = (cols.length ? `<div class="acol-top">${heads.join('')}</div>${evl}<div class="acol n${Math.min(cols.length,4)}">${cols.join('')}</div>` : '') + off;
+}
 function paintAttOrg(o){
+  if(ATT_STYLE==='cls'){ paintAttCols(); return; }      // 반별(부서 칼럼)은 기관을 한 판에 함께 그린다
   const el = $I('att-row-'+o); if(!el) return;
   const D = _attDayInfo[o];
   if(D && !D.school){                                   // 수업 없는 날 → 출결 대신 오늘이 어떤 날인지
@@ -351,17 +423,7 @@ function paintAttOrg(o){
   const lvChip = l => `<span class="att-pc" style="background:${ATT_BK.lv.bg};color:${ATT_BK.lv.c}" title="휴학${l.note?' '+esc(l.note):''}">휴학 ${esc(l.name)}</span>`;
   const lvTxt = cnt.lv ? ` · 휴학 ${cnt.lv}` : '';
   let h = '';
-  if(ATT_STYLE==='cls'){
-    h = `<div class="att-orghd"><b>${esc(orgNm)}</b><span>${present}/${roster} 출석 · ${rate}%${lvTxt}</span></div>${evl}
-      <div class="att-grid">${M.classes.map(v=>{
-        const pct = v.n? Math.round(v.p/v.n*100) : 100;
-        const gTxt = attGradeTxt(v.grade);
-        const any = v.fl.length || v.lv.length;
-        return `<a class="att-card${v.abs?' has':any?' note':''}" href="${go}">
-          <div class="att-ct"><b>${gTxt?`<i class="att-g">${esc(gTxt)}</i> `:''}${esc(v.name)}</b><span>${v.p}/${v.n}</span></div>
-          <div class="att-bar"><i style="width:${pct}%;${pct<100?'background:#f59e0b':''}"></i></div>
-          <div class="att-pch">${any ? v.fl.map(chip).join('') + v.lv.map(lvChip).join('') : '<span class="att-pc ok">✓ 전원 출석</span>'}</div></a>`; }).join('')}</div>`;
-  } else if(ATT_STYLE==='board'){
+  if(ATT_STYLE==='board'){
     const row = bk => { const list=flags.filter(f=>(f.bks||[f.bk]).includes(bk)); if(!list.length) return '';
       const memos = list.filter(f=>f.memo).map(f=>`${esc(f.name)}: ${esc(f.memo)}`).join(' · ');
       return `<a class="att-brow" href="${go}"><span class="att-k" style="color:${ATT_BK[bk].c}">${ATT_BK[bk].l}</span>
