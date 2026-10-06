@@ -12,10 +12,79 @@ export function installHomeWidgets(ctx){
 const ATT_UNIFIED_POS = ['교장','교감','행정실장'];
 let _attUnsubs = [], _attStu = {}, _attTypes = null, _attLast = {}, ATT_OPEN = {}
 let _attCls = null;   // 🏫 반편성 원장 캐시
-let ATT_STYLE = (()=>{ try{ return localStorage.getItem('gyosa_attstyle')||'cls'; }catch(e){ return 'cls'; } })();
-window.setAttStyle = s => { ATT_STYLE = s; try{ localStorage.setItem('gyosa_attstyle', s); }catch(e){}
-  document.querySelectorAll('.att-seg button').forEach(b=>b.classList.toggle('on', b.dataset.s===s));
+/* 반별·보드·요약 — 선생님(계정)마다 따로 기억한다. 아무것도 고르지 않았으면 모두 «반별»
+   (같은 컴퓨터를 여러 선생님이 써도 서로 섞이지 않게 계정별 칸에 둔다) */
+const ATT_STYLES = ['cls','board','sum'];
+function attStyleKey(){ const cu = getCU(); return 'gyosa_attstyle:' + ((cu && cu.uid) || '_'); }
+function readAttStyle(){ try{ const v = localStorage.getItem(attStyleKey()); return ATT_STYLES.includes(v) ? v : 'cls'; }catch(e){ return 'cls'; } }
+function syncAttSeg(){ document.querySelectorAll('.att-seg button').forEach(b=>b.classList.toggle('on', b.dataset.s===ATT_STYLE)); }
+let ATT_STYLE = 'cls';
+window.getAttStyle = () => readAttStyle();
+window.setAttStyle = s => { if(!ATT_STYLES.includes(s)) return; ATT_STYLE = s; try{ localStorage.setItem(attStyleKey(), s); }catch(e){}
+  syncAttSeg();
   Object.keys(_attLast).forEach(o=>paintAttOrg(o)); };
+
+/* 📅 오늘이 «수업일»인가 — 출석부(attend.html)와 똑같은 규칙
+   학기(terms) 안 · 평일 · 휴일(holidays: 공휴일·대체공휴일·휴교)이 아님 · 방학(workPeriods vacation)이 아님 */
+let _sdData = null, _sdAt = 0;
+async function loadSchoolDayData(){
+  if(_sdData && Date.now() - _sdAt < 10*60000) return _sdData;
+  const [h, w, t] = await Promise.all([ getDocs(collection(db,'holidays')), getDocs(collection(db,'workPeriods')), getDocs(collection(db,'terms')) ]);
+  _sdData = { hol: h.docs.map(d=>d.data()), wp: w.docs.map(d=>d.data()), terms: t.docs.map(d=>d.data()) };
+  _sdAt = Date.now();
+  return _sdData;
+}
+const ymdOf = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+function attDayInfo(ds, org, D){
+  const dow = new Date(ds+'T00:00:00').getDay();
+  const hol = D.hol.find(h => h.date===ds && (h.org==='all' || h.org===org));
+  if(hol) return { school:false, kind:'hol', name: hol.name || '공휴일' };
+  const vac = D.wp.find(w => w.type==='vacation' && w.org===org && ds>=w.s && ds<=w.e);
+  if(vac) return { school:false, kind:'vac', name: vac.vac || vac.name || '방학' };
+  if(dow===0 || dow===6) return { school:false, kind:'wknd', name: dow===0 ? '일요일' : '토요일' };
+  const y = Number(ds.slice(0,4));
+  const ts = D.terms.filter(t => t.org===org && t.year===y);
+  if(!ts.length) return { school:false, kind:'noterm', name: y+'년' };
+  if(!ts.some(t => t.start && t.end && ds>=t.start && ds<=t.end)) return { school:false, kind:'out', name:'' };
+  return { school:true };
+}
+function attNextSchoolDay(ds, org, D){
+  const d = new Date(ds+'T00:00:00');
+  for(let i=0; i<240; i++){ d.setDate(d.getDate()+1); const x = ymdOf(d); if(attDayInfo(x, org, D).school) return x; }
+  return '';
+}
+/* 학사일정 — 올해(연말·연초엔 이웃 해까지) 행사를 한 번에 받아 «오늘 학사일정»과 «학사 D-Day»가 같이 쓴다 */
+let _yevP = null, _yevAt = 0;
+function loadYearEvents(){
+  if(_yevP && Date.now() - _yevAt < 10*60000) return _yevP;
+  const n = new Date(), y = n.getFullYear(), mo = n.getMonth()+1;
+  const years = [y]; if(mo <= 2) years.unshift(y-1); if(mo >= 9) years.push(y+1);
+  _yevAt = Date.now();
+  _yevP = getDocs(query(collection(db,'academicEvents'), where('year','in',years)))
+    .then(s => s.docs.map(d=>({ id:d.id, ...d.data() })).filter(e=>!e.deleted && e.startDate))
+    .catch(e => { _yevP = null; throw e; });
+  return _yevP;
+}
+function evOrgOf(e){ return (Array.isArray(e.orgs) && e.orgs.length) ? e.orgs : [ (e.org==='both'||e.org==='all') ? 'all' : (e.org||'daniel') ]; }
+function evHitsOrg(e, orgs){ const os = evOrgOf(e); return os.includes('all') || os.some(x=>orgs.includes(x)); }
+// 이 날 열리는가 (기간 · 고른 요일 · «이날만 빼기»까지)
+function evOnDay(e, ds){
+  if(ds < e.startDate || ds > (e.endDate || e.startDate)) return false;
+  const wd = Array.isArray(e.weekdays) ? e.weekdays : [];
+  if(wd.length && !wd.includes(new Date(ds+'T00:00:00').getDay())) return false;
+  return !(Array.isArray(e.skipDates) && e.skipDates.includes(ds));
+}
+function evTargetLabel(e){
+  if(!e.scope || e.scope==='all') return '';
+  const t = (e.targets || []).map(String);
+  if(e.scope==='grade' && t.length && t.every(x=>/학년$/.test(x))) return t.map(x=>x.replace('학년','')).join('·') + '학년';
+  return t.join('·');
+}
+const DOW_KO = ['일','월','화','수','목','금','토'];
+const mdDow = ds => `${Number(ds.slice(5,7))}/${Number(ds.slice(8,10))} (${DOW_KO[new Date(ds+'T00:00:00').getDay()]})`;
+const josaIeyo = w => { const c = String(w||'').trim().slice(-1).charCodeAt(0);
+  return (c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 === 0) ? '예요' : '이에요'; };
+let _attDayInfo = {}, _attEv = {}, _attMerge = null, _attDay = '', _attTick = null;
 window.togAttOpen = o => { ATT_OPEN[o] = !ATT_OPEN[o]; paintAttOrg(o); };
 function attHomeOrgs(){ return orgCore.myOrgs(getCU(),'unifiedDF'); }   // 🏛 org-core 원장 위임
 function attBucket(nm){
@@ -30,10 +99,32 @@ const ATT_BK = { abs:{l:'결석',c:'#DC2626',bg:'#FDE8E8'}, lat:{l:'지각',c:'#
 async function loadAttendWidget(){
   const box = $I('w-attend'); if(!box) return;
   _attUnsubs.forEach(u=>{ try{u();}catch(e){} }); _attUnsubs = [];
+  ATT_STYLE = readAttStyle(); syncAttSeg(); attOffCss();
   const orgs = attHomeOrgs();
   if(!orgs.length){ box.innerHTML=''; return; }
-  const today = (()=>{ const n=new Date(); const p=x=>String(x).padStart(2,'0');
-    return `${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`; })();
+  const today = hwToday();
+  if(_attDay && _attDay !== today){ _attStu = {}; _attCls = null; }   // 날이 바뀌면 재적·휴학 판정도 새로
+  _attDay = today;
+  // 🕛 자정이 지나면 그날 것으로 저절로 갈아탄다
+  if(!_attTick) _attTick = setInterval(()=>{ if($I('w-attend') && hwToday() !== _attDay) loadAttendWidget(); }, 60000);
+  // 📅 오늘이 수업일인지 + 오늘 학사일정 (못 받아 오면 예전처럼 출결만 보여 준다)
+  _attDayInfo = {}; _attEv = {}; _attMerge = null;
+  try {
+    const SD = await loadSchoolDayData();
+    orgs.forEach(o=>{
+      const di = attDayInfo(today, o, SD);
+      if(!di.school && di.kind!=='noterm') di.next = attNextSchoolDay(today, o, SD);
+      _attDayInfo[o] = di;
+    });
+    const off = orgs.map(o=>_attDayInfo[o]);
+    if(orgs.length > 1 && off.every(d=>!d.school && d.kind===off[0].kind && d.name===off[0].name && d.next===off[0].next))
+      _attMerge = orgs.slice();                                      // 두 기관이 같은 이유로 쉬면 카드 하나로
+  } catch(e){ _attDayInfo = {}; }
+  try {
+    const evs = await loadYearEvents();
+    orgs.forEach(o=>{ _attEv[o] = evs.filter(e=>e.kind!=='staff' && evHitsOrg(e,[o]) && evOnDay(e, today))
+      .sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||'') || String(a.title||'').localeCompare(String(b.title||''),'ko')); });
+  } catch(e){ _attEv = {}; }
   try {
     if(!_attTypes){
       const ts = await getDocs(collection(db,'attendTypes'));
@@ -111,9 +202,95 @@ function attByClass(o){
     .filter(([,v])=>v.n > 0)                                  // 재학생 있는 반만
     .sort((a,b)=> gnum(a[1].grade)-gnum(b[1].grade) || String(a[1].name).localeCompare(String(b[1].name),'ko'));
 }
+function attOffCss(){
+  if(document.getElementById('hwa-css')) return;
+  const st = document.createElement('style'); st.id = 'hwa-css';
+  st.textContent = `
+  .att-off{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:14px;border:1px solid var(--ivd);
+    text-decoration:none;color:inherit;margin-bottom:8px;background:var(--iv)}
+  .att-off:hover{border-color:var(--gm)}
+  .att-off .ao-ic{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:22px;flex:none;background:var(--wh);box-shadow:0 1px 0 rgba(0,0,0,.04)}
+  .att-off .ao-mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .att-off .ao-mid b{font-size:15px;font-weight:900;color:var(--gd);letter-spacing:-.2px}
+  .att-off .ao-mid>span{font-size:11.8px;color:var(--ts);font-weight:600}
+  .att-off .ao-next{flex:none;text-align:center;background:var(--wh);border:1px solid var(--ivd);border-radius:12px;
+    padding:8px 14px;display:flex;flex-direction:column;gap:1px;min-width:92px}
+  .att-off .ao-next i{font-style:normal;font-size:10px;font-weight:800;color:var(--tl)}
+  .att-off .ao-next b{font-size:14px;font-weight:900;color:var(--gd);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .att-off .ao-next em{font-style:normal;font-size:10.5px;font-weight:900;color:var(--gm)}
+  .att-off .ao-mk{font-size:10.5px;font-weight:800;color:#B45309}
+  .att-off.hol{background:rgba(220,38,38,.055);border-color:rgba(220,38,38,.22)}
+  .att-off.hol .ao-mid b{color:#C53030}
+  .att-off.vac{background:rgba(14,116,144,.06);border-color:rgba(14,116,144,.22)}
+  .att-off.vac .ao-mid b{color:#0E7490}
+  .att-off.wknd{background:var(--gp)}
+  .att-off.wknd .ao-mid b{color:var(--gm)}
+  .att-off.out .ao-mid b{color:var(--ts)}
+  .att-evl{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:-2px 2px 7px}
+  .att-evh{font-size:10.5px;font-weight:900;color:var(--gm);margin-right:2px}
+  .att-evs{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+  .att-evc{font-size:10.5px;font-weight:800;color:var(--gd);background:var(--wh);border:1px solid var(--ivd);border-radius:7px;padding:2px 8px}
+  .att-evc i{font-style:normal;color:var(--tl);font-weight:700;margin-left:4px}
+  .att-evc.more{color:var(--tl)}
+  @media(max-width:560px){
+    .att-off{flex-wrap:wrap;gap:10px 12px;padding:14px}
+    .att-off .ao-mid{flex-basis:calc(100% - 60px)}
+    .att-off .ao-next{flex-direction:row;align-items:baseline;justify-content:center;gap:8px;width:100%;padding:7px 10px}
+  }`;
+  document.head.appendChild(st);
+}
+/* 🏠 수업 없는 날 카드 — 출결 숫자 대신 «오늘이 어떤 날인지»와 «다음 수업일» */
+const ATT_OFF = {
+  hol:   { ic:'🏠', cls:'hol' },   // 🎌(일본 국기 두 개)는 쓰지 않는다
+  vac:   { ic:'🏖️', cls:'vac' },
+  wknd:  { ic:'🌿', cls:'wknd' },
+  out:   { ic:'📘', cls:'out' },
+  noterm:{ ic:'🗓️', cls:'out' },
+};
+// 학년 표시 — 지혜빛은 «4세» 그대로 (예전엔 «4세학년»으로 보였다)
+function attGradeTxt(g){ if(!g) return ''; const t = String(g); return /세$/.test(t) ? t : t.replace('학년','')+'학년'; }
+function attEvChips(list, max){
+  return (list||[]).slice(0, max||3).map(e=>{ const tl = evTargetLabel(e);
+    return `<span class="att-evc">${esc(e.title||'학사 행사')}${tl?`<i>${esc(tl)}</i>`:''}</span>`; }).join('')
+    + ((list||[]).length > (max||3) ? `<span class="att-evc more">+${list.length-(max||3)}</span>` : '');
+}
+function attOffHTML(orgList, D){
+  const k = ATT_OFF[D.kind] || ATT_OFF.out;
+  const names = orgList.map(o=>(window.ORGS&&ORGS[o])||o).join(' · ');
+  let title, sub;
+  if(D.kind==='hol'){ title = `오늘은 ${D.name}${josaIeyo(D.name)}`; sub = `수업이 없는 날이라 출결을 받지 않아요`; }
+  else if(D.kind==='vac'){ title = `${D.name} 중이에요`; sub = `방학 동안은 출결을 받지 않아요`; }
+  else if(D.kind==='wknd'){ title = `오늘은 ${D.name}${josaIeyo(D.name)}`; sub = `주말 — 수업이 없는 날이에요`; }
+  else if(D.kind==='noterm'){ title = `${D.name} 학기 일정이 아직 없어요`; sub = `출석부 › 설정에서 학기를 등록하면 출결이 시작돼요`; }
+  else { title = `학기 기간이 아니에요`; sub = `학기가 시작되면 출결이 다시 보여요`; }
+  let next = '';
+  if(D.next){
+    const dn = Math.round((new Date(D.next+'T00:00:00') - new Date(_attDay+'T00:00:00'))/86400000);
+    const rel = dn===1 ? '내일' : dn===2 ? '모레' : `D-${dn}`;
+    next = `<span class="ao-next"><i>${D.kind==='out'?'개학':'다음 수업일'}</i><b>${mdDow(D.next)}</b><em>${rel}</em></span>`;
+  }
+  const marks = orgList.reduce((n,o)=>n + Object.keys((_attLast[o]||{}).flag||{}).length, 0);
+  const evs = [].concat(...orgList.map(o=>_attEv[o]||[])).filter((e,i,a)=>a.findIndex(x=>x.id===e.id)===i)
+    .filter(e=>e.category!=='closed' && e.category!=='break' && e.title!==D.name);
+  return `<a class="att-off ${k.cls}" href="${D.kind==='noterm'?'attend.html':'academic.html'}">
+    <span class="ao-ic">${k.ic}</span>
+    <span class="ao-mid"><b>${esc(title)}</b>
+      <span>${esc(names)} — ${esc(sub)}</span>
+      ${evs.length?`<span class="att-evs"><span class="att-evh">📅 학사일정</span>${attEvChips(evs)}</span>`:''}
+      ${marks?`<span class="ao-mk">출석부에 남은 기록 ${marks}건</span>`:''}</span>
+    ${next}</a>`;
+}
 function paintAttOrg(o){
   const el = $I('att-row-'+o); if(!el) return;
+  const D = _attDayInfo[o];
+  if(D && !D.school){                                   // 수업 없는 날 → 출결 대신 오늘이 어떤 날인지
+    if(_attMerge && _attMerge.includes(o)){ el.innerHTML = o===_attMerge[0] ? attOffHTML(_attMerge, D) : ''; }
+    else el.innerHTML = attOffHTML([o], D);
+    return;
+  }
   const L = _attLast[o]; if(!L){ el.innerHTML=''; return; }
+  const evl = (_attEv[o]||[]).length ? `<div class="att-evl"><span class="att-evh">📅 오늘 학사일정</span>${attEvChips(_attEv[o], 4)}</div>` : '';
   const roster = (_attStu[o]||[]).length;
   const flags = Object.values(L.flag);
   const cnt = { abs:0, lat:0, ear:0, etc:0 };
@@ -126,10 +303,10 @@ function paintAttOrg(o){
   let h = '';
   if(ATT_STYLE==='cls'){
     const cls = attByClass(o);
-    h = `<div class="att-orghd"><b>${esc(orgNm)}</b><span>${present}/${roster} 출석 · ${rate}%</span></div>
+    h = `<div class="att-orghd"><b>${esc(orgNm)}</b><span>${present}/${roster} 출석 · ${rate}%</span></div>${evl}
       <div class="att-grid">${cls.map(([,v])=>{
         const p = v.n - v.fl.length, pct = v.n? Math.round(p/v.n*100) : 100;
-        const gTxt = v.grade ? String(v.grade).replace('학년','')+'학년' : '';
+        const gTxt = attGradeTxt(v.grade);
         return `<a class="att-card${v.fl.length?' has':''}" href="${go}">
           <div class="att-ct"><b>${gTxt?`<i class="att-g">${esc(gTxt)}</i> `:''}${esc(v.name)}</b><span>${p}/${v.n}</span></div>
           <div class="att-bar"><i style="width:${pct}%;${pct<100?'background:#f59e0b':''}"></i></div>
@@ -140,7 +317,7 @@ function paintAttOrg(o){
       return `<a class="att-brow" href="${go}"><span class="att-k" style="color:${ATT_BK[bk].c}">${ATT_BK[bk].l}</span>
         <span class="att-nms">${list.map(f=>`<span class="att-nm">${esc(f.name)}<i>${esc(String(f.cls).replace('반',''))}</i></span>`).join('')}</span>
         ${memos?`<span class="att-memo">${memos}</span>`:''}</a>`; };
-    h = `<div class="att-orghd"><b>${esc(orgNm)}</b></div>
+    h = `<div class="att-orghd"><b>${esc(orgNm)}</b></div>${evl}
       <div class="att-stats">
         <a class="att-st g" href="${go}"><b>${rate}%</b><span>출석률</span></a>
         <a class="att-st r" href="${go}"><b>${cnt.abs}</b><span>결석</span></a>
@@ -153,7 +330,7 @@ function paintAttOrg(o){
     const tick = flags.length
       ? flags.map(f=>`${f.bk==='abs'?'🔴':f.bk==='lat'?'🟡':f.bk==='ear'?'🔵':'⚪️'} ${esc(f.name)}(${esc(String(f.cls).replace('반',''))}) ${ATT_BK[f.bk].l}${f.memo?' · '+esc(f.memo):''}`).join('  ·  ')
       : '✓ 특이사항 없음 — 전원 출석';
-    h = `<div class="att-sum">
+    h = `${evl}<div class="att-sum">
       <div class="att-top" onclick="togAttOpen('${o}')">
         <div class="att-ring" style="background:conic-gradient(#16a34a 0 ${rate*3.6}deg,var(--iv) ${rate*3.6}deg 360deg)"><i>${rate}%</i></div>
         <div class="att-mid"><b>${esc(orgNm)} · ${present}/${roster} 출석</b>
@@ -162,7 +339,7 @@ function paintAttOrg(o){
       <div class="att-tick">${tick}</div>
       ${ATT_OPEN[o]?`<div class="att-open">${cls.map(([,v])=>{
         const p=v.n-v.fl.length;
-        const gTxt = v.grade ? String(v.grade).replace('학년','')+'학년 ' : '';
+        const gTxt = attGradeTxt(v.grade) ? attGradeTxt(v.grade)+' ' : '';
         return `<a class="att-trow" href="${go}"><b>${esc(gTxt)}${esc(v.name)}</b><span class="n">${p}/${v.n}</span>
           <span class="who">${v.fl.length? v.fl.map(f=>`${ATT_BK[f.bk].l} ${esc(f.name)}`).join(' · ') : '✓ 전원 출석'}</span></a>`; }).join('')}</div>`:''}
     </div>`;
@@ -307,20 +484,22 @@ let CR = null;   // club-roster.js (처음 쓸 때 불러옵니다)
 async function loadAcdday(){
   const box = $I('w-acdday'); if(!box) return;
   const orgs = attHomeOrgs();
-  const n=new Date(); const p=x=>String(x).padStart(2,'0');
-  const ts=`${n.getFullYear()}-${p(n.getMonth()+1)}-${p(n.getDate())}`;
+  const ts = hwToday();
   try{
-    const far = new Date(); far.setDate(far.getDate()+120);
-    const p2 = x=>String(x).padStart(2,'0');
-    const farS = `${far.getFullYear()}-${p2(far.getMonth()+1)}-${p2(far.getDate())}`;
-    const es = await getDocs(query(collection(db,'academicEvents'),
-      where('start','>=',ts), where('start','<=',farS), orderBy('start'), limit(30)));
-    const evOrgOK = e => { const os = (Array.isArray(e.orgs)&&e.orgs.length)? e.orgs
-        : [ (e.org==='both'||e.org==='all') ? 'all' : (e.org||'daniel') ];
-      return os.includes('all') || os.some(x=>orgs.includes(x)); };
-    const up = es.docs.map(d=>d.data()).filter(e=>evOrgOK(e) && (e.start||e.date))
-      .map(e=>({ t:e.title||'학사 행사', d:(e.start||e.date) }))
-      .filter(e=>e.d>=ts).sort((a,b)=>a.d.localeCompare(b.d)).slice(0,3);
+    /* (v-105) 학사일정은 startDate/endDate 로 저장된다 — 예전 «start» 칸으로 찾던 탓에 비어 보이던 것을 바로잡음.
+       기간 안에서 요일을 고른 행사는 «다음에 열리는 날»로 센다 */
+    const far = new Date(ts+'T00:00:00'); far.setDate(far.getDate()+120);
+    const farS = ymdOf(far);
+    const evs = await loadYearEvents();
+    const nextOcc = e => {
+      const d = new Date(((e.startDate > ts) ? e.startDate : ts)+'T00:00:00');
+      const last = (e.endDate || e.startDate) < farS ? (e.endDate || e.startDate) : farS;
+      for(let i=0; i<400; i++){ const x = ymdOf(d); if(x > last) return ''; if(evOnDay(e, x)) return x; d.setDate(d.getDate()+1); }
+      return '';
+    };
+    const up = evs.filter(e=>evHitsOrg(e, orgs))
+      .map(e=>({ t:e.title||'학사 행사', d:nextOcc(e) })).filter(e=>e.d)
+      .sort((a,b)=>a.d.localeCompare(b.d) || a.t.localeCompare(b.t,'ko')).slice(0,3);
     if(!up.length){ box.innerHTML = `<div class="hw-dim">다가오는 학사 일정이 없어요.</div>`; return; }
     box.innerHTML = up.map(e=>{
       const dn = Math.round((new Date(e.d+'T00:00:00')-new Date(ts+'T00:00:00'))/86400000);
