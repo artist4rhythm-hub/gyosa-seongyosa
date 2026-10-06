@@ -162,7 +162,8 @@ async function loadAttendWidget(){
         const ids = (m.typeIds && m.typeIds.length) ? m.typeIds : (m.typeId?[m.typeId]:[]);
         const ts = ids.map(id=>_attTypes.find(x=>x.id===id)).filter(t=>t && !t.isPresent);
         if(!ts.length) return;
-        const st = smap[m.studentId] || {};
+        const st = smap[m.studentId];
+        if(!st) return;   // 오늘 휴학(또는 재학이 아닌) 학생 — 휴학 전에 입력된 기록이 있어도 출결로 세지 않는다 (기록은 보관)
         flag[m.studentId] = {
           name: st.name||m.studentName||'',
           clsId: st.classId || m.classId || '',

@@ -155,7 +155,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -181,10 +181,10 @@ let STUDENTS = [];      // 학생 캐시
 // 🔁 오늘 기준 실제 상태 (재학/휴학/자퇴/졸업) — 반편성·출석부와 같은 규칙(student-status.js)
 const curSt = s => StuStatus.status(s);
 
-function toast(msg, type=''){
+function toast(msg, type='', ms){
   const t = $I('toast'); t.textContent = msg;
   t.className = 'toast show ' + type;
-  clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
+  clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', ms || 2500);
 }
 // 공통 활동 로그 (새 기능 추가 시 해당 동작에서 호출)
 async function logActivity(action, category, target, detail){
@@ -1588,6 +1588,21 @@ async function saveStudent(editId){
       await updateDoc(doc(db,'students',editId), newData);
       logActivity('수정', '학생', `${name} 정보 수정`);
       toast('수정되었습니다.','ok');
+      // 🏠 휴학이 바뀌면 출결 기록은 지우지 않는다 — 가려졌다(보관) 다시 보였다 할 뿐. 몇 건인지 알려 드린다
+      if(lvStr(old.leaves) !== lvStr(newData.leaves) || (old.status||'active') !== newData.status){
+        try {
+          const qs = await getDocs(query(collection(db,'studentAttendance'), where('studentId','==',editId)));
+          const was = { status: old.status, leaves: old.leaves }, now = { status: newData.status, leaves: newData.leaves };
+          let hid = 0, back = 0;
+          qs.forEach(d=>{ const r = d.data(); if(!r.date) return;
+            const a = StuStatus.onLeave(was, r.date), b = StuStatus.onLeave(now, r.date);
+            if(!a && b) hid++; else if(a && !b) back++; });
+          const parts = [];
+          if(hid)  parts.push(`휴학 기간에 들어간 출결 ${hid}건은 지우지 않고 보관해요 (휴학을 풀면 다시 보여요)`);
+          if(back) parts.push(`보관돼 있던 출결 ${back}건이 다시 보여요`);
+          if(parts.length) toast('수정되었습니다 · ' + parts.join(' · '), 'ok', 6000);
+        } catch(e){}
+      }
     } else {
       newData.studentNo = await genStudentNo(org, birthYear);
       newData.history = [{ at: Date.now(), by: CU.name, changes:['학생 등록'] }];

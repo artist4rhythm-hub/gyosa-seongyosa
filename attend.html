@@ -663,6 +663,15 @@ const TERM_NAMES = {1:'1학기', 2:'2학기'};
 // 특정 날짜에 휴학 중인지 — 학생관리·반편성과 같은 규칙(student-status.js)
 //   휴학 기간 안이거나, 재적 상태가 «휴학»이면 휴학 (기간이 있으면 그 시작일부터)
 function isOnLeave(s, dateStr){ return StuStatus.onLeave(s, dateStr); }
+// «결석은» · «조퇴는» — 받침 따라
+function josaEun(w){ const c = String(w||'').trim().slice(-1).charCodeAt(0); return (c>=0xAC00 && c<=0xD7A3 && (c-0xAC00)%28===0) ? '는' : '은'; }
+// 휴학 날에 남아 있는 기록 — 지우지 않고 보관 중이라고 알려 준다
+function keptNote(rec){
+  const ids = rec && Array.isArray(rec.typeIds) ? rec.typeIds : [];
+  if(!rec || !rec.id || !ids.length) return '';
+  const nm = ids.map(id=>TYPES.find(t=>t.id===id)?.name||'').filter(Boolean).join('·');
+  return nm ? `<span style="font-size:11px;color:var(--tl)">입력돼 있던 «${esc(nm)}»${josaEun(nm)} 보관 중 — 휴학을 풀면 다시 보여요</span>` : '';
+}
 // 반 명단 — 학적이 살아 있는 학생(재학·휴학). 그날 휴학인지는 각 화면이 isOnLeave 로 나눈다
 function rollOf(c){ return ((c && c.students) || []).map(sid=>STUDENTS[sid]).filter(Boolean).filter(s=>StuStatus.enrolled(s)); }
 // 특정 날짜가 해당 기관의 등록된 학기 기간 안에 있는지
@@ -960,23 +969,27 @@ async function loadMonthBody(keep){
       const t = tids.length ? TYPES.find(x=>x.id===tids[0]) : null;
       const tnames = tids.map(id=>TYPES.find(x=>x.id===id)?.name||'').filter(Boolean).join('·');
       const lv = isOnLeave(s, di.dateStr);            // 휴학 중인 날 — 출결 대상이 아니다
-      const blk = di.blocked || lv;
-      const blockedCls = blk ? (monthAllowBlocked?'blocked allow':'blocked') : '';
-      const clickable = (!blk || monthAllowBlocked) && canEditClass(c) && !MONTH_LOCK;   // 🔒 잠기면 클릭 불가
+      /* 🏠 휴학이 «덮는다»: 휴학 날엔 이미 입력된 기록이 있어도 «휴»로 보이고, 칸은 늘 잠긴다(토글을 켜도).
+         기록은 지우지 않고 그대로 보관 → 휴학 기간을 고치거나 풀면 원래 입력이 다시 보인다 */
+      const blockedCls = lv ? 'blocked' : di.blocked ? (monthAllowBlocked?'blocked allow':'blocked') : '';
+      const clickable = !lv && (!di.blocked || monthAllowBlocked) && canEditClass(c) && !MONTH_LOCK;   // 🔒 잠기면 클릭 불가
       let bg='', label='', autoCls='';
-      if(t){
+      if(lv){
+        if(!di.blocked || t){ bg='color:var(--warn);font-size:10px;font-weight:800'; label = '휴' + (t ? '<sup style="font-size:9px;margin-left:1px">•</sup>' : ''); }
+      }
+      else if(t){
         const rs = legacyByeong(t) ? '질병' : (rec.reason||'');   // 옛 «병결»은 결석·질병으로 본다
         const nm = legacyByeong(t) ? '결' : (t.name||'').slice(0,1);
         const sub = rs ? `<span style="font-size:8px;opacity:.9;vertical-align:1px">${reasonShort(rs)}</span>` : '';
         bg=`background:${legacyByeong(t)?'#dc2626':t.color};color:#fff`;
         label = nm + sub + (tids.length>1?'⁺':'');
       }
-      else if(lv){ if(!di.blocked){ bg='color:var(--warn);font-size:10px'; label='휴'; } }   // 수업일에만 «휴» (주말·휴일은 비워 둔다)
       else if(di.autoPresent && pType){ // 자동 출석: 연한 초록 흐리게
         bg=`background:${pType.color}22;color:${pType.color}`; label='출'; autoCls='auto-present';
       }
-      if(lv && t) bg += ';outline:1.5px dashed var(--warn);outline-offset:-2px';
-      return `<td class="dcell ${blockedCls} ${autoCls}" data-sid="${s.id}" data-day="${di.dd}" style="${bg}" ${clickable?`onmousedown="startDrag(event,'${s.id}',${di.dd})" onmouseenter="dragOver('${s.id}',${di.dd})"`:''} title="${di.dateStr}${lv?' · 휴학 중'+(t?' (기록은 통계에서 빠짐)':''):''}${t?' · '+tnames:(!lv&&di.autoPresent)?' · 자동 출석':''}">${label}</td>`;
+      const tip = lv ? `${di.dateStr} · 휴학 중${t ? ` · 입력돼 있던 «${tnames}»${josaEun(tnames)} 보관 중 (휴학을 풀면 다시 보여요)` : ''}`
+                     : `${di.dateStr}${t?' · '+tnames:di.autoPresent?' · 자동 출석':''}`;
+      return `<td class="dcell ${blockedCls} ${autoCls}" data-sid="${s.id}" data-day="${di.dd}" style="${bg}" ${clickable?`onmousedown="startDrag(event,'${s.id}',${di.dd})" onmouseenter="dragOver('${s.id}',${di.dd})"`:''} title="${esc(tip)}">${label}</td>`;
     }).join('');
     const lvDay = dayInfo.find(di=>isOnLeave(s, di.dateStr));     // 이 달에 휴학인 날이 있으면 이름 옆에 표시
     const lvN = lvDay ? StuStatus.leaveNote(s, lvDay.dateStr) : '';
@@ -994,7 +1007,7 @@ async function loadMonthBody(keep){
       </div>
       <table class="mtab"><thead><tr><th class="nm">학생</th>${headDays}</tr></thead><tbody>${rows}</tbody></table>
       <p style="font-size:12px;color:var(--tl);margin-top:10px">
-        연한 초록 <b style="color:${pType?pType.color:'#16a34a'}">출</b> = 자동 출석 처리된 날입니다. 예외인 학생 칸만 클릭해 바꾸면 됩니다. <b style="color:var(--warn)">휴</b> = 학생 관리에 등록된 휴학 기간 (출결·통계 제외)<br>
+        연한 초록 <b style="color:${pType?pType.color:'#16a34a'}">출</b> = 자동 출석 처리된 날입니다. 예외인 학생 칸만 클릭해 바꾸면 됩니다. <b style="color:var(--warn)">휴</b> = 학생 관리에 등록된 휴학 기간 (출결·통계 제외) · <b style="color:var(--warn)">휴•</b> = 휴학 전에 입력돼 있던 출결이 보관 중 — 휴학을 풀면 다시 보여요<br>
         칸을 <b>클릭</b>하거나 <b>마우스로 여러 칸을 드래그</b>한 뒤 상태를 고르면 한 번에 입력됩니다. 회색 칸(주말·공휴일·학기외)은 위 토글을 켜면 입력할 수 있습니다.<br>
         <b>⁺</b> 표시는 한 날에 항목이 두 개 이상 기록된 칸입니다 (예: 지각+조퇴). 하루에 여러 항목을 기록하려면 <b>일일 체크</b>를 쓰세요 — 여기서 상태를 고르면 그 항목 하나로 바뀝니다.
       </p>
@@ -1322,7 +1335,7 @@ async function loadCheckBody(keep){
       <div style="font-size:13px;font-weight:700;color:var(--tl);margin-bottom:8px">휴학 중 (${leaveStuds.length}명) · 출결 제외</div>
       ${leaveStuds.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;opacity:.6">
         <span style="font-weight:600">${s.name}</span>
-        <span class="typebadge" style="background:var(--warn-bg);color:var(--warn)">휴학 중${StuStatus.leaveNote(s, checkDate)?' · '+esc(StuStatus.leaveNote(s, checkDate)):''}</span>
+        <span class="typebadge" style="background:var(--warn-bg);color:var(--warn)">휴학 중${StuStatus.leaveNote(s, checkDate)?' · '+esc(StuStatus.leaveNote(s, checkDate)):''}</span>${keptNote(checkRecords[s.id])}
       </div>`).join('')}
     </div>` : '';
 
