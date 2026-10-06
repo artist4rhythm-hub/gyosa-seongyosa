@@ -88,7 +88,7 @@ let _attDayInfo = {}, _attEv = {}, _attMerge = null, _attDay = '', _attTick = nu
 window.togAttOpen = o => { ATT_OPEN[o] = !ATT_OPEN[o]; paintAttOrg(o); };
 function attHomeOrgs(){ return orgCore.myOrgs(getCU(),'unifiedDF'); }   // 🏛 org-core 원장 위임
 /* 출결 항목 → 묶음. (v-107) 지각·조퇴·체험학습처럼 «출석으로 인정»되는 항목도 홈에 보인다 —
-   출석률은 결석(출석 인정 안 되는 항목)만 빼고 센다 */
+   홈 숫자는 «지금 학교에 있는 인원» — 결석·체험학습·조퇴는 빼고 지각은 넣는다 (v-109). 휴학생은 재적에서 이미 빠진다 */
 function attBucket(nm){
   const n = String(nm||'');
   if(n.includes('체험')) return 'trip';
@@ -212,6 +212,9 @@ function attBuildFlags(o){
       bk: attBucket(ts[0].name),
       bks: ts.map(t=>attBucket(t.name)),
       np: ts.some(t=>!t.isPresent),                 // 출석으로 치지 않는 항목(결석 등)이 있나
+      /* (v-109) 지금 학교에 없나 — 결석 · 체험학습 · 조퇴(이미 하교)는 없음, 지각은 와 있음.
+         출석부의 «출석 인정»과는 다르다: 홈은 «지금 몇 명이 와 있나»를 센다 */
+      out: ts.some(t=>{ const b = attBucket(t.name); return b==='abs' || b==='trip' || b==='ear' || (b==='etc' && !t.isPresent); }),
       memo: m.memo||m.note||m.reason||'' };
   });
   _attLast[o] = { flag, today: _attDay };
@@ -235,7 +238,9 @@ function attByClass(o){
   return Object.entries(map)
     .filter(([,v])=>v.n > 0 || v.lv.length)                    // 재학생(또는 휴학생) 있는 반만
     .map(([k,v])=>{ v.fl.sort((a,b)=>rank(a)-rank(b) || String(a.name).localeCompare(String(b.name),'ko'));
-      v.abs = v.fl.filter(f=>f.np).length; v.p = Math.max(0, v.n - v.abs); v.dept = attDeptOf(o, v.grade); return [k,v]; })
+      v.abs = v.fl.filter(f=>f.np).length; v.p = Math.max(0, v.n - v.abs);
+      v.out = v.fl.filter(f=>f.out).length; v.here = Math.max(0, v.n - v.out);     // 지금 반에 있는 인원 (재적은 휴학 뺀 수)
+      v.dept = attDeptOf(o, v.grade); return [k,v]; })
     .sort((a,b)=> gnum(a[1].grade)-gnum(b[1].grade) || String(a[1].name).localeCompare(String(b[1].name),'ko'));
 }
 /* 시안·점검용 — 한 기관의 오늘 출결 묶음 (그리는 쪽과 같은 자료) */
@@ -247,7 +252,9 @@ function attModel(o){
   const roster = (_attStu[o]||[]).length;
   const absent = flags.filter(f=>f.np).length;
   const present = Math.max(0, roster - absent);
+  const here = Math.max(0, roster - flags.filter(f=>f.out).length);
   return { org:o, orgNm:(window.ORGS&&ORGS[o])||o, roster, present, rate: roster ? Math.round(present/roster*100) : 100,
+    here, hereRate: roster ? Math.round(here/roster*100) : 100,
     cnt, flags, leave:(_attLeave[o]||[]).slice(), classes: attByClass(o).map(([,v])=>v), day:_attDayInfo[o]||null, events:_attEv[o]||[] };
 }
 window.__attModel = attModel;
@@ -304,7 +311,10 @@ function attOffCss(){
   .acol-r .l .c{margin-left:auto;font-weight:900;font-variant-numeric:tabular-nums;color:var(--gm);font-size:12px}
   .acol-r .l .ok{color:#16a34a;font-size:11px;font-weight:900;margin-left:2px}
   .acol-r .cs{display:flex;flex-wrap:wrap;gap:3px;margin:5px 0 1px 28px}
-  .acol-r.warn .l .c{color:#DC2626}
+  .acol-r.warn .l .c{color:#DC2626}.acol-r.away .l .c{color:#B45309}
+  .acol-r .l .c small,.acol-h .n small{font-size:10.5px;font-weight:700;color:var(--tl)}
+  .acol-org em{font-style:normal;font-weight:900;color:var(--gm);font-size:11.5px}
+  .acol-note{font-size:10.5px;color:var(--tl);font-weight:600;margin:-2px 2px 8px}
   @media(max-width:760px){ .acol.n3,.acol.n4,.acol{grid-template-columns:repeat(2,minmax(0,1fr))} .acol.n1{grid-template-columns:minmax(0,1fr)} }
   .att-st.t b{color:#0E7490}.att-st.v b{color:#B45309}
   .att-card.note{border-color:#BFDDE4}
@@ -376,12 +386,12 @@ function attColumns(o, M, multi){
   const lvChip = l => `<span class="att-pc" style="background:${ATT_BK.lv.bg};color:${ATT_BK.lv.c}" title="휴학${l.note?' '+esc(l.note):''}">휴학 ${esc(l.name)}</span>`;
   const gTag = v => { const t = String(v.grade||''); return /세$/.test(t) ? t : t.replace('학년',''); };
   return groups.map(gr=>{
-    const n = gr.cs.reduce((a,v)=>a+v.n,0), p = gr.cs.reduce((a,v)=>a+v.p,0);
+    const n = gr.cs.reduce((a,v)=>a+v.n,0), p = gr.cs.reduce((a,v)=>a+v.here,0);
     const rate = n ? Math.round(p/n*100) : 100;
-    return `<div class="acol-c"><a class="acol-h" href="${go}"><span class="t"><b>${esc(gr.name)}</b><i>${gr.cs.length}반</i><span class="n">${p}/${n}</span></span>
+    return `<div class="acol-c"><a class="acol-h" href="${go}"><span class="t"><b>${esc(gr.name)}</b><i>${gr.cs.length}반</i><span class="n" title="지금 학교에 있는 인원 / 재적(휴학 제외)">${p}<small>/${n}</small></span></span>
       <span class="acol-bar"><i style="width:${rate}%;${rate<100?'background:#f59e0b':''}"></i></span></a>
       ${gr.cs.map(v=>{ const any = v.fl.length || v.lv.length;
-        return `<a class="acol-r${v.abs?' warn':''}" href="${go}"><span class="l"><span class="acol-g">${esc(gTag(v))}</span><b>${esc(v.name)}</b><span class="c">${v.p}/${v.n}</span>${any?'':'<span class="ok">✓</span>'}</span>
+        return `<a class="acol-r${v.abs?' warn':v.here<v.n?' away':''}" href="${go}"><span class="l"><span class="acol-g">${esc(gTag(v))}</span><b>${esc(v.name)}</b><span class="c" title="지금 반에 있는 인원 / 재적(휴학 제외)">${v.here}<small>/${v.n}</small></span>${any?'':'<span class="ok">✓</span>'}</span>
           ${any?`<span class="cs">${v.fl.map(chip).join('')}${v.lv.map(lvChip).join('')}</span>`:''}</a>`; }).join('')}</div>`;
   });
 }
@@ -398,12 +408,13 @@ function paintAttCols(){
   const heads = [], cols = [], evs = [];
   on.forEach(o=>{
     const M = attModel(o); if(!M) return;
-    heads.push(`<span class="acol-org"><b>${esc(M.orgNm)}</b><span>${M.present}/${M.roster} 출석 · ${M.rate}%${M.cnt.lv?` · 휴학 ${M.cnt.lv}`:''}</span></span>`);
+    heads.push(`<span class="acol-org"><b>${esc(M.orgNm)}</b><span>지금 <em>${M.here}명</em> / 재적 ${M.roster}${M.cnt.lv?` · 휴학 ${M.cnt.lv}`:''}</span></span>`);
     (_attEv[o]||[]).forEach(e=>{ if(!evs.some(x=>x.id===e.id)) evs.push(e); });
     cols.push(...attColumns(o, M, multi));
   });
   const evl = evs.length ? `<div class="att-evl"><span class="att-evh">📅 오늘 학사일정</span>${attEvChips(evs, 4)}</div>` : '';
-  el.innerHTML = (cols.length ? `<div class="acol-top">${heads.join('')}</div>${evl}<div class="acol n${Math.min(cols.length,4)}">${cols.join('')}</div>` : '') + off;
+  const note = `<div class="acol-note">숫자 = 지금 학교에 있는 인원 / 재적(휴학 제외) · 결석·체험학습·조퇴는 빼고, 지각은 넣어요 — 출석부 출결 처리와는 따로예요</div>`;
+  el.innerHTML = (cols.length ? `<div class="acol-top">${heads.join('')}</div>${evl}<div class="acol n${Math.min(cols.length,4)}">${cols.join('')}</div>${note}` : '') + off;
 }
 function paintAttOrg(o){
   if(ATT_STYLE==='cls'){ paintAttCols(); return; }      // 반별(부서 칼럼)은 기관을 한 판에 함께 그린다
@@ -433,7 +444,7 @@ function paintAttOrg(o){
         <span class="att-nms">${M.leave.map(l=>`<span class="att-nm">${esc(l.name)}<i>${esc(String(l.cls).replace('반',''))}</i></span>`).join('')}</span></a>` : '';
     h = `<div class="att-orghd"><b>${esc(orgNm)}</b></div>${evl}
       <div class="att-stats six">
-        <a class="att-st g" href="${go}"><b>${rate}%</b><span>출석률</span></a>
+        <a class="att-st g" href="${go}"><b>${M.here}<small style="font-size:11px;color:var(--tl)">/${roster}</small></b><span>지금 학교에</span></a>
         <a class="att-st r" href="${go}"><b>${cnt.abs}</b><span>결석</span></a>
         <a class="att-st a" href="${go}"><b>${cnt.lat}</b><span>지각</span></a>
         <a class="att-st b" href="${go}"><b>${cnt.ear}</b><span>조퇴</span></a>
@@ -448,15 +459,15 @@ function paintAttOrg(o){
     const tick = items.length ? items.join('  ·  ') : '✓ 특이사항 없음 — 전원 출석';
     h = `${evl}<div class="att-sum">
       <div class="att-top" onclick="togAttOpen('${o}')">
-        <div class="att-ring" style="background:conic-gradient(#16a34a 0 ${rate*3.6}deg,var(--iv) ${rate*3.6}deg 360deg)"><i>${rate}%</i></div>
-        <div class="att-mid"><b>${esc(orgNm)} · ${present}/${roster} 출석</b>
+        <div class="att-ring" style="background:conic-gradient(#16a34a 0 ${M.hereRate*3.6}deg,var(--iv) ${M.hereRate*3.6}deg 360deg)"><i>${M.here}</i></div>
+        <div class="att-mid"><b>${esc(orgNm)} · 지금 ${M.here}명 / 재적 ${roster}</b>
           <span>결석 ${cnt.abs} · 지각 ${cnt.lat} · 조퇴 ${cnt.ear} · 체험 ${cnt.trip}${cnt.lv?` · 휴학 ${cnt.lv}`:''} — 탭해서 반별 보기</span></div>
         <span class="att-ar">${ATT_OPEN[o]?'⌃':'⌄'}</span></div>
       <div class="att-tick">${tick}</div>
       ${ATT_OPEN[o]?`<div class="att-open">${M.classes.map(v=>{
         const gTxt = attGradeTxt(v.grade) ? attGradeTxt(v.grade)+' ' : '';
         const who = v.fl.map(f=>`${esc(f.short)} ${esc(f.name)}`).concat(v.lv.map(l=>`휴학 ${esc(l.name)}`));
-        return `<a class="att-trow" href="${go}"><b>${esc(gTxt)}${esc(v.name)}</b><span class="n">${v.p}/${v.n}</span>
+        return `<a class="att-trow" href="${go}"><b>${esc(gTxt)}${esc(v.name)}</b><span class="n">${v.here}/${v.n}</span>
           <span class="who">${who.length? who.join(' · ') : '✓ 전원 출석'}</span></a>`; }).join('')}</div>`:''}
     </div>`;
   }
