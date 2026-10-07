@@ -147,7 +147,42 @@ document.addEventListener('click', e=>{
   window.setFontSize = function(v){
     try { localStorage.setItem('gyosa_fs', v); } catch(e){}
     applyFS();
+    if(window.applyLay) window.applyLay();
   };
+})();
+
+/* ═══ 넓은 화면 단 나누기 (v-112) ═══
+   본문이 실제로 쓸 수 있는 폭을 재서 <html data-lay> 로 알려 준다 (글자 크기 «크게·아주 크게»도 반영).
+     1 = 한 단 (폰 · 패드 · 큰 글자로 좁아진 화면)  2 = 두 단  3 = 아주 넓은 화면
+   화면마다 이 값을 보고 «넓으면 2단»으로 바꾼다 — 단이 좁아져 뭉개지지 않게 폭을 넉넉히 잡았다.
+   단이 바뀌면 'gyosa:lay' 이벤트를 보낸다. */
+(function(){
+  var cur = '';
+  function zoomOf(){
+    var v = document.documentElement.getAttribute('data-fs');
+    return v === 'xl' ? 1.3 : v === 'lg' ? 1.15 : 1;
+  }
+  function applyLay(){
+    var W = document.documentElement.clientWidth || window.innerWidth || 0;   // 스크롤 막대를 뺀 폭
+    var H = window.innerHeight || 0, Z = zoomOf();
+    var sbw = W > 1100 ? 220 * Z : (W > 768 && H > 520 ? 190 * Z : 0);   // 사이드바 (theme.css · 위 CSS 와 같은 규칙)
+    var sb = document.getElementById('sb');
+    if(sb){ try { var cs = getComputedStyle(sb); sbw = (cs.position === 'fixed' || cs.display === 'none') ? 0 : sb.getBoundingClientRect().width; } catch(e){} }
+    var pad = W >= 1800 ? 40 : W > 1100 ? 32 : W > 768 ? 20 : 14;            // 본문 좌우 여백 (--page-pad-x)
+    var C = (W - sbw) / Z - 2 * pad;                                        // 본문 폭 (글자 크기 반영)
+    var lay = C >= 1380 ? '3' : C >= 1040 ? '2' : '1';
+    document.documentElement.setAttribute('data-lay', lay);
+    if(lay !== cur){
+      var was = cur; cur = lay;
+      if(was){ try { window.dispatchEvent(new CustomEvent('gyosa:lay', { detail:{ lay: lay, was: was } })); } catch(e){} }
+    }
+    return lay;
+  }
+  applyLay();
+  window.applyLay = applyLay;
+  var t = null;
+  window.addEventListener('resize', function(){ clearTimeout(t); t = setTimeout(applyLay, 80); });
+  window.addEventListener('orientationchange', function(){ setTimeout(applyLay, 120); });
 })();
 
 /* ═══════════════════════════════════════════════
@@ -243,6 +278,7 @@ function renderShell(activeKey, user){
   renderSidebar();
   renderTopbar();
   renderMobileTabs();
+  if(window.applyLay) window.applyLay();   // 사이드바가 생긴 뒤 실제 폭으로 다시 잰다 (v-112)
 }
 window.renderShell = renderShell;
 
