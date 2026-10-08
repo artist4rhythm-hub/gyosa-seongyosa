@@ -279,8 +279,17 @@ function renderShell(activeKey, user){
   renderTopbar();
   renderMobileTabs();
   if(window.applyLay) window.applyLay();   // 사이드바가 생긴 뒤 실제 폭으로 다시 잰다 (v-112)
+  loadHelper();
 }
 window.renderShell = renderShell;
+
+/* ── 🧭 도우미 (v-113) — 사용 방법 안내 · 화면에서 같이 하기. 화면마다 따로 넣지 않고 여기서 한 번 부른다 ── */
+function loadHelper(){
+  if(window.__helperOn || document.getElementById('helper-js')) return;
+  const s = document.createElement('script');
+  s.id = 'helper-js'; s.src = 'helper.js'; s.defer = true;
+  document.head.appendChild(s);
+}
 
 /* ═══ 사이드바 ═══ */
 function renderSidebar(){
@@ -317,7 +326,7 @@ function renderSidebar(){
     <div id="sb-orgsw" class="sb-orgsw"></div>
     <div class="sb-search">
       <span class="material-symbols-rounded">search</span>
-      <input id="sb-q" placeholder="검색  (⌘K)" oninput="onSearch(this.value)" onkeydown="onSearchKey(event)" autocomplete="off">
+      <input id="sb-q" placeholder="메뉴 찾기" oninput="onSearch(this.value)" onkeydown="onSearchKey(event)" autocomplete="off">
     </div>
     <div id="sb-res" class="sb-res"></div>
 
@@ -416,6 +425,8 @@ window.onSearchKey = onSearchKey;
 document.addEventListener('keydown', e => {
   if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){
     e.preventDefault();
+    // v-113: ⌘K · Ctrl+K 는 «🧭 도우미»를 연다 (도우미에서도 화면 이름을 적으면 바로 갈 수 있다)
+    if(window.toggleHelper){ window.toggleHelper(); return; }
     openDrawer();
     const q = document.getElementById('sb-q');
     if(q){ q.focus(); q.select(); }
@@ -439,6 +450,9 @@ function renderTopbar(){
       <span id="tb-tail"></span>
     </div>
     <div class="tb-right">
+      <button class="tb-help" type="button" onclick="window.openHelper && openHelper()" title="도우미 — 사용 방법 찾기 (⌘K · Ctrl+K)" aria-label="도우미 — 사용 방법 찾기">
+        <span class="tb-help-i">🧭</span><span class="tb-help-l">도우미</span>
+      </button>
       <a class="tb-ic" href="message.html" aria-label="쪽지">
         <span class="material-symbols-rounded">notifications</span>
         ${totalBadge > 0 ? `<span class="tb-dot">${totalBadge > 9 ? '9+' : totalBadge}</span>` : ''}
@@ -617,6 +631,12 @@ function injectSidebarCSS(){
 .tb-ic{position:relative;color:var(--ink-2);text-decoration:none;display:flex;padding:6px;border-radius:8px;}
 .tb-ic:hover{background:var(--sb-mint-2);}
 .tb-dot{position:absolute;top:1px;right:0;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:0 4px;border-radius:8px;min-width:15px;text-align:center;}
+/* 🧭 도우미 단추 (v-113) — 폰은 아래 탭 위 동그란 단추로 대신한다 */
+.tb-help{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--gl);background:var(--gp);color:var(--gm);border-radius:100px;
+  font:800 12.5px/1 inherit;font-family:inherit;padding:7px 12px 7px 10px;margin-right:4px;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s;}
+.tb-help:hover{border-color:var(--gm);background:var(--sb-mint-2);}
+.tb-help-i{font-size:14px;line-height:1;}
+@media(max-width:768px){ .tb-help{display:none;} }
 
 #mn{flex:1;min-width:0;padding:var(--page-pad-y) var(--page-pad-x);zoom:var(--zoom);}
 

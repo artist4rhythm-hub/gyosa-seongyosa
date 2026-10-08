@@ -194,6 +194,12 @@ onAuthStateChanged(auth, async (user) => {
       window.hideLoading && window.hideLoading();
     }
     showTab('inbox');
+    // 🧭 도우미 «관리자에게 물어보기 · 권한 요청» — 채워 둔 새 쪽지를 연다 (보내기는 직접)
+    try {
+      const hc = JSON.parse(sessionStorage.getItem('gyosa_help_compose') || 'null');
+      sessionStorage.removeItem('gyosa_help_compose');
+      if(hc && Date.now() - (hc.t||0) < 10*60*1000) helpCompose(hc);
+    } catch(_){}
   } catch(e){
     window.hideLoading && window.hideLoading();
     $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block';
@@ -721,6 +727,26 @@ async function sendMsg(){
   } catch(e){ toast('전송 실패: '+e.message,'err'); }
 }
 window.sendMsg = sendMsg;
+
+/* 🧭 도우미에서 온 문의 — 받는 사람은 우리 기관 관리자(없으면 수퍼관리자), 제목·내용을 채워 둔다.
+   자동으로 보내지 않는다: 선생님이 확인하고 «보내기»를 누른다. */
+function helpCompose(hc){
+  openCompose();
+  const org = CU.org || '';
+  let admins = STAFF.filter(s => s.role === 'org_admin' && (s.org === org || (s.orgs||[]).includes(org)));
+  if(!admins.length) admins = STAFF.filter(s => s.role === 'super');
+  admins.forEach(s => composeSel.add(s.uid));
+  renderRecipBox();
+  $I('cp-subject').value = hc.subject || '';
+  $I('cp-body').value = hc.body || '';
+  const sub = document.querySelector('#mwrap .msub');
+  if(sub) sub.innerHTML = admins.length
+    ? '🧭 도우미에서 채워 둔 쪽지예요. 받는 사람과 내용을 확인하고 <b>보내기</b>를 눌러 주세요.'
+    : '🧭 도우미에서 채워 둔 쪽지예요. <b>받는 사람(관리자)</b>을 고른 뒤 <b>보내기</b>를 눌러 주세요.';
+  const ta = $I('cp-body');
+  if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+}
+window.__helpCompose = helpCompose;
 
 function replyMsg(toUid, toName, subject){
   closeMod();
