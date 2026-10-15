@@ -1,0 +1,962 @@
+/* ── 🩺 v121 오류 알림판 — 화면을 열자마자 오류를 모아 둔다 (errlog.js 가 로그인한 뒤 수퍼관리자 알림판으로 올림) ── */
+(function(){
+  if(window.__ERRQ) return;
+  window.__ERRQ = [];
+  var put = function(x){ try { window.__ERRQ.push(x); } catch(_){} };
+  window.addEventListener('error', function(e){
+    if(!e || !e.message) return;
+    put({ k:'error', m: e.message, s: (e.error && e.error.stack) || ((e.filename||'') + ':' + (e.lineno||'')) });
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    var r = e && e.reason; var m = (r && (r.message || r.code)) || String(r);
+    var perm = !!r && (r.code === 'permission-denied' || /insufficient permissions/i.test(m));
+    put({ k: perm ? 'perm' : 'promise', m: (r && r.code ? '[' + r.code + '] ' : '') + m, s: r && r.stack });
+  });
+  var ce = console.error;
+  console.error = function(){
+    try { for(var i = 0; i < arguments.length; i++){ var a = arguments[i]; var t = a && (a.message || (typeof a === 'string' ? a : ''));
+      if(a && (a.code === 'permission-denied' || /Missing or insufficient permissions/i.test(t || ''))){ put({ k:'perm', m: String(t).slice(0, 300), s: a.stack || '' }); break; } } } catch(_){}
+    return ce.apply(console, arguments);
+  };
+  window.reportAppIssue = function(k, m, s){ put({ k:k, m:m, s:s }); };
+  try { var sc = document.createElement('script'); sc.type = 'module'; sc.src = 'errlog.js'; (document.head || document.documentElement).appendChild(sc); } catch(_){}
+})();
+
+/* ── 🙂 교직원 아바타: 사진 > 이모지 > 이니셜 (이름 기반 배색) ── */
+window.AV_EMOJIS = ['🕊','🦉','🌿','🫒','🌊','⚓','🎻','🎹','📖','✒️','🕯','🌙','⭐','🏔','🌾','🍇'];
+window.AV_BGS = ['#EAF1F7','#F1EDE3','#E7F1EA','#EFEAE0','#E4EEF2','#E9EDF2','#F2EAE6','#EDE9F2',
+                 '#F0EDE4','#EAE7F0','#F5EFE2','#E6E9F0','#F4F0E2','#E9EFEA','#F1EFE4','#EFE7EE'];
+window.avColor = function(n){ let h=0; for(const c of String(n||'')) h=(h*31+c.charCodeAt(0))>>>0; return AV_BGS[h%AV_BGS.length]; };
+window.staffAvatar = function(p, size){
+  const s = size||30, name = (p&&(p.name||p.fromName))||'?';
+  const ph = (p && typeof p.photo==='string' && p.photo.startsWith('data:image/')) ? p.photo : '';
+  if(ph) return `<img src="${ph}" alt="" style="width:${s}px;height:${s}px;border-radius:50%;object-fit:cover;flex:none;vertical-align:middle">`;
+  if(p && p.avatar) return `<span style="width:${s}px;height:${s}px;border-radius:50%;background:${avColor(name)};display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s*0.5)}px;flex:none;vertical-align:middle">${p.avatar}</span>`;
+  const ch = String(name).trim().charAt(0)||'?';
+  return `<span style="width:${s}px;height:${s}px;border-radius:50%;background:var(--gd,#1E3932);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:${Math.round(s*0.42)}px;font-weight:800;flex:none;vertical-align:middle">${ch}</span>`;
+};
+/* ═══ 화면 모드 (라이트 / 다크 / 자동) ═══
+   저장: localStorage gyosa_theme = 'light' | 'dark' | 'auto' (기본 auto = 기기 설정 따름) */
+(function(){
+  function applyTheme(){
+    var pref = 'auto';
+    try { pref = localStorage.getItem('gyosa_theme') || 'auto'; } catch(e){}
+    var dark = pref === 'dark' ||
+      (pref === 'auto' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  }
+  applyTheme();
+  // 자동 모드: 기기 설정이 바뀌면 즉시 따라감
+  try {
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(){
+      var pref = localStorage.getItem('gyosa_theme') || 'auto';
+      if(pref === 'auto') applyTheme();
+    });
+  } catch(e){}
+  window.applyTheme = applyTheme;
+  window.themeLabel = function(){
+    var pref = 'auto';
+    try { pref = localStorage.getItem('gyosa_theme') || 'auto'; } catch(e){}
+    return pref === 'light' ? '☀️ 라이트' : pref === 'dark' ? '🌙 다크' : '🖥️ 자동';
+  };
+  window.cycleTheme = function(){
+    var order = ['auto','light','dark'];
+    var cur = 'auto';
+    try { cur = localStorage.getItem('gyosa_theme') || 'auto'; } catch(e){}
+    var next = order[(order.indexOf(cur) + 1) % order.length];
+    try { localStorage.setItem('gyosa_theme', next); } catch(e){}
+    applyTheme();
+    var el = document.getElementById('theme-btn-label');
+    if(el) el.textContent = window.themeLabel();
+  };
+})();
+
+/* ═══ 상단 경로에 세부 탭 잇기 ═══
+   각 페이지에서 탭을 옮길 때 부르면 된다.
+     setCrumb(['시간표 배정', '배치'])
+     setCrumb([{label:'시간표 배정', go:()=>switchTop('assign')}, {label:'배치'}])
+   좁은 화면에서는 앞부분을 접어 마지막 두 개만 보여준다. */
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, m=>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+window.setCrumb = function(parts, auto){
+  const tail = document.getElementById('tb-tail');
+  if(!tail) return;
+  if(!auto) window.__crumbManual = true;   // 페이지가 직접 정하면 자동 감지를 멈춘다 (v118: 자동 감지가 부른 것은 멈추지 않음)
+  const pgName = String((document.querySelector('#tb-crumb .tb-p')||{}).textContent||'').trim();
+  const list = (parts||[]).filter(Boolean).map(p=>
+    typeof p === 'string' ? { label:p } : p)
+    .filter(p => !pgName || String(p.label||'').trim() !== pgName);   // v118: 화면 이름과 같은 칸은 한 번만
+  if(!list.length){ tail.innerHTML = ''; return; }
+
+  window.__crumbTail = list;
+  const sep = '<span class="tb-sep">›</span>';
+  tail.innerHTML = list.map((p,i)=>{
+    const last = i === list.length - 1;
+    const cls = 'tb-t' + (last ? ' on' : '') + (p.go ? ' go' : '');
+    const idx = p.go ? ` data-ci="${i}"` : '';
+    return sep + `<span class="${cls}"${idx}>${esc(p.label)}</span>`;
+  }).join('');
+
+  tail.querySelectorAll('.tb-t.go').forEach(el=>{
+    el.onclick = ()=>{
+      const p = (window.__crumbTail||[])[+el.dataset.ci];
+      if(p && typeof p.go === 'function') p.go();
+    };
+  });
+};
+
+/* ═══ 지금 열린 탭을 알아서 경로에 잇는다 ═══
+   화면마다 탭 함수 이름이 달라도, 켜진 탭 버튼을 찾아 이름을 읽어 쓴다.
+   각 페이지를 고치지 않아도 경로가 따라온다. */
+const TAB_SEL = '.tabs-sub > .tab-sub, .subtb > .subtbtn, .subtabs > .subtbtn';
+
+// 탭 버튼에서 이름만 뽑아낸다 (이모지·알림 숫자 제외)
+function tabLabel(btn){
+  const c = btn.cloneNode(true);
+  c.querySelectorAll('.badge,.tb-b,.nb,.dot,.cnt,.num,[class*="badge"]').forEach(x=>x.remove());
+  return c.textContent
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}]/gu,'')
+    .replace(/\s*\d+\s*$/,'')        // 끝에 붙은 숫자
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function crumbFromTabs(){
+  // 페이지가 직접 setCrumb 을 부르고 있으면 건드리지 않는다
+  if(window.__crumbManual) return;
+  // v118: 감춰진 탭 바(관리자 화면의 숨은 «출근부» 탭 등)는 건너뛰고, 보이는 것만 읽는다
+  const on = [...document.querySelectorAll(
+    '.tabs-sub > .tab-sub.on, .tabs-sub > .tab-sub.active,' +
+    '.subtb > .subtbtn.on, .subtb > .subtbtn.active,' +
+    '.subtabs > .subtbtn.on, .subtabs > .subtbtn.active')].find(b => b.getClientRects().length);
+  if(!on){ return; }
+  // 이모지·기호·알림 숫자는 떼고 글자만 남긴다
+  const label = tabLabel(on);
+  if(!label) return;
+
+  // 큰 갈래가 따로 있으면 그것도 앞에 (시간표처럼 두 화면을 오가는 경우)
+  const main = document.querySelector('.tabs-main > .tab-main.on');
+  const parts = [];
+  if(main){
+    const m = tabLabel(main);
+    if(m) parts.push(m);
+  }
+  parts.push(label);
+  // v118: 화면 이름과 같은 칸은 빼고 (학사 › 학사일정 › 학사일정 → 학사 › 학사일정)
+  if(window.setCrumb) window.setCrumb(parts, true);
+}
+window.crumbFromTabs = crumbFromTabs;
+
+// 탭을 누르면 잠시 뒤 경로를 맞춘다 (화면이 다 그려진 다음에)
+document.addEventListener('click', e=>{
+  const t = e.target;
+  if(t && t.closest && t.closest(TAB_SEL)) setTimeout(crumbFromTabs, 40);
+}, true);
+
+/* ═══ 큰 글자 보기 (보통 / 크게 / 아주 크게) ═══
+   저장: localStorage gyosa_fs = 'md' | 'lg' | 'xl' (기기마다 따로)
+   theme.css 의 --zoom 을 바꿔 본문·사이드바가 함께 커진다. */
+(function(){
+  function applyFS(){
+    var v = 'md';
+    try { v = localStorage.getItem('gyosa_fs') || 'md'; } catch(e){}
+    if(['md','lg','xl'].indexOf(v) < 0) v = 'md';
+    document.documentElement.setAttribute('data-fs', v);
+    ['md','lg','xl'].forEach(function(k){
+      var b = document.getElementById('fs-' + k);
+      if(b) b.classList.toggle('on', k === v);
+    });
+    return v;
+  }
+  applyFS();
+  window.applyFS = applyFS;
+  window.setFontSize = function(v){
+    try { localStorage.setItem('gyosa_fs', v); } catch(e){}
+    applyFS();
+    if(window.applyLay) window.applyLay();
+  };
+})();
+
+/* ═══ 넓은 화면 단 나누기 (v-112) ═══
+   본문이 실제로 쓸 수 있는 폭을 재서 <html data-lay> 로 알려 준다 (글자 크기 «크게·아주 크게»도 반영).
+     1 = 한 단 (폰 · 패드 · 큰 글자로 좁아진 화면)  2 = 두 단  3 = 아주 넓은 화면
+   화면마다 이 값을 보고 «넓으면 2단»으로 바꾼다 — 단이 좁아져 뭉개지지 않게 폭을 넉넉히 잡았다.
+   단이 바뀌면 'gyosa:lay' 이벤트를 보낸다. */
+(function(){
+  var cur = '';
+  function zoomOf(){
+    var v = document.documentElement.getAttribute('data-fs');
+    return v === 'xl' ? 1.3 : v === 'lg' ? 1.15 : 1;
+  }
+  function applyLay(){
+    var W = document.documentElement.clientWidth || window.innerWidth || 0;   // 스크롤 막대를 뺀 폭
+    var H = window.innerHeight || 0, Z = zoomOf();
+    var sbw = W > 1100 ? 220 * Z : (W > 768 && H > 520 ? 190 * Z : 0);   // 사이드바 (theme.css · 위 CSS 와 같은 규칙)
+    var sb = document.getElementById('sb');
+    if(sb){ try { var cs = getComputedStyle(sb); sbw = (cs.position === 'fixed' || cs.display === 'none') ? 0 : sb.getBoundingClientRect().width; } catch(e){} }
+    var pad = W >= 1800 ? 40 : W > 1100 ? 32 : W > 768 ? 20 : 14;            // 본문 좌우 여백 (--page-pad-x)
+    var C = (W - sbw) / Z - 2 * pad;                                        // 본문 폭 (글자 크기 반영)
+    var lay = C >= 1380 ? '3' : C >= 1040 ? '2' : '1';
+    document.documentElement.setAttribute('data-lay', lay);
+    if(lay !== cur){
+      var was = cur; cur = lay;
+      if(was){ try { window.dispatchEvent(new CustomEvent('gyosa:lay', { detail:{ lay: lay, was: was } })); } catch(e){} }
+    }
+    return lay;
+  }
+  applyLay();
+  window.applyLay = applyLay;
+  var t = null;
+  window.addEventListener('resize', function(){ clearTimeout(t); t = setTimeout(applyLay, 80); });
+  window.addEventListener('orientationchange', function(){ setTimeout(applyLay, 120); });
+})();
+
+/* ═══════════════════════════════════════════════
+   사이드바 + 모바일 하단탭
+   사용법: 각 페이지에서
+     <script src="menu.js"></script>
+     <script src="sidebar.js"></script>
+     renderShell('payreq', CU);   // 페이지 키, 현재 사용자
+   구조: <div id="app"><aside id="sb">…</aside><main id="mn">…</main></div>
+   기존 콘텐츠는 #mn 안으로 들어갑니다.
+   ═══════════════════════════════════════════════ */
+
+const SB_PIN_KEY = 'gyosa_pins';
+let SB_ACTIVE = '';
+let SB_USER = null;
+let SB_BADGES = {};      // {payreq:3, approval:0, message:2}
+let SB_COLLAPSED = false;
+
+/* ── 핀(자주 쓰는) 저장 — 메모리 + 세션 ── */
+let _pins = null;
+function getPins(){
+  if(_pins) return _pins;
+  try { _pins = JSON.parse(sessionStorage.getItem(SB_PIN_KEY) || '[]'); }
+  catch(e){ _pins = []; }
+  return _pins;
+}
+function savePins(p){
+  _pins = p;
+  try { sessionStorage.setItem(SB_PIN_KEY, JSON.stringify(p)); } catch(e){}
+}
+function togglePin(key){
+  const p = getPins();
+  const i = p.indexOf(key);
+  if(i >= 0) p.splice(i, 1); else p.push(key);
+  savePins(p);
+  renderSidebar();
+}
+window.togglePin = togglePin;
+
+/* ── 뱃지 설정 (각 페이지에서 계산해 넘김) ── */
+function setBadges(obj){
+  SB_BADGES = { ...SB_BADGES, ...obj };
+  renderSidebar();
+  renderMobileTabs();
+}
+window.setBadges = setBadges;
+
+/* ── 관리자 여부 ── */
+function sbIsAdmin(){
+  const r = SB_USER && SB_USER.role;
+  return r === 'super' || r === 'org_admin' || r === 'tab_admin';
+}
+
+/* ── 아이템 필터 (권한) ── */
+function sbVisibleGroups(){
+  const admin = sbIsAdmin();
+  return MENU
+    .filter(g => !g.admin || admin)
+    .map(g => ({ ...g, items: g.items.filter(it => (!it.admin || admin || ((SB_USER?.pageAllow)||[]).includes(it.key)) && !(it.deny||[]).includes(SB_USER?.role) && !((SB_USER?.pageDeny)||[]).includes(it.key)) }))
+    .filter(g => g.items.length);
+}
+
+/* ═══ 셸(사이드바+본문) 생성 ═══ */
+function renderShell(activeKey, user){
+  window.__PAGEKEY = activeKey;
+  SB_ACTIVE = activeKey;
+  SB_USER = user || null;
+
+  if(!document.getElementById('sb-style')) injectSidebarCSS();
+
+  // 기존 body의 콘텐츠를 main으로 이동
+  let app = document.getElementById('app');
+  if(!app){
+    const existing = document.getElementById('ms');   // 기존 메인 섹션
+    app = document.createElement('div');
+    app.id = 'app';
+    app.innerHTML = `
+      <aside id="sb"></aside>
+      <div id="sb-scrim" onclick="closeDrawer()"></div>
+      <div id="mn-wrap">
+        <header id="tb"></header>
+        <main id="mn"></main>
+      </div>
+      <nav id="mtab"></nav>`;
+    document.body.insertBefore(app, document.body.firstChild);
+    if(existing){
+      document.getElementById('mn').appendChild(existing);
+      existing.style.display = 'flex';
+      existing.style.flexDirection = 'column';
+      existing.style.width = '100%';
+    }
+  }
+  renderSidebar();
+  renderTopbar();
+  renderMobileTabs();
+  if(window.applyLay) window.applyLay();   // 사이드바가 생긴 뒤 실제 폭으로 다시 잰다 (v-112)
+  loadHelper();
+}
+window.renderShell = renderShell;
+
+/* ── 🧭 도우미 (v-113) — 사용 방법 안내 · 화면에서 같이 하기. 화면마다 따로 넣지 않고 여기서 한 번 부른다 ── */
+function loadHelper(){
+  if(window.__helperOn || document.getElementById('helper-js')) return;
+  const s = document.createElement('script');
+  s.id = 'helper-js'; s.src = 'helper.js'; s.defer = true;
+  document.head.appendChild(s);
+}
+
+/* ═══ 사이드바 ═══ */
+function renderSidebar(){
+  const sb = document.getElementById('sb');
+  if(!sb) return;
+  const pins = getPins();
+  const all = menuAllItems();
+  const pinned = pins.map(k => all.find(i => i.key === k)).filter(Boolean);
+
+  const itemHTML = (it, isPinned) => {
+    const on = it.key === SB_ACTIVE;
+    const b = SB_BADGES[it.badge] || 0;
+    return `<a class="sb-i${on ? ' on' : ''}" href="${it.href}" title="${it.label}">
+      <span class="material-symbols-rounded">${it.icon}</span>
+      <span class="sb-l">${it.label}</span>
+      ${b > 0 ? `<span class="sb-b">${b > 99 ? '99+' : b}</span>` : ''}
+      <button class="sb-pin${isPinned ? ' on' : ''}" onclick="event.preventDefault();event.stopPropagation();togglePin('${it.key}')" title="${isPinned ? '고정 해제' : '자주 쓰는 항목에 고정'}">
+        <span class="material-symbols-rounded">keep</span>
+      </button>
+    </a>`;
+  };
+
+  sb.innerHTML = `
+    <div class="sb-top">
+      <a class="sb-brand" href="index.html">
+        <div class="sb-logo"><span class="material-symbols-rounded">school</span></div>
+        <span class="sb-bt">교사 선교사</span>
+      </a>
+      <button class="sb-close" onclick="closeDrawer()" aria-label="닫기">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+    </div>
+
+    <div id="sb-orgsw" class="sb-orgsw"></div>
+    <div class="sb-search">
+      <span class="material-symbols-rounded">search</span>
+      <input id="sb-q" placeholder="메뉴 찾기" oninput="onSearch(this.value)" onkeydown="onSearchKey(event)" autocomplete="off">
+    </div>
+    <div id="sb-res" class="sb-res"></div>
+
+    <nav class="sb-nav" id="sb-nav">
+      <a class="sb-i sb-home${SB_ACTIVE==='home' ? ' on' : ''}" href="index.html">
+        <span class="material-symbols-rounded">home</span>
+        <span class="sb-l">홈</span>
+      </a>
+      ${pinned.length ? `
+        <div class="sb-g">
+          <div class="sb-gt"><span class="material-symbols-rounded">keep</span>자주 쓰는</div>
+          ${pinned.map(it => itemHTML(it, true)).join('')}
+        </div>` : ''}
+      ${sbVisibleGroups().map(g => `
+        <div class="sb-g">
+          <div class="sb-gt">${g.group}</div>
+          ${g.items.map(it => itemHTML(it, pins.includes(it.key))).join('')}
+        </div>`).join('')}
+    </nav>
+
+    <div class="sb-foot">
+      <button class="sb-foot-tg" onclick="toggleSbFoot()">
+        <span>설정</span><i id="sb-foot-arrow">⌄</i>
+      </button>
+      <div class="sb-foot-body" id="sb-foot-body">
+      <div class="fs-row">
+        <span class="fs-lab">글자 크기</span>
+        <div class="fs-pick">
+          <button id="fs-md" onclick="setFontSize('md')" title="보통">가</button>
+          <button id="fs-lg" onclick="setFontSize('lg')" title="크게">가</button>
+          <button id="fs-xl" onclick="setFontSize('xl')" title="아주 크게">가</button>
+        </div>
+      </div>
+      <button class="theme-toggle" onclick="cycleTheme()" title="화면 모드: 자동 → 라이트 → 다크 순환">
+        화면 모드 <b id="theme-btn-label">${themeLabel()}</b>
+      </button>
+      <div class="sb-me">
+        <div class="sb-av" style="overflow:hidden;display:flex;align-items:center;justify-content:center;padding:0">${window.staffAvatar ? staffAvatar(SB_USER, 30) : (SB_USER?.name||'?').slice(0,1)}</div>
+        <div class="sb-mi">
+          <div class="sb-mn">${SB_USER?.name || ''}</div>
+          <div class="sb-mr">${sbOrgLabel()}</div>
+        </div>
+      </div>
+      <div id="sb-ver" class="sb-ver"></div>
+      </div>
+    </div>`;
+  // 버튼이 방금 그려졌으니 지금 고른 글자 크기를 표시해 준다
+  if(window.applyFS) window.applyFS();
+  sbFootInit();
+  // 열려 있는 탭을 경로에 잇는다
+  setTimeout(()=>{ if(window.crumbFromTabs) crumbFromTabs(); }, 120);
+}
+
+function sbOrgLabel(){
+  const ORGS = window.ORGS || { daniel: '다니엘 아마츠', jihyebit: '지혜빛' };
+  const o = SB_USER?.org;
+  const role = SB_USER?.role === 'super' ? '슈퍼관리자'
+    : SB_USER?.role === 'org_admin' ? '기관관리자'
+    : SB_USER?.position && SB_USER.position !== '교사' ? SB_USER.position : '교사';
+  return `${ORGS[o] || o || ''} · ${role}`;
+}
+
+/* ═══ 검색 ═══ */
+function onSearch(q){
+  const box = document.getElementById('sb-res');
+  const nav = document.getElementById('sb-nav');
+  if(!box) return;
+  const rs = menuSearch(q);
+  if(!q.trim()){
+    box.innerHTML = ''; box.classList.remove('show');
+    if(nav) nav.style.display = '';
+    return;
+  }
+  if(nav) nav.style.display = 'none';
+  box.classList.add('show');
+  box.innerHTML = rs.length ? rs.map(r => `
+    <a class="sb-r" href="${r.href}">
+      <span class="material-symbols-rounded">${r.icon}</span>
+      <div class="sb-rt">
+        <div class="sb-rl">${r.matchTab ? r.matchTab : r.label}</div>
+        <div class="sb-rd">${r.matchTab ? r.label : r.group}</div>
+      </div>
+    </a>`).join('') : '<div class="sb-none">결과가 없습니다</div>';
+}
+window.onSearch = onSearch;
+
+function onSearchKey(e){
+  if(e.key === 'Escape'){ e.target.value = ''; onSearch(''); e.target.blur(); }
+  if(e.key === 'Enter'){
+    const first = document.querySelector('#sb-res .sb-r');
+    if(first) location.href = first.getAttribute('href');
+  }
+}
+window.onSearchKey = onSearchKey;
+
+document.addEventListener('keydown', e => {
+  if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){
+    e.preventDefault();
+    // v-113: ⌘K · Ctrl+K 는 «🧭 도우미»를 연다 (도우미에서도 화면 이름을 적으면 바로 갈 수 있다)
+    if(window.toggleHelper){ window.toggleHelper(); return; }
+    openDrawer();
+    const q = document.getElementById('sb-q');
+    if(q){ q.focus(); q.select(); }
+  }
+});
+
+/* ═══ 상단바 (빵부스러기) ═══ */
+function renderTopbar(){
+  const tb = document.getElementById('tb');
+  if(!tb) return;
+  const it = menuFind(SB_ACTIVE);
+  const totalBadge = Object.values(SB_BADGES).reduce((s, v) => s + (v || 0), 0);
+  tb.innerHTML = `
+    <button class="tb-menu" onclick="openDrawer()" aria-label="메뉴">
+      <span class="material-symbols-rounded">menu</span>
+    </button>
+    <div class="tb-crumb" id="tb-crumb">
+      ${it ? `<span class="tb-g">${it.group}</span>
+        <span class="tb-sep">›</span>
+        <span class="tb-p">${it.label}</span>` : '<span class="tb-p">홈</span>'}
+      <span id="tb-tail"></span>
+    </div>
+    <div class="tb-right">
+      <button class="tb-help" type="button" onclick="window.openHelper && openHelper()" title="도우미 — 사용 방법 찾기 (⌘K · Ctrl+K)" aria-label="도우미 — 사용 방법 찾기">
+        <span class="tb-help-i">🧭</span><span class="tb-help-l">도우미</span>
+      </button>
+      <a class="tb-ic" href="message.html" aria-label="쪽지">
+        <span class="material-symbols-rounded">notifications</span>
+        ${totalBadge > 0 ? `<span class="tb-dot">${totalBadge > 9 ? '9+' : totalBadge}</span>` : ''}
+      </a>
+    </div>`;
+}
+
+/* ═══ 모바일 하단탭 ═══ */
+function renderMobileTabs(){
+  const mt = document.getElementById('mtab');
+  if(!mt) return;
+  const todo = (SB_BADGES.payreq || 0) + (SB_BADGES.approval || 0);
+  const msg = SB_BADGES.message || 0;
+  const tab = (icon, label, href, badge, on) => `
+    <a class="mt-i${on ? ' on' : ''}" href="${href}">
+      <span class="mt-w">
+        <span class="material-symbols-rounded">${icon}</span>
+        ${badge > 0 ? `<span class="mt-b">${badge > 9 ? '9+' : badge}</span>` : ''}
+      </span>
+      <span class="mt-l">${label}</span>
+    </a>`;
+  mt.innerHTML =
+    tab('home', '홈', 'index.html', 0, SB_ACTIVE === 'home') +
+    tab('approval', '할 일', 'payreq.html', todo, SB_ACTIVE === 'payreq') +
+    tab('mail', '쪽지', 'message.html', msg, SB_ACTIVE === 'message') +
+    `<button class="mt-i" onclick="openDrawer()">
+      <span class="mt-w"><span class="material-symbols-rounded">apps</span></span>
+      <span class="mt-l">전체</span>
+    </button>`;
+}
+
+/* ═══ 설정 접기 (글자 크기·화면 모드·내 정보) ═══
+   · 열림/닫힘을 기억한다 · 낮은 화면(폰 가로)은 처음에 접힌 채로 시작 */
+function sbFootInit(){
+  let open;
+  try { open = localStorage.getItem('sb_foot'); } catch(e){}
+  if(open === null || open === undefined){
+    open = (window.innerHeight < 560) ? '0' : '1';
+  }
+  applySbFoot(open === '1');
+}
+function applySbFoot(open){
+  const b = document.getElementById('sb-foot-body');
+  const a = document.getElementById('sb-foot-arrow');
+  if(b) b.style.display = open ? '' : 'none';
+  if(a) a.textContent = open ? '⌄' : '›';
+  document.getElementById('sb')?.classList.toggle('foot-closed', !open);
+}
+function toggleSbFoot(){
+  const b = document.getElementById('sb-foot-body');
+  const open = b && b.style.display === 'none';
+  applySbFoot(open);
+  try { localStorage.setItem('sb_foot', open ? '1' : '0'); } catch(e){}
+}
+window.toggleSbFoot = toggleSbFoot;
+
+/* ═══ 드로어(모바일) ═══ */
+function openDrawer(){
+  document.getElementById('app')?.classList.add('drawer');
+}
+window.openDrawer = openDrawer;
+function closeDrawer(){
+  document.getElementById('app')?.classList.remove('drawer');
+}
+window.closeDrawer = closeDrawer;
+
+/* ═══ CSS ═══ */
+function injectSidebarCSS(){
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0&display=swap';
+  document.head.appendChild(link);
+
+  // 아이콘 폰트가 준비되면 표시 (로딩 중 이름이 글자로 보이는 것 방지)
+  const ready = () => document.documentElement.classList.add('fonts-ready');
+  if(document.fonts && document.fonts.load){
+    document.fonts.load('20px "Material Symbols Rounded"').then(ready).catch(ready);
+    document.fonts.ready.then(ready);
+  } else { ready(); }
+  setTimeout(ready, 4000);   // 안전장치
+
+  const st = document.createElement('style');
+  st.id = 'sb-style';
+  st.textContent = `
+.material-symbols-rounded{font-family:'Material Symbols Rounded';font-weight:400;font-style:normal;font-size:20px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-feature-settings:'liga';-webkit-font-smoothing:antialiased;font-variation-settings:'opsz' 20;}
+/* 폰트 로딩 전/실패 시 아이콘 이름이 글자로 노출되지 않게 */
+.material-symbols-rounded{color:transparent;transition:color .01s;}
+.fonts-ready .material-symbols-rounded{color:inherit;}
+
+#app{display:flex;min-height:100vh;background:var(--sb-cream);}
+
+/* ── 사이드바 ── */
+#sb{width:var(--sb-w);flex:none;background:var(--sb-house);color:#fff;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:60;}
+.sb-top{display:flex;align-items:center;padding:14px 12px 10px;}
+.sb-brand{display:flex;align-items:center;gap:9px;text-decoration:none;flex:1;min-width:0;}
+.sb-logo{width:30px;height:30px;border-radius:8px;background:var(--sb-green);display:flex;align-items:center;justify-content:center;flex:none;}
+.sb-logo .material-symbols-rounded{font-size:18px;color:#fff;}
+.sb-bt{color:#fff;font-size:14.5px;font-weight:700;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;}
+.sb-close{display:none;border:none;background:none;color:rgba(255,255,255,.6);cursor:pointer;padding:4px;}
+
+.sb-search{margin:0 12px 10px;background:rgba(255,255,255,.09);border-radius:9px;display:flex;align-items:center;gap:7px;padding:0 10px;height:36px;}
+.sb-search .material-symbols-rounded{font-size:18px;color:rgba(255,255,255,.5);flex:none;}
+.sb-search input{flex:1;min-width:0;background:none;border:none;outline:none;color:#fff;font-size:13px;font-family:inherit;}
+.sb-search input::placeholder{color:rgba(255,255,255,.42);}
+
+.sb-res{display:none;padding:0 8px;overflow-y:auto;}
+.sb-res.show{display:block;flex:1;}
+.sb-r{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:8px;text-decoration:none;color:rgba(255,255,255,.85);}
+.sb-r:hover{background:rgba(255,255,255,.1);}
+.sb-r .material-symbols-rounded{font-size:18px;color:rgba(255,255,255,.55);flex:none;}
+.sb-rt{min-width:0;}
+.sb-rl{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-rd{font-size:10.5px;color:rgba(255,255,255,.45);}
+.sb-none{padding:14px 12px;font-size:12.5px;color:rgba(255,255,255,.4);text-align:center;}
+
+.sb-nav{flex:1;overflow-y:auto;padding:0 8px 8px;}
+.sb-nav::-webkit-scrollbar{width:4px;}
+.sb-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:4px;}
+.sb-home{margin-bottom:10px;}
+.sb-g{margin-bottom:12px;}
+.sb-gt{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;color:rgba(255,255,255,.4);padding:5px 9px;letter-spacing:0.4px;}
+.sb-gt .material-symbols-rounded{font-size:13px;color:var(--sb-mint);}
+
+.sb-i{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:8px;text-decoration:none;color:rgba(255,255,255,.78);margin-bottom:1px;position:relative;transition:background .12s;}
+.sb-i:hover{background:rgba(255,255,255,.09);color:#fff;}
+.sb-i.on{background:var(--sb-green);color:#fff;font-weight:600;}
+.sb-i .material-symbols-rounded{font-size:19px;flex:none;}
+.sb-l{flex:1;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-b{background:var(--danger);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;flex:none;min-width:18px;text-align:center;}
+.sb-i.on .sb-b{background:var(--sb-mint);color:var(--sb-house);}
+.sb-pin{border:none;background:none;padding:0;cursor:pointer;display:none;flex:none;color:rgba(255,255,255,.4);}
+.sb-pin .material-symbols-rounded{font-size:15px;}
+.sb-i:hover .sb-pin{display:block;}
+.sb-pin.on{display:block;color:var(--gold);}
+.sb-pin:hover{color:#fff;}
+
+.sb-foot{border-top:1px solid rgba(255,255,255,.1);padding:10px 12px;}
+.sb-me{display:flex;align-items:center;gap:8px;}
+.sb-orgsw{display:flex;gap:5px;padding:0 12px 8px}
+.sb-orgsw:empty{display:none}
+.sbo{flex:1;font-family:inherit;font-size:11px;font-weight:800;color:rgba(255,255,255,.65);
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:9px;
+  padding:6px 4px;cursor:pointer;white-space:nowrap}
+.sbo.on{background:#D8B45A;border-color:#D8B45A;color:#2A2416}
+.sb-ver{margin-top:8px;font-size:10px;letter-spacing:.02em;color:rgba(255,255,255,.45);text-align:center;font-variant-numeric:tabular-nums;}
+.sb-av{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:#fff;flex:none;}
+.sb-mi{min-width:0;}
+.sb-mn{font-size:12.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-mr{font-size:10.5px;color:rgba(255,255,255,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+#sb-scrim{display:none;}
+
+/* ── 본문 ── */
+#mn-wrap{flex:1;min-width:0;display:flex;flex-direction:column;}
+#tb{height:var(--hd-h);background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 18px;position:sticky;top:0;z-index:40;}
+.tb-menu{display:none;border:none;background:none;cursor:pointer;color:var(--ink);padding:4px;}
+.tb-crumb{display:flex;align-items:center;gap:4px;flex:1;min-width:0;}
+.tb-g{font-size:12.5px;color:var(--ink-3);}
+.tb-sep{font-size:15px;color:var(--ink-3);margin:0 5px;flex:none;line-height:1;}
+.tb-p{font-size:14.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* 세부 탭 경로 */
+#tb-tail{display:inline-flex;align-items:center;gap:0;min-width:0;}
+.tb-t{font-size:13.5px;font-weight:600;color:var(--ink-3, var(--tl));white-space:nowrap;}
+.tb-t.on{font-weight:700;color:var(--ink);}
+.tb-t.go{cursor:pointer;}
+.tb-t.go:hover{color:var(--gm);}
+@media(max-width:900px){
+  /* 좁으면 마지막 두 개만 남긴다 */
+  #tb-tail .tb-t:not(:nth-last-child(-n+3)){display:none;}
+  #tb-tail .tb-sep:not(:nth-last-child(-n+4)){display:none;}
+}
+@media(max-width:640px){
+  .tb-g,.tb-crumb > .tb-sep:first-of-type{display:none;}
+}
+.tb-right{display:flex;align-items:center;gap:6px;}
+.tb-ic{position:relative;color:var(--ink-2);text-decoration:none;display:flex;padding:6px;border-radius:8px;}
+.tb-ic:hover{background:var(--sb-mint-2);}
+.tb-dot{position:absolute;top:1px;right:0;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:0 4px;border-radius:8px;min-width:15px;text-align:center;}
+/* 🧭 도우미 단추 (v-113) — 폰은 아래 탭 위 동그란 단추로 대신한다 */
+.tb-help{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--gl);background:var(--gp);color:var(--gm);border-radius:100px;
+  font:800 12.5px/1 inherit;font-family:inherit;padding:7px 12px 7px 10px;margin-right:4px;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s;}
+.tb-help:hover{border-color:var(--gm);background:var(--sb-mint-2);}
+.tb-help-i{font-size:14px;line-height:1;}
+@media(max-width:768px){ .tb-help{display:none;} }
+
+#mn{flex:1;min-width:0;padding:var(--page-pad-y) var(--page-pad-x);zoom:var(--zoom);}
+
+/* ── 큰 글자 보기: 사이드바 ──
+   사이드바는 화면에 붙어 있어 zoom 을 쓰면 세로가 넘치므로 글자만 비례로 키운다.
+   폭은 theme.css 의 --sb-w 가 이미 --zoom 을 반영한다. */
+.sb-bn{font-size:calc(14px * var(--zoom));}
+.sb-gt{font-size:calc(10.5px * var(--zoom));}
+.sb-i{font-size:calc(13px * var(--zoom));}
+.sb-i .material-symbols-rounded{font-size:calc(20px * var(--zoom));}
+.sb-mn{font-size:calc(12.5px * var(--zoom));}
+.sb-mr{font-size:calc(11px * var(--zoom));}
+.theme-toggle{font-size:calc(12px * var(--zoom));}
+#tb .tb-p{font-size:calc(14.5px * var(--zoom));}
+#tb .tb-t{font-size:calc(13.5px * var(--zoom));}
+#tb .tb-g{font-size:calc(12.5px * var(--zoom));}
+
+/* ── 글자 크기 고르기 ── */
+.fs-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+.fs-lab{font-size:calc(11px * var(--zoom));font-weight:700;color:rgba(255,255,255,.5);flex:none;}
+.fs-pick{display:flex;gap:4px;flex:1;}
+.fs-pick button{flex:1;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.07);
+  color:rgba(255,255,255,.72);border-radius:8px;padding:6px 0;cursor:pointer;
+  font-family:inherit;font-weight:800;line-height:1;transition:background .12s;}
+.fs-pick button:nth-child(1){font-size:12px;}
+.fs-pick button:nth-child(2){font-size:15px;}
+.fs-pick button:nth-child(3){font-size:18px;}
+.fs-pick button:hover{background:rgba(255,255,255,.14);}
+.fs-pick button.on{background:var(--sb-green);border-color:var(--sb-green);color:#fff;}
+html[data-theme="dark"] .fs-pick button.on{color:#06130E;}
+#mtab{display:none;}
+
+/* ── 태블릿: 사이드바 좁게 ── */
+@media(max-width:1100px){
+  :root{--sb-w:calc(190px * var(--zoom));}
+}
+
+/* 설정 접기 버튼 */
+.sb-foot-tg{display:flex;align-items:center;justify-content:space-between;width:100%;
+  border:none;background:none;color:rgba(255,255,255,.55);font-family:inherit;
+  font-size:11.5px;font-weight:800;letter-spacing:.04em;cursor:pointer;
+  padding:4px 2px 8px;}
+.sb-foot-tg i{font-style:normal;font-size:13px;opacity:.8;}
+
+/* ── 폰 가로(낮은 화면): 서랍 취급 + 세로 압축 ──
+   가로로 눕히면 폭이 768px를 넘어 데스크톱으로 오해받던 문제를 바로잡는다.
+   X 버튼이 안 먹히던 것도 이것 때문 — 이제 서랍이라 닫힌다. */
+@media (max-height:520px) and (max-width:1100px){
+  #sb{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);
+    transition:transform .22s ease;box-shadow:var(--shadow-md);
+    width:calc(250px * var(--zoom));max-width:60vw;overflow-y:auto;z-index:60;}
+  #app.drawer #sb{transform:translateX(0);}
+  #app.drawer #sb-scrim{display:block;position:fixed;inset:0;background:rgba(30,57,50,.45);z-index:55;}
+  .sb-close{display:block;}
+  .tb-menu{display:block;}
+  /* 세로 압축 — 위쪽 상표·검색, 아래 설정이 절반을 차지하지 않게 */
+  .sb-top{padding:7px 12px 5px;}
+  .sb-search{display:none;}
+  .sb-foot{padding-top:6px;padding-bottom:8px;}
+  .fs-row{margin-bottom:6px;}
+}
+
+/* ── 모바일/세로: 드로어 + 하단탭 ── */
+@media(max-width:768px){
+  #sb{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--shadow-md);width:calc(264px * var(--zoom));max-width:86vw;}
+  #app.drawer #sb{transform:translateX(0);}
+  #app.drawer #sb-scrim{display:block;position:fixed;inset:0;background:rgba(30,57,50,.45);z-index:55;}
+  .sb-close{display:block;}
+  .tb-menu{display:block;}
+  .sb-pin{display:block;}
+  #mn{padding:var(--page-pad-y) var(--page-pad-x) calc(var(--tab-h) + 14px);}
+  #tb{padding:0 12px;}
+
+  #mtab{display:flex;position:fixed;bottom:0;left:0;right:0;height:calc(var(--tab-h) * var(--zoom));background:var(--surface);border-top:1px solid var(--line);z-index:50;padding-bottom:env(safe-area-inset-bottom);}
+  .mt-i{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-decoration:none;border:none;background:none;cursor:pointer;color:var(--ink-3);font-family:inherit;padding:0;}
+  .mt-i.on{color:var(--sb-green);}
+  .mt-w{position:relative;display:flex;}
+  .mt-w .material-symbols-rounded{font-size:calc(22px * var(--zoom));}
+  .mt-i{font-size:calc(10.5px * var(--zoom));}
+  .mt-b{position:absolute;top:-3px;right:-7px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:0 4px;border-radius:8px;min-width:15px;text-align:center;line-height:14px;}
+  .mt-l{font-size:10px;font-weight:600;}
+}
+`;
+  document.head.appendChild(st);
+}
+
+/* ── 역할 차단 가드 ──
+   차단된 역할이 페이지에 직접 접근하면 안내 후 홈으로 보냄.
+   사용: guardPage(CU, 'att')  → true면 통과, false면 차단됨 */
+function guardPage(user, key){
+  if(!user) return true;
+  const it = (window.menuAllItems ? menuAllItems() : []).find(i => i.key === key);
+  if(!it) return true;
+  const roleDeny = (it.deny || []).includes(user.role);
+  const persDeny = (user.pageDeny || []).includes(key);
+  if(roleDeny || persDeny){
+    document.body.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F2F0EB;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;padding:20px">
+        <div style="background:#fff;border:1px solid #E3E1DA;border-radius:18px;padding:36px 40px;text-align:center;max-width:380px">
+          <div style="font-size:40px;margin-bottom:12px">🔒</div>
+          <div style="font-size:17px;font-weight:800;color:#1E3932;margin-bottom:8px">접근 권한이 없습니다</div>
+          <div style="font-size:13px;color:#5A6560;line-height:1.7;margin-bottom:20px">
+            이 메뉴에 대한 접근 권한이 없습니다.<br>필요하시면 관리자에게 문의해 주세요.
+          </div>
+          <button onclick="location.href='index.html'" style="background:#00704A;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">홈으로 가기</button>
+        </div>
+      </div>`;
+    return false;
+  }
+  return true;
+}
+window.guardPage = guardPage;
+
+// ── 모달 상단 닫기 버튼 자동 추가 (애플식) ──
+(function(){
+  function addCloseX(mbox){
+    if(mbox.querySelector('.ui-close-x')) return; // 이미 있음
+    // 페이지가 자기 닫기 버튼을 이미 넣었으면 또 붙이지 않는다 (두 개가 겹쳐 보이던 문제)
+    if(mbox.querySelector('[aria-label="닫기"], .evi-x, .tvi-x, .wg-x, .rp-x, .mclose, .m-x')) return;
+    const btn = document.createElement('button');
+    btn.className = 'ui-close-x';
+    btn.innerHTML = '✕';
+    btn.setAttribute('aria-label','닫기');
+    btn.onclick = function(e){
+      e.stopPropagation();
+      // 우선 closeMod() 시도, 없으면 오버레이 제거
+      if(typeof window.closeMod === 'function'){ window.closeMod(); return; }
+      const ov = mbox.closest('.mov, .modal, .overlay');
+      if(ov) ov.remove(); else mbox.remove();
+    };
+    mbox.appendChild(btn);
+  }
+  /* ── ✋ 팝업 옮기기 ──
+     팝업의 빈 곳(글자·버튼이 아닌 자리)을 끌면 창을 옮길 수 있다.
+     뒤에 있는 달력·시간표를 보면서 이야기할 때 편하다.
+     · 옮긴 자리는 그 팝업이 닫힐 때까지만 유지된다
+     · 버튼·입력칸·링크를 누른 것이면 옮기지 않는다 */
+  function makeDraggable(mbox){
+    if(mbox.__dragOn) return;
+    mbox.__dragOn = true;
+    mbox.classList.add('ui-movable');
+
+    let sx=0, sy=0, ox=0, oy=0, moving=false;
+    const NO_DRAG = 'button, a, input, textarea, select, label, .chip, .gchip, [onclick], [contenteditable]';
+
+    const down = (e)=>{
+      const t = e.target;
+      if(t.closest && t.closest(NO_DRAG)) return;      // 누르는 것이면 옮기지 않는다
+      const p = e.touches ? e.touches[0] : e;
+      const r = mbox.getBoundingClientRect();
+      // 처음 잡는 순간, 지금 보이는 자리에 그대로 고정시킨다
+      if(!mbox.__placed){
+        mbox.style.position = 'fixed';
+        mbox.style.margin = '0';
+        mbox.style.left = r.left + 'px';
+        mbox.style.top  = r.top  + 'px';
+        mbox.style.width = r.width + 'px';
+        mbox.__placed = true;
+      }
+      sx = p.clientX; sy = p.clientY;
+      ox = parseFloat(mbox.style.left) || r.left;
+      oy = parseFloat(mbox.style.top)  || r.top;
+      moving = true;
+      mbox.classList.add('ui-moving');
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+      document.addEventListener('touchmove', move, {passive:false});
+      document.addEventListener('touchend', up);
+      e.preventDefault();
+    };
+    const move = (e)=>{
+      if(!moving) return;
+      const p = e.touches ? e.touches[0] : e;
+      let nx = ox + (p.clientX - sx);
+      let ny = oy + (p.clientY - sy);
+      // 화면 밖으로 완전히 나가지 않게 살짝 잡아 둔다
+      const r = mbox.getBoundingClientRect();
+      nx = Math.max(12 - r.width + 90, Math.min(window.innerWidth - 90, nx));
+      ny = Math.max(6, Math.min(window.innerHeight - 60, ny));
+      mbox.style.left = nx + 'px';
+      mbox.style.top  = ny + 'px';
+      if(e.cancelable) e.preventDefault();
+    };
+    const up = ()=>{
+      moving = false;
+      mbox.classList.remove('ui-moving');
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.removeEventListener('touchmove', move);
+      document.removeEventListener('touchend', up);
+    };
+    mbox.addEventListener('mousedown', down);
+    mbox.addEventListener('touchstart', down, {passive:false});
+  }
+
+  function scan(root){
+    if(!root || !root.querySelectorAll) return;
+    if(root.classList && root.classList.contains('mbox')){ addCloseX(root); makeDraggable(root); }
+    root.querySelectorAll && root.querySelectorAll('.mbox').forEach(el=>{ addCloseX(el); makeDraggable(el); });
+  }
+  const obs = new MutationObserver(muts=>{
+    muts.forEach(m=>m.addedNodes.forEach(n=>{ if(n.nodeType===1) scan(n); }));
+  });
+  if(document.body){
+    obs.observe(document.body, {childList:true, subtree:true});
+    scan(document.body);
+  } else {
+    document.addEventListener('DOMContentLoaded', ()=>{
+      obs.observe(document.body, {childList:true, subtree:true});
+      scan(document.body);
+    });
+  }
+})();
+
+/* ═══ 🔄 새 버전 자동 감지 ═══
+   GitHub에 새 파일을 올리면, 열려 있는 화면이 스스로 알아차린다.
+   · 5분마다 + 화면으로 돌아올 때, 지금 페이지의 ETag(파일 지문)를 서버에 물어본다
+   · 지문이 달라졌으면 = 새 버전 → 아래에 「새로 고침」 배너를 띄운다
+   · HEAD 요청이라 아주 가볍다 (본문은 받지 않는다) */
+(function(){
+  let tag = null;
+  let shown = false;
+
+  async function check(){
+    if(shown) return;
+    try {
+      const r = await fetch(location.pathname + '?v=' + Date.now(),
+        { method:'HEAD', cache:'no-store' });
+      if(!r.ok) return;
+      const t = r.headers.get('etag') || r.headers.get('last-modified');
+      if(!t) return;
+      if(tag === null){ tag = t; return; }   // 처음 값은 기준으로만 담아둔다
+      if(t !== tag){ tag = t; showBanner(); }
+    } catch(e){ /* 오프라인 등 — 조용히 넘어간다 */ }
+  }
+
+  function showBanner(){
+    if(document.getElementById('upd-bar')) return;
+    shown = true;
+    const b = document.createElement('div');
+    b.id = 'upd-bar';
+    b.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);'
+      + 'z-index:950;display:flex;align-items:center;gap:11px;'
+      + 'background:#1E3932;color:#fff;padding:11px 14px 11px 18px;border-radius:12px;'
+      + 'box-shadow:0 8px 30px rgba(0,0,0,.25);font-size:13px;font-weight:700;'
+      + 'font-family:inherit;max-width:92vw;';
+    b.innerHTML = '새 버전이 나왔어요'
+      + '<button onclick="location.reload()" style="font-family:inherit;font-size:12.5px;'
+      + 'font-weight:800;border:none;border-radius:8px;padding:7px 13px;cursor:pointer;'
+      + 'background:#fff;color:#1E3932;white-space:nowrap">새로 고침</button>'
+      + '<button onclick="this.parentNode.remove()" aria-label="닫기" style="border:none;'
+      + 'background:none;color:rgba(255,255,255,.6);font-size:15px;cursor:pointer;'
+      + 'padding:2px 4px;line-height:1">✕</button>';
+    document.body.appendChild(b);
+  }
+
+  /* ── 🧭 전역 기관 스위처 — 어디서 바꾸든 전 화면이 따라온다 ── */
+  (function orgSwitch(){
+    if(!window.orgCore || !SB_USER) return;
+    const orgs = orgCore.myOrgs(SB_USER, 'std');
+    if(orgs.length < 2) return;                              // 단일 기관 사용자에겐 불필요
+    const host = document.getElementById('sb-orgsw'); if(!host) return;
+    const draw = ()=>{
+      const cur = orgCore.curOrg() || SB_USER.org || orgs[0];
+      const showAll = orgCore.combinedHas(window.__PAGEKEY || '');
+      const items = [ ...orgs.map(o=>[o, (window.ORGS&&ORGS[o])||o]),
+                      ...(showAll ? [['all','👥 함께']] : []) ];
+      host.innerHTML = items.map(([v,l])=>
+        `<button type="button" class="sbo${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('');
+    };
+    host.addEventListener('click', e=>{ const b=e.target.closest('.sbo');
+      if(!b) return;
+      orgCore.setCurOrg(b.dataset.v, false);
+      if(!window.__ORG_LIVE) setTimeout(()=>location.reload(), 80);   // 라이브 미지원 화면은 새 스코프로 다시 연다
+    });
+    window.addEventListener('orgchange', draw);
+    draw();
+  })();
+
+  /* ── 🏷 버전 배지 — version.json 한 곳만 올리면 전 화면에 반영 ── */
+  (async function fillVer(tries){
+    tries = tries || 0;
+    let v = window.__APPVER;
+    if(!v){ try{ const r = await fetch('version.json?_='+Date.now(), { cache:'no-store' });
+      const j = await r.json(); v = j && j.v; window.__APPVER = v; }catch(e){} }
+    const el = document.getElementById('sb-ver');
+    if(el && v){ el.textContent = '교사 선교사 v' + v; return; }
+    if(tries < 12) setTimeout(()=>fillVer(tries+1), 700);   // 사이드바가 아직 안 그려졌으면 잠시 뒤
+  })();
+
+  setTimeout(check, 4000);                    // 열리고 4초 뒤 기준값을 잡는다
+  setInterval(check, 5 * 60 * 1000);          // 5분마다
+  document.addEventListener('visibilitychange', ()=>{
+    if(!document.hidden) check();             // 다른 앱 갔다 돌아오면 바로
+  });
+})();

@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>반 편성 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="반편성">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="theme.css">
+<style>
+:root {
+  --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
+  --gold:#B08D3C; --goldd:#8A6410; --goldp:#F7EFD8;
+  --iv:#F2F0EB; --ivd:#E3E1DA;
+  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#ffffff;
+  --sh:0 2px 12px rgba(30,57,50,0.08); --r:12px; --rs:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--iv);color:var(--tx);min-height:100vh;}
+
+#gate{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(150deg,#E8F3EF 0%,#F2F0EB 60%,#F7EFD8 100%);padding:24px;text-align:center;}
+.gbox{background:var(--wh);border-radius:24px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(30,57,50,0.12);}
+.gtitle{font-size:22px;font-weight:800;color:var(--gd);margin-bottom:8px;}
+.gsub{font-size:14px;color:var(--ts);line-height:1.6;margin-bottom:20px;}
+.gbtn{display:inline-block;width:100%;padding:14px;background:linear-gradient(135deg,#00704A,#1E3932);color:var(--wh);border:none;border-radius:var(--rs);font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;}
+
+#ms{display:none;flex-direction:column;width:100%;}
+.ah{display:none;}
+.pg-links{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.pg-link{padding:7px 14px;border-radius:8px;background:var(--wh);border:1px solid var(--ivd);color:var(--gm);font-size:13px;font-weight:600;text-decoration:none;}
+.pg-link:hover{background:var(--gp);}
+.ah{background:linear-gradient(135deg,#1E3932,#16302A);color:var(--wh);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+.ahl{display:flex;align-items:center;gap:12px;}
+.ahi{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.aht{font-size:16px;font-weight:700;}
+.ahr{text-align:right;}
+#hn{font-size:15px;font-weight:600;}
+#hi{font-size:11px;opacity:.7;margin-top:2px;}
+.homebtn{background:rgba(255,255,255,0.15);color:var(--wh);border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;margin-top:4px;text-decoration:none;display:inline-block;}
+
+.tc{padding:0;max-width:var(--page-dash,1680px);margin:0 auto;width:100%;}   /* v-112 넓은 화면 */
+.actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
+.adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
+.acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
+
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.fgrp{display:flex;flex-direction:column;}
+.fgrp.full{grid-column:1/-1;}
+.fgrp label{font-size:12px;font-weight:700;color:var(--ts);margin-bottom:5px;}
+.fgrp input,.fgrp select{height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);outline:none;width:100%;font-family:inherit;}
+.fgrp input:focus,.fgrp select:focus{border-color:var(--gl);background:var(--wh);}
+
+.bp{background:linear-gradient(135deg,#00704A,#1E3932);color:var(--wh);border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;}
+.bs{background:var(--iv);color:var(--ts);border:1.5px solid var(--ivd);border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+.bm{background:var(--gp);color:var(--gm);border:none;border-radius:6px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+.bd{background:var(--danger-bg);color:var(--danger);border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;}
+.toolbar select,.toolbar input{height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--wh);outline:none;}
+
+/* 반 카드 */
+.clscard{border:1px solid var(--ivd);border-radius:12px;margin-bottom:10px;overflow:hidden;}
+.clshead{display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--wh);cursor:pointer;}
+.clshead:hover{background:var(--iv);}
+.clsname{font-size:15px;font-weight:800;color:var(--gd);}
+.clsmeta{font-size:12px;color:var(--ts);}
+.clsteacher{font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;background:var(--goldp);color:var(--goldd);}
+.clscount{margin-left:auto;font-size:12px;color:var(--tl);}
+.clsbody{padding:8px 16px 16px;background:var(--iv);display:none;}
+.clsbody.open{display:block;}
+/* 넓은 화면 (v-112) — 반 카드를 두 줄로 나란히 (칸이 480px 아래로 좁아지면 한 줄) */
+.cls-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(min(480px,100%),calc(50% - 6px)),1fr));gap:10px 12px;align-items:start;}
+.cls-grid .clscard{margin-bottom:0;}
+.cls-grid .clshead{flex-wrap:wrap;row-gap:4px;}
+.stud-chip{display:inline-flex;align-items:center;gap:6px;background:var(--wh);border:1px solid var(--ivd);border-radius:100px;padding:5px 10px;font-size:13px;margin:0 6px 6px 0;}
+.stud-chip .x{cursor:pointer;color:var(--danger);font-weight:800;}
+
+.empty{text-align:center;color:var(--tl);padding:30px;font-size:14px;}
+.badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px;background:var(--ok-bg);color:var(--ok);}
+
+.mov{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;}
+.mbk{position:absolute;inset:0;background:rgba(20,25,60,0.5);}
+.mbox{position:relative;background:var(--wh);border-radius:16px;padding:24px;width:100%;max-width:520px;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.mtitle{font-size:18px;font-weight:800;color:var(--gd);margin-bottom:4px;}
+.msub{font-size:13px;color:var(--ts);margin-bottom:16px;}
+.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+.pickrow{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--ivd);font-size:14px;}
+.pickrow:last-child{border-bottom:none;}
+
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+</style>
+<link rel="stylesheet" href="ui.css">
+<script src="loading.js"></script>
+<script src="modal-close.js"></script>
+<script src="org-core.js"></script>
+<script src="student-status.js"></script>
+<script src="menu.js"></script>
+<script src="timemachine.js"></script>
+<script src="filename.js"></script>
+<script src="sidebar.js"></script>
+<script type="module" src="union.js?v=64"></script>
+<script type="module" src="badges.js"></script>
+<script type="module" src="presence.js"></script>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gbox">
+    <div class="gtitle">반 편성</div>
+    <div class="gsub" id="gate-msg">로그인 확인 중...</div>
+    <a class="gbtn" id="gate-btn" href="index.html" style="display:none">로그인 화면으로</a>
+  </div>
+</div>
+
+<div id="ms">
+  <div class="pg-links"><a class="pg-link" href="students.html">← 학생 관리</a></div>
+  <div class="tc" id="main-body"></div>
+</div>
+
+<div id="mwrap"></div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { gateRecalc } from './gate-client.js?v=122';   // 🎫 반이 바뀌면 학부모 출입증(반 게시판)도 바로 따라감 (v122)
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = (()=>{ try{ return initializeFirestore(app, { experimentalAutoDetectLongPolling: true }); }catch(e){ return getFirestore(app); } })()   /* 🔌 막히는 네트워크 자동 우회 */;
+
+const $I = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+// 생년월일 → "2018년생 (만7세)" 형태
+function birthInfo(birth){
+  if(!birth) return '';
+  const y = birth.slice(0,4);
+  let age = '';
+  const bd = new Date(birth+'T00:00:00');
+  if(!isNaN(bd)){
+    const now = new Date();
+    let a = now.getFullYear()-bd.getFullYear();
+    const m = now.getMonth()-bd.getMonth();
+    if(m<0 || (m===0 && now.getDate()<bd.getDate())) a--;
+    age = ` (만${a}세)`;
+  }
+  return `${y}년생${age}`;
+}
+// 부서 옵션 — 관리자 화면 「부서 관리」(adminConfig/depts)와 같은 목록을 쓴다
+const DEPTS = {jihyebit:['전체'], daniel:['초등부','중고등부','행정실']};
+async function loadDeptsCfg(){
+  try {
+    const s = await getDoc(doc(db,'adminConfig','depts'));
+    if(s.exists()){
+      const d = s.data();
+      if(Array.isArray(d.daniel) && d.daniel.length) DEPTS.daniel = d.daniel.slice();
+      if(Array.isArray(d.jihyebit) && d.jihyebit.length) DEPTS.jihyebit = d.jihyebit.slice();
+    }
+  } catch(e){}
+}
+// 학년 옵션 (참고용 - 자유 입력도 가능)
+const GRADES = {
+  jihyebit:['4세','5세','6세','7세'],
+  daniel:['1학년','2학년','3학년','4학년','5학년','6학년','7학년','8학년','9학년','10학년','11학년','12학년']
+};
+
+let CU = null;
+let STUDENTS = [];     // 학생 캐시
+let STAFF = [];        // 교직원 캐시 (담임 지정용)
+let CLASSES = [];      // 현재 연도 반 목록
+let curYear = new Date().getFullYear();
+
+// 자퇴/퇴원(quit) 학생: 이번 학년도(3월~익년 2월) 자퇴자는 반편성에 포함 가능 (수행성 경비 정산용)
+function schoolYearOf(d){
+  const t = (d instanceof Date) ? d : new Date(d);
+  if(isNaN(t)) return 0;
+  return t.getMonth() >= 2 ? t.getFullYear() : t.getFullYear() - 1;
+}
+function showQuitStu(s){
+  if((s.status||'active') !== 'quit') return false;
+  if(!s.quitDate) return true;
+  return schoolYearOf(s.quitDate) >= schoolYearOf(new Date());
+}
+// 🔁 오늘 기준 실제 상태 — 학생관리·출석부와 같은 규칙(student-status.js)
+//    재적 상태가 «재학»이어도 휴학 기간 안이면 «휴학»
+const curSt = s => StuStatus.status(s);
+function leaveBadge(s){
+  const n = StuStatus.leaveNote(s);
+  return `<span style="font-size:10px;color:var(--warn);font-weight:700;background:var(--warn-bg);padding:1px 6px;border-radius:100px" title="학생 관리의 휴학 설정">휴학${n?' '+n:''}</span>`;
+}
+function quitBadgeCls(s){
+  if(!s.quitDate) return '자퇴';
+  const t = new Date(s.quitDate);
+  return isNaN(t) ? '자퇴' : `자퇴 ${t.getMonth()+1}/${t.getDate()}`;
+}
+
+function toast(msg, type=''){
+  const t = $I('toast'); t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
+}
+// 공통 활동 로그 (새 기능 추가 시 해당 동작에서 호출)
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){}
+}
+function myOrgs(){ return orgCore.myOrgs(CU,'std'); }   // 🏛 org-core 원장 위임
+function orgOptionsHTML(includeAll){
+  const orgs = myOrgs();
+  let h = includeAll ? '<option value="">전체 기관</option>' : '';
+  if(orgs.includes('jihyebit')) h += '<option value="jihyebit">지혜빛</option>';
+  if(orgs.includes('daniel')) h += '<option value="daniel">다니엘 아마츠</option>';
+  return h;
+}
+/* ── 반편성을 고칠 수 있는 사람 ──
+   수퍼·기관관리자는 늘 열려 있고, 그 외에는
+   관리자 → 접근 권한 → 기능별 담당자에서 「반편성」에 지정된 분만.
+   (부서장·교사도 지정만 하면 고칠 수 있어요) */
+let CLASS_EDITORS = [];
+const isAdmin = () => CU &&
+  (['super','org_admin'].includes(CU.role) || CLASS_EDITORS.includes(CU.uid));
+
+async function loadClassEditors(){
+  try {
+    const s = await getDoc(doc(db,'classConfig','editors'));
+    CLASS_EDITORS = (s.exists() && Array.isArray(s.data().uids)) ? s.data().uids : [];
+  } catch(e){ CLASS_EDITORS = []; }
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if(!user){
+    $I('gate-msg').textContent = '로그인이 필요합니다. 메인 화면에서 먼저 로그인해주세요.';
+    $I('gate-btn').style.display = 'inline-block';
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(db,'staff',user.uid));
+    if(!snap.exists()){ $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    CU = { uid:user.uid, ...snap.data() };
+    $I('gate').style.display='none'; $I('ms').style.display='flex';
+    window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'class')) return;
+  renderShell('class', CU);
+    window.showLoading && window.showLoading('불러오는 중…');
+
+    await loadClassEditors();
+    await loadDeptsCfg();
+    // ⏱ 타임머신 — 이번 학년도(내 기관) 반 편성 전체를 묶음으로 보관·복원
+    if(window.TM) TM.init({
+      page:'class', pageLabel:'반편성', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU.uid, name:CU.name||''}),
+      canRestore:()=>isAdmin(),
+      targets:[
+        {col:'classes', scope:()=>({year:curYear, org__in:myOrgs()}), label:'반 편성 (올해 전체)'},
+      ],
+      onRestored: async ()=>{ await loadClasses(); renderClasses(); }
+    });
+    await loadStudents();
+    await loadStaff();
+    window.hideLoading && window.hideLoading();
+    renderMain();
+  } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
+});
+
+async function loadStudents(){
+  await liveCol('students', docs=>{
+    const allowed = myOrgs();
+    STUDENTS = docs.filter(s=>allowed.includes(s.org));
+  });
+}
+/* 🔁 실시간 연동 — 학생관리에서 휴학·자퇴 등을 바꾸거나 다른 선생님이 반을 고치면 이 화면이 바로 따라 바뀐다.
+   처음 한 번은 받아 올 때까지 기다리고(getDocs 와 같은 읽기), 그 뒤로는 바뀐 문서만 들어온다. */
+const LIVE = {};
+function liveCol(name, apply, sigOf){
+  const L = LIVE[name];
+  if(L) return L.ready.then(()=>{ if(L.docs) apply(L.docs); });   // 이미 듣는 중(또는 처음 받는 중) → 받은 자료로
+  const E = LIVE[name] = { docs:null, sig:'', unsub:null, ready:null };
+  E.ready = new Promise((res, rej)=>{
+    let first = true;
+    E.unsub = onSnapshot(collection(db, name), snap=>{
+      const docs = []; snap.forEach(d=>docs.push({ id:d.id, ...d.data() }));
+      const sig = sigOf ? JSON.stringify(docs.map(sigOf).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))) : '';
+      const changed = !sigOf || sig !== E.sig;
+      E.docs = docs; E.sig = sig;
+      apply(docs);
+      if(first){ first = false; res(); }
+      else if(changed) liveRefresh();
+    }, err=>{
+      if(LIVE[name] === E) delete LIVE[name];   // 끊기면 다음 불러오기 때 새로 듣는다 (받은 자료는 그대로 쓴다)
+      if(first){ first = false; rej(err); }
+    });
+  });
+  return E.ready;
+}
+function liveRefresh(){
+  clearTimeout(liveRefresh._t);
+  liveRefresh._t = setTimeout(()=>{ try { if($I('class-list')) renderClasses(); } catch(e){ console.warn('[live]', e); } }, 150);
+}
+async function loadStaff(){
+  const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+  const allowed = myOrgs();
+  STAFF = [];
+  snap.forEach(d=>{ const s={uid:d.id,...d.data()}; const so=s.orgs&&s.orgs.length?s.orgs:[s.org]; if(so.some(o=>allowed.includes(o))) STAFF.push(s); });
+}
+async function loadClasses(){
+  await liveCol('classes', docs=>{
+    const allowed = myOrgs();
+    CLASSES = docs.filter(c=>c.year===curYear && allowed.includes(c.org));
+  });
+}
+
+// ── 메인 화면 ──
+async function renderMain(){
+  // 연도 옵션 (올해 기준 ±2년)
+  const ty = new Date().getFullYear();
+  const years = [];
+  for(let y=ty+1; y>=ty-3; y--) years.push(y);
+  $I('main-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">${curYear}년 반 편성</h3>
+      <p class="adesc">연도별로 반을 만들고 담임을 지정한 뒤, 각 반에 학생을 배정합니다.</p>
+      <div class="toolbar">
+        <select id="sel-year" onchange="changeYear()">
+          ${years.map(y=>`<option value="${y}"${y===curYear?' selected':''}>${y}년</option>`).join('')}
+        </select>
+        <select id="flt-org" onchange="renderClasses()">${orgOptionsHTML(true)}</select>
+        ${isAdmin()?`<button class="bp" onclick="openClassForm()">＋ 반 만들기</button>`:''}
+        ${isAdmin()?`<button class="bs" onclick="openPromote()">⬆ 전년도에서 진급</button>`:''}
+        ${isAdmin()?`<button class="bs" onclick="downloadClassTemplate()">⬇ 엑셀 양식</button>`:''}
+        ${isAdmin()?`<button class="bs" onclick="document.getElementById('cls-xlsx').click()">⬆ 엑셀 일괄 편성</button><input type="file" id="cls-xlsx" accept=".xlsx,.xls" style="display:none" onchange="handleClassXlsx(event)">`:''}
+      </div>
+    </div>
+    <div id="class-list"></div>`;
+  await loadClasses();
+  renderClasses();
+}
+
+function changeYear(){
+  curYear = Number($I('sel-year').value);
+  renderMain();
+}
+window.changeYear = changeYear;
+
+// ── 반 목록 렌더 ──
+function renderClasses(){
+  const el = $I('class-list'); if(!el) return;
+  const wasOpen = new Set([...el.querySelectorAll('.clsbody.open')].map(b=>b.id));   // 다시 그려도 펼친 반은 그대로
+  const fOrg = $I('flt-org')?.value || '';
+  let list = CLASSES.filter(c => !fOrg || c.org===fOrg);
+  // 정렬: 기관 → 학년 낮은 순(지혜빛 4세→7세, 다니엘 1학년→12학년) → 반 이름
+  const minGrade = c => {
+    const gs = new Set();
+    Object.values(c.grades||{}).forEach(g=>{ if(g) gs.add(g); });
+    if(c.grade) gs.add(c.grade);
+    let min = 999;
+    gs.forEach(g=>{ const n = parseInt(String(g),10); if(!isNaN(n) && n<min) min = n; });
+    return min;
+  };
+  list.sort((a,b)=>
+    (a.org||'').localeCompare(b.org||'') ||
+    minGrade(a) - minGrade(b) ||
+    (a.name||'').localeCompare(b.name||'','ko'));
+  if(!list.length){ el.innerHTML = '<div class="acard"><p class="empty">등록된 반이 없습니다. "반 만들기"로 시작하세요.</p></div>'; return; }
+  el.innerHTML = '<div class="acard"><div class="cls-grid">' + list.map(c=>{
+    const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(Boolean)
+      .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    const nLeave = studs.filter(s=>curSt(s)==='leave').length;
+    const nQuit = studs.filter(s=>(s.status||'active')==='quit').length;
+    const nGrad = studs.filter(s=>['grad','egrad'].includes(s.status)).length;
+    const teacher = STAFF.find(s=>s.uid===c.teacherUid);
+    const grades = c.grades || {};
+    const studChips = studs.length
+      ? studs.map(s=>{
+          const g = grades[s.id];
+          const gradeTag = g ? `<span style="background:var(--gp);color:var(--gm);font-size:10px;font-weight:700;padding:1px 6px;border-radius:100px">${g}</span>` : `<span style="color:var(--danger);font-size:10px">학년?</span>`;
+          const isQuit = (s.status||'active')==='quit';
+          const isLeave = curSt(s)==='leave';
+          return `<span class="stud-chip" style="${isQuit?'background:var(--iv);border:1px dashed var(--gray-bg);color:var(--gray-tx)':isLeave?'background:var(--iv);border:1px dashed var(--warn);opacity:.8':''}">${s.name}${isQuit?`<span style="font-size:10px;color:var(--gray-tx);font-weight:700;background:var(--gray-bg);padding:1px 6px;border-radius:100px">${quitBadgeCls(s)}</span>`:''}${isLeave?leaveBadge(s):''}${s.birth?`<span style="color:var(--tl);font-size:11px">${s.birth.slice(0,4)}</span>`:''}${gradeTag}${isAdmin()?`<span class="x" onclick="removeStudent('${c.id}','${s.id}')">✕</span>`:''}</span>`;
+        }).join('')
+      : '<span style="font-size:13px;color:var(--tl)">배정된 학생이 없습니다.</span>';
+    return `<div class="clscard">
+      <div class="clshead" onclick="toggleClass('${c.id}')">
+        <span class="clsname">${c.name}</span>
+        <span class="clsmeta">${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' · '+c.dept:''} · ${c.grade||''}</span>
+        ${teacher?`<span class="clsteacher">담임 ${teacher.name}</span>`:'<span class="clsteacher" style="background:var(--danger-bg);color:var(--danger)">담임 미지정</span>'}
+        <span class="clscount">학생 ${studs.length-nQuit-nGrad}명${nLeave?` <span style="color:var(--warn)">(휴학 ${nLeave})</span>`:''}${nQuit?` <span style="color:var(--gray-tx)">· 자퇴 ${nQuit}</span>`:''}${nGrad?` <span style="color:var(--gray-tx)">· 졸업 ${nGrad}</span>`:''}</span>
+      </div>
+      <div class="clsbody" id="body-${c.id}">
+        <div style="margin-bottom:10px">${studChips}</div>
+        ${isAdmin()?`<div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="bm" onclick="openAddStudent('${c.id}')">＋ 학생 추가</button>
+          <button class="bm" onclick="openGradeAssign('${c.id}')">🎓 학년 지정</button>
+          <button class="bm" onclick="openClassForm('${c.id}')">반 정보 수정</button>
+          <button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="deleteClass('${c.id}')">반 삭제</button>
+        </div>`:''}
+      </div>
+    </div>`;
+  }).join('') + '</div></div>';
+  wasOpen.forEach(id=>{ const b = $I(id); if(b) b.classList.add('open'); });
+}
+window.renderClasses = renderClasses;
+
+function toggleClass(id){
+  const b = $I('body-'+id); if(b) b.classList.toggle('open');
+}
+window.toggleClass = toggleClass;
+
+// ── 반 생성/수정 ──
+function openClassForm(editId){
+  const c = editId ? CLASSES.find(x=>x.id===editId) : null;
+  const orgs = myOrgs();
+  const defOrg = c?.org || orgs[0];
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${c?'반 정보 수정':'반 만들기'} (${curYear}년)</div>
+      <div class="msub">반 이름, 기관, 학년, 담임을 설정합니다.</div>
+      <div class="fg">
+        <div class="fgrp"><label>반 이름 *</label><input id="c-name" value="${c?.name||''}" placeholder="예: 이레반, 로이반"></div>
+        <div class="fgrp"><label>기관 *</label><select id="c-org" onchange="updClassDept()">${orgs.map(o=>`<option value="${o}"${defOrg===o?' selected':''}>${ORGS[o]}</option>`).join('')}</select></div>
+        <div class="fgrp"><label>부서</label><select id="c-dept"></select></div>
+        <div class="fgrp full"><label>학년 (여러 학년 합반이면 복수 선택)</label>
+          <div id="c-grade-box" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1.5px solid var(--ivd);border-radius:8px;background:var(--iv)"></div>
+        </div>
+        <div class="fgrp full"><label>담임 선생님</label><select id="c-teacher">
+          <option value="">미지정</option>
+          ${STAFF.map(s=>`<option value="${s.uid}"${c?.teacherUid===s.uid?' selected':''}>${s.name} (${ORGS[s.org]||s.org})</option>`).join('')}
+        </select></div>
+        <div class="fgrp full"><label>대리 출결 관리자 (담임 부재 시, 복수 선택 가능)</label>
+          <select id="c-deputy" multiple size="4" style="height:auto;padding:8px">
+            ${STAFF.map(s=>`<option value="${s.uid}"${(c?.deputies||[]).includes(s.uid)?' selected':''}>${s.name} (${ORGS[s.org]||s.org})</option>`).join('')}
+          </select>
+          <span style="font-size:11px;color:var(--tl);margin-top:4px">Ctrl(⌘) 누르고 여러 명 선택 가능</span>
+        </div>
+      </div>
+      <datalist id="grade-list"></datalist>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveClass('${c?.id||''}')">저장</button>
+      </div>
+    </div></div>`;
+  updClassDept(c?.dept, c?.gradeList || c?.grade);
+}
+window.openClassForm = openClassForm;
+function closeMod(){ $I('mwrap').innerHTML=''; }
+window.closeMod = closeMod;
+
+function updClassDept(selDept, selGrade){
+  const org = $I('c-org').value;
+  const depts = (DEPTS[org] || ['전체']).slice();
+  if(selDept && !depts.includes(selDept)) depts.push(selDept);   // 옛 부서 이름도 보이게
+  const ds = $I('c-dept');
+  ds.innerHTML = depts.map(d=>`<option value="${d}"${selDept===d?' selected':''}>${d}</option>`).join('');
+  // 학년 복수 선택 체크박스
+  renderGradeBox(org, selGrade);
+}
+window.updClassDept = updClassDept;
+
+// 반 학년 체크박스 렌더 (기관 변경 시 갱신)
+function renderGradeBox(org, selGrade){
+  const box = $I('c-grade-box'); if(!box) return;
+  // 기존 학년 문자열을 배열로 (배열이면 그대로, "6·7세"/"2·3학년" 같은 문자열이면 분리)
+  let selected = [];
+  if(Array.isArray(selGrade)) selected = selGrade;
+  else if(typeof selGrade==='string' && selGrade){
+    // GRADES 목록 중 문자열에 포함된 것 찾기
+    const list = GRADES[org]||[];
+    selected = list.filter(g=>selGrade.includes(g.replace('세','').replace('학년','')) || selGrade.includes(g));
+    if(!selected.length) selected = selGrade.split(/[·,/\s]+/).filter(Boolean);
+  }
+  const list = GRADES[org] || [];
+  box.innerHTML = list.map(g=>{
+    const on = selected.includes(g);
+    return `<label style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1.5px solid ${on?'var(--gm)':'var(--ivd)'};border-radius:8px;background:${on?'var(--gp)':'#fff'};cursor:pointer;font-size:13px">
+      <input type="checkbox" class="c-grade-chk" value="${g}"${on?' checked':''} onchange="this.parentElement.style.background=this.checked?'var(--gp)':'#fff';this.parentElement.style.borderColor=this.checked?'var(--gm)':'var(--ivd)'" style="width:15px;height:15px;cursor:pointer"> ${g}</label>`;
+  }).join('');
+}
+window.renderGradeBox = renderGradeBox;
+
+async function saveClass(editId){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, editId?'반 수정':'반 만들기');
+  const name = $I('c-name').value.trim();
+  const org = $I('c-org').value;
+  if(!name) return toast('반 이름을 입력하세요.','err');
+  // 학년 복수 선택 수집
+  const gradeArr = Array.from(document.querySelectorAll('.c-grade-chk:checked')).map(c=>c.value);
+  const gradeStr = gradeArr.join('·');  // 표시용 "6세·7세"
+  const data = {
+    name, org, year: curYear,
+    dept: $I('c-dept').value,
+    grade: gradeStr,          // 표시용 문자열 (호환)
+    gradeList: gradeArr,      // 복수 학년 배열
+    teacherUid: $I('c-teacher').value,
+    deputies: Array.from($I('c-deputy').selectedOptions).map(o=>o.value),
+  };
+  try {
+    if(editId){
+      await updateDoc(doc(db,'classes',editId), data);
+      logActivity('수정', '반편성', `${curYear}년 ${name} 수정`);
+      gateRecalc((CLASSES.find(x=>x.id===editId)||{}).students||[]);
+      toast('수정되었습니다.','ok');
+    } else {
+      data.students = [];
+      data.createdAt = Timestamp.now();
+      await addDoc(collection(db,'classes'), data);
+      logActivity('입력', '반편성', `${curYear}년 ${name} 생성`);
+      toast('반이 만들어졌습니다.','ok');
+    }
+    closeMod();
+    await loadClasses();
+    renderClasses();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveClass = saveClass;
+
+async function deleteClass(id){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '반 삭제 전');
+  const c = CLASSES.find(x=>x.id===id);
+  if(!confirm(`"${c?.name}" 반을 삭제할까요?\n(학생 정보는 삭제되지 않고 반 배정만 해제됩니다)`)) return;
+  try {
+    await deleteDoc(doc(db,'classes',id));
+    logActivity('삭제', '반편성', `${curYear}년 ${c?.name||''} 삭제`);
+    gateRecalc(c?.students||[]);
+    toast('삭제되었습니다.');
+    await loadClasses();
+    renderClasses();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.deleteClass = deleteClass;
+
+// ── 학생 추가 (반에 배정) ──
+let _addCtx = null;  // 현재 추가 화면 컨텍스트
+function openAddStudent(classId){
+  const c = CLASSES.find(x=>x.id===classId); if(!c) return;
+  // 이미 다른 반에 배정된 학생 ID 모음 (같은 연도)
+  const assignedElsewhere = new Set();
+  CLASSES.forEach(cl=>{ if(cl.id!==classId) (cl.students||[]).forEach(sid=>assignedElsewhere.add(sid)); });
+  const already = new Set(c.students||[]);
+  // 후보: 같은 기관, 재학·휴학생 + 이번 학년도 자퇴생(수행성 경비 정산용), 아직 이 반에 없음
+  const candidates = STUDENTS.filter(s=>
+    s.org===c.org && (StuStatus.enrolled(s) || showQuitStu(s)) && !already.has(s.id)
+  );
+  _addCtx = { classId, candidates, assignedElsewhere };
+
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${c.name}에 학생 추가</div>
+      <div class="msub">추가할 학생을 체크한 뒤 아래 버튼을 누르세요. 여러 명을 한 번에 배정할 수 있습니다.</div>
+      <input type="text" id="add-search" placeholder="이름 검색" oninput="filterAddList()" style="width:100%;height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;margin-bottom:8px;outline:none">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+        <select id="add-sort" onchange="renderAddList()" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 8px;font-size:13px;background:var(--wh)">
+          <option value="name-asc">이름 ㄱ→ㅎ</option>
+          <option value="name-desc">이름 ㅎ→ㄱ</option>
+          <option value="birth-asc">나이 많은순 (옛날 출생)</option>
+          <option value="birth-desc">나이 적은순 (최근 출생)</option>
+        </select>
+        <button class="bm" onclick="toggleAllAdd(true)">전체 선택</button>
+        <button class="bm" onclick="toggleAllAdd(false)">전체 해제</button>
+        <span id="add-count" style="font-size:12px;color:var(--ts);align-self:center;margin-left:auto">0명 선택</span>
+      </div>
+      <div id="add-list" style="max-height:340px;overflow-y:auto"></div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="addCheckedStudents('${classId}')">선택한 학생 추가</button>
+      </div>
+    </div></div>`;
+  renderAddList();
+}
+window.openAddStudent = openAddStudent;
+
+// 후보 목록을 정렬 옵션대로 그리기
+function renderAddList(){
+  if(!_addCtx) return;
+  const { candidates, assignedElsewhere } = _addCtx;
+  const sort = $I('add-sort')?.value || 'name-asc';
+  const arr = [...candidates];
+  arr.sort((a,b)=>{
+    const rk = s => (s.status||'active')==='quit' ? 2 : curSt(s)==='leave' ? 1 : 0;   // 휴학생·자퇴생은 뒤로
+    const qa = rk(a), qb = rk(b);
+    if(qa !== qb) return qa - qb;
+    if(sort==='name-asc') return a.name.localeCompare(b.name,'ko');
+    if(sort==='name-desc') return b.name.localeCompare(a.name,'ko');
+    // 생년월일 기준 (빈 값은 뒤로)
+    const ba = a.birth||'9999', bb = b.birth||'9999';
+    if(sort==='birth-asc') return ba.localeCompare(bb);   // 옛날 출생 먼저 = 나이 많은순
+    if(sort==='birth-desc') return bb.localeCompare(ba);  // 최근 출생 먼저 = 나이 적은순
+    return 0;
+  });
+  const el = $I('add-list');
+  el.innerHTML = arr.length ? arr.map(s=>{
+    const elsewhere = assignedElsewhere.has(s.id);
+    const isQuit = (s.status||'active')==='quit';
+    const isLeave = !isQuit && curSt(s)==='leave';
+    const bi = birthInfo(s.birth);
+    return `<label class="pickrow add-row" data-name="${s.name}" style="cursor:pointer${isQuit||isLeave?';background:var(--iv);border-style:dashed':''}">
+      <span><input type="checkbox" class="add-chk" value="${s.id}" onchange="updateAddCount()" style="width:16px;height:16px;margin-right:8px;vertical-align:middle">${s.name}${isQuit?` <span style="font-size:11px;color:var(--gray-tx);font-weight:700;background:var(--gray-bg);padding:1px 7px;border-radius:100px">${quitBadgeCls(s)}</span>`:''}${isLeave?' '+leaveBadge(s):''} <span style="color:var(--gm);font-size:12px;font-weight:600">${bi}</span> <span style="color:var(--tl);font-size:12px">학번 ${s.studentNo||'-'}</span>${elsewhere?' <span style="color:var(--danger);font-size:11px">⚠️ 다른 반 배정됨</span>':''}</span>
+    </label>`;
+  }).join('') : '<p class="empty">추가할 수 있는 학생이 없습니다.</p>';
+  // 검색어 유지 적용
+  filterAddList();
+  updateAddCount();
+}
+window.renderAddList = renderAddList;
+
+function updateAddCount(){
+  const n = document.querySelectorAll('.add-chk:checked').length;
+  const el = $I('add-count'); if(el) el.textContent = `${n}명 선택`;
+}
+window.updateAddCount = updateAddCount;
+
+function toggleAllAdd(on){
+  // 검색으로 보이는 항목만 토글
+  document.querySelectorAll('.add-row').forEach(r=>{
+    if(r.style.display!=='none'){ const chk=r.querySelector('.add-chk'); if(chk) chk.checked=on; }
+  });
+  updateAddCount();
+}
+window.toggleAllAdd = toggleAllAdd;
+
+function filterAddList(){
+  const q = ($I('add-search')?.value||'').trim();
+  document.querySelectorAll('.add-row').forEach(r=>{
+    r.style.display = (!q || r.dataset.name.includes(q)) ? '' : 'none';
+  });
+}
+window.filterAddList = filterAddList;
+
+async function addCheckedStudents(classId){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '학생 배정 전');
+  const c = CLASSES.find(x=>x.id===classId); if(!c) return;
+  const ids = Array.from(document.querySelectorAll('.add-chk:checked')).map(c=>c.value);
+  if(!ids.length) return toast('학생을 선택하세요.','err');
+  try {
+    const studs = Array.from(new Set([...(c.students||[]), ...ids]));
+    await updateDoc(doc(db,'classes',classId), {students:studs});
+    c.students = studs;
+    gateRecalc(ids);
+    logActivity('수정','반편성',`${c.name}에 ${ids.length}명 배정`);
+    toast(`${ids.length}명이 추가되었습니다.`,'ok');
+    closeMod();
+    renderClasses();
+    const b = $I('body-'+classId); if(b) b.classList.add('open');
+  } catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.addCheckedStudents = addCheckedStudents;
+
+// ── 학년 지정 (반 안 학생들에게 개별 학년 부여) ──
+function openGradeAssign(classId){
+  const c = CLASSES.find(x=>x.id===classId); if(!c) return;
+  const studs = (c.students||[]).map(sid=>STUDENTS.find(s=>s.id===sid)).filter(Boolean)
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  if(!studs.length) return toast('먼저 학생을 추가하세요.','err');
+  const grades = c.grades || {};
+  const gradeOpts = (cur) => {
+    // 반에 합반 학년(gradeList)이 지정돼 있으면 그 학년만, 없으면 기관 전체 학년
+    const list = (c.gradeList && c.gradeList.length) ? c.gradeList : (GRADES[c.org] || []);
+    return `<option value="">미지정</option>` + list.map(g=>`<option value="${g}"${cur===g?' selected':''}>${g}</option>`).join('');
+  };
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${c.name} 학년 지정</div>
+      <div class="msub">각 학생의 학년을 지정하세요. 통계에서 학년별로 볼 때 사용됩니다.</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--ts)">전체 일괄:</span>
+        <select id="grade-bulk" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px">${gradeOpts('')}</select>
+        <button class="bm" onclick="applyGradeBulk()">전체 적용</button>
+      </div>
+      <div style="max-height:340px;overflow-y:auto">
+        ${studs.map(s=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--ivd)">
+          <span style="font-size:14px">${s.name} <span style="color:var(--tl);font-size:11px">${s.birth?s.birth.slice(0,4)+'년생':''}</span>${curSt(s)==='leave'?' '+leaveBadge(s):''}</span>
+          <select class="grade-sel" data-sid="${s.id}" style="height:34px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px">${gradeOpts(grades[s.id])}</select>
+        </div>`).join('')}
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveGrades('${classId}')">저장</button>
+      </div>
+    </div></div>`;
+}
+window.openGradeAssign = openGradeAssign;
+
+function applyGradeBulk(){
+  const v = $I('grade-bulk').value;
+  document.querySelectorAll('.grade-sel').forEach(sel=>sel.value=v);
+}
+window.applyGradeBulk = applyGradeBulk;
+
+async function saveGrades(classId){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '학년 저장 전');
+  const c = CLASSES.find(x=>x.id===classId); if(!c) return;
+  const grades = {};
+  document.querySelectorAll('.grade-sel').forEach(sel=>{
+    const v = sel.value; if(v) grades[sel.dataset.sid] = v;
+  });
+  try {
+    await updateDoc(doc(db,'classes',classId), {grades});
+    c.grades = grades;
+    gateRecalc(c.students||[]);
+    logActivity('수정','반편성',`${c.name} 학년 지정`);
+    toast('학년이 저장되었습니다.','ok');
+    closeMod();
+    renderClasses();
+    const b = $I('body-'+classId); if(b) b.classList.add('open');
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveGrades = saveGrades;
+
+// ── 엑셀 일괄 편성 ──
+// 양식 다운로드: 현재 연도/기관의 재학생 명단 + 빈 "반이름" 칸
+function downloadClassTemplate(){
+  const fOrg = $I('flt-org')?.value || '';
+  const orgs = fOrg ? [fOrg] : myOrgs();
+  const headers = ['학번','이름','생년월일','기관','배정할 반 이름'];
+  const aoa = [headers];
+  STUDENTS.filter(s=>orgs.includes(s.org) && StuStatus.enrolled(s))
+    .sort((a,b)=>(a.org+a.name).localeCompare(b.org+b.name,'ko'))
+    .forEach(s=>{
+      // 이미 올해 배정된 반 찾기
+      const cur = CLASSES.find(c=>(c.students||[]).includes(s.id));
+      aoa.push([s.studentNo||'', s.name, s.birth||'', ORGS[s.org]||s.org, cur?cur.name:'']);
+    });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:14},{wch:14},{wch:14},{wch:16},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '반편성');
+  XLSX.writeFile(wb, `반편성_양식_${curYear}.xlsx`);
+  toast('양식을 다운로드했습니다. "배정할 반 이름"을 채워서 올려주세요.','ok');
+}
+window.downloadClassTemplate = downloadClassTemplate;
+
+function handleClassXlsx(ev){
+  const file = ev.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      parseClassXlsx(rows);
+    } catch(err){ toast('엑셀 읽기 실패: '+err.message,'err'); }
+    ev.target.value='';
+  };
+  reader.readAsArrayBuffer(file);
+}
+window.handleClassXlsx = handleClassXlsx;
+
+function parseClassXlsx(rows){
+  if(!rows || rows.length<2) return toast('데이터가 없습니다.','err');
+  // 0학번 1이름 2기관 3반이름
+  const allowed = myOrgs();
+  // 학번/이름으로 학생 찾기
+  const byNo = {}, byName = {};
+  STUDENTS.forEach(s=>{ if(s.studentNo) byNo[s.studentNo]=s; (byName[s.name]=byName[s.name]||[]).push(s); });
+  // 반 이름 → 반 객체 (올해, 기관별)
+  const findClass = (org, name) => CLASSES.find(c=>c.org===org && c.name===name);
+
+  const assign = {};   // classId -> Set(studentId)
+  const errors = [];
+  const orgMap = {'지혜빛':'jihyebit','다니엘':'daniel','다니엘 아마츠':'daniel'};
+
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i]; if(!r||r.every(c=>String(c).trim()==='')) continue;
+    const no=String(r[0]??'').trim(), name=String(r[1]??'').trim();
+    const orgRaw=String(r[3]??'').trim(), className=String(r[4]??'').trim();
+    if(!className) continue;  // 반 이름 비었으면 건너뜀
+    // 학생 찾기 (학번 우선)
+    let stu = no && byNo[no] ? byNo[no] : null;
+    if(!stu && name && byName[name]){ stu = byName[name].length===1?byName[name][0]:byName[name].find(s=>orgMap[orgRaw]===s.org); }
+    if(!stu){ errors.push(`${i+1}행: 학생을 찾을 수 없음 (${name||no})`); continue; }
+    if(!allowed.includes(stu.org)){ errors.push(`${i+1}행 ${stu.name}: 권한 없는 기관`); continue; }
+    const cls = findClass(stu.org, className);
+    if(!cls){ errors.push(`${i+1}행 ${stu.name}: "${className}" 반이 ${curYear}년에 없음`); continue; }
+    (assign[cls.id]=assign[cls.id]||new Set()).add(stu.id);
+  }
+
+  const totalAssign = Object.values(assign).reduce((s,set)=>s+set.size,0);
+  if(!totalAssign){ return toast('편성할 내용이 없습니다. 반 이름과 반 등록을 확인하세요.','err'); }
+
+  // 미리보기
+  const summary = Object.entries(assign).map(([cid,set])=>{
+    const c = CLASSES.find(x=>x.id===cid);
+    return `<div style="padding:6px 0;border-bottom:1px solid var(--ivd);font-size:13px"><b>${c.name}</b> ← ${set.size}명</div>`;
+  }).join('');
+  const errHTML = errors.length?`<div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:10px;font-size:12px;margin-top:10px;line-height:1.6">⚠️ 제외 ${errors.length}건:<br>${errors.slice(0,15).join('<br>')}${errors.length>15?'<br>...':''}</div>`:'';
+  window.__clsAssign = assign;
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">일괄 편성 미리보기</div>
+      <div class="msub">${totalAssign}명을 아래 반에 배정합니다. (기존 배정에 추가됩니다)</div>
+      <div style="max-height:300px;overflow-y:auto">${summary}</div>
+      ${errHTML}
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="confirmClassXlsx()">${totalAssign}명 편성</button>
+      </div>
+    </div></div>`;
+}
+
+async function confirmClassXlsx(){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '엑셀 일괄 편성 전');
+  const assign = window.__clsAssign; if(!assign) return;
+  toast('편성 중...');
+  let cnt=0;
+  try {
+    for(const [cid,set] of Object.entries(assign)){
+      const c = CLASSES.find(x=>x.id===cid); if(!c) continue;
+      const studs = Array.from(new Set([...(c.students||[]), ...set]));
+      await updateDoc(doc(db,'classes',cid), {students:studs});
+      c.students = studs;
+      gateRecalc([...set]);
+      cnt += set.size;
+    }
+    logActivity('수정','반편성',`엑셀 일괄 편성 ${cnt}명`);
+    toast(`${cnt}명이 편성되었습니다.`,'ok');
+    closeMod();
+    await loadClasses();
+    renderClasses();
+  } catch(e){ toast('편성 실패: '+e.message,'err'); }
+}
+window.confirmClassXlsx = confirmClassXlsx;
+
+async function removeStudent(classId, studentId){
+  await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, '학생 제외 전');
+  const c = CLASSES.find(x=>x.id===classId); if(!c) return;
+  try {
+    const studs = (c.students||[]).filter(x=>x!==studentId);
+    await updateDoc(doc(db,'classes',classId), {students:studs});
+    c.students = studs;
+    gateRecalc([studentId]);
+    toast('학생이 제외되었습니다.');
+    renderClasses();
+    const b = $I('body-'+classId); if(b) b.classList.add('open');
+  } catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.removeStudent = removeStudent;
+
+// ── 진급 이월 ──
+function openPromote(){
+  const prevYear = curYear - 1;
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">전년도에서 진급</div>
+      <div class="msub">${prevYear}년 반 편성을 ${curYear}년으로 복제합니다.</div>
+      <div style="background:var(--iv);border-radius:10px;padding:14px;font-size:13px;color:var(--ts);line-height:1.7;margin-bottom:16px">
+        · ${prevYear}년의 각 반이 ${curYear}년에 같은 이름으로 새로 생성됩니다.<br>
+        · 학생과 담임도 그대로 복제됩니다.<br>
+        · 복제 후 반 이름·학년·담임·학생을 자유롭게 수정하세요.<br>
+        · 졸업생은 학생 관리에서 재적상태를 '졸업'으로 바꾸면 다음 배정에서 자동 제외됩니다.<br>
+        <b style="color:var(--danger)">· 주의: ${curYear}년에 이미 만든 반이 있으면 중복될 수 있습니다.</b>
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="doPromote(${prevYear})">${prevYear}년 → ${curYear}년 복제</button>
+      </div>
+    </div></div>`;
+}
+window.openPromote = openPromote;
+
+async function doPromote(prevYear){
+  try {
+    await TM.snapBundle('classes', {year:curYear, org__in:myOrgs()}, `진급 복제 전 (${prevYear}→${curYear})`);
+    toast('복제 중...');
+    const snap = await getDocs(collection(db,'classes'));
+    const allowed = myOrgs();
+    const prevClasses = [];
+    snap.forEach(d=>{ const c={id:d.id,...d.data()}; if(c.year===prevYear && allowed.includes(c.org)) prevClasses.push(c); });
+    if(!prevClasses.length){ toast(`${prevYear}년 반 편성이 없습니다.`,'err'); return; }
+    // 재학·휴학생만 복제 대상 (휴학생도 학적이 살아 있어 반·학년을 이어 간다. 자퇴·졸업은 빠진다)
+    const activeIds = new Set(STUDENTS.filter(s=>StuStatus.enrolled(s)).map(s=>s.id));
+    let cnt=0;
+    for(const c of prevClasses){
+      const studs = (c.students||[]).filter(sid=>activeIds.has(sid));
+      // 복제 대상 학생의 학년만 남기기
+      const grades = {};
+      if(c.grades) studs.forEach(sid=>{ if(c.grades[sid]) grades[sid]=c.grades[sid]; });
+      await addDoc(collection(db,'classes'), {
+        name:c.name, org:c.org, dept:c.dept||'', grade:c.grade||'', gradeList:c.gradeList||[],
+        teacherUid:c.teacherUid||'', deputies:c.deputies||[],
+        year:curYear, students:studs, grades,
+        createdAt: Timestamp.now()
+      });
+      gateRecalc(studs);
+      cnt++;
+    }
+    toast(`${cnt}개 반이 복제되었습니다.`,'ok');
+    logActivity('입력', '반편성', `${prevYear}년→${curYear}년 진급 복제 (${cnt}개 반)`);
+    closeMod();
+    await loadClasses();
+    renderClasses();
+  } catch(e){ toast('복제 실패: '+e.message,'err'); }
+}
+window.doPromote = doPromote;
+</script>
+</body>
+</html>

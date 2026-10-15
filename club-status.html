@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>동아리 현황 · 교사 선교사</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
+<link rel="stylesheet" href="theme.css">
+<script src="loading.js"></script>
+<style>
+:root{
+  --cs-pt:#0C2A44; --cs-pt2:#1E4B74; --cs-gold:#D8B45A;
+  --cs-cream:#FBFAF7; --cs-ink:#22262B; --cs-ink2:#5A5F66; --cs-ink3:#8A8F98;
+  --cs-line:#E7E4DC; --cs-row:#FAF9F4; --cs-wh:#FFFFFF;
+  --ac-bg:#EDEEF0; --ac-ink:#5B6068; --ac-line:#D8DADF;
+}
+#cs{max-width:560px;margin:0 auto;padding:14px 12px 90px;font-family:'Noto Sans KR',-apple-system,'Apple SD Gothic Neo',sans-serif;color:var(--cs-ink)}
+body.share-mode{background:#EFEDE7}
+/* 넓은 화면 (v-112) — 교사 화면에서는 폭을 넓혀 «개설 동아리 | 월별 일정» 두 단으로 (공유 링크 화면은 그대로) */
+html[data-lay="2"] body:not(.share-mode) #cs,html[data-lay="3"] body:not(.share-mode) #cs{max-width:var(--page-dash,1680px)}
+html[data-lay="2"] body:not(.share-mode) .cs-two,html[data-lay="3"] body:not(.share-mode) .cs-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);column-gap:22px;align-items:start}
+html[data-lay="2"] body:not(.share-mode) .cs-two .grid2,html[data-lay="3"] body:not(.share-mode) .cs-two .grid2{grid-template-columns:repeat(auto-fill,minmax(230px,1fr))}
+html[data-lay="2"] body:not(.share-mode) .cs-two .cd,html[data-lay="3"] body:not(.share-mode) .cs-two .cd{min-height:78px}
+body.share-mode #tb,body.share-mode #sb{display:none!important}
+
+.ph{background:linear-gradient(135deg,var(--cs-pt) 0%,var(--cs-pt2) 100%);border-radius:14px;color:#fff;
+  padding:14px 16px;display:flex;align-items:center;gap:11px;margin-bottom:10px}
+.ph .em{font-size:22px}
+.ph b{font-size:15px;font-weight:900;display:block;letter-spacing:-.01em}
+.ph span{font-size:11px;opacity:.75;font-weight:500}
+.ph .yr{margin-left:auto;font-size:10.5px;background:rgba(255,255,255,.14);border-radius:8px;padding:3px 9px;
+  font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+.tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.tools select{padding:7px 9px;border:1.5px solid var(--cs-line);border-radius:10px;font-family:inherit;
+  font-size:12.5px;font-weight:800;background:var(--cs-wh);color:var(--cs-ink)}
+.tb-btn{padding:7px 12px;border:1.5px solid var(--cs-line);border-radius:10px;background:var(--cs-wh);
+  font-family:inherit;font-size:12px;font-weight:800;color:var(--cs-ink2);cursor:pointer}
+.tb-btn.pr{background:var(--cs-pt);border-color:var(--cs-pt);color:#fff}
+.pubnote{font-size:10.5px;color:var(--cs-ink3);width:100%}
+
+.secT{font-size:13.5px;font-weight:900;color:var(--cs-ink);margin:16px 2px 8px;display:flex;align-items:center;gap:7px}
+.secT .mini{margin-left:auto;font-size:10.5px;font-weight:800;color:var(--cs-ink3);cursor:pointer}
+
+/* A-1 카드 */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.ccard{background:var(--cs-wh);border:1px solid var(--cs-line);border-radius:12px;padding:11px 12px;cursor:pointer}
+.ccard .dot{width:11px;height:11px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:-1px}
+.ccard b{font-size:13px;font-weight:900;letter-spacing:-.01em}
+.ccard .m .rm{font-weight:800;color:#1E4B74;background:#E5EDFC;border-radius:7px;padding:1px 7px}
+.ccard .m{font-size:10.8px;color:var(--cs-ink2);margin-top:4px;font-weight:600}
+.ccard .n{font-size:10.8px;color:var(--cs-ink3);margin-top:2px;font-weight:700}
+.ccard .n em{font-style:normal;color:var(--cs-pt);font-weight:900}
+.ccard.open{grid-column:1/-1;border-color:#CFE0F2;box-shadow:0 2px 10px rgba(12,42,68,.08)}
+.roster{margin-top:9px;padding-top:9px;border-top:1px dashed var(--cs-line);display:flex;flex-wrap:wrap;gap:5px}
+.stu{font-size:10.8px;font-weight:800;color:var(--cs-ink);background:var(--cs-row);border:1px solid var(--cs-line);
+  border-radius:8px;padding:3px 8px}
+.stu i{font-style:normal;font-weight:600;color:var(--cs-ink3);font-size:9.8px;margin-left:3px}
+.roster .none{font-size:10.8px;color:var(--cs-ink3);font-weight:600}
+
+/* 달력 공통 */
+.mtabs{display:flex;gap:6px;margin:14px 0 10px;flex-wrap:wrap}
+.mtab{flex:1;min-width:52px;text-align:center;font-size:12px;font-weight:800;color:var(--cs-ink3);
+  background:var(--cs-wh);border:1px solid var(--cs-line);border-radius:10px;padding:7px 0;cursor:pointer}
+.mtab.on{background:var(--cs-pt);color:#fff;border-color:var(--cs-pt)}
+.vsw{display:flex;gap:0;border:1.5px solid var(--cs-line);border-radius:10px;overflow:hidden;margin-left:auto}
+.vsw button{border:0;background:var(--cs-wh);font-family:inherit;font-size:11.5px;font-weight:800;
+  color:var(--cs-ink3);padding:6px 11px;cursor:pointer}
+.vsw button.on{background:var(--cs-pt);color:#fff}
+.legend{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.lg{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;color:var(--cs-ink2);
+  background:var(--cs-wh);border:1px solid var(--cs-line);border-radius:999px;padding:3px 9px;cursor:pointer;user-select:none}
+.lg .dot{width:8px;height:8px;border-radius:50%}
+.lg.off{opacity:.35;text-decoration:line-through}
+.lg.ac{background:var(--ac-bg);color:var(--ac-ink);border-color:var(--ac-line);cursor:default}
+
+/* B-1 월 그리드 */
+.cal{background:var(--cs-wh);border:1px solid var(--cs-line);border-radius:13px;overflow:hidden}
+.cal .wk{display:grid;grid-template-columns:repeat(7,1fr);background:var(--cs-pt)}
+.cal .wk div{font-size:10px;font-weight:800;color:#fff;text-align:center;padding:5px 0;opacity:.9}
+.row7{display:grid;grid-template-columns:repeat(7,1fr)}
+.cd{min-height:66px;border-top:1px solid var(--cs-line);border-right:1px solid var(--cs-line);
+  padding:3px 3px 4px;cursor:pointer;background:var(--cs-wh)}
+.cd:nth-child(7n){border-right:0}
+.cd .dn{font-size:10px;font-weight:800;color:var(--cs-ink2);font-variant-numeric:tabular-nums}
+.cd.dim{cursor:default}
+.cd.dim .dn{color:#C9CCD2}
+.cd.sun .dn{color:#D26060}.cd.sat .dn{color:#5B8DEF}
+.cd.today{background:#FDF8EC}.cd.today .dn{color:#B08A2E}
+.cd.sel{outline:2px solid var(--cs-gold);outline-offset:-2px;border-radius:6px}
+.acb{height:12px;border-radius:3px;background:var(--ac-bg);color:var(--ac-ink);font-size:8.5px;font-weight:800;
+  line-height:12px;padding:0 3px;white-space:nowrap;overflow:hidden;margin-top:2px;border:1px solid var(--ac-line)}
+.acb.cont{border-radius:0;margin-left:-4px;margin-right:-4px;border-left:0;border-right:0}
+.acb.sL{border-radius:3px 0 0 3px;margin-right:-4px;border-right:0}
+.acb.sR{border-radius:0 3px 3px 0;margin-left:-4px;border-left:0}
+.dots{display:flex;flex-wrap:wrap;gap:2px;margin-top:3px;padding:0 1px}
+.dd{width:7px;height:7px;border-radius:50%}
+.dd.more{width:auto;height:auto;font-size:8px;font-weight:900;color:var(--cs-ink3);line-height:7px}
+
+/* 날짜 시트 */
+.sheet{background:var(--cs-wh);border:1px solid var(--cs-line);border-radius:13px;margin-top:10px;overflow:hidden}
+.sheet .sh{background:var(--cs-row);padding:9px 13px;font-size:12.5px;font-weight:900;border-bottom:1px solid var(--cs-line)}
+.sheet .sh span{font-weight:700;color:var(--cs-ink3);font-size:10.5px;margin-left:5px}
+.sit{display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid var(--cs-line);cursor:pointer}
+.sit:last-child{border-bottom:0}
+.sit .bar{width:4px;align-self:stretch;border-radius:3px;flex:none}
+.sit b{font-size:12.5px;font-weight:900}
+.sit .no{font-size:10px;font-weight:900;color:#fff;border-radius:6px;padding:1px 6px;flex:none}
+.sit .t{font-size:10.8px;color:var(--cs-ink2);font-weight:700;margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sit .mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sit .l1{display:flex;align-items:center;gap:6px;min-width:0}
+.sit .l1 b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sit .l2{font-size:10.5px;font-weight:600;color:var(--cs-ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sit.ac{background:#FAFBFC;cursor:pointer}
+.sit.ac b{color:var(--ac-ink)}
+.sit.ac .bar{background:var(--ac-line)}
+.sit.none{color:var(--cs-ink3);font-size:11px;font-weight:600;cursor:default}
+
+/* B-2 주간 */
+.wcard{background:var(--cs-wh);border:1px solid var(--cs-line);border-radius:13px;overflow:hidden;margin-bottom:10px}
+.wcard .whd{background:var(--cs-row);padding:8px 13px;font-size:12px;font-weight:900;
+  border-bottom:1px solid var(--cs-line);display:flex;align-items:center}
+.wcard .whd span{margin-left:auto;font-weight:700;color:var(--cs-ink3);font-size:10.5px;font-variant-numeric:tabular-nums}
+.drow{display:flex;gap:10px;padding:8px 13px;border-top:1px solid var(--cs-line);align-items:flex-start}
+.drow:first-of-type{border-top:0}
+.drow .dl{width:40px;flex:none;text-align:center}
+.drow .dl b{display:block;font-size:12px;font-weight:900}
+.drow .dl span{font-size:9.5px;color:var(--cs-ink3);font-weight:700}
+.drow.off{background:#FAFAFB}
+.drow.off .dl b{color:#C9CCD2}
+.drow.today2{background:#FDF8EC}
+.dbody{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+.acline{font-size:10.3px;font-weight:800;color:var(--ac-ink);background:var(--ac-bg);border:1px solid var(--ac-line);
+  border-radius:6px;padding:2px 8px;align-self:flex-start;cursor:pointer}
+.cchip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:900;color:#fff;
+  border-radius:8px;padding:4px 9px;align-self:flex-start;cursor:pointer}
+.cchip i{font-style:normal;font-weight:700;font-size:9.8px;opacity:.88;font-variant-numeric:tabular-nums}
+.emp{font-size:10.3px;color:#C6C9CE;font-weight:700}
+
+/* 상세 팝 */
+.cs-bg{position:fixed;inset:0;background:rgba(20,26,32,.45);z-index:1200;display:flex;align-items:center;justify-content:center;padding:20px}
+.pop{background:var(--cs-wh);border-radius:14px;overflow:hidden;max-width:330px;width:100%;box-shadow:0 8px 26px rgba(20,30,40,.2)}
+.pop .pt{padding:11px 14px;color:#fff;font-weight:900;font-size:13.5px}
+.pop.acp .pt{background:#6A6F78}
+.pop .pb{padding:11px 14px;font-size:11.5px;color:var(--cs-ink2);line-height:1.8}
+.pop .pb b{color:var(--cs-ink)}
+.pop .foot{border-top:1px dashed var(--cs-line);padding:8px 14px;font-size:10px;color:var(--cs-ink3)}
+
+.empty{background:var(--cs-wh);border:1px dashed var(--cs-line);border-radius:12px;padding:22px 14px;
+  text-align:center;font-size:12px;color:var(--cs-ink3);font-weight:600}
+.sfoot{margin-top:26px;text-align:center;font-size:10.5px;color:var(--cs-ink3);line-height:1.9}
+
+/* 로그인 */
+#ls{display:none;min-height:100vh;align-items:center;justify-content:center;padding:20px}
+.lbox{background:var(--cs-wh);border:1px solid var(--cs-line);border-radius:16px;padding:26px 22px;max-width:340px;width:100%}
+.lbox h1{font-size:16px;font-weight:900;text-align:center;color:var(--cs-pt)}
+.lbox p{font-size:11.5px;color:var(--cs-ink3);text-align:center;margin:4px 0 14px}
+.lbox input{width:100%;padding:11px 12px;border:1.5px solid var(--cs-line);border-radius:10px;font-family:inherit;
+  font-size:13.5px;margin-bottom:8px;box-sizing:border-box}
+.lbox button{width:100%;padding:12px;border:0;border-radius:10px;background:var(--cs-pt);color:#fff;
+  font-family:inherit;font-size:14px;font-weight:800;cursor:pointer}
+.alert{font-size:11.5px;color:#B91C1C;text-align:center;margin-top:8px;min-height:15px}
+@media (max-width:420px){ .grid2{grid-template-columns:1fr 1fr} .cd{min-height:60px} }
+</style>
+</head>
+<body>
+<div id="tb"></div><div id="sb"></div>
+
+<div id="ls"><div class="lbox">
+  <h1>📊 동아리 현황</h1><p>교사 계정으로 로그인해 주세요</p>
+  <input id="l-id" placeholder="아이디" autocomplete="username">
+  <input id="l-pw" type="password" placeholder="비밀번호" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+  <button onclick="doLogin()">로그인</button>
+  <div id="l-msg" class="alert"></div>
+</div></div>
+
+<div id="ms" style="display:none"><div id="cs"></div></div>
+
+<script type="module">
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, onSnapshot, Timestamp, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { instrOf, openClubRoster } from './club-roster.js';   // 🎨 (v-92) 홈과 같은 담당·명단 창
+
+const __cfg = ({
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
+});
+const app = getApps().length ? getApp() : initializeApp(__cfg);
+const auth = getAuth(app);
+const db = (()=>{ try{ return initializeFirestore(app, { experimentalAutoDetectLongPolling: true }); }catch(e){ return getFirestore(app); } })();
+
+const $I = id => document.getElementById(id);
+const esc = t => String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ORGS = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원' };
+const WD = ['일','월','화','수','목','금','토'];
+const PALETTE = ['#5B8DEF','#E8734A','#58B368','#9B6DD6','#E5A83B','#4FB3BF','#E06C9F','#7E9C3F','#6B7FD7','#C2924B'];
+const SHARE_ID = new URLSearchParams(location.search).get('share');
+const SHARE = !!SHARE_ID;
+const toast = t=>{ const el=document.createElement('div'); el.textContent=t;
+  el.style.cssText='position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1E3932;color:#fff;padding:10px 16px;border-radius:100px;font-size:13px;font-weight:700;z-index:9999';
+  document.body.appendChild(el); setTimeout(()=>el.remove(),2400); };
+
+/* ── 상태 ── */
+let CU=null, SEMS=[], SEM=null, CLUBS=[], ENR=[], SNAP=null, ACAD=null, ACID='';
+let MONTHS=[], MON='', VIEW='cal', SELD='', HIDE=new Set(), OPENC=new Set();
+
+/* ── 날짜 도우미 ── */
+const pad = n => String(n).padStart(2,'0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const todayS = ymd(new Date());
+function addMin(hhmm, m){ if(!hhmm) return ''; const [h,mi]=hhmm.split(':').map(Number);
+  const t=h*60+mi+(Number(m)||0); return `${pad(Math.floor(t/60)%24)}:${pad(t%60)}`; }
+const mLabel = ym => `${Number(ym.slice(5,7))}월`;
+const dLabel = ds => { const d=new Date(ds+'T00:00:00'); return `${Number(ds.slice(5,7))}월 ${Number(ds.slice(8,10))}일 ${WD[d.getDay()]}요일`; };
+
+/* ── 세션 정규화: 휴강 제외 + n/총차시 번호 ── */
+function bkMap(){ const m={}; (SEM?.blocked||[]).forEach(b=>{ if(b.date) m[b.date]=b.reason||'운영 불가'; }); return m; }
+const isOff = (x,m)=> x.skip || (!x.extra && !x.override && (x.blocked || m[x.date]));
+function liveSessions(c){
+  const m = bkMap();
+  const arr = (c.sessions||[]).filter(x=>x && x.date && !isOff(x,m))
+    .map(x=>({ date:x.date, time:x.time||c.start||'', end:addMin(x.time||c.start||'', c.durMin||60) }))
+    .sort((a,b)=> a.date===b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date));
+  const total = arr.length;
+  return arr.map((s,i)=>({ ...s, no:i+1, total }));
+}
+
+/* ── 색: 도장 색 우선, 없으면 제목순 자동 ── */
+function colorOf(cid){
+  if(SNAP?.colors && SNAP.colors[cid]) return SNAP.colors[cid];
+  const order = CLUBS.slice().sort((a,b)=>String(a.title).localeCompare(String(b.title),'ko')).map(c=>c.id);
+  return PALETTE[ order.indexOf(cid) % PALETTE.length ];
+}
+
+/* ── 명단: 교사=실시간 · 공유=도장 스냅샷 ── */
+function rosterOf(cid){
+  if(SHARE){ const c=(SNAP?.clubs||[]).find(x=>x.id===cid); return c?.roster||[]; }
+  const out=[];
+  ENR.forEach(e=>{
+    const r1 = new Set(e.r1Final||[]);
+    Object.entries(e.r2Cancel||{}).forEach(([k,v])=>{ if(v) r1.delete(k); });
+    const a1 = e.r1Final ? r1.has(cid)
+      : (e.result||[]).some(r=>r.clubId===cid && r.state==='assigned' && (e.final||{})[r.clubId]!==false);
+    const a2 = (e.result2||[]).some(r=>r.clubId===cid && r.state==='assigned');
+    if(a1||a2) out.push({ id:e.studentId||'', n:e.studentName||'', g:e.grade||'', c:e.className||'' });
+  });
+  return out.sort((a,b)=> (parseInt(a.g)||99)-(parseInt(b.g)||99) || String(a.n).localeCompare(String(b.n),'ko'));
+}
+
+/* ── 학사 레이어 ── */
+async function loadAcad(id){
+  try{
+    const d0 = await getDoc(doc(db,'sharedAcademic', id));
+    if(!d0.exists()) return null;
+    const m = d0.data();
+    if(m.snapshot) return m.snapshot;
+    const n = m.chunks||0; let js='';
+    for(let i=0;i<n;i++){ const c=await getDoc(doc(db,'sharedAcademic', `${id}__c${i}`));
+      if(c.exists()) js += (c.data().part||''); }
+    return js ? JSON.parse(js) : null;
+  }catch(e){ return null; }
+}
+async function pickAcadId(){                    // 교사 모드: 학부모용 최신 공유본 자동 선택
+  try{
+    const ss = await getDocs(collection(db,'sharedAcademic'));
+    const list = ss.docs.filter(d=>!d.id.includes('__c')).map(d=>({id:d.id, ...d.data()}))
+      .filter(d=> (d.audience||'parent')==='parent' && d.active!==false)
+      .filter(d=> !d.shareOrg || d.shareOrg==='all' || d.shareOrg===SEM?.org)
+      .sort((a,b)=> (b.updatedAt?.seconds||0)-(a.updatedAt?.seconds||0));
+    return list[0]?.id || '';
+  }catch(e){ return ''; }
+}
+function acadItemsOf(ds){
+  if(!ACAD) return [];
+  const out=[];
+  (ACAD.events||[]).forEach(e=>{
+    const f = e.start || e.from || e.date;          // 학사 원본은 start·end — 혹시 모를 별칭까지 흡수
+    const t = e.end || e.to || f;
+    if(f && ds>=f && ds<=t) out.push({ kind:'ev', t:e.title||'학사 행사', from:f, to:t, start: ds===f });
+  });
+  (ACAD.holidays||[]).forEach(h=>{ if(h.date===ds) out.push({ kind:'hd', t:h.name||'쉬는 날', from:h.date, to:h.date, start:true }); });
+  return out;
+}
+
+/* ── 데이터 적재 ── */
+/* 🏫 교실 — 관리자 배정(room)이 진실, 없으면 강사 희망(place)을 보조로 */
+const roomOf = c => String(c.room || c.loc || c.place || '').trim();
+let CLUB_UNSUB = null;
+function loadClubs(){                       // 🔗 실시간 구독 — 교실·시간을 고치면 이 화면이 곧바로 따라온다
+  const qy = SHARE
+    ? query(collection(db,'clubApplications'), where('semId','==',SEM.id), where('published','==',true))
+    : query(collection(db,'clubApplications'), where('semId','==',SEM.id));
+  const apply = ss => {
+    CLUBS = ss.docs.map(d=>({id:d.id, ...d.data()}))
+      .filter(c=>!c.deleted && !c.cancelled && c.status==='approved' && (c.sessions||[]).length);
+    MONTHS = [...new Set(CLUBS.flatMap(c=>liveSessions(c).map(s=>s.date.slice(0,7))))].sort();
+    if(!MONTHS.includes(MON)) MON = MONTHS.includes(todayS.slice(0,7)) ? todayS.slice(0,7) : (MONTHS[0]||'');
+  };
+  return new Promise(resolve=>{
+    if(CLUB_UNSUB){ try{ CLUB_UNSUB(); }catch(e){} CLUB_UNSUB = null; }
+    let first = true;
+    CLUB_UNSUB = onSnapshot(qy, ss=>{
+      apply(ss);
+      if(first){ first=false; resolve(); } else { try{ render(); }catch(e){} }
+    }, err=>{ console.warn('[현황] 동아리 구독 실패', err); if(first){ first=false; resolve(); } });
+  });
+}
+async function boot(){
+  if(SHARE){
+    document.body.classList.add('share-mode');
+    const sd = await getDoc(doc(db,'clubStatusShare', SHARE_ID));
+    if(!sd.exists()){ $I('ms').style.display='block'; $I('cs').innerHTML =
+      '<div class="empty" style="margin-top:60px">아직 게시되지 않은 현황이에요.<br>기관에 문의해 주세요 🙏</div>'; window.hideLoading&&hideLoading(); return; }
+    SNAP = sd.data();
+    const sm = await getDoc(doc(db,'clubSemesters', SNAP.semId));
+    SEM = sm.exists() ? {id:sm.id, ...sm.data()} : {id:SNAP.semId, name:SNAP.semName, org:SNAP.org, blocked:[]};
+    ACID = SNAP.acShareId||'';
+    if(ACID) ACAD = await loadAcad(ACID);
+
+/* 📊 게시 링크 조회 기록 — 실패해도 화면 영향 없음 (규칙 v18 게시 후부터 쌓입니다) */
+async function logShareView(kind, shareId, title){
+  try{
+    const ua = navigator.userAgent || '';
+    const os = /iPhone|iPad|iPod/.test(ua)?'iOS' : /Android/.test(ua)?'Android'
+             : /Macintosh/.test(ua)?'Mac' : /Windows/.test(ua)?'Windows' : '기타';
+    const mob = /Mobi|Android|iPhone|iPad/.test(ua);
+    await addDoc(collection(db,'shareViewLogs'), {
+      kind, shareId: String(shareId||''), title: String(title||'').slice(0,80),
+      at: serverTimestamp(),
+      device: os + (mob?' · 모바일':' · PC'),
+      lang: navigator.language || '',
+      ref: String(document.referrer||'').slice(0,200)
+    });
+  }catch(_){/* 무시 */}
+}
+    await loadClubs();
+    pickTodayIfAny();
+    logShareView('clubStatus', SHARE_ID, `${(ORGS[SNAP.org]||SNAP.org||'')} 동아리 현황`);
+    $I('ms').style.display='block'; render(); window.hideLoading&&hideLoading();
+    document.addEventListener('visibilitychange', async ()=>{ if(document.hidden) return;
+      try{ await loadClubs(); if(ACID) ACAD = await loadAcad(ACID); render(); }catch(e){} });
+    return;
+  }
+  onAuthStateChanged(auth, async user=>{
+    if(!user){ window.hideLoading&&hideLoading(); $I('ls').style.display='flex'; $I('ms').style.display='none'; return; }
+    const st = await getDoc(doc(db,'staff', user.uid));
+    if(!st.exists()){ $I('l-msg').textContent='교사 계정이 아니에요 — 교사 아이디로 로그인해 주세요.';
+      $I('ls').style.display='flex'; window.hideLoading&&hideLoading(); return; }
+    CU = { uid:user.uid, ...st.data() };
+    window.ORGS = ORGS;
+    if(window.renderShell) renderShell('clubstat', CU);
+    const ss = await getDocs(collection(db,'clubSemesters'));
+    const orgs = orgCore.myOrgs(CU,'stdDF');   // 🏛 org-core 원장 위임
+    SEMS = ss.docs.map(d=>({id:d.id, ...d.data()})).filter(s=>orgs.includes(s.org))
+      .sort((a,b)=> String(b.rangeFrom||'').localeCompare(String(a.rangeFrom||'')));
+    document.addEventListener('visibilitychange', async ()=>{        // 탭에 돌아오면 폐강·명단 변화 즉시 반영
+      if(document.hidden || SHARE || !SEM) return;
+      try{ await loadClubs(); render(); }catch(e){}   // 명단은 구독이 실시간 담당
+    });
+    if(!SEMS.length){ $I('ls').style.display='none'; $I('ms').style.display='block';
+      $I('cs').innerHTML='<div class="empty" style="margin-top:40px">아직 동아리 학기가 없어요.</div>'; window.hideLoading&&hideLoading(); return; }
+    SEM = SEMS[0];
+    await reloadSem();
+    $I('ls').style.display='none'; $I('ms').style.display='block'; window.hideLoading&&hideLoading();
+  });
+}
+async function reloadSem(){
+  SNAP=null; ACAD=null; OPENC.clear(); HIDE.clear(); SELD='';
+  try{ const sd = await getDoc(doc(db,'clubStatusShare', SEM.id)); if(sd.exists()) SNAP = sd.data(); }catch(e){}
+  ACID = SNAP?.acShareId || await pickAcadId();
+  if(ACID) ACAD = await loadAcad(ACID);
+  await loadClubs();
+  pickTodayIfAny();
+  if(window.__enrUn){ try{ __enrUn(); }catch(e){} }
+  window.__enrUn = onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
+    ENR = snap.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>!e.deleted);   // 🔗 단일 진실원: 관리 화면에서 바꾸면 여기도 즉시
+    render();
+  });
+}
+window.pickSem = async id=>{ const s=SEMS.find(x=>x.id===id); if(!s) return; SEM=s; window.showLoading&&showLoading(); await reloadSem(); window.hideLoading&&hideLoading(); };
+
+/* ── 📊 현황 게시 도장 (수퍼) ── */
+window.stampStatus = async ()=>{
+  if(!CU || CU.role!=='super') return;
+  const colors={}; CLUBS.forEach(c=>{ colors[c.id]=colorOf(c.id); });
+  const clubs = CLUBS.map(c=>({ id:c.id, title:c.title||'', roster:rosterOf(c.id) }));
+  const acid = ACID || await pickAcadId();
+  try{
+    await setDoc(doc(db,'clubStatusShare', SEM.id), {
+      org:SEM.org, semId:SEM.id, semName:SEM.name||'', acShareId:acid, colors, clubs,
+      publishedAt:Timestamp.now(), byUid:CU.uid, byName:CU.name||''
+    });
+    SNAP = { org:SEM.org, semId:SEM.id, semName:SEM.name||'', acShareId:acid, colors, clubs, publishedAt:{seconds:Date.now()/1000} };
+    ACID = acid;
+    toast('📊 현황을 게시했습니다 — 링크가 최신 명단으로 갱신됐어요'); render();
+  }catch(e){ toast('게시 실패: '+(e.code==='permission-denied'?'규칙 v17 게시가 필요합니다':(e.message||''))); }
+};
+window.copyShare = ()=>{
+  const url = location.origin + location.pathname + '?share=' + SEM.id;
+  navigator.clipboard?.writeText(url).then(()=>toast('공유 링크를 복사했어요')).catch(()=>prompt('이 링크를 복사하세요', url));
+};
+
+/* ── 렌더 ── */
+/* ═══ 🖨 동아리 현황 출력 — 요약표 한 장 / 명단 포함, 둘 다 고를 수 있게 ═══ */
+function openPrintWinCS(title, body){
+  const w = window.open('', '_blank');
+  if(!w){ alert('팝업이 막혔어요 — 주소창 오른쪽에서 팝업을 허용해 주세요'); return; }
+  w.document.open();
+  // 새 창 제목이 곧 «PDF로 저장» 파일 이름 — «동아리현황_{학기}_{기관}» (v-115)
+  const parts = [String(title||'').replace(/\s+/g,''), SEM && (SEM.name||SEM.id), SEM && ORGS[SEM.org]];
+  const docTitle = window.FN ? FN.make(parts) : parts.filter(Boolean).join('_');
+  w.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${esc(docTitle)}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&display=swap">
+  <style>
+    @page{ size:A4 portrait; margin:12mm 12mm 14mm }
+    *{ box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact }
+    body{ margin:0; font-family:'Noto Sans KR','Malgun Gothic',sans-serif; color:#222; font-size:10pt; line-height:1.55 }
+    .hd{ background:#1E3932; color:#fff; border-radius:10px; padding:11px 15px }
+    .hd .t{ font-size:15pt; font-weight:900 } .hd .s{ font-size:9pt; opacity:.88 }
+    table{ width:100%; border-collapse:collapse; margin-top:9px }
+    th{ background:#E8F3EF; color:#0F241F; font-weight:900; padding:6px 7px; text-align:left; border-bottom:1.5px solid #D6D2C6; font-size:9.5pt }
+    td{ padding:5px 7px; border-bottom:1px solid #EFECE4; vertical-align:top }
+    tr{ break-inside:avoid; page-break-inside:avoid }
+    tr:nth-child(even) td{ background:#FAF9F5 }
+    h3{ font-size:11.5pt; margin:14px 0 2px; color:#0F241F }
+    .club{ break-inside:avoid; page-break-inside:avoid; margin-top:12px; border:1px solid #E3DFD3; border-radius:9px; padding:8px 11px }
+    .club .ct{ font-size:11.5pt; font-weight:900 } .club .cm{ font-size:9pt; color:#666 }
+    .names{ columns:3; column-gap:14px; margin-top:5px; font-size:9.5pt }
+    .names div{ break-inside:avoid; padding:1px 0 }
+    .pb{ page-break-before:always; break-before:page }
+    .ft{ margin-top:10px; color:#999; font-size:8pt; text-align:right }
+    .bar{ display:none }
+    @media screen{ body{ background:#EDEBE4; padding:18px } .wrap{ background:#fff; max-width:186mm; margin:0 auto; padding:12mm; box-shadow:0 4px 18px rgba(0,0,0,.12) }
+      .bar{ display:flex; gap:8px; justify-content:center; margin-bottom:14px }
+      .bar button{ font-family:inherit; font-size:13px; font-weight:800; padding:9px 18px; border-radius:10px; border:0; background:#1E3932; color:#fff; cursor:pointer } }
+  </style></head><body>
+  <div class="bar"><button onclick="window.print()">🖨 인쇄 · PDF 저장</button><button onclick="window.close()" style="background:#fff;color:#5A6560;border:1.5px solid #E3E1DA">닫기</button></div>
+  <div class="wrap">${body}</div>
+  <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),450));<\/script></body></html>`);
+  w.document.close();
+}
+function statusPrintBody(withNames){
+  const list = CLUBS.slice().sort((x,y)=>String(x.title||'').localeCompare(String(y.title||''),'ko'));
+  const uniq = new Set(); list.forEach(c=>rosterOf(c.id).forEach(r=>uniq.add(r.n+'|'+r.g)));
+  const timeOf = c => `${(c.weekdays||[]).map(w=>WD[w]).join('·')} ${c.start||''}${c.start?`–${addMin(c.start,c.durMin||60)}`:''}`;
+  const head = `<div class="hd"><div class="t">🎨 ${esc(ORGS[SEM.org]||SEM.org||'')} · 동아리 현황</div>
+    <div class="s">${esc(SEM.name||SEM.id||'')} · 개설 ${list.length}개 · 참여 ${uniq.size}명${SEM.rangeFrom?` · ${esc(SEM.rangeFrom)} ~ ${esc(SEM.rangeTo||'')}`:''}</div></div>`;
+  const table = `<table><tr><th>동아리</th><th>요일 · 시간</th><th>교실</th><th>강사</th><th style="text-align:center">인원</th></tr>
+    ${list.map(c=>`<tr><td><span style=\"display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:${colorOf(c.id)}\"></span><b>${esc(c.title||'')}</b></td><td>${esc(timeOf(c))}</td><td>${esc(roomOf(c)||'—')}</td><td>${esc(c.instructorName||'')}</td><td style="text-align:center">${rosterOf(c.id).length}</td></tr>`).join('')}</table>`;
+  const wds = [1,2,3,4,5,6].filter(w=>list.some(c=>(c.weekdays||[]).includes(w)));
+  const byWd = wds.length ? `<h3>요일별 한눈에</h3><table><tr>${wds.map(w=>`<th style="text-align:center">${WD[w]}</th>`).join('')}</tr>
+    <tr>${wds.map(w=>`<td>${list.filter(c=>(c.weekdays||[]).includes(w)).sort((a,b)=>String(a.start||'').localeCompare(String(b.start||''))).map(c=>`<div>· ${esc(c.title||'')} <span style="color:#888;font-size:8.5pt">${esc(c.start||'')}</span></div>`).join('')}</td>`).join('')}</tr></table>` : '';
+  const names = !withNames ? '' : `<div class="pb"></div><h3 style="margin-top:0">👥 동아리별 명단</h3>` + list.map(c=>{
+    const r = rosterOf(c.id).slice().sort((a,b)=>String(a.n).localeCompare(String(b.n),'ko'));
+    return `<div class="club"><div class="ct"><span style=\"display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:${colorOf(c.id)}\"></span>${esc(c.title||'')} <span style="font-size:9.5pt;color:#666;font-weight:700">· ${r.length}명</span></div>
+      <div class="cm">${esc(timeOf(c))} · ${esc(roomOf(c)||'교실 미정')} · 강사 ${esc(c.instructorName||'')}</div>
+      ${r.length?`<div class="names">${r.map(x=>`<div>${esc(x.n)} <span style="color:#888;font-size:8.5pt">${esc(String(x.g||'').replace('학년',''))}${x.c?'·'+esc(String(x.c).replace('반','')):''}</span></div>`).join('')}</div>`:'<div class="cm">아직 확정된 학생이 없습니다</div>'}</div>`;
+  }).join('');
+  return head + table + byWd + names + `<div class="ft">출력 ${new Date().toLocaleDateString('ko-KR')} · 교사 선교사</div>`;
+}
+window.printStatus = ()=>{
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:fixed;inset:0;background:rgba(16,22,26,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px';
+  bg.addEventListener('click', e=>{ if(e.target===bg) bg.remove(); });
+  bg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:18px;max-width:380px;width:100%;font-family:inherit">
+    <div style="font-size:15px;font-weight:900;color:#0F241F;margin-bottom:4px">🖨 현황 출력</div>
+    <div style="font-size:12px;color:#5A6560;margin-bottom:12px">A4 세로로 나옵니다. 인쇄 창에서 «PDF로 저장»도 가능해요.</div>
+    <button onclick="this.closest('div[style*=fixed]').remove(); openPrintWinCS('동아리 현황', statusPrintBody(false))"
+      style="display:block;width:100%;text-align:left;border:1.5px solid #1E3932;background:#F6FBF8;border-radius:11px;padding:11px 13px;margin-bottom:8px;cursor:pointer;font-family:inherit">
+      <b style="font-size:13px;color:#0F241F">📋 요약표 한 장</b><div style="font-size:11.5px;color:#5A6560;margin-top:2px">동아리 · 요일·시간 · 교실 · 강사 · 인원 + 요일별 한눈에 — 게시·배포용</div></button>
+    <button onclick="this.closest('div[style*=fixed]').remove(); openPrintWinCS('동아리 현황·명단', statusPrintBody(true))"
+      style="display:block;width:100%;text-align:left;border:1.5px solid #E3E1DA;background:#fff;border-radius:11px;padding:11px 13px;cursor:pointer;font-family:inherit">
+      <b style="font-size:13px;color:#0F241F">👥 명단 포함</b><div style="font-size:11.5px;color:#5A6560;margin-top:2px">요약표 다음 장부터 동아리별 참여 학생 이름 — 담임·강사용</div></button>
+  </div>`;
+  document.body.appendChild(bg);
+};
+window.statusPrintBody = statusPrintBody;
+window.openPrintWinCS = openPrintWinCS;
+
+function render(){
+  const secs={}; CLUBS.forEach(c=>{ secs[c.id]=liveSessions(c); });
+  const students = new Set(); CLUBS.forEach(c=>rosterOf(c.id).forEach(s=>students.add(s.n+'|'+s.g)));
+  const range = MONTHS.length? `${MONTHS[0].slice(0,4)}.${MONTHS[0].slice(5,7)} – ${MONTHS.at(-1).slice(0,4)}.${MONTHS.at(-1).slice(5,7)}` : '';
+  let h = '';
+  if(!SHARE){
+    h += `<div class="tools">
+      <select onchange="pickSem(this.value)">${SEMS.map(s=>`<option value="${s.id}"${s.id===SEM.id?' selected':''}>${esc(ORGS[s.org]||s.org)} · ${esc(s.name||s.id)}</option>`).join('')}</select>
+      ${CU?.role==='super'?`<button class="tb-btn pr" onclick="stampStatus()">📊 현황 게시</button>`:''}
+      ${SNAP?`<button class="tb-btn" onclick="copyShare()">🔗 링크 복사</button>`:''}
+      <button class="tb-btn" onclick="printStatus()">🖨 현황 출력</button>
+      <div class="pubnote">${SNAP?`게시됨 · ${SNAP.byName?esc(SNAP.byName)+' · ':''}공유 링크의 명단·색은 도장 시점 기준 — <b>이 화면의 명단은 실시간</b>입니다 (다시 게시하면 공유본도 갱신)`:'아직 게시 전 — 「📊 현황 게시」를 누르면 학부모 공유 링크가 생깁니다 (명단은 도장 시점으로 담겨요)'}</div>
+    </div>`;
+  }
+  h += `<div class="ph"><div class="em">🎨</div>
+    <div><b>${esc(ORGS[SEM.org]||SEM.org)} · 동아리 현황</b><span>${esc(SEM.name||'')} · 확정 ${CLUBS.length}개 · 참여 ${students.size}명</span></div>
+    ${range?`<div class="yr">${range}</div>`:''}</div>`;
+
+  if(!CLUBS.length){
+    h += `<div class="empty">확정·공고된 동아리가 아직 없어요.</div>`;
+    $I('cs').innerHTML = h; return;
+  }
+
+  /* Ⅰ. A-1 카드 */
+  const allOpen = OPENC.size===CLUBS.length;
+  h += `<div class="cs-two"><div class="cs-a"><div class="secT">🎯 개설 동아리 <span class="mini" onclick="togAll()">${allOpen?'모두 접기':'모두 펼치기'}</span></div><div class="grid2">`;
+  CLUBS.slice().sort((a,b)=>String(a.title).localeCompare(String(b.title),'ko')).forEach(c=>{
+    const col=colorOf(c.id), r=rosterOf(c.id), open=OPENC.has(c.id), ses=secs[c.id];
+    const days=(c.weekdays||[]).map(w=>WD[w]).join('·');
+    h += `<div class="ccard${open?' open':''}" onclick="togC('${c.id}')">
+      <b><span class="dot" style="background:${col}"></span>${esc(c.title||'')}</b>
+      <div class="m">${days} ${esc(c.start||'')}${c.start?`–${addMin(c.start,c.durMin||60)}`:''}${roomOf(c)?` · <span class="rm">🏫 ${esc(roomOf(c))}</span>`:''}</div>
+      <div class="n">👥 <em>${r.length}명</em>${instrOf(c)?` · 👤 ${esc(instrOf(c))}`:''} · 총 ${ses.length?ses[0].total:0}차시</div>
+      ${open?`<div class="roster">${r.length? r.map(s=>`<span class="stu">${esc(s.n)}<i>${esc(String(s.g).replace('학년',''))}${s.c?'·'+esc(String(s.c).replace('반','')):''}</i></span>`).join('')
+        : `<span class="none">${SHARE?'명단은 게시 이후 표시됩니다':'확정된 참여자가 아직 없어요'}</span>`}</div>`:''}
+    </div>`;
+  });
+  h += `</div></div>`;
+
+  /* Ⅱ. 달력 */
+  h += `<div class="cs-b"><div class="secT">🗓 월별 일정
+    <div class="vsw"><button class="${VIEW==='cal'?'on':''}" onclick="setView('cal')">📅 월</button><button class="${VIEW==='week'?'on':''}" onclick="setView('week')">📋 주</button></div></div>`;
+  h += `<div class="mtabs">${MONTHS.map(m=>`<div class="mtab${m===MON?' on':''}" onclick="setMon('${m}')">${mLabel(m)}</div>`).join('')}</div>`;
+  h += `<div class="legend"><span class="lg ac">학사일정</span>${CLUBS.slice().sort((a,b)=>String(a.title).localeCompare(String(b.title),'ko')).map(c=>
+    `<span class="lg${HIDE.has(c.id)?' off':''}" onclick="togHide('${c.id}')"><span class="dot" style="background:${colorOf(c.id)}"></span>${esc((c.title||'').slice(0,7))}</span>`).join('')}</div>`;
+
+  h += VIEW==='cal' ? calHTML(secs) : weekHTML(secs);
+  if(VIEW==='cal' && SELD) h += sheetHTML(SELD, secs);
+  h += `</div></div>`;   // .cs-b · .cs-two (v-112)
+
+  h += `<div class="sfoot">회색은 학사일정(학부모 공유본), 색은 동아리 수업이에요 · 항목을 누르면 자세히 보여요<br>${SHARE?'일정이 바뀌면 이 화면도 자동으로 갱신됩니다':''}</div>`;
+  $I('cs').innerHTML = h;
+}
+function sesOn(ds, secs){
+  const out=[];
+  CLUBS.forEach(c=>{ if(HIDE.has(c.id)) return;
+    (secs[c.id]||[]).forEach(s=>{ if(s.date===ds) out.push({c, s}); }); });
+  return out.sort((a,b)=> a.s.time.localeCompare(b.s.time) || String(a.c.title).localeCompare(String(b.c.title),'ko'));
+}
+function calHTML(secs){
+  const y=Number(MON.slice(0,4)), m=Number(MON.slice(5,7));
+  const first=new Date(y,m-1,1), last=new Date(y,m,0);
+  const start=new Date(first); start.setDate(1-first.getDay());
+  let h = `<div class="cal"><div class="wk">${WD.map(w=>`<div>${w}</div>`).join('')}</div>`;
+  for(let w=0; w<6; w++){
+    const rs=new Date(start); rs.setDate(start.getDate()+w*7);
+    if(rs>last) break;                                    // 행 시작이 월을 넘어가면 종료
+    h += `<div class="row7">`;
+    for(let i=0;i<7;i++){
+      const d=new Date(start); d.setDate(start.getDate()+w*7+i);
+      const ds=ymd(d), inM=(d.getMonth()+1===m);
+      const ac=inM?acadItemsOf(ds):[], ses=inM?sesOn(ds,secs):[];
+      const cls=['cd']; if(!inM)cls.push('dim'); if(i===0)cls.push('sun'); if(i===6)cls.push('sat');
+      if(ds===todayS&&inM)cls.push('today'); if(ds===SELD)cls.push('sel');
+      h += `<div class="${cls.join(' ')}"${inM?` onclick="pickDay('${ds}')"`:''}><div class="dn">${d.getDate()}</div>`;
+      ac.slice(0,2).forEach(a=>{
+        const multi=a.from!==a.to, st=a.from===ds, en=a.to===ds;
+        const bc = multi ? (st?'acb sL':(en?'acb sR':'acb cont')) : 'acb';
+        h += `<div class="${bc}">${(st||i===0)?esc(a.t):''}</div>`; });
+      if(ses.length){ h += `<div class="dots">${ses.slice(0,4).map(x=>`<span class="dd" style="background:${colorOf(x.c.id)}"></span>`).join('')}${ses.length>4?`<span class="dd more">+${ses.length-4}</span>`:''}</div>`; }
+      h += `</div>`;
+    }
+    h += `</div>`;
+  }
+  return h+`</div>`;
+}
+function sheetHTML(ds, secs){
+  const ac=acadItemsOf(ds), ses=sesOn(ds,secs), bk=bkMap()[ds];
+  let h = `<div class="sheet"><div class="sh">${dLabel(ds)}<span>탭한 날짜</span></div>`;
+  ac.forEach((a,i)=> h += `<div class="sit ac" onclick="popAc(${i},'${ds}')"><span class="bar"></span><b>${esc(a.t)}</b><span class="t">${a.from===a.to?'하루':`${a.from.slice(5).replace('-','.')}–${a.to.slice(5).replace('-','.')}`}</span></div>`);
+  ses.forEach(x=> h += `<div class="sit" onclick="popSes('${x.c.id}','${x.s.date}')"><span class="bar" style="background:${colorOf(x.c.id)}"></span>
+    <span class="mid"><span class="l1"><b>${esc(x.c.title||'')}</b><span class="no" style="background:${colorOf(x.c.id)}">${x.s.no}/${x.s.total}차시</span></span>
+    <span class="l2">🏫 ${roomOf(x.c)?esc(roomOf(x.c)):'교실 미정'}${instrOf(x.c)?` · 👤 ${esc(instrOf(x.c))}`:''} · 👥 ${rosterOf(x.c.id).length}명</span></span>
+    <span class="t">${x.s.time}–${x.s.end}</span></div>`);
+  if(!ac.length && !ses.length) h += `<div class="sit none">${bk?`동아리 휴강 — ${esc(bk)}`:'이날은 학사·동아리 일정이 없어요'}</div>`;
+  else if(bk && !ses.length) h += `<div class="sit none">동아리 휴강 — ${esc(bk)}</div>`;
+  return h+`</div>`;
+}
+function weekHTML(secs){
+  const y=Number(MON.slice(0,4)), m=Number(MON.slice(5,7));
+  const first=new Date(y,m-1,1), last=new Date(y,m,0);
+  const start=new Date(first); start.setDate(first.getDate()-((first.getDay()+6)%7));   // 월요일 기준
+  let h='', wn=0;
+  for(let ws=new Date(start); ws<=last; ws.setDate(ws.getDate()+7)){
+    const we=new Date(ws); we.setDate(ws.getDate()+6);
+    if(we < first) continue;                               // 주 전체가 지난달이면 건너뜀
+    wn++;
+    let rows='';
+    for(let i=0;i<7;i++){
+      const d=new Date(ws); d.setDate(ws.getDate()+i);
+      if(d.getMonth()+1!==m) continue;
+      const ds=ymd(d), ac=acadItemsOf(ds), ses=sesOn(ds,secs), bk=bkMap()[ds];
+      if(i>=5 && !ac.length && !ses.length) continue;                 // 토·일은 내용 있을 때만
+      const off = !!bk || ac.some(a=>a.kind==='hd');
+      rows += `<div class="drow${off?' off':''}${ds===todayS?' today2':''}"><div class="dl"><b>${d.getDate()}</b><span>${WD[d.getDay()]}</span></div><div class="dbody">`;
+      ac.forEach((a,ai)=>{ rows += `<div class="acline" onclick="popAc(${ai},'${ds}')">${esc(a.t)}</div>`; });
+      ses.forEach(x=>{ rows += `<span class="cchip" style="background:${colorOf(x.c.id)}" onclick="popSes('${x.c.id}','${x.s.date}')">${esc(x.c.title||'')} <i>${x.s.no}/${x.s.total} · ${x.s.time}</i></span>`; });
+      if(!ac.length && !ses.length) rows += `<span class="emp">일정 없음</span>`;
+      else if(bk && !ses.length && !ac.length) rows += `<span class="emp">동아리 휴강</span>`;
+      rows += `</div></div>`;
+    }
+    if(rows) h += `<div class="wcard"><div class="whd">${m}월 ${['첫','둘','셋','넷','다섯','여섯'][wn-1]||wn}째 주<span>${ws.getMonth()+1}.${ws.getDate()} – ${we.getMonth()+1}.${we.getDate()}</span></div>${rows}</div>`;
+  }
+  return h || `<div class="empty">이 달에는 표시할 일정이 없어요.</div>`;
+}
+
+/* 📅 (v-92) 오늘 수업이 있으면 처음부터 오늘 목록을 펼쳐 둡니다 */
+function pickTodayIfAny(){
+  if(SELD) return;
+  if(MON === todayS.slice(0,7) && CLUBS.some(c=> liveSessions(c).some(s=> s.date === todayS))) SELD = todayS;
+}
+/* ── 상호작용 ── */
+window.togC = id=>{ OPENC.has(id)?OPENC.delete(id):OPENC.add(id); render(); };
+window.togAll = ()=>{ if(OPENC.size===CLUBS.length) OPENC.clear(); else CLUBS.forEach(c=>OPENC.add(c.id)); render(); };
+window.setMon = m=>{ MON=m; SELD=''; render(); };
+window.setView = v=>{ VIEW=v; render(); };
+window.togHide = id=>{ HIDE.has(id)?HIDE.delete(id):HIDE.add(id); render(); };
+window.pickDay = ds=>{ SELD = (SELD===ds)?'':ds; render();
+  if(SELD){ setTimeout(()=>{ document.querySelector('.sheet')?.scrollIntoView({behavior:'smooth', block:'nearest'}); }, 40); } };
+function popBG(html){ const bg=document.createElement('div'); bg.className='cs-bg';
+  bg.addEventListener('click', ev=>{ if(ev.target===bg) bg.remove(); });
+  bg.innerHTML=html; document.body.appendChild(bg); }
+window.popAc = (i, ds)=>{ const a=acadItemsOf(ds)[i]; if(!a) return;
+  popBG(`<div class="pop acp"><div class="pt">🗓 ${esc(a.t)}</div>
+    <div class="pb"><b>${a.from===a.to? a.from.replace(/-/g,'.') : `${a.from.replace(/-/g,'.')} – ${a.to.replace(/-/g,'.')}`}</b></div>
+    <div class="foot">학사일정(학부모 공유본)에서 자동으로 가져왔어요 — 원본이 바뀌면 함께 갱신됩니다</div></div>`); };
+window.popSes = (cid, ds)=>{ const c=CLUBS.find(x=>x.id===cid); if(!c) return;
+  const s=liveSessions(c).find(x=>x.date===ds); if(!s) return;
+  const r=rosterOf(cid);
+  if(!SHARE && CU){   // 👥 (v-92) 누가 참여하는지 + 그날 출석부 · 동아리 출석 — 학생 안전·귀가 확인
+    openClubRoster({ db, fs:{ doc, getDoc, getDocs, collection, query, where }, club:c, sem:SEM, session:s,
+      roster:r, color:colorOf(cid), org:SEM.org });
+    return;
+  }
+  popBG(`<div class="pop"><div class="pt" style="background:${colorOf(cid)}">${esc(c.title||'')} · ${s.no}/${s.total}차시</div>
+    <div class="pb"><b>${dLabel(ds)} ${s.time} – ${s.end}</b>${roomOf(c)?` · 🏫 ${esc(roomOf(c))}`:''}<br>
+    ${instrOf(c)?`👤 ${esc(instrOf(c))} · `:''}참여 ${r.length}명</div>
+    <div class="foot">보강·시간 변경은 강사 입력 즉시 이 달력에 반영됩니다</div></div>`); };
+
+window.doLogin = async ()=>{
+  const id=$I('l-id').value.trim(), pw=$I('l-pw').value, msg=$I('l-msg'); msg.textContent='';
+  try{ await signInWithEmailAndPassword(auth, `${id}@gyosa-seongyosa.staff`, pw); }
+  catch(e){ msg.textContent='로그인 실패 — 아이디나 비밀번호를 확인해 주세요.'; }
+};
+boot();
+</script>
+<script src="modal-close.js"></script>
+<script src="org-core.js"></script>
+<script src="menu.js"></script>
+<script src="filename.js"></script>
+<script src="sidebar.js"></script>
+<script type="module" src="union.js?v=64"></script>
+</body>
+</html>

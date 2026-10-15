@@ -1,0 +1,2684 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>출석부 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="출석부">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="theme.css">
+<style>
+:root {
+  --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
+  --gold:#B08D3C; --goldd:#8A6410; --goldp:#F7EFD8;
+  --iv:#F2F0EB; --ivd:#E3E1DA;
+  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#ffffff;
+  --sh:0 2px 12px rgba(30,57,50,0.08); --r:12px; --rs:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--iv);color:var(--tx);min-height:100vh;}
+
+#gate{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(150deg,#E8F3EF 0%,#F2F0EB 60%,#F7EFD8 100%);padding:24px;text-align:center;}
+.gbox{background:var(--wh);border-radius:24px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(30,57,50,0.12);}
+.gtitle{font-size:22px;font-weight:800;color:var(--gd);margin-bottom:8px;}
+.gsub{font-size:14px;color:var(--ts);line-height:1.6;margin-bottom:20px;}
+.gbtn{display:inline-block;width:100%;padding:14px;background:linear-gradient(135deg,#00704A,#1E3932);color:var(--wh);border:none;border-radius:var(--rs);font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;}
+
+#ms{display:none;flex-direction:column;width:100%;}
+.ah{display:none;}
+.pg-links{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.pg-link{padding:7px 14px;border-radius:8px;background:var(--wh);border:1px solid var(--ivd);color:var(--gm);font-size:13px;font-weight:600;text-decoration:none;}
+.pg-link:hover{background:var(--gp);}
+.ah{background:linear-gradient(135deg,#1E3932,#16302A);color:var(--wh);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+.ahl{display:flex;align-items:center;gap:12px;}
+.ahi{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.aht{font-size:16px;font-weight:700;}
+.ahr{text-align:right;}
+#hn{font-size:15px;font-weight:600;}
+#hi{font-size:11px;opacity:.7;margin-top:2px;}
+.homebtn{background:rgba(255,255,255,0.15);color:var(--wh);border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;margin-top:4px;text-decoration:none;display:inline-block;}
+
+/* 하위 탭 */
+.subtb{display:flex;gap:4px;background:var(--wh);padding:8px 16px;border-bottom:1px solid var(--ivd);overflow-x:auto;}
+.subtbtn{padding:8px 14px;background:transparent;border:none;border-radius:8px;font-size:14px;font-weight:600;color:var(--ts);cursor:pointer;white-space:nowrap;}
+.subtbtn.active{background:var(--gp);color:var(--gm);}
+
+.tc{padding:0;max-width:var(--page-dash,1680px);margin:0 auto;width:100%;}   /* v-112 넓은 화면 */
+/* 넓은 화면 (v-112) — 일일 체크의 학생 줄을 두 명씩 나란히 (최대 두 명 · 칸이 500px 아래로 좁아지면 한 줄에 한 명) */
+.ck-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(min(500px,100%),calc(50% - 14px)),1fr));column-gap:28px;}
+.actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
+.adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
+.acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
+
+.fgrp{display:flex;flex-direction:column;margin-bottom:12px;}
+.fgrp label{font-size:12px;font-weight:700;color:var(--ts);margin-bottom:5px;}
+.fgrp input,.fgrp select{height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);outline:none;width:100%;font-family:inherit;}
+
+.bp{background:linear-gradient(135deg,#00704A,#1E3932);color:var(--wh);border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;}
+.bs{background:var(--iv);color:var(--ts);border:1.5px solid var(--ivd);border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+.bm{background:var(--gp);color:var(--gm);border:none;border-radius:10px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+
+/* 출결 항목 목록 */
+.typelist{display:flex;flex-direction:column;gap:8px;margin-top:16px;}
+.typeitem{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--wh);border:1px solid var(--ivd);border-radius:10px;}
+@media(max-width:640px){.typeitem{flex-wrap:wrap;row-gap:8px;}}   /* 폰 (v-112) — 버튼이 화면 밖으로 밀리지 않게 다음 줄로 */
+.typedot{width:20px;height:20px;border-radius:50%;flex-shrink:0;}
+.typename{font-size:15px;font-weight:700;color:var(--gd);flex:1;}
+.typebadge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:100px;}
+.typegrip{cursor:grab;color:var(--tl);font-size:15px;padding:0 2px;user-select:none}
+.ga-org{margin-bottom:14px}
+.ga-org:last-child{margin-bottom:0}
+.ga-orgname{font-size:13px;font-weight:800;color:var(--gd);margin-bottom:7px}
+.ga-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--ivd)}
+.ga-row:last-child{border-bottom:none}
+.ga-grade{flex:0 0 64px;font-size:13px;font-weight:800;color:var(--gm);padding-top:5px}
+.ga-chips{display:flex;gap:5px;flex-wrap:wrap}
+.ga-chip{font-family:inherit;font-size:12.5px;font-weight:700;padding:6px 12px;border:1.5px solid var(--ivd);border-radius:8px;background:var(--wh);color:var(--ts);cursor:pointer}
+.ga-chip:hover{border-color:var(--gm)}
+.ga-chip.on{background:var(--gm);border-color:var(--gm);color:#fff}
+.ga-chip i{font-style:normal;font-size:10px;opacity:.8}
+
+.empty{text-align:center;color:var(--tl);padding:30px;font-size:14px;}
+
+.addrow{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:8px;}
+.addrow .fgrp{margin-bottom:0;}
+
+.mov{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;}
+.mbk{position:absolute;inset:0;background:rgba(20,25,60,0.5);}
+.mbox{position:relative;background:var(--wh);border-radius:16px;padding:24px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.mtitle{font-size:18px;font-weight:800;color:var(--gd);margin-bottom:4px;}
+.msub{font-size:13px;color:var(--ts);margin-bottom:16px;}
+.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+.ck-mode-btn{padding:9px 16px;border:1.5px solid var(--ivd);background:var(--wh);border-radius:9px;font-size:14px;font-weight:600;color:var(--ts);cursor:pointer;}
+.ck-mode-btn.on{background:var(--gm);color:#fff;border-color:var(--gm);}
+.mtab{border-collapse:collapse;font-size:12px;white-space:nowrap;}
+.mtab th,.mtab td{border:1px solid var(--ivd);padding:0;text-align:center;}
+.mtab .nm{position:sticky;left:0;background:var(--wh);z-index:2;text-align:left;padding:4px 8px;font-weight:600;min-width:80px;}
+.mtab th.nm{z-index:3;background:var(--iv);}
+.mtab .dcell{width:30px;height:30px;cursor:pointer;font-size:11px;font-weight:700;}
+.mtab .dcell.blocked{background:var(--iv);color:#bbb;cursor:default;}
+.mtab .dcell.blocked.allow{cursor:pointer;}
+.mtab .dcell.drag-sel{outline:2px solid var(--gm);outline-offset:-2px;filter:brightness(0.92);}
+.mtab .dcell.auto-present{font-weight:400;opacity:0.85;}
+.mtab{user-select:none;}
+.mtab .wkhd{background:var(--iv);color:#999;}
+.mmenu{position:fixed;z-index:200;background:var(--wh);border:1px solid var(--ivd);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.2);padding:6px;min-width:130px;max-height:300px;overflow-y:auto;}
+.mmenu button{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;border:none;background:none;border-radius:10px;font-size:13px;cursor:pointer;text-align:left;}
+.mmenu button:hover{background:var(--iv);}
+.mmenu .sep{border-top:1px solid var(--ivd);margin:4px 0;font-size:11px;color:var(--tl);padding:4px 10px 2px;}
+</style>
+<link rel="stylesheet" href="ui.css">
+<script src="loading.js"></script>
+<script src="modal-close.js"></script>
+<script src="org-core.js"></script>
+<script src="student-status.js"></script>
+<script src="orgbar.js"></script>
+<script src="menu.js"></script>
+<script src="timemachine.js"></script>
+<script src="filename.js"></script>
+<script src="drawer.js"></script>
+<script src="sidebar.js"></script>
+<script type="module" src="union.js?v=64"></script>
+<script src="org-bar.js"></script>
+<script type="module" src="badges.js"></script>
+<script type="module" src="presence.js"></script>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gbox">
+    <div class="gtitle">출석부</div>
+    <div class="gsub" id="gate-msg">로그인 확인 중...</div>
+    <a class="gbtn" id="gate-btn" href="index.html" style="display:none">로그인 화면으로</a>
+  </div>
+</div>
+
+<div id="ms">
+  <div id="org-bar"></div>
+  <div class="subtb" id="subtb">
+    <button class="subtbtn active" id="tb-check" onclick="showTab('check')">✅ 출석 체크</button>
+    <button class="subtbtn" id="tb-stat" onclick="showTab('stat')">📊 통계</button>
+    <button class="subtbtn" id="tb-report" onclick="showTab('report')">📋 학기말 출결표</button>
+    <button class="subtbtn" id="tb-set" onclick="showTab('set')" style="display:none">⚙️ 설정</button>
+  </div>
+  <div class="tc" id="c-check" style="display:none"></div>
+  <div class="tc" id="c-stat" style="display:none"></div>
+  <div class="tc" id="c-set" style="display:none"></div>
+  <div class="tc" id="c-report" style="display:none"></div>
+</div>
+
+<div id="mwrap"></div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, query, where, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { eqInDays, inRange } from './qread.js';   // 📉 v120 그 반 · 그 날짜(그 달)만 읽기
+// 📉 v120 학기 통계 · 출결표 — 같은 기간을 보기만 바꿔 다시 그릴 때는 받은 기록을 다시 쓴다 (5분 · 이 화면에서 출결을 고치면 버림)
+let SA_CACHE = null;
+function saRange(sd, ed){
+  const key = sd + '~' + ed;
+  if(SA_CACHE && SA_CACHE.key === key && Date.now() - SA_CACHE.t < 300000) return SA_CACHE.p;
+  const p = inRange(db, 'studentAttendance', sd, ed).catch(e => { SA_CACHE = null; throw e; });
+  SA_CACHE = { key, p, t: Date.now() };
+  return p;
+}
+function saDrop(){ SA_CACHE = null; RPT.att = null; }
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = (()=>{ try{ return initializeFirestore(app, { experimentalAutoDetectLongPolling: true }); }catch(e){ return getFirestore(app); } })()   /* 🔌 막히는 네트워크 자동 우회 */;
+
+const $I = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+const ROLES = {super:'슈퍼관리자', org_admin:'기관관리자', tab_admin:'부서장', teacher:'교사'};
+let CU = null;
+let TYPES = [];   // 출결 항목 캐시
+let TERMS = [];   // 학기 일정 캐시
+let HOLIDAYS = []; // 출근부 공휴일 (연동)
+let WORKPERIODS = []; // 출근부 근무/방학 기간 (연동)
+let CLASSES = [];  // 반 편성 캐시 (올해)
+
+// ── 학년 정렬 (4세→7세→1학년→12학년). 어디서나 공통 사용 ──
+function gradeRank(g){
+  if(!g) return 999;
+  const first = String(g).split(/[·,]/)[0].trim(); // 합반이면 첫 학년 기준
+  const age = first.match(/(\d+)\s*세/);
+  if(age) return Number(age[1]);            // 4~7세 → 4~7
+  const grd = first.match(/(\d+)\s*학년/);
+  if(grd) return 100 + Number(grd[1]);      // 1~12학년 → 101~112
+  return 998;
+}
+// 반 배열을 학년순(같으면 이름순)으로 정렬
+function sortClasses(arr){
+  return [...arr].sort((a,b)=> gradeRank(a.grade)-gradeRank(b.grade) || (a.name||'').localeCompare(b.name||'','ko'));
+}
+// 학년 문자열 배열을 나이순으로 정렬
+function sortGrades(arr){
+  return [...arr].sort((a,b)=> gradeRank(a)-gradeRank(b));
+}
+let STUDENTS = {}; // 학생 캐시 (id -> data)
+let curYear = new Date().getFullYear();
+
+// 기본 출결 항목 (최초 1회 자동 생성용)
+const DEFAULT_TYPES = [
+  {name:'출석', color:'#16a34a', order:1, isPresent:true},
+  {name:'결석', color:'#dc2626', order:2, isPresent:false},
+  {name:'지각', color:'#f59e0b', order:3, isPresent:false},
+  {name:'조퇴', color:'#d97706', order:4, isPresent:false},
+  {name:'병결', color:'#7c3aed', order:5, isPresent:false},
+  {name:'체험학습', color:'#0369a1', order:6, isPresent:false},
+];
+
+/* ── 📋 출결 사유(하위 항목) — 학기말 출결표 기준 ── */
+const REASONS = {
+  '결석':['질병','무단','기타'],
+  '지각':['질병','무단','기타'],
+  '조퇴':['질병','무단','기타'],
+  '체험학습':['가족 대소사','가족 여행','기타'],
+};
+const reasonShort = r => r==='가족 대소사' ? '대' : r==='가족 여행' ? '여' : (r||'').slice(0,1);
+const needsReasonT = t => !!(t && REASONS[t.name]);
+// '병결'은 «결석·질병»으로 통일 — 새 입력 메뉴에서는 숨긴다 (옛 기록은 결석·질병으로 표시)
+const HIDDEN_TYPE_NAMES = ['병결'];
+const menuTypes = () => [...TYPES].sort((a,b)=>(a.order||0)-(b.order||0))
+  .filter(t=>!HIDDEN_TYPE_NAMES.includes(t.name));
+const legacyByeong = t => t && t.name==='병결';
+
+/* ── 🔒 월 단위 잠금 — 입력이 끝난 달은 잠근다 (수퍼·기관관리자만 잠금/해제) ── */
+let MONTH_LOCK = false;
+function canLockMonth(c){
+  return !!CU && (CU.role==='super' || CU.role==='org_admin') && myOrgs().includes(c.org);
+}
+/* v119: 📅 일일 체크도 잠긴 달을 따른다 (예전에는 «한눈에 보기»만 확인했다) */
+let DAY_LOCK = false, DAY_LOCK_KEY = '';
+async function loadDayLock(c, ymd){
+  const key = `${c.org}_${String(ymd||'').slice(0,7)}`;
+  DAY_LOCK = false; DAY_LOCK_KEY = key;
+  try {
+    const d = await getDoc(doc(db,'attendLocks', key));
+    DAY_LOCK = d.exists() && d.data().locked === true;
+  } catch(e){}
+  return DAY_LOCK;
+}
+async function loadMonthLock(c){
+  MONTH_LOCK = false;
+  try {
+    const d = await getDoc(doc(db,'attendLocks', `${c.org}_${monthYM}`));
+    MONTH_LOCK = d.exists() && d.data().locked === true;
+  } catch(e){}
+}
+/* ═════════ 📋 학기말 출결표 ═════════
+   학생별 출결을 학기 단위로 집계해 생활기록부 형식의 표로 만든다.
+   · 결석·지각·조퇴: 질병/무단/기타 · 체험학습: 가족 대소사/가족 여행/기타
+   · 옛 «병결» 기록은 결석·질병으로, 사유 없는 기록은 «기타»로 집계
+   · 출석일수 = 수업일수 − 결석일수 (지각·조퇴·체험학습은 출석 인정) */
+let RPT = { att: null };   // studentAttendance 캐시
+
+function renderReport(){
+  const box = $I('c-report');
+  const years = [...new Set(TERMS.map(t=>t.year))].sort((a,b)=>b-a);
+  box.innerHTML = `<div class="acard">
+    <h3 class="actitle">📋 학기말 출결표</h3>
+    <p class="adesc">학기 전체 출결을 학생별로 정리합니다. 반·학년 취합표로 한눈에 보고,
+      학생별 개별표(생활기록부 형식)로 인쇄할 수 있어요. 지각·조퇴·체험학습은 출석으로 인정됩니다.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="fgrp" style="margin-bottom:0"><label>연도</label>
+        <select id="rp-year" onchange="loadReport()">${years.map(y=>`<option value="${y}">${y}년</option>`).join('')}</select></div>
+      <div class="fgrp" style="margin-bottom:0"><label>기관</label>
+        <select id="rp-org" onchange="loadReport()">${myOrgs().map(o=>`<option value="${o}">${ORGS[o]||o}</option>`).join('')}</select></div>
+      <div class="fgrp" style="margin-bottom:0"><label>학기</label>
+        <select id="rp-term" onchange="loadReport()"><option value="1">1학기</option><option value="2">2학기</option></select></div>
+      <div class="fgrp" style="margin-bottom:0;min-width:150px"><label>반</label>
+        <select id="rp-class" onchange="loadReport()"></select></div>
+      <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <span id="rp-sticky-btn">${stickyBtnHTML('rp')}</span>
+        <button class="bp" onclick="printReport()">🖨 개별표 인쇄</button></span>
+    </div>
+  </div>
+  <div id="rp-body"><div class="acard"><p class="empty">반을 선택하면 표가 나옵니다.</p></div></div>`;
+  // 반 목록 채우고 첫 로드
+  fillReportClasses();
+  loadReport();
+}
+window.renderReport = renderReport;
+
+function fillReportClasses(){
+  const org = $I('rp-org')?.value;
+  const sel = $I('rp-class'); if(!sel) return;
+  const list = sortClasses(CLASSES.filter(c=>c.org===org));
+  sel.innerHTML = `<option value="">전체 (학년순)</option>` +
+    list.map(c=>`<option value="${c.id}">${c.grade?'['+c.grade+'] ':''}${esc(c.name)}</option>`).join('');
+}
+
+function rpTerm(){
+  const y=Number($I('rp-year')?.value), o=$I('rp-org')?.value, t=Number($I('rp-term')?.value);
+  return TERMS.find(x=>x.year===y && x.org===o && Number(x.term)===t) || null;
+}
+
+/* 학생 한 명의 학기 집계 */
+function tallyStudent(recs, term){
+  const z = ()=>({질병:0,무단:0,기타:0});
+  const out = { 결석:z(), 지각:z(), 조퇴:z(), 체험:{ '가족 대소사':0,'가족 여행':0,'기타':0 } };
+  for(const r of recs){
+    if(!r.date || r.date < term.start || r.date > term.end) continue;
+    const tids = recTypes(r);
+    const t = tids.length ? TYPES.find(x=>x.id===tids[0]) : null;
+    if(!t) continue;
+    let name = t.name, reason = r.reason||'';
+    if(name==='병결'){ name='결석'; reason='질병'; }
+    if(name==='결석'||name==='지각'||name==='조퇴'){
+      const key = (reason==='질병'||reason==='무단') ? reason : '기타';
+      out[name][key]++;
+    } else if(name==='체험학습'){
+      const key = (reason==='가족 대소사'||reason==='가족 여행') ? reason : '기타';
+      out.체험[key]++;
+    }
+  }
+  out.결석합 = out.결석.질병+out.결석.무단+out.결석.기타;
+  out.지각합 = out.지각.질병+out.지각.무단+out.지각.기타;
+  out.조퇴합 = out.조퇴.질병+out.조퇴.무단+out.조퇴.기타;
+  out.체험합 = out.체험['가족 대소사']+out.체험['가족 여행']+out.체험['기타'];
+  return out;
+}
+
+/* 학기 내 임시휴교(기관 전용 휴일) 각주 */
+function closureNote(term){
+  const items = HOLIDAYS.filter(h=>h.org===term.org && h.date>=term.start && h.date<=term.end)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  if(!items.length) return '';
+  const byName = {};
+  items.forEach(h=>{ const k=h.name||'임시 휴교'; (byName[k]=byName[k]||[]).push(h.date.slice(5).replace('-','/')); });
+  return Object.entries(byName).map(([k,ds],i)=>`${i+1}. ${k} ※ ${ds.join(', ')} (총 ${ds.length}일)`).join('  ');
+}
+
+async function loadReport(){
+  // 기관이 바뀐 경우에만 반 목록을 다시 만든다 — 안 그러면 반 선택이 매번 «전체»로 초기화되는 버그
+  const _org = $I('rp-org')?.value;
+  if(fillReportClasses._last !== _org){ fillReportClasses(); fillReportClasses._last = _org; }
+  const body = $I('rp-body'); if(!body) return;
+  const term = rpTerm();
+  if(!term || !term.start || !term.end){
+    body.innerHTML = '<div class="acard"><p class="empty">이 연도·기관·학기의 «학기 일정»이 설정 탭에 등록되어 있어야 해요.</p></div>'; return;
+  }
+  body.innerHTML = '<div class="acard"><p class="empty">집계 중…</p></div>';
+  // 📉 v120 — 그 학기 기간의 기록만 (예전: 모든 학생의 모든 기록)
+  const rpKey = term.start+'~'+term.end;
+  if(!RPT.att || RPT.attKey!==rpKey){
+    const snap = await saRange(term.start, term.end);
+    RPT.att = []; snap.forEach(d=>RPT.att.push(d.data())); RPT.attKey = rpKey;
+  }
+  const org = term.org;
+  const clsId = $I('rp-class')?.value || '';
+  let studs = Object.values(STUDENTS).filter(x=>x.org===org && StuStatus.enrolled(x));
+  if(clsId){ const c=CLASSES.find(x=>x.id===clsId); const set=new Set(c?.students||[]); studs=studs.filter(x=>set.has(x.id)); }
+  const clsOf = sid => { const c=CLASSES.find(x=>x.org===org && (x.students||[]).includes(sid)); return c||null; };
+  studs.sort((a,b)=>{
+    const ca=clsOf(a.id), cb=clsOf(b.id);
+    return String(ca?.grade||'').localeCompare(String(cb?.grade||''),'ko')
+      || (ca?.name||'').localeCompare(cb?.name||'','ko')
+      || (a.name||'').localeCompare(b.name||'','ko');
+  });
+  const dayList = calcSchoolDays(term);
+  const schoolDays = dayList.length;
+  const byStu = {};
+  RPT.att.forEach(r=>{ if(r.org===org){ (byStu[r.studentId]=byStu[r.studentId]||[]).push(r); } });
+  const rows = studs.map(st=>{
+    // 개인 수업일수 = 학기 수업일 − 본인 휴학 기간에 걸린 수업일 (출석 통계와 같은 기준). 휴학 중 기록은 세지 않는다
+    const lvDays = leaveDaysInSet(st, dayList);
+    const myDays = Math.max(0, schoolDays - lvDays);
+    const t = tallyStudent((byStu[st.id]||[]).filter(r=>!isOnLeave(st, r.date)), term);
+    const c = clsOf(st.id);
+    const attended = Math.max(0, myDays - t.결석합);
+    return { st, c, t, attended, myDays, lvDays };
+  }).filter(r=> !(schoolDays>0 && r.lvDays>=schoolDays));   // 학기 내내 휴학이면 표에서 뺀다
+  RPT.rows = rows; RPT.term = term; RPT.schoolDays = schoolDays;
+
+  const cell = v => v ? `<b>${v}</b>` : '<span style="color:var(--ivd)">·</span>';
+  const note = closureNote(term);
+  body.innerHTML = `<div class="acard" style="overflow-x:auto">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+      <h3 class="actitle" style="margin:0">${ORGS[org]||org} · ${term.year}년 ${TERM_NAMES[term.term]||term.term+'학기'}
+        <span style="font-size:12px;color:var(--tl);font-weight:600">(${term.start} ~ ${term.end} · 수업일 ${schoolDays}일 · ${rows.length}명)</span></h3>
+    </div>
+    <div class="${stickyOn()?'stickywrap':''}" style="overflow-x:auto">
+    <table class="rpt-tbl" style="border-collapse:collapse;width:100%;font-size:12px;text-align:center">
+      <thead>
+        <tr style="background:var(--gd);color:#fff">
+          <th rowspan="2" style="min-width:76px">이름</th><th rowspan="2">반</th><th rowspan="2">학년</th>
+          <th rowspan="2" style="background:#0B5B3E">출석일수/<br>수업일수</th>
+          <th colspan="3">결석</th><th colspan="3">지각</th><th colspan="3">조퇴</th><th colspan="3">체험학습</th>
+        </tr>
+        <tr style="background:var(--gm);color:#fff;font-size:10.5px">
+          <th>질병</th><th>무단</th><th>기타</th><th>질병</th><th>무단</th><th>기타</th>
+          <th>질병</th><th>무단</th><th>기타</th><th>대소사</th><th>여행</th><th>기타</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((r,i)=>`<tr style="${i%2?'background:#FAFAF7':''}">
+          <td style="font-weight:800;text-align:left;padding-left:10px">${esc(r.st.name)}</td>
+          <td>${esc(r.c?.name||'-')}</td><td>${esc(r.c?.grade||'-')}</td>
+          <td style="font-weight:900;color:var(--gd)">${r.attended} / ${r.myDays}${r.lvDays?`<div style="font-size:10px;font-weight:600;color:var(--warn)">휴학 ${r.lvDays}일 제외</div>`:''}</td>
+          <td>${cell(r.t.결석.질병)}</td><td>${cell(r.t.결석.무단)}</td><td>${cell(r.t.결석.기타)}</td>
+          <td>${cell(r.t.지각.질병)}</td><td>${cell(r.t.지각.무단)}</td><td>${cell(r.t.지각.기타)}</td>
+          <td>${cell(r.t.조퇴.질병)}</td><td>${cell(r.t.조퇴.무단)}</td><td>${cell(r.t.조퇴.기타)}</td>
+          <td>${cell(r.t.체험['가족 대소사'])}</td><td>${cell(r.t.체험['가족 여행'])}</td><td>${cell(r.t.체험['기타'])}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    <style>
+      .rpt-tbl th,.rpt-tbl td{border:1px solid var(--ivd);padding:6px 5px}
+      .stickywrap .rpt-tbl thead tr:first-child th{position:sticky;top:0;z-index:3}
+      .stickywrap .rpt-tbl thead tr:nth-child(2) th{position:sticky;top:31px;z-index:3}
+      .stickywrap .rpt-tbl thead tr:first-child th{height:31px;box-sizing:border-box}
+      .stickywrap .rpt-tbl th:first-child,.stickywrap .rpt-tbl td:first-child{position:sticky;left:0;z-index:2;background:#fff}
+      .stickywrap .rpt-tbl thead th:first-child{z-index:4;background:var(--gd)}
+      .stickywrap .rpt-tbl tbody tr:nth-child(even) td:first-child{background:#FAFAF7}
+    </style>
+    ${note?`<p style="font-size:11.5px;color:var(--ts);margin-top:10px;line-height:1.7"><b>*휴교 사유</b> — ${esc(note)}</p>`:''}
+    <p style="font-size:11px;color:var(--tl);margin-top:6px">· 출석일수 = 수업일수 − 결석일수 (지각·조퇴·체험학습은 출석 인정) · 옛 «병결» 기록은 결석·질병으로 집계 · 휴학 기간의 수업일은 그 학생의 수업일수에서 뺍니다</p>
+  </div>`;
+}
+window.loadReport = loadReport;
+
+/* 학생별 개별표 인쇄 (생활기록부 형식) */
+window.printReport = function(){
+  if(!RPT.rows || !RPT.rows.length){ toast('먼저 표를 불러와 주세요.','err'); return; }
+  const term = RPT.term, sd = RPT.schoolDays, note = closureNote(term);
+  const one = r => `
+    <div style="page-break-inside:avoid;margin-bottom:26px">
+      <div style="font-weight:800;font-size:14px;margin-bottom:6px">▶ ${esc(r.st.name)} — 출결 (정상 수업 기간 : ${term.start.slice(5).replace('-','.')}~${term.end.slice(5).replace('-','.')})</div>
+      <table style="border-collapse:collapse;width:100%;font-size:12px;text-align:center">
+        <tr>
+          <th rowspan="2" style="border:1.5px solid #26428B;padding:7px;min-width:90px">출석 일수 /<br>총 수업 일수</th>
+          <th colspan="3" style="border:1.5px solid #26428B;padding:7px">결석일수</th>
+          <th colspan="3" style="border:1.5px solid #26428B;padding:7px">지각</th>
+          <th colspan="3" style="border:1.5px solid #26428B;padding:7px">조퇴</th>
+          <th colspan="3" style="border:1.5px solid #26428B;padding:7px">체험학습</th>
+        </tr>
+        <tr>
+          <th style="border:1px solid #26428B;padding:5px">질병</th><th style="border:1px solid #26428B;padding:5px">무단</th><th style="border:1px solid #26428B;padding:5px">기타</th>
+          <th style="border:1px solid #26428B;padding:5px">질병</th><th style="border:1px solid #26428B;padding:5px">무단</th><th style="border:1px solid #26428B;padding:5px">기타</th>
+          <th style="border:1px solid #26428B;padding:5px">질병</th><th style="border:1px solid #26428B;padding:5px">무단</th><th style="border:1px solid #26428B;padding:5px">기타</th>
+          <th style="border:1px solid #26428B;padding:4px;font-size:10px">가족<br>대소사</th><th style="border:1px solid #26428B;padding:4px;font-size:10px">가족<br>여행</th><th style="border:1px solid #26428B;padding:5px">기타</th>
+        </tr>
+        <tr>
+          <td style="border:1.5px solid #26428B;padding:9px;font-weight:800">${r.attended}일 /<br>총 ${r.myDays}일${r.lvDays?`<div style="font-size:10px;font-weight:600">(휴학 ${r.lvDays}일 제외)</div>`:''}</td>
+          ${['결석','지각','조퇴'].map(k=>['질병','무단','기타'].map(x=>`<td style="border:1px solid #26428B;padding:9px">${r.t[k][x]||'·'}</td>`).join('')).join('')}
+          ${['가족 대소사','가족 여행','기타'].map(x=>`<td style="border:1px solid #26428B;padding:9px">${r.t.체험[x]||'·'}</td>`).join('')}
+        </tr>
+      </table>
+      ${note?`<div style="font-size:11px;margin-top:7px;line-height:1.7"><b>*휴교 사유</b><br>${esc(note)}</div>`:''}
+    </div>`;
+  const pa = $I('print-area') || (()=>{ const d=document.createElement('div'); d.id='print-area'; document.body.appendChild(d);
+    const st=document.createElement('style'); st.textContent='@media print{ body *{visibility:hidden} #print-area,#print-area *{visibility:visible} #print-area{position:absolute;left:0;top:0;width:100%} }'; document.head.appendChild(st); return d; })();
+  pa.style.display='block';
+  pa.innerHTML = `<div style="font-family:inherit;padding:16px">
+    <h2 style="margin:0 0 3px;font-size:17px">${ORGS[term.org]||term.org} ${term.year}학년도 ${TERM_NAMES[term.term]||''} 출결 현황</h2>
+    <p style="font-size:11px;color:#555;margin:0 0 16px">수업일수 ${sd}일 · ${term.start} ~ ${term.end}</p>
+    ${RPT.rows.map(one).join('')}</div>`;
+  // 파일 이름 «출결현황_2026학년도 1학기_다니엘 아마츠_[1학년] 사랑반» (v-115) — 한 명이면 이름까지
+  const cls = CLASSES.find(x=>x.id===($I('rp-class')?.value||''));
+  const nm = ['출결현황', `${term.year}학년도 ${TERM_NAMES[term.term]||''}`, window.FN?FN.orgName(term.org):(ORGS[term.org]||''),
+    cls ? `${cls.grade?cls.grade+' ':''}${cls.name||''}` : '', RPT.rows.length===1 ? RPT.rows[0].st.name : ''];
+  if(window.FN) FN.printAs(nm); else window.print();
+  setTimeout(()=>{ pa.style.display='none'; }, 300);
+};
+
+window.toggleMonthLock = async function(){
+  const c = CLASSES.find(x=>x.id===monthClassId); if(!c) return;
+  if(!canLockMonth(c)){ toast('잠금은 수퍼관리자·기관관리자만 할 수 있어요.','err'); return; }
+  const [y,m]=monthYM.split('-').map(Number);
+  if(MONTH_LOCK){
+    if(!confirm(`${y}년 ${m}월 출석부 잠금을 풀까요?\n\n푸는 동안은 다시 입력·수정할 수 있습니다.`)) return;
+  } else {
+    if(!confirm(`${y}년 ${m}월 출석부를 잠글까요?\n\n잠그면 모든 선생님(관리자 포함)이 입력·수정할 수 없고,\n고치려면 잠금을 풀어야 합니다.`)) return;
+  }
+  try {
+    await setDoc(doc(db,'attendLocks', `${c.org}_${monthYM}`), {
+      org: c.org, month: monthYM, locked: !MONTH_LOCK,
+      byName: CU.name||'', byUid: CU.uid, at: Timestamp.now()
+    });
+    MONTH_LOCK = !MONTH_LOCK;
+    toast(MONTH_LOCK ? '🔒 잠갔습니다 — 이 달은 입력이 막혀요' : '🔓 잠금을 풀었습니다','ok');
+    loadMonthBody();
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
+function toast(msg, type=''){
+  const t = $I('toast'); t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
+}
+// 공통 활동 로그
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){}
+}
+const UNIFIED_POS = ['교장','교감','행정실장'];   // 두 기관을 함께 보는 통합 직책
+function myOrgs(){ return orgCore.myOrgs(CU,'unified'); }   // 🏛 org-core 원장 위임
+const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
+
+/* ── 출석부 담당자 (컨트롤 타워에서 지정, attendConfig/editors.uids) ──
+   담당자는 설정 탭을 열 수 있고, 자기 기관의 모든 반 출결을 기록할 수 있다 */
+let ATTEND_EDITORS = [];
+/* ── 학년별 담당 선생님 (attendConfig/gradeAssign.v = {"기관|학년":[uid…]}) ──
+   지정된 선생님은 그 학년 학생이 있는 반의 출결을 기록할 수 있다 */
+let GRADE_ASSIGN = {};
+async function loadAttendConfig(){
+  try {
+    const e = await getDoc(doc(db,'attendConfig','editors'));
+    ATTEND_EDITORS = (e.exists() && Array.isArray(e.data().uids)) ? e.data().uids : [];
+  } catch(err){ ATTEND_EDITORS = []; }
+  try {
+    const g = await getDoc(doc(db,'attendConfig','gradeAssign'));
+    GRADE_ASSIGN = (g.exists() && g.data().v) ? g.data().v : {};
+  } catch(err){ GRADE_ASSIGN = {}; }
+}
+const isAttendEditor = () => CU && ATTEND_EDITORS.includes(CU.uid);
+const canSetup = () => CU && (['super','org_admin'].includes(CU.role) || isAttendEditor());
+
+/* 한 반에 걸린 학년들 (반 자체 학년 + 학생별 학년) */
+function classGrades(c){
+  const set = new Set();
+  if(c.grade) String(c.grade).split(/[·,]/).forEach(g=>{ g=g.trim(); if(g) set.add(g); });
+  Object.values(c.grades||{}).forEach(g=>{ if(g) set.add(g); });
+  return Array.from(set);
+}
+
+/* 출결 기록 하나에 담긴 항목들 — 복수선택(typeIds) 우선, 예전 단일(typeId)도 받아준다 */
+function recTypes(r){
+  if(r && Array.isArray(r.typeIds) && r.typeIds.length) return r.typeIds;
+  return (r && r.typeId) ? [r.typeId] : [];
+}
+
+onAuthStateChanged(auth, async (user) => {
+  if(!user){
+    $I('gate-msg').textContent = '로그인이 필요합니다. 메인 화면에서 먼저 로그인해주세요.';
+    $I('gate-btn').style.display = 'inline-block';
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(db,'staff',user.uid));
+    if(!snap.exists()){ $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    CU = { uid:user.uid, ...snap.data() };
+    // 휴직/퇴직 차단
+    const ac = CU.acStatus || 'active';
+    if(ac==='leave'||ac==='quit'){ $I('gate-msg').textContent = ac==='quit'?'퇴직 처리된 계정입니다.':'휴직 중인 계정입니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    $I('gate').style.display='none'; $I('ms').style.display='flex';
+    window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'attend')) return;
+  renderShell('attend', CU);
+    window.showLoading && window.showLoading('불러오는 중…');
+    
+    
+    // 설정 탭: 기관관리자·슈퍼 + 출석부 담당자
+    await loadAttendConfig();
+    if(canSetup()) $I('tb-set').style.display='';
+    await loadTypes();
+    // ⏱ 타임머신 연결 — 설정을 저장하기 직전 상태가 자동 보관된다
+    if(window.TM) TM.init({
+      page:'attend', pageLabel:'출석부', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU.uid, name:CU.name||''}),
+      canRestore:()=>canSetup(),
+      targets:[
+        {col:'attendTypes', scope:{}, label:'출결 항목 (전체 묶음)'},
+        {col:'attendConfig', docId:'gradeAssign', label:'학년별 담당 선생님'},
+        {col:'terms', scope:{}, label:'학기 일정 (전체 묶음)'},
+      ],
+      onRestored: async ()=>{
+        await loadAttendConfig(); await loadTypes(); await loadTerms();
+        if($I('c-set') && $I('c-set').style.display!=='none') renderSet();
+      }
+    });
+    await loadTerms();
+    await loadHolidays();
+    await loadClasses();
+    await loadStudents();
+    window.hideLoading && window.hideLoading();
+    // 기관 선택 바
+    if(window.OrgBar){
+      statOrg = OrgBar.init({
+        orgs: myOrgs(), labels: ORGS, storeKey: 'attend_org',
+        onChange: ()=>{ statOrg = OrgBar.current; statClassFilter=''; statGradeFilter='';
+                        if(typeof fillStatFilters==='function') fillStatFilters();
+                        showTab(curTab||'check'); }
+      });
+    }
+    (function(){
+    const q = new URLSearchParams(location.search);
+    if(q.get('stat')==='live'){
+      const o = q.get('org');
+      if(o==='daniel'||o==='jihyebit'){ statOrg = o; try{ localStorage.setItem('attend_org', o); }catch(e){} }
+      statView = 'live';
+      showTab('stat');
+    } else showTab('check');
+  })();
+  } catch(e){ $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block'; }
+});
+
+// ── 출결 항목 로드 (없으면 기본값 자동 생성) ──
+async function loadTypes(){
+  const snap = await getDocs(collection(db,'attendTypes'));
+  TYPES = [];
+  snap.forEach(d=>TYPES.push({id:d.id, ...d.data()}));
+  // 최초 실행: 항목이 하나도 없으면 기본값 생성 (설정 권한자만)
+  if(TYPES.length===0 && canSetup()){
+    for(const t of DEFAULT_TYPES){
+      await addDoc(collection(db,'attendTypes'), {...t, createdAt:Timestamp.now()});
+    }
+    const snap2 = await getDocs(collection(db,'attendTypes'));
+    TYPES = [];
+    snap2.forEach(d=>TYPES.push({id:d.id, ...d.data()}));
+  }
+  TYPES.sort((a,b)=>(a.order||0)-(b.order||0));
+}
+
+// ── 학기 일정 로드 ──
+async function loadTerms(){
+  const snap = await getDocs(collection(db,'terms'));
+  const allowed = myOrgs();
+  TERMS = [];
+  snap.forEach(d=>{ const t={id:d.id, ...d.data()}; if(allowed.includes(t.org)) TERMS.push(t); });
+  TERMS.sort((a,b)=> (b.year-a.year) || a.org.localeCompare(b.org) || (a.term-b.term));
+}
+
+// ── 출근부 휴일/기간 연동 로드 ──
+async function loadHolidays(){
+  const hSnap = await getDocs(collection(db,'holidays'));
+  HOLIDAYS = []; hSnap.forEach(d=>HOLIDAYS.push(d.data()));
+  const wSnap = await getDocs(collection(db,'workPeriods'));
+  WORKPERIODS = []; wSnap.forEach(d=>WORKPERIODS.push(d.data()));
+}
+
+// ── 특정 날짜가 해당 기관에서 휴일/방학인지 판정 ──
+// 반환: 휴일이면 사유 문자열, 아니면 null
+function holidayReason(dateStr, org){
+  // 공휴일 (출근부 holidays: org가 'all' 또는 해당 기관)
+  const hol = HOLIDAYS.find(h => h.date===dateStr && (h.org==='all' || h.org===org));
+  if(hol) return hol.name || '공휴일';
+  // 방학기간 (출근부 workPeriods 중 type==='vacation')
+  const vac = WORKPERIODS.find(w => w.type==='vacation' && w.org===org && dateStr>=w.s && dateStr<=w.e);
+  if(vac) return vac.vac || vac.name || '방학';
+  return null;
+}
+
+// ── 수업일 계산: 학기 기간 평일 − 휴일/방학 ──
+// term: {year, org, term, start, end}
+// 반환: 수업일 날짜 배열 (YYYY-MM-DD)
+function calcSchoolDays(term){
+  const days = [];
+  if(!term.start || !term.end) return days;
+  let d = new Date(term.start+'T00:00:00');
+  const end = new Date(term.end+'T00:00:00');
+  while(d <= end){
+    const dow = d.getDay();
+    const ds = fmtDate(d);
+    // 평일(월~금)이고 휴일/방학이 아니면 수업일
+    if(dow!==0 && dow!==6 && !holidayReason(ds, term.org)){
+      days.push(ds);
+    }
+    d.setDate(d.getDate()+1);
+  }
+  return days;
+}
+
+function fmtDate(d){ return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+const TERM_NAMES = {1:'1학기', 2:'2학기'};
+// 특정 날짜에 휴학 중인지 — 학생관리·반편성과 같은 규칙(student-status.js)
+//   휴학 기간 안이거나, 재적 상태가 «휴학»이면 휴학 (기간이 있으면 그 시작일부터)
+function isOnLeave(s, dateStr){ return StuStatus.onLeave(s, dateStr); }
+// «결석은» · «조퇴는» — 받침 따라
+function josaEun(w){ const c = String(w||'').trim().slice(-1).charCodeAt(0); return (c>=0xAC00 && c<=0xD7A3 && (c-0xAC00)%28===0) ? '는' : '은'; }
+// 휴학 날에 남아 있는 기록 — 지우지 않고 보관 중이라고 알려 준다
+function keptNote(rec){
+  const ids = rec && Array.isArray(rec.typeIds) ? rec.typeIds : [];
+  if(!rec || !rec.id || !ids.length) return '';
+  const nm = ids.map(id=>TYPES.find(t=>t.id===id)?.name||'').filter(Boolean).join('·');
+  return nm ? `<span style="font-size:11px;color:var(--tl)">입력돼 있던 «${esc(nm)}»${josaEun(nm)} 보관 중 — 휴학을 풀면 다시 보여요</span>` : '';
+}
+// 반 명단 — 학적이 살아 있는 학생(재학·휴학). 그날 휴학인지는 각 화면이 isOnLeave 로 나눈다
+function rollOf(c){ return ((c && c.students) || []).map(sid=>STUDENTS[sid]).filter(Boolean).filter(s=>StuStatus.enrolled(s)); }
+// 특정 날짜가 해당 기관의 등록된 학기 기간 안에 있는지
+// 반환: 속하면 학기객체, 안 속하면 null, 그 해 학기 자체가 없으면 'none'
+function termOfDate(dateStr, org){
+  const year = Number(dateStr.slice(0,4));
+  const orgTerms = TERMS.filter(t=>t.org===org && t.year===year);
+  if(!orgTerms.length) return 'none';
+  const hit = orgTerms.find(t=>t.start && t.end && dateStr>=t.start && dateStr<=t.end);
+  return hit || null;
+}
+
+// 이 날짜가 '자동 출석' 대상인지 (학기 중 평일, 공휴일 아님)
+function isAutoPresentDate(dateStr, org){
+  const dow = new Date(dateStr+'T00:00:00').getDay();
+  if(dow===0 || dow===6) return false;          // 주말 제외
+  if(holidayReason(dateStr, org)) return false; // 공휴일 제외
+  const term = termOfDate(dateStr, org);
+  if(term==='none' || term===null) return false; // 학기 밖 제외
+  return true;
+}
+// 출석 항목(isPresent:true) 찾기
+function presentType(){ return TYPES.find(t=>t.isPresent) || TYPES.find(t=>t.name==='출석') || TYPES[0]; }
+
+// 학생의 휴학 기간과 수업일 집합의 교집합 일수 (통계 분모 제외용)
+function leaveDaysInSet(s, daySet){ return StuStatus.leaveDays(s, daySet); }
+
+// ── 반·학생 로드 ──
+async function loadClasses(){
+  await liveCol('classes', docs=>{
+    const allowed = myOrgs();
+    CLASSES = docs.filter(c=>c.year===curYear && allowed.includes(c.org));
+    CLASSES.sort((a,b)=> (a.org+a.dept+(a.grade||'')).localeCompare(b.org+b.dept+(b.grade||'')));
+  }, c=>[c.id,c.name,c.org,c.year,c.dept,c.grade,c.gradeList,c.students,c.grades,c.teacherUid,c.deputies,c.shadowUids]);
+}
+async function loadStudents(){
+  await liveCol('students', docs=>{
+    const allowed = myOrgs();
+    STUDENTS = {};
+    docs.forEach(s=>{ if(allowed.includes(s.org)) STUDENTS[s.id]=s; });
+  }, s=>[s.id,s.name,s.org,s.status,s.leaves,s.gender,s.studentNo]);
+}
+/* 🔁 실시간 연동 — 학생관리에서 휴학·자퇴를 바꾸거나 반편성에서 학생을 옮기면 출석부가 바로 따라 바뀐다.
+   처음 한 번은 받아 올 때까지 기다리고(getDocs 와 같은 읽기), 그 뒤로는 바뀐 문서만 들어온다.
+   출석부에 영향 있는 칸(이름·상태·휴학 기간·반 구성 등)이 바뀔 때만 다시 그린다 — 연락처 수정 같은 건 조용히 넘어간다. */
+const LIVE = {};
+function liveCol(name, apply, sigOf){
+  const L = LIVE[name];
+  if(L) return L.ready.then(()=>{ if(L.docs) apply(L.docs); });   // 이미 듣는 중(또는 처음 받는 중) → 받은 자료로
+  const E = LIVE[name] = { docs:null, sig:'', unsub:null, ready:null };
+  E.ready = new Promise((res, rej)=>{
+    let first = true;
+    E.unsub = onSnapshot(collection(db, name), snap=>{
+      const docs = []; snap.forEach(d=>docs.push({ id:d.id, ...d.data() }));
+      const sig = sigOf ? JSON.stringify(docs.map(sigOf).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))) : '';
+      const changed = !sigOf || sig !== E.sig;
+      E.docs = docs; E.sig = sig;
+      apply(docs);
+      if(first){ first = false; res(); }
+      else if(changed) liveRefresh();
+    }, err=>{
+      if(LIVE[name] === E) delete LIVE[name];   // 끊기면 다음 불러오기 때 새로 듣는다 (받은 자료는 그대로 쓴다)
+      if(first){ first = false; rej(err); }
+    });
+  });
+  return E.ready;
+}
+function liveRefresh(){
+  clearTimeout(liveRefresh._t);
+  liveRefresh._t = setTimeout(()=>{
+    try {
+      if(checkClassId && !CLASSES.some(c=>c.id===checkClassId)) checkClassId = '';
+      if(monthClassId && !CLASSES.some(c=>c.id===monthClassId)) monthClassId = '';
+      if(curTab==='check'){
+        if(!$I('ck-mode-body')){ if($I('c-check')) renderCheck(); return; }   // «편성된 반 없음» 화면이었으면 처음부터
+        if(checkMode==='daily') renderDailyCheck(true);
+        else {
+          if($I('month-menu') || dragging || BULK_BUSY){ liveRefresh(); return; }   // 고르는 중엔 끝난 뒤에
+          renderMonthCheck(true);
+        }
+      } else if(curTab==='stat'){
+        if(statView==='live'){ if(LIVE_PAINT) LIVE_PAINT(); }
+        else if($I('st-body')) buildStat();
+      } else if(curTab==='report'){
+        if($I('rp-body') && RPT.att) loadReport();
+      }
+    } catch(e){ console.warn('[live]', e); }
+  }, 200);
+}
+
+// 이 반의 출결을 기록할 권한이 있는지 (담임/대리/부서장/관리자)
+function canEditClass(c){
+  if(!CU) return false;
+  if(CU.role==='super' || CU.role==='org_admin') return myOrgs().includes(c.org);
+  // 출석부 담당자: 자기 기관의 모든 반 기록 가능
+  if(isAttendEditor() && myOrgs().includes(c.org)) return true;
+  if(CU.role==='tab_admin'){
+    // 부서장: 행정실은 다니엘 전체, 그 외는 본인 부서
+    if(CU.dept==='행정실') return myOrgs().includes(c.org);
+    return c.org===CU.org && c.dept===CU.dept;
+  }
+  // 교사: 담임이거나 대리로 지정된 반
+  if(c.teacherUid===CU.uid || (c.deputies||[]).includes(CU.uid) || (c.shadowUids||[]).includes(CU.uid)) return true;
+  // 학년별 담당: 담당 학년 학생이 있는 반
+  return classGrades(c).some(g => (GRADE_ASSIGN[c.org+'|'+g]||[]).includes(CU.uid));
+}
+// 이 반을 열람할 권한 (같은 기관이면 누구나)
+function canViewClass(c){
+  return myOrgs().includes(c.org);
+}
+
+// ── 탭 전환 ──
+let curTab = 'check';
+function showTab(t){
+  if(t!=='stat') { try{ stopLive(); }catch(e){} }
+  curTab = t;
+  document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
+  $I('tb-'+t)?.classList.add('active');
+  ['check','stat','set','report'].forEach(id=>{ const el=$I('c-'+id); if(el) el.style.display='none'; });
+  $I('c-'+t).style.display='block';
+  if(t==='check') renderCheck();
+  if(t==='stat') renderStat();
+  if(t==='set') renderSet();
+  if(t==='report') renderReport();
+}
+window.showTab = showTab;
+
+// ── 출석 체크 ──
+let checkDate = fmtDate(new Date());  // 선택된 날짜
+let checkClassId = '';                 // 선택된 반
+let checkGradeFilter = '';             // 학년 필터 (빈값=전체)
+let checkRecords = {};                 // {studentId: {typeId, memo}}
+let checkKey = '';                     // checkRecords 가 어느 «반|날짜» 것인지
+let checkMode = 'daily';               // 'daily' | 'month'
+let monthClassId = '';                 // 월별 입력 선택 반
+let monthYM = '';                      // 월별 입력 YYYY-MM
+let monthAllowBlocked = false;         // 막힌 날짜(주말·공휴일·학기밖) 입력 허용
+let monthData = {};                    // {studentId: {day: {id, typeId}}}
+
+function renderCheck(){
+  if(!CLASSES.length){
+    $I('c-check').innerHTML = `<div class="acard"><h3 class="actitle">✅ 출석 체크</h3>
+      <div class="empty">${curYear}년에 편성된 반이 없습니다.<br>먼저 반 편성에서 반을 만들고 학생을 배정해주세요.</div></div>`;
+    return;
+  }
+
+  $I('c-check').innerHTML = `
+    <div class="acard" style="padding-bottom:14px">
+      <div style="display:flex;gap:6px;margin-bottom:4px">
+        <button class="ck-mode-btn ${checkMode==='daily'?'on':''}" onclick="setCheckMode('daily')">📅 일일 체크</button>
+        <button class="ck-mode-btn ${checkMode==='month'?'on':''}" onclick="setCheckMode('month')">🗓️ 월별 입력</button>
+      </div>
+    </div>
+    <div id="ck-mode-body"></div>`;
+  if(checkMode==='daily') renderDailyCheck();
+  else renderMonthCheck();
+}
+window.renderCheck = renderCheck;
+
+function setCheckMode(m){ checkMode = m; renderCheck(); }
+window.setCheckMode = setCheckMode;
+
+let _keepCk = null;   // 실시간 갱신 직전의 화면 상태 (스크롤·입력 중인 칸)
+function renderDailyCheck(keep){
+  // 🔁 실시간 갱신으로 다시 그릴 때: 화면을 갈아엎기 전에 메모·스크롤·입력 중인 칸을 챙겨 둔다
+  _keepCk = null;
+  if(keep && checkKey===checkClassId+'|'+checkDate){
+    document.querySelectorAll('#ck-body input[id^="memo-"]').forEach(el=>{
+      const sid = el.id.slice(5); if(checkRecords[sid]) checkRecords[sid].memo = el.value;
+    });
+    const a = document.activeElement;
+    _keepCk = { y: window.scrollY, focus: a && a.id, sel: (a && typeof a.selectionStart==='number') ? [a.selectionStart, a.selectionEnd] : null };
+  }
+  const sortCls = sortClasses;
+  const editable = sortClasses(CLASSES.filter(canEditClass));
+  const viewable = sortClasses(CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)));
+  const allSelectable = [...editable, ...viewable];
+  if(!checkClassId && editable.length) checkClassId = editable[0].id;
+  else if(!checkClassId && allSelectable.length) checkClassId = allSelectable[0].id;
+  const optgroup = (label, arr) => arr.length
+    ? `<optgroup label="${label}">${arr.map(c=>`<option value="${c.id}"${c.id===checkClassId?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name} (${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' '+c.dept:''})</option>`).join('')}</optgroup>` : '';
+  $I('ck-mode-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">✅ 출석 체크</h3>
+      <p class="adesc">날짜와 반을 선택하면 학생 명단이 나타납니다. 기본은 모두 출석이며, 변경이 필요한 학생만 바꾸고 저장하세요.
+        <span style="color:var(--tl)">항목을 여러 개 누르면 함께 기록됩니다 (예: 지각+조퇴).</span></p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fgrp" style="margin-bottom:0"><label>날짜</label>
+          <input type="date" id="ck-date" value="${checkDate}" onchange="onCheckChange()"></div>
+        <div class="fgrp" style="margin-bottom:0;flex:1;min-width:180px"><label>반</label>
+          <select id="ck-class" onchange="onCheckClassChange()">
+            ${optgroup('내가 기록하는 반', editable)}
+            ${optgroup('열람 전용 (다른 반)', viewable)}
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0;min-width:120px"><label>학년 필터</label>
+          <select id="ck-grade" onchange="onCheckChange()"><option value="">전체 학년</option></select></div>
+      </div>
+    </div>
+    <div id="ck-body"></div>`;
+  fillCheckGradeFilter();
+  loadCheckBody(keep);
+}
+
+// ── 월별 입력 ──
+let monthKey = '';     // monthData 가 어느 «반|월» 것인지
+function renderMonthCheck(keep){
+  const keepK = keep && monthKey===monthClassId+'|'+monthYM
+    ? { y: window.scrollY, x: ($I('m-body')?.firstElementChild?.scrollLeft)||0 } : null;
+  const editable = sortClasses(CLASSES.filter(canEditClass));
+  const viewable = sortClasses(CLASSES.filter(c=>canViewClass(c) && !canEditClass(c)));
+  if(!monthClassId && editable.length) monthClassId = editable[0].id;
+  else if(!monthClassId && viewable.length) monthClassId = viewable[0].id;
+  if(!monthYM){ const d=new Date(); monthYM = `${d.getFullYear()}-${pad(d.getMonth()+1)}`; }
+  const optgroup = (label, arr) => arr.length
+    ? `<optgroup label="${label}">${arr.map(c=>`<option value="${c.id}"${c.id===monthClassId?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name} (${ORGS[c.org]||c.org}${c.dept&&c.dept!=='전체'?' '+c.dept:''})</option>`).join('')}</optgroup>` : '';
+  $I('ck-mode-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">🗓️ 월별 출결 입력</h3>
+      <p class="adesc">반과 월을 선택하면 한 달 전체 출결을 표로 입력할 수 있습니다. 칸을 클릭해 상태를 고르고, <b>사유(질병·무단·기타)까지</b> 고르면 저장됩니다. 과거 날짜도 잠기지 않았다면 언제든 수정할 수 있어요.<br>
+      <span style="color:var(--gm);font-weight:700">📌 같은 날 여러 상황이 겹치면 «결석 › 조퇴 › 지각» 순서로 <b>앞의 것 하나만</b> 기록합니다.</span> (예: 지각하고 조퇴한 날 → 조퇴만)</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fgrp" style="margin-bottom:0;flex:1;min-width:180px"><label>반</label>
+          <select id="m-class" onchange="onMonthCheckChange()">
+            ${optgroup('내가 기록하는 반', editable)}
+            ${optgroup('열람 전용 (다른 반)', viewable)}
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>월</label>
+          <input type="month" id="m-ym" value="${monthYM}" onchange="onMonthCheckChange()"></div>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;padding-bottom:8px">
+          <input type="checkbox" id="m-allow" ${monthAllowBlocked?'checked':''} onchange="toggleMonthAllow()" style="width:16px;height:16px"> 주말·공휴일·학기외 입력 허용
+        </label>
+      </div>
+    </div>
+    <div id="m-body"><div class="acard"><p class="empty">불러오는 중...</p></div></div>`;
+  return loadMonthBody(!!keepK).then(()=>{
+    if(!keepK) return;
+    window.scrollTo(0, keepK.y);
+    const w = $I('m-body')?.firstElementChild; if(w) w.scrollLeft = keepK.x;
+  });
+}
+window.renderMonthCheck = renderMonthCheck;
+
+function onMonthCheckChange(){ monthClassId=$I('m-class').value; monthYM=$I('m-ym').value; loadMonthBody(); }
+window.onMonthCheckChange = onMonthCheckChange;
+function toggleMonthAllow(){ monthAllowBlocked=$I('m-allow').checked; loadMonthBody(); }
+window.toggleMonthAllow = toggleMonthAllow;
+
+async function loadMonthBody(keep){
+  const body = $I('m-body'); if(!body) return;
+  try {
+  const c = CLASSES.find(x=>x.id===monthClassId);
+  if(!c){ body.innerHTML='<div class="acard"><p class="empty">반을 선택하세요.</p></div>'; return; }
+  keep = !!keep && monthKey===monthClassId+'|'+monthYM;   // 🔁 학생·반만 바뀐 실시간 갱신 → 받은 출결 그대로 다시 그리기
+  if(!keep) await loadMonthLock(c);   // 🔒 이 달 잠금 여부
+  const [y,m] = monthYM.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const grades = c.grades || {};
+  const studs = rollOf(c).sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  if(!studs.length){ body.innerHTML='<div class="acard"><p class="empty">이 반에 재학 중인 학생이 없습니다.</p></div>'; return; }
+  const prefix = `${y}-${pad(m)}`;
+  if(!keep){
+    const want = monthClassId+'|'+monthYM;
+    // 📉 v120 — 이 반 · 이 달만 (예전: 모든 학생의 모든 기록)
+    const snap = await eqInDays(db,'studentAttendance','classId', monthClassId, `${prefix}-01`, `${prefix}-${pad(daysInMonth)}`);
+    const md = {};   // 다 받은 뒤에 한 번에 바꾼다 (받는 동안 누른 칸이 옛 기록을 잃지 않게)
+    snap.forEach(d=>{
+      const r=d.data();
+      if(r.classId===monthClassId && (r.date||'').startsWith(prefix)){
+        const day = Number(r.date.slice(8,10));
+        if(!md[r.studentId]) md[r.studentId]={};
+        md[r.studentId][day] = {id:d.id, typeIds:recTypes(r), reason:r.reason||''};
+      }
+    });
+    if(want !== monthClassId+'|'+monthYM) return;   // 받는 사이 반·월을 바꿨으면 버린다
+    monthData = md; monthKey = want;
+  }
+  const dayInfo = [];
+  for(let dd=1; dd<=daysInMonth; dd++){
+    const dateStr = `${y}-${pad(m)}-${pad(dd)}`;
+    const dow = new Date(dateStr+'T00:00:00').getDay();
+    const wknd = dow===0||dow===6;
+    const hol = !!holidayReason(dateStr, c.org);
+    const term = termOfDate(dateStr, c.org);
+    const outOfTerm = (term==='none' || term===null);
+    const blocked = wknd || hol || outOfTerm;
+    const autoPresent = !blocked; // 학기 중 평일 = 자동 출석 대상
+    dayInfo.push({dd, dateStr, dow, blocked, autoPresent});
+  }
+  const dnames=['일','월','화','수','목','금','토'];
+  const headDays = dayInfo.map(di=>`<th class="${di.dow===0||di.dow===6?'wkhd':''}" style="padding:3px 2px">${di.dd}<br><span style="font-size:9px;font-weight:400">${dnames[di.dow]}</span></th>`).join('');
+  const pType = presentType();
+  const rows = studs.map(s=>{
+    const cells = dayInfo.map(di=>{
+      const rec = monthData[s.id] && monthData[s.id][di.dd];
+      const tids = rec ? (rec.typeIds||[]) : [];
+      const t = tids.length ? TYPES.find(x=>x.id===tids[0]) : null;
+      const tnames = tids.map(id=>TYPES.find(x=>x.id===id)?.name||'').filter(Boolean).join('·');
+      const lv = isOnLeave(s, di.dateStr);            // 휴학 중인 날 — 출결 대상이 아니다
+      /* 🏠 휴학이 «덮는다»: 휴학 날엔 이미 입력된 기록이 있어도 «휴»로 보이고, 칸은 늘 잠긴다(토글을 켜도).
+         기록은 지우지 않고 그대로 보관 → 휴학 기간을 고치거나 풀면 원래 입력이 다시 보인다 */
+      const blockedCls = lv ? 'blocked' : di.blocked ? (monthAllowBlocked?'blocked allow':'blocked') : '';
+      const clickable = !lv && (!di.blocked || monthAllowBlocked) && canEditClass(c) && !MONTH_LOCK;   // 🔒 잠기면 클릭 불가
+      let bg='', label='', autoCls='';
+      if(lv){
+        if(!di.blocked || t){ bg='color:var(--warn);font-size:10px;font-weight:800'; label = '휴' + (t ? '<sup style="font-size:9px;margin-left:1px">•</sup>' : ''); }
+      }
+      else if(t){
+        const rs = legacyByeong(t) ? '질병' : (rec.reason||'');   // 옛 «병결»은 결석·질병으로 본다
+        const nm = legacyByeong(t) ? '결' : (t.name||'').slice(0,1);
+        const sub = rs ? `<span style="font-size:8px;opacity:.9;vertical-align:1px">${reasonShort(rs)}</span>` : '';
+        bg=`background:${legacyByeong(t)?'#dc2626':t.color};color:#fff`;
+        label = nm + sub + (tids.length>1?'⁺':'');
+      }
+      else if(di.autoPresent && pType){ // 자동 출석: 연한 초록 흐리게
+        bg=`background:${pType.color}22;color:${pType.color}`; label='출'; autoCls='auto-present';
+      }
+      const tip = lv ? `${di.dateStr} · 휴학 중${t ? ` · 입력돼 있던 «${tnames}»${josaEun(tnames)} 보관 중 (휴학을 풀면 다시 보여요)` : ''}`
+                     : `${di.dateStr}${t?' · '+tnames:di.autoPresent?' · 자동 출석':''}`;
+      return `<td class="dcell ${blockedCls} ${autoCls}" data-sid="${s.id}" data-day="${di.dd}" style="${bg}" ${clickable?`onmousedown="startDrag(event,'${s.id}',${di.dd})" onmouseenter="dragOver('${s.id}',${di.dd})"`:''} title="${esc(tip)}">${label}</td>`;
+    }).join('');
+    const lvDay = dayInfo.find(di=>isOnLeave(s, di.dateStr));     // 이 달에 휴학인 날이 있으면 이름 옆에 표시
+    const lvN = lvDay ? StuStatus.leaveNote(s, lvDay.dateStr) : '';
+    return `<tr><td class="nm" title="${esc(s.name)}${lvDay?' · 휴학 '+esc(lvN):''}">${esc(s.name)} <span style="color:${s.gender==='남'?'#2b6cb0':'#d53f8c'};font-size:10px">${s.gender||''}</span>${lvDay?' <span style="color:var(--warn);font-size:9.5px;font-weight:700">휴학</span>':''}</td>${cells}</tr>`;
+  }).join('');
+  body.innerHTML = `
+    <div class="acard" style="overflow-x:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <h3 class="actitle" style="margin:0">${c.name} · ${y}년 ${m}월 (${studs.length}명)
+          ${MONTH_LOCK?'<span style="font-size:11px;font-weight:800;color:#8A6410;background:#F7EFD8;border-radius:100px;padding:3px 10px;vertical-align:2px">🔒 잠김 — 수정하려면 잠금을 푸세요</span>':''}
+          ${canLockMonth(c)?`<button class="bm" style="font-size:11px;padding:5px 12px;vertical-align:2px;${MONTH_LOCK?'':'background:#F7EFD8;color:#8A6410'}" onclick="toggleMonthLock()">${MONTH_LOCK?'🔓 잠금 풀기':'🔒 이 달 입력 잠그기'}</button>`:''}</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px">
+          ${TYPES.map(t=>`<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:11px;height:11px;border-radius:8px;background:${t.color};display:inline-block"></span>${t.name}</span>`).join('')}
+        </div>
+      </div>
+      <table class="mtab"><thead><tr><th class="nm">학생</th>${headDays}</tr></thead><tbody>${rows}</tbody></table>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">
+        연한 초록 <b style="color:${pType?pType.color:'#16a34a'}">출</b> = 자동 출석 처리된 날입니다. 예외인 학생 칸만 클릭해 바꾸면 됩니다. <b style="color:var(--warn)">휴</b> = 학생 관리에 등록된 휴학 기간 (출결·통계 제외) · <b style="color:var(--warn)">휴•</b> = 휴학 전에 입력돼 있던 출결이 보관 중 — 휴학을 풀면 다시 보여요<br>
+        칸을 <b>클릭</b>하거나 <b>마우스로 여러 칸을 드래그</b>한 뒤 상태를 고르면 한 번에 입력됩니다. 회색 칸(주말·공휴일·학기외)은 위 토글을 켜면 입력할 수 있습니다.<br>
+        <b>⁺</b> 표시는 한 날에 항목이 두 개 이상 기록된 칸입니다 (예: 지각+조퇴). 하루에 여러 항목을 기록하려면 <b>일일 체크</b>를 쓰세요 — 여기서 상태를 고르면 그 항목 하나로 바뀝니다.
+      </p>
+    </div>`;
+  } catch(e){
+    body.innerHTML = `<div class="acard"><div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:14px;font-size:13px">월별 표를 그리는 중 오류가 발생했습니다.<br>${esc(e.message)}</div></div>`;
+    console.error('loadMonthBody 오류', e);
+  }
+}
+
+// ── 드래그 일괄 선택 ──
+let dragging = false;
+let dragCells = [];   // [{sid, day}]
+
+function startDrag(ev, sid, day){
+  ev.preventDefault();
+  closeMonthMenu();
+  const c = CLASSES.find(x=>x.id===monthClassId);
+  if(!c || !canEditClass(c)) return;
+  dragging = true;
+  dragCells = [];
+  addDragCell(sid, day);
+}
+window.startDrag = startDrag;
+
+function dragOver(sid, day){
+  if(!dragging) return;
+  addDragCell(sid, day);
+}
+window.dragOver = dragOver;
+
+function addDragCell(sid, day){
+  if(dragCells.some(c=>c.sid===sid && c.day===day)) return;
+  dragCells.push({sid, day});
+  const cell = document.querySelector(`.dcell[data-sid="${sid}"][data-day="${day}"]`);
+  if(cell) cell.classList.add('drag-sel');
+}
+
+function clearDragSel(){
+  document.querySelectorAll('.dcell.drag-sel').forEach(c=>c.classList.remove('drag-sel'));
+}
+
+// 마우스 놓으면: 1칸이면 단일 메뉴, 여러 칸이면 일괄 메뉴
+document.addEventListener('mouseup', (e)=>{
+  if(!dragging) return;
+  dragging = false;
+  if(dragCells.length===0){ return; }
+  if(dragCells.length===1){
+    const {sid, day} = dragCells[0];
+    clearDragSel(); 
+    openMonthMenu(e, sid, day);
+    dragCells = [];
+  } else {
+    openBulkMenu(e);
+  }
+});
+
+// 일괄 입력 메뉴
+function openBulkMenu(ev){
+  closeMonthMenu();
+  if(MONTH_LOCK){ clearDragSel(); dragCells=[]; return toast('🔒 이 달은 잠겨 있어요.','err'); }
+  const sorted = menuTypes();
+  const menu = document.createElement('div');
+  menu.className='mmenu'; menu.id='month-menu';
+  const cnt = dragCells.length;
+  let html = `<div class="sep" style="color:var(--gm);font-weight:700">${cnt}칸 일괄 입력</div>`;
+  html += sorted.map(t=> needsReasonT(t)
+    ? `<button onclick="showBulkReason('${t.id}')"><span style="width:12px;height:12px;border-radius:8px;background:${t.color};display:inline-block"></span>${t.name} <span style="margin-left:auto;color:var(--tl);font-size:10px">사유 ›</span></button>`
+    : `<button onclick="applyBulk('${t.id}')"><span style="width:12px;height:12px;border-radius:8px;background:${t.color};display:inline-block"></span>${t.name}</button>`).join('');
+  html += `<div class="sep"></div><button onclick="applyBulkClear()" style="color:var(--danger)">✕ 삭제(미입력)</button>`;
+  html += `<button onclick="cancelBulk()" style="color:var(--tl)">취소</button>`;
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const x=Math.min((ev.clientX||200), window.innerWidth-170), yy=Math.min((ev.clientY||200), window.innerHeight-300);
+  menu.style.left=x+'px'; menu.style.top=yy+'px';
+}
+
+window.showBulkReason = function(typeId){
+  const menu = $I('month-menu'); if(!menu) return;
+  const t = TYPES.find(x=>x.id===typeId); if(!t) return;
+  const rs = REASONS[t.name] || ['기타'];
+  menu.innerHTML =
+    `<div class="sep" style="color:var(--gm);font-weight:700">${dragCells.length}칸 · ${t.name} — 사유를 골라주세요</div>` +
+    rs.map(r=>`<button onclick="applyBulk('${typeId}','${r}')">${r==='질병'?'🤒':r==='무단'?'❓':r==='가족 대소사'?'👨‍👩‍👧':r==='가족 여행'?'✈️':'📎'} ${r}</button>`).join('') +
+    `<div class="sep"></div><button onclick="cancelBulk()" style="color:var(--tl)">취소</button>`;
+};
+
+let BULK_BUSY = false;   // 여러 칸을 한꺼번에 쓰는 중 (실시간 갱신은 끝난 뒤로)
+async function applyBulk(typeId, reason){
+  closeMonthMenu();
+  const cells = [...dragCells];
+  clearDragSel(); dragCells=[];
+  let ok=0;
+  BULK_BUSY = true;
+  try {
+    for(const {sid, day} of cells){
+      try { await setMonthCell(sid, day, typeId, true, reason); ok++; } catch(e){}
+    }
+  } finally { BULK_BUSY = false; }
+  toast(`${ok}칸 입력 완료`,'ok');
+}
+window.applyBulk = applyBulk;
+
+async function applyBulkClear(){
+  closeMonthMenu();
+  const cells = [...dragCells];
+  clearDragSel(); dragCells=[];
+  BULK_BUSY = true;
+  try {
+    for(const {sid, day} of cells){
+      try { await clearMonthCell(sid, day, true); } catch(e){}
+    }
+  } finally { BULK_BUSY = false; }
+  toast('삭제 완료','ok');
+}
+window.applyBulkClear = applyBulkClear;
+
+function cancelBulk(){ closeMonthMenu(); clearDragSel(); dragCells=[]; }
+window.cancelBulk = cancelBulk;
+
+function openMonthMenu(ev, sid, day){
+  ev.stopPropagation();
+  closeMonthMenu();
+  const c = CLASSES.find(x=>x.id===monthClassId);
+  if(!c || !canEditClass(c)) return toast('기록 권한이 없습니다.','err');
+  if(MONTH_LOCK) return toast('🔒 이 달은 잠겨 있어요 — 관리자가 잠금을 풀어야 수정할 수 있습니다.','err');
+  const sorted = menuTypes();
+  const menu = document.createElement('div');
+  menu.className='mmenu'; menu.id='month-menu';
+  const cur = monthData[sid] && monthData[sid][day];
+  const btn = t => needsReasonT(t)
+    ? `<button onclick="showReasonMenu('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:8px;background:${t.color};display:inline-block"></span>${t.name} <span style="margin-left:auto;color:var(--tl);font-size:10px">사유 ›</span></button>`
+    : `<button onclick="setMonthCell('${sid}',${day},'${t.id}')"><span style="width:12px;height:12px;border-radius:8px;background:${t.color};display:inline-block"></span>${t.name}${cur&&cur.typeId===t.id?' ✓':''}</button>`;
+  let html = sorted.slice(0,5).map(btn).join('');
+  if(sorted.length>5){
+    html += `<div class="sep">기타</div>` + sorted.slice(5).map(btn).join('');
+  }
+  if(cur){ html += `<div class="sep"></div><button onclick="clearMonthCell('${sid}',${day})" style="color:var(--danger)">✕ 삭제(미입력)</button>`; }
+  menu.innerHTML = html;
+  document.body.appendChild(menu);
+  const x=Math.min(ev.clientX, window.innerWidth-160), yy=Math.min(ev.clientY, window.innerHeight-260);
+  menu.style.left=x+'px'; menu.style.top=yy+'px';
+}
+window.openMonthMenu = openMonthMenu;
+
+/* ── 2단계: 사유 고르기 (필수) ── */
+window.showReasonMenu = function(sid, day, typeId){
+  const menu = $I('month-menu'); if(!menu) return;
+  const t = TYPES.find(x=>x.id===typeId); if(!t) return;
+  const rs = REASONS[t.name] || ['기타'];
+  menu.innerHTML =
+    `<div class="sep" style="color:var(--gm);font-weight:700"><span style="width:10px;height:10px;border-radius:8px;background:${t.color};display:inline-block;margin-right:5px"></span>${t.name} — 사유를 골라주세요</div>` +
+    rs.map(r=>`<button onclick="setMonthCell('${sid}',${day},'${typeId}',false,'${r}')">${r==='질병'?'🤒':r==='무단'?'❓':r==='가족 대소사'?'👨‍👩‍👧':r==='가족 여행'?'✈️':'📎'} ${r}</button>`).join('') +
+    `<div class="sep"></div><button onclick="event.stopPropagation();openMonthMenu(event,'${sid}',${day})" style="color:var(--tl)">‹ 뒤로</button>`;
+};
+function closeMonthMenu(){ const m=$I('month-menu'); if(m) m.remove(); }
+document.addEventListener('click', e=>{ if(!e.target.closest('.mmenu') && !e.target.closest('.dcell')) closeMonthMenu(); });
+
+async function setMonthCell(sid, day, typeId, bulk, reason){
+  if(!bulk) closeMonthMenu();
+  const c = CLASSES.find(x=>x.id===monthClassId); if(!c) return;
+  if(MONTH_LOCK){ if(!bulk) toast('🔒 이 달은 잠겨 있어요.','err'); return; }
+  const t = TYPES.find(x=>x.id===typeId);
+  if(needsReasonT(t) && !reason){ toast(`${t.name}은(는) 사유(질병·무단·기타)를 골라야 저장돼요.`,'err'); return; }
+  const [y,m]=monthYM.split('-').map(Number);
+  const dateStr=`${y}-${pad(m)}-${pad(day)}`;
+  const s = STUDENTS[sid]; if(!s) return;
+  const cur = monthData[sid] && monthData[sid][day];
+  try {
+    const data = {
+      studentId:sid, studentName:s.name, classId:c.id, className:c.name,
+      org:c.org, date:dateStr, month:monthYM, typeId, typeIds:[typeId],
+      reason: reason||'', memo:(cur&&cur.memo)||'',
+      by:CU.name, byUid:CU.uid, updatedAt:Timestamp.now()
+    };
+    if(cur && cur.id){ await updateDoc(doc(db,'studentAttendance',cur.id), data); saDrop(); monthData[sid][day]={id:cur.id, typeIds:[typeId], reason:reason||''}; }
+    else { data.createdAt=Timestamp.now(); const ref=await addDoc(collection(db,'studentAttendance'), data); saDrop();
+      if(!monthData[sid]) monthData[sid]={}; monthData[sid][day]={id:ref.id, typeIds:[typeId], reason:reason||''}; }
+    updateMonthCellUI(sid, day, typeId, reason||'');
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.setMonthCell = setMonthCell;
+
+async function clearMonthCell(sid, day, bulk){
+  if(!bulk) closeMonthMenu();
+  if(MONTH_LOCK){ if(!bulk) toast('🔒 이 달은 잠겨 있어요.','err'); return; }
+  const cur = monthData[sid] && monthData[sid][day];
+  if(!cur || !cur.id) return;
+  try {
+    await deleteDoc(doc(db,'studentAttendance',cur.id)); saDrop();
+    delete monthData[sid][day];
+    updateMonthCellUI(sid, day, null);
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.clearMonthCell = clearMonthCell;
+
+function updateMonthCellUI(sid, day, typeId){
+  const c = CLASSES.find(x=>x.id===monthClassId); if(!c) return;
+  const cell = $I('m-body')?.querySelector(`td.dcell[data-sid="${sid}"][data-day="${day}"]`); if(!cell) return;
+  const t = typeId ? TYPES.find(x=>x.id===typeId) : null;
+  cell.classList.remove('auto-present');
+  if(t){
+    cell.style.background=t.color; cell.style.color='#fff';
+    const rs = arguments.length>3 ? (arguments[3]||'') : '';
+    cell.innerHTML = (t.name||'').slice(0,1) + (rs?`<span style="font-size:8px;opacity:.9;vertical-align:1px">${reasonShort(rs)}</span>`:'');
+  }
+  else {
+    // 삭제됨 → 자동출석 대상이면 연한 초록 '출'로 복원
+    const [y,m]=monthYM.split('-').map(Number);
+    const dateStr=`${y}-${pad(m)}-${pad(day)}`;
+    const pType = presentType();
+    cell.style.outline='';
+    if(isOnLeave(STUDENTS[sid], dateStr)){ cell.style.background=''; cell.style.color='var(--warn)'; cell.textContent = isAutoPresentDate(dateStr, c.org) ? '휴' : ''; }
+    else if(isAutoPresentDate(dateStr, c.org) && pType){
+      cell.style.background=pType.color+'22'; cell.style.color=pType.color; cell.textContent='출';
+      cell.classList.add('auto-present');
+    } else { cell.style.background=''; cell.style.color=''; cell.textContent=''; }
+  }
+}
+function fillCheckGradeFilter(){
+  const el = $I('ck-grade'); if(!el) return;
+  const c = CLASSES.find(x=>x.id===checkClassId);
+  const gradeSet = new Set();
+  if(c && c.grades) Object.values(c.grades).forEach(g=>{ if(g) gradeSet.add(g); });
+  const arr = Array.from(gradeSet).sort();
+  el.innerHTML = '<option value="">전체 학년</option>' + arr.map(g=>`<option value="${g}"${g===checkGradeFilter?' selected':''}>${g}</option>`).join('');
+}
+window.fillCheckGradeFilter = fillCheckGradeFilter;
+
+// 반이 바뀌면 학년 필터를 초기화하고 다시 채움
+function onCheckClassChange(){
+  checkClassId = $I('ck-class').value;
+  checkGradeFilter = '';
+  fillCheckGradeFilter();
+  loadCheckBody();
+}
+window.onCheckClassChange = onCheckClassChange;
+
+function onCheckChange(){
+  checkDate = $I('ck-date').value;
+  checkClassId = $I('ck-class').value;
+  checkGradeFilter = $I('ck-grade')?.value || '';
+  loadCheckBody();
+}
+window.onCheckChange = onCheckChange;
+
+async function loadCheckBody(keep){
+  const body = $I('ck-body'); if(!body) return;
+  // 🔁 실시간 갱신으로 다시 그릴 때: 저장 전 고른 항목·메모를 그대로 둔다 (다시 받아 오지 않는다)
+  keep = !!keep && !!_keepCk && checkKey===checkClassId+'|'+checkDate;
+  const K = keep ? _keepCk : null; _keepCk = null;
+  const c = CLASSES.find(x=>x.id===checkClassId);
+  if(!c){ body.innerHTML=''; return; }
+  if(!keep || DAY_LOCK_KEY !== `${c.org}_${String(checkDate||'').slice(0,7)}`) await loadDayLock(c, checkDate);   // 🔒 이 날짜의 달이 잠겼나
+  const editable = canEditClass(c) && !DAY_LOCK;
+  const grades = c.grades || {};
+  const allStuds = rollOf(c)
+    .filter(s=>!checkGradeFilter || (grades[s.id]||'')===checkGradeFilter)  // 학년 필터
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  // 이 날짜에 휴학 중인 학생 분리
+  const studs = allStuds.filter(s=>!isOnLeave(s, checkDate));
+  const leaveStuds = allStuds.filter(s=>isOnLeave(s, checkDate));
+
+  // 날짜가 휴일/방학인지 체크
+  const holReason = holidayReason(checkDate, c.org);
+  const dow = new Date(checkDate+'T00:00:00').getDay();
+  const isWeekend = dow===0||dow===6;
+
+  if(!keep){
+    body.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
+    // 기존 기록 로드 (이 반·이 날짜) — 📉 v120 서버에도 «이 반 · 이 날짜»만 묻는다 (예전: 모든 기록)
+    const snap = await eqInDays(db,'studentAttendance','classId', checkClassId, checkDate, checkDate);
+    checkRecords = {};
+    snap.forEach(d=>{ const r=d.data(); if(r.classId===checkClassId && r.date===checkDate) checkRecords[r.studentId]={id:d.id, typeIds:recTypes(r), memo:r.memo||''}; });
+    checkKey = checkClassId+'|'+checkDate;
+  }
+
+  // 기본 출석 타입 (isPresent=true 중 첫번째)
+  const defType = TYPES.find(t=>t.isPresent) || TYPES[0];
+
+  // 학기 기간 체크: 학기 밖이면 입력 차단
+  const term = termOfDate(checkDate, c.org);
+  if(term === 'none'){
+    body.innerHTML = `<div class="acard"><div style="background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:14px;font-size:13px;line-height:1.6">📅 ${checkDate.slice(0,4)}년 ${ORGS[c.org]} 학기 일정이 등록되지 않았습니다.<br>설정 탭에서 학기(개학일~종업일)를 먼저 등록해야 출석을 기록할 수 있습니다.</div></div>`;
+    return;
+  }
+  if(term === null){
+    body.innerHTML = `<div class="acard"><div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:14px;font-size:13px;line-height:1.6">🚫 이 날짜(${checkDate})는 <b>학기 기간이 아닙니다.</b><br>출석은 등록된 학기(개학일~종업일) 안에서만 기록할 수 있습니다.<br><span style="color:var(--ts)">방학·학기 외 기간에는 출결을 입력하지 않습니다.</span></div></div>`;
+    return;
+  }
+
+  let banner = '';
+  if(DAY_LOCK){ const [ly,lm] = String(checkDate).split('-').map(Number);
+    banner = `<div class="ck-lock" style="background:#F7EFD8;color:#8A6410;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px;line-height:1.6">🔒 <b>${ly}년 ${lm}월 출석부는 잠겨 있어요.</b> 보기만 할 수 있습니다.`
+      + (canLockMonth(c) ? `<br><span style="color:var(--ts)">고치려면 «한눈에 보기» 위 «🔓 잠금 풀기» 또는 «⚙️ 설정 › 월별 입력 잠금»에서 이 달을 풀어 주세요.</span>`
+                         : `<br><span style="color:var(--ts)">고쳐야 하면 수퍼관리자나 기관관리자에게 잠금을 풀어 달라고 요청하세요.</span>`) + `</div>`; }
+  if(holReason) banner += `<div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 <b>${holReason}</b> 입니다. (휴일/방학)</div>`;
+  else if(isWeekend) banner += `<div style="background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px">📌 이 날짜는 주말입니다.</div>`;
+
+  if(!studs.length){
+    body.innerHTML = `<div class="acard">${banner}<div class="empty">이 반에 배정된 재학생이 없습니다.</div></div>`;
+    return;
+  }
+
+  const typeButtons = (sid, curTypes) => TYPES.map(t=>{
+    const sel = curTypes.includes(t.id);
+    return `<button class="tbtn-att" onclick="setRec('${sid}','${t.id}')" data-sid="${sid}" data-tid="${t.id}"
+      style="border:1.5px solid ${sel?t.color:'var(--ivd)'};background:${sel?t.color:'var(--wh)'};color:${sel?'#fff':'var(--ts)'};padding:5px 12px;border-radius:8px;font-size:13px;font-weight:600;cursor:${editable?'pointer':'default'};${editable?'':'pointer-events:none;opacity:.7'}">${t.name}</button>`;
+  }).join('');
+
+  const rows = studs.map(s=>{
+    const rec = checkRecords[s.id];
+    const curTypes = (rec && rec.typeIds && rec.typeIds.length) ? rec.typeIds : (defType?[defType.id]:[]);
+    const g = grades[s.id];
+    const gradeTag = g ? `<span style="background:var(--gp);color:var(--gm);font-size:10px;font-weight:700;padding:1px 7px;border-radius:100px">${g}</span>` : '';
+    return `<div id="row-${s.id}" style="padding:12px 0;border-bottom:1px solid var(--ivd);scroll-margin-top:70px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-weight:700;font-size:15px;color:var(--gd)">${s.name}</span>
+        ${gradeTag}
+        <span style="font-size:11px;color:var(--tl)">학번 ${s.studentNo||'-'}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${typeButtons(s.id, curTypes)}</div>
+      <input type="text" id="memo-${s.id}" placeholder="메모 (선택)" value="${esc(rec?.memo||'').replace(/"/g,'&quot;')}" ${editable?'':'disabled'}
+        style="width:100%;height:34px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 10px;font-size:13px;background:${editable?'var(--iv)':'var(--iv)'};outline:none">
+    </div>`;
+  }).join('');
+
+  const leaveSection = leaveStuds.length ? `
+    <div style="margin-top:16px;padding-top:12px;border-top:2px dashed var(--ivd)">
+      <div style="font-size:13px;font-weight:700;color:var(--tl);margin-bottom:8px">휴학 중 (${leaveStuds.length}명) · 출결 제외</div>
+      ${leaveStuds.map(s=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;opacity:.6">
+        <span style="font-weight:600">${s.name}</span>
+        <span class="typebadge" style="background:var(--warn-bg);color:var(--warn)">휴학 중${StuStatus.leaveNote(s, checkDate)?' · '+esc(StuStatus.leaveNote(s, checkDate)):''}</span>${keptNote(checkRecords[s.id])}
+      </div>`).join('')}
+    </div>` : '';
+
+  // 이 날짜가 자동 출석 대상인지 (학기 중 평일)
+  const autoPresentToday = isAutoPresentDate(checkDate, c.org);
+  const pType = presentType();
+  // 정사각 박스 현황 그리드 (한눈에 전체 상태)
+  const gridBoxes = studs.map(s=>{
+    const rec = checkRecords[s.id];
+    const tids = rec ? (rec.typeIds||[]) : [];
+    const ts = tids.map(id=>TYPES.find(x=>x.id===id)).filter(Boolean);
+    let color, tn, faint=false;
+    if(ts.length){ color=ts[0].color; tn=ts.map(x=>x.name).join('·'); }
+    else if(autoPresentToday && pType){ color=pType.color; tn='출석(자동)'; faint=true; }
+    else { color='var(--gray-bg)'; tn='미입력'; }
+    return `<div id="box-${s.id}" onclick="scrollToStud('${s.id}')" title="${s.name} · ${tn}" style="aspect-ratio:1;background:${color};border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;padding:4px;overflow:hidden;border:1.5px solid rgba(0,0,0,0.06);${faint?'opacity:.65':''}" data-name="${s.name}">
+      <span style="font-size:12px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.3);text-align:center;line-height:1.2">${s.name}</span>
+      <span class="box-state" style="font-size:9px;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,0.3);margin-top:2px">${tn}</span>
+    </div>`;
+  }).join('');
+  const gridSection = studs.length ? `
+    <div class="acard">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 class="actitle" style="margin:0;font-size:15px">🔲 한눈에 보기</h3>
+        <span style="font-size:12px;color:var(--tl)">박스를 누르면 해당 학생으로 이동</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:8px">${gridBoxes}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:11px">
+        ${TYPES.map(t=>`<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:12px;height:12px;border-radius:8px;background:${t.color};display:inline-block"></span>${t.name}</span>`).join('')}
+      </div>
+    </div>` : '';
+
+  body.innerHTML = `
+    ${gridSection}
+    <div class="acard">
+      ${banner}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <h3 class="actitle" style="margin:0">${c.name} · ${studs.length}명${leaveStuds.length?` <span style="font-size:12px;color:var(--tl);font-weight:400">(휴학 ${leaveStuds.length}명 제외)</span>`:''}</h3>
+        ${editable?`<span style="font-size:12px;color:var(--gm)">✏️ 기록 가능</span>`:DAY_LOCK?`<span style="font-size:12px;color:#8A6410;font-weight:700">🔒 잠김 · 보기만</span>`:`<span style="font-size:12px;color:var(--tl)">👁 열람 전용</span>`}
+      </div>
+      <div class="ck-rows">${rows}</div>
+      ${editable?`<button class="bp" style="margin-top:16px;width:100%" onclick="saveCheck()">저장</button>`:''}
+      ${leaveSection}
+    </div>`;
+
+  // 초기 선택값 채우기 (기록 없으면 기본 출석)
+  studs.forEach(s=>{ if(!checkRecords[s.id]) checkRecords[s.id]={typeIds: defType?[defType.id]:[], memo:''}; });
+  if(K){
+    window.scrollTo(0, K.y);
+    const f = K.focus && $I(K.focus);
+    if(f && f.focus) try { f.focus({preventScroll:true}); if(K.sel && f.setSelectionRange) f.setSelectionRange(K.sel[0], K.sel[1]); } catch(e){}
+  }
+}
+
+function setRec(sid, tid){
+  /* 복수선택: 누르면 켜지고, 다시 누르면 꺼진다.
+     · 기본 출석만 선택된 상태에서 다른 항목을 누르면 교체 (예전 습관 그대로)
+     · 그 외에는 추가 (지각+조퇴처럼 함께 기록)
+     · 전부 끄면 기본 출석으로 돌아온다 */
+  const rec = checkRecords[sid] || (checkRecords[sid]={typeIds:[], memo:''});
+  let arr = Array.isArray(rec.typeIds) ? rec.typeIds.slice() : [];
+  const defId = (TYPES.find(t=>t.isPresent)||TYPES[0])?.id;
+  if(arr.includes(tid)){
+    arr = arr.filter(x=>x!==tid);
+    if(!arr.length && defId) arr=[defId];
+  } else {
+    if(arr.length===1 && arr[0]===defId && tid!==defId) arr=[tid];
+    else arr.push(tid);
+  }
+  rec.typeIds = arr;
+  // 버튼 스타일 갱신
+  document.querySelectorAll(`.tbtn-att[data-sid="${sid}"]`).forEach(b=>{
+    const t = TYPES.find(x=>x.id===b.dataset.tid);
+    const sel = arr.includes(b.dataset.tid);
+    b.style.background = sel?t.color:'var(--wh)';
+    b.style.color = sel?'#fff':'var(--ts)';
+    b.style.borderColor = sel?t.color:'var(--ivd)';
+  });
+  // 정사각 박스 갱신
+  const box = $I('box-'+sid);
+  if(box){
+    const ts = arr.map(id=>TYPES.find(x=>x.id===id)).filter(Boolean);
+    box.style.background = ts.length?ts[0].color:'var(--gray-bg)';
+    const label = ts.length?ts.map(x=>x.name).join('·'):'미입력';
+    const st = box.querySelector('.box-state');
+    if(st) st.textContent = label;
+    box.title = `${box.dataset.name} · ${label}`;
+  }
+}
+
+function scrollToStud(sid){
+  const row = $I('row-'+sid);
+  if(!row) return;
+  row.scrollIntoView({behavior:'smooth', block:'center'});
+  // 강조: 노란 배경 + 테두리 + 2번 깜박임
+  row.style.transition = 'background .25s, box-shadow .25s';
+  row.style.borderRadius = '10px';
+  let on = false, cnt = 0;
+  const blink = () => {
+    on = !on;
+    row.style.background = on ? 'var(--warn-bg)' : 'transparent';
+    row.style.boxShadow = on ? '0 0 0 2px var(--gold)' : 'none';
+    cnt++;
+    if(cnt < 6) setTimeout(blink, 280);
+    else { row.style.background=''; row.style.boxShadow='none'; }
+  };
+  blink();
+}
+window.scrollToStud = scrollToStud;
+window.setRec = setRec;
+
+async function saveCheck(){
+  const c = CLASSES.find(x=>x.id===checkClassId);
+  if(!c || !canEditClass(c)) return toast('기록 권한이 없습니다.','err');
+  const term = termOfDate(checkDate, c.org);
+  if(term==='none') return toast('학기 일정이 등록되지 않았습니다.','err');
+  if(term===null) return toast('학기 기간이 아닙니다. 출석을 기록할 수 없습니다.','err');
+  if(await loadDayLock(c, checkDate)){ toast('🔒 이 달은 잠겨 있어요 — 관리자가 잠금을 풀어야 저장할 수 있습니다.','err'); loadCheckBody(); return; }
+  const grades = c.grades || {};
+  const studs = rollOf(c)
+    .filter(s=>!checkGradeFilter || (grades[s.id]||'')===checkGradeFilter)  // 화면에 보이는 학생만
+    .filter(s=>!isOnLeave(s, checkDate));  // 휴학 중인 학생 제외
+  toast('저장 중...');
+  let cnt=0;
+  try {
+    for(const s of studs){
+      const rec = checkRecords[s.id]; if(!rec||!(rec.typeIds&&rec.typeIds.length)) continue;
+      const memo = ($I('memo-'+s.id)?.value||'').trim();
+      const existing = rec.id;
+      const data = {
+        studentId: s.id, studentName: s.name, classId: c.id, className: c.name,
+        org: c.org, date: checkDate, month: String(checkDate).slice(0,7), typeId: rec.typeIds[0], typeIds: rec.typeIds, memo,
+        by: CU.name, byUid: CU.uid, updatedAt: Timestamp.now()
+      };
+      if(existing){
+        // 변경 이력 누적
+        await updateDoc(doc(db,'studentAttendance',existing), data); saDrop();
+      } else {
+        data.createdAt = Timestamp.now();
+        await addDoc(collection(db,'studentAttendance'), data); saDrop();
+      }
+      cnt++;
+    }
+    logActivity('수정','출석부',`${c.name} ${checkDate} (${cnt}명)`);
+    toast(`${cnt}명 출결이 저장되었습니다.`,'ok');
+    // 결석·지각 알림 (담임·대리 + 부서장·관리자에게, 본인 제외)
+    sendAbsenceAlert(c, checkDate, studs);
+    loadCheckBody();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveCheck = saveCheck;
+
+// 결석·지각 요약 알림
+async function sendAbsenceAlert(c, dateStr, studs){
+  try {
+    // 결석/지각 등 '출석 아닌' 학생 모으기
+    const abnormal = [];
+    studs.forEach(s=>{
+      const rec = checkRecords[s.id];
+      const tids = rec ? (rec.typeIds||[]) : [];
+      const bad = tids.map(id=>TYPES.find(x=>x.id===id)).filter(t=>t && !t.isPresent);
+      if(bad.length){ abnormal.push({name:s.name, type:bad.map(t=>t.name).join('·')}); }
+    });
+    if(!abnormal.length) return; // 다 정상 출석이면 알림 없음
+
+    // 알림 대상 uid 수집: 담임 + 대리 + 같은 기관 관리자(org_admin/super) + 같은 부서 부서장(tab_admin)
+    const targets = new Set();
+    if(c.teacherUid) targets.add(c.teacherUid);
+    (c.deputies||[]).forEach(u=>targets.add(u));
+    const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    snap.forEach(d=>{
+      const st = d.data();
+      if((st.acStatus||'active')!=='active') return;
+      const stOrgs = st.role==='super' ? ['jihyebit','daniel'] : (st.orgs&&st.orgs.length?st.orgs:[st.org]);
+      // 슈퍼·기관관리자: 해당 기관이면
+      if((st.role==='super'||st.role==='org_admin') && stOrgs.includes(c.org)) targets.add(d.id);
+      // 부서장: 같은 기관+같은 부서
+      if(st.role==='tab_admin' && stOrgs.includes(c.org) && (st.dept===c.dept || c.dept==='행정실')) targets.add(d.id);
+    });
+    targets.delete(CU.uid); // 방금 체크한 본인 제외
+    const toUids = [...targets];
+    if(!toUids.length) return;
+    // 대상 이름
+    const nameMap = {};
+    snap.forEach(d=>{ nameMap[d.id]=d.data().name; });
+    const toNames = toUids.map(u=>nameMap[u]||'');
+    // 메시지 작성
+    const summary = abnormal.map(a=>`${a.name}(${a.type})`).join(', ');
+    const [y,m,dd] = dateStr.split('-');
+    const subject = `[출결] ${c.name} ${Number(m)}/${Number(dd)} 결석·지각 ${abnormal.length}명`;
+    const body = `${ORGS[c.org]||c.org} ${c.name}\n${dateStr} 출결 특이사항\n\n${summary}\n\n(기록: ${CU.name})`;
+    await addDoc(collection(db,'messages'), {
+      fromUid:CU.uid, fromName:CU.name,
+      toUids, toNames, unread:[...toUids],
+      subject, body, readBy:[],
+      createdAt:Timestamp.now()
+    });
+  } catch(e){ console.error('결석 알림 실패', e); }
+}
+
+// ── 출석 통계 ──
+let statRecords = null;  // 출결 기록 캐시 (한 번만 로드)
+let statYear = new Date().getFullYear();
+let statOrg = '';
+let statTermSel = '1';   // '1' | '2' | 'year'
+let statView = 'month'; // student | class | grade | dept | all | month
+let statClassFilter = '';
+let statGradeFilter = '';
+
+let liveUnsub = null;      // 실시간 구독 해제 손잡이
+let liveDate = '';         // 보고 있는 날짜 (기본 오늘)
+let LIVE_PAINT = null;     // 학생·반이 바뀌면 마지막 표시로 다시 칠하기
+function stopLive(){ LIVE_PAINT = null; if(liveUnsub){ try{liveUnsub();}catch(e){} liveUnsub=null; } }
+
+/* ── 🔴 오늘 실시간 (기관 전체) — 담임이 표시하는 순간 화면이 그 자리에서 바뀐다 ──
+   저장 구조가 «특이사항만 기록»이므로: 표시 없음 = 정상 출석.
+   따라서 카드에는 재적·특이 유형별 수·출석률을 보여준다 (미입력 개념 없음). */
+function renderLive(){
+  stopLive();
+  const orgs = myOrgs();
+  const org = statOrg = (window.OrgBar && OrgBar.current) || statOrg || orgs[0];
+  if(!liveDate) liveDate = todayYMD2();
+  $I('c-stat').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">🔴 오늘 실시간 — ${ORGS[org]||org} 전체</h3>
+      <p class="adesc">담임 선생님이 출결을 표시하면 이 화면이 <b>실시간으로</b> 바뀝니다. 표시가 없는 학생은 정상 출석으로 봅니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <div class="fgrp" style="margin-bottom:0"><label>보기</label>
+          <select id="st-view" onchange="onStatChange()">
+            <option value="month">월별 달력</option><option value="week">주간 통계</option>
+            <option value="student">학생별</option><option value="class">반별</option>
+            <option value="grade">학년별</option><option value="dept">부서별</option>
+            <option value="all">전체</option>
+            <option value="live" selected>🔴 오늘 실시간 (기관 전체)</option>
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>날짜</label>
+          <input type="date" id="lv-date" value="${liveDate}" onchange="liveDate=this.value; renderLive();"></div>
+        <span id="lv-pulse" style="font-size:11.5px;color:var(--tl);align-self:center">● 연결 중…</span>
+      </div>
+      <div id="lv-sum" style="margin-bottom:12px"></div>
+      <div id="lv-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px"></div>
+    </div>`;
+  const isToday = liveDate === todayYMD2();
+  const qy = query(collection(db,'studentAttendance'), where('org','==',org), where('date','==',liveDate));
+  liveUnsub = onSnapshot(qy, snap=>{
+    const marks = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    LIVE_PAINT = ()=>{ if($I('lv-grid')) paintLive(org, marks, isToday); };
+    paintLive(org, marks, isToday);
+    const p = $I('lv-pulse');
+    if(p){ p.innerHTML = isToday
+      ? '<span style="color:#16a34a">●</span> 실시간 연결됨 — 표시 즉시 갱신'
+      : '지난 날짜 조회 (실시간과 무관)'; }
+  }, err=>{
+    const g=$I('lv-grid'); if(g) g.innerHTML = `<div style="grid-column:1/-1;color:var(--danger,#C0392B);font-size:13px">불러오지 못했습니다: ${esc(err.message||'')}</div>`;
+  });
+}
+function todayYMD2(){ const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; }
+function paintLive(org, marks, isToday){
+  const cls = sortClasses(CLASSES.filter(c=>c.org===org));
+  const byClass = {};
+  marks.forEach(m=>{ (byClass[m.classId] = byClass[m.classId] || []).push(m); });
+  const typeOf = id => TYPES.find(t=>t.id===id) || null;
+  let totRoster=0, totFlag=0, totAbsent=0;
+  const cards = cls.map(c=>{
+    // 출결 대상 = 학적이 살아 있고 그날 휴학이 아닌 학생 (출석 체크 명단과 같다)
+    const roll = rollOf(c);
+    const on = roll.filter(s=>!isOnLeave(s, liveDate));
+    const onIds = new Set(on.map(s=>s.id));
+    const roster = on.length, nLeave = roll.length - on.length;
+    const ms = (byClass[c.id] || []).filter(m=>onIds.has(m.studentId));
+    // 학생별 대표 유형(복수면 첫 항목), 정상출석(isPresent) 표시는 특이에서 제외
+    const flagged = {};
+    ms.forEach(m=>{
+      const t = typeOf((m.typeIds&&m.typeIds[0])||m.typeId);
+      if(t && !t.isPresent) flagged[m.studentId] = { t, name:m.studentName||'' };
+    });
+    const flagN = Object.keys(flagged).length;
+    const cnt = {};
+    Object.values(flagged).forEach(f=>{ cnt[f.t.name] = cnt[f.t.name]||{n:0,color:f.t.color,names:[]}; cnt[f.t.name].n++; cnt[f.t.name].names.push(f.name); });
+    const rate = roster ? Math.round((roster-flagN)/roster*1000)/10 : 0;
+    totRoster+=roster; totFlag+=flagN; totAbsent+=flagN;
+    const t = (typeof STAFFM!=='undefined') ? null : null;
+    const chips = Object.entries(cnt).map(([nm,v])=>
+      `<span title="${esc(v.names.join(', '))}" style="display:inline-flex;align-items:center;gap:4px;border:1px solid ${v.color}44;background:${v.color}14;color:${v.color};border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">${esc(nm)} ${v.n}</span>`).join(' ');
+    return `<div style="background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:13px;padding:13px 15px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <b style="font-size:14.5px;color:var(--gd)">${c.grade?'['+esc(c.grade)+'] ':''}${esc(c.name)}</b>
+        <span style="font-size:11px;color:var(--tl)">재적 ${roster}${nLeave?` <span style="color:var(--warn)">· 휴학 ${nLeave}</span>`:''}</span>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;min-height:24px">
+        ${flagN ? chips : `<span style="font-size:11.5px;color:#16a34a;font-weight:800">✓ 특이사항 없음${isToday?' (전원 출석)':''}</span>`}
+      </div>
+      <div style="margin-top:9px;background:var(--iv);border-radius:100px;height:7px;overflow:hidden">
+        <div style="width:${rate}%;height:100%;background:${rate>=95?'#16a34a':rate>=85?'#f59e0b':'#dc2626'}"></div>
+      </div>
+      <div style="margin-top:4px;font-size:11px;color:var(--ts);text-align:right">출석 ${rate}%</div>
+    </div>`;
+  }).join('');
+  const orate = totRoster ? Math.round((totRoster-totAbsent)/totRoster*1000)/10 : 0;
+  $I('lv-sum').innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <div style="flex:1;min-width:130px;background:var(--gp);border:1px solid var(--gm);border-radius:12px;padding:11px 14px">
+        <div style="font-size:11px;color:var(--gd)">재적</div><div style="font-size:20px;font-weight:900;color:var(--gd)">${totRoster}명</div></div>
+      <div style="flex:1;min-width:130px;background:#FDF3E7;border:1px solid #F2D9B8;border-radius:12px;padding:11px 14px">
+        <div style="font-size:11px;color:#B4690E">특이사항</div><div style="font-size:20px;font-weight:900;color:#B4690E">${totFlag}건</div></div>
+      <div style="flex:1;min-width:130px;background:#EAF6EF;border:1px solid #CBE7D5;border-radius:12px;padding:11px 14px">
+        <div style="font-size:11px;color:#16a34a">기관 출석률</div><div style="font-size:20px;font-weight:900;color:#16a34a">${orate}%</div></div>
+    </div>`;
+  $I('lv-grid').innerHTML = cards || `<div style="grid-column:1/-1;color:var(--tl);font-size:13px">이 기관에 올해 반 편성이 없습니다.</div>`;
+}
+window.renderLive = renderLive;
+
+function renderStat(){
+  stopLive();
+  const orgs = myOrgs();
+  statOrg = (window.OrgBar && OrgBar.current) || statOrg || orgs[0];
+  if(statView === 'live'){ renderLive(); return; }
+  const ty = new Date().getFullYear();
+  const years = [];
+  for(let y=ty+1; y>=ty-3; y--) years.push(y);
+
+  $I('c-stat').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📊 출석 통계</h3>
+      <p class="adesc">학기 또는 연간 단위로 학생·반·부서·전체 출석 현황을 봅니다. 수업일수는 학기 기간의 평일에서 휴일·방학을 뺀 값입니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fgrp" style="margin-bottom:0"><label>연도</label>
+          <select id="st-year" onchange="onStatChange()">${years.map(y=>`<option value="${y}"${y===statYear?' selected':''}>${y}년</option>`).join('')}</select></div>
+        
+        <div class="fgrp" style="margin-bottom:0"><label>학기</label>
+          <select id="st-term" onchange="onStatChange()">
+            <option value="1"${statTermSel==='1'?' selected':''}>1학기</option>
+            <option value="2"${statTermSel==='2'?' selected':''}>2학기</option>
+            <option value="year"${statTermSel==='year'?' selected':''}>연간 (1+2학기)</option>
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>보기</label>
+          <select id="st-view" onchange="onStatChange()">
+            <option value="month"${statView==='month'?' selected':''}>월별 달력</option>
+            <option value="week"${statView==='week'?' selected':''}>주간 통계</option>
+            <option value="student"${statView==='student'?' selected':''}>학생별</option>
+            <option value="class"${statView==='class'?' selected':''}>반별</option>
+            <option value="grade"${statView==='grade'?' selected':''}>학년별</option>
+            <option value="dept"${statView==='dept'?' selected':''}>부서별</option>
+            <option value="all"${statView==='all'?' selected':''}>전체</option>
+            <option value="live"${statView==='live'?' selected':''}>🔴 오늘 실시간 (기관 전체)</option>
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>반 필터</label>
+          <select id="st-class" onchange="onStatChange()"><option value="">전체 반</option></select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>학년 필터</label>
+          <select id="st-grade" onchange="onStatChange()"><option value="">전체 학년</option></select></div>
+      </div>
+      <button class="bs" style="margin-top:12px" onclick="downloadStatExcel()">⬇ 엑셀 다운로드</button>
+    </div>
+    <div id="st-body"></div>`;
+  fillStatFilters();
+  buildStat();
+}
+window.renderStat = renderStat;
+
+// 반/학년 필터 옵션 채우기 (선택된 기관 기준)
+function fillStatFilters(){
+  const orgClasses = CLASSES.filter(c=>c.org===statOrg);
+  const clsEl = $I('st-class');
+  if(clsEl){
+    clsEl.innerHTML = '<option value="">전체 반</option>' +
+      sortClasses(orgClasses).map(c=>`<option value="${c.id}"${c.id===statClassFilter?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name}</option>`).join('');
+  }
+  // 학년 목록 (반 grades에 등장하는 학년 + 반 grade)
+  const gradeSet = new Set();
+  orgClasses.forEach(c=>{ Object.values(c.grades||{}).forEach(g=>gradeSet.add(g)); });
+  const gEl = $I('st-grade');
+  if(gEl){
+    const arr = sortGrades(Array.from(gradeSet));
+    gEl.innerHTML = '<option value="">전체 학년</option>' +
+      arr.map(g=>`<option value="${g}"${g===statGradeFilter?' selected':''}>${g}</option>`).join('');
+  }
+}
+window.fillStatFilters = fillStatFilters;
+
+function onStatChange(){
+  const prevOrg = statOrg;
+  if($I('st-year')) statYear = Number($I('st-year').value);
+  statOrg = (window.OrgBar && OrgBar.current) || statOrg;
+  if($I('st-term')) statTermSel = $I('st-term').value;
+  statView = $I('st-view')?.value || statView;
+  statClassFilter = $I('st-class')?.value || '';
+  statGradeFilter = $I('st-grade')?.value || '';
+  if(statView === 'live'){ renderLive(); return; }        // 🔴 실시간 판으로 전환
+  if(prevOrg !== statOrg){ statClassFilter=''; statGradeFilter=''; fillStatFilters(); }
+  // 실시간 판에서 일반 통계로 돌아올 때는 화면 틀부터 다시 그린다 (연도·학기 칸 복원)
+  if(!$I('st-year')){ stopLive(); renderStat(); return; }
+  stopLive();
+  buildStat();
+}
+window.onStatChange = onStatChange;
+
+// 선택된 학기들의 수업일 집합 + 라벨
+function getStatTerms(){
+  const sel = [];
+  const want = statTermSel==='year' ? [1,2] : [Number(statTermSel)];
+  for(const tn of want){
+    const t = TERMS.find(x=>x.year===statYear && x.org===statOrg && x.term===tn);
+    if(t) sel.push(t);
+  }
+  return sel;
+}
+
+let _statCache = null;
+async function buildStat(){
+  const body = $I('st-body'); if(!body) return;
+  body.innerHTML = '<div class="acard"><p class="empty">집계 중...</p></div>';
+
+  // 월별 달력 보기는 별도 흐름
+  if(statView==='month'){ buildMonthlyCalendar(); return; }
+  if(statView==='week'){ buildWeeklyStat(); return; }
+
+  const terms = getStatTerms();
+  if(!terms.length){
+    body.innerHTML = `<div class="acard"><div class="empty">선택한 학기가 등록되지 않았습니다.<br>설정 탭에서 ${statYear}년 ${ORGS[statOrg]} 학기를 먼저 등록해주세요.</div></div>`;
+    return;
+  }
+
+  // 수업일 집합
+  let schoolDays = [];
+  terms.forEach(t=>{ schoolDays = schoolDays.concat(calcSchoolDays(t)); });
+  const schoolDaySet = new Set(schoolDays);
+  const totalDays = schoolDaySet.size;
+  const minDate = schoolDays.length ? schoolDays.reduce((a,b)=>a<b?a:b) : '';
+  const maxDate = schoolDays.length ? schoolDays.reduce((a,b)=>a>b?a:b) : '';
+
+  // 출결 기록 로드 (이 기관) — 📉 v120 수업일 기간만 (예전: 모든 기록)
+  const snap = minDate ? await saRange(minDate, maxDate) : { forEach(){} };
+  const recs = [];
+  snap.forEach(d=>{ const r=d.data(); if(r.org===statOrg && schoolDaySet.has(r.date)) recs.push(r); });
+
+  // 출석 인정 타입 id 집합
+  const presentIds = new Set(TYPES.filter(t=>t.isPresent).map(t=>t.id));
+  const typeName = id => (TYPES.find(t=>t.id===id)?.name)||'기타';
+
+  // 이 기관·올해 반들
+  const orgClasses = CLASSES.filter(c=>c.org===statOrg);
+  // 학생 → 반 매핑
+  const studClass = {};
+  orgClasses.forEach(c=>(c.students||[]).forEach(sid=>{ studClass[sid]=c; }));
+
+  // 학생별 집계: {studentId: {name, className, grade, dept, counts, present, recorded, myTotal}}
+  const byStud = {};
+  // 대상 학생 = 이 기관 반에 배정된 재학생
+  orgClasses.forEach(c=>{
+    // 반 필터 적용
+    if(statClassFilter && c.id!==statClassFilter) return;
+    (c.students||[]).forEach(sid=>{
+      const s = STUDENTS[sid]; if(!s || !StuStatus.enrolled(s)) return;
+      const grade = (c.grades||{})[sid] || '';
+      // 학년 필터 적용
+      if(statGradeFilter && grade!==statGradeFilter) return;
+      if(!byStud[sid]){
+        // 개인 수업일수 = 전체 수업일 − 본인 휴학 기간에 걸린 수업일
+        const leaveDays = leaveDaysInSet(s, schoolDaySet);
+        if(totalDays>0 && leaveDays>=totalDays) return;   // 기간 내내 휴학 → 집계에서 뺀다
+        byStud[sid]={name:s.name, studentNo:s.studentNo||'', className:c.name, grade:grade||'(학년미지정)', dept:c.dept||'', classId:c.id, counts:{}, present:0, recorded:0, myTotal: Math.max(0, totalDays - leaveDays), leaveDays};
+      }
+    });
+  });
+  // 기록 반영 (휴학 기간에 잘못 기록된 건 제외)
+  recs.forEach(r=>{
+    const b = byStud[r.studentId]; if(!b) return;
+    const s = STUDENTS[r.studentId];
+    if(isOnLeave(s, r.date)) return;  // 휴학 중 기록은 무시
+    const tids = recTypes(r);
+    tids.forEach(id=>{ const tn = typeName(id); b.counts[tn]=(b.counts[tn]||0)+1; });
+    b.recorded++;
+    // 그 날의 모든 항목이 «출석 인정»일 때만 출석으로 센다 (하나라도 결석 처리면 결석)
+    if(tids.length && tids.every(id=>presentIds.has(id))) b.present++;
+  });
+  // 기록 없는 날은 "출석"으로 간주 (개인 수업일 기준)
+  Object.values(byStud).forEach(b=>{
+    const autoPresent = b.myTotal - b.recorded;
+    if(autoPresent>0){ b.present += autoPresent; b.counts['출석']=(b.counts['출석']||0)+autoPresent; }
+  });
+
+  _statCache = {byStud, totalDays, minDate, maxDate, terms};
+
+  // 보기별 렌더
+  if(statView==='student') renderStatStudent(byStud, totalDays, minDate, maxDate);
+  else if(statView==='class') renderStatGroup(byStud, totalDays, 'className', '반');
+  else if(statView==='grade') renderStatGroup(byStud, totalDays, 'grade', '학년');
+  else if(statView==='dept') renderStatGroup(byStud, totalDays, 'dept', '부서');
+  else renderStatAll(byStud, totalDays, minDate, maxDate);
+}
+
+function periodLabel(min,max){ return min&&max?`${min} ~ ${max}`:''; }
+
+function renderStatStudent(byStud, totalDays, minDate, maxDate){
+  const list = Object.values(byStud).sort((a,b)=>(a.className+a.name).localeCompare(b.className+b.name,'ko'));
+  if(!list.length){ $I('st-body').innerHTML='<div class="acard"><p class="empty">대상 학생이 없습니다.</p></div>'; return; }
+  // 등장하는 출결 항목들 (열 구성)
+  const cols = TYPES.map(t=>t.name);
+  const rows = list.map(b=>{
+    const denom = b.myTotal!=null ? b.myTotal : totalDays;
+    const rate = denom? Math.round(b.present/denom*100) : 0;
+    const leaveNote = b.leaveDays>0 ? ` <span style="font-size:10px;color:var(--warn)">(휴학 ${b.leaveDays}일 제외)</span>` : '';
+    return `<tr>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${b.name}${leaveNote}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd)">${b.className}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd)">${b.grade||'-'}</td>
+      ${cols.map(c=>`<td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${b.counts[c]||0}</td>`).join('')}
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${denom}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'}">${rate}%</td>
+    </tr>`;
+  }).join('');
+  $I('st-body').innerHTML = `
+    <div class="acard">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <h3 class="actitle" style="margin:0">학생별 출석 (${list.length}명)</h3>
+        <span style="font-size:12px;color:var(--ts)">수업일 ${totalDays}일 · ${periodLabel(minDate,maxDate)}</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">
+          <thead><tr style="background:var(--iv)">
+            <th style="padding:8px;text-align:left">이름</th><th style="padding:8px;text-align:left">반</th><th style="padding:8px;text-align:left">학년</th>
+            ${cols.map(c=>`<th style="padding:8px;text-align:center">${c}</th>`).join('')}
+            <th style="padding:8px;text-align:center">수업일</th>
+            <th style="padding:8px;text-align:center">출석률</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderStatGroup(byStud, totalDays, key, label){
+  // 그룹별 합산
+  const groups = {};
+  Object.values(byStud).forEach(b=>{
+    const g = b[key]||'(미지정)';
+    if(!groups[g]) groups[g]={count:0, present:0, possible:0, counts:{}};
+    groups[g].count++;
+    groups[g].present += b.present;
+    groups[g].possible += (b.myTotal!=null ? b.myTotal : totalDays);
+    Object.entries(b.counts).forEach(([k,v])=>groups[g].counts[k]=(groups[g].counts[k]||0)+v);
+  });
+  const cols = TYPES.map(t=>t.name);
+  // 학년별/반별은 학년순, 그 외(부서 등)는 이름순
+  const useGradeSort = (key==='grade' || key==='className');
+  const sortFn = useGradeSort
+    ? (a,b)=> gradeRank(a[0])-gradeRank(b[0]) || a[0].localeCompare(b[0],'ko')
+    : (a,b)=> a[0].localeCompare(b[0],'ko');
+  const rows = Object.entries(groups).sort(sortFn).map(([g,d])=>{
+    const rate = d.possible? Math.round(d.present/d.possible*100):0;
+    return `<tr>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${g}</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${d.count}명</td>
+      ${cols.map(c=>`<td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${d.counts[c]||0}</td>`).join('')}
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'}">${rate}%</td>
+    </tr>`;
+  }).join('');
+  $I('st-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">${label}별 출석 · 수업일 ${totalDays}일</h3>
+      <div style="overflow-x:auto;margin-top:10px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">
+          <thead><tr style="background:var(--iv)">
+            <th style="padding:8px;text-align:left">${label}</th><th style="padding:8px;text-align:center">인원</th>
+            ${cols.map(c=>`<th style="padding:8px;text-align:center">${c}</th>`).join('')}
+            <th style="padding:8px;text-align:center">평균 출석률</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderStatAll(byStud, totalDays, minDate, maxDate){
+  const list = Object.values(byStud);
+  const totalStud = list.length;
+  const totalPresent = list.reduce((s,b)=>s+b.present,0);
+  const totalPossible = list.reduce((s,b)=>s+(b.myTotal!=null?b.myTotal:totalDays),0);
+  const avgRate = totalPossible? Math.round(totalPresent/totalPossible*100):0;
+  const allCounts = {};
+  list.forEach(b=>Object.entries(b.counts).forEach(([k,v])=>allCounts[k]=(allCounts[k]||0)+v));
+  const stat=(label,val,color)=>`<div style="flex:1;min-width:90px;background:var(--iv);border-radius:10px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:800;color:${color||'var(--gm)'}">${val}</div><div style="font-size:11px;color:var(--ts);margin-top:2px">${label}</div></div>`;
+  const typeRows = TYPES.map(t=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--ivd);font-size:13px"><span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${t.color};margin-right:6px"></span>${t.name}</span><span style="font-weight:700">${allCounts[t.name]||0}건</span></div>`).join('');
+  $I('st-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">전체 출석 현황 · 수업일 ${totalDays}일</h3>
+      <p class="adesc">${periodLabel(minDate,maxDate)}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+        ${stat('대상 학생',totalStud+'명')}
+        ${stat('수업일',totalDays+'일')}
+        ${stat('평균 출석률',avgRate+'%',avgRate>=90?'#16a34a':'#b45309')}
+      </div>
+      <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:8px">항목별 합계</div>
+      ${typeRows}
+    </div>`;
+}
+
+// 엑셀 다운로드 (현재 보기 기준)
+function downloadStatExcel(){
+  if(!_statCache){ toast('먼저 통계를 조회하세요.','err'); return; }
+  const {byStud, totalDays, terms} = _statCache;
+  const cols = TYPES.map(t=>t.name);
+  const header = ['이름','학번','반','부서', ...cols, '수업일','출석률(%)'];
+  const aoa = [header];
+  Object.values(byStud).sort((a,b)=>(a.className+a.name).localeCompare(b.className+b.name,'ko')).forEach(b=>{
+    const denom = b.myTotal!=null ? b.myTotal : totalDays;
+    const rate = denom? Math.round(b.present/denom*100):0;
+    aoa.push([b.name, b.studentNo, b.className, b.dept, ...cols.map(c=>b.counts[c]||0), denom, rate]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = header.map(h=>({wch:Math.max(h.length,8)}));
+  const wb = XLSX.utils.book_new();
+  const termLabel = statTermSel==='year'?'연간':TERM_NAMES[Number(statTermSel)];
+  XLSX.utils.book_append_sheet(wb, ws, '출석통계');
+  XLSX.writeFile(wb, `출석통계_${statYear}_${ORGS[statOrg]}_${termLabel}.xlsx`);
+  toast('엑셀을 다운로드했습니다.','ok');
+}
+window.downloadStatExcel = downloadStatExcel;
+
+// ── 월별 달력형 보기 ──
+let statMonth = new Date().getMonth()+1;  // 1~12
+let statMonthClassId = '';
+
+// ── 주간 통계 ──
+let statWeekMonday = null; // 그 주 월요일 Date
+
+function mondayOf(d){ const x=new Date(d); const day=x.getDay(); const diff=(day===0?-6:1-day); x.setDate(x.getDate()+diff); x.setHours(0,0,0,0); return x; }
+
+async function buildWeeklyStat(){
+  const body = $I('st-body'); if(!body) return;
+  if(!statWeekMonday) statWeekMonday = mondayOf(new Date());
+  const mon = new Date(statWeekMonday);
+  const days = [];
+  for(let i=0;i<7;i++){ const d=new Date(mon); d.setDate(mon.getDate()+i); days.push(d); }
+  const dstr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const weekStart = dstr(days[0]), weekEnd = dstr(days[6]);
+  const dowName=['월','화','수','목','금','토','일'];
+
+  const orgClasses = sortClasses(CLASSES.filter(c=>c.org===statOrg));
+  // 이 주 출결 기록 로드 — 📉 v120 이 주만
+  const snap = await inRange(db,'studentAttendance', weekStart, weekEnd);
+  const recs = [];
+  snap.forEach(d0=>{ const r=d0.data(); if(r.org===statOrg && r.date>=weekStart && r.date<=weekEnd && !isOnLeave(STUDENTS[r.studentId], r.date)) recs.push(r); });
+  const typeById={}; TYPES.forEach(t=>typeById[t.id]=t);
+
+  // 반별 집계 (결석·지각 등 비출석만)
+  const rows = orgClasses.map(c=>{
+    const cRecs = recs.filter(r=>r.classId===c.id);
+    const abn = cRecs.filter(r=> recTypes(r).some(id=>{ const t=typeById[id]; return t && !t.isPresent; }));
+    if(!abn.length) return `<tr><td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${c.grade?'['+c.grade+'] ':''}${c.name}</td><td colspan="2" style="padding:7px 10px;border-bottom:1px solid var(--ivd);color:var(--tl)">특이사항 없음</td></tr>`;
+    // 유형별 카운트
+    const byType={};
+    abn.forEach(r=> recTypes(r).forEach(id=>{ const t=typeById[id]; if(t && !t.isPresent){ byType[t.name]=(byType[t.name]||0)+1; } }));
+    const typeSummary = Object.entries(byType).map(([n,cnt])=>`${n} ${cnt}`).join(', ');
+    const detail = abn.sort((a,b)=>a.date.localeCompare(b.date)).map(r=>{
+      const bad = recTypes(r).map(id=>typeById[id]).filter(t=>t && !t.isPresent);
+      const t = bad[0];
+      return `<span style="display:inline-block;font-size:11px;background:${t?t.color:'#999'}22;color:${t?t.color:'#999'};padding:1px 7px;border-radius:100px;margin:1px">${r.studentName} ${Number(r.date.slice(5,7))}/${Number(r.date.slice(8,10))} ${bad.map(x=>x.name).join('·')}</span>`;
+    }).join(' ');
+    return `<tr><td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600;white-space:nowrap">${c.grade?'['+c.grade+'] ':''}${c.name}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-size:12px;font-weight:700;color:var(--gm);white-space:nowrap">${typeSummary}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${detail}</td></tr>`;
+  }).join('');
+
+  // 전체 요약
+  const allAbn = recs.filter(r=> recTypes(r).some(id=>{ const t=typeById[id]; return t && !t.isPresent; }));
+  const totalByType={};
+  allAbn.forEach(r=> recTypes(r).forEach(id=>{ const t=typeById[id]; if(t && !t.isPresent){ totalByType[t.name]=(totalByType[t.name]||0)+1; } }));
+  const totalSummary = Object.entries(totalByType).map(([n,cnt])=>`${n} ${cnt}건`).join(' · ') || '특이사항 없음';
+
+  body.innerHTML = `
+    <div class="acard">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="bs" onclick="weekShift(-1)" style="padding:6px 12px">‹ 이전주</button>
+          <span style="font-weight:700;font-size:14px">${weekStart} ~ ${weekEnd}</span>
+          <button class="bs" onclick="weekShift(1)" style="padding:6px 12px">다음주 ›</button>
+          <button class="bs" onclick="weekThis()" style="padding:6px 12px">이번주</button>
+        </div>
+      </div>
+      <div style="background:var(--gp);border-radius:8px;padding:12px;margin-bottom:14px;font-size:14px">
+        <b>${ORGS[statOrg]} 이번 주 요약:</b> ${totalSummary}
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">반</th><th style="padding:8px 10px;text-align:left;white-space:nowrap">요약</th><th style="padding:8px 10px;text-align:left">상세</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--tl)">편성된 반이 없습니다.</td></tr>'}</tbody>
+      </table></div>
+      <p style="font-size:12px;color:var(--tl);margin-top:10px">출석을 제외한 결석·지각·조퇴 등 특이사항만 표시합니다.</p>
+    </div>`;
+}
+window.buildWeeklyStat = buildWeeklyStat;
+function weekShift(n){ const d=new Date(statWeekMonday); d.setDate(d.getDate()+n*7); statWeekMonday=d; buildWeeklyStat(); }
+window.weekShift = weekShift;
+function weekThis(){ statWeekMonday = mondayOf(new Date()); buildWeeklyStat(); }
+window.weekThis = weekThis;
+
+async function buildMonthlyCalendar(){
+  const body = $I('st-body'); if(!body) return;
+  // 이 기관 반 목록 (학년순 정렬)
+  const orgClasses = sortClasses(CLASSES.filter(c=>c.org===statOrg));
+  if(!orgClasses.length){
+    body.innerHTML = `<div class="acard"><div class="empty">${statYear}년 ${ORGS[statOrg]}에 편성된 반이 없습니다.</div></div>`;
+    return;
+  }
+  if(!statMonthClassId || !orgClasses.find(c=>c.id===statMonthClassId)) statMonthClassId = orgClasses[0].id;
+
+  const months = [];
+  for(let m=1;m<=12;m++) months.push(m);
+
+  // 선택 UI + 본문 컨테이너
+  body.innerHTML = `
+    <div class="acard">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:6px">
+        <div class="fgrp" style="margin-bottom:0;flex:1;min-width:160px"><label>반</label>
+          <select id="mc-class" onchange="onMonthChange()">
+            ${orgClasses.map(c=>`<option value="${c.id}"${c.id===statMonthClassId?' selected':''}>${c.grade?'['+c.grade+'] ':''}${c.name}${c.dept&&c.dept!=='전체'?' · '+c.dept:''}</option>`).join('')}
+          </select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>월</label>
+          <select id="mc-month" onchange="onMonthChange()">
+            ${months.map(m=>`<option value="${m}"${m===statMonth?' selected':''}>${m}월</option>`).join('')}
+          </select></div>
+      </div>
+    </div>
+    <div id="mc-body"><div class="acard"><p class="empty">불러오는 중...</p></div></div>`;
+  loadMonthlyBody();
+}
+window.buildMonthlyCalendar = buildMonthlyCalendar;
+
+function onMonthChange(){
+  statMonthClassId = $I('mc-class').value;
+  statMonth = Number($I('mc-month').value);
+  loadMonthlyBody();
+}
+window.onMonthChange = onMonthChange;
+
+async function loadMonthlyBody(){
+  const body = $I('mc-body'); if(!body) return;
+  const c = CLASSES.find(x=>x.id===statMonthClassId); if(!c) return;
+  const studs = rollOf(c).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+
+  // 그 달의 날짜들
+  const y = statYear, m = statMonth;
+  const lastDay = new Date(y, m, 0).getDate();
+  const days = [];
+  for(let d=1; d<=lastDay; d++){
+    const ds = `${y}-${pad(m)}-${pad(d)}`;
+    const dow = new Date(ds+'T00:00:00').getDay();
+    const hol = holidayReason(ds, c.org);
+    // 학기 기간 안인지 (학기 객체면 true, null/'none'이면 false)
+    const tm = termOfDate(ds, c.org);
+    const inTerm = (tm && tm!=='none');
+    days.push({d, ds, dow, isWeekend:dow===0||dow===6, hol, inTerm});
+  }
+
+  // 출결 기록 로드 (이 반·이 달) — 📉 v120 서버에도 «이 반 · 이 달»만
+  const snap = await eqInDays(db,'studentAttendance','classId', statMonthClassId, `${y}-${pad(m)}-01`, `${y}-${pad(m)}-${pad(lastDay)}`);
+  const recMap = {};  // studentId -> {date -> typeId}
+  const prefix = `${y}-${pad(m)}`;
+  snap.forEach(doc0=>{ const r=doc0.data(); if(r.classId===statMonthClassId && (r.date||'').startsWith(prefix)){ (recMap[r.studentId]=recMap[r.studentId]||{})[r.date]=recTypes(r); } });
+
+  const typeById = {}; TYPES.forEach(t=>typeById[t.id]=t);
+  const presentIds = new Set(TYPES.filter(t=>t.isPresent).map(t=>t.id));
+  const defType = TYPES.find(t=>t.isPresent) || TYPES[0];
+
+  // 수업일(학기 안 + 평일 + 휴일아님) 카운트
+  const schoolDays = days.filter(x=>x.inTerm && !x.isWeekend && !x.hol);
+  const totalSchool = schoolDays.length;
+
+  if(!studs.length){
+    body.innerHTML = `<div class="acard"><div class="empty">이 반에 배정된 재학생이 없습니다.</div></div>`;
+    return;
+  }
+
+  const dowName = ['일','월','화','수','목','금','토'];
+
+  // 헤더 (날짜)
+  const headCells = days.map(x=>{
+    const bg = !x.inTerm?'var(--gray-bg)':x.hol?'var(--danger-bg)':x.isWeekend?'var(--iv)':'transparent';
+    const col = x.dow===0?'#dc2626':x.dow===6?'#2563eb':'var(--ts)';
+    const ttl = !x.inTerm?(x.ds+' 학기 외'):(x.ds+(x.hol?' '+x.hol:''));
+    return `<th style="padding:2px;min-width:22px;background:${bg};font-size:10px;color:${col};font-weight:600" title="${ttl}">${x.d}<br><span style="font-size:9px">${dowName[x.dow]}</span></th>`;
+  }).join('');
+
+  // 학생별 행
+  const rows = studs.map(s=>{
+    const rec = recMap[s.id] || {};
+    let present=0;
+    // 개인 수업일 = 이 달 수업일 − 휴학인 날
+    const myTotal = totalSchool - schoolDays.filter(x=>isOnLeave(s, x.ds)).length;
+    const cells = days.map(x=>{
+      if(!x.inTerm) return `<td style="background:var(--gray-bg);border:1px solid var(--ivd)"></td>`;
+      if(x.isWeekend || x.hol) return `<td style="background:${x.hol?'var(--danger-bg)':'var(--iv)'};border:1px solid var(--ivd)"></td>`;
+      if(isOnLeave(s, x.ds)) return `<td title="${x.ds} 휴학 중" style="border:1px solid var(--ivd);text-align:center;font-size:10px;color:var(--warn)">휴</td>`;
+      // 기록 없으면 기본 출석
+      const tids = rec[x.ds] || (defType?[defType.id]:[]);
+      const isDefault = !rec[x.ds];
+      if(tids.length && tids.every(id=>presentIds.has(id))) present++;
+      const names = tids.map(id=>typeById[id]?.name||'').filter(Boolean).join('·');
+      const dotSpans = tids.slice(0,2).map(id=>{ const t=typeById[id];
+        return t?`<span style="display:inline-block;width:${tids.length>1?8:14}px;height:14px;border-radius:8px;background:${t.color};opacity:${isDefault?0.25:1}"></span>`:''; }).join('');
+      const dot = dotSpans ? `<span title="${names}" style="display:inline-flex;gap:1px;vertical-align:middle">${dotSpans}</span>` : '';
+      return `<td style="border:1px solid var(--ivd);text-align:center;padding:1px">${dot}</td>`;
+    }).join('');
+    const rate = myTotal>0 ? Math.round(present/myTotal*100) : 0;
+    // 월간 합계 막대
+    const bar = myTotal>0
+      ? `<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;background:var(--ivd);border-radius:8px;height:10px;min-width:40px;overflow:hidden"><div style="width:${rate}%;height:100%;background:${rate>=90?'var(--ok)':rate>=70?'var(--warn)':'var(--danger)'}"></div></div><span style="font-size:11px;font-weight:700;color:${rate>=90?'var(--ok)':rate>=70?'var(--warn)':'var(--danger)'};white-space:nowrap">${present}/${myTotal}</span></div>`
+      : `<span style="font-size:11px;font-weight:700;color:var(--warn)">휴학</span>`;
+    return `<tr>
+      <td style="position:sticky;left:0;background:var(--wh);padding:4px 8px;font-size:13px;font-weight:600;white-space:nowrap;border-right:2px solid var(--ivd)">${s.name}${(c.grades&&c.grades[s.id])?`<span style="color:var(--gm);font-size:10px;font-weight:700;margin-left:4px">${c.grades[s.id]}</span>`:''}</td>
+      ${cells}
+      <td style="padding:4px 8px;min-width:90px">${bar}</td>
+    </tr>`;
+  }).join('');
+
+  // 범례
+  const legend = TYPES.map(t=>`<span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-size:12px"><span style="width:12px;height:12px;border-radius:8px;background:${t.color}"></span>${t.name}</span>`).join('');
+
+  body.innerHTML = `
+    <div class="acard">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <h3 class="actitle" style="margin:0">${c.name} · ${y}년 ${m}월</h3>
+        <span style="font-size:12px;color:var(--ts)">수업일 ${totalSchool}일 · 학생 ${studs.length}명</span>
+      </div>
+      <div style="margin-bottom:10px">${legend}<span style="font-size:11px;color:var(--tl);margin-left:6px">(연한 색 = 자동 출석, 진한 색 = 직접 기록)</span></div>
+      <div style="overflow-x:auto">
+        <table style="border-collapse:collapse;font-size:12px">
+          <thead><tr>
+            <th style="position:sticky;left:0;background:var(--iv);padding:4px 8px;border-right:2px solid var(--ivd);font-size:12px">학생</th>
+            ${headCells}
+            <th style="padding:4px 8px;font-size:12px">월간 출석</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+window.loadMonthlyBody = loadMonthlyBody;
+
+// ── 설정: 출결 항목 관리 ──
+/* 🗂 서랍 정리 (v118) — 설정 탭: 넷 모두 닫힌 서랍 · 지금 상태 한 줄 */
+if(window.Drawer){
+  const T = x => String(x==null?'':x).replace(/\s+/g,' ').trim();
+  const MD = x => T(x).replace(/(\d{4})-(\d\d)-(\d\d)/g, (m,y,a,b)=>`${+a}/${+b}`);
+  Drawer.def('att-types', { icon:'checklist', title:'출결 항목',
+    sum: el => { const it = [...el.querySelectorAll('#typelist .typeitem')]; if(!it.length) return '항목이 없어요';
+      const ok = it.filter(x=>/출석 인정/.test(x.textContent)).length;
+      const def = it.find(x=>/★ 기본/.test(x.textContent));
+      return `<b>${it.length}개</b> · 출석 인정 ${ok} · 결석 처리 ${it.length-ok}` + (def ? ` · 기본 «${esc(T(def.querySelector('.typename')?.textContent))}»` : ''); } });
+  Drawer.def('att-ga', { icon:'school', title:'학년별 담당 선생님',
+    sum: el => { const rs = [...el.querySelectorAll('.ga-mtx tbody tr')]; if(!rs.length) return '담임 · 대리 선생님은 지정 없이도 자기 반을 기록해요';
+      const n = rs.filter(r=>/^\d+$/.test(T(r.lastElementChild?.textContent))).length;
+      return n ? `<b>${n}명</b> 지정 · 담임은 자동` : '<b>지정 없음</b> · 담임 · 대리 선생님은 자기 반만 기록'; } });
+  Drawer.def('att-lock', { icon:'lock', title:'월별 입력 잠금',
+    sum: el => { const o = $I('lk-org'), y = $I('lk-year'); const n = ((el.querySelector('#lk-grid')?.textContent||'').match(/잠김 ·/g)||[]).length;
+      const on = o && o.selectedOptions[0] ? T(o.selectedOptions[0].textContent) : '', yl = y && y.selectedOptions[0] ? T(y.selectedOptions[0].textContent) : '';
+      return `${on} <b>${yl}</b> · ` + (n ? `잠긴 달 <b>${n}개</b>` : '잠긴 달 없음'); },
+    badge: el => { const n = ((el.querySelector('#lk-grid')?.textContent||'').match(/잠김 ·/g)||[]).length; return n ? [[n+'개월 잠김','warn']] : [['모두 열림']]; } });
+  Drawer.def('att-term', { icon:'calendar_month', title:'학기 일정',
+    sum: el => { const it = [...el.querySelectorAll('.typelist .typeitem')]; if(!it.length) return '등록된 학기가 없어요 — 수업일수 계산의 뿌리예요';
+      const d = new Date(); const td = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const xs = it.map(x=>{ const r = T(x.textContent).match(/(\d{4}-\d\d-\d\d)\s*~\s*(\d{4}-\d\d-\d\d)/); return { x, s:r?r[1]:'', e:r?r[2]:'' }; });
+      const pick = xs.find(v=>v.s<=td && td<=v.e) || xs.filter(v=>v.s>td).sort((a,b)=>a.s.localeCompare(b.s))[0] || xs[0];
+      const nm = T(pick.x.querySelector('.typename')?.textContent); const days = T(pick.x.querySelector('.typebadge')?.textContent);
+      return `<b>${esc(nm)}</b> · ${MD(pick.s)}~${MD(pick.e)} · ${esc(days)}` + (it.length > 1 ? ` · 모두 ${it.length}개` : ''); } });
+}
+function renderSet(){
+  if(!canSetup()){ $I('c-set').innerHTML='<div class="acard"><p class="empty">설정 권한이 없습니다.</p></div>'; return; }
+  const pt = presentType();
+  const items = TYPES.map((t,i)=>`
+    <div class="typeitem" draggable="true"
+      ondragstart="typeDragStart(event,${i})" ondragover="typeDragOver(event,${i})"
+      ondragend="typeDragEnd()" data-ti="${i}">
+      <span class="typegrip" title="끌어서 순서 바꾸기">⠿</span>
+      <span class="typedot" style="background:${t.color}"></span>
+      <span class="typename">${t.name}</span>
+      ${t.isPresent?'<span class="typebadge" style="background:var(--ok-bg);color:var(--ok)">출석 인정</span>':'<span class="typebadge" style="background:var(--danger-bg);color:var(--danger)">결석 처리</span>'}
+      ${pt && pt.id===t.id?'<span class="typebadge" style="background:var(--goldp);color:var(--goldd)">★ 기본</span>':''}
+      <span style="flex:1"></span>
+      <button class="bm" onclick="moveType(${i},-1)" ${i===0?'disabled style="opacity:.3"':''}>▲</button>
+      <button class="bm" onclick="moveType(${i},1)" ${i===TYPES.length-1?'disabled style="opacity:.3"':''}>▼</button>
+      <button class="bm" onclick="openTypeForm('${t.id}')">수정</button>
+      <button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="delType('${t.id}')">삭제</button>
+    </div>`).join('');
+  $I('c-set').innerHTML = `
+    <div class="acard" data-dw="att-types">
+      <h3 class="actitle">⚙️ 출결 항목 설정</h3>
+      <p class="adesc">출석 체크에 사용할 항목을 관리합니다. 항목마다 <b>출석 인정 여부</b>를 정할 수 있어요 —
+        "출석 인정" 항목은 출석일수에 포함되고, "결석 처리" 항목은 제외됩니다. (예: 체험학습을 출석으로 인정하려면 그 항목만 켜면 됩니다)<br>
+        <span style="color:var(--tl)">· ⠿를 끌거나 ▲▼로 순서를 바꿀 수 있고, 출석 체크 화면의 버튼도 이 순서를 따릅니다.
+        · <b>맨 위의 출석 인정 항목(★ 기본)</b>이 자동 출석에 쓰입니다.</span></p>
+      <button class="bp" onclick="openTypeForm()">＋ 항목 추가</button>
+      <div class="typelist" id="typelist">${items || '<p class="empty">항목이 없습니다.</p>'}</div>
+    </div>
+    ${gradeAssignCardHTML()}
+    <div class="acard" id="lock-card" data-dw="att-lock">
+      <h3 class="actitle">🔒 월별 입력 잠금</h3>
+      <p class="adesc">입력이 끝난 달을 잠급니다. 잠긴 달은 <b>모든 선생님(관리자 포함)</b>이 입력·수정할 수 없고,
+        고치려면 여기(또는 월별 입력 화면)에서 잠금을 풀어야 합니다. — 수퍼관리자·기관관리자만 조작할 수 있어요.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+        <div class="fgrp" style="margin-bottom:0"><label>기관</label>
+          <select id="lk-org" onchange="renderLockGrid()">${myOrgs().map(o=>`<option value="${o}">${ORGS[o]||o}</option>`).join('')}</select></div>
+        <div class="fgrp" style="margin-bottom:0"><label>연도</label>
+          <select id="lk-year" onchange="renderLockGrid()">${[0,-1,1].map(d=>{const y=new Date().getFullYear()+d;return `<option value="${y}" ${d===0?'selected':''}>${y}년</option>`;}).join('')}</select></div>
+      </div>
+      <div id="lk-grid"><p class="empty" style="font-size:13px">불러오는 중…</p></div>
+    </div>
+    <div class="acard" data-dw="att-term">
+      <h3 class="actitle">📅 학기 일정 설정</h3>
+      <p class="adesc">연도·기관·학기별로 개학일과 종업일을 입력합니다. 수업일수는 학기 기간의 평일에서 출근부에 등록된 방학·공휴일·임시휴교를 자동으로 뺀 값입니다. (휴일은 출근부에서 한 번만 등록하면 출석부에 자동 반영됩니다)</p>
+      <button class="bp" onclick="openTermForm()">＋ 학기 추가</button>
+      <div class="typelist">${termListHTML()}</div>
+    </div>`;
+  loadGaStaff();
+  renderLockGrid();
+}
+
+/* ── 🔒 월별 잠금 그리드 ── */
+async function renderLockGrid(){
+  const box = $I('lk-grid'); if(!box) return;
+  const org = $I('lk-org')?.value || myOrgs()[0];
+  const year = $I('lk-year')?.value || String(new Date().getFullYear());
+  const canDo = CU && (CU.role==='super' || (CU.role==='org_admin' && myOrgs().includes(org)));
+  const locks = {};
+  try {
+    const snap = await getDocs(collection(db,'attendLocks'));
+    snap.forEach(d=>{ const v=d.data(); if(v.org===org && String(v.month||'').startsWith(year)) locks[v.month]=v; });
+  } catch(e){}
+  const now = new Date(); const curYM = `${now.getFullYear()}-${pad(now.getMonth()+1)}`;
+  box.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px">` +
+    Array.from({length:12},(_,i)=>{
+      const ym = `${year}-${pad(i+1)}`;
+      const lk = locks[ym];
+      const locked = lk && lk.locked===true;
+      const isCur = ym===curYM;
+      return `<button ${canDo?`onclick="lockToggle('${org}','${ym}',${locked?'false':'true'})"`:'disabled'}
+        style="border:1.5px solid ${locked?'#EAD9A8':'var(--ivd)'};border-radius:11px;padding:11px 8px;cursor:${canDo?'pointer':'default'};
+        background:${locked?'var(--gold-bg,#F7EFD8)':'var(--wh,#fff)'};font-family:inherit;text-align:center;${isCur?'outline:2px solid var(--gl)':''}">
+        <div style="font-size:14px;font-weight:900;color:${locked?'#8A6410':'var(--gd)'}">${i+1}월 ${locked?'🔒':'🔓'}</div>
+        <div style="font-size:9.5px;color:var(--tl);margin-top:3px;line-height:1.4">${locked?`잠김 · ${esc(lk.byName||'')}`:(canDo?'눌러서 잠그기':'열림')}</div>
+      </button>`;
+    }).join('') + `</div>
+    <p style="font-size:11px;color:var(--tl);margin-top:9px">🔒 잠김 달은 월별 입력 화면에도 잠금 배지가 뜨고, 서버에서도 저장이 거부됩니다.</p>`;
+}
+window.renderLockGrid = renderLockGrid;
+window.lockToggle = async function(org, ym, lock){
+  const [y,m]=ym.split('-');
+  if(!confirm(lock ? `${y}년 ${Number(m)}월(${ORGS[org]||org})을 잠글까요?\n잠그면 관리자 포함 모두 입력할 수 없어요.`
+                   : `${y}년 ${Number(m)}월(${ORGS[org]||org}) 잠금을 풀까요?`)) return;
+  try {
+    await setDoc(doc(db,'attendLocks', `${org}_${ym}`), {
+      org, month: ym, locked: lock, byName: CU.name||'', byUid: CU.uid, at: Timestamp.now()
+    });
+    toast(lock?'🔒 잠갔습니다':'🔓 풀었습니다','ok');
+    renderLockGrid();
+    if(typeof monthYM!=='undefined' && monthYM===ym) loadMonthBody();
+  } catch(e){ toast('실패: '+(e.message||''),'err'); }
+};
+
+// ── 출결 항목 순서 바꾸기 (드래그 + ▲▼) ──
+let _typeDragFrom = null;
+function typeDragStart(ev, i){ _typeDragFrom = i; ev.dataTransfer.effectAllowed='move'; }
+window.typeDragStart = typeDragStart;
+function typeDragOver(ev, i){
+  ev.preventDefault();
+  if(_typeDragFrom===null || _typeDragFrom===i) return;
+  const t = TYPES.splice(_typeDragFrom,1)[0];
+  TYPES.splice(i,0,t);
+  _typeDragFrom = i;
+  renderSet();
+}
+window.typeDragOver = typeDragOver;
+function typeDragEnd(){ if(_typeDragFrom!==null){ _typeDragFrom=null; saveTypeOrder(); } }
+window.typeDragEnd = typeDragEnd;
+function moveType(i, dir){
+  const j = i + dir;
+  if(j<0 || j>=TYPES.length) return;
+  const t = TYPES.splice(i,1)[0];
+  TYPES.splice(j,0,t);
+  renderSet();
+  saveTypeOrder();
+}
+window.moveType = moveType;
+async function saveTypeOrder(){
+  try {
+    await TM.snapBundle('attendTypes',{},'항목 순서 변경');
+    for(let i=0;i<TYPES.length;i++){
+      TYPES[i].order = i+1;
+      await updateDoc(doc(db,'attendTypes',TYPES[i].id), {order:i+1});
+    }
+    logActivity('수정','출석항목','순서 변경');
+  } catch(e){ toast('순서 저장 실패: '+e.message,'err'); }
+}
+
+// ── 🎓 학년별 담당 선생님 ──
+/* 기관·학년마다 담당 선생님을 정한다. 지정된 선생님은 담임이 아니어도
+   그 학년 학생이 있는 반의 출결을 기록할 수 있다.
+   저장: attendConfig/gradeAssign = { v: {"기관|학년":[uid…]} } */
+let GA_STAFF = null;   // 교직원 캐시 (칩 표시용)
+function gradeAssignCardHTML(){
+  return `<div class="acard" data-dw="att-ga">
+    <h3 class="actitle">🎓 학년별 담당 선생님</h3>
+    <p class="adesc">학년마다 출석을 기록할 선생님을 정합니다. 담임이 아니어도 지정된 학년의 반은 기록할 수 있어요.
+      <span style="color:var(--tl)">(담임·대리 선생님은 지정 없이도 자기 반을 기록합니다 · 학년은 반 편성에 입력된 학년을 따라옵니다)</span></p>
+    <div id="ga-box"><p class="empty" style="font-size:13px">불러오는 중…</p></div>
+  </div>`;
+}
+async function loadGaStaff(){
+  const box = $I('ga-box'); if(!box) return;
+  if(!GA_STAFF){
+    try {
+      const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+      GA_STAFF = [];
+      snap.forEach(d=>{ const s={uid:d.id, ...d.data()};
+        if(!s.noAuth && (s.acStatus||'active')==='active') GA_STAFF.push(s); });
+      GA_STAFF.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+    } catch(e){ box.innerHTML = '<p class="empty">교직원 목록을 불러오지 못했습니다.</p>'; return; }
+  }
+  renderGradeAssign();
+}
+/* 📌 머리줄 고정 — 긴 표에서 머리줄·이름 칸을 붙잡아 두기 (표 안 스크롤 모드)
+   끄면 원래처럼 페이지 전체 스크롤 (좁게 느껴질 땐 끄면 됨) — 선택은 이 기기에 기억 */
+function stickyOn(){ try { return localStorage.getItem('attendSticky')==='1'; } catch(e){ return false; } }
+window.toggleSticky = function(rerender){
+  try { localStorage.setItem('attendSticky', stickyOn()?'0':'1'); } catch(e){}
+  if(rerender==='ga') renderGradeAssign();
+  else if(rerender==='rp') loadReport();
+};
+function stickyBtnHTML(target){
+  return `<button class="bm" style="font-size:11px;padding:5px 11px;${stickyOn()?'background:var(--gp);color:var(--gd);font-weight:800':''}"
+    onclick="toggleSticky('${target}')" title="켜면 표 안에서 스크롤되고 머리줄·이름이 고정돼요 · 끄면 페이지 전체 스크롤">
+    📌 머리줄 고정 ${stickyOn()?'켬':'끔'}</button>`;
+}
+
+/* 담임(반 편성 기준)인 학년 — 자동 권한 표시용 */
+function homeroomGrades(uid, org){
+  const set = new Set();
+  CLASSES.filter(c=>c.org===org && (c.teacherUid===uid || c.teacher===uid ||
+    (Array.isArray(c.subTeachers)&&c.subTeachers.includes(uid)) || c.subTeacherUid===uid || (Array.isArray(c.shadowUids)&&c.shadowUids.includes(uid))))
+    .forEach(c=>classGrades(c).forEach(g=>set.add(g)));
+  return set;
+}
+function renderGradeAssign(){
+  const box = $I('ga-box'); if(!box) return;
+  const html = myOrgs().map(org=>{
+    const gset = new Set();
+    CLASSES.filter(c=>c.org===org).forEach(c=>classGrades(c).forEach(g=>gset.add(g)));
+    const grades = sortGrades(Array.from(gset));
+    if(!grades.length) return `<div class="ga-org"><div class="ga-orgname">${ORGS[org]||org}</div>
+      <p class="empty" style="font-size:12.5px">반 편성에 학년이 입력된 반이 없습니다. 반 편성에서 학년을 먼저 넣어주세요.</p></div>`;
+    const staff = GA_STAFF.filter(s=>{
+      const so = s.orgs && s.orgs.length ? s.orgs : [s.org];
+      return so.includes(org);
+    }).sort((a,b)=>(a.dept||'').localeCompare(b.dept||'','ko') || (a.name||'').localeCompare(b.name||'','ko'));
+    // ✅ 한눈에 보는 권한 매트릭스: 행=선생님, 열=학년, 셀=체크
+    const head = `<tr><th style="text-align:left;min-width:120px">선생님</th>
+      ${grades.map(g=>`<th style="min-width:44px">${esc(g)}</th>`).join('')}
+      <th style="min-width:56px;font-size:10px;color:var(--tl)">담당<br>학년수</th></tr>`;
+    const rows = staff.map(st=>{
+      const hr = homeroomGrades(st.uid, org);
+      let cnt = 0;
+      const cells = grades.map(g=>{
+        const key = org+'|'+g;
+        const on = (GRADE_ASSIGN[key]||[]).includes(st.uid);
+        const isHr = hr.has(g);
+        if(on) cnt++;
+        return `<td style="text-align:center;cursor:pointer;user-select:none;${on?'background:var(--gp)':''}"
+          onmousedown="gaDown(event,'${key}','${st.uid}')" onmouseenter="gaOver('${key}','${st.uid}')"
+          title="${esc(st.name)} · ${esc(g)}${isHr?' (담임 — 지정 없이도 기록 가능)':''}">
+          ${on?'<span style="color:var(--gm);font-weight:900;font-size:15px">✓</span>'
+              :(isHr?'<span style="color:#B8A24A;font-size:11px" title="담임 자동 권한">🏠</span>'
+                    :'<span style="color:var(--ivd)">·</span>')}</td>`;
+      }).join('');
+      return `<tr>
+        <td style="text-align:left;white-space:nowrap"><b>${esc(st.name||'')}</b>
+          <span style="font-size:10px;color:var(--tl)"> ${esc(st.dept||'')}${st.role==='partner'?' · 협력':st.role==='org_admin'?' · 관리자':st.role==='super'?' · 수퍼':''}</span></td>
+        ${cells}
+        <td style="text-align:center;font-size:11px;color:${cnt?'var(--gm)':'var(--tl)'};font-weight:${cnt?'800':'400'}">${cnt||'·'}</td></tr>`;
+    }).join('');
+    return `<div class="ga-org"><div class="ga-orgname" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${ORGS[org]||org}
+        <span style="font-size:10.5px;font-weight:600;color:var(--tl)"> — 칸을 눌러 켜고, <b>드래그하면 쭉</b> 켜고 끕니다 · ✓ 지정됨 · 🏠 담임(자동 권한) · 관리자·수퍼는 전체 기록 가능</span>
+        <span style="flex:1"></span>${stickyBtnHTML('ga')}</div>
+      <div class="ga-scroll ${stickyOn()?'stickywrap':''}" style="overflow-x:auto"><table class="ga-mtx" style="border-collapse:collapse;width:100%;font-size:12.5px">
+        <thead style="background:var(--gp);color:var(--gd)">${head}</thead>
+        <tbody>${rows}</tbody></table></div>
+      <style>
+        .ga-mtx th,.ga-mtx td{padding:7px 6px;border-bottom:1px solid var(--iv)} .ga-mtx tbody tr:hover{background:#FAFAF7}
+        .stickywrap{max-height:70vh;overflow:auto;border:1px solid var(--iv);border-radius:10px}
+        .stickywrap thead th{position:sticky;top:0;z-index:3;background:var(--gp)}
+        .stickywrap th:first-child,.stickywrap td:first-child{position:sticky;left:0;z-index:2;background:#fff}
+        .stickywrap thead th:first-child{z-index:4;background:var(--gp)}
+        .stickywrap tbody tr:nth-child(even) td:first-child{background:#FAFAF7}
+      </style>
+    </div>`;
+  }).join('');
+  box.innerHTML = html;
+}
+/* 🖱 드래그로 쭉 체크 — 처음 누른 칸의 «반대 상태»를 지나가는 칸 전부에 적용, 놓으면 한 번에 저장 */
+let GA_DRAG = null;   // { on:true/false, changed:0, before:{} }
+function gaApply(key, uid, on){
+  const cur = GRADE_ASSIGN[key]||[];
+  const has = cur.includes(uid);
+  if(on===has) return false;
+  GRADE_ASSIGN[key] = on ? [...cur, uid] : cur.filter(u=>u!==uid);
+  if(!GRADE_ASSIGN[key].length) delete GRADE_ASSIGN[key];
+  return true;
+}
+function gaRepaint(){
+  // 스크롤 위치를 지키면서 다시 그린다 (드래그 중에도 자연스럽게)
+  const sc = {};
+  document.querySelectorAll('.ga-scroll').forEach((el,i)=>sc[i]=el.scrollLeft);
+  renderGradeAssign();
+  document.querySelectorAll('.ga-scroll').forEach((el,i)=>{ if(sc[i]!=null) el.scrollLeft=sc[i]; });
+}
+window.gaDown = function(ev, key, uid){
+  ev.preventDefault();
+  const on = !(GRADE_ASSIGN[key]||[]).includes(uid);
+  GA_DRAG = { on, changed:0, before: JSON.parse(JSON.stringify(GRADE_ASSIGN)) };
+  if(gaApply(key, uid, on)) GA_DRAG.changed++;
+  gaRepaint();
+};
+window.gaOver = function(key, uid){
+  if(!GA_DRAG) return;
+  if(gaApply(key, uid, GA_DRAG.on)) { GA_DRAG.changed++; gaRepaint(); }
+};
+document.addEventListener('mouseup', async ()=>{
+  if(!GA_DRAG) return;
+  const d = GA_DRAG; GA_DRAG = null;
+  if(!d.changed) return;
+  try {
+    await TM.snapDoc('attendConfig','gradeAssign','학년담당 변경');
+    await setDoc(doc(db,'attendConfig','gradeAssign'), {
+      v: GRADE_ASSIGN, updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name||''
+    });
+    logActivity('권한','학년담당', `담당 지정 ${d.changed}칸 변경 (${d.on?'지정':'해제'})`);
+    if(d.changed>1) toast(`${d.changed}칸 ${d.on?'지정':'해제'} 저장 ✓`,'ok');
+  } catch(e){
+    GRADE_ASSIGN = d.before;
+    toast('저장 실패 — 되돌렸습니다: '+(e.message||''),'err');
+    gaRepaint();
+  }
+});
+// (예전 단건 토글 — 다른 곳 호환용)
+async function toggleGA(key, uid){ window.gaDown({preventDefault(){}} , key, uid); document.dispatchEvent(new Event('mouseup')); }
+window.toggleGA = toggleGA;
+
+// 학기 목록 HTML
+function termListHTML(){
+  if(!TERMS.length) return '<p class="empty">등록된 학기가 없습니다.</p>';
+  return TERMS.map(t=>{
+    const days = calcSchoolDays(t).length;
+    return `<div class="typeitem" style="flex-wrap:wrap">
+      <span class="typename" style="flex:0 0 auto">${t.year}년 · ${ORGS[t.org]||t.org} · ${TERM_NAMES[t.term]||t.term}</span>
+      <span style="font-size:13px;color:var(--ts)">${t.start||'?'} ~ ${t.end||'?'}</span>
+      <span class="typebadge" style="background:var(--gp);color:var(--gm)">수업일 ${days}일</span>
+      <span style="flex:1"></span>
+      <button class="bm" onclick="openTermForm('${t.id}')">수정</button>
+      <button class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="delTerm('${t.id}')">삭제</button>
+    </div>`;
+  }).join('');
+}
+
+// ── 출결 항목 추가/수정 폼 ──
+function openTypeForm(editId){
+  const t = editId ? TYPES.find(x=>x.id===editId) : null;
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${t?'항목 수정':'항목 추가'}</div>
+      <div class="msub">출결 항목의 이름, 색상, 출석 인정 여부를 설정합니다.</div>
+      <div class="fgrp"><label>항목 이름</label><input id="t-name" value="${t?.name||''}" placeholder="예: 공결, 외출"></div>
+      <div class="fgrp"><label>색상</label>
+        <input id="t-color" type="color" value="${t?.color||'#00704A'}" style="height:44px;padding:4px">
+      </div>
+      <div class="fgrp"><label>출석 인정 여부</label>
+        <select id="t-present">
+          <option value="no"${t&&!t.isPresent?' selected':''}>결석 처리 (출석일수에서 제외)</option>
+          <option value="yes"${t&&t.isPresent?' selected':''}>출석 인정 (출석일수에 포함)</option>
+        </select>
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveType('${t?.id||''}')">저장</button>
+      </div>
+    </div></div>`;
+}
+window.openTypeForm = openTypeForm;
+function closeMod(){ $I('mwrap').innerHTML=''; }
+window.closeMod = closeMod;
+
+async function saveType(editId){
+  const name = $I('t-name').value.trim();
+  const color = $I('t-color').value;
+  const isPresent = $I('t-present').value==='yes';
+  if(!name) return toast('항목 이름을 입력하세요.','err');
+  try {
+    await TM.snapBundle('attendTypes',{}, editId?`항목 수정: ${name}`:`항목 추가: ${name}`);
+    if(editId){
+      await updateDoc(doc(db,'attendTypes',editId), {name, color, isPresent});
+      logActivity('수정','출석항목',`${name}`);
+      toast('수정되었습니다.','ok');
+    } else {
+      const maxOrder = TYPES.length ? Math.max(...TYPES.map(t=>t.order||0)) : 0;
+      await addDoc(collection(db,'attendTypes'), {name, color, isPresent, order:maxOrder+1, createdAt:Timestamp.now()});
+      logActivity('입력','출석항목',`${name}`);
+      toast('추가되었습니다.','ok');
+    }
+    closeMod();
+    await loadTypes();
+    renderSet();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveType = saveType;
+
+async function delType(id){
+  const t = TYPES.find(x=>x.id===id);
+  if(!confirm(`"${t?.name}" 항목을 삭제할까요?\n이미 이 항목으로 기록된 출결이 있다면 통계에 영향이 있을 수 있습니다.`)) return;
+  try {
+    await TM.snapBundle('attendTypes',{},`항목 삭제: ${t?.name||''}`);
+    await deleteDoc(doc(db,'attendTypes',id));
+    logActivity('삭제','출석항목',`${t?.name||''}`);
+    toast('삭제되었습니다.');
+    await loadTypes();
+    renderSet();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.delType = delType;
+
+// ── 학기 일정 추가/수정 폼 ──
+function orgOptionsHTML(sel){
+  return myOrgs().map(o=>`<option value="${o}"${sel===o?' selected':''}>${ORGS[o]}</option>`).join('');
+}
+function openTermForm(editId){
+  const t = editId ? TERMS.find(x=>x.id===editId) : null;
+  const ty = new Date().getFullYear();
+  const years = [];
+  for(let y=ty+1; y>=ty-3; y--) years.push(y);
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${t?'학기 수정':'학기 추가'}</div>
+      <div class="msub">연도, 기관, 학기를 정하고 개학일·종업일을 입력하세요.</div>
+      <div class="fgrp"><label>연도</label>
+        <select id="tm-year">${years.map(y=>`<option value="${y}"${t&&t.year===y?' selected':(!t&&y===ty?' selected':'')}>${y}년</option>`).join('')}</select></div>
+      <div class="fgrp"><label>기관</label>
+        <select id="tm-org">${orgOptionsHTML(t?.org)}</select></div>
+      <div class="fgrp"><label>학기</label>
+        <select id="tm-term">
+          <option value="1"${t&&t.term===1?' selected':''}>1학기</option>
+          <option value="2"${t&&t.term===2?' selected':''}>2학기</option>
+        </select></div>
+      <div class="fgrp"><label>개학일</label><input type="date" id="tm-start" value="${t?.start||''}"></div>
+      <div class="fgrp"><label>종업일</label><input type="date" id="tm-end" value="${t?.end||''}"></div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveTerm('${t?.id||''}')">저장</button>
+      </div>
+    </div></div>`;
+}
+window.openTermForm = openTermForm;
+
+async function saveTerm(editId){
+  const year = Number($I('tm-year').value);
+  const org = $I('tm-org').value;
+  const term = Number($I('tm-term').value);
+  const start = $I('tm-start').value, end = $I('tm-end').value;
+  if(!start || !end) return toast('개학일과 종업일을 입력하세요.','err');
+  if(start > end) return toast('종업일이 개학일보다 빠릅니다.','err');
+  const data = {year, org, term, start, end};
+  await TM.snapBundle('terms',{}, editId?'학기 수정':'학기 추가');
+  try {
+    if(editId){
+      await updateDoc(doc(db,'terms',editId), data);
+      logActivity('수정','학기일정',`${year} ${ORGS[org]} ${TERM_NAMES[term]}`);
+      toast('수정되었습니다.','ok');
+    } else {
+      // 중복 체크 (같은 연도·기관·학기)
+      if(TERMS.some(t=>t.year===year && t.org===org && t.term===term))
+        return toast('이미 등록된 학기입니다. 수정해주세요.','err');
+      data.createdAt = Timestamp.now();
+      await addDoc(collection(db,'terms'), data);
+      logActivity('입력','학기일정',`${year} ${ORGS[org]} ${TERM_NAMES[term]}`);
+      toast('추가되었습니다.','ok');
+    }
+    closeMod();
+    await loadTerms();
+    renderSet();
+  } catch(e){ toast('저장 실패: '+e.message,'err'); }
+}
+window.saveTerm = saveTerm;
+
+async function delTerm(id){
+  const t = TERMS.find(x=>x.id===id);
+  if(!confirm(`${t?.year}년 ${ORGS[t?.org]} ${TERM_NAMES[t?.term]} 학기를 삭제할까요?`)) return;
+  try {
+    await TM.snapBundle('terms',{},`학기 삭제: ${t?.year||''}년`);
+    await deleteDoc(doc(db,'terms',id));
+    logActivity('삭제','학기일정',`${t?.year} ${ORGS[t?.org]} ${TERM_NAMES[t?.term]}`);
+    toast('삭제되었습니다.');
+    await loadTerms();
+    renderSet();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.delTerm = delTerm;
+</script>
+</body>
+</html>

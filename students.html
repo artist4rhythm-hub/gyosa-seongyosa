@@ -1,0 +1,2064 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>학생 관리 · 교사 선교사</title>
+<meta name="theme-color" content="#1E3932">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="학생관리">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="theme.css">
+<style>
+:root {
+  --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
+  --gold:#B08D3C; --goldd:#8A6410; --goldp:#F7EFD8;
+  --iv:#F2F0EB; --ivd:#E3E1DA;
+  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#ffffff;
+  --sh:0 2px 12px rgba(30,57,50,0.08); --r:12px; --rs:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--iv);color:var(--tx);min-height:100vh;}
+
+/* 로딩/로그인 안내 */
+#gate{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(150deg,#E8F3EF 0%,#F2F0EB 60%,#F7EFD8 100%);padding:24px;text-align:center;}
+.gbox{background:var(--wh);border-radius:24px;padding:40px 36px;width:100%;max-width:380px;box-shadow:0 8px 40px rgba(30,57,50,0.12);}
+.gtitle{font-size:22px;font-weight:800;color:var(--gd);margin-bottom:8px;}
+.gsub{font-size:14px;color:var(--ts);line-height:1.6;margin-bottom:20px;}
+.gbtn{display:inline-block;width:100%;padding:14px;background:linear-gradient(135deg,#00704A,#1E3932);color:var(--wh);border:none;border-radius:var(--rs);font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;}
+
+/* 헤더 */
+#ms{display:none;flex-direction:column;width:100%;}
+.ah{display:none;}
+.pg-links{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.pg-link{padding:7px 14px;border-radius:8px;background:var(--wh);border:1px solid var(--ivd);color:var(--gm);font-size:13px;font-weight:600;text-decoration:none;}
+.pg-link:hover{background:var(--gp);}
+.ah{background:linear-gradient(135deg,#1E3932,#16302A);color:var(--wh);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10;}
+.ahl{display:flex;align-items:center;gap:12px;}
+.ahi{width:36px;height:36px;background:rgba(255,255,255,0.15);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.aht{font-size:16px;font-weight:700;}
+.ahr{text-align:right;}
+#hn{font-size:15px;font-weight:600;}
+#hi{font-size:11px;opacity:.7;margin-top:2px;}
+.homebtn{background:rgba(255,255,255,0.15);color:var(--wh);border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;margin-top:4px;text-decoration:none;display:inline-block;}
+
+/* 콘텐츠 */
+.tc{padding:0;max-width:var(--page-dash,1680px);margin:0 auto;width:100%;}   /* v-112 넓은 화면 */
+.subtb{display:flex;gap:4px;background:var(--wh);padding:8px 16px;border-bottom:1px solid var(--ivd);overflow-x:auto;}
+.subtbtn{padding:8px 14px;background:transparent;border:none;border-radius:8px;font-size:14px;font-weight:600;color:var(--ts);cursor:pointer;white-space:nowrap;}
+.subtbtn.active{background:var(--gp);color:var(--gm);}
+.actitle{font-size:17px;font-weight:800;color:var(--gd);margin-bottom:6px;}
+.adesc{font-size:13px;color:var(--ts);margin-bottom:14px;line-height:1.5;}
+.acard{background:var(--wh);border-radius:var(--r);padding:20px;box-shadow:var(--sh);margin-bottom:16px;}
+
+/* 폼 */
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+.fgrp{display:flex;flex-direction:column;}
+.fgrp.full{grid-column:1/-1;}
+.fgrp label{font-size:12px;font-weight:700;color:var(--ts);margin-bottom:5px;}
+.fgrp input,.fgrp select,.fgrp textarea{height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;background:var(--iv);outline:none;width:100%;font-family:inherit;}
+.fgrp textarea{height:auto;padding:10px 12px;resize:vertical;}
+.fgrp input:focus,.fgrp select:focus,.fgrp textarea:focus{border-color:var(--gl);background:var(--wh);}
+
+/* 버튼 */
+.bp{background:linear-gradient(135deg,#00704A,#1E3932);color:var(--wh);border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;}
+.bs{background:var(--iv);color:var(--ts);border:1.5px solid var(--ivd);border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+.bm{background:var(--gp);color:var(--gm);border:none;border-radius:10px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+.bd{background:var(--danger-bg);color:var(--danger);border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;}
+
+/* 학생 목록 */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;}
+.toolbar select,.toolbar input{height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--wh);outline:none;}
+.slist{display:flex;flex-direction:column;gap:8px;}
+/* 넓은 화면 (v-112) — 학생 카드를 화면 폭만큼 여러 줄로 (폰에서는 한 줄에 한 명) */
+#student-list.slist{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:8px 10px;align-items:stretch;}
+#student-list.slist > .empty{grid-column:1/-1;}
+.sitem{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--wh);border:1px solid var(--ivd);border-radius:10px;cursor:pointer;transition:border-color .15s;}
+.sitem:hover{border-color:var(--gl);}
+.savatar{width:40px;height:40px;border-radius:50%;background:var(--gp);color:var(--gm);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0;}
+.sinfo{flex:1;min-width:0;}
+.sname{font-size:15px;font-weight:700;color:var(--gd);}
+.smeta{font-size:12px;color:var(--ts);margin-top:2px;}
+.snum{font-size:11px;color:var(--tl);font-family:monospace;}
+.badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:100px;}
+.b-active{background:var(--ok-bg);color:var(--ok);}
+.b-leave{background:var(--warn-bg);color:var(--warn);}
+.b-quit{background:var(--danger-bg);color:var(--danger);}
+.b-grad{background:var(--info-bg);color:#0369a1;}
+.empty{text-align:center;color:var(--tl);padding:30px;font-size:14px;}
+
+/* 모달 */
+.mov{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:16px;}
+.mbk{position:absolute;inset:0;background:rgba(20,25,60,0.5);}
+.mbox{position:relative;background:var(--wh);border-radius:16px;padding:24px;width:100%;max-width:560px;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
+.mtitle{font-size:18px;font-weight:800;color:var(--gd);margin-bottom:4px;}
+.msub{font-size:13px;color:var(--ts);margin-bottom:16px;}
+.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;}
+.seclb{font-size:13px;font-weight:800;color:var(--gold);margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--ivd);}
+.jc-box{background:var(--iv);border:1px solid var(--ivd);border-radius:10px;padding:12px 14px;}
+
+/* 형제/이력 */
+.sibrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+.sibchip{display:inline-flex;align-items:center;gap:6px;background:var(--goldp);color:var(--goldd);font-size:12px;font-weight:600;padding:5px 10px;border-radius:100px;}
+.sibchip .x{cursor:pointer;font-weight:800;}
+.cand{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--iv);border-radius:8px;margin-bottom:6px;font-size:13px;}
+.histitem{font-size:12px;color:var(--ts);padding:7px 0;border-bottom:1px dashed var(--ivd);line-height:1.5;}
+.histitem:last-child{border-bottom:none;}
+
+/* 토스트 */
+.toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+</style>
+<link rel="stylesheet" href="ui.css">
+<script src="loading.js"></script>
+<script src="modal-close.js"></script>
+<script src="org-core.js"></script>
+<script src="student-status.js"></script>
+<script src="orgbar.js"></script>
+<script src="menu.js"></script>
+<script src="timemachine.js"></script>
+<script src="filename.js"></script>
+<script src="sidebar.js"></script>
+<script type="module" src="union.js?v=64"></script>
+<script src="org-bar.js"></script>
+<script type="module" src="badges.js"></script>
+<script type="module" src="presence.js"></script>
+</head>
+<body>
+
+<!-- 로그인 게이트 (로그인 안 된 경우) -->
+<div id="gate">
+  <div class="gbox">
+    <div class="gtitle">학생 관리</div>
+    <div class="gsub" id="gate-msg">로그인 확인 중...</div>
+    <a class="gbtn" id="gate-btn" href="index.html" style="display:none">로그인 화면으로</a>
+  </div>
+</div>
+
+<!-- 메인 -->
+<div id="ms">
+  <div class="pg-links"><a class="pg-link" href="class.html">반 편성 →</a><a class="pg-link" href="attend.html">출석부 →</a></div>
+  <div id="org-bar"></div>
+  <div class="subtb" id="sub-tabs">
+    <button class="subtbtn active" id="st-all" onclick="showStudentTab('all')">📋 전체 목록</button>
+    <button class="subtbtn" id="st-roster" onclick="showStudentTab('roster')">📊 재학생 명단</button>
+    <button class="subtbtn" id="st-extract" onclick="showStudentTab('extract')">🔍 명단 추출</button>
+    <button class="subtbtn" id="st-stat" onclick="showStudentTab('stat')">📈 재적 통계</button>
+    <button class="subtbtn" id="st-birth" onclick="showStudentTab('birth')">🎂 생일 명단</button>
+    <button class="subtbtn" id="st-contact" onclick="showStudentTab('contact')">📞 연락처</button>
+  </div>
+  <div class="tc" id="main-body"></div>
+</div>
+
+<div id="mwrap"></div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { gateRecalc } from './gate-client.js?v=122';   // 🎫 학부모 출입증 다시 계산 (v122)
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd",
+  measurementId: "G-E91V0S88T8"
+};
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = (()=>{ try{ return initializeFirestore(app, { experimentalAutoDetectLongPolling: true }); }catch(e){ return getFirestore(app); } })()   /* 🔌 막히는 네트워크 자동 우회 */;
+
+// ── 공통 유틸 ──
+const $I = id => document.getElementById(id);
+const pad = n => String(n).padStart(2,'0');
+const ORGS = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
+const STATUS = {active:'재학', leave:'휴학', quit:'자퇴', grad:'졸업', egrad:'조기졸업'};
+const STATUS_BADGE = {active:'b-active', leave:'b-leave', quit:'b-quit', grad:'b-grad', egrad:'b-grad'};
+let CU = null;          // 현재 로그인 유저
+let STUDENTS = [];      // 학생 캐시
+// 🔁 오늘 기준 실제 상태 (재학/휴학/자퇴/졸업) — 반편성·출석부와 같은 규칙(student-status.js)
+const curSt = s => StuStatus.status(s);
+
+function toast(msg, type='', ms){
+  const t = $I('toast'); t.textContent = msg;
+  t.className = 'toast show ' + type;
+  clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', ms || 2500);
+}
+// 공통 활동 로그 (새 기능 추가 시 해당 동작에서 호출)
+async function logActivity(action, category, target, detail){
+  if(!CU) return;
+  try {
+    await addDoc(collection(db,'activityLogs'), {
+      uid: CU.uid, name: CU.name||'', role: CU.role||'', org: CU.org||'',
+      action, category, target: target||'', detail: detail||'',
+      at: Timestamp.now()
+    });
+  } catch(e){}
+}
+// 볼 수 있는 기관 목록
+function myOrgs(){ return orgCore.myOrgs(CU,'std'); }   // 🏛 org-core 원장 위임
+function orgOptionsHTML(includeAll, selected){
+  const orgs = myOrgs();
+  let h = includeAll ? '<option value="">전체 기관</option>' : '<option value="">선택</option>';
+  if(orgs.includes('jihyebit')) h += `<option value="jihyebit"${selected==='jihyebit'?' selected':''}>지혜빛</option>`;
+  if(orgs.includes('daniel')) h += `<option value="daniel"${selected==='daniel'?' selected':''}>다니엘 아마츠</option>`;
+  return h;
+}
+/* ── 학생 정보를 고칠 수 있는 사람 ──
+   수퍼·기관관리자는 늘 열려 있고, 그 외에는
+   관리자 → 접근 권한 → 기능별 담당자에서 「학생관리」에 지정된 분만.
+   (담당자 명단은 classConfig/editors 문서의 studentUids 칸) */
+let STUDENT_EDITORS = [];
+const isAdmin = () => CU &&
+  (['super','org_admin'].includes(CU.role) || STUDENT_EDITORS.includes(CU.uid));
+
+async function loadStudentEditors(){
+  try {
+    const g = await getDoc(doc(db,'classConfig','editors'));
+    STUDENT_EDITORS = (g.exists() && Array.isArray(g.data().studentUids)) ? g.data().studentUids : [];
+  } catch(e){ STUDENT_EDITORS = []; }
+}
+
+// ── 로그인 확인 ──
+onAuthStateChanged(auth, async (user) => {
+  if(!user){
+    $I('gate-msg').textContent = '로그인이 필요합니다. 메인 화면에서 먼저 로그인해주세요.';
+    $I('gate-btn').style.display = 'inline-block';
+    return;
+  }
+  // staff 문서 로드
+  try {
+    const snap = await getDoc(doc(db,'staff',user.uid));
+    if(!snap.exists()){
+      $I('gate-msg').textContent = '교직원 정보를 찾을 수 없습니다.';
+      $I('gate-btn').style.display = 'inline-block';
+      return;
+    }
+    CU = { uid:user.uid, ...snap.data() };
+    $I('gate').style.display = 'none';
+    $I('ms').style.display = 'flex';
+    window.ORGS = ORGS;
+  if(window.guardPage && !guardPage(CU, 'students')) return;
+  renderShell('students', CU);
+    const org = ORGS[CU.org] || CU.org;
+    
+    
+    window.showLoading && window.showLoading('학생 정보를 불러오는 중…');
+    await loadStudentEditors();
+    window.setLoadStep && window.setLoadStep('학생 명단 불러오는 중…', 35);
+    await loadStudents();
+    // ⏱ 타임머신 — 학생 명부 전체를 묶음으로 보관·복원
+    if(window.TM) window.TM.init({
+      page:'students', pageLabel:'학생관리', db,
+      F:{doc,getDoc,setDoc,addDoc,deleteDoc,getDocs,collection,Timestamp},
+      me:()=>({uid:CU.uid, name:CU.name||''}),
+      canRestore:()=>isAdmin(),
+      targets:[
+        {col:'students', scope:()=>({org__in:myOrgs()}), label:'학생 명부 (내 기관 전체)'},
+      ],
+      onRestored: async ()=>{ await loadStudents(); renderList(); }
+    });
+    window.setLoadStep && window.setLoadStep('반 편성 불러오는 중…', 75);
+    await loadClasses();
+    window.hideLoading && window.hideLoading();
+    // 👥 함께 보기 설정을 미리 당겨온다 — «전체 기관» 노출 게이트
+    try{ const ov = await getDoc(doc(db,'systemConfig','orgView'));
+      if(ov.exists() && Array.isArray(ov.data().combined)) orgCore.applyLocalOrgView(ov.data().combined);
+    }catch(e){}
+    // 기관 선택 바 (전체 포함) — 모든 탭이 이 선택을 따름
+    if(window.OrgBar){
+      OrgBar.init({
+        orgs: myOrgs(), labels: ORGS, storeKey: 'students_org',
+        allowAll: true, defaultAll: true,
+        onChange: ()=>{ applyOrgScope(); }
+      });
+      applyOrgScope(true);
+    }
+    showStudentTab('all');
+    // 증명서 발급 등에서 ?edit=학생ID로 들어오면 편집창 자동 열기
+    const editId = new URLSearchParams(location.search).get('edit');
+    if(editId && STUDENTS.some(s=>s.id===editId)){
+      setTimeout(()=>{ openStudentForm(editId); }, 300);
+    }
+  } catch(e){
+    window.hideLoading && window.hideLoading();
+    $I('gate-msg').textContent = '오류가 발생했습니다: ' + e.message;
+    $I('gate-btn').style.display = 'inline-block';
+  }
+});
+
+// ── 메인 화면 ──
+let CLASSES = [];   // 반편성 (학생 학년 정보용)
+let STAFF = [];     // 교직원 (담임 이름 조회용)
+let studentTab = 'all';
+
+async function loadClasses(){
+  try { await liveCol('classes', docs=>{ CLASSES = docs; }); }
+  catch(e){ CLASSES = []; }
+  try {
+    const st = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    STAFF = []; st.forEach(d=>STAFF.push({uid:d.id, ...d.data()}));
+  } catch(e){ STAFF = []; }
+}
+// 학생이 속한 반 객체
+function studentClass(sid){ return CLASSES.find(c=>(c.students||[]).includes(sid)) || null; }
+// 반의 담임 이름
+function classTeacherName(c){ if(!c||!c.teacherUid) return ''; const t=STAFF.find(s=>s.uid===c.teacherUid); return t?t.name:''; }
+
+// 학생의 현재 학년 찾기 (반편성 grades 기준). 없으면 ''
+function studentGrade(sid){
+  const y = new Date().getFullYear();
+  const sorted = [...CLASSES].sort((a,b)=>((b.year||y)===y?1:0)-((a.year||y)===y?1:0));  // 올해 반 우선
+  for(const c of sorted){
+    if((c.students||[]).includes(sid) && c.grades && c.grades[sid]) return c.grades[sid];
+  }
+  return '';
+}
+// 학생이 속한 반 이름
+function studentClassName(sid){
+  const c = CLASSES.find(c=>(c.students||[]).includes(sid));
+  return c ? c.name : '';
+}
+
+// 상단 기관 바 → 각 탭의 기관 필터에 반영
+function applyOrgScope(silent){
+  const cur = (window.OrgBar && OrgBar.current) || '__all__';
+  const isAll = cur === '__all__';
+  rosterOrgView = isAll ? 'all' : 'split';
+  birthOrg   = isAll ? '' : cur;
+  contactOrg = isAll ? '' : cur;
+  if(!silent) showStudentTab(typeof studentTab !== 'undefined' ? (studentTab || 'all') : 'all');
+}
+// 기관 스코프에 맞는 학생만 (전체면 내 기관 전부)
+function inOrgScope(s){
+  const cur = (window.OrgBar && OrgBar.current) || '__all__';
+  if(cur === '__all__') return myOrgs().includes(s.org);
+  return s.org === cur;
+}
+
+function showStudentTab(t){
+  studentTab = t;
+  document.querySelectorAll('.subtbtn').forEach(b=>b.classList.remove('active'));
+  $I('st-'+t)?.classList.add('active');
+  if(t==='all') renderMain();
+  else if(t==='roster') renderRoster();
+  else if(t==='extract') renderExtract();
+  else if(t==='stat') renderStat();
+  else if(t==='birth') renderBirth();
+  else if(t==='contact') renderContact();
+}
+window.showStudentTab = showStudentTab;
+
+async function renderMain(){
+  $I('main-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">학생 관리</h3>
+      <p class="adesc">학생 기본정보를 등록하고 관리합니다. 학번은 출생연도 기준으로 자동 부여됩니다. (생년월일 필수)</p>
+      ${isAdmin()?`<div style="display:flex;flex-wrap:wrap;gap:8px">
+        <button class="bp" onclick="openStudentForm()">＋ 새 학생 등록</button>
+        <button class="bs" onclick="downloadTemplate()">⬇ 엑셀 양식 다운로드</button>
+        <button class="bs" onclick="document.getElementById('xlsx-input').click()">⬆ 엑셀 일괄 등록</button>
+        <input type="file" id="xlsx-input" accept=".xlsx,.xls" style="display:none" onchange="handleXlsxUpload(event)">
+        <button class="bs" onclick="reassignStudentNos()" style="margin-left:auto">🔄 학번 일괄 재배정</button>
+      </div>`:''}
+    </div>
+    <div class="acard">
+      <div class="toolbar">
+        <select id="flt-org" onchange="renderList()">${orgOptionsHTML(true)}</select>
+        <select id="flt-status" onchange="renderList()">
+          <option value="active">재학생만</option>
+          <option value="">전체 상태</option>
+          <option value="leave">휴학</option>
+          <option value="quit">자퇴</option>
+          <option value="grad">졸업</option>
+        </select>
+        <select id="flt-birth" onchange="renderList()"><option value="">전체 출생연도</option></select>
+        <select id="flt-gender" onchange="renderList()">
+          <option value="">남녀 전체</option>
+          <option value="남">남학생</option>
+          <option value="여">여학생</option>
+        </select>
+        <select id="flt-sort" onchange="renderList()">
+          <option value="name">이름순</option>
+          <option value="studentNo">학번순</option>
+          <option value="birth">출생연도순</option>
+          <option value="admit">입학연도순</option>
+        </select>
+        <input type="text" id="flt-search" placeholder="이름 검색" oninput="renderList()" style="flex:1;min-width:120px">
+      </div>
+      <div id="list-count" style="font-size:12px;color:var(--tl);margin-bottom:8px"></div>
+      <div class="slist" id="student-list"><p class="empty">불러오는 중...</p></div>
+    </div>`;
+  await loadStudents();
+  fillBirthFilter();
+  renderList();
+}
+
+// 출생연도 필터 옵션 채우기
+function fillBirthFilter(){
+  const el = $I('flt-birth'); if(!el) return;
+  const years = Array.from(new Set(STUDENTS.map(s=>(s.birth||'').slice(0,4)).filter(Boolean))).sort((a,b)=>a-b);   // 출생연도 오름차순(순차)
+  el.innerHTML = '<option value="">전체 출생연도</option>' + years.map(y=>`<option value="${y}">${y}년생</option>`).join('');
+}
+
+// ── 학생 데이터 로드 ──
+async function loadStudents(){
+  await liveCol('students', docs=>{
+    const allowed = myOrgs();
+    STUDENTS = docs.filter(s=>allowed.includes(s.org));
+  });
+}
+/* 🔁 실시간 연동 — 학생·반 편성을 «듣고» 있다가, 다른 화면(반편성·출석부·다른 선생님)에서 바뀌면 지금 보는 탭을 바로 다시 그린다.
+   처음 한 번은 받아 올 때까지 기다리고(getDocs 와 같은 읽기), 그 뒤로는 바뀐 문서만 들어온다. */
+const LIVE = {};
+function liveCol(name, apply, sigOf){
+  const L = LIVE[name];
+  if(L) return L.ready.then(()=>{ if(L.docs) apply(L.docs); });   // 이미 듣는 중(또는 처음 받는 중) → 받은 자료로
+  const E = LIVE[name] = { docs:null, sig:'', unsub:null, ready:null };
+  E.ready = new Promise((res, rej)=>{
+    let first = true;
+    E.unsub = onSnapshot(collection(db, name), snap=>{
+      const docs = []; snap.forEach(d=>docs.push({ id:d.id, ...d.data() }));
+      const sig = sigOf ? JSON.stringify(docs.map(sigOf).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))) : '';
+      const changed = !sigOf || sig !== E.sig;
+      E.docs = docs; E.sig = sig;
+      apply(docs);
+      if(first){ first = false; res(); }
+      else if(changed) liveRefresh();
+    }, err=>{
+      if(LIVE[name] === E) delete LIVE[name];   // 끊기면 다음 불러오기 때 새로 듣는다 (받은 자료는 그대로 쓴다)
+      if(first){ first = false; rej(err); }
+    });
+  });
+  return E.ready;
+}
+function liveRefresh(){
+  clearTimeout(liveRefresh._t);
+  liveRefresh._t = setTimeout(()=>{
+    try {
+      if(studentTab==='all') renderList();
+      else if(studentTab==='roster') renderRoster();
+      else if(studentTab==='extract') renderExtract();
+      else if(studentTab==='stat') renderStat();
+      else if(studentTab==='birth') renderBirth();
+      else if(studentTab==='contact') renderContact();
+    } catch(e){ console.warn('[live]', e); }
+  }, 150);
+}
+
+// ── 학생 목록 렌더 ──
+function renderList(){
+  const el = $I('student-list'); if(!el) return;
+  const fOrg = $I('flt-org')?.value || '';
+  const fStatus = $I('flt-status')?.value;
+  const fBirth = $I('flt-birth')?.value || '';
+  const fGender = $I('flt-gender')?.value || '';
+  const fSort = $I('flt-sort')?.value || 'name';
+  const fSearch = ($I('flt-search')?.value || '').trim();
+  let list = STUDENTS.filter(s => {
+    if(fOrg && s.org !== fOrg) return false;
+    if(fStatus && curSt(s) !== fStatus) return false;
+    if(fBirth && (s.birth||'').slice(0,4) !== fBirth) return false;
+    if(fGender && s.gender !== fGender) return false;
+    if(fSearch && !s.name.includes(fSearch)) return false;
+    return true;
+  });
+  // 정렬
+  list.sort((a,b)=>{
+    if(fSort==='name') return a.name.localeCompare(b.name,'ko');
+    if(fSort==='studentNo') return (a.studentNo||'').localeCompare(b.studentNo||'');
+    if(fSort==='birth') return (a.birth||'').localeCompare(b.birth||'') || a.name.localeCompare(b.name,'ko');
+    if(fSort==='admit') return (a.admitDate||String(a.admitYear||'')).localeCompare(b.admitDate||String(b.admitYear||'')) || a.name.localeCompare(b.name,'ko');
+    return 0;
+  });
+  const cntEl = $I('list-count'); if(cntEl) cntEl.textContent = `${list.length}명`;
+  if(!list.length){ el.innerHTML = '<p class="empty">조건에 맞는 학생이 없습니다.</p>'; return; }
+  el.innerHTML = list.map(s => {
+    const st = curSt(s);
+    let yearInfo = '';
+    if(s.transferDate) yearInfo = `편입 ${s.transferDate.slice(0,4)}년`;
+    else if(s.admitDate) yearInfo = `입학 ${s.admitDate.slice(0,4)}년`;
+    else if(s.admitYear) yearInfo = `입학 ${s.admitYear}년`;
+    const lvNote = st==='leave' ? StuStatus.leaveNote(s) : '';
+    const leaveBadge = lvNote ? ` <span style="font-size:11px;color:var(--warn);font-weight:600">${esc(lvNote)}</span>` : '';
+    // 성별 색상
+    const gc = s.gender==='남' ? 'var(--m-tx)' : s.gender==='여' ? 'var(--f-tx)' : 'var(--gm)';
+    const gbg = s.gender==='남' ? 'var(--m-bg)' : s.gender==='여' ? 'var(--f-bg)' : 'var(--gp)';
+    return `<div class="sitem" onclick="openStudentDetail('${s.id}')" ${st==='quit'?'style="opacity:.55"':''}>
+      <div class="savatar" style="background:${gbg};color:${gc}">${s.name.charAt(0)}</div>
+      <div class="sinfo">
+        <div class="sname" style="color:${gc}">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span>${leaveBadge}</div>
+        <div class="smeta">${ORGS[s.org]||s.org}${s.birth?' · '+s.birth:''}${yearInfo?' · '+yearInfo:''}</div>
+        <div class="snum">학번 ${s.studentNo||'-'}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// 오늘 날짜 문자열
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+function esc(s){ return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// 기관별 학년 순서
+const GRADE_ORDER = {
+  daniel: ['1학년','2학년','3학년','4학년','5학년','6학년','7학년','8학년','9학년','10학년','11학년','12학년'],
+  jihyebit: ['4세','5세','6세','7세']
+};
+let rosterIncludeLeave = true;  // 재학생 명단에 휴학생 포함 여부
+// 명단에 넣을 학생인가 — 오늘 실제 상태로 판정 (재적 상태가 «재학»이어도 휴학 기간 안이면 휴학으로 본다)
+function inRoster(s){ const st = curSt(s); return st==='active' || (rosterIncludeLeave && st==='leave'); }
+let rosterOrgView = 'split';    // split(기관별) | all(총합)
+
+// ── 재학생 명단 (학년별 표) ──
+function renderRoster(){
+  const ctrl = `
+    <div class="acard">
+      <h3 class="actitle">📊 재학생 명단</h3>
+      <p class="adesc">반편성에서 지정한 학생별 학년을 기준으로 정리합니다. 학년이 지정되지 않은 학생은 '미지정'으로 표시됩니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="r-view" onchange="setRosterView()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">
+          <option value="split"${rosterOrgView==='split'?' selected':''}>기관별로 보기</option>
+          <option value="all"${rosterOrgView==='all'?' selected':''}>전체 총합</option>
+        </select>
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="r-leave" ${rosterIncludeLeave?'checked':''} onchange="setRosterLeave()" style="width:16px;height:16px"> 휴학생 포함
+        </label>
+        <button class="bs" onclick="downloadRosterExcel()" style="margin-left:auto">⬇ 엑셀 다운로드</button>
+      </div>
+    </div>`;
+  let body = '';
+  const orgs = rosterOrgView==='all' ? ['__all__'] : Object.keys(GRADE_ORDER).filter(o=>myOrgsHas(o));
+  orgs.forEach(org=>{ body += rosterTable(org); });
+  // 휴학생 목록 (항상 별도 표시)
+  body += rosterLeaveList();
+  $I('main-body').innerHTML = ctrl + body;
+}
+window.renderRoster = renderRoster;
+
+// 휴학생 목록 (별도 카드)
+function rosterLeaveList(){
+  const targetOrgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
+  const leaves = STUDENTS.filter(s=>curSt(s)==='leave' && targetOrgs.includes(s.org))
+    .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(a.name||'').localeCompare(b.name||'','ko'));
+  if(!leaves.length) return '';
+  const rows = leaves.map(s=>{
+    const g = studentGrade(s.id);
+    return `<tr>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)} <span style="color:${s.gender==='남'?'var(--m-tx)':'var(--f-tx)'};font-size:11px">(${s.gender||'-'})</span></td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${g||'미지정'}</td>
+      <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);color:var(--warn);font-weight:600">${esc(StuStatus.leaveNote(s))}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px;color:var(--warn)">🏖️ 현재 휴학생 (${leaves.length}명)</h3>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">이름</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">학년</th><th style="padding:8px 10px;text-align:left">휴학 기간</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+}
+
+// 재학생 명단 엑셀 다운로드
+function downloadRosterExcel(){
+  const targetOrgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
+  const aoa = [['이름','성별','기관','부서','학년','상태']];
+  STUDENTS.filter(s=>targetOrgs.includes(s.org) && inRoster(s))
+    .sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'))
+    .forEach(s=>{
+      aoa.push([s.name, s.gender||'', ORGS[s.org]||s.org, s.dept||'', studentGrade(s.id)||'미지정', curSt(s)==='leave'?'휴학':'재학']);
+    });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:12},{wch:6},{wch:14},{wch:10},{wch:10},{wch:8}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '재학생명단');
+  XLSX.writeFile(wb, `재학생명단_${todayStr()}.xlsx`);
+  toast('엑셀을 다운로드했습니다.','ok');
+}
+window.downloadRosterExcel = downloadRosterExcel;
+function setRosterView(){ rosterOrgView = $I('r-view').value; renderRoster(); }
+window.setRosterView = setRosterView;
+function setRosterLeave(){ rosterIncludeLeave = $I('r-leave').checked; renderRoster(); }
+window.setRosterLeave = setRosterLeave;
+
+function myOrgsHas(org){ return myOrgs().includes(org); }
+
+// 한 기관(또는 전체)의 학년별 표
+// 학년 → 부서 (다니엘). 지혜빛은 부서 없음
+function gradeToDept(grade){
+  const m = String(grade).match(/(\d+)\s*학년/);
+  if(!m) return '';
+  const n = Number(m[1]);
+  if(n>=1 && n<=5) return '초등부';
+  if(n>=6 && n<=9) return '중등부';
+  if(n>=10 && n<=12) return '고등부';
+  return '';
+}
+
+function rosterTable(orgKey){
+  const isAll = orgKey==='__all__';
+  const targetOrgs = isAll ? Object.keys(GRADE_ORDER).filter(myOrgsHas) : [orgKey];
+  let grades = [];
+  targetOrgs.forEach(o=>{ (GRADE_ORDER[o]||[]).forEach(g=>{ if(!grades.includes(g)) grades.push(g); }); });
+  const byGrade = {}; grades.forEach(g=>byGrade[g]=[]);
+  const unset = [];
+  STUDENTS.forEach(s=>{
+    if(!targetOrgs.includes(s.org)) return;
+    if(!inRoster(s)) return;
+    const g = studentGrade(s.id);
+    if(g && byGrade[g]) byGrade[g].push(s);
+    else unset.push(s);
+  });
+  grades.forEach(g=>byGrade[g].sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko')));
+  unset.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+  const maxRows = Math.max(1, ...grades.map(g=>byGrade[g].length), unset.length);
+  const genderTag = s => `<span style="color:${s.gender==='남'?'var(--m-tx)':s.gender==='여'?'var(--f-tx)':'var(--tl)'};font-size:11px">(${s.gender||'-'})</span>`;
+  const cnt = g => { const arr=byGrade[g]||[]; const m=arr.filter(s=>s.gender==='남').length, f=arr.filter(s=>s.gender==='여').length; return {m,f,t:arr.length}; };
+  const bd = 'border:1px solid var(--ivd)';
+
+  // 부서 헤더 행 (다니엘 학년만 부서가 있음). 연속된 같은 부서를 colspan으로 묶음
+  let deptHeadCells = '';
+  let i2 = 0;
+  while(i2 < grades.length){
+    const dept = gradeToDept(grades[i2]);
+    if(!dept){ deptHeadCells += `<th style="${bd};padding:4px;background:var(--wh)"></th>`; i2++; continue; }
+    let span = 1;
+    while(i2+span < grades.length && gradeToDept(grades[i2+span])===dept) span++;
+    deptHeadCells += `<th colspan="${span}" style="${bd};padding:5px;font-size:11px;background:var(--m-bg);color:var(--gd);font-weight:700">${dept}</th>`;
+    i2 += span;
+  }
+  if(unset.length) deptHeadCells += `<th style="${bd};padding:4px;background:var(--wh)"></th>`;
+  const hasAnyDept = grades.some(g=>gradeToDept(g));
+  // 왼쪽 레이블 열용 스타일
+  const lbl = `${bd};padding:4px 8px;font-size:11px;font-weight:700;background:var(--iv);color:var(--ts);position:sticky;left:0;white-space:nowrap`;
+
+  // 학년 헤더
+  const headGrades = grades.map(g=>`<th style="${bd};padding:5px;font-size:11px;background:var(--gp);color:var(--gm)">${g}</th>`).join('') + (unset.length?`<th style="${bd};padding:5px;font-size:11px;background:var(--iv)">미지정</th>`:'');
+
+  // 학생 행들 (맨 앞에 번호)
+  let rowsHtml = '';
+  for(let i=0;i<maxRows;i++){
+    rowsHtml += `<tr><td style="${lbl}">${i+1}</td>` + grades.map(g=>{
+      const s = byGrade[g][i];
+      const lv = s && curSt(s)==='leave';
+      return `<td style="${bd};padding:4px 8px;font-size:12px;${lv?'opacity:.5':''}">${s?esc(s.name)+' '+genderTag(s)+(lv?' <span style="font-size:10px;color:var(--warn);font-weight:700">휴학</span>':''):''}</td>`;
+    }).join('');
+    if(unset.length) rowsHtml += `<td style="${bd};padding:4px 8px;font-size:12px;background:var(--iv)">${unset[i]?esc(unset[i].name)+' '+genderTag(unset[i]):''}</td>`;
+    rowsHtml += '</tr>';
+  }
+
+  // 집계 3줄: 남 / 여 / 계 (맨 앞에 레이블)
+  const unsetCnt = (()=>{ const m=unset.filter(s=>s.gender==='남').length, f=unset.filter(s=>s.gender==='여').length; return {m,f,t:unset.length}; })();
+  const sumLine = (label, pick, bg, tx) => `<tr style="font-size:11px;font-weight:700;background:${bg};color:${tx}"><td style="${bd};padding:3px 8px;text-align:center;position:sticky;left:0;background:${bg};color:${tx}">${label}</td>`
+    + grades.map(g=>{ const c=cnt(g); return `<td style="${bd};padding:3px 6px;text-align:center">${pick(c)}</td>`; }).join('')
+    + (unset.length?`<td style="${bd};padding:3px 6px;text-align:center">${pick(unsetCnt)}</td>`:'')
+    + '</tr>';
+  const aggRows =
+    sumLine('남', c=>c.m, 'var(--m-bg)', 'var(--m-tx)') +
+    sumLine('여', c=>c.f, 'var(--f-bg)', 'var(--f-tx)') +
+    sumLine('계', c=>c.t, 'var(--gray-bg)', 'var(--gray-tx)');
+
+  // 총원 표
+  let totM=0, totF=0, totals={};
+  targetOrgs.forEach(o=>{
+    const studs = STUDENTS.filter(s=>s.org===o && inRoster(s));
+    const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
+    totals[o]={m,f,t:studs.length}; totM+=m; totF+=f;
+  });
+  const title = isAll ? '전체 (두 기관 합산)' : ORGS[orgKey];
+  // 다니엘이면 부서별 총원도
+  let deptTotals = '';
+  if(!isAll && orgKey==='daniel'){
+    const depts = ['초등부','중등부','고등부'];
+    const dt = {};
+    depts.forEach(d=>dt[d]={m:0,f:0,t:0});
+    STUDENTS.forEach(s=>{
+      if(s.org!=='daniel' || !inRoster(s)) return;
+      const d = gradeToDept(studentGrade(s.id));
+      if(!dt[d]) return;
+      if(s.gender==='남') dt[d].m++; else if(s.gender==='여') dt[d].f++;
+      dt[d].t++;
+    });
+    deptTotals = depts.map(d=>`<tr><td style="${bd};padding:6px 10px;font-weight:600">${d}</td><td style="${bd};padding:6px 10px;text-align:center">${dt[d].m}</td><td style="${bd};padding:6px 10px;text-align:center">${dt[d].f}</td><td style="${bd};padding:6px 10px;text-align:center;font-weight:700">${dt[d].t}</td></tr>`).join('');
+  }
+  const totalTable = `
+    <table style="border-collapse:collapse;margin-top:12px;font-size:13px;min-width:min(280px,100%)">
+      <thead><tr style="background:var(--gp)"><th style="${bd};padding:6px 10px;text-align:left">구분</th><th style="${bd};padding:6px 10px">남</th><th style="${bd};padding:6px 10px">여</th><th style="${bd};padding:6px 10px">합계</th></tr></thead>
+      <tbody>
+        ${deptTotals}
+        <tr class="tot-row" style="font-weight:800"><td style="${bd};padding:7px 10px">${title} 총원</td><td style="${bd};padding:7px 10px;text-align:center">${totM}</td><td style="${bd};padding:7px 10px;text-align:center">${totF}</td><td style="${bd};padding:7px 10px;text-align:center;font-size:15px">${totM+totF}</td></tr>
+      </tbody>
+    </table>`;
+
+  return `
+    <div class="acard">
+      <h3 class="actitle" style="font-size:15px">${title}</h3>
+      <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">
+        <thead>
+          ${hasAnyDept?`<tr><th style="${lbl};background:var(--iv)">부서</th>${deptHeadCells}</tr>`:''}
+          <tr><th style="${lbl};background:var(--iv)">학년</th>${headGrades}</tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+        <tfoot>${aggRows}</tfoot>
+      </table></div>
+      ${totalTable}
+    </div>`;
+}
+
+// ── 재적 통계 ──
+function renderStat(){
+  let html = `<div class="acard"><h3 class="actitle">📈 재적 통계</h3><p class="adesc">현재 재학 중인 학생 기준입니다.</p>`;
+  const orgs = Object.keys(GRADE_ORDER).filter(myOrgsHas);
+  let gM=0,gF=0;
+  orgs.forEach(o=>{
+    const studs = STUDENTS.filter(s=>s.org===o && curSt(s)==='active');
+    const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
+    gM+=m; gF+=f;
+    // 부서별
+    const depts = {};
+    studs.forEach(s=>{ const d=s.dept||'미지정'; (depts[d]=depts[d]||[]).push(s); });
+    const deptRows = Object.entries(depts).map(([d,arr])=>{
+      const dm=arr.filter(s=>s.gender==='남').length, df=arr.filter(s=>s.gender==='여').length;
+      return `<tr><td style="padding:6px 10px;border-bottom:1px solid var(--ivd)">${d}</td><td style="padding:6px 10px;border-bottom:1px solid var(--ivd);text-align:center">${dm}</td><td style="padding:6px 10px;border-bottom:1px solid var(--ivd);text-align:center">${df}</td><td style="padding:6px 10px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700">${arr.length}</td></tr>`;
+    }).join('');
+    html += `<div class="acard" style="box-shadow:none;border:1px solid var(--ivd)">
+      <h3 class="actitle" style="font-size:15px">${ORGS[o]}</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:6px 10px;text-align:left">부서</th><th style="padding:6px 10px">남</th><th style="padding:6px 10px">여</th><th style="padding:6px 10px">계</th></tr></thead>
+        <tbody>${deptRows||'<tr><td colspan="4" style="padding:10px;text-align:center;color:var(--tl)">학생 없음</td></tr>'}</tbody>
+        <tfoot><tr style="background:var(--gp);font-weight:700"><td style="padding:6px 10px">${ORGS[o]} 합계</td><td style="padding:6px 10px;text-align:center">${m}</td><td style="padding:6px 10px;text-align:center">${f}</td><td style="padding:6px 10px;text-align:center">${studs.length}</td></tr></tfoot>
+      </table>
+    </div>`;
+  });
+  html += `<div class="enroll-total" style="border-radius:10px;padding:16px;font-size:15px;font-weight:700;text-align:center">전체 재적: 남 ${gM} · 여 ${gF} · 총 ${gM+gF}명</div>`;
+  html += '</div>';
+  $I('main-body').innerHTML = html;
+}
+window.renderStat = renderStat;
+
+// ── 생일 명단 ──
+let birthMonth = new Date().getMonth()+1;
+let birthOrg = '';  // '' = 전체
+function renderBirth(){
+  const months = []; for(let m=1;m<=12;m++) months.push(m);
+  const myo = myOrgs();
+  let list = STUDENTS.filter(s=>curSt(s)==='active' && s.birth && Number(s.birth.slice(5,7))===birthMonth);
+  if(birthOrg) list = list.filter(s=>s.org===birthOrg);
+  list.sort((a,b)=>Number(a.birth.slice(8,10))-Number(b.birth.slice(8,10)));
+  const orgOpts = `<option value="">전체 기관</option>` + myo.map(o=>`<option value="${o}"${birthOrg===o?' selected':''}>${ORGS[o]}</option>`).join('');
+  const rows = list.map(s=>`<tr>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)} <span style="color:${s.gender==='남'?'var(--m-tx)':'var(--f-tx)'};font-size:11px">(${s.gender||'-'})</span></td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${s.birth} (${Number(s.birth.slice(5,7))}월 ${Number(s.birth.slice(8,10))}일)</td>
+  </tr>`).join('');
+  $I('main-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">🎂 생일 명단</h3>
+      <p class="adesc">월과 기관을 선택하면 그 달 생일인 재학생을 보여줍니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <select id="b-month" onchange="setBirthMonth()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:14px;background:var(--iv)">
+          ${months.map(m=>`<option value="${m}"${m===birthMonth?' selected':''}>${m}월</option>`).join('')}
+        </select>
+        <select id="b-org" onchange="setBirthOrg()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:14px;background:var(--iv)">${orgOpts}</select>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">이름</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">생년월일</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="3" style="padding:20px;text-align:center;color:var(--tl)">이 달 생일인 학생이 없습니다.</td></tr>'}</tbody>
+      </table>
+      <div style="margin-top:10px;font-size:13px;color:var(--ts)">${birthMonth}월 생일자: ${list.length}명</div>
+    </div>`;
+}
+window.renderBirth = renderBirth;
+function setBirthMonth(){ birthMonth = Number($I('b-month').value); renderBirth(); }
+window.setBirthMonth = setBirthMonth;
+function setBirthOrg(){ birthOrg = $I('b-org').value; renderBirth(); }
+window.setBirthOrg = setBirthOrg;
+
+// ── 연락처 명단 ──
+let contactOrg = '';     // '' = 전체
+let contactGrade = '';   // '' = 전체 학년
+function renderContact(){
+  const myo = myOrgs();
+  let list = STUDENTS.filter(s=>curSt(s)==='active');
+  if(contactOrg) list = list.filter(s=>s.org===contactOrg);
+  if(contactGrade) list = list.filter(s=>studentGrade(s.id)===contactGrade);
+  list.sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'));
+  // 학년 옵션 (선택된 기관 기준, 없으면 내 기관 전체)
+  const gradeSet = new Set();
+  const baseOrgs = contactOrg ? [contactOrg] : myo;
+  baseOrgs.forEach(o=>(GRADE_ORDER[o]||[]).forEach(g=>gradeSet.add(g)));
+  const orgOpts = `<option value="">전체 기관</option>` + myo.map(o=>`<option value="${o}"${contactOrg===o?' selected':''}>${ORGS[o]}</option>`).join('');
+  const gradeOpts = `<option value="">전체 학년</option>` + Array.from(gradeSet).map(g=>`<option value="${g}"${contactGrade===g?' selected':''}>${g}</option>`).join('');
+  const rows = list.map(s=>`<tr>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-weight:600">${esc(s.name)}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-size:12px">${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd);font-size:12px">${studentGrade(s.id)||'-'}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${esc(s.guardian||'-')}</td>
+    <td style="padding:7px 10px;border-bottom:1px solid var(--ivd)">${esc(s.guardianPhone||s.phone||'-')}</td>
+  </tr>`).join('');
+  $I('main-body').innerHTML = `
+    <div class="acard">
+      <h3 class="actitle">📞 연락처 명단</h3>
+      <p class="adesc">재학생 학부모 연락처입니다. 기관·학년으로 좁혀 보거나 엑셀로 내려받을 수 있습니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+        <select id="ct-org" onchange="setContactOrg()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">${orgOpts}</select>
+        <select id="ct-grade" onchange="setContactGrade()" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">${gradeOpts}</select>
+        <button class="bs" onclick="downloadContactExcel()" style="margin-left:auto">⬇ 엑셀 다운로드</button>
+      </div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--iv)"><th style="padding:8px 10px;text-align:left">학생</th><th style="padding:8px 10px;text-align:left">소속</th><th style="padding:8px 10px;text-align:left">학년</th><th style="padding:8px 10px;text-align:left">보호자</th><th style="padding:8px 10px;text-align:left">연락처</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--tl)">해당하는 학생이 없습니다.</td></tr>'}</tbody>
+      </table></div>
+      <div style="margin-top:10px;font-size:12px;color:var(--tl)">총 ${list.length}명 · 연락처가 '-'면 보호자 연락처가 입력되지 않은 것입니다.</div>
+    </div>`;
+}
+window.renderContact = renderContact;
+function setContactOrg(){ contactOrg = $I('ct-org').value; contactGrade=''; renderContact(); }
+window.setContactOrg = setContactOrg;
+function setContactGrade(){ contactGrade = $I('ct-grade').value; renderContact(); }
+window.setContactGrade = setContactGrade;
+
+// ══════════ 🔍 명단 추출 (필터 + 그룹핑 + 집계 + 담임) ══════════
+let exFilter = { orgs:[], depts:[], grades:[], genders:[], status:'active' };
+// v130 — 명단 추출 대상은 «오늘» 재학 · 휴학인 학생 (자퇴 · 졸업 · 조기졸업은 빠짐 · 상태 «전체» = 재학+휴학)
+//   칩 옆 숫자도 아래 «성별 · 상태»에 맞춰 센다 (예전엔 휴학 · 자퇴 · 졸업까지 모두 세어 결과와 숫자가 달랐음)
+const exInPool = s => { const st = curSt(s); return st==='active' || st==='leave'; };
+const exStOK  = s => { const st = curSt(s); return exFilter.status==='all' ? (st==='active' || st==='leave') : st===exFilter.status; };
+const exGenOK = s => !exFilter.genders.length || exFilter.genders.includes(s.gender);
+const exCount = f => STUDENTS.filter(s=>exStOK(s) && exGenOK(s) && f(s)).length;
+let exGroupBy = 'grade';   // grade | dept | gender | class | org | none
+
+function renderExtract(){
+  const myo = myOrgs();
+  // 기관을 하나도 안 고르면 = 내 기관 전체 대상
+  const activeOrgs = exFilter.orgs.length ? exFilter.orgs : myo;
+
+  // 기관별 학년(연령) 목록 — 실제 데이터에서 수집
+  const gradesOf = (org) => {
+    const set = new Set();
+    STUDENTS.filter(s=>s.org===org && exInPool(s)).forEach(s=>{ const g=studentGrade(s.id); if(g) set.add(g); });
+    return Array.from(set).sort(exGradeSort);
+  };
+
+  const chip = (on, onclick, label, cnt) =>
+    `<button class="ex-chip${on?' on':''}${cnt===0?' zero':''}" onclick="${onclick}">${label}${cnt!=null?`<span class="ex-cn">${cnt}</span>`:''}</button>`;
+
+  // ── 기관 선택 (다중) ──
+  const orgChips = myo.map(o=>{
+    const on = exFilter.orgs.includes(o);
+    const cnt = exCount(s=>s.org===o);
+    return `<button class="ex-org${on?' on':''}" onclick="exToggle('orgs','${o}')">
+      <span class="ex-oc">${on?'✓':'＋'}</span>
+      <span>${ORGS[o]||o}</span>
+      <span class="ex-on">${cnt}명</span>
+    </button>`;
+  }).join('');
+
+  // ── 기관별 패널 (열리듯이) ──
+  const panels = activeOrgs.map(o=>{
+    const gs = gradesOf(o);
+    const isDaniel = o === 'daniel';
+    const deptRow = isDaniel ? `
+      <div class="ex-sub">
+        <span class="ex-lbl2">부서</span>
+        <div class="ex-grid dept">
+          ${['초등부','중등부','고등부'].map(d=>chip(exFilter.depts.includes(d), `exToggle('depts','${d}')`, d, exCount(s=>s.org===o && gradeToDept(studentGrade(s.id))===d))).join('')}
+        </div>
+      </div>` : '';
+    const gradeLabel = isDaniel ? '학년' : '연령';
+    const gradeRow = gs.length ? `
+      <div class="ex-sub">
+        <span class="ex-lbl2">${gradeLabel}</span>
+        <div class="ex-grid">
+          ${gs.map(g=>{
+            const cnt = exCount(s=>s.org===o && studentGrade(s.id)===g);
+            return `<button class="ex-chip${exFilter.grades.includes(g)?' on':''}${cnt===0?' zero':''}" onclick="exToggle('grades','${g.replace(/'/g,"\\'")}')">${esc(g)}<span class="ex-cn">${cnt}</span></button>`;
+          }).join('')}
+        </div>
+      </div>` : `<div class="ex-sub"><span class="ex-lbl2">${gradeLabel}</span><span style="font-size:12px;color:var(--tl)">정보 없음</span></div>`;
+
+    return `<div class="ex-panel">
+      <div class="ex-ph">
+        <span class="ex-pd"></span>${ORGS[o]||o}
+        <button class="ex-mini" onclick="exSelectAllGrades('${o}')">전체 선택</button>
+        <button class="ex-mini" onclick="exClearGrades('${o}')">해제</button>
+      </div>
+      ${deptRow}
+      ${gradeRow}
+    </div>`;
+  }).join('');
+
+  const groupOpts = [['grade','학년별'],['dept','부서별'],['gender','성별'],['class','반별'],['org','기관별'],['none','묶지 않음']]
+    .map(([v,l])=>`<button class="ex-gbtn${exGroupBy===v?' on':''}" onclick="exSetGroup('${v}')">${l}</button>`).join('');
+
+  const ctrl = `
+    <div class="acard">
+      <h3 class="actitle">🔍 명단 추출</h3>
+      <p class="adesc">기관을 고르면 아래에 그 기관의 학년·부서가 펼쳐집니다. 두 기관을 함께 골라 합산 인원도 볼 수 있습니다. 옆의 숫자는 아래에서 고른 <b>성별 · 상태</b>에 맞춘 오늘 인원이에요.</p>
+      <style>
+        .ex-chip{position:relative;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px 6px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--wh);font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;transition:all .13s;white-space:nowrap;font-family:inherit;}
+        .ex-chip:hover{border-color:var(--gm);}
+        .ex-chip.on{background:var(--gm);border-color:var(--gm);color:#fff;}
+        .ex-cn{font-size:10.5px;opacity:.6;font-weight:700;}
+        .ex-chip.on .ex-cn{opacity:.85;}
+        .ex-chip.zero:not(.on){color:var(--tl);border-style:dashed;}
+        .ex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px;flex:1;min-width:0;}   /* min-width:0 — 폰에서 칸이 화면 밖으로 밀리지 않게 (v-112) */
+        .ex-grid.dept{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));max-width:420px;}
+        .ex-org{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border:1.5px solid var(--ivd);border-radius:11px;background:var(--wh);font-size:13.5px;font-weight:700;color:var(--ts);cursor:pointer;font-family:inherit;transition:all .13s;}
+        .ex-org:hover{border-color:var(--gm);}
+        .ex-org.on{background:var(--gp);border-color:var(--gm);color:var(--gd);}
+        .ex-oc{font-size:12px;color:var(--gm);font-weight:900;}
+        .ex-on{font-size:11px;color:var(--tl);font-weight:600;}
+        .ex-org.on .ex-on{color:var(--gm);}
+        .ex-panel{border:1px solid var(--ivd);border-left:3px solid var(--gm);border-radius:11px;padding:12px 14px;margin-bottom:10px;background:var(--iv);animation:exOpen .18s ease;}
+        @keyframes exOpen{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+        .ex-ph{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;color:var(--gd);margin-bottom:10px;}
+        .ex-pd{width:7px;height:7px;border-radius:50%;background:var(--gm);}
+        .ex-mini{margin-left:auto;padding:3px 9px;border:1px solid var(--ivd);border-radius:10px;background:var(--wh);font-size:11px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit;}
+        .ex-mini:last-child{margin-left:0;}
+        .ex-mini:hover{border-color:var(--gm);color:var(--gm);}
+        .ex-sub{display:flex;align-items:flex-start;gap:10px;margin-bottom:9px;}
+        .ex-sub:last-child{margin-bottom:0;}
+        .ex-lbl2{font-size:12px;font-weight:800;color:var(--gm);min-width:34px;padding-top:9px;flex:none;}
+        .ex-gbtn{padding:7px 15px;border:1.5px solid var(--ivd);border-radius:8px;background:var(--wh);font-size:13px;font-weight:700;color:var(--ts);cursor:pointer;font-family:inherit;}
+        .ex-gbtn.on{background:var(--gd);border-color:var(--gd);color:#fff;}
+        .ex-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 14px;}
+        .ex-lbl{font-size:12.5px;font-weight:800;color:var(--gd);min-width:52px;flex:none;}
+        .ex-row .ex-chip{padding:7px 15px;border-radius:100px;}
+      </style>
+
+      <div class="ex-row"><span class="ex-lbl">기관</span>${orgChips}</div>
+      ${panels}
+
+      <div class="ex-row" style="margin-top:14px"><span class="ex-lbl">성별</span>
+        ${['남','여'].map(g=>chip(exFilter.genders.includes(g), `exToggle('genders','${g}')`, g)).join('')}
+      </div>
+      <div class="ex-row"><span class="ex-lbl">상태</span>
+        ${chip(exFilter.status==='active', "exSetStatus('active')", '재학')}
+        ${chip(exFilter.status==='leave', "exSetStatus('leave')", '휴학')}
+        ${chip(exFilter.status==='all', "exSetStatus('all')", '전체')}
+      </div>
+      <div style="border-top:1px solid var(--ivd);margin:10px 0;padding-top:12px">
+        <div class="ex-row" style="margin-bottom:0"><span class="ex-lbl">묶기</span>${groupOpts}
+          <button class="ex-chip" style="margin-left:auto;padding:7px 15px;border-radius:100px" onclick="exReset()">↺ 초기화</button>
+        </div>
+      </div>
+    </div>
+    <div id="ex-result"></div>`;
+  $I('main-body').innerHTML = ctrl;
+  renderExtractResult();
+}
+window.renderExtract = renderExtract;
+
+// 학년 정렬: 숫자 학년(1~12) 먼저, 그다음 연령(4~7세), 나머지
+function exGradeSort(a, b){
+  const num = s => { const m = String(s).match(/(\d+)/); return m ? Number(m[1]) : 999; };
+  const isAge = s => /세/.test(String(s));
+  const ia = isAge(a), ib = isAge(b);
+  if(ia !== ib) return ia ? 1 : -1;    // 학년 먼저, 연령 뒤
+  return num(a) - num(b) || String(a).localeCompare(String(b), 'ko');
+}
+
+// 기관의 학년 전체 선택 / 해제
+function exSelectAllGrades(org){
+  const gs = Array.from(new Set(STUDENTS.filter(s=>s.org===org && exInPool(s)).map(s=>studentGrade(s.id)).filter(Boolean)));
+  const set = new Set(exFilter.grades);
+  gs.forEach(g=>set.add(g));
+  exFilter.grades = Array.from(set);
+  renderExtract();
+}
+window.exSelectAllGrades = exSelectAllGrades;
+function exClearGrades(org){
+  const gs = new Set(STUDENTS.filter(s=>s.org===org).map(s=>studentGrade(s.id)).filter(Boolean));
+  exFilter.grades = exFilter.grades.filter(g=>!gs.has(g));
+  renderExtract();
+}
+window.exClearGrades = exClearGrades;
+window.renderExtract = renderExtract;
+
+function exToggle(field, val){
+  const arr = exFilter[field];
+  const i = arr.indexOf(val);
+  if(i>=0) arr.splice(i,1); else arr.push(val);
+  renderExtract();
+}
+window.exToggle = exToggle;
+function exSetStatus(s){ exFilter.status=s; renderExtract(); }
+window.exSetStatus = exSetStatus;
+function exSetGroup(g){ exGroupBy=g; renderExtractResult(); }
+window.exSetGroup = exSetGroup;
+function exReset(){ exFilter={orgs:[],depts:[],grades:[],genders:[],status:'active'}; exGroupBy='grade'; renderExtract(); }
+window.exReset = exReset;
+
+// 현재 필터로 걸러진 학생 목록
+function exGetFiltered(){
+  return STUDENTS.filter(s=>{
+    if(!exStOK(s)) return false;                 // 재학 · 휴학 · 전체(재학+휴학) — 자퇴 · 졸업은 빠짐
+    if(exFilter.orgs.length && !exFilter.orgs.includes(s.org)) return false;
+    const g = studentGrade(s.id);
+    if(exFilter.depts.length){
+      // 부서(초·중·고)는 다니엘 아마츠에만 해당. 지혜빛(유아)은 부서 필터의 영향을 받지 않음
+      if(s.org === 'daniel'){ const d=gradeToDept(g); if(!exFilter.depts.includes(d)) return false; }
+    }
+    if(exFilter.grades.length && !exFilter.grades.includes(g)) return false;
+    if(exFilter.genders.length && !exFilter.genders.includes(s.gender)) return false;
+    return true;
+  });
+}
+
+// 그룹 키/라벨
+function exGroupKeyLabel(s){
+  const g = studentGrade(s.id);
+  switch(exGroupBy){
+    case 'grade': return { k: g||'zzz미지정', label: g||'학년 미지정' };
+    case 'dept': { const d=gradeToDept(g)||'zz기타'; return { k:d, label:gradeToDept(g)||'부서 미지정' }; }
+    case 'gender': return { k: s.gender||'z', label: s.gender||'미지정' };
+    case 'class': { const c=studentClass(s.id); return { k: c?c.name:'zz미배정', label: c?c.name:'반 미배정' }; }
+    case 'org': return { k: s.org, label: ORGS[s.org]||s.org };
+    default: return { k:'all', label:'전체' };
+  }
+}
+
+function renderExtractResult(){
+  const box = $I('ex-result'); if(!box) return;
+  const list = exGetFiltered();
+  if(!list.length){ box.innerHTML = '<div class="acard"><p class="empty">조건에 맞는 학생이 없습니다. 필터를 조정해보세요.</p></div>'; return; }
+
+  // 그룹핑
+  const groups = {};
+  list.forEach(s=>{ const {k,label}=exGroupKeyLabel(s); if(!groups[k]) groups[k]={label,students:[]}; groups[k].students.push(s); });
+  const gKeys = Object.keys(groups).sort((a,b)=>{
+    // 학년/부서는 숫자 우선
+    const na=parseInt(groups[a].label)||999, nb=parseInt(groups[b].label)||999;
+    if(exGroupBy==='dept'){ const order={'초등부':1,'중등부':2,'고등부':3}; return (order[groups[a].label]||9)-(order[groups[b].label]||9); }
+    return na-nb || groups[a].label.localeCompare(groups[b].label,'ko');
+  });
+
+  const totM = list.filter(s=>s.gender==='남').length;
+  const totF = list.filter(s=>s.gender==='여').length;
+
+  // 요약 카드
+  let html = `<div class="acard">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+      <h3 class="actitle" style="margin:0">📋 추출 결과</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="bp" onclick="exPreview()" style="padding:8px 14px">👁️ 미리보기</button>
+        <button class="bm" onclick="exExcel()">📊 엑셀</button>
+        <button class="bm" onclick="exImage()">🖼️ 이미지</button>
+        <button class="bm" onclick="exPDF()">🖨️ PDF</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px">
+      <div class="ex-sum" style="background:var(--gp)"><div class="ex-sn">${list.length}</div><div class="ex-sl">전체 인원</div></div>
+      <div class="ex-sum" style="background:var(--m-bg)"><div class="ex-sn" style="color:var(--m-tx)">${totM}</div><div class="ex-sl">남</div></div>
+      <div class="ex-sum" style="background:var(--f-bg)"><div class="ex-sn" style="color:var(--f-tx)">${totF}</div><div class="ex-sl">여</div></div>
+      <div class="ex-sum" style="background:var(--goldp)"><div class="ex-sn" style="color:var(--goldd)">${gKeys.length}</div><div class="ex-sl">그룹 수</div></div>
+      ${(exFilter.status==='all' && list.some(s=>curSt(s)==='leave')) ? `<div class="ex-sum" style="background:var(--warn-bg)"><div class="ex-sn" style="color:var(--warn)">${list.filter(s=>curSt(s)==='leave').length}</div><div class="ex-sl">그중 휴학</div></div>` : ''}
+    </div>
+    <style>
+      .ex-sum{padding:12px 20px;border-radius:12px;text-align:center;min-width:90px;}
+      .ex-sn{font-size:26px;font-weight:900;color:var(--gm);line-height:1;}
+      .ex-sl{font-size:11px;color:var(--ts);margin-top:4px;font-weight:600;}
+    </style>
+  </div>`;
+
+  // 그룹별 상세
+  html += `<div id="ex-sheet">`;
+  gKeys.forEach(k=>{
+    const g = groups[k];
+    const studs = g.students.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+    const m = studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
+    // 이 그룹 학생들이 속한 반들의 담임 (중복 제거)
+    const teacherSet = new Map();
+    studs.forEach(s=>{ const c=studentClass(s.id); if(c){ const tn=classTeacherName(c); if(tn) teacherSet.set(c.name+'|'+tn, {cls:c.name, t:tn}); } });
+    const teachers = [...teacherSet.values()];
+    const teacherLine = teachers.length ? teachers.map(x=> exGroupBy==='class' ? `담임 ${x.t}` : `${x.cls} ${x.t}`).join(' · ') : '담임 미지정';
+
+    html += `<div class="acard" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;border-bottom:2px solid var(--gm);padding-bottom:8px;margin-bottom:10px">
+        <div style="font-size:16px;font-weight:800;color:var(--gd)">${esc(g.label)}
+          <span style="font-size:13px;color:var(--gm);font-weight:700">${studs.length}명</span>
+          <span style="font-size:12px;color:var(--tl);font-weight:400">(남 ${m} · 여 ${f}${studs.some(s=>curSt(s)==='leave')?` · 휴학 ${studs.filter(s=>curSt(s)==='leave').length}`:''})</span>
+        </div>
+        <div style="font-size:12px;color:var(--goldd);font-weight:600">👩‍🏫 ${esc(teacherLine)}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${studs.map(s=>{
+          const gc = s.gender==='남'?'var(--m-tx)':s.gender==='여'?'var(--f-tx)':'var(--ts)';
+          const gbg = s.gender==='남'?'var(--m-bg)':s.gender==='여'?'var(--f-bg)':'var(--iv)';
+          const leave = curSt(s)==='leave';
+          return `<span style="padding:5px 11px;border-radius:100px;background:${gbg};color:${gc};font-size:12.5px;font-weight:600;${leave?'opacity:.6':''}">${esc(s.name)}<span style="font-size:10px;opacity:.8"> ${s.gender||''}</span>${leave?' <span style="font-size:10px;color:var(--warn);font-weight:800">휴학</span>':''}</span>`;
+        }).join('')}
+      </div>
+    </div>`;
+  });
+  html += `</div>`;
+  box.innerHTML = html;
+}
+window.renderExtractResult = renderExtractResult;
+
+// 라이브러리 동적 로드 (html2canvas, jspdf)
+function exEnsureH2C(){
+  return new Promise((resolve,reject)=>{
+    if(window.html2canvas) return resolve();
+    let sc=document.getElementById('h2c-script');
+    if(!sc){ sc=document.createElement('script'); sc.id='h2c-script'; sc.src='https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'; document.head.appendChild(sc); }
+    const chk=setInterval(()=>{ if(window.html2canvas){clearInterval(chk);resolve();} },100);
+    setTimeout(()=>{clearInterval(chk); if(!window.html2canvas)reject(new Error('이미지 모듈 로드 실패'));},8000);
+  });
+}
+function exEnsureJsPDF(){
+  return new Promise((resolve,reject)=>{
+    if(window.jspdf&&window.jspdf.jsPDF) return resolve();
+    let sc=document.getElementById('jspdf-script');
+    if(!sc){ sc=document.createElement('script'); sc.id='jspdf-script'; sc.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; document.head.appendChild(sc); }
+    const chk=setInterval(()=>{ if(window.jspdf&&window.jspdf.jsPDF){clearInterval(chk);resolve();} },100);
+    setTimeout(()=>{clearInterval(chk); if(!(window.jspdf&&window.jspdf.jsPDF))reject(new Error('PDF 모듈 로드 실패'));},8000);
+  });
+}
+
+const exGroupLabel = () => ({grade:'학년별',dept:'부서별',gender:'성별',class:'반별',org:'기관별',none:'전체'}[exGroupBy]||'');
+
+// 필터 요약 텍스트
+function exFilterSummary(){
+  const p=[];
+  if(exFilter.orgs.length) p.push(exFilter.orgs.map(o=>ORGS[o]||o).join('·'));
+  if(exFilter.depts.length) p.push(exFilter.depts.join('·'));
+  if(exFilter.grades.length) p.push(exFilter.grades.join('·'));
+  if(exFilter.genders.length) p.push(exFilter.genders.join('·'));
+  p.push(exFilter.status==='active'?'재학':exFilter.status==='leave'?'휴학':'재학+휴학');
+  return p.join(' / ');
+}
+
+// 인쇄용 HTML 생성
+function exBuildHTML(){
+  const list = exGetFiltered();
+  const groups = {};
+  list.forEach(s=>{ const {k,label}=exGroupKeyLabel(s); if(!groups[k]) groups[k]={label,students:[]}; groups[k].students.push(s); });
+  const gKeys = Object.keys(groups).sort((a,b)=>{
+    if(exGroupBy==='dept'){ const order={'초등부':1,'중등부':2,'고등부':3}; return (order[groups[a].label]||9)-(order[groups[b].label]||9); }
+    const na=parseInt(groups[a].label)||999, nb=parseInt(groups[b].label)||999;
+    return na-nb || groups[a].label.localeCompare(groups[b].label,'ko');
+  });
+  const totM=list.filter(s=>s.gender==='남').length, totF=list.filter(s=>s.gender==='여').length;
+
+  const rows = gKeys.map(k=>{
+    const g=groups[k]; const studs=g.students.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
+    const m=studs.filter(s=>s.gender==='남').length, f=studs.filter(s=>s.gender==='여').length;
+    const tset=new Map();
+    studs.forEach(s=>{ const c=studentClass(s.id); if(c){ const tn=classTeacherName(c); if(tn) tset.set(c.name+'|'+tn,{cls:c.name,t:tn}); } });
+    const teachers=[...tset.values()];
+    const tline = teachers.length ? teachers.map(x=> exGroupBy==='class'?x.t:`${x.cls} ${x.t}`).join(', ') : '미지정';
+    // 남 · 여 · 미지정으로 나눠 5명씩 격자로
+    const boys   = studs.filter(s=>s.gender==='남');
+    const girls  = studs.filter(s=>s.gender==='여');
+    const others = studs.filter(s=>s.gender!=='남' && s.gender!=='여');
+    const nameCell = (s,cls)=>`<span class="nm ${cls}${curSt(s)==='leave'?' leave':''}">${esc(s.name)}${curSt(s)==='leave'?'<i>휴학</i>':''}</span>`;
+    const sec = (list,tag,tcls,ncls)=> list.length
+      ? `<div class="ex-gsec"><span class="ex-gtag ${tcls}">${tag} ${list.length}</span><div class="ex-ngrid">${list.map(s=>nameCell(s,ncls)).join('')}</div></div>`
+      : '';
+    const names = sec(boys,'남','m','m') + sec(girls,'여','f','f') + sec(others,'?','n','');
+    return `<tr>
+      <td class="exg">${esc(g.label)}</td>
+      <td class="exc">${studs.length}<span class="exmf">남${m}·여${f}</span></td>
+      <td class="ext">${esc(tline)}</td>
+      <td class="exn">${names}</td>
+    </tr>`;
+  }).join('');
+
+  // 하단 기관명: 추출된 명단에 실제로 포함된 기관만 표시
+  const orgSet = [...new Set(list.map(s=>s.org).filter(Boolean))];
+  const orgLine = orgSet.length ? orgSet.map(o=>ORGS[o]||o).join(' · ')
+                : (ORGS[CU && CU.org] || '');
+
+  return `<div class="ex-doc">
+    <div class="ex-head">
+      <div class="ex-title">재학생 명단 추출</div>
+      <div class="ex-sub">${esc(exFilterSummary())} · ${exGroupLabel()} 묶기</div>
+    </div>
+    <div class="ex-total">전체 <b>${list.length}명</b> (남 ${totM} · 여 ${totF}) · ${gKeys.length}개 그룹</div>
+    <table class="ex-tbl">
+      <thead><tr><th style="width:90px">그룹</th><th style="width:76px">인원</th><th style="width:150px">담임</th><th>명단</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="ex-foot">추출일 ${todayStr()}${orgLine?' · '+esc(orgLine):''}</div>
+  </div>`;
+}
+
+const EX_CSS = `
+.ex-doc{background:#FFFFFF;color:#1a1a1a;font-family:'Noto Sans KR',sans-serif;width:960px;padding:34px;box-sizing:border-box;}
+.ex-head{text-align:center;margin-bottom:8px;}
+.ex-title{font-size:22px;font-weight:800;color:#1b4332;}
+.ex-sub{font-size:12.5px;color:#8ba396;margin-top:6px;}
+.ex-total{text-align:center;font-size:13px;color:#2f5c48;margin-bottom:16px;font-weight:600;}
+.ex-total b{color:#1b4332;font-size:15px;}
+.ex-tbl{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}
+.ex-tbl th,.ex-tbl td{border:1px solid #d9e2dd;padding:8px 9px;vertical-align:middle;word-break:break-word;}
+.ex-tbl thead th{background:#2d6a4f;color:#fff;font-weight:700;text-align:center;}
+.ex-tbl .exg{background:#E8F3EF;font-weight:800;color:#1b4332;text-align:center;}
+.ex-tbl .exc{text-align:center;font-weight:800;color:#8a6410;background:#F7EFD8;}
+.ex-tbl .exc .exmf{display:block;font-size:9.5px;color:#96865a;font-weight:500;margin-top:2px;}
+.ex-tbl .ext{font-size:11px;color:#4a6357;text-align:center;background:#E8F3EF;}
+.ex-tbl .exn{padding:6px 8px;}
+.ex-gsec{display:flex;align-items:flex-start;gap:7px;}
+.ex-gsec + .ex-gsec{margin-top:5px;padding-top:5px;border-top:1px dashed #e3ebe6;}
+.ex-gtag{flex:0 0 44px;text-align:center;font-size:10px;font-weight:800;border-radius:10px;padding:3px 0;margin-top:2px;}
+.ex-gtag.m{background:#E6F0FB;color:#2B6CB0;}
+.ex-gtag.f{background:#FCE8F3;color:#D53F8C;}
+.ex-gtag.n{background:#EEF0EE;color:#6b756f;}
+.ex-ngrid{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:3px 6px;}
+.ex-ngrid .nm{font-size:12px;font-weight:600;color:#243029;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:2px 4px;border-radius:8px;}
+.ex-ngrid .nm.m{background:#F3F8FD;}
+.ex-ngrid .nm.f{background:#FDF3F8;}
+.ex-ngrid .nm.leave{opacity:.6;}
+.ex-ngrid .nm i{font-style:normal;font-size:9.5px;font-weight:800;color:#C2410C;margin-left:3px;}
+.ex-foot{text-align:center;font-size:10.5px;color:#a8b5ac;margin-top:14px;}
+`;
+
+async function exImage(){
+  const list=exGetFiltered(); if(!list.length){ toast('추출된 명단이 없습니다.','err'); return; }
+  window.showLoading && window.showLoading('이미지를 만드는 중…');
+  try{
+    await exEnsureH2C();
+    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;';
+    holder.innerHTML=`<style>${EX_CSS}</style>`+exBuildHTML();
+    document.body.appendChild(holder);
+    const node=holder.querySelector('.ex-doc');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#FFFFFF'});
+    document.body.removeChild(holder);
+    const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download=`명단추출_${exGroupLabel()}_${todayStr()}.png`; a.click();
+    window.hideLoading && window.hideLoading(); toast('이미지를 저장했습니다.','ok');
+  }catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.exImage = exImage;
+
+async function exPDF(){
+  const list=exGetFiltered(); if(!list.length){ toast('추출된 명단이 없습니다.','err'); return; }
+  window.showLoading && window.showLoading('PDF를 만드는 중…');
+  try{
+    await exEnsureH2C(); await exEnsureJsPDF();
+    const holder=document.createElement('div'); holder.style.cssText='position:fixed;left:-99999px;top:0;';
+    holder.innerHTML=`<style>${EX_CSS}</style>`+exBuildHTML();
+    document.body.appendChild(holder);
+    const node=holder.querySelector('.ex-doc');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#FFFFFF'});
+    document.body.removeChild(holder);
+    const { jsPDF }=window.jspdf;
+    const pdf=new jsPDF({orientation:'portrait',unit:'mm',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), margin=8;
+    const iw=pw-margin*2, ih=canvas.height*iw/canvas.width;
+    const img=canvas.toDataURL('image/jpeg',0.92);
+    if(ih<=ph-margin*2){ pdf.addImage(img,'JPEG',margin,margin,iw,ih); }
+    else { let rem=canvas.height,pos=0; const pageH=Math.floor(canvas.width*(ph-margin*2)/iw);
+      while(rem>0){ const sl=document.createElement('canvas'); sl.width=canvas.width; sl.height=Math.min(pageH,rem);
+        sl.getContext('2d').drawImage(canvas,0,pos,canvas.width,sl.height,0,0,canvas.width,sl.height);
+        const sh=sl.height*iw/canvas.width; if(pos>0)pdf.addPage(); pdf.addImage(sl.toDataURL('image/jpeg',0.92),'JPEG',margin,margin,iw,sh);
+        rem-=sl.height; pos+=sl.height; } }
+    pdf.save(`명단추출_${exGroupLabel()}_${todayStr()}.pdf`);
+    window.hideLoading && window.hideLoading(); toast('PDF를 저장했습니다.','ok');
+  }catch(e){ window.hideLoading && window.hideLoading(); toast('출력 실패: '+(e.message||''),'err'); }
+}
+window.exPDF = exPDF;
+
+function exExcel(){
+  const list=exGetFiltered(); if(!list.length){ toast('추출된 명단이 없습니다.','err'); return; }
+  try{
+    const groups={};
+    list.forEach(s=>{ const {k,label}=exGroupKeyLabel(s); if(!groups[k]) groups[k]={label,students:[]}; groups[k].students.push(s); });
+    const gKeys=Object.keys(groups).sort((a,b)=>{
+      if(exGroupBy==='dept'){ const o={'초등부':1,'중등부':2,'고등부':3}; return (o[groups[a].label]||9)-(o[groups[b].label]||9); }
+      const na=parseInt(groups[a].label)||999,nb=parseInt(groups[b].label)||999; return na-nb||groups[a].label.localeCompare(groups[b].label,'ko');
+    });
+    const wb=XLSX.utils.book_new();
+    // 시트1: 그룹 요약
+    const sum=[['그룹','인원','남','여','담임']];
+    gKeys.forEach(k=>{ const g=groups[k]; const studs=g.students;
+      const m=studs.filter(s=>s.gender==='남').length,f=studs.filter(s=>s.gender==='여').length;
+      const tset=new Map(); studs.forEach(s=>{ const c=studentClass(s.id); if(c){const tn=classTeacherName(c); if(tn)tset.set(c.name+'|'+tn,`${c.name} ${tn}`);} });
+      sum.push([g.label, studs.length, m, f, [...tset.values()].join(', ')||'미지정']);
+    });
+    const tm=list.filter(s=>s.gender==='남').length, tf=list.filter(s=>s.gender==='여').length;
+    sum.push(['합계', list.length, tm, tf, '']);
+    const ws1=XLSX.utils.aoa_to_sheet(sum); ws1['!cols']=[{wch:14},{wch:8},{wch:6},{wch:6},{wch:30}];
+    XLSX.utils.book_append_sheet(wb, ws1, '그룹 요약');
+    // 시트2: 전체 명단
+    const det=[['그룹','이름','성별','기관','학년','반','담임','상태']];
+    gKeys.forEach(k=>{ const g=groups[k]; g.students.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko')).forEach(s=>{
+      const c=studentClass(s.id);
+      det.push([g.label, s.name, s.gender||'', ORGS[s.org]||s.org, studentGrade(s.id)||'', c?c.name:'', c?classTeacherName(c):'', STATUS[curSt(s)]||'재학']);
+    }); });
+    const ws2=XLSX.utils.aoa_to_sheet(det); ws2['!cols']=[{wch:12},{wch:10},{wch:6},{wch:12},{wch:8},{wch:10},{wch:8},{wch:6}];
+    XLSX.utils.book_append_sheet(wb, ws2, '전체 명단');
+    XLSX.writeFile(wb, `명단추출_${exGroupLabel()}_${todayStr()}.xlsx`);
+    toast('엑셀 파일을 저장했습니다.','ok');
+  }catch(e){ toast('엑셀 생성 실패: '+(e.message||''),'err'); }
+}
+window.exExcel = exExcel;
+
+// 출력 전 미리보기 (실제 출력물과 동일한 레이아웃을 모달로)
+function exPreview(){
+  const list = exGetFiltered();
+  if(!list.length){ toast('추출된 명단이 없습니다.','err'); return; }
+  const mv = document.createElement('div'); mv.className='mov'; mv.id='ex-preview-mod';
+  mv.innerHTML = `<div class="mbk" onclick="document.getElementById('ex-preview-mod').remove()"></div>
+    <div class="mbox" style="max-width:96vw;width:1040px;max-height:92vh;display:flex;flex-direction:column">
+      <div class="mtitle">👁️ 출력 미리보기</div>
+      <div class="msub">아래 모습 그대로 이미지·PDF로 저장됩니다.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+        <button class="bm" onclick="exExcel()">📊 엑셀</button>
+        <button class="bm" onclick="exImage()">🖼️ 이미지 저장</button>
+        <button class="bm" onclick="exPDF()">🖨️ PDF 저장</button>
+      </div>
+      <div style="overflow:auto;flex:1;border:1px solid var(--ivd);border-radius:10px;background:var(--iv);padding:16px;display:flex;justify-content:center;align-items:flex-start">
+        <div style="box-shadow:0 4px 20px rgba(0,0,0,.15);flex-shrink:0">
+          <style>${EX_CSS}</style>
+          ${exBuildHTML()}
+        </div>
+      </div>
+      <div class="mact"><button class="bs" onclick="document.getElementById('ex-preview-mod').remove()">닫기</button></div>
+    </div>`;
+  $I('mwrap').appendChild(mv);
+}
+window.exPreview = exPreview;
+
+function downloadContactExcel(){
+  let list = STUDENTS.filter(s=>curSt(s)==='active');
+  if(contactOrg) list = list.filter(s=>s.org===contactOrg);
+  if(contactGrade) list = list.filter(s=>studentGrade(s.id)===contactGrade);
+  list.sort((a,b)=>(a.org||'').localeCompare(b.org||'')||(studentGrade(a.id)||'').localeCompare(studentGrade(b.id)||'')||(a.name||'').localeCompare(b.name||'','ko'));
+  const aoa = [['학생','성별','기관','부서','학년','보호자','연락처','주소']];
+  list.forEach(s=> aoa.push([s.name, s.gender||'', ORGS[s.org]||s.org, s.dept||'', studentGrade(s.id)||'', s.guardian||'', s.guardianPhone||s.phone||'', s.address||'']));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:12},{wch:6},{wch:14},{wch:10},{wch:8},{wch:12},{wch:15},{wch:24}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '연락처');
+  XLSX.writeFile(wb, `연락처명단_${todayStr()}.xlsx`);
+  toast('엑셀을 다운로드했습니다.','ok');
+}
+window.downloadContactExcel = downloadContactExcel;
+// 특정 날짜에 휴학 중인지 — 공용 규칙(student-status.js): 휴학 기간 안이거나 재적 상태가 «휴학»
+function isOnLeave(s, dateStr){ return StuStatus.onLeave(s, dateStr); }
+window.isOnLeave = isOnLeave;
+
+// ── 학번 일괄 재배정 (출생연도 기준) ──
+async function reassignStudentNos(){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, '학번 일괄 재배정 전');
+  const noBirth = STUDENTS.filter(s=>!s.birth);
+  let msg = '모든 학생의 학번을 출생연도 기준으로 다시 매깁니다.\n\n규칙: 기관별 + 출생연도별로 묶고, 등록순으로 번호 부여 (예: 2018-01)\n\n기존 학번은 모두 바뀝니다. 계속할까요?';
+  if(noBirth.length) msg = `⚠️ 생년월일이 없는 학생이 ${noBirth.length}명 있습니다. 이 학생들은 재배정에서 제외됩니다.\n(${noBirth.slice(0,5).map(s=>s.name).join(', ')}${noBirth.length>5?' 외':''})\n\n` + msg;
+  if(!confirm(msg)) return;
+
+  // 기관+출생연도별 그룹, 등록순(createdAt) 정렬
+  const groups = {};
+  STUDENTS.filter(s=>s.birth).forEach(s=>{
+    const by = s.birth.slice(0,4);
+    const key = `${s.org}-${by}`;
+    (groups[key]=groups[key]||[]).push(s);
+  });
+  let updated = 0;
+  try {
+    for(const key of Object.keys(groups)){
+      const [org, by] = key.split('-');
+      // 등록순: createdAt 있으면 그걸로, 없으면 기존 학번/이름순
+      const arr = groups[key].sort((a,b)=>{
+        const ta = a.createdAt?.seconds||0, tb = b.createdAt?.seconds||0;
+        if(ta!==tb) return ta-tb;
+        return (a.studentNo||'').localeCompare(b.studentNo||'') || a.name.localeCompare(b.name,'ko');
+      });
+      for(let i=0;i<arr.length;i++){
+        const newNo = `${by}-${pad(i+1)}`;
+        if(arr[i].studentNo !== newNo){
+          await updateDoc(doc(db,'students',arr[i].id), {studentNo:newNo});
+          arr[i].studentNo = newNo;
+          updated++;
+        }
+      }
+    }
+    logActivity('수정','학생',`학번 일괄 재배정 (${updated}명)`);
+    toast(`${updated}명의 학번이 재배정되었습니다.`,'ok');
+    await loadStudents();
+    renderList();
+  } catch(e){ toast('재배정 실패: '+e.message,'err'); }
+}
+window.reassignStudentNos = reassignStudentNos;
+
+// ── 학번 생성 (출생연도 기준, 등록순 고정) ──
+// 규칙: 출생연도 4자리 + '-' + 그 기관/그 출생연도 등록 순번 2자리
+async function genStudentNo(org, birthYear){
+  const prefix = `${birthYear}`;
+  // 같은 기관 + 같은 출생연도 학생 수 세기
+  const cnt = STUDENTS.filter(s => s.org===org && (s.birth||'').slice(0,4)===String(birthYear)).length;
+  return `${prefix}-${pad((cnt+1))}`;
+}
+
+window.renderList = renderList;
+
+// ── 학생 등록/수정 폼 ──
+function openStudentForm(editId){
+  const s = editId ? STUDENTS.find(x=>x.id===editId) : null;
+  const thisYear = new Date().getFullYear();
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">${s?'학생 정보 수정':'새 학생 등록'}</div>
+      <div class="msub">${s?'변경 사항은 이력에 자동 기록됩니다.':'기본정보를 입력하세요. * 표시는 필수입니다.'}</div>
+
+      <div class="seclb">기본 정보</div>
+      <div class="fg">
+        <div class="fgrp"><label>이름 *</label><input id="f-name" value="${s?.name||''}"></div>
+        <div class="fgrp"><label>성별</label><select id="f-gender">
+          <option value="">선택</option>
+          <option value="남"${s?.gender==='남'?' selected':''}>남</option>
+          <option value="여"${s?.gender==='여'?' selected':''}>여</option>
+        </select></div>
+        <div class="fgrp"><label>생년월일 *</label><input type="date" id="f-birth" value="${s?.birth||''}"></div>
+        <div class="fgrp"><label>기관 *</label><select id="f-org">${orgOptionsHTML(false, s?.org)}</select>
+          ${s?`<span style="font-size:11px;color:var(--gm);margin-top:3px">기관을 바꾸면 기존 반 편성에서는 빠지니, 새 기관에서 다시 반 편성을 해주세요.</span>`:''}</div>
+        <div class="fgrp"><label>입학일</label><input type="date" id="f-admit" value="${s?.admitDate||''}"></div>
+        <div class="fgrp"><label>편입일</label><input type="date" id="f-transfer" value="${s?.transferDate||''}"></div>
+        <div class="fgrp"><label>자퇴일</label><input type="date" id="f-quit" value="${s?.quitDate||''}"></div>
+        <div class="fgrp"><label>재적 상태 <span style="font-weight:400;color:var(--tl);font-size:11px">(오늘 기준)</span></label><select id="f-status" onchange="onStatusPick()">
+          ${Object.entries(STATUS).map(([k,v])=>`<option value="${k}"${(s?curSt(s):'active')===k?' selected':''}>${v}</option>`).join('')}
+        </select>
+          <span id="f-status-hint" style="font-size:11px;color:var(--warn);margin-top:3px;line-height:1.5">${statusHint(s)}</span></div>
+      </div>
+
+      <div class="seclb">연락처</div>
+      <div class="fg">
+        <div class="fgrp"><label>학생 연락처</label><input id="f-phone" value="${s?.phone||''}" placeholder="010-0000-0000"></div>
+        <div class="fgrp"><label>학생 이메일</label><input id="f-email" value="${s?.email||''}" placeholder="student@email.com"></div>
+        <div class="fgrp"><label>보호자 이름</label><input id="f-guardian" value="${s?.guardian||''}"></div>
+        <div class="fgrp"><label>보호자 연락처</label><input id="f-gphone" value="${s?.guardianPhone||''}" placeholder="010-0000-0000"></div>
+        <div class="fgrp full"><label>주소</label><input id="f-addr" value="${s?.address||''}"></div>
+      </div>
+
+      <div class="seclb">휴학 기간 <span style="font-weight:400;color:var(--tl);font-size:11px">(여러 번 가능 · 복학일을 모르면 끝 날짜를 비워 두세요 · 기간 안에는 재학생 명단·반편성·출석부에서 «휴학»으로 바뀌고 출결·통계에서 빠져요)</span></div>
+      <div id="leave-list"></div>
+      <button type="button" class="bm" onclick="addLeaveRow()" style="margin-top:4px">＋ 휴학 기간 추가</button>
+
+      <div class="seclb">특이사항</div>
+      <div class="fg"><div class="fgrp full"><textarea id="f-memo" rows="2" placeholder="알레르기, 특이사항 등">${s?.memo||''}</textarea></div></div>
+
+      <input type="hidden" id="f-admit-year" value="${s?.admitYear||thisYear}">
+      <div class="mact">
+        ${s&&isAdmin()?`<button class="bd" onclick="deleteStudent('${s.id}')">삭제</button>`:''}
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="saveStudent('${s?.id||''}')">저장</button>
+      </div>
+    </div></div>`;
+  _formStu = s || null;
+  renderLeaveRows(StuStatus.periods(s));
+}
+window.openStudentForm = openStudentForm;
+
+// 폼을 열 때 재적 상태 칸 아래 안내
+function statusHint(s){
+  if(!s || curSt(s)!=='leave') return '';
+  const lv = StuStatus.period(s);
+  if(lv && lv.end) return `휴학 기간 ~${Number(lv.end.slice(5,7))}/${Number(lv.end.slice(8,10))} — 지나면 저절로 «재학»으로 바뀌어요.`;
+  if(lv) return '복학일 미정 — 복학하면 «재학»으로 바꿔 주세요 (휴학 기간이 어제까지로 마감돼요).';
+  if(StuStatus.needsCheck(s)) return '휴학 기간 기록이 끝났는데 재적 상태가 «휴학»이라 계속 휴학으로 봐요. 복학했으면 «재학»으로 바꿔 주세요.';
+  return '휴학 기간 기록이 없어요 — 휴학 시작일을 아래에 넣어 두면 출결이 그날부터 정확히 빠져요.';
+}
+let _formStu = null;   // 폼을 연 학생 (재적 상태를 바꿀 때 원래 상태 참고)
+// 재적 상태를 «휴학»/«재학»으로 바꾸면 휴학 기간을 함께 맞춘다 (저장 전 화면에서만 — 고쳐서 저장하면 된다)
+function readLeaveRows(){
+  return Array.from(document.querySelectorAll('.leave-row')).map(r=>({
+    start:r.querySelector('.lv-start').value, end:r.querySelector('.lv-end').value
+  }));
+}
+function onStatusPick(){
+  const v = $I('f-status').value, T = StuStatus.today(), Y = StuStatus.addDays(T, -1);
+  const md = x => `${Number(x.slice(5,7))}/${Number(x.slice(8,10))}`;
+  let rows = readLeaveRows(), msg = '';
+  const covering = r => r.start && r.start<=T && (!r.end || r.end>=T);
+  if(v==='leave'){
+    if(!rows.some(covering)){
+      rows.push({start:T, end:''});
+      msg = `휴학 기간 ${md(T)}~ (복학일 미정)을 넣었어요. 시작일·복학일은 아래에서 고칠 수 있어요.`;
+    }
+  } else if(v==='active'){
+    let n = 0;
+    rows = rows.filter(r=>{
+      if(!covering(r)) return true;
+      n++;
+      if(r.start<=Y){ r.end = Y; return true; }
+      return false;                          // 오늘 시작한 휴학 → 지운다
+    });
+    if(n) msg = `걸쳐 있던 휴학 기간을 어제(${md(Y)})까지로 마쳤어요 — 오늘부터 재학.`;
+    else if(_formStu && (_formStu.status||'active')==='leave' && StuStatus.onLeave({status:'leave', leaves:rows.filter(r=>r.start)}, Y)){
+      // 기간 기록 없이 상태로만 휴학이던 학생 — 언제부터였는지 넣어야 지난 출결이 바르게 빠진다
+      rows.push({start:'', end:Y});
+      msg = `복학 처리: 휴학 기간 «? ~ ${md(Y)}»을 넣었어요. 휴학 시작일을 채워 주세요 (모르면 그 줄을 지우면 돼요 — 지난 날도 출석으로 셉니다).`;
+    }
+  }
+  renderLeaveRows(rows);
+  const h = $I('f-status-hint'); if(h) h.textContent = msg;
+}
+window.onStatusPick = onStatusPick;
+
+// ── 휴학 기간 행 관리 ──
+function renderLeaveRows(leaves){
+  const el = $I('leave-list'); if(!el) return;
+  if(!leaves || !leaves.length){ el.innerHTML = '<p style="font-size:12px;color:var(--tl);padding:4px 0">등록된 휴학 기간이 없습니다.</p>'; return; }
+  el.innerHTML = leaves.map((lv,i)=>`
+    <div class="leave-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+      <input type="date" class="lv-start" value="${lv.start||''}" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">
+      <span style="color:var(--tl)">~</span>
+      <input type="date" class="lv-end" value="${lv.end||''}" style="height:38px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;background:var(--iv)">
+      <button type="button" class="bm" style="background:var(--danger-bg);color:var(--danger)" onclick="removeLeaveRow(${i})">삭제</button>
+    </div>`).join('');
+}
+// 시작일이 있는 행만 (끝 날짜가 비면 «복학일 미정»)
+function collectLeaves(){
+  return readLeaveRows().filter(r=>r.start).map(r=>({start:r.start, end:r.end||''}))
+    .sort((a,b)=>a.start.localeCompare(b.start));
+}
+// 저장 전에 휴학 기간이 말이 되는지
+function leaveRowsError(){
+  for(const r of readLeaveRows()){
+    if(!r.start && r.end) return '휴학 기간의 시작일을 넣어 주세요.';
+    if(r.start && r.end && r.end < r.start) return `휴학 기간 ${r.start} ~ ${r.end} — 끝 날짜가 시작일보다 빨라요.`;
+  }
+  return '';
+}
+function addLeaveRow(){
+  const cur = readLeaveRows();   // 쓰다 만 행도 그대로 둔다
+  cur.push({start:'', end:''});
+  renderLeaveRows(cur);
+}
+window.addLeaveRow = addLeaveRow;
+function removeLeaveRow(i){
+  const rows = readLeaveRows();
+  rows.splice(i,1);
+  renderLeaveRows(rows);
+}
+window.removeLeaveRow = removeLeaveRow;
+function closeMod(){ $I('mwrap').innerHTML=''; }
+window.closeMod = closeMod;
+
+// ── 학생 저장 ──
+async function saveStudent(editId){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, editId?'학생 정보 수정':'학생 추가');
+  const name = $I('f-name').value.trim();
+  const org = $I('f-org').value;
+  const birth = $I('f-birth').value;
+  if(!name) return toast('이름을 입력하세요.','err');
+  if(!org) return toast('기관을 선택하세요.','err');
+  if(!birth) return toast('생년월일을 입력하세요. (학번 부여에 필요합니다)','err');
+  const lvErr = leaveRowsError(); if(lvErr) return toast(lvErr,'err');
+
+  const admitDate = $I('f-admit').value;
+  const admitYear = admitDate ? Number(admitDate.slice(0,4)) : Number($I('f-admit-year').value);
+  const birthYear = Number(birth.slice(0,4));
+
+  const leaves = collectLeaves();
+  const newData = {
+    name, org,
+    status: StuStatus.canonical($I('f-status').value, leaves),   // 날짜가 정해진 휴학은 «재학 + 기간»으로 저장 (그 기간만 휴학)
+    gender: $I('f-gender').value,
+    birth,
+    admitDate, admitYear,
+    transferDate: $I('f-transfer').value,
+    quitDate: $I('f-quit').value,
+    leaves,
+    phone: $I('f-phone').value.trim(),
+    email: $I('f-email').value.trim(),
+    guardian: $I('f-guardian').value.trim(),
+    guardianPhone: $I('f-gphone').value.trim(),
+    address: $I('f-addr').value.trim(),
+    memo: $I('f-memo').value.trim(),
+  };
+
+  try {
+    if(editId){
+      // 변경 이력 계산
+      const old = STUDENTS.find(s=>s.id===editId);
+      const changes = [];
+      const fieldNames = {name:'이름',gender:'성별',birth:'생년월일',admitDate:'입학일',transferDate:'편입일',quitDate:'자퇴일',status:'재적상태',phone:'학생연락처',email:'이메일',guardian:'보호자',guardianPhone:'보호자연락처',address:'주소',memo:'특이사항'};
+      for(const k of Object.keys(fieldNames)){
+        const ov = old[k]||'', nv = newData[k]||'';
+        let ovd = ov, nvd = nv;
+        if(k==='status'){ ovd = STATUS[ov]||ov; nvd = STATUS[nv]||nv; }
+        if(ovd !== nvd) changes.push(`${fieldNames[k]}: ${ovd||'(없음)'} → ${nvd||'(없음)'}`);
+      }
+      const lvStr = a => StuStatus.periods({leaves:a}).map(l=>`${l.start}~${l.end||'미정'}`).join(', ');
+      if(lvStr(old.leaves) !== lvStr(newData.leaves)) changes.push(`휴학기간: ${lvStr(old.leaves)||'(없음)'} → ${lvStr(newData.leaves)||'(없음)'}`);
+      const hist = old.history || [];
+      if(changes.length){
+        hist.push({ at: Date.now(), by: CU.name, changes });
+      }
+      newData.history = hist;
+      newData.studentNo = old.studentNo;  // 학번 유지
+      await updateDoc(doc(db,'students',editId), newData);
+      logActivity('수정', '학생', `${name} 정보 수정`);
+      // 🎫 졸업 · 자퇴 · 휴학 · 이름 · 기관이 바뀌면 그 학생 보호자의 출입증을 바로 다시 계산 (학부모 사이트가 저절로 따라감)
+      if((old.status||'active') !== newData.status || lvStr(old.leaves) !== lvStr(newData.leaves) || old.name !== newData.name || old.org !== newData.org) gateRecalc([editId]);
+      toast('수정되었습니다.','ok');
+      // 🏠 휴학이 바뀌면 출결 기록은 지우지 않는다 — 가려졌다(보관) 다시 보였다 할 뿐. 몇 건인지 알려 드린다
+      if(lvStr(old.leaves) !== lvStr(newData.leaves) || (old.status||'active') !== newData.status){
+        try {
+          const qs = await getDocs(query(collection(db,'studentAttendance'), where('studentId','==',editId)));
+          const was = { status: old.status, leaves: old.leaves }, now = { status: newData.status, leaves: newData.leaves };
+          let hid = 0, back = 0;
+          qs.forEach(d=>{ const r = d.data(); if(!r.date) return;
+            const a = StuStatus.onLeave(was, r.date), b = StuStatus.onLeave(now, r.date);
+            if(!a && b) hid++; else if(a && !b) back++; });
+          const parts = [];
+          if(hid)  parts.push(`휴학 기간에 들어간 출결 ${hid}건은 지우지 않고 보관해요 (휴학을 풀면 다시 보여요)`);
+          if(back) parts.push(`보관돼 있던 출결 ${back}건이 다시 보여요`);
+          if(parts.length) toast('수정되었습니다 · ' + parts.join(' · '), 'ok', 6000);
+        } catch(e){}
+      }
+    } else {
+      newData.studentNo = await genStudentNo(org, birthYear);
+      newData.history = [{ at: Date.now(), by: CU.name, changes:['학생 등록'] }];
+      newData.createdAt = Timestamp.now();
+      newData.siblings = [];
+      await addDoc(collection(db,'students'), newData);
+      logActivity('입력', '학생', `${name} 학생 등록`);
+      toast('등록되었습니다.','ok');
+    }
+    closeMod();
+    await loadStudents();
+    renderList();
+  } catch(e){
+    toast('저장 실패: ' + e.message, 'err');
+  }
+}
+window.saveStudent = saveStudent;
+
+// ── 학생 삭제 ──
+async function deleteStudent(id){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, '학생 삭제 전');
+  if(!confirm('정말 이 학생을 삭제할까요?\n출석·성적 등 연결된 데이터가 있으면 문제가 될 수 있습니다.\n(자퇴/졸업은 삭제 대신 재적상태 변경을 권장합니다)')) return;
+  try {
+    const s = STUDENTS.find(x=>x.id===id);
+    await deleteDoc(doc(db,'students',id));
+    logActivity('삭제', '학생', `${s?.name||''} 학생 삭제`);
+    gateRecalc([id]);   // 🎫 학부모 연결도 정리
+    toast('삭제되었습니다.');
+    closeMod();
+    await loadStudents();
+    renderList();
+  } catch(e){ toast('삭제 실패: '+e.message,'err'); }
+}
+window.deleteStudent = deleteStudent;
+
+// ── 학생 상세 보기 ──
+/* ═══════════════════════════════════════════════
+   학부모 가입코드 — 평소 고정 + 필요시 재발급
+   joinCodes/{code} : { code, studentId, org, studentName, active, createdAt, createdBy }
+   students/{id}.joinCode : 현재 유효 코드 (조회 편의용 캐시)
+   ═══════════════════════════════════════════════ */
+// 헷갈리는 글자(0,O,1,I,L) 제외한 안전한 코드 생성
+function genJoinCode(org){
+  const prefix = org === 'daniel' ? 'DA' : org === 'jihyebit' ? 'JH' : 'ST';
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // 0,O,1,I,L 제외
+  const pick = n => Array.from({length:n}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+  return `${prefix}-${pick(2)}-${pick(4)}`;
+}
+
+// 코드 중복 방지 (아주 드물지만 안전하게)
+async function genUniqueJoinCode(org){
+  for(let i=0;i<8;i++){
+    const code = genJoinCode(org);
+    try {
+      const ex = await getDoc(doc(db,'joinCodes',code));
+      if(!ex.exists()) return code;
+    } catch(e){ return code; }
+  }
+  return genJoinCode(org) + Math.floor(Math.random()*9);
+}
+
+// 상세 모달 안의 가입코드 박스 HTML
+function joinCodeBoxHTML(s){
+  const code = s.joinCode || '';
+  if(!code){
+    return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--tl)">아직 발급된 코드가 없습니다.</span>
+      <button class="bm" onclick="issueJoinCode('${s.id}')">＋ 코드 발급</button>
+    </div>`;
+  }
+  return `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <code style="font-size:16px;font-weight:800;letter-spacing:1px;background:var(--gp);color:var(--gm);padding:7px 14px;border-radius:8px;border:1px solid var(--gm)">${code}</code>
+    <button class="bm" onclick="copyJoinCode('${code}')">📋 복사</button>
+    <button class="bm" onclick="reissueJoinCode('${s.id}')">🔄 재발급</button>
+  </div>
+  <div style="font-size:12px;color:var(--tl);margin-top:6px">학부모에게 이 코드를 전달하세요 (새 코드는 30일 동안 쓸 수 있어요). 재발급하면 이전 코드는 즉시 무효화됩니다. QR 코드표는 학부모 관리 › 연결 현황에서 인쇄해요.</div>`;
+}
+
+// 코드 발급 (최초)
+async function issueJoinCode(studentId){
+  const s = STUDENTS.find(x=>x.id===studentId); if(!s) return;
+  try {
+    const code = await genUniqueJoinCode(s.org);
+    await setDoc(doc(db,'joinCodes',code), {
+      code, studentId, org: s.org, studentName: s.name,
+      active: true, createdAt: Timestamp.now(), createdBy: CU.name,
+      expiresAt: Timestamp.fromMillis(Date.now() + 30*864e5),   // 🎫 v122: 새 코드는 30일 동안만 (연결한 학부모는 그대로)
+      grade: studentGrade(studentId)||s.grade||'', className: studentClassName(studentId)||s.className||'',   // 👨‍👩‍👧 반편성 기준
+    });
+    await updateDoc(doc(db,'students',studentId), { joinCode: code });
+    s.joinCode = code;
+    logActivity('입력','학생',`${s.name} 가입코드 발급 (${code})`);
+    const box = $I('jc-box-'+studentId); if(box) box.innerHTML = joinCodeBoxHTML(s);
+    toast('가입코드를 발급했습니다.','ok');
+  } catch(e){ toast('발급 실패: '+e.message,'err'); }
+}
+
+// 재발급 (이전 코드 무효화 + 새 코드)
+async function reissueJoinCode(studentId){
+  const s = STUDENTS.find(x=>x.id===studentId); if(!s) return;
+  if(!confirm('현재 코드를 무효화하고 새 코드를 발급합니다.\n이미 연결된 학부모는 계속 열람할 수 있고, 새로 연결하려는 사람은 새 코드가 필요합니다.\n\n계속할까요?')) return;
+  try {
+    const old = s.joinCode;
+    if(old){
+      try { await updateDoc(doc(db,'joinCodes',old), { active:false, revokedAt:Timestamp.now(), revokedBy:CU.name }); } catch(e){}
+    }
+    const code = await genUniqueJoinCode(s.org);
+    await setDoc(doc(db,'joinCodes',code), {
+      code, studentId, org: s.org, studentName: s.name,
+      active: true, createdAt: Timestamp.now(), createdBy: CU.name,
+      expiresAt: Timestamp.fromMillis(Date.now() + 30*864e5),   // 🎫 v122: 새 코드는 30일 동안만 (연결한 학부모는 그대로)
+      grade: studentGrade(studentId)||s.grade||'', className: studentClassName(studentId)||s.className||'',   // 👨‍👩‍👧 반편성 기준
+    });
+    await updateDoc(doc(db,'students',studentId), { joinCode: code });
+    s.joinCode = code;
+    logActivity('수정','학생',`${s.name} 가입코드 재발급 (${old||'-'} → ${code})`);
+    const box = $I('jc-box-'+studentId); if(box) box.innerHTML = joinCodeBoxHTML(s);
+    toast('새 코드를 발급했습니다.','ok');
+  } catch(e){ toast('재발급 실패: '+e.message,'err'); }
+}
+
+// 코드 복사
+function copyJoinCode(code){
+  const done = () => toast('코드를 복사했습니다.','ok');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(done).catch(()=>fallbackCopy(code,done));
+  } else fallbackCopy(code, done);
+}
+function fallbackCopy(text, cb){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); cb&&cb(); } catch(e){}
+  document.body.removeChild(ta);
+}
+window.issueJoinCode = issueJoinCode;
+window.reissueJoinCode = reissueJoinCode;
+window.copyJoinCode = copyJoinCode;
+
+function openStudentDetail(id){
+  const s = STUDENTS.find(x=>x.id===id); if(!s) return;
+  const st = curSt(s);
+  // 형제 정보
+  const sibs = (s.siblings||[]).map(sid => STUDENTS.find(x=>x.id===sid)).filter(Boolean);
+  const sibHTML = sibs.length
+    ? sibs.map(sb=>`<span class="sibchip">${sb.name} (${ORGS[sb.org]||sb.org})${isAdmin()?`<span class="x" onclick="unlinkSibling('${s.id}','${sb.id}')">✕</span>`:''}</span>`).join('')
+    : '<span style="font-size:13px;color:var(--tl)">등록된 형제가 없습니다.</span>';
+  // 변경 이력
+  const hist = (s.history||[]).slice().reverse();
+  const histHTML = hist.length
+    ? hist.map(h=>{
+        const d = new Date(h.at);
+        const dstr = `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return `<div class="histitem"><b>${dstr}</b> · ${h.by}<br>${(h.changes||[]).join('<br>')}</div>`;
+      }).join('')
+    : '<span style="font-size:13px;color:var(--tl)">이력이 없습니다.</span>';
+
+  const row = (label,val) => val ? `<div style="display:flex;gap:8px;padding:5px 0;font-size:14px"><span style="color:var(--tl);min-width:90px">${label}</span><span style="font-weight:600">${val}</span></div>` : '';
+
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
+        <div class="savatar" style="width:52px;height:52px;font-size:20px">${s.name.charAt(0)}</div>
+        <div>
+          <div class="mtitle" style="margin:0">${s.name} <span class="badge ${STATUS_BADGE[st]}">${STATUS[st]}</span></div>
+          <div class="snum">학번 ${s.studentNo||'-'} · ${ORGS[s.org]||s.org}</div>
+        </div>
+      </div>
+
+      <div class="seclb">기본 정보</div>
+      ${row('성별',s.gender)}${row('생년월일',s.birth)}
+      ${row('입학일',s.admitDate)}${row('편입일',s.transferDate)}${row('자퇴일',s.quitDate)}
+      ${row('학생 연락처',s.phone)}${row('학생 이메일',s.email)}
+      ${row('보호자',s.guardian)}${row('보호자 연락처',s.guardianPhone)}
+      ${row('주소',s.address)}${row('특이사항',s.memo)}
+      ${StuStatus.periods(s).length?`<div class="seclb">휴학 기간</div>${StuStatus.periods(s).map(lv=>`<div style="font-size:14px;padding:4px 0">${lv.start} ~ ${lv.end||'복학일 미정'}${(todayStr()>=lv.start&&(!lv.end||todayStr()<=lv.end))?' <span class="badge b-leave">현재 휴학 중</span>':''}</div>`).join('')}`:''}
+      ${st==='leave'?`<div style="font-size:12px;color:var(--warn);margin-top:4px">${esc(statusHint(s))} 반편성·출석부·재학생 명단도 같은 기준이에요.</div>`:''}
+
+      <div class="seclb">형제 / 자매 ${isAdmin()?`<button class="bm" style="margin-left:8px" onclick="openSiblingPicker('${s.id}')">＋ 연결</button>`:''}</div>
+      <div class="sibrow">${sibHTML}</div>
+
+      ${isAdmin()?`<div class="seclb">학부모 가입코드</div>
+      <div id="jc-box-${s.id}" class="jc-box">${joinCodeBoxHTML(s)}</div>`:''}
+
+      <div class="seclb">변경 이력</div>
+      <div>${histHTML}</div>
+
+      <div class="mact">
+        ${isAdmin()?`<button class="bs" onclick="openStudentForm('${s.id}')">정보 수정</button>`:''}
+        <button class="bp" onclick="closeMod()">닫기</button>
+      </div>
+    </div></div>`;
+}
+window.openStudentDetail = openStudentDetail;
+
+// ── 형제 연결 ──
+function openSiblingPicker(id){
+  const s = STUDENTS.find(x=>x.id===id); if(!s) return;
+  const already = new Set([id, ...(s.siblings||[])]);
+  // 자동 추천: 같은 기관 + 같은 보호자 연락처
+  const auto = STUDENTS.filter(x => !already.has(x.id) && x.org===s.org && s.guardianPhone && x.guardianPhone===s.guardianPhone);
+  // 수동: 같은 기관 전체 (이미 연결된 것 제외)
+  const manual = STUDENTS.filter(x => !already.has(x.id) && x.org===s.org).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+
+  const autoHTML = auto.length
+    ? auto.map(x=>`<div class="cand"><span>👍 ${x.name} · 학번 ${x.studentNo||'-'} <span style="color:var(--goldd);font-size:11px">(보호자 연락처 일치)</span></span><button class="bm" onclick="linkSibling('${id}','${x.id}')">연결</button></div>`).join('')
+    : '<span style="font-size:13px;color:var(--tl)">추천할 형제 후보가 없습니다.</span>';
+
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="openStudentDetail('${id}')"></div>
+    <div class="mbox">
+      <div class="mtitle">형제 / 자매 연결</div>
+      <div class="msub">${s.name} 학생과 형제 관계인 학생을 연결합니다.</div>
+
+      <div class="seclb">자동 추천 (보호자 연락처 일치)</div>
+      <div>${autoHTML}</div>
+
+      <div class="seclb">수동 선택</div>
+      <div class="fgrp">
+        <select id="sib-manual">
+          <option value="">학생 선택...</option>
+          ${manual.map(x=>`<option value="${x.id}">${x.name} · 학번 ${x.studentNo||'-'}</option>`).join('')}
+        </select>
+      </div>
+      <button class="bm" style="margin-top:8px" onclick="linkSiblingManual('${id}')">선택한 학생 연결</button>
+
+      <div class="mact"><button class="bp" onclick="openStudentDetail('${id}')">완료</button></div>
+    </div></div>`;
+}
+window.openSiblingPicker = openSiblingPicker;
+
+async function linkSibling(id, sibId){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, '형제 연결 전');
+  try {
+    const a = STUDENTS.find(x=>x.id===id), b = STUDENTS.find(x=>x.id===sibId);
+    const aSibs = Array.from(new Set([...(a.siblings||[]), sibId]));
+    const bSibs = Array.from(new Set([...(b.siblings||[]), id]));
+    await updateDoc(doc(db,'students',id), {siblings:aSibs});
+    await updateDoc(doc(db,'students',sibId), {siblings:bSibs});
+    toast('형제로 연결되었습니다.','ok');
+    await loadStudents();
+    openSiblingPicker(id);
+  } catch(e){ toast('연결 실패: '+e.message,'err'); }
+}
+window.linkSibling = linkSibling;
+
+function linkSiblingManual(id){
+  const sibId = $I('sib-manual').value;
+  if(!sibId) return toast('학생을 선택하세요.','err');
+  linkSibling(id, sibId);
+}
+window.linkSiblingManual = linkSiblingManual;
+
+async function unlinkSibling(id, sibId){
+  if(!confirm('형제 연결을 해제할까요?')) return;
+  try {
+    const a = STUDENTS.find(x=>x.id===id), b = STUDENTS.find(x=>x.id===sibId);
+    await updateDoc(doc(db,'students',id), {siblings:(a.siblings||[]).filter(x=>x!==sibId)});
+    if(b) await updateDoc(doc(db,'students',sibId), {siblings:(b.siblings||[]).filter(x=>x!==id)});
+    toast('연결이 해제되었습니다.');
+    await loadStudents();
+    openStudentDetail(id);
+  } catch(e){ toast('실패: '+e.message,'err'); }
+}
+window.unlinkSibling = unlinkSibling;
+
+// ── 엑셀 일괄 등록 ──
+// 양식 컬럼 정의 (헤더명 → 내부 필드)
+const XLSX_COLS = [
+  {h:'이름', f:'name'},
+  {h:'성별(남/여)', f:'gender'},
+  {h:'생년월일(YYYY-MM-DD)', f:'birth'},
+  {h:'기관(지혜빛/다니엘)', f:'org'},
+  {h:'입학일(YYYY-MM-DD)', f:'admitDate'},
+  {h:'편입일(YYYY-MM-DD)', f:'transferDate'},
+  {h:'자퇴일(YYYY-MM-DD)', f:'quitDate'},
+  {h:'재적상태(재학/휴학/자퇴/졸업)', f:'status'},
+  {h:'학생연락처', f:'phone'},
+  {h:'학생이메일', f:'email'},
+  {h:'보호자이름', f:'guardian'},
+  {h:'보호자연락처', f:'guardianPhone'},
+  {h:'주소', f:'address'},
+  {h:'특이사항', f:'memo'},
+];
+
+// 양식 다운로드
+function downloadTemplate(){
+  const headers = XLSX_COLS.map(c=>c.h);
+  // 예시 행 2개
+  const example = [
+    ['홍길동','남','2018-03-15','다니엘','2025-03-02','','','재학','010-1234-5678','hong@email.com','홍판서','010-8765-4321','경기도 오산시 ...','땅콩 알레르기'],
+    ['김믿음','여','2021-05-20','지혜빛','','2026-03-02','','재학','','','김집사','010-1111-2222','경기도 화성시 ...','편입생 예시'],
+  ];
+  const aoa = [headers, ...example];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  // 컬럼 너비
+  ws['!cols'] = headers.map(h=>({wch: Math.max(h.length, 14)}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '학생등록');
+  XLSX.writeFile(wb, '학생등록_양식.xlsx');
+  toast('양식을 다운로드했습니다.','ok');
+}
+window.downloadTemplate = downloadTemplate;
+
+// 엑셀 업로드 처리
+function handleXlsxUpload(ev){
+  const file = ev.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      parseAndPreview(rows);
+    } catch(err){
+      toast('엑셀 읽기 실패: '+err.message,'err');
+    }
+    ev.target.value = '';  // 같은 파일 재선택 가능하게
+  };
+  reader.readAsArrayBuffer(file);
+}
+window.handleXlsxUpload = handleXlsxUpload;
+
+// 파싱 + 미리보기
+function parseAndPreview(rows){
+  if(!rows || rows.length < 2) return toast('데이터가 없습니다.','err');
+  // 첫 행은 헤더 → 무시하고 순서 기준으로 매핑
+  const allowed = myOrgs();
+  const orgMap = {'지혜빛':'jihyebit','다니엘':'daniel','다니엘 아마츠':'daniel'};
+  const statusMap = {'재학':'active','휴학':'leave','자퇴':'quit','졸업':'grad','조기졸업':'egrad'};
+  const parsed = [], errors = [];
+
+  for(let i=1;i<rows.length;i++){
+    const r = rows[i];
+    if(!r || r.every(c=>String(c).trim()==='')) continue;  // 빈 행 skip
+    const rowNum = i+1;
+    const get = idx => String(r[idx]??'').trim();
+    const name = get(0);
+    if(!name) continue;  // 이름 없으면 skip
+    const orgRaw = get(3);
+    const org = orgMap[orgRaw] || (orgRaw==='jihyebit'||orgRaw==='daniel'?orgRaw:'');
+    if(!org){ errors.push(`${rowNum}행 "${name}": 기관이 올바르지 않습니다 (${orgRaw})`); continue; }
+    if(!allowed.includes(org)){ errors.push(`${rowNum}행 "${name}": 등록 권한이 없는 기관입니다 (${orgRaw})`); continue; }
+    const statusRaw = get(7);
+    const status = statusMap[statusRaw] || 'active';
+    const admitDate = get(4);
+    const transferDate = get(5);
+    const quitDate = get(6);
+    // 입학년도: 입학일 우선, 없으면 편입일 연도
+    const yearBase = admitDate || transferDate;
+    parsed.push({
+      name, gender:get(1), birth:get(2), org, admitDate, transferDate, quitDate,
+      admitYear: yearBase ? Number(yearBase.slice(0,4)) : new Date().getFullYear(),
+      status, phone:get(8), email:get(9), guardian:get(10),
+      guardianPhone:get(11), address:get(12), memo:get(13),
+    });
+  }
+
+  if(!parsed.length){
+    return toast('등록할 학생이 없습니다. 양식을 확인하세요.','err');
+  }
+
+  // 미리보기 모달
+  const errHTML = errors.length
+    ? `<div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:12px;line-height:1.6">
+         ⚠️ 제외된 ${errors.length}건:<br>${errors.join('<br>')}</div>` : '';
+  const rowsHTML = parsed.map((p,i)=>`<tr>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${i+1}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${p.name}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${ORGS[p.org]}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${p.birth||'-'}</td>
+    <td style="padding:6px 8px;border-bottom:1px solid var(--ivd)">${STATUS[p.status]}</td>
+  </tr>`).join('');
+
+  window.__bulkParsed = parsed;
+  $I('mwrap').innerHTML = `
+    <div class="mov"><div class="mbk" onclick="closeMod()"></div>
+    <div class="mbox">
+      <div class="mtitle">일괄 등록 미리보기</div>
+      <div class="msub">아래 ${parsed.length}명의 학생을 등록합니다. 확인 후 등록하세요.</div>
+      ${errHTML}
+      <div style="max-height:320px;overflow-y:auto;border:1px solid var(--ivd);border-radius:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:var(--iv);position:sticky;top:0">
+            <th style="padding:8px;text-align:left">#</th><th style="padding:8px;text-align:left">이름</th>
+            <th style="padding:8px;text-align:left">기관</th><th style="padding:8px;text-align:left">생년월일</th>
+            <th style="padding:8px;text-align:left">상태</th>
+          </tr></thead>
+          <tbody>${rowsHTML}</tbody>
+        </table>
+      </div>
+      <div class="mact">
+        <button class="bs" onclick="closeMod()">취소</button>
+        <button class="bp" onclick="confirmBulkRegister()">${parsed.length}명 등록</button>
+      </div>
+    </div></div>`;
+}
+
+// 일괄 등록 실행
+async function confirmBulkRegister(){
+  await window.TM.snapBundle('students', {org__in:myOrgs()}, '엑셀 일괄 등록 전');
+  const parsed = window.__bulkParsed || [];
+  if(!parsed.length) return;
+  $I('mwrap').innerHTML = `<div class="mov"><div class="mbk"></div><div class="mbox" style="text-align:center">
+    <div class="mtitle">등록 중...</div><div class="msub" id="bulk-progress">0 / ${parsed.length}</div></div></div>`;
+  let ok=0, fail=0;
+  // 학번 부여를 위해 기관/출생연도별 카운터를 현재 학생 수로 초기화
+  const counter = {};
+  STUDENTS.forEach(s => {
+    const by = (s.birth||'').slice(0,4);
+    if(!by) return;
+    const key = `${s.org}-${by}`;
+    counter[key] = (counter[key]||0) + 1;
+  });
+  for(let i=0;i<parsed.length;i++){
+    const p = parsed[i];
+    try {
+      const by = (p.birth||'').slice(0,4);
+      if(!by){ fail++; continue; }  // 생년월일 없으면 제외
+      const key = `${p.org}-${by}`;
+      counter[key] = (counter[key]||0) + 1;
+      const studentNo = `${by}-${pad(counter[key])}`;
+      await addDoc(collection(db,'students'), {
+        ...p, studentNo, siblings:[],
+        history:[{at:Date.now(), by:CU.name, changes:['엑셀 일괄 등록']}],
+        createdAt: Timestamp.now()
+      });
+      ok++;
+    } catch(e){ fail++; }
+    const pr = $I('bulk-progress'); if(pr) pr.textContent = `${i+1} / ${parsed.length}`;
+  }
+  toast(`${ok}명 등록 완료${fail?`, ${fail}명 실패`:''}`, 'ok');
+  logActivity('입력', '학생', `엑셀 일괄 등록 ${ok}명`);
+  closeMod();
+  await loadStudents();
+  renderList();
+}
+window.confirmBulkRegister = confirmBulkRegister;
+</script>
+</body>
+</html>
