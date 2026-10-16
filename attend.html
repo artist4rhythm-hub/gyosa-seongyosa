@@ -576,13 +576,26 @@ onAuthStateChanged(auth, async (user) => {
     window.ORGS = ORGS;
   if(window.guardPage && !guardPage(CU, 'attend')) return;
   renderShell('attend', CU);
-    window.showLoading && window.showLoading('불러오는 중…');
-    
-    
+    window.showLoading && window.showLoading('출석부를 여는 중…');
+    /* ⚡ v133 — 예전: 설정 → 출결 항목 → 학기 → 휴일 → 근무 기간 → 반 → 학생을 하나씩 차례로(8번 왕복) 받았다.
+       이제: 서로 기다릴 필요가 없으니 한꺼번에 묻는다 (받는 자료는 그대로).
+       출결 항목만 «설정 권한»을 안 뒤에 — 항목이 하나도 없을 때 기본 항목을 만드는 사람이 설정 권한자이기 때문 */
+    window.setLoadStep && window.setLoadStep('필요한 자료를 함께 불러오는 중…', 30);
+    let n = 0, ldDone = false; const tick = p => p.then(v=>{ n++; if(!ldDone && window.setLoadStep) window.setLoadStep(null, 30 + n*12); return v; });
+    try {
+      await Promise.all([
+        tick(loadAttendConfig().then(loadTypes)),
+        tick(loadTerms()), tick(loadHolidays()), tick(loadClasses()), tick(loadStudents()),
+      ]).finally(()=>{ ldDone = true; });     // 하나가 막혀 먼저 끝나도, 늦게 도착한 것이 로딩 덮개를 다시 켜지 않게
+    } catch(e){
+      // v133 — 불러오다 막히면 로딩 덮개를 걷고 까닭을 보여 준다 (예전: 덮개가 그대로 남아 멈춘 것처럼 보임)
+      window.hideLoading && window.hideLoading();
+      $I('gate-msg').textContent='오류: '+e.message+' — 잠시 뒤 새로고침해 주세요.'; $I('gate-btn').style.display='inline-block';
+      $I('gate').style.display=''; $I('ms').style.display='none';
+      return;
+    }
     // 설정 탭: 기관관리자·슈퍼 + 출석부 담당자
-    await loadAttendConfig();
     if(canSetup()) $I('tb-set').style.display='';
-    await loadTypes();
     // ⏱ 타임머신 연결 — 설정을 저장하기 직전 상태가 자동 보관된다
     if(window.TM) TM.init({
       page:'attend', pageLabel:'출석부', db,
@@ -599,10 +612,6 @@ onAuthStateChanged(auth, async (user) => {
         if($I('c-set') && $I('c-set').style.display!=='none') renderSet();
       }
     });
-    await loadTerms();
-    await loadHolidays();
-    await loadClasses();
-    await loadStudents();
     window.hideLoading && window.hideLoading();
     // 기관 선택 바
     if(window.OrgBar){

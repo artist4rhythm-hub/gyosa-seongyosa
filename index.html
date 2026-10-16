@@ -510,6 +510,7 @@ onAuthStateChanged(auth, async (user) => {
     // 사이드바 셸이 남은 채 로그인 화면이 겹쳐 뜨면 화면이 깨진다 → 페이지를 깨끗하게 새로 연다
     if (CU && document.getElementById('app')) { location.replace('index.html'); return; }
     CU = null;
+    try { window.staffLite && staffLite.drop(); } catch(e){}   // ⚡ v133 — 로그아웃(직접 · 자동 · 다른 화면에서)하면 교직원 사본도 지움
     authResolved = true;
     window.hideLoading && window.hideLoading();
     window.__BOOT_OK=true; $I('ls').style.display = 'flex';
@@ -592,6 +593,7 @@ async function doLogout() {
   try { await signOut(auth); } catch(e){}
   // 저장된 로그인 흔적 정리
   try { ['gyosa_role','gyosa_name','gyosa_uid','gyosa_pagedeny'].forEach(k=>localStorage.removeItem(k)); } catch(e){}
+  try { window.staffLite && staffLite.drop(); } catch(e){}
   // 어느 화면에서든 → 최초 로그인 화면으로
   location.href = 'index.html';
 }
@@ -4171,7 +4173,9 @@ function staffSnapOnce(fresh){
   const now = Date.now();
   if(fresh || !__staffSnapP || now - __staffSnapAt > 30000){
     __staffSnapAt = now;
-    __staffSnapP = getDocs(collection(db,'staff')).catch(e=>{ __staffSnapP = null; throw e; });
+    __staffSnapP = getDocs(collection(db,'staff'))
+      .then(s=>{ try{ if(window.staffLite && auth.currentUser) staffLite.put(s, auth.currentUser.uid); }catch(e){} return s; })   // ⚡ v133 — 다른 화면이 먼저 쓰는 «가벼운 사본»
+      .catch(e=>{ __staffSnapP = null; throw e; });
   }
   return __staffSnapP;
 }

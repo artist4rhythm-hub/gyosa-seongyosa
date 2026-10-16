@@ -135,7 +135,7 @@ import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https:/
 import { getFirestore, initializeFirestore, doc, getDoc, collection, getDocs, query, where }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import * as Conn from './parent-conn.js?v=124';    // 👨‍👩‍👧 학부모 연결 (담임 모드)
-import * as Board from './parent-board.js?v=124';  // 💬 우리 반 게시판
+import * as Board from './parent-board.js?v=132';  // 💬 우리 반 게시판
 
 const __cfg = ({
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -193,7 +193,14 @@ const staffName = uid => { const s = Conn.S.staff.get(uid); return s ? (s.name||
 
 function renderTop(){
   const c = CUR;
-  const opts = (list, g) => list.length ? `<optgroup label="${g}">${list.map(x=>`<option value="${esc(x.id)}" ${c&&x.id===c.id?'selected':''}>${esc(x.label)}${x.org&&isAdmin()&&CU.role==='super'?' · '+esc(ORG_L[x.org]||''):''}</option>`).join('')}</optgroup>` : '';
+  // v132 — 기관마다 묶고 (지혜빛 → 다니엘) · 학년 순서대로 (parent-board.js decorate 가 정렬)
+  const opt1 = x => `<option value="${esc(x.id)}" ${c&&x.id===c.id?'selected':''}>${esc(x.label)}${x.org&&isAdmin()&&CU.role==='super'?' · '+esc(ORG_L[x.org]||''):''}</option>`;
+  const opts = (list, g) => {
+    if(!list.length) return '';
+    const orgsIn = [...new Set(list.map(x=>x.org||'daniel'))];
+    if(orgsIn.length < 2) return `<optgroup label="${g}">${list.map(opt1).join('')}</optgroup>`;
+    return orgsIn.map(o=>`<optgroup label="${g} · ${esc(ORG_L[o]||o)}">${list.filter(x=>(x.org||'daniel')===o).map(opt1).join('')}</optgroup>`).join('');
+  };
   const pick = allCls().length > 1 ? `<select onchange="cpPick(this.value)">${opts(MINE, '내 반')}${opts(OTHERS, isAdmin()?'다른 반 (관리자)':'다른 반')}</select>` : '';
   const t = c ? staffName(c.teacherUid) : '', ds = c ? (c.deputies||[]).map(staffName).filter(Boolean) : [];
   $I('cp-top').innerHTML = c ? `<div class="cp-cls"><span class="cp-yr">${esc(String(c.year||''))}학년도</span>

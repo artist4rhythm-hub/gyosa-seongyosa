@@ -103,3 +103,52 @@ window.orgCore = (function(){
   return { myOrgs, lockTo, POLICY, UNIFIED_POS, JF, DF, unionOpen, setUnion, primaryOrg,
            curOrg, setCurOrg, combined, combinedHas, applyLocalOrgView, DEFAULT_COMBINED };
 })();
+
+/* ═══════════════════════════════════════════════════════════
+   ⚡ v133 — 교직원 명단 «가벼운 사본» (같은 탭 안에서만)
+   · 교직원 문서에는 사진 · 결재 서명 그림이 들어 있어 명단 전체가 수백 KB ~ 1MB 넘게 무겁다.
+     화면마다 이것을 다 받을 때까지 기다리느라 느린 연결(휴대폰 · 사파리)에서 화면이 늦게 떴다.
+   · 한 번 받은 명단에서 사진 · 서명 · 알림 토큰 · 연락처 · 계좌처럼 무겁거나 민감한 칸은 빼고
+     이 탭(sessionStorage)에만 잠깐 기억한다 — 탭을 닫으면 사라짐 · 로그인한 사람이 바뀌면 쓰지 않음.
+     남기는 칸은 «이름 · 역할 · 기관 · 부서 · 직책 · 재직 상태»뿐 (정해 둔 칸만 — 새로 생기는 칸도 저절로 빠짐).
+   · 이것을 쓰는 화면은 «먼저 사본으로 화면을 띄우고 → 곧바로 뒤에서 진짜 명단을 다시 받는다».
+     결재선을 정하는 것처럼 저장에 쓰이는 판단은 진짜 명단을 받은 뒤에 한다 (staffLite.fresh).
+   ═══════════════════════════════════════════════════════════ */
+window.staffLite = (function(){
+  const KEY = 'gs_staffLite_v133', MAX_AGE = 10 * 60000;
+  const KEEP = ['name','role','org','orgs','dept','position','positionOrgs','acStatus','isTest','avatar','approved'];
+  function lite(d){
+    const o = {};
+    for(const k of KEEP){
+      if(!(k in d)) continue;
+      const v = d[k];
+      if(typeof v === 'string' && v.length > 300) continue;           // 그림 같은 긴 글자는 빼기
+      if(v && typeof v === 'object' && !Array.isArray(v)) continue;   // 이름표 칸은 글자 · 목록 · 참거짓뿐
+      o[k] = v;
+    }
+    return o;
+  }
+  /* 받은 명단(스냅샷)을 기억 — uid: 지금 로그인한 사람 */
+  function put(snap, uid){
+    try{
+      if(!snap || !snap.docs || !uid) return;
+      // 서버에 닿지 못해 이 기기에 남은 것만 돌려준 결과(빈 명단 등)는 기억하지 않는다
+      if(snap.empty || !snap.docs.length || (snap.metadata && snap.metadata.fromCache)) return;
+      const rows = snap.docs.map(d => [d.id, lite(d.data() || {})]);
+      sessionStorage.setItem(KEY, JSON.stringify({ uid, at: Date.now(), rows }));
+    }catch(e){ try{ sessionStorage.removeItem(KEY); }catch(_){} }
+  }
+  /* 기억해 둔 명단 — 스냅샷처럼 쓸 수 있게 (docs · forEach · size). 없거나 오래됐으면 null */
+  function get(uid){
+    try{
+      const c = JSON.parse(sessionStorage.getItem(KEY) || 'null');
+      if(!c || !uid || c.uid !== uid || !Array.isArray(c.rows)) return null;
+      if(Date.now() - (c.at || 0) > MAX_AGE) return null;
+      if(!c.rows.length) return null;
+      const docs = c.rows.map(([id, d]) => ({ id, exists: () => true, data: () => JSON.parse(JSON.stringify(d)), __lite: true }));
+      return { docs, size: docs.length, empty: !docs.length, forEach: (fn, t) => docs.forEach(fn, t), __lite: true, at: c.at };
+    }catch(e){ return null; }
+  }
+  function drop(){ try{ sessionStorage.removeItem(KEY); }catch(e){} }
+  return { put, get, drop, KEY };
+})();

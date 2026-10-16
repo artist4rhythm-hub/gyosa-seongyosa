@@ -271,7 +271,8 @@
      · 요청 사이 빈 시간에도 트리클(조금씩 전진)로 절대 멈춰 보이지 않는다
      · 지금 받는 것의 이름을 아래 작은 줄에 보여준다 */
   const NET = { total:0, done:0, active:new Map(), bg:new Set(), seq:0, shownAt:0,
-    manual:null, timer:null, explicit:false, lastProg:0, detailManual:'' };
+    manual:null, timer:null, explicit:false, lastProg:0, detailManual:'',
+    bytes:0, byteAt:0 };      // v133 — 실제로 받은 바이트 (실시간 연결로 흘러 들어오는 자료까지)
 
   function labelOf(url){
     try{
@@ -324,6 +325,15 @@
     const id = netStart(this.__loUrl || '');
     const end = () => netEnd(id);
     this.addEventListener('loadend', end, { once:true });
+    /* v133 — 서버 자료는 «열어 둔 연결 하나»로 조금씩 흘러 들어온다(요청이 끝나지 않음).
+       예전에는 끝난 요청만 세서, 자료를 잘 받고 있는데도 «멈췄다»고 보고 페이지를 다시 열었다.
+       이제 바이트가 들어올 때마다 «진행 중»으로 센다. */
+    let got = 0;
+    this.addEventListener('progress', ev => {
+      const l = (ev && ev.loaded) || 0;
+      if(l > got){ NET.bytes += l - got; got = l; }
+      NET.lastProg = NET.byteAt = Date.now();
+    });
     return _send.apply(this, arguments);
   };
 
@@ -358,38 +368,76 @@
         const labels = [...NET.active.values()].map(v=>v.lb).filter(Boolean);
         const n = NET.active.size;
         const t = NET.shownAt ? (Date.now() - NET.shownAt) / 1000 : 0;
-        if(labels.length) det.textContent = '받는 중 · ' + labels[labels.length-1] + (n>1 ? ` 외 ${n-1}개` : '');
+        const flowing = NET.byteAt && (Date.now() - NET.byteAt < 4000);
+        const kb = NET.bytes >= 200 * 1024 ? ' · ' + fmtBytes(NET.bytes) : '';
+        if(labels.length) det.textContent = '받는 중 · ' + labels[labels.length-1] + (n>1 ? ` 외 ${n-1}개` : '') + kb;
+        else if(flowing) det.textContent = '받는 중 · 서버 자료' + kb;
         else if(n) det.textContent = `받는 중 · ${n}개 요청`;
         else if(t > 7) det.textContent = '네트워크가 느린 것 같아요 — 조금만 기다려 주세요…';
         else det.textContent = '';
       }
     }
   }
-  /* ⏱ 정지 감시 — 12초 넘게 진행이 없으면 알리고, 18초에 한 번 스스로 다시 시도한다 */
+  function fmtBytes(b){ return b >= 1048576 ? (b/1048576).toFixed(1) + 'MB' : Math.round(b/1024) + 'KB'; }
+
+  /* ⏱ 정지 감시 (v133 다시 만듦)
+     · «진행» = 요청이 끝남 · 자료(바이트)가 들어옴 · 화면이 다음 단계로 넘어감(setLoadStep) — 셋 중 하나라도 있으면 기다린다
+     · 10초 넘게 아무것도 안 들어오면 → 띠로 알리고 «다시 시도» 단추 (저절로 다시 열지 않음)
+     · 35초 넘게 완전히 조용할 때만 → 한 번 저절로 다시 연다. 같은 화면은 5분에 한 번까지 —
+       예전에는 «한 번만» 표시가 화면이 뜨는 순간(pageshow) 지워져서, 느린 연결에서 끝없이 다시 열렸다 */
+  const QUIET_WARN = 10000, QUIET_AUTO = 35000, AUTO_GAP = 5 * 60000;
+  function autoKey(){ return location.pathname || '/'; }
+  function autoUsed(){             // 이 화면에서 최근 5분 안에 저절로 다시 연 적이 있나 (기억 못 하면 «있음» — 절대 되풀이하지 않게)
+    try{ const m = JSON.parse(sessionStorage.getItem('loAuto2') || '{}'); return Date.now() - (m[autoKey()] || 0) < AUTO_GAP; }
+    catch(e){ return true; }
+  }
+  function markAuto(){
+    try{ const m = JSON.parse(sessionStorage.getItem('loAuto2') || '{}'); m[autoKey()] = Date.now();
+      sessionStorage.setItem('loAuto2', JSON.stringify(m));
+      const back = JSON.parse(sessionStorage.getItem('loAuto2') || '{}');
+      return back[autoKey()] === m[autoKey()]; }
+    catch(e){ return false; }
+  }
+  /* 사람이 화면을 누르거나 글자를 친 뒤에는 저절로 다시 열지 않는다
+     (저장하는 중 · 다른 화면으로 넘어가는 중에 다시 열면 하던 일이 날아감 — 띠와 단추만 보여 준다) */
+  let USER_ACTED = false;
+  const acted = () => { USER_ACTED = true; };
+  try{ addEventListener('pointerdown', acted, { capture:true, passive:true }); addEventListener('keydown', acted, { capture:true, passive:true }); }catch(e){}
+  window.__loAutoRetry = { used: autoUsed, acted: () => USER_ACTED };     // 진단 · 시험용
   function checkStall(){
     const st = document.getElementById('lo-stall'); if(!st) return;
-    if(!ov || !ov.classList.contains('on')){ st.style.display='none'; return; }
+    if(!ov || !ov.classList.contains('on')){ st.style.display='none'; st.__mode=''; return; }
     const now = Date.now();
     const prog = Math.max(NET.lastProg||0, NET.shownAt||0);
-    const stalled = NET.shownAt && (now - NET.shownAt > 12000) && (now - prog > 6000);
-    if(!stalled){ st.style.display='none'; return; }
-    let retried = false;
-    try{ retried = sessionStorage.getItem('loRetried') === '1'; }catch(e){}
-    st.style.display='block';
-    st.innerHTML = retried
-      ? '🔌 서버 응답이 없어요 — 네트워크(와이파이·데이터)를 확인해 주세요.<br>' +
-        '<button class="lo-retry" onclick="try{sessionStorage.removeItem(\'loRetried\')}catch(e){};location.reload()">🔄 다시 시도</button>' +
-        '<button class="lo-retry" onclick="window.__cleanReload()">🧹 임시 저장 비우고 다시 열기</button>'
-      : '🔌 응답이 늦어지고 있어요 — 잠시 후 자동으로 다시 시도합니다.<br>' +
-        '<button class="lo-retry" onclick="try{sessionStorage.setItem(\'loRetried\',\'1\')}catch(e){};location.reload()">지금 다시 시도</button>';
-    if(!retried && now - NET.shownAt > 18000){
-      try{ sessionStorage.setItem('loRetried','1'); }catch(e){}
-      location.reload();
+    const quiet = now - prog;
+    if(!NET.shownAt || now - NET.shownAt < 15000 || quiet < QUIET_WARN){ st.style.display='none'; st.__mode=''; return; }
+    const dead = quiet >= QUIET_AUTO;
+    const used = autoUsed();
+    if(dead && !used && !USER_ACTED && navigator.onLine !== false){
+      if(markAuto()){ location.reload(); return; }   // 기억해 둘 수 있을 때만 다시 연다
     }
+    const mode = dead ? 'dead' : 'slow';
+    if(st.__mode === mode) return;                   // 같은 내용이면 다시 그리지 않음 (단추 누르는 중 깜빡임 방지)
+    st.__mode = mode;
+    st.style.display='block';
+    st.innerHTML = dead
+      ? '🔌 서버 응답이 없어요 — 와이파이·데이터 연결을 확인해 주세요.<br>' +
+        '<button class="lo-retry" onclick="location.reload()">🔄 다시 시도</button> ' +
+        '<button class="lo-retry" onclick="window.__cleanReload()">🧹 임시 저장 비우고 다시 열기</button>'
+      : '🐢 서버 응답이 늦어요 — 계속 기다리는 중이에요.<br>' +
+        '<button class="lo-retry" onclick="location.reload()">🔄 다시 시도</button>';
   }
   function startTicker(){
     if(NET.timer) return;
-    NET.timer = setInterval(()=>{ sweepLongLived(); paint(); checkStall(); }, 220);
+    NET.lastTick = 0;
+    NET.timer = setInterval(()=>{
+      /* v133 — 다른 앱 · 다른 탭으로 갔다 오거나(화면이 숨겨짐) 알림 창이 떠서 시계가 멈췄던 동안은
+         «조용했던 시간»으로 치지 않는다 (돌아오자마자 저절로 다시 여는 일 막기) */
+      const now = Date.now();
+      if(document.hidden || (NET.lastTick && now - NET.lastTick > 1500)) NET.lastProg = Math.max(NET.lastProg||0, now);
+      NET.lastTick = now;
+      sweepLongLived(); paint(); checkStall();
+    }, 220);
   }
   function stopTicker(){
     if(NET.timer){ clearInterval(NET.timer); NET.timer = null; }
@@ -399,11 +447,13 @@
     const o = ensure(); if(!o) return;
     const cap = document.getElementById('lo-cap');
     if(cap) cap.textContent = caption || '불러오는 중…';
+    NET.cap = caption || '';
     const sEl = document.getElementById('lo-sub'); if(sEl) sEl.textContent = '0%';
     const dEl = document.getElementById('lo-det'); if(dEl) dEl.textContent = '';
     const fill = document.getElementById('lo-fill');
     if(fill) fill.style.width = '0%';
     NET.shownAt = Date.now() || 1; NET.total = 0; NET.done = 0; NET.manual = null; NET.detailManual = '';
+    NET.bytes = 0; NET.byteAt = 0;
     NET.explicit = true;
     o.classList.add('on');
     startTicker(); paint();
@@ -411,17 +461,19 @@
 
   window.setLoadStep = function(caption, pct, detail){
     const o = ensure(); if(!o) return;
-    if(!o.classList.contains('on')){ window.showLoading(caption); }
+    if(!o.classList.contains('on')){ window.showLoading(caption || NET.cap); }   // v133 — 문구 없이 진행률만 바꿀 때는 앞 문구 그대로
     const cap = document.getElementById('lo-cap');
-    if(cap && caption) cap.textContent = caption;
+    if(cap && caption){ cap.textContent = caption; NET.cap = caption; }
     if(typeof pct === 'number' && !isNaN(pct)) NET.manual = pct;
     if(detail != null){ NET.detailManual = String(detail); }
+    NET.lastProg = Date.now();                // 화면이 다음 단계로 넘어감 = 진행 중
     paint();
   };
 
   /* 아래 작은 줄만 바꾸고 싶을 때 — 예: setLoadDetail('학생 명단 12/47') */
   window.setLoadDetail = function(text){
     NET.detailManual = String(text || '');
+    NET.lastProg = Date.now();
     const d = document.getElementById('lo-det'); if(d) d.textContent = NET.detailManual;
   };
 
@@ -436,14 +488,14 @@
         const ks = await caches.keys();
         for(const k of ks) await caches.delete(k);
       }
-      sessionStorage.removeItem('loRetried');
+      sessionStorage.removeItem('loRetried'); sessionStorage.removeItem('loAuto2');
     } catch(e){}
     location.reload();
   };
 
   window.hideLoading = function(){
-    try{ sessionStorage.removeItem('loRetried'); }catch(e){}   // 정상 로드 — 다음에 또 멈추면 다시 1회 자동 시도
-    const st = document.getElementById('lo-stall'); if(st) st.style.display='none';
+    // v133 — «저절로 다시 열기» 기록은 여기서 지우지 않는다 (5분이 지나면 저절로 풀림 · 되풀이 막기)
+    const st = document.getElementById('lo-stall'); if(st){ st.style.display='none'; st.__mode=''; }
     if(ov) ov.classList.remove('on');
     NET.shownAt = 0; NET.manual = null; NET.explicit = false; NET.detailManual = '';
     stopTicker();
@@ -490,6 +542,8 @@
     window.showLoading('페이지를 여는 중…');
   }, true);
 
+  /* 화면이 뜨면(뒤로 가기로 돌아온 화면 포함) 덮개를 걷는다 — 예전과 같음.
+     v133 — 여기서 걷어도 «저절로 다시 열기» 기록은 지워지지 않는다 (예전에는 지워져서 끝없이 다시 열렸다) */
   window.addEventListener('pageshow', function(){ window.hideLoading(); });
 })();
 

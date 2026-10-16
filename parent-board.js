@@ -42,7 +42,16 @@ export function decorate(list){
   out.forEach(c => { const dup = out.filter(x => x.name === c.name && (x.org || 'daniel') === (c.org || 'daniel')).length > 1;
     c.dup = dup;
     c.label = dup ? [subOf(c).replace(' · ', ' '), c.name].filter(Boolean).join(' ') : [c.grade, c.name].filter(Boolean).join(' '); });
-  return out.sort((a, b) => nat(a.name, b.name) || nat(a.grade || '', b.grade || '') || nat(a.dept || '', b.dept || ''));
+  // v132 — 기관(지혜빛 → 다니엘) · 학년 순서(4세 → 7세 · 1학년 → 12학년) · 같은 학년은 반 이름 순
+  //   (예전엔 반 이름 «가나다»순이라 학년이 뒤섞여 보였음)
+  return out.sort((a, b) => (ORG_RANK[a.org || 'daniel'] ?? 9) - (ORG_RANK[b.org || 'daniel'] ?? 9)
+    || gradeRank(a) - gradeRank(b) || nat(a.name, b.name) || nat(a.dept || '', b.dept || ''));
+}
+const ORG_RANK = { jihyebit: 0, daniel: 1 };
+// 반의 학년 자리 — «4세» · «2학년» · 여러 학년 반(gradeList)은 가장 낮은 학년 · 학년 없는 반은 맨 뒤
+export function gradeRank(c){
+  const gs = [c && c.grade, ...((c && c.gradeList) || [])].filter(Boolean).map(g => { const m = String(g).match(/(\d+)/); return m ? Number(m[1]) : 999; });
+  return gs.length ? Math.min(...gs) : 999;
 }
 
 /* ═══ 본 것 (이 기기) — 새 글 · 새 댓글 표시와 사이드바 숫자 (pb-badge.js 와 같은 셈) ═══ */
