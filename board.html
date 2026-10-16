@@ -795,6 +795,7 @@ async function submitPost(){
       window.hideLoading && window.hideLoading();
     }
     notifyMentions(`${title} ${content}`, ref.id, title, board);
+    dailyEv('board-post', { postId: ref.id });   // 🔔 v135 휴대폰 알림 (새 글 · @언급) — 받는 사람은 서버가 정함
     // 📢 공지사항에도 등록 (관리자 옵션)
     if($I('cp-notice')?.checked && ['super','org_admin'].includes(CU.role)){
       const sv = $I('cp-notice-scope')?.value || 'all';
@@ -816,6 +817,10 @@ async function submitPost(){
 }
 window.submitPost = submitPost;
 
+// 🔔 v135 — 휴대폰 알림 서버에 «무슨 일이 있었는지»만 알린다 (실패해도 글쓰기에는 지장 없음)
+function dailyEv(ev, payload){
+  try { import('./push-client.js?v=135').then(m => m.notifyEvent && m.notifyEvent(auth, db, ev, payload)).catch(()=>{}); } catch(e){}
+}
 // @이름 멘션 → 해당 교직원에게 알림
 function notifyMentions(text, postId, postTitle, board){
   if(!text || !STAFF.length) return;
@@ -1075,10 +1080,11 @@ async function addComment(postId, parentId){
   if(!text) return;
   const post = POSTS.find(p=>p.id===postId);
   try {
-    await addDoc(collection(db,'boardComments'), {
+    const cref = await addDoc(collection(db,'boardComments'), {
       postId, text, parentId: parentId||null,
       authorUid:CU.uid, authorName:CU.name, createdAt:Timestamp.now()
     });
+    dailyEv('board-comment', { commentId: cref.id });   // 🔔 v135 휴대폰 알림 (글쓴이 · 댓글 단 분 · @언급)
     const newCount = (post?.commentCount||0)+1;
     await updateDoc(doc(db,'boardPosts',postId), {commentCount:newCount});
     if(post) post.commentCount = newCount;

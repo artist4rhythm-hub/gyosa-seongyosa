@@ -52,11 +52,10 @@ messaging.onBackgroundMessage((payload) => {
   const title = n.title || d.title || '학교 소식';
   const body  = n.body  || d.body  || '';
   bumpBadge();
-  self.registration.showNotification(title, {
-    body,
-    icon: d.icon || 'icon-192.png',
-    data: { link: d.link || '' },
-  });
+  const opt = { body, icon: d.icon || 'icon-192.png', data: { link: d.link || '' } };
+  // 🔔 v135 — 같은 묶음(tag)의 알림은 앞의 것을 바꿔 띄움 (예: 같은 반 출결이 다시 바뀌면 하나만) · tag 없으면 예전 그대로
+  if(d.tag){ opt.tag = String(d.tag).slice(0, 80); opt.renotify = true; }
+  self.registration.showNotification(title, opt);
 });
 
 self.addEventListener('notificationclick', (e) => {

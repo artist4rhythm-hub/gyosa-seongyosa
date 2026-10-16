@@ -1081,15 +1081,18 @@ async function syncTasks(ctx, id, m, prev){
   try{ await batch.commit(); }catch(e){ console.warn('tasks', e); X && X.toast && X.toast('임무를 홈에 올리지 못했어요 — ' + (e.code || e.message), 'err'); }
   const old = new Map();
   ((prev && prev.topics) || []).forEach(t => (t.tasks || []).forEach(k => old.set(k.id, new Set(k.uids || []))));
+  const jobs = [];
   for(const [key, { t, ti, k }] of want){
     const was = old.get(k.id) || new Set();
     for(const u of k.uids || []){
       if(was.has(u) || u === CU.uid) continue;
-      FS.addDoc(FS.collection(db, 'mtgNotifs'), { toUid: u, kind: 'task', meetingId: id, org: m.org, mtitle, date: m.date, tgt: 'k:' + key,
+      jobs.push(FS.addDoc(FS.collection(db, 'mtgNotifs'), { toUid: u, kind: 'task', meetingId: id, org: m.org, mtitle, date: m.date, tgt: 'k:' + key,
         where: `${ti + 1}. ${t.title || ''}`, text: C.textOf(k.h).trim().slice(0, 140) + (k.due ? ` · ${C.fmtMD(k.due)}까지` : ''),
-        fromUid: CU.uid, fromName: CU.name || '', at: FS.serverTimestamp(), read: false }).catch(()=>{});
+        fromUid: CU.uid, fromName: CU.name || '', at: FS.serverTimestamp(), read: false }).catch(()=>{}));
     }
   }
+  // 🔔 v135 새로 맡은 임무를 휴대폰으로도 (서버가 방금 남긴 알림을 확인하고 보냄 · 기다리지 않음)
+  if(jobs.length && typeof ctx.dailyEv === 'function') Promise.all(jobs).then(() => ctx.dailyEv('mtg', { meetingId: id })).catch(()=>{});
 }
 /* 수정 이력에서 «이 모습으로 되돌리기» */
 export async function saveRevert(ctx, m, ver){

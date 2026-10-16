@@ -1531,11 +1531,16 @@ async function saveCheck(){
     toast(`${cnt}명 출결이 저장되었습니다.`,'ok');
     // 결석·지각 알림 (담임·대리 + 부서장·관리자에게, 본인 제외)
     sendAbsenceAlert(c, checkDate, studs);
+    dailyEv('attend', { classId: c.id, date: checkDate });   // 🔔 v135 휴대폰 알림 — 오늘 «출결 현황» 시각 뒤에 바뀐 결석 · 지각 · 조퇴만 (서버가 판단)
     loadCheckBody();
   } catch(e){ toast('저장 실패: '+e.message,'err'); }
 }
 window.saveCheck = saveCheck;
 
+// 🔔 v135 — 휴대폰 알림 서버에 «무슨 일이 있었는지»만 알린다 (실패해도 저장에는 지장 없음)
+function dailyEv(ev, payload){
+  try { import('./push-client.js?v=135').then(m => m.notifyEvent && m.notifyEvent(auth, db, ev, payload)).catch(()=>{}); } catch(e){}
+}
 // 결석·지각 요약 알림
 async function sendAbsenceAlert(c, dateStr, studs){
   try {

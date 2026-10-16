@@ -583,7 +583,7 @@ function confirmLeave(){ return Promise.resolve(confirm('저장하지 않은 내
 function edCtx(){
   return { db, FS, C, STORE, CU, STAFF, SMAP, CFG, WRITE, SEE, LIST, TASKS, toast, modal, popMenu,
     defaultOrg: (ORG && ORG !== 'all' && WRITE.includes(ORG)) ? ORG : (WRITE.find(o => o !== 'da') || 'da'),
-    typesOf, saveTypes, DEPTS, nameOf, pins: () => PINS,
+    typesOf, saveTypes, DEPTS, nameOf, pins: () => PINS, dailyEv,
     onSaved: id => go({ m: id }, true),
     onCancel: id => { if(id) go({ m: id }, true); else go({ org: ORG }, true); } };
 }
@@ -1004,9 +1004,14 @@ function notifyComment(m, c){
   else if(c.tgt.startsWith('k:')){ for(const t of m.topics || []) for(const k of t.tasks || []) if(C.taskKey(m.id, k.id) === c.tgt.slice(2)) (k.uids || []).forEach(u => add(u, 'cmt')); }
   CMTS.filter(x => x.tgt === c.tgt && !x.del).forEach(x => add(x.uid, 'cmt'));
   const where_ = tgtName(c.tgt);
-  [...to.entries()].slice(0, 40).forEach(([uid, kind]) => addDoc(collection(db, 'mtgNotifs'), {
+  const jobs = [...to.entries()].slice(0, 40).map(([uid, kind]) => addDoc(collection(db, 'mtgNotifs'), {
     toUid: uid, kind, meetingId: m.id, org: m.org, mtitle: C.titleOf(m), date: m.date, tgt: c.tgt, where: where_,
     text: c.text.slice(0, 140), fromUid: CU.uid, fromName: CU.name || '', at: serverTimestamp(), read: false }).catch(()=>{}));
+  if(jobs.length) Promise.all(jobs).then(() => dailyEv('mtg', { meetingId: m.id }));   // 🔔 v135 방금 남긴 알림을 휴대폰으로도
+}
+// 🔔 v135 — 휴대폰 알림 서버에 «이 회의록에 알림을 남겼다»만 알린다 (서버가 방금 만든 알림을 확인하고 보냄 · 실패해도 지장 없음)
+function dailyEv(ev, payload){
+  try { import('./push-client.js?v=135').then(x => x.notifyEvent && x.notifyEvent(auth, db, ev, payload)).catch(()=>{}); } catch(e){}
 }
 async function setTaskStatus(key, st){
   const d = taskOf(key);

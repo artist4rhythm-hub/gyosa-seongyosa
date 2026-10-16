@@ -1928,6 +1928,7 @@ window.doPublish = async function(){
       counts: { placed, lessons:(snap.lessons||[]).length },
     });
     await setDoc(doc(db,'timetablePublishedData', ref.id), { snapshot });
+    dailyEv('timetable', { pubId: ref.id });   // 🔔 v135 이 시간표에 수업이 있는 선생님들께 휴대폰 알림
     await loadPublished();
     VIEW_ORG = MG_ORG;
     CUR = PUBS.find(p=>p.active && orgOf(p)===MG_ORG) || pubsForView()[0] || null;
@@ -1939,6 +1940,10 @@ window.doPublish = async function(){
   } catch(e){ toast('게시 실패: '+(e.message||''),'err'); }
 };
 
+// 🔔 v135 — 휴대폰 알림 서버에 «게시했다»만 알린다 (받는 사람 · 내용은 서버가 시간표를 보고 정함 · 실패해도 게시에는 지장 없음)
+function dailyEv(ev, payload){
+  try { import('./push-client.js?v=135').then(m => m.notifyEvent && m.notifyEvent(auth, db, ev, payload)).catch(()=>{}); } catch(e){}
+}
 window.unpublish = async function(id){
   const p = PUBS.find(x=>x.id===id);
   if(!canManage(p)){ toast('이 기관 시간표를 내릴 권한이 없습니다.','err'); return; }   // 🔒 기관 교차 차단
@@ -2062,6 +2067,7 @@ window.republish = async function(id){
       await updateDoc(doc(db,'timetablePublished',x.id), { active:false });
     }
     await updateDoc(doc(db,'timetablePublished',id), { active:true, archived:false });
+    dailyEv('timetable', { pubId: id });   // 🔔 v135
     await loadPublished();
     VIEW_ORG = orgOf(p);
     CUR = PUBS.find(x=>x.active && orgOf(x)===VIEW_ORG) || PUBS[0] || null;

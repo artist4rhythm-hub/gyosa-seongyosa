@@ -492,8 +492,8 @@ onAuthStateChanged(auth, async (user) => {
       //    (그 화면에서는 일부러 고를 방법이 없었음) → 모두 꺼짐 + 고친 뒤 저장한 표시(notifyPrefsV)가 없으면 다시 모두 켬
       try {
         const P = CU.notifyPrefs;
-        if(P && !CU.notifyPrefsV && NT_KINDS.every(([k])=>P[k]===false)){
-          const all = {}; NT_KINDS.forEach(([k])=>{ all[k] = true; });
+        if(P && !CU.notifyPrefsV && NT_OLD5.every(k=>P[k]===false)){
+          const all = {}; NT_OLD5.forEach(k=>{ all[k] = true; });
           updateDoc(doc(db,'staff',user.uid), { notifyPrefs: all, notifyPrefsV: 134 }).then(()=>{ CU.notifyPrefs = all; CU.notifyPrefsV = 134; }).catch(()=>{});
         }
       } catch(e){}
@@ -5244,10 +5244,29 @@ window.updEditOrgMode = updEditOrgMode;
    · 켠 기기마다 이름표(fcmDevices)를 남겨 «알림 받는 기기» 목록으로 보여 줌 · 이 기기 끄기 · 안 쓰는 기기 빼기
    · 컴퓨터 크롬이 연결돼 있는데도 «오프라인»이라고 잘못 알려 줄 때(installations/app-offline) 실제 연결을 확인하고 한 번 더 */
 const NT_KINDS = [
-  ['msg','✉️ 쪽지 도착'], ['approval','📋 결재 요청 (내 차례)'],
-  ['approval_result','✅ 결재 결과 (승인·반려·지급)'], ['pay','💰 회계 상신 (담당자)'],
-  ['board','📢 게시판 새 글'],
+  ['msg','✉️ 쪽지 도착','now'], ['approval','📋 결재 요청 (내 차례)','now'],
+  ['approval_result','✅ 결재 결과 (승인·반려·지급)','now'], ['pay','💰 회계 상신 (담당자)','now'],
+  ['board','📢 게시판 새 글','now'],
+  // 🔔 v135 — 새 알림 서버(gyosa-daily)가 보내는 것
+  ['board_reply','💬 내 글 댓글 · @언급','now'], ['minutes','📝 회의록 임무 · 댓글','now'],
+  ['timetable','🗓 새 시간표 게시','now'], ['parent','👪 우리 반 학부모 글 · 댓글','now'],
+  ['brief','☀️ 아침 브리핑 — 오늘 일정 · 내 수업','time'], ['attend','🧾 출결 — 미입력 · 반별 현황 · 결석·조퇴','time'],
+  ['tomorrow','🌙 내일 안내 — 내일 일정 · 수업 · 쉬는 날','time'], ['lesson','⏰ 수업 시작 전 (원하는 분만)','time'],
 ];
+const NT_OLD5 = ['msg','approval','approval_result','pay','board'];   // v134 까지 있던 종류 (예전 «모두 꺼짐» 고치기는 이것만 본다)
+const NT_OPTIN = { lesson: true };                                    // 고른 분만 받는 종류 (기본 꺼짐)
+const ntKindOn = (prefs, k) => NT_OPTIN[k] ? prefs[k] === true : prefs[k] !== false;
+let NT_DAILY = null;   // config/pushDaily — 시각 표시 · 수퍼관리자 설정
+const NT_JOBS_DEF = { brief:{ on:true, at:'08:00' }, remind:{ on:true, at:'09:00' }, summary:{ on:true, at:'09:30' }, tomorrow:{ on:true, at:'18:00' }, lesson:{ on:true, before:10 } };
+function ntJobs(){ const j = (NT_DAILY && NT_DAILY.jobs) || {}; const o = {}; Object.keys(NT_JOBS_DEF).forEach(k => { o[k] = Object.assign({}, NT_JOBS_DEF[k], j[k] || {}); }); return o; }
+function ntKindLabel(k, l){
+  const J = ntJobs(), off = x => x.on === false ? ' · 학교에서 쉬는 중' : '';
+  if(k==='brief') return `${l} <em class="tm">${esc(J.brief.at)}${off(J.brief)}</em>`;
+  if(k==='attend') return `${l} <em class="tm">${esc(J.remind.at)} · ${esc(J.summary.at)}${(J.remind.on===false&&J.summary.on===false)?' · 학교에서 쉬는 중':''}</em>`;
+  if(k==='tomorrow') return `${l} <em class="tm">${esc(J.tomorrow.at)}${off(J.tomorrow)}</em>`;
+  if(k==='lesson') return `${l} <em class="tm">${esc(String(J.lesson.before))}분 전${off(J.lesson)}</em>`;
+  return l;
+}
 const NT_FB = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
 function ntEnv(){
   const ua = navigator.userAgent || '';
@@ -5310,7 +5329,7 @@ function ntCardHTML(E, on){
   const dev = `<div class="nt-dev">${ntIcon(E.kind)} 이 기기: <b>${esc(E.label)}</b></div>`;
   const guide = '<a href="install-guide.html" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:700;color:var(--gm)">📲 그림으로 보는 «홈 화면에 추가» 방법 ›</a>';
   if(on) return `<div class="nt-card ok">${dev}<div class="nt-h">✅ 이 기기에서 알림을 받고 있어요</div>
-      쪽지 · 결재 · 회계 소식이 잠금화면 알림으로 와요. 앱을 보고 있을 때는 화면 위 «알림 띠»로 떠요.
+      쪽지 · 결재 · 오늘 일정 · 출결 소식이 잠금화면 알림으로 와요. 앱을 보고 있을 때는 화면 위 «알림 띠»로 떠요.
       <div class="nt-row"><button class="bs" onclick="diagStaffPush(true)">🧪 테스트 알림 보내기</button>
         <button class="bs" onclick="disableStaffPush()" style="color:var(--danger,#C0392B)">이 기기 알림 끄기</button></div></div>`;
   if(E.inApp) return `<div class="nt-card warn">${dev}<div class="nt-h">카카오톡 · 네이버 같은 앱 안에서 열려 있어요</div>
@@ -5364,11 +5383,17 @@ async function paintNotifyTab(fresh){
   // 받을 알림 종류 — 지금 저장된 값 그대로 (예전 화면 오류로 모두 꺼져 있으면 알려 줌) · 고치는 중이면 건드리지 않음
   const paintKinds = (prefs) => {
     const box = $I('nt-prefs'); if(!box || box.__dirty) return;
-    box.innerHTML = NT_KINDS.map(([k,l])=>`<label><input type="checkbox" id="nt-k-${k}" ${prefs[k]===false?'':'checked'}> <span>${l}</span></label>`).join('');
+    const row = ([k,l]) => `<label><input type="checkbox" id="nt-k-${k}" ${ntKindOn(prefs,k)?'checked':''}> <span>${ntKindLabel(k,l)}</span></label>`;
+    box.innerHTML = `<div class="nt-grp">⚡ 그때그때</div>` + NT_KINDS.filter(x=>x[2]==='now').map(row).join('')
+      + `<div class="nt-grp">🕗 정해진 시간 <span>학교 일정 · 시간표 · 출석부를 보고 보내요</span></div>` + NT_KINDS.filter(x=>x[2]==='time').map(row).join('');
     if(!box.__wired){ box.__wired = true; box.addEventListener('change', () => { box.__dirty = true; }); }
-    const allOff = NT_KINDS.every(([k])=>prefs[k]===false); const w = $I('nt-allOff'); if(w) w.style.display = allOff ? '' : 'none';
+    const allOff = NT_KINDS.every(([k])=>NT_OPTIN[k] || prefs[k]===false); const w = $I('nt-allOff'); if(w) w.style.display = allOff ? '' : 'none';
   };
   paintKinds(CU.notifyPrefs || {});
+  // 🔔 v135 정해진 시간 알림의 시각 (학교 설정) — 읽으면 종류 이름 옆 시각을 다시 그림
+  if(!NT_DAILY || fresh !== false){
+    getDoc(doc(db,'config','pushDaily')).then(d => { NT_DAILY = d.exists() ? d.data() : {}; paintKinds(CU.notifyPrefs || {}); ntPaintAdmin(); }).catch(()=>{ NT_DAILY = NT_DAILY || {}; ntPaintAdmin(); });
+  } else ntPaintAdmin();
   // 알림 받는 기기 — 내 문서를 새로 읽어서
   try{
     if(fresh !== false || !NT_ME){ const me = await getDoc(doc(db,'staff',CU.uid)); NT_ME = me.exists() ? me.data() : {}; }
@@ -5439,7 +5464,7 @@ window.enableStaffPush = async () => {
     const upd = { fcmTokens: arrayUnion(token), ['fcmDevices.'+ntKey(token)]: { label: E.label, kind: E.kind, at: Timestamp.now() } };
     // 받을 종류가 모두 꺼져 있으면(예전 화면 오류) 알림을 켜는 김에 다시 모두 켠다
     const P = CU.notifyPrefs;
-    if(P && !CU.notifyPrefsV && NT_KINDS.every(([k])=>P[k]===false)){ const all={}; NT_KINDS.forEach(([k])=>all[k]=true); upd.notifyPrefs = all; upd.notifyPrefsV = 134; CU.notifyPrefs = all; CU.notifyPrefsV = 134; }
+    if(P && !CU.notifyPrefsV && NT_OLD5.every(k=>P[k]===false)){ const all={}; NT_OLD5.forEach(k=>all[k]=true); upd.notifyPrefs = all; upd.notifyPrefsV = 134; CU.notifyPrefs = all; CU.notifyPrefsV = 134; }
     await updateDoc(doc(db,'staff',CU.uid), upd);
     localStorage.setItem('staff_push_on','1'); localStorage.setItem('staff_push_tok', token);
     try{ window.__lpLoad = 1; import('./live-push.js?v=131').then(x=>x.start()).catch(()=>{}); }catch(e){}   // 🔔 v131 지금부터 화면 위 알림 띠도
@@ -5548,6 +5573,99 @@ window.diagStaffPush = async () => {
   } catch(e){ bad('점검 중 오류: '+(e.message||e)); }
   out.textContent = L.join('\n');
 };
+/* 🔔 v135 — 새 알림 서버(gyosa-daily): 나에게 미리 보내 보기 · 학교 알림 시간(수퍼관리자) */
+const NT_PC = () => import('./push-client.js?v=135');
+async function ntDaily(action, payload){ try{ const m = await NT_PC(); return await m.dailyCall(auth, db, action, payload); }catch(e){ return { ok:false, error:'network' }; } }
+const NT_NOSRV = '알림 서버에 닿지 못했어요 — 학교에서 새 알림 서버를 아직 켜지 않았을 수 있어요 (수퍼관리자 안내 참고)';
+window.ntPreview = async (job, btn) => {
+  const out = $I('nt-pvout');
+  if(btn){ btn.disabled = true; btn.__t = btn.textContent; btn.textContent = '만드는 중…'; }
+  try{
+    const r = await ntDaily('preview', { job });
+    if(!r || r.error === 'network' || /^http-/.test(r.error||'')){ ntSay(false, NT_NOSRV); if(out) out.style.display = 'none'; return; }
+    if(r.error === 'rate') return ntSay(false, '조금 뒤 다시 눌러 주세요 (5분에 다섯 번까지)');
+    if(r.ok === false) return ntSay(false, '미리 보내지 못했어요: ' + (r.error || ''));
+    if(out){
+      out.style.display = '';
+      out.innerHTML = r.title ? `<b>${esc(r.title)}</b>\n${esc(r.body || '')}` : `<span style="color:var(--tl)">${esc(r.empty || '보낼 내용이 없어요')}</span>`;
+    }
+    if(r.sent > 0) ntSay(true, '보냈어요 ✓ 몇 초 안에 알림을 켠 기기로 와요 (아래는 같은 내용)');
+    else if(r.title) ntSay(false, '알림 받는 기기가 없어 보내지 못했어요 — 아래가 받을 내용이에요');
+    else ntSay(true, '지금은 보낼 내용이 없어요 — 아래 설명을 봐 주세요');
+  } finally { if(btn){ btn.disabled = false; btn.textContent = btn.__t || btn.textContent; } }
+};
+function ntPaintAdmin(){
+  const box = $I('nt-admin'); if(!box) return;
+  if(!CU || CU.role !== 'super'){ box.innerHTML = ''; return; }
+  if(box.__dirty) return;
+  const J = ntJobs(), E = Object.assign({ board:true, board_reply:true, timetable:true, minutes:true, attend:true, parent:true }, (NT_DAILY && NT_DAILY.events) || {});
+  const url = (NT_DAILY && typeof NT_DAILY.url === 'string') ? NT_DAILY.url : '';
+  const tr = (k, label) => `<div class="nt-ad-row"><label><input type="checkbox" id="nt-a-${k}-on" ${J[k].on!==false?'checked':''}> ${label}</label><input type="time" id="nt-a-${k}-at" step="300" value="${esc(J[k].at)}"></div>`;
+  const ev = (k, label) => `<label><input type="checkbox" id="nt-a-ev-${k}" ${E[k]!==false?'checked':''}> ${label}</label>`;
+  box.innerHTML = `<details class="nt-adm"${box.__open ? ' open' : ''} ontoggle="this.parentNode.__open=this.open">
+    <summary>🛠 학교 알림 시간 · 종류 (수퍼관리자만 보여요)</summary>
+    <div style="margin-top:8px">
+      ${tr('brief','☀️ 아침 브리핑')}${tr('remind','🧾 출결 미입력 (담임)')}${tr('summary','🧾 출결 현황 (관리자 · 부서장 · 담임)')}${tr('tomorrow','🌙 내일 안내')}
+      <div class="nt-ad-row"><label><input type="checkbox" id="nt-a-lesson-on" ${J.lesson.on!==false?'checked':''}> ⏰ 수업 시작 전 (고른 분만)</label>
+        <select id="nt-a-lesson-before">${[5,10,15,20,30].map(n=>`<option value="${n}" ${Number(J.lesson.before)===n?'selected':''}>${n}분 전</option>`).join('')}</select></div>
+      <div class="nt-ad-sub">그때그때 알림 (새 알림 서버)</div>
+      <div class="nt-ad-ev">${ev('board','📢 게시판 새 글')}${ev('board_reply','💬 댓글 · @언급')}${ev('minutes','📝 회의록 임무 · 댓글')}${ev('timetable','🗓 새 시간표 게시')}${ev('attend','🧾 결석 · 조퇴 (현황 뒤)')}${ev('parent','👪 학부모 글 · 댓글')}</div>
+      <div class="nt-ad-sub">알림 서버 주소 <span>(비워 두면 기본 주소 · Cloud Shell 에 나온 주소가 다를 때만)</span></div>
+      <input id="nt-a-url" value="${esc(url)}" placeholder="https://gyosa-daily-455744290312.asia-northeast3.run.app" autocomplete="off" spellcheck="false">
+      <div class="nt-row"><button class="bp" onclick="ntSaveAdmin(this)">학교 알림 저장</button><button class="bs" onclick="ntAdminStatus(this)">🩺 서버 상태</button></div>
+      <div id="nt-a-out" class="nt-pvout" style="display:none"></div>
+      <div class="nt-ad-note">· 시각은 5분 단위로 보내요 (08:03 → 08:05 무렵) · 정해진 시각을 1시간 넘기면 그날은 건너뜀<br>
+        · 출결 알림은 출석부 «수업일»(학기 중 평일 · 공휴일 · 방학 제외)에만, 출석부를 최근 30일 안에 한 번이라도 저장한 반만<br>
+        · 아침 브리핑 · 내일 안내는 보낼 내용(일정 · 수업 · 결재 · 임무)이 있는 분께만 · 쪽지 · 결재 알림은 예전 서버가 그대로 보내요</div>
+    </div></details>`;
+  box.oninput = () => { box.__dirty = true; };
+}
+window.ntSaveAdmin = async (btn) => {
+  const out = $I('nt-a-out'), say = (ok, t) => { if(!out) return; out.style.display=''; out.style.color = ok ? '#16A34A' : '#C0392B'; out.textContent = t; };
+  if(!CU || CU.role !== 'super') return;
+  const jobs = {};
+  for(const k of ['brief','remind','summary','tomorrow']){
+    const at = String($I(`nt-a-${k}-at`)?.value || '').slice(0,5);
+    if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(at)) return say(false, '시각을 다시 확인해 주세요 (예: 08:00)');
+    if(at < '06:00' || at > '21:55') return say(false, '시각은 06:00 ~ 21:55 사이로 넣어 주세요 (그 밖에는 서버가 쉬어요)');
+    jobs[k] = { on: !!$I(`nt-a-${k}-on`)?.checked, at };
+  }
+  jobs.lesson = { on: !!$I('nt-a-lesson-on')?.checked, before: Number($I('nt-a-lesson-before')?.value || 10) };
+  const events = {}; ['board','board_reply','timetable','minutes','attend','parent'].forEach(k => { events[k] = !!$I('nt-a-ev-'+k)?.checked; });
+  const url = String($I('nt-a-url')?.value || '').trim().replace(/\/+$/,'');
+  if(url && !/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.run\.app$/i.test(url)) return say(false, '서버 주소는 https://….run.app 모양이어야 해요 (Cloud Shell 에 나온 주소 그대로)');
+  if(btn) btn.disabled = true;
+  try{
+    const prevUrl = (NT_DAILY && NT_DAILY.url) || '';
+    await setDoc(doc(db,'config','pushDaily'), { jobs, events, url, updatedAt: Timestamp.now(), updatedBy: CU.name || '' }, { merge: true });
+    if(url !== prevUrl){ try{ await setDoc(doc(db,'parentConfig','gate'), { dailyUrl: url }, { merge: true }); }catch(e){} }   // 학부모 사이트도 같은 주소로
+    NT_DAILY = Object.assign({}, NT_DAILY || {}, { jobs, events, url });
+    try{ (await NT_PC()).dailyUrlReset(); }catch(e){}
+    $I('nt-admin').__dirty = false;
+    const pr = $I('nt-prefs'); if(pr && !pr.__dirty) paintNotifyTab(false);
+    say(true, '저장했어요 ✓ 다음 5분 안에 서버가 새 시각을 따라요');
+  }catch(e){ say(false, '저장하지 못했어요: ' + (e.message || '')); }
+  finally{ if(btn) btn.disabled = false; }
+};
+window.ntAdminStatus = async (btn) => {
+  const out = $I('nt-a-out'); if(!out) return;
+  out.style.display = ''; out.style.color = ''; out.textContent = '서버에 묻는 중…';
+  if(btn) btn.disabled = true;
+  try{
+    const r = await ntDaily('status', {});
+    if(!r || r.ok === false){ out.style.color = '#C0392B'; out.textContent = (r && r.error === 'forbidden') ? '수퍼관리자만 볼 수 있어요' : NT_NOSRV; return; }
+    const N = { brief:'☀️ 아침 브리핑', remind:'🧾 출결 미입력', summary:'🧾 출결 현황', tomorrow:'🌙 내일 안내', lesson:'⏰ 수업 전' };
+    const L = [`✅ 서버 살아 있음 · 버전 ${r.version} · 지금 ${r.now && r.now.date} ${r.now ? String(Math.floor(r.now.min/60)).padStart(2,'0') + ':' + String(r.now.min%60).padStart(2,'0') : ''}`,
+      r.keySet ? '✅ 5분마다 깨우는 열쇠(DAILY_KEY): 설정됨' : '❌ 열쇠(DAILY_KEY)가 없어요 — 배포 안내의 명령을 다시 실행해 주세요',
+      r.cfg && r.cfg.staffOn === false ? '❌ 교사 알림 마스터 스위치(config/pushStaff)가 꺼져 있어요' : ''].filter(Boolean);
+    const last = r.last || {};
+    Object.keys(N).forEach(k => { const x = last[k]; if(!x) return L.push(`· ${N[k]}: 아직 보낸 적 없음`);
+      const t = x.at && (x.at._seconds || x.at.seconds) ? new Date((x.at._seconds || x.at.seconds) * 1000) : null;
+      const when = t ? `${t.getMonth()+1}/${t.getDate()} ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}` : (x.date || '');
+      L.push(`· ${N[k]}: ${when} — ${x.error ? '❌ ' + x.error : `${x.users || 0}명 · ${x.sent || 0}건 보냄`}`); });
+    out.textContent = L.join('\n');
+  } finally { if(btn) btn.disabled = false; }
+};
 window.saveNotifyPrefs = async () => {
   const m=$I('nt-msg');
   // v134 — 예전에는 칸이 안 그려진 채로 저장되어 «모든 종류 꺼짐»이 저장됐다 → 칸이 있을 때만
@@ -5555,7 +5673,7 @@ window.saveNotifyPrefs = async () => {
   const prefs = {}; NT_KINDS.forEach(([k])=>{ prefs[k] = !!$I('nt-k-'+k)?.checked; });
   try{ await updateDoc(doc(db,'staff',CU.uid), { notifyPrefs: prefs, notifyPrefsV: 134 }); CU.notifyPrefs = prefs; CU.notifyPrefsV = 134;
     try{ $I('nt-prefs').__dirty = false; }catch(e){}
-    const w = $I('nt-allOff'); if(w) w.style.display = NT_KINDS.every(([k])=>prefs[k]===false) ? '' : 'none';
+    const w = $I('nt-allOff'); if(w) w.style.display = NT_KINDS.every(([k])=>NT_OPTIN[k] || prefs[k]===false) ? '' : 'none';
     m.style.display='block'; m.style.background='#DCFCE7'; m.style.color='#16A34A'; m.textContent='설정을 저장했습니다 ✓';
   }catch(e){ m.style.display='block'; m.style.background='#FDECEA'; m.style.color='#C0392B'; m.textContent='저장 실패: '+(e.message||''); }
 };
@@ -5639,6 +5757,26 @@ function openMyInfo(){
         #mi-nt .nt-kinds label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;min-width:0}
         #mi-nt .nt-kinds input{width:17px;height:17px;flex:none}
         @media(max-width:560px){ #mi-nt .nt-kinds{grid-template-columns:1fr} }
+        /* 🔔 v135 — 정해진 시간 알림 · 미리 받아 보기 · 학교 알림 시간(수퍼관리자) */
+        #mi-nt .nt-grp{grid-column:1/-1;font-size:11.5px;font-weight:800;color:var(--gm,#00704A);margin:6px 0 0}
+        #mi-nt .nt-grp:first-child{margin-top:0}
+        #mi-nt .nt-grp span{font-weight:600;color:var(--tl);margin-left:4px}
+        #mi-nt .nt-kinds em.tm{font-style:normal;font-size:11px;font-weight:700;color:var(--tl);margin-left:3px;white-space:nowrap}
+        #mi-nt .nt-pv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+        #mi-nt .nt-pv .bs{padding:9px 4px;font-size:12px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        #mi-nt .nt-pvout{margin-top:8px;background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:10px;padding:9px 12px;font-size:12.5px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+        #mi-nt .nt-adm{margin-top:14px;border:1px solid var(--ivd);border-radius:12px;padding:10px 12px;background:var(--iv)}
+        #mi-nt .nt-adm summary{cursor:pointer;font-size:12.5px;font-weight:800;color:var(--ts)}
+        #mi-nt .nt-ad-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px dashed var(--ivd);font-size:13px}
+        #mi-nt .nt-ad-row label{display:flex;align-items:center;gap:7px;min-width:0}
+        #mi-nt .nt-ad-row input[type=time], #mi-nt .nt-ad-row select{border:1.5px solid var(--ivd);border-radius:8px;padding:5px 8px;font-size:13px;font-family:inherit;background:var(--wh,#fff);flex:none;color:inherit}
+        #mi-nt .nt-ad-ev{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;font-size:12.5px}
+        #mi-nt .nt-ad-ev label{display:flex;gap:6px;align-items:center;min-width:0}
+        #mi-nt .nt-ad-sub{font-size:11.5px;font-weight:800;color:var(--ts);margin:10px 0 5px}
+        #mi-nt .nt-ad-sub span{font-weight:600;color:var(--tl)}
+        #mi-nt #nt-a-url{width:100%;box-sizing:border-box;border:1.5px solid var(--ivd);border-radius:8px;padding:7px 9px;font-size:12.5px;font-family:inherit;background:var(--wh,#fff);color:inherit}
+        #mi-nt .nt-ad-note{font-size:11.5px;color:var(--tl);line-height:1.6;margin-top:8px}
+        @media(max-width:560px){ #mi-nt .nt-ad-ev{grid-template-columns:1fr} #mi-nt .nt-pv{grid-template-columns:1fr 1fr} }
       </style>
       <div class="mbox" style="max-width:520px;border-radius:20px;max-height:90vh">
         <div class="mtitle">내 정보</div>
@@ -5709,6 +5847,15 @@ function openMyInfo(){
           <div class="nt-sec">받을 알림 종류</div>
           <div id="nt-prefs" class="nt-kinds"></div>
           <div id="nt-allOff" style="display:none;margin-top:8px;font-size:12px;color:#B45309;background:#FFF7E6;border-radius:8px;padding:7px 10px">⚠️ 지금 모든 종류가 꺼져 있어요 — 받을 것을 체크하고 «설정 저장»을 눌러 주세요.</div>
+          <div class="nt-sec">🧪 나에게 지금 보내 보기 <span style="font-weight:600;color:var(--tl)">— 이런 알림이 와요</span></div>
+          <div class="nt-pv">
+            <button class="bs" onclick="ntPreview('brief',this)">☀️ 아침 브리핑</button>
+            <button class="bs" onclick="ntPreview('tomorrow',this)">🌙 내일 안내</button>
+            <button class="bs" onclick="ntPreview('summary',this)">🧾 출결 현황</button>
+            <button class="bs" onclick="ntPreview('lesson',this)">⏰ 다음 수업</button>
+          </div>
+          <div id="nt-pvout" class="nt-pvout" style="display:none"></div>
+          <div id="nt-admin"></div>
           <details style="margin-top:14px;border-top:1px solid var(--iv);padding-top:10px">
             <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ts)">🧪 알림이 안 올 때 — 진단 · 나에게 테스트 알림</summary>
             <button class="bs" style="margin-top:9px" onclick="diagStaffPush()">🧪 진단 + 테스트 알림 보내기</button>
