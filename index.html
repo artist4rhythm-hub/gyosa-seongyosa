@@ -380,7 +380,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { installHomeWidgets } from './home-widgets.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, onSnapshot, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, onSnapshot, arrayUnion, arrayRemove, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { attOf, attRange, colOnce, colDrop, qOnce } from './qread.js';   // 📉 v120 필요한 것만 읽기
 
 // ── Firebase 초기화 ──────────────────────────
@@ -488,6 +488,15 @@ onAuthStateChanged(auth, async (user) => {
         return;
       }
       CU = { uid: user.uid, ...data };
+      // 🔔 v134 — 예전 «내 정보 › 알림»은 종류 칸이 안 그려진 채 «설정 저장»이 돼서 모든 종류가 «꺼짐»으로 저장됐다.
+      //    (그 화면에서는 일부러 고를 방법이 없었음) → 모두 꺼짐 + 고친 뒤 저장한 표시(notifyPrefsV)가 없으면 다시 모두 켬
+      try {
+        const P = CU.notifyPrefs;
+        if(P && !CU.notifyPrefsV && NT_KINDS.every(([k])=>P[k]===false)){
+          const all = {}; NT_KINDS.forEach(([k])=>{ all[k] = true; });
+          updateDoc(doc(db,'staff',user.uid), { notifyPrefs: all, notifyPrefsV: 134 }).then(()=>{ CU.notifyPrefs = all; CU.notifyPrefsV = 134; }).catch(()=>{});
+        }
+      } catch(e){}
       try {
         localStorage.setItem('gyosa_role', CU.role||'teacher');
         localStorage.setItem('gyosa_pagedeny', JSON.stringify(CU.pageDeny||[]));
@@ -796,33 +805,6 @@ function showPw(uid) {
       </div>
     </div>`;
   document.body.appendChild(el);
-  MIAV = { avatar: CU.avatar||'', photo: CU.photo||'' };
-  miavPaint();
-  try{ paintNotifyTab(); }catch(e){}
-  const fi = $I('miav-file');
-  if(fi) fi.addEventListener('change', async ()=>{
-    const f = fi.files && fi.files[0]; if(!f) return;
-    const msg = $I('miav-msg');
-    try {
-      const url = await new Promise((res, rej)=>{
-        const img = new Image();
-        img.onload = ()=>{ try{
-          const S=128, cv=document.createElement('canvas'); cv.width=S; cv.height=S;
-          const cx=cv.getContext('2d'); const m=Math.min(img.width,img.height);
-          cx.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,S,S);
-          const u=cv.toDataURL('image/jpeg',0.82);
-          u.length>140000 ? rej(new Error('사진이 너무 복잡해요 — 다른 사진으로 시도해 주세요.')) : res(u);
-        }catch(e){rej(e);} };
-        img.onerror = ()=>rej(new Error('사진을 읽지 못했습니다.'));
-        img.src = URL.createObjectURL(f);
-      });
-      MIAV.photo = url; MIAV.avatar=''; miavPaint(); msg.style.display='none';
-    } catch(e){
-      msg.style.display='block'; msg.style.background='#FDECEA'; msg.style.color='#C0392B';
-      msg.textContent = e.message||'사진 처리에 실패했습니다.';
-    }
-    fi.value='';
-  });
 }
 window.showPw = showPw;
 
@@ -1915,6 +1897,7 @@ function renderHome(){
           </div>
         </div>
       </div>
+      <div id="nt-nudge"></div>
 
       <div class="hm-blocks">${_worder.map((k,i)=>{ const h = HW[k]?HW[k]():''; return h ? `<section class="hm-b" data-k="${k}" style="order:${i}">${h}</section>` : ''; }).join('\n\n      ')}</div>
 
@@ -2011,6 +1994,7 @@ function renderHome(){
   loadHomeSchedule();
   loadHomeNotices();
   restoreHomeFolds();
+  try{ paintNtNudge(); }catch(e){}     // 🔔 v134 아직 알림을 안 켠 휴대폰에 작은 안내
 }
 window.renderHome = renderHome;
 
@@ -5254,46 +5238,271 @@ function updEditOrgMode(){
 }
 window.updEditOrgMode = updEditOrgMode;
 
-/* ── 🔔 교사 알림: 켜기(토큰 저장) + 종류별 수신 설정 ── */
+/* ── 🔔 교사 알림: 켜기(토큰 저장) + 종류별 수신 설정 ──
+   v134 — 휴대폰 먼저 다시 정리
+   · 이 기기가 무엇인지(아이폰 홈 화면 앱 · 아이폰 사파리 · 안드로이드 · 컴퓨터 · 카톡 안 브라우저) 알아보고 그에 맞는 안내만
+   · 켠 기기마다 이름표(fcmDevices)를 남겨 «알림 받는 기기» 목록으로 보여 줌 · 이 기기 끄기 · 안 쓰는 기기 빼기
+   · 컴퓨터 크롬이 연결돼 있는데도 «오프라인»이라고 잘못 알려 줄 때(installations/app-offline) 실제 연결을 확인하고 한 번 더 */
 const NT_KINDS = [
   ['msg','✉️ 쪽지 도착'], ['approval','📋 결재 요청 (내 차례)'],
   ['approval_result','✅ 결재 결과 (승인·반려·지급)'], ['pay','💰 회계 상신 (담당자)'],
   ['board','📢 게시판 새 글'],
 ];
-function paintNotifyTab(){
-  const prefs = CU.notifyPrefs || {};
-  $I('nt-prefs').innerHTML = NT_KINDS.map(([k,l])=>`
-    <label style="display:flex;align-items:center;gap:9px;font-size:13px;cursor:pointer">
-      <input type="checkbox" id="nt-k-${k}" ${prefs[k]===false?'':'checked'} style="width:16px;height:16px"> ${l}</label>`).join('');
-  const on = localStorage.getItem('staff_push_on')==='1' && ('Notification' in window) && Notification.permission==='granted';
-  $I('nt-state').textContent = on ? '✓ 이 기기에서 알림 받는 중' : '아직 꺼져 있어요';
-  if(on){ $I('nt-on').textContent='✓ 켜져 있음'; $I('nt-on').disabled=true; }
+const NT_FB = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js';
+function ntEnv(){
+  const ua = navigator.userAgent || '';
+  const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints||0) > 1);
+  const ios = ipad || /iPhone|iPod/.test(ua);
+  const android = /Android/i.test(ua);
+  let standalone = false;
+  try{ standalone = !!((window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone); }catch(e){}
+  const inApp = /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp|; wv\)/i.test(ua);
+  const vm = /OS (\d+)[_.](\d+)/.exec(ua); const iosVer = (ios && vm) ? (vm[1] + '.' + vm[2]) : '';
+  const hasN = typeof window.Notification === 'function';
+  const supported = hasN && ('serviceWorker' in navigator) && !!window.PushManager;
+  let perm = 'unsupported'; try{ if(hasN) perm = Notification.permission; }catch(e){}
+  const browser = /KAKAOTALK/i.test(ua) ? '카카오톡 안 브라우저' : /NAVER\(inapp/i.test(ua) ? '네이버 앱 안 브라우저' : inApp ? '앱 안 브라우저'
+    : /SamsungBrowser/i.test(ua) ? '삼성 인터넷' : /Whale/i.test(ua) ? '웨일' : /Edg\//.test(ua) ? '엣지'
+    : /CriOS|Chrome/i.test(ua) ? '크롬' : /FxiOS|Firefox/i.test(ua) ? '파이어폭스' : /Safari/i.test(ua) ? '사파리' : '브라우저';
+  const kind = ios ? (ipad ? 'ipad' : 'iphone') : android ? 'android' : 'pc';
+  const os = /Mac/.test(ua) ? '맥' : /Win/.test(ua) ? '윈도우' : /CrOS/.test(ua) ? '크롬북' : '컴퓨터';
+  const name = kind==='iphone' ? '아이폰' : kind==='ipad' ? '아이패드' : kind==='android' ? '안드로이드' : os;
+  const how = (ios || android) && standalone && !inApp ? '홈 화면 앱' : browser;
+  return { ios, ipad, android, phone: ios || android, standalone, inApp, iosVer, supported, perm, browser, kind, label: name + ' · ' + how };
+}
+const ntIcon = k => k==='pc' ? '💻' : k==='ipad' ? '📱' : '📱';
+// 토큰 → 짧은 이름표 열쇠 (문서 칸 이름으로 쓸 수 있게)
+function ntKey(t){ let h = 2166136261; t = String(t||''); for(let i=0;i<t.length;i++){ h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); } return 'd' + (h>>>0).toString(36) + t.length.toString(36); }
+const ntOn = () => { try{ return localStorage.getItem('staff_push_on')==='1' && typeof window.Notification === 'function' && Notification.permission==='granted'; }catch(e){ return false; } };
+async function ntVapid(){
+  const cfg = await getDoc(doc(db,'parentConfig','push'));
+  const vk = cfg.exists() ? (cfg.data().vapidKey||cfg.data().vapidkey||'') : '';
+  if(!vk) throw new Error('학교 알림 설정(VAPID)이 아직 없습니다.');
+  return vk;
+}
+/* 토큰 받기 — 브라우저가 «오프라인»이라고 잘못 알려 줘서 막힐 때(VPN · 보안 프로그램 등) 실제로 연결되는지 보고 한 번 더 */
+ntGetToken.hold = 0;
+async function ntGetToken(m, messaging, opts){
+  try { return await m.getToken(messaging, opts); }
+  catch(e){
+    const off = /app-offline|offline/i.test(String((e && e.code) || '') + ' ' + String((e && e.message) || ''));
+    if(!off || navigator.onLine !== false) throw e;
+    let reach = false;
+    try{ await fetch('https://firebaseinstallations.googleapis.com/', { mode:'no-cors', cache:'no-store' }); reach = true; }catch(_){}
+    if(!reach) throw new Error('인터넷 연결이 끊겨 있어요 — 와이파이·데이터를 확인하고 다시 눌러 주세요.');
+    try{ if(!(ntGetToken.hold++)) Object.defineProperty(navigator, 'onLine', { configurable:true, get: () => true }); }catch(_){ ntGetToken.hold--; throw e; }
+    try { return await m.getToken(messaging, opts); }
+    finally { try{ if(!(--ntGetToken.hold)) delete navigator.onLine; }catch(_){} }     // 마지막 하나가 끝나면 브라우저 값으로
+  }
+}
+function ntSay(ok, t){ const m=$I('nt-msg'); if(!m) return; m.style.display='block'; m.style.background=ok?'#DCFCE7':'#FDECEA'; m.style.color=ok?'#16A34A':'#C0392B'; m.textContent=t; }
+function ntFriendly(e){
+  const t = String((e && (e.code || '')) + ' ' + ((e && e.message) || e || ''));
+  if(/app-offline|offline/i.test(t)) return '이 브라우저가 «인터넷이 끊겼다»고 알려 와서 멈췄어요. 와이파이·VPN·보안 프로그램을 확인하고 다시 눌러 주세요. (휴대폰에서 켜 두시는 것을 추천해요)';
+  if(/messaging\/permission|NotAllowedError|permission-blocked/i.test(t)) return '알림이 허용되지 않았어요 — 위 안내대로 허용한 뒤 다시 눌러 주세요.';
+  if(/permission-denied|insufficient permissions/i.test(t)) return '저장할 권한이 없어요 — 로그아웃했다 다시 로그인한 뒤 눌러 주세요.';
+  if(/unsupported|not supported|isSupported/i.test(t)) return '이 브라우저는 알림을 지원하지 않아요.';
+  return '켜지 못했어요: ' + ((e && e.message) || e || '');
+}
+
+// 이 기기 상태 카드
+function ntCardHTML(E, on){
+  const dev = `<div class="nt-dev">${ntIcon(E.kind)} 이 기기: <b>${esc(E.label)}</b></div>`;
+  const guide = '<a href="install-guide.html" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:700;color:var(--gm)">📲 그림으로 보는 «홈 화면에 추가» 방법 ›</a>';
+  if(on) return `<div class="nt-card ok">${dev}<div class="nt-h">✅ 이 기기에서 알림을 받고 있어요</div>
+      쪽지 · 결재 · 회계 소식이 잠금화면 알림으로 와요. 앱을 보고 있을 때는 화면 위 «알림 띠»로 떠요.
+      <div class="nt-row"><button class="bs" onclick="diagStaffPush(true)">🧪 테스트 알림 보내기</button>
+        <button class="bs" onclick="disableStaffPush()" style="color:var(--danger,#C0392B)">이 기기 알림 끄기</button></div></div>`;
+  if(E.inApp) return `<div class="nt-card warn">${dev}<div class="nt-h">카카오톡 · 네이버 같은 앱 안에서 열려 있어요</div>
+      이 화면에서는 알림을 켤 수 없어요.
+      <ol class="nt-steps">
+        <li><b class="n">1</b><span>화면의 <b>⋯</b> 또는 <b>⋮</b> 메뉴 → <b>«다른 브라우저로 열기»</b> (아이폰은 <b>사파리</b>)</span></li>
+        <li><b class="n">2</b><span>${E.ios ? '사파리에서 <b>홈 화면에 추가</b>한 뒤 그 앱으로 열기' : '열린 크롬에서 로그인'}</span></li>
+        <li><b class="n">3</b><span>내 정보 › 🔔 알림 › <b>«이 휴대폰에서 알림 켜기»</b></span></li>
+      </ol></div>`;
+  if(E.ios && !E.standalone) return `<div class="nt-card warn">${dev}<div class="nt-h">📲 아이폰 · 아이패드는 «홈 화면에 추가»한 앱에서 알림을 받아요</div>
+      사파리 탭에서는 알림을 켤 수 없어요 (애플이 정한 방식이에요). 1분이면 끝나요.
+      <ol class="nt-steps">
+        <li><b class="n">1</b><span>사파리 ${E.ipad ? '위쪽' : '아래쪽'}의 <b>공유 단추 ⬆︎</b>를 누르기</span></li>
+        <li><b class="n">2</b><span>목록에서 <b>«홈 화면에 추가»</b> → <b>«추가»</b></span></li>
+        <li><b class="n">3</b><span>홈 화면에 생긴 <b>교사선교사</b> 아이콘으로 열고 → 내 정보 › 🔔 알림 › <b>«이 휴대폰에서 알림 켜기»</b></span></li>
+      </ol>${guide}</div>`;
+  if(!E.supported){
+    if(E.ios) return `<div class="nt-card warn">${dev}<div class="nt-h">아이폰을 iOS 16.4 이상으로 올려야 알림을 받을 수 있어요</div>
+      ${E.iosVer ? `지금 iOS ${E.iosVer} · ` : ''}설정 › 일반 › 소프트웨어 업데이트 → 업데이트한 뒤 홈 화면 앱을 다시 열어 주세요.</div>`;
+    return `<div class="nt-card warn">${dev}<div class="nt-h">이 브라우저는 알림을 지원하지 않아요</div>
+      휴대폰에서 켜 주세요 — 안드로이드는 크롬 · 삼성 인터넷, 아이폰은 홈 화면에 추가한 앱.</div>`;
+  }
+  if(E.perm === 'denied'){
+    const how = E.ios ? '아이폰 <b>설정</b> › <b>알림</b> › <b>교사선교사</b> › <b>알림 허용</b> 켜기 → 이 앱을 껐다 다시 열기'
+      : E.android ? (E.standalone ? '휴대폰 <b>설정</b> › <b>애플리케이션</b> › <b>교사선교사</b>(또는 크롬) › <b>알림</b> 허용'
+                                  : '주소창 오른쪽 <b>⋮</b> › <b>설정</b> › <b>사이트 설정</b> › <b>알림</b> › 이 사이트 <b>허용</b>')
+      : '주소창 왼쪽 아이콘(🔒 또는 ⚙︎) › <b>알림</b> › <b>허용</b> → 새로고침';
+    return `<div class="nt-card bad">${dev}<div class="nt-h">⛔ 이 기기에서 알림이 «차단»되어 있어요</div>
+      ${how} 한 뒤 아래 단추를 눌러 주세요.
+      <button class="bp nt-big" id="nt-on" onclick="enableStaffPush()">🔔 허용했어요 — 다시 켜기</button></div>`;
+  }
+  if(E.phone) return `<div class="nt-card">${dev}<div class="nt-h">🔔 이 휴대폰으로 쪽지 · 결재 알림 받기</div>
+      아래 단추를 누르면 «알림 허용»을 묻는 창이 떠요 — <b>«허용»</b>을 눌러 주세요.
+      <button class="bp nt-big" id="nt-on" onclick="enableStaffPush()">🔔 이 휴대폰에서 알림 켜기</button></div>`;
+  return `<div class="nt-card">${dev}<div class="nt-h">💡 알림은 휴대폰에서 받는 것을 추천해요</div>
+      휴대폰에서 교사 선교사를 열고 내 정보 › 🔔 알림에서 켜 주세요 (아이폰은 홈 화면에 추가한 앱에서).
+      컴퓨터에서도 받고 싶으면 아래 단추를 눌러요 — 크롬이 켜져 있을 때 화면 구석에 알림이 떠요.
+      <div class="nt-row"><button class="bs" id="nt-on" onclick="enableStaffPush()">💻 이 컴퓨터에서도 받기</button></div></div>`;
+}
+let NT_ME = null;      // 방금 읽은 내 교직원 문서 (기기 목록 · 받을 종류)
+// 이 기기가 정말 받고 있나 — 이 기기 표시 + (알고 있으면) 내 문서의 토큰 목록에도 있어야 «켜짐»
+function ntOnHere(){
+  if(!ntOn()) return false;
+  const tok = localStorage.getItem('staff_push_tok') || '';
+  if(!tok || !NT_ME || !Array.isArray(NT_ME.fcmTokens)) return true;     // 예전에 켠 기기 · 아직 못 읽음 → 표시대로
+  return NT_ME.fcmTokens.includes(tok);
+}
+async function paintNotifyTab(fresh){
+  const E = ntEnv();
+  const card = $I('nt-card'); if(card) card.innerHTML = ntCardHTML(E, ntOnHere());
+  // 받을 알림 종류 — 지금 저장된 값 그대로 (예전 화면 오류로 모두 꺼져 있으면 알려 줌) · 고치는 중이면 건드리지 않음
+  const paintKinds = (prefs) => {
+    const box = $I('nt-prefs'); if(!box || box.__dirty) return;
+    box.innerHTML = NT_KINDS.map(([k,l])=>`<label><input type="checkbox" id="nt-k-${k}" ${prefs[k]===false?'':'checked'}> <span>${l}</span></label>`).join('');
+    if(!box.__wired){ box.__wired = true; box.addEventListener('change', () => { box.__dirty = true; }); }
+    const allOff = NT_KINDS.every(([k])=>prefs[k]===false); const w = $I('nt-allOff'); if(w) w.style.display = allOff ? '' : 'none';
+  };
+  paintKinds(CU.notifyPrefs || {});
+  // 알림 받는 기기 — 내 문서를 새로 읽어서
+  try{
+    if(fresh !== false || !NT_ME){ const me = await getDoc(doc(db,'staff',CU.uid)); NT_ME = me.exists() ? me.data() : {}; }
+    if(NT_ME.notifyPrefs){ CU.notifyPrefs = NT_ME.notifyPrefs; paintKinds(CU.notifyPrefs); }
+    if(NT_ME.fcmDevices) CU.fcmDevices = NT_ME.fcmDevices;
+    // 다른 기기에서 이 기기를 뺐으면 → 이 기기는 «꺼짐»으로 바로잡기
+    const myTok = localStorage.getItem('staff_push_tok') || '';
+    if(myTok && Array.isArray(NT_ME.fcmTokens) && !NT_ME.fcmTokens.includes(myTok)){ localStorage.removeItem('staff_push_on'); localStorage.removeItem('staff_push_tok'); }
+    if(card) card.innerHTML = ntCardHTML(E, ntOnHere());
+    // 예전에 켠 이 기기(이름표 없음) — 조용히 토큰을 알아내 이름표를 붙인다
+    if(ntOn() && !localStorage.getItem('staff_push_tok') && !paintNotifyTab.__tried){
+      paintNotifyTab.__tried = true;
+      ntLearnToken().then(()=>paintNotifyTab()).catch(()=>{});
+    }
+    ntPaintDevices();
+  }catch(e){ const d=$I('nt-devices'); if(d) d.innerHTML = '<div style="font-size:12px;color:var(--tl)">기기 목록을 읽지 못했어요</div>'; }
+}
+function ntPaintDevices(){
+  const box = $I('nt-devices'); if(!box) return;
+  const toks = Array.isArray(NT_ME && NT_ME.fcmTokens) ? NT_ME.fcmTokens.filter(Boolean) : [];
+  const devs = (NT_ME && NT_ME.fcmDevices) || {};
+  const mine = localStorage.getItem('staff_push_tok') || '';
+  const n = $I('nt-devn'); if(n) n.textContent = toks.length ? toks.length + '대' : '';
+  if(!toks.length){ box.innerHTML = '<div style="font-size:12px;color:var(--tl);padding:2px 0 4px">아직 알림을 받는 기기가 없어요 — 휴대폰에서 켜 두면 쪽지 · 결재가 바로 와요.</div>'; return; }
+  const rows = toks.map(t => { const d = devs[ntKey(t)] || null; return { t, d, me: t === mine }; })
+    .sort((a,b)=> (b.me - a.me) || ((b.d && b.d.at && b.d.at.seconds) || 0) - ((a.d && a.d.at && a.d.at.seconds) || 0));
+  const hasPhone = rows.some(r => r.d && r.d.kind && r.d.kind !== 'pc') || (rows.some(r=>r.me) && ntEnv().phone);
+  const dt = d => { try{ const x = d.at && d.at.toDate ? d.at.toDate() : null; return x ? `${x.getMonth()+1}/${x.getDate()} 켬` : ''; }catch(e){ return ''; } };
+  box.innerHTML = rows.map((r,i) => `<div class="nt-d">
+      <span>${r.d ? ntIcon(r.d.kind) : '❔'}</span>
+      <span class="nm">${r.d ? esc(r.d.label || '기기') : (r.me ? esc(ntEnv().label) : '예전에 켠 기기 (이름 없음)')}</span>
+      ${r.me ? '<span class="me">이 기기</span>' : ''}<span class="dt">${r.d ? dt(r.d) : ''}</span>
+      ${r.me ? '' : `<button class="x" title="이 기기는 더 이상 받지 않기" onclick="removeStaffDevice(${i})">✕</button>`}
+    </div>`).join('')
+    + (hasPhone ? '' : '<div style="font-size:11.5px;color:#B45309;margin-top:2px">📱 휴대폰이 목록에 없어요 — 휴대폰에서 한 번 켜 두시는 것을 추천해요.</div>');
+  box.__rows = rows;
+}
+// 이미 켜 둔 기기의 토큰 알아내기 (새로 묻지 않음)
+async function ntLearnToken(){
+  if(!ntOn()) return '';
+  const m = await import(NT_FB);
+  if(m.isSupported && !(await m.isSupported())) return '';
+  const vk = await ntVapid();
+  const reg = await navigator.serviceWorker.register('sw.js');
+  const token = await ntGetToken(m, m.getMessaging(app), { vapidKey: vk, serviceWorkerRegistration: reg });
+  if(!token) return '';
+  // 다른 기기에서 ✕로 뺀 토큰이면 다시 넣지 않는다 → 이 기기는 «꺼짐»으로
+  const toks = Array.isArray(NT_ME && NT_ME.fcmTokens) ? NT_ME.fcmTokens : [];
+  if(!toks.includes(token)){ localStorage.removeItem('staff_push_on'); return ''; }
+  localStorage.setItem('staff_push_tok', token);
+  const E = ntEnv();
+  await updateDoc(doc(db,'staff',CU.uid), { ['fcmDevices.'+ntKey(token)]: { label: E.label, kind: E.kind, at: Timestamp.now() } });
+  return token;
 }
 window.enableStaffPush = async () => {
-  const btn=$I('nt-on'), m=$I('nt-msg');
-  const say=(ok,t)=>{ m.style.display='block'; m.style.background=ok?'#DCFCE7':'#FDECEA'; m.style.color=ok?'#16A34A':'#C0392B'; m.textContent=t; };
+  const btn=$I('nt-on');
+  const E = ntEnv();
   try{
-    if(!('Notification' in window) || !('serviceWorker' in navigator)) return say(false,'이 브라우저는 알림을 지원하지 않아요. (아이폰은 홈 화면에 추가한 앱에서)');
-    btn.disabled=true; btn.textContent='설정 중…';
-    const perm = await Notification.requestPermission();
-    if(perm!=='granted'){ btn.disabled=false; btn.textContent='🔔 이 기기에서 알림 켜기'; return say(false,'알림이 허용되지 않았어요. 브라우저 설정에서 허용해 주세요.'); }
-    const cfg = await getDoc(doc(db,'parentConfig','push'));
-    const vk = cfg.exists() ? (cfg.data().vapidKey||cfg.data().vapidkey||'') : '';
-    if(!vk) throw new Error('학교 알림 설정(VAPID)이 아직 없습니다.');
-    const { getMessaging, getToken } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js');
-    const reg = await navigator.serviceWorker.register('firebase-messaging-sw.js');
-    const token = await getToken(getMessaging(app), { vapidKey: vk, serviceWorkerRegistration: reg });
+    if(!E.supported) return ntSay(false, E.ios ? '아이폰 · 아이패드는 홈 화면에 추가한 앱에서 켜 주세요 (위 안내).' : '이 브라우저는 알림을 지원하지 않아요.');
+    if(btn){ btn.disabled=true; btn.textContent='켜는 중…'; }
+    const perm = await Notification.requestPermission();      // 누른 바로 그때 물어야 아이폰에서도 창이 뜬다
+    if(perm!=='granted'){ paintNotifyTab(false); return ntSay(false, perm==='denied' ? '알림이 차단되었어요 — 위 안내대로 허용해 주세요.' : '알림 허용 창에서 «허용»을 눌러 주세요.'); }
+    const vk = await ntVapid();
+    const m = await import(NT_FB);
+    const reg = await navigator.serviceWorker.register('sw.js');     // v134 — 화면 저장 · 알림을 한 서비스 워커로 (같은 자리를 두 파일이 번갈아 차지하지 않게)
+    const token = await ntGetToken(m, m.getMessaging(app), { vapidKey: vk, serviceWorkerRegistration: reg });
     if(!token) throw new Error('토큰을 만들지 못했습니다.');
-    await updateDoc(doc(db,'staff',CU.uid), { fcmTokens: arrayUnion(token) });
-    localStorage.setItem('staff_push_on','1');
-    try{ window.__lpLoad = 1; import('./live-push.js?v=131').then(m=>m.start()).catch(()=>{}); }catch(e){}   // 🔔 v131 지금부터 화면 위 알림 띠도
-    btn.textContent='✓ 켜져 있음'; $I('nt-state').textContent='✓ 이 기기에서 알림 받는 중';
-    say(true,'켰습니다 ✓ 이제 쪽지·결재 소식이 이 기기로 옵니다');
-  }catch(e){ btn.disabled=false; btn.textContent='🔔 이 기기에서 알림 켜기'; say(false,'실패: '+(e.message||'')); }
+    const upd = { fcmTokens: arrayUnion(token), ['fcmDevices.'+ntKey(token)]: { label: E.label, kind: E.kind, at: Timestamp.now() } };
+    // 받을 종류가 모두 꺼져 있으면(예전 화면 오류) 알림을 켜는 김에 다시 모두 켠다
+    const P = CU.notifyPrefs;
+    if(P && !CU.notifyPrefsV && NT_KINDS.every(([k])=>P[k]===false)){ const all={}; NT_KINDS.forEach(([k])=>all[k]=true); upd.notifyPrefs = all; upd.notifyPrefsV = 134; CU.notifyPrefs = all; CU.notifyPrefsV = 134; }
+    await updateDoc(doc(db,'staff',CU.uid), upd);
+    localStorage.setItem('staff_push_on','1'); localStorage.setItem('staff_push_tok', token);
+    try{ window.__lpLoad = 1; import('./live-push.js?v=131').then(x=>x.start()).catch(()=>{}); }catch(e){}   // 🔔 v131 지금부터 화면 위 알림 띠도
+    await paintNotifyTab();
+    ntSay(true, E.phone ? '켰습니다 ✓ 이제 쪽지 · 결재 소식이 이 휴대폰으로 와요' : '켰습니다 ✓ 이 컴퓨터로도 알림이 와요');
+    try{ const nb = $I('nt-nudge'); if(nb) nb.innerHTML = ''; }catch(e){}
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent = E.phone ? '🔔 이 휴대폰에서 알림 켜기' : '💻 이 컴퓨터에서도 받기'; }
+    ntSay(false, ntFriendly(e));
+  }
 };
+// 이 기기 알림 끄기 (다른 기기는 그대로)
+window.disableStaffPush = async () => {
+  if(!confirm('이 기기에서 알림을 끌까요?\n(다른 기기는 그대로 받아요)')) return;
+  try{
+    let tok = localStorage.getItem('staff_push_tok') || '';
+    let reg = null;
+    try{
+      const m = await import(NT_FB);
+      reg = await navigator.serviceWorker.register('sw.js');
+      const messaging = m.getMessaging(app);
+      try{ const t = await ntGetToken(m, messaging, { vapidKey: await ntVapid(), serviceWorkerRegistration: reg }); if(!tok) tok = t || ''; }catch(e){}
+      if(m.deleteToken) await m.deleteToken(messaging);
+    }catch(e){
+      try{ const sub = reg && reg.pushManager && await reg.pushManager.getSubscription(); if(sub) await sub.unsubscribe(); }catch(_){}
+    }
+    if(tok) await updateDoc(doc(db,'staff',CU.uid), { fcmTokens: arrayRemove(tok), ['fcmDevices.'+ntKey(tok)]: deleteField() });
+    localStorage.removeItem('staff_push_on'); localStorage.removeItem('staff_push_tok');
+    await paintNotifyTab();
+    ntSay(true, '이 기기 알림을 껐어요. 다시 받으려면 «알림 켜기»를 누르세요.');
+  }catch(e){ ntSay(false, '끄지 못했어요: ' + (e.message||'')); }
+};
+// 목록에서 안 쓰는 기기 빼기 (바꾼 휴대폰 등)
+window.removeStaffDevice = async (i) => {
+  const box = $I('nt-devices'); const r = box && box.__rows && box.__rows[i]; if(!r) return;
+  const nm = r.d ? (r.d.label || '이 기기') : '이름 없는 기기';
+  if(!confirm(`«${nm}»은(는) 더 이상 알림을 받지 않게 할까요?\n(그 기기에서 다시 켜면 다시 받아요)`)) return;
+  try{
+    await updateDoc(doc(db,'staff',CU.uid), { fcmTokens: arrayRemove(r.t), ['fcmDevices.'+ntKey(r.t)]: deleteField() });
+    await paintNotifyTab(); ntSay(true, '목록에서 뺐어요.');
+  }catch(e){ ntSay(false, '빼지 못했어요: ' + (e.message||'')); }
+};
+// 🏠 홈 — 아직 알림을 안 켠 휴대폰에만 작은 안내 (나중에 → 14일 동안 숨김)
+function paintNtNudge(){
+  const box = $I('nt-nudge'); if(!box) return;
+  const E = ntEnv();
+  let hide = false; try{ hide = Date.now() < +(localStorage.getItem('nt_nudge_until') || 0); }catch(e){}
+  const sameKind = Object.values((CU && CU.fcmDevices) || {}).some(d => d && d.kind === E.kind);
+  if(!E.phone || ntOn() || hide || sameKind || E.perm === 'denied'){ box.innerHTML = ''; return; }
+  const ios = E.ios && !E.standalone;
+  if(!E.supported && !ios && !E.inApp){ box.innerHTML = ''; return; }
+  box.innerHTML = `<div style="display:flex;align-items:center;gap:10px;background:var(--wh,#fff);border:1.5px solid var(--gl,#D4E9E2);border-radius:12px;padding:11px 12px;margin:0 0 14px;box-shadow:0 2px 10px rgba(0,0,0,.04)">
+      <span style="font-size:22px;flex:none">${ios || E.inApp ? '📲' : '🔔'}</span>
+      <span style="flex:1;min-width:0;font-size:13px;line-height:1.5;color:var(--tx,#1F2320)"><b>${ios || E.inApp ? '홈 화면에 추가하면' : '이 휴대폰으로'}</b> 쪽지 · 결재 알림을 바로 받을 수 있어요</span>
+      <button class="bp" style="flex:none;padding:8px 12px;font-size:12.5px;border-radius:10px" onclick="openMyInfo();switchMyTab('nt')">${ios || E.inApp ? '방법 보기' : '켜기'}</button>
+      <button class="bs" style="flex:none;padding:8px 9px;font-size:12px;border-radius:10px" onclick="try{localStorage.setItem('nt_nudge_until', String(Date.now()+14*86400000))}catch(e){};this.parentNode.remove()">나중에</button>
+    </div>`;
+}
+window.paintNtNudge = paintNtNudge;
 /* 🧪 진단: 어디서 끊기는지 한 번에 본다 + 나에게 테스트 알림 */
 window.diagStaffPush = async () => {
   const out = $I('nt-diag'); out.style.display='block'; out.textContent = '점검 중…';
+  try{ const dd = out.closest('details'); if(dd) dd.open = true; out.scrollIntoView({ block:'nearest', behavior:'smooth' }); }catch(e){}
   const L = [];
   const ok = (t)=>L.push('✅ '+t), bad = (t)=>L.push('❌ '+t), info=(t)=>L.push('ℹ️ '+t);
   try {
@@ -5303,11 +5512,13 @@ window.diagStaffPush = async () => {
     else bad('알림 권한: '+Notification.permission+' (허용 필요)');
     if(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ok('실행 방식: 설치한 앱');
     else info('실행 방식: 브라우저 탭 (PC 크롬은 OK · 아이폰/패드는 설치 앱 필요)');
+    info('이 기기: ' + ntEnv().label);
+    if(navigator.onLine === false) bad('브라우저가 «오프라인»이라고 알려 옴 (VPN · 보안 프로그램 때문일 수 있음 — 알림 켜기는 실제 연결을 확인하고 진행해요)');
     // 2 서비스 워커
     if('serviceWorker' in navigator){
       const regs = await navigator.serviceWorker.getRegistrations();
-      const sw = regs.find(r => (r.active||r.installing||r.waiting)?.scriptURL?.includes('firebase-messaging-sw'));
-      sw ? ok('서비스 워커: 등록됨') : bad('서비스 워커: 미등록 → «알림 켜기»를 다시 눌러주세요');
+      const sw = regs.find(r => /firebase-messaging-sw|\/sw\.js/.test((r.active||r.installing||r.waiting)?.scriptURL || ''));
+      sw ? ok('서비스 워커: 등록됨 (' + (((sw.active||sw.installing||sw.waiting).scriptURL||'').split('/').pop()) + ')') : bad('서비스 워커: 미등록 → «알림 켜기»를 다시 눌러주세요');
     } else bad('서비스 워커 미지원');
     // 3 내 문서의 토큰
     const me = await getDoc(doc(db,'staff',CU.uid));
@@ -5338,9 +5549,13 @@ window.diagStaffPush = async () => {
   out.textContent = L.join('\n');
 };
 window.saveNotifyPrefs = async () => {
-  const prefs = {}; NT_KINDS.forEach(([k])=>{ prefs[k] = !!$I('nt-k-'+k)?.checked; });
   const m=$I('nt-msg');
-  try{ await updateDoc(doc(db,'staff',CU.uid), { notifyPrefs: prefs }); CU.notifyPrefs = prefs;
+  // v134 — 예전에는 칸이 안 그려진 채로 저장되어 «모든 종류 꺼짐»이 저장됐다 → 칸이 있을 때만
+  if(NT_KINDS.some(([k])=>!$I('nt-k-'+k))){ m.style.display='block'; m.style.background='#FDECEA'; m.style.color='#C0392B'; m.textContent='받을 알림 종류를 불러오지 못했어요 — 창을 닫았다 다시 열어 주세요.'; return; }
+  const prefs = {}; NT_KINDS.forEach(([k])=>{ prefs[k] = !!$I('nt-k-'+k)?.checked; });
+  try{ await updateDoc(doc(db,'staff',CU.uid), { notifyPrefs: prefs, notifyPrefsV: 134 }); CU.notifyPrefs = prefs; CU.notifyPrefsV = 134;
+    try{ $I('nt-prefs').__dirty = false; }catch(e){}
+    const w = $I('nt-allOff'); if(w) w.style.display = NT_KINDS.every(([k])=>prefs[k]===false) ? '' : 'none';
     m.style.display='block'; m.style.background='#DCFCE7'; m.style.color='#16A34A'; m.textContent='설정을 저장했습니다 ✓';
   }catch(e){ m.style.display='block'; m.style.background='#FDECEA'; m.style.color='#C0392B'; m.textContent='저장 실패: '+(e.message||''); }
 };
@@ -5377,6 +5592,7 @@ window.saveMyAvatar = async () => {
   }
 };
 function openMyInfo(){
+  document.querySelectorAll('#my-info-mod').forEach(x=>x.remove());     // v134 — 창 오른쪽 위 ✕로 닫으면 빈 껍데기가 남던 것
   const el=document.createElement('div'); el.id='my-info-mod';
   const c = STAFF_CACHE[CU.uid] || CU || {};
   const IN = 'height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none;font-family:inherit';
@@ -5386,15 +5602,53 @@ function openMyInfo(){
   el.innerHTML=`
     <div class="mov" style="align-items:center;padding:20px">
       <div class="mbk" onclick="document.getElementById('my-info-mod').remove()"></div>
+      <style>
+        /* v134 — 휴대폰에서 탭 다섯 개가 창보다 넓어 창 전체가 옆으로 밀리던 것: 다섯 칸에 맞춰 나누고 옆으로 넘치지 않게 */
+        #my-info-mod .mbox{overflow-x:hidden}
+        #my-info-mod .mi-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;margin-bottom:16px}
+        #my-info-mod .mi-tabs .subtbtn{padding:8px 4px 9px;min-width:0;justify-content:center;overflow:hidden;text-overflow:ellipsis;font-size:12.5px}
+        #my-info-mod .mi-tabs .subtbtn .ic{flex:none}
+        @media(max-width:560px){
+          #my-info-mod .mov{padding:10px !important}
+          #my-info-mod .mbox{padding-left:14px !important;padding-right:14px !important;padding-bottom:24px !important}
+          #my-info-mod .mi-tabs{gap:3px}
+          #my-info-mod .mi-tabs .subtbtn{flex-direction:column;gap:2px;padding:7px 1px 8px;font-size:11.5px;line-height:1.15;min-height:48px;white-space:nowrap}
+          #my-info-mod .mi-tabs .subtbtn .ic{font-size:17px}
+        }
+        /* 🔔 알림 탭 */
+        #mi-nt .nt-card{border-radius:12px;padding:13px 14px;margin-bottom:12px;font-size:12.5px;line-height:1.65;border:1px solid var(--ivd);background:var(--iv)}
+        #mi-nt .nt-card.ok{background:#E8F6EE;border-color:#B7E2C8}
+        #mi-nt .nt-card.warn{background:#FFF7E6;border-color:#F2D9A6}
+        #mi-nt .nt-card.bad{background:#FDECEA;border-color:#F3C3BD}
+        #mi-nt .nt-h{font-size:14.5px;font-weight:900;color:var(--tx,#1F2320);margin-bottom:3px}
+        #mi-nt .nt-dev{font-size:11.5px;color:var(--ts);margin-bottom:8px}
+        #mi-nt .nt-steps{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+        #mi-nt .nt-steps li{display:flex;gap:9px;align-items:flex-start}
+        #mi-nt .nt-steps b.n{flex:none;width:22px;height:22px;border-radius:50%;background:var(--gm,#00704A);color:#fff;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
+        #mi-nt .nt-big{width:100%;padding:14px 12px;font-size:15px;font-weight:900;border-radius:12px;margin-top:10px}
+        #mi-nt .nt-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+        #mi-nt .nt-row > button{flex:1 1 auto}
+        #mi-nt .nt-sec{font-size:12px;font-weight:800;color:var(--ts);margin:16px 0 7px;display:flex;align-items:center;gap:6px}
+        #mi-nt .nt-devs{display:flex;flex-direction:column;gap:6px}
+        #mi-nt .nt-d{display:flex;align-items:center;gap:9px;border:1px solid var(--ivd);border-radius:10px;padding:8px 10px;font-size:12.5px;background:var(--wh,#fff)}
+        #mi-nt .nt-d .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
+        #mi-nt .nt-d .dt{font-size:11px;color:var(--tl);flex:none}
+        #mi-nt .nt-d .me{font-size:10.5px;font-weight:800;color:#fff;background:var(--gm,#00704A);border-radius:6px;padding:1px 6px;flex:none}
+        #mi-nt .nt-d .x{border:0;background:none;color:var(--tl);cursor:pointer;font-size:13px;padding:2px 4px;flex:none}
+        #mi-nt .nt-kinds{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px}
+        #mi-nt .nt-kinds label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;min-width:0}
+        #mi-nt .nt-kinds input{width:17px;height:17px;flex:none}
+        @media(max-width:560px){ #mi-nt .nt-kinds{grid-template-columns:1fr} }
+      </style>
       <div class="mbox" style="max-width:520px;border-radius:20px;max-height:90vh">
         <div class="mtitle">내 정보</div>
 
-        <div style="display:flex;gap:6px;margin-bottom:16px">
-          <button class="subtbtn on" id="mi-t1" onclick="switchMyTab('basic')" style="padding:8px 16px">👤 기본</button>
-          <button class="subtbtn" id="mi-t2" onclick="switchMyTab('hr')" style="padding:8px 16px">📇 인사정보</button>
-          <button class="subtbtn" id="mi-t3" onclick="switchMyTab('pw')" style="padding:8px 16px">🔑 비밀번호</button>
-          <button class="subtbtn" id="mi-t4" onclick="switchMyTab('av')" style="padding:8px 16px">🙂 프로필</button>
-          <button class="subtbtn" id="mi-t5" onclick="switchMyTab('nt')" style="padding:8px 16px">🔔 알림</button>
+        <div class="mi-tabs">
+          <button class="subtbtn on" id="mi-t1" onclick="switchMyTab('basic')"><span class="ic">👤</span><span>기본</span></button>
+          <button class="subtbtn" id="mi-t2" onclick="switchMyTab('hr')"><span class="ic">📇</span><span>인사정보</span></button>
+          <button class="subtbtn" id="mi-t3" onclick="switchMyTab('pw')"><span class="ic">🔑</span><span>비밀번호</span></button>
+          <button class="subtbtn" id="mi-t4" onclick="switchMyTab('av')"><span class="ic">🙂</span><span>프로필</span></button>
+          <button class="subtbtn" id="mi-t5" onclick="switchMyTab('nt')"><span class="ic">🔔</span><span>알림</span></button>
         </div>
 
         <!-- 기본: 명부에 표시되는 내 정보 전체 -->
@@ -5446,24 +5700,20 @@ function openMyInfo(){
           </div>
         </div>
 
-        <!-- 🔔 알림 -->
+        <!-- 🔔 알림 (v134 — 휴대폰 먼저: 이 기기 상태 → 켜는 방법 → 받는 기기 → 받을 종류) -->
         <div id="mi-nt" style="display:none">
-          <div style="background:var(--gp);border:1px solid var(--gm);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--gd);line-height:1.6">
-            쪽지·결재·회계 소식을 이 기기의 <b>잠금화면 알림</b>으로 받습니다.
-            앱을 열어 보고 있을 때는 화면 위에 <b>알림 띠</b>로 떠요.
-            아이폰·아이패드는 홈 화면에 추가한 앱에서 켜야 해요.
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-            <button class="bp" id="nt-on" onclick="enableStaffPush()">🔔 이 기기에서 알림 켜기</button>
-            <span id="nt-state" style="font-size:12px;color:var(--ts)"></span>
-          </div>
-          <div style="font-size:12px;color:var(--tl);margin-bottom:6px">받을 알림 종류</div>
-          <div id="nt-prefs" style="display:flex;flex-direction:column;gap:7px"></div>
-          <div class="alert" id="nt-msg" style="display:none;margin-top:10px;border-radius:9px;padding:8px 11px;font-size:12px;font-weight:700"></div>
-          <div style="margin-top:14px;border-top:1px solid var(--iv);padding-top:12px">
-            <button class="bs" onclick="diagStaffPush()">🧪 진단 + 테스트 알림 보내기</button>
-            <div id="nt-diag" style="display:none;margin-top:9px;background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:9px;padding:9px 12px;font-size:12px;line-height:1.7;white-space:pre-wrap"></div>
-          </div>
+          <div id="nt-card"></div>
+          <div class="alert" id="nt-msg" style="display:none;margin:0 0 10px;border-radius:9px;padding:8px 11px;font-size:12px;font-weight:700"></div>
+          <div class="nt-sec">📲 알림 받는 기기 <span id="nt-devn" style="font-weight:700;color:var(--tl)"></span></div>
+          <div id="nt-devices" class="nt-devs"><div style="font-size:12px;color:var(--tl)">불러오는 중…</div></div>
+          <div class="nt-sec">받을 알림 종류</div>
+          <div id="nt-prefs" class="nt-kinds"></div>
+          <div id="nt-allOff" style="display:none;margin-top:8px;font-size:12px;color:#B45309;background:#FFF7E6;border-radius:8px;padding:7px 10px">⚠️ 지금 모든 종류가 꺼져 있어요 — 받을 것을 체크하고 «설정 저장»을 눌러 주세요.</div>
+          <details style="margin-top:14px;border-top:1px solid var(--iv);padding-top:10px">
+            <summary style="cursor:pointer;font-size:12.5px;font-weight:700;color:var(--ts)">🧪 알림이 안 올 때 — 진단 · 나에게 테스트 알림</summary>
+            <button class="bs" style="margin-top:9px" onclick="diagStaffPush()">🧪 진단 + 테스트 알림 보내기</button>
+            <div id="nt-diag" style="display:none;margin-top:9px;background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:9px;padding:9px 12px;font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere"></div>
+          </details>
           <div class="mact" style="margin-top:16px">
             <button class="bs" onclick="document.getElementById('my-info-mod').remove()">닫기</button>
             <button class="bp" onclick="saveNotifyPrefs()">설정 저장</button>
@@ -5512,6 +5762,36 @@ function openMyInfo(){
       </div>
     </div>`;
   document.body.appendChild(el);
+  /* v134 — 아래 준비 코드가 예전에는 «비밀번호 확인(showPw)» 끝에 잘못 붙어 있어서
+     내 정보 › 🙂 프로필(미리보기 · 사진 올리기)과 🔔 알림(받을 알림 종류 칸)이 비어 있었다 */
+  MIAV = { avatar: CU.avatar||'', photo: CU.photo||'' };
+  miavPaint();
+  try{ paintNotifyTab().catch(()=>{}); }catch(e){}
+  const fi = $I('miav-file');
+  if(fi) fi.addEventListener('change', async ()=>{
+    const f = fi.files && fi.files[0]; if(!f) return;
+    const msg = $I('miav-msg');
+    try {
+      const url = await new Promise((res, rej)=>{
+        const img = new Image();
+        img.onload = ()=>{ try{
+          const S=128, cv=document.createElement('canvas'); cv.width=S; cv.height=S;
+          const cx=cv.getContext('2d'); const m=Math.min(img.width,img.height);
+          cx.drawImage(img,(img.width-m)/2,(img.height-m)/2,m,m,0,0,S,S);
+          const u=cv.toDataURL('image/jpeg',0.82);
+          u.length>140000 ? rej(new Error('사진이 너무 복잡해요 — 다른 사진으로 시도해 주세요.')) : res(u);
+        }catch(e){rej(e);} };
+        img.onerror = ()=>rej(new Error('사진을 읽지 못했습니다.'));
+        img.src = URL.createObjectURL(f);
+      });
+      MIAV.photo = url; MIAV.avatar=''; miavPaint(); msg.style.display='none';
+    } catch(e){
+      msg.style.display='block'; msg.style.background='#FDECEA'; msg.style.color='#C0392B';
+      msg.textContent = e.message||'사진 처리에 실패했습니다.';
+    }
+    fi.value='';
+  });
+
 }
 window.openMyInfo = openMyInfo;
 
@@ -5520,6 +5800,7 @@ function switchMyTab(t){
   const t4 = $I('mi-t4'); if(t4) t4.classList.toggle('on', t==='av');
   const nt = $I('mi-nt'); if(nt) nt.style.display = (t==='nt') ? '' : 'none';
   const t5 = $I('mi-t5'); if(t5) t5.classList.toggle('on', t==='nt');
+  if(t==='nt'){ try{ paintNotifyTab(false).catch(()=>{}); }catch(e){} }
   ['basic','hr','pw'].forEach(k=>{ const e=$I('mi-'+k); if(e) e.style.display='none'; });
   ['mi-t1','mi-t2','mi-t3'].forEach(id=>{ const e=$I(id); if(e) e.classList.remove('on'); });
   const map = {basic:'mi-t1', hr:'mi-t2', pw:'mi-t3'};

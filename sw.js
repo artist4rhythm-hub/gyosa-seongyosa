@@ -7,6 +7,13 @@
 //   · Firestore 등 실시간 자료 → 손대지 않음 (항상 실서버)
 const CACHE = 'gyosa-v5';   // v5: 우리 사이트 JS·CSS·JSON도 네트워크 우선 — 업데이트 직후 «새 화면+옛 부품» 혼합(백지 원인) 원천 차단
 
+/* 🔔 v134 — 알림(푸시)도 이 서비스 워커가 받는다.
+   예전: 알림을 켤 때는 firebase-messaging-sw.js 를, 화면을 열 때마다 이 sw.js 를 «같은 자리(범위)»에 등록해서
+         화면을 한 번 열면 알림 받는 부분이 이 파일로 바뀌었다 — 이 파일에는 푸시를 받는 곳이 없어
+         휴대폰 · 컴퓨터 알림이 뜨지 않았다(크롬은 «백그라운드에서 업데이트됨» 알림, 아이폰은 구독이 끊길 수 있음).
+   이제: 알림 받는 부분을 여기로 불러와 어느 쪽이 등록돼 있어도 알림이 뜬다 (못 불러와도 화면 저장 기능은 그대로). */
+try { importScripts('firebase-messaging-sw.js'); } catch (e) { /* 연결이 끊긴 채 설치될 때 등 — 다음 업데이트 때 다시 */ }
+
 self.addEventListener('install', e => { self.skipWaiting(); });
 
 self.addEventListener('activate', e => {
