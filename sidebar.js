@@ -277,6 +277,8 @@ function renderShell(activeKey, user){
   window.__PAGEKEY = activeKey;
   SB_ACTIVE = activeKey;
   SB_USER = user || null;
+  // 🔔 v131 이 기기에서 «알림 켜기»를 했으면 — 앱을 열어 둔 동안 온 알림을 화면 위 띠로 (live-push.js)
+  try{ if(user && !window.__lpLoad && localStorage.getItem('staff_push_on') === '1'){ window.__lpLoad = 1; import('./live-push.js?v=131').catch(()=>{}); } }catch(e){}
 
   if(!document.getElementById('sb-style')) injectSidebarCSS();
 
