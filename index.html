@@ -297,6 +297,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="menu.js"></script>
 <script src="filename.js"></script>
 <script src="sidebar.js"></script>
+<script src="home-layout.js?v=136"></script>
 <script type="module" src="union.js?v=64"></script>
 <script type="module" src="badges.js"></script>
 </head>
@@ -520,6 +521,7 @@ onAuthStateChanged(auth, async (user) => {
     if (CU && document.getElementById('app')) { location.replace('index.html'); return; }
     CU = null;
     try { window.staffLite && staffLite.drop(); } catch(e){}   // ⚡ v133 — 로그아웃(직접 · 자동 · 다른 화면에서)하면 교직원 사본도 지움
+    try { window.orgCore && orgCore.setUnion(false); sessionStorage.removeItem('gyosa_union_uid'); } catch(e){}   // 🔐 v136 — 로그아웃 상태에서는 연합을 닫는다 (다음에 로그인하는 분이 이어받지 않게)
     authResolved = true;
     window.hideLoading && window.hideLoading();
     window.__BOOT_OK=true; $I('ls').style.display = 'flex';
@@ -603,6 +605,7 @@ async function doLogout() {
   // 저장된 로그인 흔적 정리
   try { ['gyosa_role','gyosa_name','gyosa_uid','gyosa_pagedeny'].forEach(k=>localStorage.removeItem(k)); } catch(e){}
   try { window.staffLite && staffLite.drop(); } catch(e){}
+  try { window.orgCore && orgCore.setUnion(false); sessionStorage.removeItem('gyosa_union_uid'); } catch(e){}   // 🔐 v136 — 연합도 닫기
   // 어느 화면에서든 → 최초 로그인 화면으로
   location.href = 'index.html';
 }
@@ -1313,19 +1316,12 @@ function renderHome(){
 
   /* ── 🧲 위젯 블록 빌더 — WORDER() 순서대로 조립 ── */
   const HW = {
-    wxmemo: ()=> (widgetOn('wx')||widgetOn('memo')) ? `
-      <div style="display:flex;justify-content:flex-end;margin:-4px 0 6px">
-        <button class="hm-laybtn" onclick="cycleLayout()" title="날씨·메모 배치를 바꿉니다 (기본 → 메모 넓게 → 한 줄로)">🧩 배치: ${HOME_LAYOUT==='std'?'기본':HOME_LAYOUT==='memo'?'메모 넓게':'한 줄로'}</button>
-      </div>
-      <div class="hm-cols hm-lay-${HOME_LAYOUT}">
-        ${widgetOn('wx') ? `<div class="hm-wx" id="hm-wx"><div class="wx-load">날씨를 불러오는 중…</div></div>` : ''}
-        ${widgetOn('memo') ? `<div class="hm-memo" id="hm-memo"></div>` : ''}
-      </div>` : '',
-    tools: ()=> (widgetOn('chk')||widgetOn('dday')||widgetOn('fav')) ? `<div class="hm-tools">
-        ${widgetOn('chk') ? `<div class="hm-tool" id="hm-chk"></div>` : ''}
-        ${widgetOn('dday') ? `<div class="hm-tool" id="hm-dday"></div>` : ''}
-        ${widgetOn('fav') ? `<div class="hm-tool" id="hm-fav"></div>` : ''}
-      </div>` : '',
+    // 🧱 v136 — 날씨 · 메모 · 개인 도구(할 일 · D-Day · 즐겨찾기)는 낱낱의 창 (✏️ 배치 바꾸기로 크기 · 자리를 따로 정함)
+    wx:   ()=> widgetOn('wx')   ? `<div class="hm-wx" id="hm-wx"><div class="wx-load">날씨를 불러오는 중…</div></div>` : '',
+    memo: ()=> widgetOn('memo') ? `<div class="hm-memo" id="hm-memo"></div>` : '',
+    chk:  ()=> widgetOn('chk')  ? `<div class="hm-tool" id="hm-chk"></div>` : '',
+    dday: ()=> widgetOn('dday') ? `<div class="hm-tool" id="hm-dday"></div>` : '',
+    fav:  ()=> widgetOn('fav')  ? `<div class="hm-tool" id="hm-fav"></div>` : '',
     world: ()=> widgetOn('world') ? `<div class="hm-world" id="hm-world"></div>` : '',
     today: ()=> widgetOn('today') ? `<div class="hm-today" id="hm-today">
         <div class="hm-tdi"><span class="hm-tdc">🕘</span><div><div class="hm-tdl">오늘 내 출근</div><div class="hm-tdv" id="td-att">확인 중…</div></div></div>
@@ -1396,8 +1392,8 @@ function renderHome(){
       .hm-blocks{display:block}   /* 위젯 블록 묶음 (v-111) — 블록 배치라 위젯 사이 간격은 예전 그대로 (차례는 «홈 고르기» 순서대로 그려짐) */
       /* 🖥 넓은 화면 — 두 단 (v-112 · arrangeHome 이 넓을 때만 .split 을 붙임)
          왼쪽 = 출결 · 동아리 · 시간표 · 날씨·메모 · 세계 시각 · 빠른 이동 / 오른쪽 = 처리할 일 · 회의 · 결재 · 경비 · D-Day · 오늘 한눈에 · 개인 도구 */
-      .hm-blocks.split{display:grid;grid-template-columns:minmax(0,1fr) 360px;column-gap:24px;align-items:start}
-      html[data-lay="3"] .hm-blocks.split{grid-template-columns:minmax(0,1fr) 400px;column-gap:28px}
+      .hm-blocks.split{display:grid;grid-template-columns:minmax(0,1fr) var(--hm-side,360px);column-gap:24px;align-items:start}
+      html[data-lay="3"] .hm-blocks.split{grid-template-columns:minmax(0,1fr) var(--hm-side,400px);column-gap:28px}
       .hm-main,.hm-side{min-width:0}
       .hm-main .wc-grid{grid-template-columns:repeat(auto-fit,minmax(104px,1fr))}   /* 왼쪽 단 폭에 맞춰 세계 시계 칸 수를 정함 (좁게 9칸으로 끼지 않게) */
       /* 넓으면 인사 카드도 낮게 — 시계를 오른쪽으로 */
@@ -1426,6 +1422,9 @@ function renderHome(){
         background:rgba(255,255,255,.14);color:#fff;border-radius:8px;font-family:inherit;font-size:11.5px;
         font-weight:700;padding:5px 10px;cursor:pointer;backdrop-filter:blur(3px)}
       .hm-wgset:hover{background:rgba(255,255,255,.26)}
+      .hm-wgbtns{position:absolute;top:12px;right:12px;z-index:3;display:flex;gap:6px}
+      .hm-wgbtns .hm-wgset{position:static}
+      @media(max-width:760px){ .hm-lyset{display:none} }   /* 휴대폰은 늘 한 줄 */
       .wg-ov{position:fixed;inset:0;background:rgba(10,20,15,.42);z-index:900;display:flex;
         align-items:center;justify-content:center;padding:16px}
       .wg-box{background:var(--wh);border-radius:14px;width:min(430px,96vw);max-height:88vh;overflow:auto;
@@ -1885,7 +1884,10 @@ function renderHome(){
     <div class="hm-wrap">
       <div class="hm-hero">
         <div class="hm-hsky" id="hm-sky"></div>
-        <button class="hm-wgset" onclick="openWidgetSetup()" title="홈에 무엇을 띄울지 고르기">🧩 홈 고르기</button>
+        <div class="hm-wgbtns">
+          <button class="hm-wgset hm-lyset" onclick="window.HomeLayout && HomeLayout.begin()" title="창 크기 · 자리 바꾸기 (모서리를 끌어서)">✏️ 배치 바꾸기</button>
+          <button class="hm-wgset" onclick="openWidgetSetup()" title="홈에 무엇을 띄울지 고르기">🧩 홈 고르기</button>
+        </div>
         <div class="hm-hin">
           <div class="hm-date">${dateStr}</div>
           <div class="hm-hi">${greet}, ${esc(CU.name)} 선생님</div>
@@ -2002,9 +2004,10 @@ window.renderHome = renderHome;
    위젯 블록(section.hm-b)을 «홈 고르기» 차례 그대로 왼쪽(넓은 단) · 오른쪽(좁은 단)에 나눠 담는다.
    좁아지면(패드·폰·큰 글자) 다시 한 줄로 — 블록을 옮기기만 하므로 안의 내용·실시간 갱신은 그대로 이어진다.
    한쪽 단에 들어갈 블록이 하나도 없으면 나누지 않는다. */
-const HM_SIDE = ['todo','mtg','appr','money','acdday','today','tools'];
+const HM_SIDE = ['todo','mtg','appr','money','acdday','today','chk','dday','fav'];
 function arrangeHome(){
   const bl = document.querySelector('#home-body .hm-blocks'); if(!bl) return;
+  if(window.HomeLayout){ bl.classList.remove('hl-std','hl-memo','hl-one'); bl.classList.add('hl-' + HOME_LAYOUT); HomeLayout.apply(); return; }   // 🧱 v136
   const lay = document.documentElement.getAttribute('data-lay') || '1';
   const secs = [...bl.querySelectorAll('section.hm-b')].sort((a,b)=>Number(a.style.order)-Number(b.style.order));
   const side = secs.filter(x=>HM_SIDE.includes(x.dataset.k)), main = secs.filter(x=>!HM_SIDE.includes(x.dataset.k));
@@ -2021,6 +2024,21 @@ function arrangeHome(){
 }
 window.arrangeHome = arrangeHome;
 window.addEventListener('gyosa:lay', ()=>{ try{ arrangeHome(); }catch(e){} });
+/* 🧱 v136 ✏️ 배치 바꾸기 (home-layout.js) — 고치는 동안의 차례는 WORDER_TMP, «완료»를 누르면 내 계정에 */
+let WORDER_TMP = null;
+if(window.HomeLayout) HomeLayout.init({
+  getOrder: () => WORDER(),
+  setOrder: (o, restore) => { WORDER_TMP = restore ? null : (Array.isArray(o) ? o.slice() : null); },
+  sideKeys: HM_SIDE,
+  label: k => ((WBLOCKS.find(x=>x.k===k)||{}).l || k),
+  save: (lay, order) => {
+    WORDER_TMP = null;
+    try{ localStorage.setItem('gyosa_worder', JSON.stringify(order)); }catch(e){}
+    saveHomeAcc({ order: order.slice(), lay });
+    toast('배치를 저장했어요 ✓ 내 계정에 저장돼 다른 기기에서도 같아요','ok');
+  },
+  toast: (m, t) => toast(m, t),
+});
 
 /* ═══ 🧩 홈 위젯 고르기 ═══
    홈에 무엇을 띄울지 각자 정한다. 고른 값은 이 기기에 남는다. */
@@ -2051,26 +2069,33 @@ const WBLOCKS = [
   { k:'acdday', l:'학사 D-Day' },
   { k:'today',  l:'오늘 한눈에' },
   { k:'tt',     l:'내 시간표' },
-  { k:'wxmemo', l:'날씨·메모' },
-  { k:'tools',  l:'개인 도구 (할 일·D-Day·즐겨찾기)' },
+  { k:'wx',     l:'날씨' },
+  { k:'memo',   l:'메모 · 포스트잇' },
+  { k:'chk',    l:'오늘 할 일' },
+  { k:'dday',   l:'D-Day' },
+  { k:'fav',    l:'내 즐겨찾기' },
   { k:'world',  l:'세계 시각' },
   { k:'quick',  l:'빠른 이동' },
 ];
 function WORDER(){
-  let o=null; try{ o=JSON.parse(localStorage.getItem('gyosa_worder')||'null'); }catch(e){}
+  let o = WORDER_TMP || (HOME_ACC && Array.isArray(HOME_ACC.order) ? HOME_ACC.order : null);      // 🧱 v136 — (배치를 고치는 중이면 그 차례) · 내 계정에 저장한 차례가 먼저
+  if(!o){ try{ o=JSON.parse(localStorage.getItem('gyosa_worder')||'null'); }catch(e){} }
   const base = WBLOCKS.map(x=>x.k);
   if(!Array.isArray(o)) return base.slice();
-  const out = o.filter(k=>base.includes(k));
+  o = o.flatMap(k => k==='wxmemo' ? ['wx','memo'] : k==='tools' ? ['chk','dday','fav'] : [k]);   // 옛 묶음 → 낱낱 (같은 자리)
+  const out = o.filter((k,i)=>base.includes(k) && o.indexOf(k)===i);
   /* 새로 생긴 위젯은 맨 끝이 아니라 «원래 자리»(바로 앞 위젯 다음)에 끼운다 — 📝 v-93 */
   base.forEach((k,i)=>{ if(out.includes(k)) return;
     const j = i>0 ? out.indexOf(base[i-1]) : -1;
     if(j>=0) out.splice(j+1, 0, k); else out.push(k); });
   return out;
 }
-function saveWorder(o){ try{ localStorage.setItem('gyosa_worder', JSON.stringify(o)); }catch(e){} }
+function saveWorder(o){ try{ localStorage.setItem('gyosa_worder', JSON.stringify(o)); }catch(e){} saveHomeAcc({ order: o.slice() }); }
 const WIDGET_DEFAULT = { clock:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1, attend:1, mtg:1, club:1, appr:1, money:1, acdday:1 };
 let WIDGET_ON = { ...WIDGET_DEFAULT };
 function loadWidgetPrefs(){
+  homeAccLocal();
+  if(HOME_ACC && HOME_ACC.on && typeof HOME_ACC.on === 'object'){ WIDGET_ON = { ...WIDGET_DEFAULT, ...HOME_ACC.on }; return; }   // 🧱 v136 — 내 계정
   try {
     const v = JSON.parse(localStorage.getItem('gyosa_widgets')||'null');
     if(v && typeof v === 'object') WIDGET_ON = { ...WIDGET_DEFAULT, ...v };
@@ -2078,6 +2103,68 @@ function loadWidgetPrefs(){
 }
 function saveWidgetPrefs(){
   try { localStorage.setItem('gyosa_widgets', JSON.stringify(WIDGET_ON)); } catch(e){}
+  saveHomeAcc({ on: { ...WIDGET_ON } });
+}
+/* 🧱 v136 — 홈 차례 · 보이기 · 배치(크기 · 자리)를 «내 계정»에 (어느 기기에서 로그인해도 같은 홈)
+   userMemos/{uid}.home = { order, on, lay:{ w, n }, at } · 이 기기 사본 localStorage gyosa_home:{uid} (먼저 그리기용)
+   예전 «이 기기» 값(gyosa_worder · gyosa_widgets)은 처음 저장할 때 계정으로 옮겨진다 */
+let HOME_ACC = null, HOME_ACC_UID = '';
+function homeAccLocal(){
+  if(!CU) return;
+  if(HOME_ACC_UID === CU.uid) return;
+  HOME_ACC_UID = CU.uid; HOME_ACC = null;
+  try{ const v = JSON.parse(localStorage.getItem('gyosa_home:' + CU.uid) || 'null'); if(v && typeof v === 'object') HOME_ACC = v; }catch(e){}
+  try{ window.HomeLayout && HomeLayout.set(HOME_ACC && HOME_ACC.lay); }catch(e){}
+}
+let _homeAccT = null, _homeAccSeq = 0, _homeAccBusy = 0;
+const _homeAccDirty = new Set();
+// 키 차례와 상관없이 같은지 비교 (Firestore 는 칸 이름을 가나다순으로 돌려줌)
+const homeStab = x => JSON.stringify(x === undefined ? null : x, (k, v) => (v && typeof v === 'object' && !Array.isArray(v)) ? Object.keys(v).sort().reduce((o, kk) => (o[kk] = v[kk], o), {}) : v);
+function saveHomeAcc(patch){
+  if(!CU) return;
+  homeAccLocal();
+  const fresh = !HOME_ACC;                      // 계정에 아직 없음 → 처음 한 번은 이 기기 값(차례 · 보이기)을 함께 옮김
+  HOME_ACC = Object.assign({ order: WORDER(), on: { ...WIDGET_ON } }, HOME_ACC || {}, patch || {});
+  try{ localStorage.setItem('gyosa_home:' + CU.uid, JSON.stringify(HOME_ACC)); }catch(e){}
+  _homeAccSeq++;
+  (fresh ? ['order', 'on', 'lay'] : Object.keys(patch || {})).forEach(k => _homeAccDirty.add(k));
+  clearTimeout(_homeAccT);
+  const uid = CU.uid;
+  _homeAccT = setTimeout(async ()=>{
+    _homeAccT = null;
+    const keys = [..._homeAccDirty].filter(k => HOME_ACC && HOME_ACC[k] !== undefined); _homeAccDirty.clear();
+    if(!keys.length || HOME_ACC_UID !== uid) return;
+    // 바뀐 칸만 (home.order · home.on · home.lay 를 각각 통째로) — 다른 기기에서 바꾼 나머지 칸은 그대로 둠
+    const at = Timestamp.now(), part = {};
+    keys.forEach(k => { part[k] = JSON.parse(JSON.stringify(HOME_ACC[k])); });
+    const up = { 'home.at': at, updatedAt: Timestamp.now() };
+    keys.forEach(k => { up['home.' + k] = part[k]; });
+    _homeAccBusy++;
+    try{ await updateDoc(doc(db,'userMemos', uid), up); }
+    catch(e){
+      // 문서가 아직 없을 때 — 새로 만든다
+      try{ await setDoc(doc(db,'userMemos', uid), { home: Object.assign({ at }, part), uid, updatedAt: Timestamp.now() }, { merge:true }); }
+      catch(e2){ toast('홈 배치를 계정에 저장하지 못했어요 — 이 기기에는 남아 있어요','err'); }
+    }
+    finally{ _homeAccBusy--; _homeAccSeq++; }   // 저장 전에 시작한 읽기는 옛 값일 수 있어 쓰지 않음
+  }, 400);
+}
+// 계정에서 읽은 홈 설정 — 이 기기 사본과 다르면 따라간다 (차례 · 보이기가 바뀌었으면 홈을 다시 그림)
+//   seq0 = 읽기 시작할 때의 저장 번호 — 읽는 사이에 이 탭에서 바꿨거나 저장을 기다리는 중이면 옛 값으로 덮지 않음
+function homeAccFromServer(h, seq0){
+  if(!CU || !h || typeof h !== 'object') return;
+  if(seq0 !== undefined && seq0 !== _homeAccSeq) return;
+  if(_homeAccT || _homeAccBusy || _homeAccDirty.size) return;
+  homeAccLocal();
+  const pick = x => homeStab({ order: x && x.order || null, on: x && x.on || null });
+  const before = pick(HOME_ACC), beforeLay = homeStab((HOME_ACC && HOME_ACC.lay) || null);
+  const keep = { order: Array.isArray(h.order) ? h.order : undefined, on: (h.on && typeof h.on==='object') ? h.on : undefined, lay: (h.lay && typeof h.lay==='object') ? h.lay : undefined };
+  Object.keys(keep).forEach(k=>{ if(keep[k] === undefined) delete keep[k]; });
+  HOME_ACC = keep;
+  try{ localStorage.setItem('gyosa_home:' + CU.uid, JSON.stringify(HOME_ACC)); }catch(e){}
+  if(window.HomeLayout && HomeLayout.editing && HomeLayout.editing()) return;   // 고치는 중에는 건드리지 않음
+  if(homeStab(HOME_ACC.lay || null) !== beforeLay){ try{ HomeLayout.set(HOME_ACC.lay); }catch(e){} }   // 배치 먼저 (아래에서 다시 그려도 새 배치로)
+  if(pick(HOME_ACC) !== before) renderHome();
 }
 const widgetOn = k => WIDGET_ON[k] !== 0 && WIDGET_ON[k] !== false;
 
@@ -2087,9 +2174,7 @@ window.openWidgetSetup = function(){
       <input type="checkbox" ${widgetOn(w.key)?'checked':''} onchange="setWidget('${w.key}', this.checked)">
       <span class="wg-b"><b>${w.label}</b><span>${w.hint}</span></span>
     </label>`).join('');
-  const blockOn = k => k==='wxmemo' ? (widgetOn('wx')||widgetOn('memo'))
-    : k==='tools' ? (widgetOn('chk')||widgetOn('dday')||widgetOn('fav'))
-    : widgetOn(k);
+  const blockOn = k => widgetOn(k);
   const orows = WORDER().map((k,i)=>{ const b=WBLOCKS.find(x=>x.k===k); if(!b) return '';
     return `<div class="wgo-row${blockOn(k)?'':' dim'}" data-k="${k}">
       <span class="wgo-hnd" onpointerdown="wDrag(event)" title="길게 눌러 끌기">⠿</span>
@@ -2100,7 +2185,7 @@ window.openWidgetSetup = function(){
   ov.innerHTML = `<div class="wg-box">
       <div class="wg-h">🧩 홈 화면 고르기
         <button class="wg-x" onclick="closeWidgetSetup()" aria-label="닫기">✕</button></div>
-      <div class="wg-d">⠿를 끌어 순서를 바꾸고, 아래에서 켜고 끄세요. 이 기기에만 적용됩니다.</div>
+      <div class="wg-d">⠿를 끌어 순서를 바꾸고, 아래에서 켜고 끄세요. 내 계정에 저장돼 어느 기기에서나 같아요. 창 크기는 «✏️ 배치 바꾸기».</div>
       <div class="wg-st">🧲 순서 <span>맨 위 인사말은 고정</span></div>
       <div class="wgo-list" id="wgo-list">${orows}</div>
       <div class="wg-st">👀 보이기 · 숨기기</div>
@@ -2150,7 +2235,7 @@ window.wDrag = function(ev){
 };
 window.closeWidgetSetup = function(){ $I('wg-mod')?.remove(); };
 window.setWidget = function(k, on){ WIDGET_ON[k] = on ? 1 : 0; saveWidgetPrefs(); renderHome(); };
-window.resetWidgets = function(){ WIDGET_ON = { ...WIDGET_DEFAULT }; saveWidgetPrefs(); try{ localStorage.removeItem('gyosa_worder'); }catch(e){} closeWidgetSetup(); renderHome(); };
+window.resetWidgets = function(){ WIDGET_ON = { ...WIDGET_DEFAULT }; try{ localStorage.removeItem('gyosa_worder'); }catch(e){} saveHomeAcc({ order: WBLOCKS.map(x=>x.k), on: { ...WIDGET_DEFAULT } }); saveWidgetPrefs(); closeWidgetSetup(); renderHome(); };
 
 // ⚡ 빠른 이동 타일 (즐겨찾기)
 const QUICK_ICON = {
@@ -3350,10 +3435,12 @@ let _memoTimer = null;
 let STICKIES = [];   // 📌 포스트잇 [{id, color, text}]
 async function loadMemo(){
   try {
+    const homeSeq0 = _homeAccSeq;   // 🧱 v136 — 읽는 사이에 바꾼 홈 설정을 옛 값으로 덮지 않게
     const s = await getDoc(doc(db,'userMemos', CU.uid));
     MEMO_TEXT = (s.exists() && typeof s.data().text === 'string') ? s.data().text : '';
     STICKIES = (s.exists() && Array.isArray(s.data().stickies)) ? s.data().stickies : [];
     const d = s.exists() ? s.data() : {};
+    try{ if(d.home) homeAccFromServer(d.home, homeSeq0); }catch(e){}   // 🧱 v136 홈 배치
     TODOS = Array.isArray(d.todos) ? d.todos : [];
     DDAYS = Array.isArray(d.ddays) ? d.ddays : [];
     FAVS  = Array.isArray(d.favs)  ? d.favs  : [];
@@ -4179,6 +4266,7 @@ async function reloadStaffCache(){
 }
 
 function showTab(t){
+  try{ if(t !== 'home' && window.HomeLayout && HomeLayout.editing()) HomeLayout.end(false); }catch(e){}   // 🧱 다른 탭으로 가면 배치 고치기는 취소
   document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('active'));
   $I('t-'+t)?.classList.add('active');
   // 상위 탭 콘텐츠 전환

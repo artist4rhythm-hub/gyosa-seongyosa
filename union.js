@@ -152,13 +152,14 @@ window.unionTry = async ()=>{
   }
   _fails = 0;
   window.orgCore && orgCore.setUnion(true);
+  setOwner(_me && _me.uid);                        // 🔐 v136 — 연 사람만 (같은 탭에서 다른 계정이 이어받지 않게)
   await logUnion('open');
   closeModal();
   paintBanner();
   location.reload();                               // 모든 화면이 양기관 범위로 다시 그려진다
 };
 window.unionClose = async ()=>{
-  window.orgCore && orgCore.setUnion(false);
+  window.orgCore && orgCore.setUnion(false); setOwner('');
   await logUnion('close');
   location.reload();
 };
@@ -234,10 +235,44 @@ function syncBand(){
   root.style.setProperty('--union-h', h + 'px');
   document.body.style.paddingBottom = h + 'px';
 }
+/* 🔐 v136 — 연합 띠는 «로그인한 사람이 연 연합»일 때만
+   · 로그아웃(직접 · 자동 · 다른 탭) 상태 = 로그인 화면에는 띠를 그리지 않고 연합을 닫는다
+   · 연 사람(uid)을 같은 탭에 적어 두고, 다른 계정으로 들어오면 연합을 닫는다
+   · 로그인을 확인하기 전에는 그리지 않는다 (로그인 화면에서 잠깐 보이는 것도 막음) */
+const OWNER_KEY = 'gyosa_union_uid';
+function setOwner(uid){ try{ uid ? sessionStorage.setItem(OWNER_KEY, uid) : sessionStorage.removeItem(OWNER_KEY); }catch(e){} }
+function getOwner(){ try{ return sessionStorage.getItem(OWNER_KEY) || ''; }catch(e){ return ''; } }
+let _authUid;                                         // undefined = 아직 모름 · null = 로그아웃 · 'uid' = 로그인
+function closeIfStale(uid){
+  const open = !!(window.orgCore && orgCore.unionOpen());
+  if(!open){ if(!uid) setOwner(''); return false; }
+  const owner = getOwner();
+  if(!uid || (owner && owner !== uid)){
+    try{ orgCore.setUnion(false); }catch(e){}
+    setOwner('');
+    return true;
+  }
+  if(!owner) setOwner(uid);                           // v136 전에 연 연합 — 지금 로그인한 분 것으로
+  return false;
+}
+async function watchUnionAuth(tries){
+  const F = await fb();
+  if(!F){
+    // 앱이 아직 안 켜짐(느린 연결) — 로그아웃으로 보지 않는다: 연합은 그대로 두고 띠만 그리지 않은 채 다시 기다림
+    paintBanner();
+    const n = (tries || 0) + 1; if(n <= 4) setTimeout(()=>{ watchUnionAuth(n).catch(()=>{}); }, 3000);
+    return;
+  }
+  onAuthStateChanged(F.auth, u=>{
+    _authUid = u ? u.uid : null;
+    closeIfStale(_authUid);
+    paintBanner();
+  });
+}
 function paintBanner(){
   document.getElementById('union-band')?.remove();
   const root = document.documentElement;
-  if(!(window.orgCore && orgCore.unionOpen())){
+  if(!(window.orgCore && orgCore.unionOpen()) || !_authUid){
     if(root.classList.contains('union-on')){
       root.classList.remove('union-on');
       root.style.removeProperty('--union-h'); root.style.removeProperty('--union-b');
@@ -385,6 +420,7 @@ function paintTestBadge(me){
 
 function boot(){
   try{ paintBanner(); armDoor(); }catch(e){ console.warn('[연합] 초기화 건너뜀', e); return; }
+  watchUnionAuth().catch(()=>{});
   whoami().then(paintTestBadge).catch(()=>{});
   watchAuth().catch(()=>{});
 }

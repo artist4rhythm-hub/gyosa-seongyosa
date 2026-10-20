@@ -600,6 +600,13 @@
   function show(email, doSignOut){
     try { window.__BOOT_OK = true; window.__markAlive && window.__markAlive(); } catch(e){}
     try { window.hideLoading && window.hideLoading(); } catch(e){}
+    // 🔐 v136 — 교직원이 아닌 계정이면 이 탭의 연합도 닫는다 (띠 · 열린 상태를 이어받지 않게)
+    try {
+      if(window.orgCore && orgCore.setUnion) orgCore.setUnion(false); else sessionStorage.removeItem('gyosa_union');
+      sessionStorage.removeItem('gyosa_union_uid');
+      var ub = document.getElementById('union-band'); if(ub) ub.remove();
+      document.documentElement.classList.remove('union-on');
+    } catch(e){}
     var old = document.getElementById('bootFix'); if(old) old.remove();
     var d = document.createElement('div'); d.id = 'staffGate';
     d.innerHTML = '<div style="position:fixed;inset:0;background:#F2F0EB;display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;font-family:-apple-system,\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif">'
