@@ -143,6 +143,8 @@ th{background:var(--iv);font-weight:700;font-size:12px;}
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, updateDoc, setDoc, collection, getDocs, addDoc, deleteDoc, Timestamp, query, where, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { loadMySign, saveMySign } from './mysign.js?v=137';
+import { dropLists } from './listcache.js?v=137';
 import { notifyStaff } from './push-client.js';
 const APV_LINK = 'https://artist4rhythm-hub.github.io/gyosa-seongyosa/approval.html';
 
@@ -208,6 +210,8 @@ onAuthStateChanged(auth, async (user) => {
     
     
     if(canManagePos()) $I('tb-pos').style.display='';
+    // ✍️ v137 — 내 서명은 «본인만 읽는 곳»(staffSign)에서 · 예전 칸에 있으면 그리로 옮김
+    try { const ms = await loadMySign(db, CU.uid, snap.data()); CU.signature = ms.sig || ''; } catch(e){}
     await loadStaff();
     await loadConfig();
     await loadDocs();
@@ -219,7 +223,7 @@ onAuthStateChanged(auth, async (user) => {
 async function loadStaff(){
   const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
   STAFF = [];
-  snap.forEach(d=>{ const s={uid:d.id, ...d.data()}; if((s.acStatus||'active')==='active') STAFF.push(s); });
+  snap.forEach(d=>{ const s={uid:d.id, ...d.data()}; delete s.signature; if((s.acStatus||'active')==='active') STAFF.push(s); });   // 서명은 명단에서 쓰지 않음 (내 것은 CU.signature)
   STAFF.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
 }
 
@@ -409,7 +413,7 @@ function renderSign(){
   $I('c-sign').innerHTML = `
     <div class="acard">
       <h3 class="actitle">✍️ 내 서명 등록</h3>
-      <p class="adesc">서명(도장) 이미지를 등록하면, 결재할 때 결재란에 자동으로 들어갑니다. 배경이 투명하거나 흰색인 PNG를 권장합니다. 업로드 시 자동으로 작게 변환되어 저장됩니다.</p>
+      <p class="adesc">서명(도장) 이미지를 등록하면, 결재할 때 결재란에 자동으로 들어갑니다. 배경이 투명하거나 흰색인 PNG를 권장합니다. 업로드 시 자동으로 작게 변환되어 저장됩니다.<br>🔒 등록한 서명은 나만 볼 수 있어요 — 다른 선생님 화면에는 내려가지 않고, 내가 결재할 때만 결재란에 들어갑니다.</p>
       <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap">
         <div style="text-align:center">
           <div style="width:120px;height:120px;border:2px dashed var(--ivd);border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--wh);overflow:hidden">
@@ -473,10 +477,8 @@ function showSigPreview(dataUrl){
 
 async function saveSig(dataUrl){
   try {
-    await updateDoc(doc(db,'staff',CU.uid), {signature:dataUrl});
+    await saveMySign(db, CU.uid, dataUrl);   // ✍️ v137 — 본인만 읽는 곳에 (규칙 v32 전이면 예전 칸)
     CU.signature = dataUrl;
-    // STAFF 캐시에도 반영
-    const me = STAFF.find(s=>s.uid===CU.uid); if(me) me.signature = dataUrl;
     toast('서명이 등록되었습니다.','ok');
     closeMod();
     renderSign();
@@ -487,9 +489,8 @@ window.saveSig = saveSig;
 async function deleteSig(){
   if(!confirm('등록된 서명을 삭제할까요?')) return;
   try {
-    await updateDoc(doc(db,'staff',CU.uid), {signature:''});
+    await saveMySign(db, CU.uid, '');
     CU.signature = '';
-    const me = STAFF.find(s=>s.uid===CU.uid); if(me) me.signature = '';
     toast('서명을 삭제했습니다.');
     renderSign();
   } catch(e){ toast('실패: '+e.message,'err'); }
@@ -1002,7 +1003,7 @@ async function setPosition(uid, pos){
       update.positionOrgs = [s.org];
     }
     if(!pos) update.positionOrgs = []; // 미지정이면 비움
-    await updateDoc(doc(db,'staff',uid), update);
+    await updateDoc(doc(db,'staff',uid), update); dropLists('staff');   // 📉 v137 — 다른 화면이 기억한 명단 버리기
     if(s){ s.position = pos; if(update.positionOrgs) s.positionOrgs = update.positionOrgs; }
     toast('직책을 지정했습니다.','ok');
     renderPos();
@@ -1017,7 +1018,7 @@ async function setPosOrg(uid, org, on){
   if(on){ if(!orgs.includes(org)) orgs.push(org); }
   else { orgs = orgs.filter(o=>o!==org); }
   try {
-    await updateDoc(doc(db,'staff',uid), {positionOrgs:orgs});
+    await updateDoc(doc(db,'staff',uid), {positionOrgs:orgs}); dropLists('staff');
     s.positionOrgs = orgs;
     toast('적용 기관을 변경했습니다.','ok');
   } catch(e){ toast('실패: '+e.message,'err'); }

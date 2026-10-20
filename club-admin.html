@@ -229,6 +229,8 @@ import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebase
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, getDocs, query, where, onSnapshot, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
+dropLists('clubSemesters','clubApplications','clubEnrollments'); try{ addEventListener('pagehide', () => dropLists('clubSemesters','clubApplications','clubEnrollments')); }catch(e){}   // 동아리를 고치는 화면 — 홈 동아리 칸이 새로 받게
 
 const __cfg = ({
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -604,7 +606,7 @@ window.removeRoom = (r)=>{ SEM.roomPool=(SEM.roomPool||[]).filter(x=>x!==r); SEM
 window.addRoom = ()=>{ const v=$I('s-room-add').value.trim(); if(!v) return; SEM.roomPool=[...new Set([...(SEM.roomPool||[]), v])]; SEM.rooms=[...new Set([...(SEM.rooms||[]), v])]; $I('s-room-add').value=''; paintRooms(); };
 async function paintMgrs(){
   const box = $I('mgr-list'); if(!box) return;
-  if(!STAFF_ALL){ const sn = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+  if(!STAFF_ALL){ const sn = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
     STAFF_ALL = sn.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>x.name)
       .sort((a,b)=>String(a.name).localeCompare(String(b.name),'ko')); }
   const selNames = STAFF_ALL.filter(t=>CLUB_MGRS.includes(t.uid)).map(t=>t.name);
@@ -671,7 +673,7 @@ window.saveSet = async ()=>{
 let CAL_YM = null, AC = null;   // 보고 있는 달, 학사 데이터 캐시 {events:[], holidays:[]}
 async function loadAcademic(){
   if(AC) return AC;
-  const [ev, ho] = await Promise.all([getDocs(collection(db,'academicEvents')), getDocs(collection(db,'holidays'))]);
+  const [ev, ho] = await Promise.all([getDocs(collection(db,'academicEvents')), cachedCol(db, 'holidays', { uid: CU && CU.uid, ms: 30 * 60000 })]);
   const events = ev.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>e.startDate&&e.endDate)
     .filter(e=>{ const os = Array.isArray(e.orgs)&&e.orgs.length ? e.orgs : [e.org||'daniel']; return os.includes(SEM.org)||os.includes('all')||e.org==='both'; });
   const holidays = ho.docs.map(d=>d.data()).filter(h=>h.date && ((h.org||'all')==='all'||h.org===SEM.org) && (h.who||'all')!=='staff');

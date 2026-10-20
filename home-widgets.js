@@ -4,6 +4,7 @@
      학사 D-Day · 결재/경비 카운터 · 💰 이달 활동 합계
    · index는 installHomeWidgets(문맥) 한 줄로 설치 — 동작 동일
    ═══════════════════════════════════════════════════════════ */
+import { cachedQuery, cachedCol } from './listcache.js?v=137';   // 📉 v137 같은 탭에서 잠깐 기억
 export function installHomeWidgets(ctx){
   const { db, getCU, $I, esc, ORGS } = ctx;
   const { doc, getDoc, getDocs, collection, query, where, orderBy, limit, onSnapshot, Timestamp } = ctx.fs;
@@ -31,7 +32,8 @@ async function loadSchoolDayData(){
   if(_sdData && Date.now() - _sdAt < 10*60000) return _sdData;
   // 📉 v120 — 이 탭에서 10분 안에 받은 것이 있으면 다시 쓴다 (화면을 옮겨 다니다 홈에 와도 또 읽지 않게)
   try { const c = JSON.parse(sessionStorage.getItem('hw120:sd') || 'null'); if(c && c.d && Date.now() - c.at < 10*60000){ _sdData = c.d; _sdAt = c.at; return _sdData; } } catch(e){}
-  const [h, w, t] = await Promise.all([ getDocs(collection(db,'holidays')), getDocs(collection(db,'workPeriods')), getDocs(collection(db,'terms')) ]);
+  const cu1 = getCU();
+  const [h, w, t] = await Promise.all([ cachedCol(db, 'holidays', { uid: cu1 && cu1.uid, ms: 30 * 60000 }), getDocs(collection(db,'workPeriods')), getDocs(collection(db,'terms')) ]);   // 📉 v137 휴일은 다른 화면과 함께 기억
   _sdData = { hol: h.docs.map(d=>d.data()), wp: w.docs.map(d=>d.data()), terms: t.docs.map(d=>d.data()) };
   _sdAt = Date.now();
   try { sessionStorage.setItem('hw120:sd', JSON.stringify({ at:_sdAt, d:_sdData })); } catch(e){}
@@ -185,10 +187,14 @@ async function loadAttendWidget(){
   }, ()=>{ _attCls = _attCls || []; clsReady(); }));
   await clsP;
   orgs.forEach(o=>{
-    _attUnsubs.push(onSnapshot(query(collection(db,'students'), where('org','==',o)), s=>{
+    /* 📉 v137 — 학생 명단(재적 · 휴학)은 같은 탭에서 10분 기억 (예전: 홈에 올 때마다 그 기관 학생 전체를 실시간으로 새로 받음)
+       · 학생관리 · 반편성 · 증명서에서 학생을 고치면 그 자리에서 버림 → 홈에 돌아오면 바로 새 명단
+       · 오늘 출결 표시는 예전처럼 실시간 (아래) */
+    const cu0 = getCU();
+    cachedQuery(db, 'students@' + o, ()=>query(collection(db,'students'), where('org','==',o)), { uid: cu0 && cu0.uid, ms: 10 * 60000 }).then(s=>{
       _attStuRaw[o] = s.docs.map(d=>({id:d.id, ...d.data()}));
       attBuildStu(o); attBuildFlags(o); paintAttOrg(o);
-    }, ()=>{ const el=$I('att-row-'+o); if(el && !_attStu[o]) el.innerHTML=`<div class="hw-dim">학생 명단을 불러오지 못했어요.</div>`; }));
+    }).catch(()=>{ const el=$I('att-row-'+o); if(el && !_attStu[o]) el.innerHTML=`<div class="hw-dim">학생 명단을 불러오지 못했어요.</div>`; });
     const qy = query(collection(db,'studentAttendance'), where('org','==',o), where('date','==',today));
     _attUnsubs.push(onSnapshot(qy, snap=>{
       _attMarks[o] = snap.docs.map(d=>d.data());
@@ -583,7 +589,9 @@ async function loadClubWidget(){
   try{
     if(!CR) CR = await import('./club-roster.js');
     clubCss();
-    const ss = await getDocs(collection(db,'clubSemesters'));
+    // 📉 v137 — 동아리 학기 · 개설 · 신청 숫자는 같은 탭에서 5분 기억 (동아리 관리 화면을 열고 닫으면 버림)
+    const cuC = getCU(), lcC = { uid: cuC && cuC.uid, ms: 5 * 60000 };
+    const ss = await cachedCol(db, 'clubSemesters', lcC);
     const sems = ss.docs.map(d=>({id:d.id, ...d.data()}));
     const rows = [];
     for(const o of orgs){
@@ -592,7 +600,7 @@ async function loadClubWidget(){
       const sm = cand[0]; if(!sm) continue;
       const orgNm = (window.ORGS&&ORGS[o])||o;
       if(sm.status==='enrolling' || sm.status==='adjusting'){
-        const en = await getDocs(query(collection(db,'clubEnrollments'), where('semId','==',sm.id)));
+        const en = await cachedQuery(db, 'clubEnrollments@' + sm.id, ()=>query(collection(db,'clubEnrollments'), where('semId','==',sm.id)), lcC);
         const n = en.docs.filter(d=>{ const e=d.data(); return !e.deleted && (((e.picks||[]).length)||((e.picks2||[]).length)); }).length;
         const msE = (sm.milestones||[]).find(m=>m.role==='enrollEnd');
         let dd=''; if(msE && msE.at){ const dt=String(msE.at).slice(0,10);
@@ -602,8 +610,8 @@ async function loadClubWidget(){
           <b>${esc(orgNm)} — 학부모 신청 진행 중 · ${n}명${dd}</b><span class="hw-go">›</span></a>`);
       } else {
         const [as, es, shd] = await Promise.all([
-          getDocs(query(collection(db,'clubApplications'), where('semId','==',sm.id))),
-          getDocs(query(collection(db,'clubEnrollments'), where('semId','==',sm.id))).catch(()=>null),
+          cachedQuery(db, 'clubApplications@' + sm.id, ()=>query(collection(db,'clubApplications'), where('semId','==',sm.id)), lcC),
+          cachedQuery(db, 'clubEnrollments@' + sm.id, ()=>query(collection(db,'clubEnrollments'), where('semId','==',sm.id)), lcC).catch(()=>null),
           getDoc(doc(db,'clubStatusShare', sm.id)).catch(()=>null),
         ]);
         const apps = as.docs.map(d=>({id:d.id, ...d.data()}))

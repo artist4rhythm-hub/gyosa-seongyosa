@@ -275,6 +275,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -462,7 +463,7 @@ async function loadData(){
     const cs = await getDocs(collection(db,'classes'));
     CLASSES = []; cs.forEach(d=>CLASSES.push({id:d.id, ...d.data()}));
     window.setLoadStep('교직원 정보 불러오는 중…', 80);
-    const st = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    const st = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));   // 재직증명서에 주소 · 연락처가 들어가서 늘 새로 받음
     STAFF_ALL = []; st.forEach(d=>STAFF_ALL.push({uid:d.id, ...d.data()}));
     window.setLoadStep('직인 불러오는 중…', 90);
     await loadSeals();
@@ -1156,7 +1157,7 @@ async function doIssueStaff(uid, org, mode){
     if(position !== (s.position||'')) updates.position = position;
     if(isCareer && duty !== (s.duty||'')) updates.duty = duty;
     if(Object.keys(updates).length){
-      await updateDoc(doc(db,'staff',uid), updates);
+      await updateDoc(doc(db,'staff',uid), updates); dropLists('staff');
       Object.assign(s, updates);
     }
 
@@ -1501,7 +1502,7 @@ async function doIssue(sid, mode){
     if(newBirth !== (s.birth||'')) updates.birth = newBirth;
     if($I('pv-admitDate') && newAdmit !== (s.admitDate||'')) updates.admitDate = newAdmit;
     if(Object.keys(updates).length){
-      await updateDoc(doc(db,'students',sid), updates);
+      await updateDoc(doc(db,'students',sid), updates); dropLists('students');
       Object.assign(s, updates);
     }
 

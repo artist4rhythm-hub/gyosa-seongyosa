@@ -383,6 +383,8 @@ import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updat
 import { installHomeWidgets } from './home-widgets.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, onSnapshot, arrayUnion, arrayRemove, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { attOf, attRange, colOnce, colDrop, qOnce } from './qread.js';   // 📉 v120 필요한 것만 읽기
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
+import { moveMySign } from './mysign.js?v=137';               // ✍️ v137 결재 서명을 본인만 읽는 곳으로
 
 // ── Firebase 초기화 ──────────────────────────
 const firebaseConfig = {
@@ -498,6 +500,8 @@ onAuthStateChanged(auth, async (user) => {
           updateDoc(doc(db,'staff',user.uid), { notifyPrefs: all, notifyPrefsV: 134 }).then(()=>{ CU.notifyPrefs = all; CU.notifyPrefsV = 134; }).catch(()=>{});
         }
       } catch(e){}
+      // ✍️ v137 — 결재 서명이 아직 교직원 문서에 있으면 «본인만 읽는 곳»으로 옮김 (새 곳에 써진 뒤에만 예전 칸 비움 · 규칙 v32 전이면 그대로)
+      if(typeof data.signature === 'string' && data.signature) moveMySign(db, user.uid, data.signature).catch(()=>{});
       try {
         localStorage.setItem('gyosa_role', CU.role||'teacher');
         localStorage.setItem('gyosa_pagedeny', JSON.stringify(CU.pageDeny||[]));
@@ -521,6 +525,7 @@ onAuthStateChanged(auth, async (user) => {
     if (CU && document.getElementById('app')) { location.replace('index.html'); return; }
     CU = null;
     try { window.staffLite && staffLite.drop(); } catch(e){}   // ⚡ v133 — 로그아웃(직접 · 자동 · 다른 화면에서)하면 교직원 사본도 지움
+    dropLists();                                               // 📉 v137 — 같은 탭에 기억한 명단도 모두
     try { window.orgCore && orgCore.setUnion(false); sessionStorage.removeItem('gyosa_union_uid'); } catch(e){}   // 🔐 v136 — 로그아웃 상태에서는 연합을 닫는다 (다음에 로그인하는 분이 이어받지 않게)
     authResolved = true;
     window.hideLoading && window.hideLoading();
@@ -605,6 +610,7 @@ async function doLogout() {
   // 저장된 로그인 흔적 정리
   try { ['gyosa_role','gyosa_name','gyosa_uid','gyosa_pagedeny'].forEach(k=>localStorage.removeItem(k)); } catch(e){}
   try { window.staffLite && staffLite.drop(); } catch(e){}
+  dropLists();   // 📉 v137 같은 탭에 기억한 명단
   try { window.orgCore && orgCore.setUnion(false); sessionStorage.removeItem('gyosa_union_uid'); } catch(e){}   // 🔐 v136 — 연합도 닫기
   // 어느 화면에서든 → 최초 로그인 화면으로
   location.href = 'index.html';
@@ -675,7 +681,7 @@ async function createAcc() {
       uid: cred.user.uid, id, name, org, orgs, dept, role,
       acStatus: 'active',
       createdAt: Timestamp.now()
-    });
+    }); dropLists('staff');
     toast(`${name} 선생님 계정이 발급되었습니다.`, 'ok');
     logActivity('입력', '계정', `${name} (${id}) 계정 발급`);
     $I('nn').value = ''; $I('nid').value = ''; $I('npw').value = '';
@@ -712,7 +718,7 @@ async function saveEditStaff(uid) {
   }
 
   const birth = $I('es-birth')?.value || '';
-  await updateDoc(doc(db, 'staff', uid), { name, org, orgs, dept, role, acStatus, birth });
+  await updateDoc(doc(db, 'staff', uid), { name, org, orgs, dept, role, acStatus, birth }); dropLists('staff');
   logActivity('수정', '계정', `${name} 정보 수정 (상태: ${acStatus==='active'?'재직':acStatus==='leave'?'휴직':'퇴직'})`);
   toast(`${name} 선생님 정보가 수정되었습니다.`, 'ok');
   document.getElementById('edit-staff-mod')?.remove();
@@ -738,7 +744,7 @@ async function deleteStaff(uid) {
   if (!snap.exists()) return;
   const s = snap.data();
   if (!confirm(`${s.name} (${s.id}) 선생님 계정을 삭제할까요?\n출근 기록은 유지됩니다.`)) return;
-  await deleteDoc(doc(db, 'staff', uid));
+  await deleteDoc(doc(db, 'staff', uid)); dropLists('staff');
   logActivity('삭제', '계정', `${s.name} (${s.id}) 계정 삭제`);
   toast(`${s.name} 선생님 계정이 삭제되었습니다.`, 'ok');
   await loadStaff();
@@ -851,8 +857,8 @@ async function drawCal() {
 
   const holMap = {}, wps = [], recMap = {};
   try {
-    // 공휴일 로드 (전체 가져와서 필터 - 색인 불필요)
-    const holSnap = await getDocs(collection(db, 'holidays'));
+    // 공휴일 로드 (전체 가져와서 필터 - 색인 불필요) · 📉 v137 같은 탭 30분 기억 (등록 · 삭제하면 버림)
+    const holSnap = await cachedCol(db, 'holidays', { uid: CU && CU.uid, ms: 30 * 60000 });
     holSnap.forEach(d => {
       const h = d.data();
       if (h.org === CU.org || h.org === 'all') holMap[h.date] = h.name;
@@ -978,7 +984,7 @@ window.delWP = delWP;
 async function addHol() {
   const date=$I('hd').value, name=$I('hn2').value.trim(), org=$I('ho').value;
   if(!date||!name) return toast('날짜와 이름을 입력하세요.','err');
-  await addDoc(collection(db,'holidays'),{date,name,org,createdAt:Timestamp.now()});
+  await addDoc(collection(db,'holidays'),{date,name,org,createdAt:Timestamp.now()}); dropLists('holidays');
   toast('등록되었습니다.','ok');
   $I('hd').value='';$I('hn2').value='';
   await loadHolList();
@@ -1002,7 +1008,7 @@ window.loadHolList = loadHolList;
 
 async function delHol(id) {
   if(!confirm('삭제할까요?')) return;
-  await deleteDoc(doc(db,'holidays',id));
+  await deleteDoc(doc(db,'holidays',id)); dropLists('holidays');
   toast('삭제되었습니다.');
   await loadHolList();
 }
@@ -1038,7 +1044,7 @@ async function getAllRows(sd, ed, orgFilter, uidFilter) {
   const wpSnap = await getDocs(collection(db,'workPeriods'));
   const wps = []; wpSnap.forEach(d=>wps.push(d.data()));
 
-  const holSnap = await getDocs(collection(db,'holidays'));
+  const holSnap = await cachedCol(db, 'holidays', { uid: CU && CU.uid, ms: 30 * 60000 });
   const holDates = new Set();
   holSnap.forEach(d=>{ if(!orgFilter||d.data().org==='all'||d.data().org===orgFilter) holDates.add(d.data().date); });
 
@@ -1194,7 +1200,7 @@ async function showMain(){
   const logTab = $I('sa-log'); if(logTab) logTab.style.display = CU.role==='super' ? '' : 'none';
   const actTab = $I('sa-act'); if(actTab) actTab.style.display = CU.role==='super' ? '' : 'none';
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
-  await reloadStaffCache();
+  await reloadStaffCache(true);   // 📉 v137 홈을 그릴 때는 같은 탭 기억 (관리 탭은 늘 새로)
   updateNoticeDot();
   // 공통 상단 메뉴 렌더 (컨테이너에)
   window.ORGS = ORGS;
@@ -3615,7 +3621,7 @@ async function loadMyTimetable(){
     const ymd = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
     TT_OFF = '';
     try {
-      const hs = await getDocs(collection(db,'holidays'));
+      const hs = await cachedCol(db, 'holidays', { uid: CU && CU.uid, ms: 30 * 60000 });
       hs.forEach(d=>{ const v=d.data();
         if(v.date===ymd && (v.org==='all'||v.org===CU.org) && (v.who||'all')!=='staff') TT_OFF = v.name||'쉬는 날';
       });
@@ -4240,21 +4246,23 @@ function renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt){
    홈이 뜰 때 교직원 캐시와 생일 위젯이 같은 명부를 각각 따로 받고 있었다.
    30초 안에 다시 찾으면 방금 받은 것을 그대로 준다 (각자 거르는 방식은 그대로). */
 let __staffSnapP = null, __staffSnapAt = 0;
-function staffSnapOnce(fresh){
+function staffSnapOnce(fresh, tab){
   const now = Date.now();
   if(fresh || !__staffSnapP || now - __staffSnapAt > 30000){
     __staffSnapAt = now;
-    __staffSnapP = getDocs(collection(db,'staff'))
-      .then(s=>{ try{ if(window.staffLite && auth.currentUser) staffLite.put(s, auth.currentUser.uid); }catch(e){} return s; })   // ⚡ v133 — 다른 화면이 먼저 쓰는 «가벼운 사본»
+    const uid = auth.currentUser ? auth.currentUser.uid : '';
+    // 📉 v137 — tab: 같은 탭에서 10분 안에 받은 명단이 있으면 그것 (화면을 옮겨 다니며 홈에 돌아올 때마다 다시 받지 않게)
+    __staffSnapP = cachedCol(db, 'staff', { uid, ms: 10 * 60000, fresh: !tab })
+      .then(s=>{ try{ if(window.staffLite && uid) staffLite.put(s, uid); }catch(e){} return s; })   // ⚡ v133 — 다른 화면이 먼저 쓰는 «가벼운 사본»
       .catch(e=>{ __staffSnapP = null; throw e; });
   }
   return __staffSnapP;
 }
 
 // 교직원 캐시 새로고침 (권한 필터 적용)
-async function reloadStaffCache(){
+async function reloadStaffCache(tab){
   try {
-    const snap = await staffSnapOnce(true).then(s=>(window.hideTest?hideTest(s):s));
+    const snap = await staffSnapOnce(true, tab).then(s=>(window.hideTest?hideTest(s):s));
     STAFF_CACHE = {};
     const allowed = myOrgs();
     snap.forEach(d => {
@@ -5786,7 +5794,7 @@ window.miavClear = () => { MIAV = { avatar:'', photo:'' }; miavPaint(); };
 window.saveMyAvatar = async () => {
   const msg = $I('miav-msg');
   try {
-    await updateDoc(doc(db,'staff',CU.uid), { avatar: MIAV.avatar||'', photo: MIAV.photo||'' });
+    await updateDoc(doc(db,'staff',CU.uid), { avatar: MIAV.avatar||'', photo: MIAV.photo||'' }); dropLists('staff');
     CU.avatar = MIAV.avatar||''; CU.photo = MIAV.photo||'';
     try { window.SB_USER && Object.assign(SB_USER,{avatar:CU.avatar,photo:CU.photo}); } catch(e){}
     const chip = document.querySelector('.sb-av'); if(chip) chip.innerHTML = staffAvatar(CU, 30);
@@ -5800,7 +5808,7 @@ window.saveMyAvatar = async () => {
 function openMyInfo(){
   document.querySelectorAll('#my-info-mod').forEach(x=>x.remove());     // v134 — 창 오른쪽 위 ✕로 닫으면 빈 껍데기가 남던 것
   const el=document.createElement('div'); el.id='my-info-mod';
-  const c = STAFF_CACHE[CU.uid] || CU || {};
+  const c = Object.assign({}, STAFF_CACHE[CU.uid] || {}, CU || {});   // 📉 v137 — 명단 기억은 몇 분 묵을 수 있어 방금 받은 내 문서(CU)가 우선
   const IN = 'height:40px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 12px;font-size:14px;width:100%;background:var(--iv);outline:none;font-family:inherit';
   const need = (v)=> v ? '' : '<span style="font-size:11px;color:var(--danger);font-weight:700;margin-left:5px">미입력</span>';
   const show = (v)=> v ? esc(v) : '<span style="color:var(--danger);font-weight:600">미입력</span>';
@@ -6058,12 +6066,12 @@ async function saveMyHR(){
     return toast('이메일 형식을 확인하세요.','err');
   }
   try {
-    const before = STAFF_CACHE[CU.uid] || CU || {};
+    const before = Object.assign({}, STAFF_CACHE[CU.uid] || {}, CU || {});
     // 변경된 항목만 골라 로그 문구 생성
     const FIELDS = [['birth','생년월일',birth],['phone','휴대폰',phone],['email','이메일',email],['address','주소',address],['duty','담당',duty]];
     const changes = FIELDS.filter(([k,_,v]) => (before[k]||'') !== v)
                           .map(([k,l,v]) => `${l}: "${before[k]||'(없음)'}" → "${v||'(삭제)'}"`);
-    await updateDoc(doc(db,'staff',CU.uid), { birth, phone, email, address, duty });
+    await updateDoc(doc(db,'staff',CU.uid), { birth, phone, email, address, duty }); dropLists('staff');
     CU.birth=birth; CU.phone=phone; CU.email=email; CU.address=address; CU.duty=duty;
     if(STAFF_CACHE[CU.uid]) Object.assign(STAFF_CACHE[CU.uid], {birth, phone, email, address, duty});
     if(changes.length && window.logActivity) logActivity('수정','내 정보', CU.name||'', changes.join(' / '));

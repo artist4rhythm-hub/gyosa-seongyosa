@@ -362,6 +362,7 @@ import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https:/
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, collection, query, where,
   onSnapshot, serverTimestamp, Timestamp, increment, runTransaction, writeBatch }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 import * as C from './minutes-core.js';
 import { makeStore, saveBlob, cleanInlineCached, cleanTableCached } from './minutes-files.js';
 const SAFE = { clean: cleanInlineCached, cleanTbl: cleanTableCached };      // 🔒 보여 줄 때 다시 다듬기
@@ -470,7 +471,7 @@ async function loadCfg(){
 }
 async function loadStaff(){
   try{
-    const snap = await getDocs(collection(db, 'staff')).then(s => (window.hideTest ? hideTest(s) : s));
+    const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s => (window.hideTest ? hideTest(s) : s));
     STAFF = [];
     snap.forEach(d => { const s = { uid: d.id, ...d.data() }; if((s.acStatus || 'active') === 'active' && !s.noAuth) STAFF.push(s); });
     STAFF.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));

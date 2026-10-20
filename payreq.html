@@ -669,6 +669,7 @@ html[data-theme="dark"]{--xl-am-bg:#221C0E;--xl-am-box:#2E2510;--xl-am-line:#5C4
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, deleteDoc, query, where, Timestamp, arrayUnion, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 import { notifyStaff } from './push-client.js';
 // 🧾 영수증 사진 — 원본에서 자르고 글자 보존 (v125) · 따로 불러온다: 이 파일이 없거나 늦게 와도 화면은 그대로 열리게
 let RI = null;
@@ -1515,7 +1516,7 @@ async function submitPayReq(){
 
     // 본인 계좌 저장 (다음 자동)
     if(prMode==='expense' && (prBank.bank||prBank.account)){
-      try { await setDoc(doc(db,'staff',CU.uid), { payBank:prBank }, {merge:true}); } catch(e){}
+      try { await setDoc(doc(db,'staff',CU.uid), { payBank:prBank }, {merge:true}); dropLists('staff'); } catch(e){}
     }
 
     // 이력 남기기 — 상신 · 재상신 · 수정을 구분해서 기록
@@ -2972,7 +2973,7 @@ async function submitExpense(){
     // 계좌 정보를 내 계정에 저장 (다음 신청 시 자동 입력)
     if(bank!==(CU.bankName||'') || account!==(CU.bankAccount||'') || holder!==(CU.bankHolder||'')){
       try {
-        await updateDoc(doc(db,'staff',CU.uid), {bankName:bank, bankAccount:account, bankHolder:holder});
+        await updateDoc(doc(db,'staff',CU.uid), {bankName:bank, bankAccount:account, bankHolder:holder}); dropLists('staff');
         Object.assign(CU, {bankName:bank, bankAccount:account, bankHolder:holder});
       } catch(e2){}
     }

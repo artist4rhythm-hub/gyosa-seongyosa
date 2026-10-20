@@ -3453,6 +3453,7 @@ setupTabs();
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, deleteDoc, getDocs, collection, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -3530,7 +3531,7 @@ onAuthStateChanged(auth, async (user)=>{
 
   // 전체 교직원 로드 (학년 편성에서 담당 선생님을 계정 목록에서 고르기 위함)
   try {
-    const ssnap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    const ssnap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
     const orgName = {jihyebit:'지혜빛', daniel:'다니엘 아마츠'};
     window.ALL_STAFF = ssnap.docs
       .map(d=>{ const s=d.data(); return {uid:d.id, name:s.name||'', role:s.role||'', org:s.org||'', orgLabel:orgName[s.org]||s.org||'', status:s.acStatus||'active'}; })
@@ -3572,7 +3573,7 @@ window.openTtPermDlg = async function(ttId){
   const canManage = myRole==='super' || (item.savedByUid && item.savedByUid===myUid);
   if(!canManage){ alert('이 틀의 담당자 또는 슈퍼 관리자만 권한을 바꿀 수 있습니다.'); return; }
 
-  const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+  const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
   const staff = [];
   snap.forEach(d=>{ const s=d.data(); if((s.acStatus||'active')==='active') staff.push({uid:d.id, name:s.name, role:s.role, org:s.org}); });
   staff.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));
@@ -3623,7 +3624,7 @@ async function openPlanAccessDlg(){
     allowed = pa.exists() && Array.isArray(pa.data().uids) ? pa.data().uids : [];
   } catch(e){}
   // 교직원 목록
-  const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+  const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
   const staff = [];
   snap.forEach(d=>{ const s=d.data(); if((s.acStatus||'active')==='active') staff.push({uid:d.id, name:s.name, role:s.role, org:s.org}); });
   staff.sort((a,b)=>(a.name||'').localeCompare(b.name||'','ko'));

@@ -316,6 +316,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
+dropLists('staff'); try{ addEventListener('pagehide', () => dropLists('staff')); }catch(e){}   // 교직원을 고치는 화면 — 들어올 때 · 나갈 때 기억한 교직원 명단을 버림 (다음 화면은 새로 받음)
 import { attOf, attRange, colOnce, colDrop } from './qread.js';   // 📉 v120 필요한 것만 읽기
 
 // ── Firebase 초기화 ──────────────────────────
@@ -797,7 +799,7 @@ async function drawCal() {
   const holMap = {}, wps = [], recMap = {};
   try {
     // 공휴일 로드 (전체 가져와서 필터 - 색인 불필요)
-    const holSnap = await getDocs(collection(db, 'holidays'));
+    const holSnap = await cachedCol(db, 'holidays', { uid: CU && CU.uid, ms: 30 * 60000 });   // 📉 v137 같은 탭 30분 (등록 · 삭제하면 버림)
     holSnap.forEach(d => {
       const h = d.data();
       if (h.org === CU.org || h.org === 'all') holMap[h.date] = h.name;
@@ -927,7 +929,7 @@ async function addHol() {
   const who=($I('hw')&&$I('hw').value)||'all';
   if(!date||!name) return toast('날짜와 이름을 입력하세요.','err');
   await window.TM.snapBundle('holidays', {}, `휴일 등록: ${name}`);
-  await addDoc(collection(db,'holidays'),{date,name,org,who,createdAt:Timestamp.now()});
+  await addDoc(collection(db,'holidays'),{date,name,org,who,createdAt:Timestamp.now()}); dropLists('holidays');
   toast('등록되었습니다.','ok');
   $I('hd').value='';$I('hn2').value='';
   await loadHolList();
@@ -952,7 +954,7 @@ window.loadHolList = loadHolList;
 async function delHol(id) {
   if(!confirm('삭제할까요?')) return;
   await window.TM.snapBundle('holidays', {}, '휴일 삭제 전');
-  await deleteDoc(doc(db,'holidays',id));
+  await deleteDoc(doc(db,'holidays',id)); dropLists('holidays');
   toast('삭제되었습니다.');
   await loadHolList();
 }
@@ -988,7 +990,7 @@ async function getAllRows(sd, ed, orgFilter, uidFilter) {
   const wpSnap = await getDocs(collection(db,'workPeriods'));
   const wps = []; wpSnap.forEach(d=>wps.push(d.data()));
 
-  const holSnap = await getDocs(collection(db,'holidays'));
+  const holSnap = await cachedCol(db, 'holidays', { uid: CU && CU.uid, ms: 30 * 60000 });
   const holDates = new Set();
   holSnap.forEach(d=>{ if(!orgFilter||d.data().org==='all'||d.data().org===orgFilter) holDates.add(d.data().date); });
 

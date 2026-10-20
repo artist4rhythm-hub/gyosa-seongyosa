@@ -1236,6 +1236,7 @@ import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, deleteDoc, addDoc, updateDoc, serverTimestamp,
   collection, getDocs, orderBy, query, where, Timestamp, onSnapshot }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 
 const __cfg = ({
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -4394,11 +4395,13 @@ function eventDays(s, e, weekdays, skips){
 }
 async function clearEventLinks(ev){
   for(const hid of (ev.holidayIds||[])){ try{ await deleteDoc(doc(db,'holidays',hid)); }catch(e){} }
+  dropLists('holidays');   // 📉 v137 다른 화면이 기억한 휴일 버리기
   for(const wid of (ev.wpIds||[])){ try{ await deleteDoc(doc(db,'workPeriods',wid)); }catch(e){} }
 }
 async function buildEventLinks(ev, wantWp){
   const out = { holidayIds: [], wpIds: [] };
   if(ev.category === 'closed'){
+    dropLists('holidays');   // 📉 v137 (중간에 실패해도 다른 화면이 옛 휴일을 쓰지 않게 먼저)
     const days = eventDays(ev.startDate, ev.endDate, ev.weekdays, ev.skipDates);
     for(const date of days){
       const r = await addDoc(collection(db,'holidays'), {
@@ -4407,6 +4410,7 @@ async function buildEventLinks(ev, wantWp){
       });
       out.holidayIds.push(r.id);
     }
+    dropLists('holidays');   // 📉 v137
   }
   if(ev.category === 'break' && wantWp){
     const wOrgs = ev.org==='all' ? ['daniel','jihyebit'] : [ev.org];
@@ -6515,7 +6519,7 @@ let EDITORS = { all:[], daniel:[], jihyebit:[] };
 async function loadStaffList(){
   if(!isSuper()) return;
   try {
-    const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
     STAFF_LIST = snap.docs.map(d=>({ uid:d.id, ...d.data() }))
       .filter(s=>s.name)
       .sort((a,b)=> String(a.name).localeCompare(String(b.name),'ko'));

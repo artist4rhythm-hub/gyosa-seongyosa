@@ -130,6 +130,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 import { gateRecalc } from './gate-client.js?v=122';   // 🎫 반이 바뀌면 학부모 출입증(반 게시판)도 바로 따라감 (v122)
 
 const firebaseConfig = {
@@ -321,7 +322,7 @@ function liveRefresh(){
   liveRefresh._t = setTimeout(()=>{ try { if($I('class-list')) renderClasses(); } catch(e){ console.warn('[live]', e); } }, 150);
 }
 async function loadStaff(){
-  const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+  const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
   const allowed = myOrgs();
   STAFF = [];
   snap.forEach(d=>{ const s={uid:d.id,...d.data()}; const so=s.orgs&&s.orgs.length?s.orgs:[s.org]; if(so.some(o=>allowed.includes(o))) STAFF.push(s); });

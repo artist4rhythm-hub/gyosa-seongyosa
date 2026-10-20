@@ -702,6 +702,7 @@ import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
   collection, getDocs, query, where, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -3603,7 +3604,7 @@ window.fnPickStaff = async function(cb, cur, opt){
     chip.className = `fnp-gd ${next==='남'?'m':next==='여'?'f':'n'} gd-edit`;
     chip.textContent = next || '?';
     cnt();
-    try { await setDoc(doc(db,'staff',uid), { gender: next }, { merge:true }); }
+    try { await setDoc(doc(db,'staff',uid), { gender: next }, { merge:true }); dropLists('staff'); }
     catch(err){ toast('성별 저장 실패: '+err.message,'err'); }
   });
   cnt();
@@ -3806,7 +3807,7 @@ window.fnPickStaffEvent = async function(cb, cur, opt){
     chip.textContent = next||'?';
     const inp=chip.closest('.fnp-it').querySelector('input'); if(inp) inp.dataset.gen=next;
     cnt();
-    try { await setDoc(doc(db,'staff',uid), { gender: next }, { merge:true }); }
+    try { await setDoc(doc(db,'staff',uid), { gender: next }, { merge:true }); dropLists('staff'); }
     catch(err){ toast('성별 저장 실패: '+err.message,'err'); }
   });
   $I('fe-ok').onclick = ()=>{
@@ -3916,7 +3917,7 @@ document.addEventListener('click', async e=>{
   if(st) st.gender=next;
   (AG?.teachers||[]).forEach(t=>{ if(t.n===name) t.g=next; });
   agPaint();
-  try { await setDoc(doc(db,'staff',uid), { gender: next }, { merge:true }); }
+  try { await setDoc(doc(db,'staff',uid), { gender: next }, { merge:true }); dropLists('staff'); }
   catch(err){ toast('성별 저장 실패: '+err.message,'err'); }
 }, true);   // 캡처 단계 — 드래그 시작보다 먼저 잡는다
 function agUnitTch(u){
@@ -4404,7 +4405,7 @@ window.saveBlock = async function(){
    ═══════════════════════════════════════════ */
 async function loadStaffList(){
   if(STAFF) return;
-  const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+  const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
   STAFF = snap.docs.map(d=>({ uid:d.id, ...d.data() }))
     .sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'ko'));
 }

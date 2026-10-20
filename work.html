@@ -115,6 +115,7 @@ th{background:var(--iv);font-weight:700;font-size:12px;}
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 import { attOf, attRange } from './qread.js';   // 📉 v120 고른 기간만 읽기
 
 const firebaseConfig = {
@@ -195,7 +196,7 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 async function loadStaff(){
-  const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+  const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
   const allowed = myOrgs();
   STAFF = [];
   snap.forEach(d=>{
@@ -242,7 +243,7 @@ async function loadExc(){
   });
 }
 async function loadHolidays(){
-  const snap = await getDocs(collection(db,'holidays'));
+  const snap = await cachedCol(db, 'holidays', { uid: CU && CU.uid, ms: 30 * 60000 });   // 📉 v137 같은 탭 30분
   HOLIDAYS = []; snap.forEach(d=>HOLIDAYS.push(d.data()));
 }
 async function loadConfig(){

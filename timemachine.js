@@ -233,6 +233,8 @@ const TM = {
     const g = await F.getDoc(F.doc(c.db,'snapshots',snapId));
     if(!g.exists()) throw new Error('스냅샷을 찾을 수 없습니다.');
     const s = g.data();
+    try{ window.dropLists && window.dropLists(s.col); }catch(e){}   // 📉 v137 — 되돌리는 명단을 다른 화면이 기억해 둔 것 버리기 (끝난 뒤에도 한 번 더)
+    try{
     if(s.bundle){
       const scope = JSON.parse(s.scope||'{}');
       await this.snapBundle(s.col, scope, '되돌리기 직전 자동 보관');
@@ -254,6 +256,7 @@ const TM = {
       await F.setDoc(F.doc(c.db, s.col, s.docId), JSON.parse(s.data||'{}'));
       return {bundle:false};
     }
+    } finally { try{ window.dropLists && window.dropLists(s.col); }catch(e){} }
   },
 
   _ago(at){

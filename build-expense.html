@@ -119,6 +119,7 @@ import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
   collection, getDocs, query, where, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 // 🧾 영수증 · 증빙 사진 — 글자 보존 · 문서 1MB 안 (v125) · 따로 불러온다: 이 파일이 없거나 늦게 와도 화면은 그대로 열리게
 let RI = null;
 const RI_P = import('./receipt-image.js?v=125').then(m => (RI = m)).catch(() => null);
@@ -191,7 +192,7 @@ async function loadLedgers(){
 }
 async function loadStaff(){
   if(STAFF.length) return STAFF;
-  try{ const s = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+  try{ const s = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
     STAFF = s.docs.map(d=>({uid:d.id, ...d.data()})).filter(x=>!x.deleted && x.status!=='퇴직'); }
   catch(e){ STAFF=[]; }
   return STAFF;
@@ -650,7 +651,7 @@ window.saveLedger = async (id)=>{
     for(const u of uids){
       try{ const st = await getDoc(doc(db,'staff',u));
         const cur = (st.exists() && Array.isArray(st.data().pageAllow)) ? st.data().pageAllow : [];
-        if(!cur.includes('buildexp')) await setDoc(doc(db,'staff',u), { pageAllow:[...cur,'buildexp'] }, { merge:true });
+        if(!cur.includes('buildexp')){ await setDoc(doc(db,'staff',u), { pageAllow:[...cur,'buildexp'] }, { merge:true }); dropLists('staff'); }
       }catch(_){}
     }
     closeModal(); CUR ? renderDetail() : renderList(); toast('저장했습니다');

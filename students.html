@@ -160,6 +160,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, onSnapshot, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
+dropLists('students'); try{ addEventListener('pagehide', () => dropLists('students')); }catch(e){}   // 학생을 고치는 화면 — 들어올 때 · 나갈 때 기억한 학생 명단을 버림 (홈 출결 칸이 새 명단으로)
 import { gateRecalc } from './gate-client.js?v=122';   // 🎫 학부모 출입증 다시 계산 (v122)
 
 const firebaseConfig = {
@@ -303,7 +305,7 @@ async function loadClasses(){
   try { await liveCol('classes', docs=>{ CLASSES = docs; }); }
   catch(e){ CLASSES = []; }
   try {
-    const st = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    const st = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
     STAFF = []; st.forEach(d=>STAFF.push({uid:d.id, ...d.data()}));
   } catch(e){ STAFF = []; }
 }

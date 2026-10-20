@@ -162,6 +162,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, Timestamp, query, where, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 import { eqInDays, inRange } from './qread.js';   // 📉 v120 그 반 · 그 날짜(그 달)만 읽기
 // 📉 v120 학기 통계 · 출결표 — 같은 기간을 보기만 바꿔 다시 그릴 때는 받은 기록을 다시 쓴다 (5분 · 이 화면에서 출결을 고치면 버림)
 let SA_CACHE = null;
@@ -662,7 +663,7 @@ async function loadTerms(){
 
 // ── 출근부 휴일/기간 연동 로드 ──
 async function loadHolidays(){
-  const hSnap = await getDocs(collection(db,'holidays'));
+  const hSnap = await cachedCol(db, 'holidays', { uid: CU && CU.uid, ms: 30 * 60000 });   // 📉 v137 같은 탭 30분
   HOLIDAYS = []; hSnap.forEach(d=>HOLIDAYS.push(d.data()));
   const wSnap = await getDocs(collection(db,'workPeriods'));
   WORKPERIODS = []; wSnap.forEach(d=>WORKPERIODS.push(d.data()));
@@ -1558,7 +1559,7 @@ async function sendAbsenceAlert(c, dateStr, studs){
     const targets = new Set();
     if(c.teacherUid) targets.add(c.teacherUid);
     (c.deputies||[]).forEach(u=>targets.add(u));
-    const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+    const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
     snap.forEach(d=>{
       const st = d.data();
       if((st.acStatus||'active')!=='active') return;
@@ -2400,7 +2401,7 @@ async function loadGaStaff(){
   const box = $I('ga-box'); if(!box) return;
   if(!GA_STAFF){
     try {
-      const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
+      const snap = await cachedCol(db, 'staff', { uid: CU && CU.uid, ms: 10 * 60000 }).then(s=>(window.hideTest?hideTest(s):s));
       GA_STAFF = [];
       snap.forEach(d=>{ const s={uid:d.id, ...d.data()};
         if(!s.noAuth && (s.acStatus||'active')==='active') GA_STAFF.push(s); });
