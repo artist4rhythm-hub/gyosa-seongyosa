@@ -395,7 +395,7 @@ html[data-theme="dark"] #slist .sitem.dw-row-on{ border-color:#2E5A48; }
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, arrayUnion } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 dropLists('staff'); try{ addEventListener('pagehide', () => dropLists('staff')); }catch(e){}   // 교직원을 고치는 화면 — 들어올 때 · 나갈 때 기억한 교직원 명단을 버림 (다음 화면은 새로 받음)
 import { attOf, attRange, colOnce, colDrop } from './qread.js';   // 📉 v120 필요한 것만 읽기
@@ -3060,9 +3060,15 @@ async function renderAccessCtl(){
         .duty-t th,.duty-t td{border-bottom:1px solid var(--ivd);padding:6px 4px;text-align:center}
         .duty-t thead th{background:var(--gp);font-size:11px;font-weight:800;color:var(--gd);
           position:sticky;padding:8px 4px;z-index:3;box-shadow:0 1px 0 var(--ivd)}
-        .duty-t thead tr:first-child th{top:0;height:32px}
-        .duty-t thead tr:nth-child(2) th{top:31px;height:34px}
-        .duty-th{font-size:11px;line-height:1.4;display:inline-block}
+        .duty-t thead tr:first-child th{top:0;height:26px}
+        .duty-t thead tr:nth-child(2) th{top:26px;height:34px}
+        .duty-t thead tr:nth-child(3) th{top:60px;height:26px}
+        .duty-t thead th.duty-sh{font-size:10.5px;letter-spacing:.06em;color:var(--gm);background:var(--iv);border-left:2px solid var(--wh)}
+        .duty-t .duty-se{border-right:2px solid var(--ivd)}
+        .duty-t th.duty-nmh{min-width:120px}
+        .duty-th{font-size:11px;line-height:1.4;display:inline-block;white-space:nowrap}
+        .duty-t thead th{min-width:46px}
+        .duty-t thead th.duty-gh,.duty-t thead th.duty-sh{white-space:nowrap}
         .duty-nmh{text-align:left !important;padding-left:12px !important;min-width:110px}
         .duty-nm{text-align:left !important;padding-left:12px !important;font-size:12.5px;white-space:nowrap}
         .duty-role{font-size:10px;color:var(--tl);margin-left:5px;font-weight:600}
@@ -3077,6 +3083,7 @@ async function renderAccessCtl(){
 
         /* 기능별 목록 */
         .duty-list{display:flex;flex-direction:column;gap:9px}
+        .duty-sec-t{font-size:11.5px;font-weight:800;color:var(--gm);letter-spacing:.05em;margin:8px 2px -2px}
         .duty-row{border:1px solid var(--ivd);border-radius:11px;padding:11px 13px;background:var(--wh)}
         .duty-rh{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px}
         .duty-ic{font-size:15px}
@@ -3161,60 +3168,100 @@ async function renderAccessCtl(){
      field : 그 문서 안의 칸 이름
      always: 지정하지 않아도 늘 고칠 수 있는 사람 (역할로 판단) */
 const DUTY_DEFS = [
-  { key:'timetable', icon:'🗓', label:'시간표',
+  /* sec: 표 맨 윗줄 묶음 (사이드바 구역과 같은 이름) · grp: 같은 기능의 칸 묶음 (학사일정 · 수행성 경비) */
+  /* ── 학사 ── */
+  /* 🎓 학생관리 — 담당자는 반편성과 같은 문서(classConfig/editors)의 studentUids 칸에 담는다 */
+  { key:'students', sec:'학사', icon:'🎓', label:'학생관리',
+    desc:'학생 등록 · 정보 수정 · 삭제 · 학부모 가입 코드',
+    doc:['classConfig','editors'], field:'studentUids',
+    always:s=>s.role==='super' || s.role==='org_admin' },
+  { key:'attend', sec:'학사', icon:'✅', label:'출석부',
+    desc:'출결 항목 · 학년별 담당 · 출석부 설정 · 모든 반 출결',
+    doc:['attendConfig','editors'], field:'uids',
+    always:s=>s.role==='super' || s.role==='org_admin' },
+  /* 🧩 반편성 — 반 만들기·학생 배정·진급 */
+  { key:'class', sec:'학사', icon:'🧩', label:'반편성',
+    desc:'반 만들기 · 학생 배정 · 진급',
+    doc:['classConfig','editors'], field:'uids',
+    always:s=>s.role==='super' || s.role==='org_admin' },
+  /* 학사일정 세 칸은 grp로 묶여 표 머리에서 「📅 학사일정」 한 지붕 아래 놓인다 */
+  { key:'ac_all', sec:'학사', icon:'📅', label:'학사일정 · DA 전체', grp:'📅 학사일정', sub:'DA 전체',
+    desc:'두 기관 공통 일정 (정기휴가·창립일 등)',
+    doc:['academicConfig','editors'], field:'all',
+    always:s=>s.role==='super' },
+  { key:'ac_daniel', sec:'학사', icon:'📅', label:'학사일정 · 다니엘 아마츠', grp:'📅 학사일정', sub:'다니엘',
+    desc:'다니엘 아마츠 학사일정',
+    doc:['academicConfig','editors'], field:'daniel',
+    always:s=>s.role==='super' || (s.role==='org_admin' && s.org==='daniel') },
+  { key:'ac_jihyebit', sec:'학사', icon:'📅', label:'학사일정 · 지혜빛 선교원', grp:'📅 학사일정', sub:'지혜빛',
+    desc:'지혜빛 선교원 학사일정',
+    doc:['academicConfig','editors'], field:'jihyebit',
+    always:s=>s.role==='super' || (s.role==='org_admin' && s.org==='jihyebit') },
+  /* 📝 회의록 — 회의 종류 · 불참 사유 설정 · 다른 분 회의록 휴지통 (열람 기관 허락은 수퍼관리자만) */
+  { key:'minutes', sec:'학사', icon:'📝', label:'회의록',
+    desc:'회의 종류 · 불참 사유 설정 · 다른 분 회의록 정리 (열람 허락은 수퍼관리자)',
+    doc:['minutesConfig','managers'], field:'uids',
+    always:s=>s.role==='super' },
+  /* 🎨 동아리 — 학기 운영·취합·배정 · 현황 게시. 열람(풀타임 교사 전체)은 «동아리 열람 허용»으로 따로 */
+  { key:'club', sec:'학사', icon:'🎨', label:'동아리 관리자', short:'동아리',
+    desc:'동아리·조이클래스 학기 운영 · 취합 · 배정 · 현황 게시',
+    doc:['config','clubManagers'], field:'uids',
+    always:s=>s.role==='super' },
+  { key:'gcal', sec:'학사', icon:'🗓', label:'구글 캘린더',
+    desc:'캘린더 추가 · 고치기 · 순서',
+    doc:['config','gcalManagers'], field:'uids',
+    always:s=>s.role==='super' || s.role==='org_admin' },
+  { key:'cert', sec:'학사', icon:'📜', label:'증명서 발급', short:'증명서',
+    desc:'내 기관 모든 학생 · 교직원 증명서 발급 (직인 등록은 수퍼관리자)',
+    doc:['config','certIssuers'], field:'uids',
+    always:s=>s.role==='super' || s.role==='org_admin' },
+
+  /* ── 근무 · 행정 ── */
+  { key:'work', sec:'근무 · 행정', icon:'⏱', label:'근무시간',
+    desc:'근무시간 설정 · 예외 입력 · 모두의 근무시간 보기',
+    doc:['workConfig','editors'], field:'uids',
+    always:s=>s.role==='super' || s.role==='org_admin' || s.role==='tab_admin' },
+  { key:'approval', sec:'근무 · 행정', icon:'🖋', label:'전자결재 · 직책 관리', short:'전자결재',
+    desc:'직책 지정 · 직책 목록 · 문서 종류 · 맞춤 양식 (결재선은 수퍼관리자)',
+    doc:['approvalConfig','managers'], field:'uids',
+    always:s=>s.role==='super' || s.role==='org_admin' },
+  { key:'timetable', sec:'근무 · 행정', icon:'🗓', label:'시간표',
     desc:'시간표 틀 · 수업 정의 · 배치',
     doc:['timetableConfig','editors'], field:'uids',
     always:s=>s.role==='super' },
 
-  /* 학사일정 세 칸은 grp로 묶여 표 머리에서 「📅 학사일정」 한 지붕 아래 놓인다 */
-  { key:'ac_all', icon:'📅', label:'학사일정 · DA 전체', grp:'📅 학사일정', sub:'DA 전체',
-    desc:'두 기관 공통 일정 (정기휴가·창립일 등)',
-    doc:['academicConfig','editors'], field:'all',
-    always:s=>s.role==='super' },
-  { key:'ac_daniel', icon:'📅', label:'학사일정 · 다니엘 아마츠', grp:'📅 학사일정', sub:'다니엘',
-    desc:'다니엘 아마츠 학사일정',
-    doc:['academicConfig','editors'], field:'daniel',
-    always:s=>s.role==='super' || (s.role==='org_admin' && s.org==='daniel') },
-  { key:'ac_jihyebit', icon:'📅', label:'학사일정 · 지혜빛 선교원', grp:'📅 학사일정', sub:'지혜빛',
-    desc:'지혜빛 선교원 학사일정',
-    doc:['academicConfig','editors'], field:'jihyebit',
-    always:s=>s.role==='super' || (s.role==='org_admin' && s.org==='jihyebit') },
-
-  { key:'payreq', icon:'💳', label:'경비 지급 요청서', short:'경비 요청',
-    desc:'지급 처리 · 취합 · 설정',
+  /* ── 경비 ── */
+  { key:'payreq', sec:'경비', icon:'💳', label:'경비 지급 요청서', short:'경비 요청',
+    desc:'지급 처리 · 취합',
     doc:['payConfig','managers'], field:'list',
     always:s=>s.role==='super' },
-
-  { key:'expense', icon:'💰', label:'수행성 경비',
-    desc:'경비 취합 · 마감 · 설정',
-    doc:['expenseConfig','managers'], field:'list',
+  /* 💰 수행성 경비 — 기관마다 따로 (수행성 경비 화면의 «관리자 지정»과 같은 칸) · 예전 공통 칸(list)은 두 기관 모두로 본다 */
+  { key:'exp_daniel', sec:'경비', icon:'💰', label:'수행성 경비 · 다니엘 아마츠', grp:'💰 수행성 경비', sub:'다니엘',
+    desc:'다니엘 아마츠 경비 취합 · 입금 · 학기 마감',
+    doc:['expenseConfig','managers'], field:'daniel', legacy:'list', legacySibs:['daniel','jihyebit'],
+    always:s=>s.role==='super' },
+  { key:'exp_jihyebit', sec:'경비', icon:'💰', label:'수행성 경비 · 지혜빛 선교원', grp:'💰 수행성 경비', sub:'지혜빛',
+    desc:'지혜빛 선교원 경비 취합 · 입금 · 학기 마감',
+    doc:['expenseConfig','managers'], field:'jihyebit', legacy:'list', legacySibs:['daniel','jihyebit'],
+    always:s=>s.role==='super' },
+  { key:'actexp', sec:'경비', icon:'🏕', label:'활동 경비',
+    desc:'활동 만들기 · 지우기 · 활동마다 회계 담당 지정',
+    doc:['actConfig','editors'], field:'uids',
+    always:s=>s.role==='super' },
+  { key:'buildexp', sec:'경비', icon:'🏗', label:'공사 경비',
+    desc:'공사 만들기 · 선급금 · 설정 · 공사마다 담당 지정',
+    doc:['bldConfig','editors'], field:'uids', pageAllow:'buildexp',
     always:s=>s.role==='super' },
 
-  { key:'attend', icon:'✅', label:'출석부',
-    desc:'출결 항목 · 출석부 설정',
-    doc:['attendConfig','editors'], field:'uids',
+  /* ── 소통 ── */
+  { key:'board', sec:'소통', icon:'📋', label:'게시판 관리', short:'게시판',
+    desc:'분류 관리 · 다른 분 글 · 댓글 정리 · 휴지통',
+    doc:['boardConfig','managers'], field:'uids',
+    always:s=>s.role==='super' || s.role==='org_admin' || s.role==='tab_admin' },
+  { key:'family', sec:'소통', icon:'📨', label:'가정통신문',
+    desc:'통신문 만들기 · 담당 지정 · 게시 · 지우기',
+    doc:['famConfig','editors'], field:'uids', names:true,
     always:s=>s.role==='super' },
-
-  /* 🎨 동아리 — 학기 운영·취합·배정을 맡는 관리자.
-     열람(풀타임 교사 전체)은 아래 «동아리 열람 허용» 토글로 따로 켠다 */
-  { key:'club', icon:'🎨', label:'동아리 관리자',
-    desc:'동아리·조이클래스 학기 운영 · 취합 · 배정',
-    doc:['config','clubManagers'], field:'uids',
-    always:s=>s.role==='super' },
-
-  /* 🧩 반편성 — 반 만들기·학생 배정·진급. 수퍼·기관관리자는 늘 열려 있고,
-     부서장·교사는 여기서 담당자로 지정해야 고칠 수 있다 */
-  { key:'class', icon:'🧩', label:'반편성',
-    desc:'반 만들기 · 학생 배정 · 진급',
-    doc:['classConfig','editors'], field:'uids',
-    always:s=>s.role==='super' || s.role==='org_admin' },
-
-  /* 🎓 학생관리 — 담당자는 반편성과 같은 문서(classConfig/editors)의
-     studentUids 칸에 담는다 (문서 하나로 학사 담당을 함께 관리) */
-  { key:'students', icon:'🎓', label:'학생관리',
-    desc:'학생 등록 · 정보 수정 · 삭제',
-    doc:['classConfig','editors'], field:'studentUids',
-    always:s=>s.role==='super' || s.role==='org_admin' },
 ];
 
 let DUTY = {};              // { key: [uid…] }
@@ -3237,6 +3284,8 @@ async function loadDuties(){
     let list = Array.isArray(data[d.field]) ? data[d.field].slice() : [];
     // 학사일정의 예전 저장 방식({uids:[…]})도 받아준다
     if(!list.length && d.doc[0]==='academicConfig' && Array.isArray(data.uids)) list = data.uids.slice();
+    // 수행성 경비의 예전 공통 칸(list) = 두 기관 모두 — 표에는 기관 칸마다 켜진 것으로 보인다
+    if(d.legacy && Array.isArray(data[d.legacy])) data[d.legacy].forEach(u=>{ if(!list.includes(u)) list.push(u); });
     DUTY[d.key] = list;
   }
 }
@@ -3256,21 +3305,44 @@ window.toggleDuty = async function(key, uid){
   if(s && def.always(s)) return;    // 늘 권한이 있는 사람은 건드리지 않는다
 
   const cur = DUTY[key] || [];
+  const before = { ...DUTY };
   DUTY[key] = cur.includes(uid) ? cur.filter(u=>u!==uid) : [...cur, uid];
+  const turnedOn = DUTY[key].includes(uid);
 
   try {
     await window.TM.snapDoc(def.doc[0], def.doc[1], `담당자 변경: ${def.label}`);
+    const upd = { [def.field]: DUTY[key] };
+    if(def.legacy){
+      // 예전 공통 칸(list)에 있던 분은 기관 칸으로 옮겨 담고 공통 칸에서는 뺀다 (한 기관만 끄는 것도 되게)
+      const g = await getDoc(doc(db, def.doc[0], def.doc[1]));
+      const data = g.exists() ? g.data() : {};
+      const leg = Array.isArray(data[def.legacy]) ? data[def.legacy] : [];
+      if(leg.includes(uid)){
+        upd[def.legacy] = leg.filter(u=>u!==uid);
+        (def.legacySibs||[]).filter(f=>f!==def.field).forEach(f=>{
+          const sib = DUTY_DEFS.find(x=>x.doc.join('/')===def.doc.join('/') && x.field===f);
+          const arr = Array.isArray(data[f]) ? data[f].slice() : [];
+          if(!arr.includes(uid)) arr.push(uid);
+          upd[f] = arr; if(sib) DUTY[sib.key] = [...new Set([...(DUTY[sib.key]||[]), uid])];
+        });
+      }
+    }
+    if(def.names) upd.names = DUTY[key].map(u=>STAFF_CACHE[u]?.name||'');   // 가정통신문 화면이 함께 적어 두는 이름 목록
     await setDoc(doc(db, def.doc[0], def.doc[1]), {
-      [def.field]: DUTY[key],
+      ...upd,
       updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name||'',
     }, { merge:true });
+    // 공사 경비는 관리자용 메뉴라 «화면 허용»(pageAllow)도 있어야 사이드바에 보인다
+    if(def.pageAllow && turnedOn && s && !(s.pageAllow||[]).includes(def.pageAllow)){
+      try { await setDoc(doc(db,'staff',uid), { pageAllow: arrayUnion(def.pageAllow) }, { merge:true }); s.pageAllow = [...(s.pageAllow||[]), def.pageAllow]; dropLists('staff'); } catch(e){}
+    }
     renderDutyPanel();
     try {
       logActivity('권한', '담당자',
         `${s?.name||''} — ${def.label} ${DUTY[key].includes(uid)?'지정':'해제'}`);
     } catch(e){}
   } catch(e){
-    DUTY[key] = cur;                // 되돌린다
+    Object.keys(DUTY).forEach(k=>{ DUTY[k] = before[k]; });   // 되돌린다
     alert('저장 실패: '+(e.message||''));
     renderDutyPanel();
   }
@@ -3343,15 +3415,17 @@ function renderDutyPanel(){
      수퍼관리자는 어차피 다 열려 있으니 «있음»으로 치지 않는다 —
      그러면 경고가 영영 안 떠서 빠뜨린 걸 못 찾기 때문이다. */
   const empty = DUTY_DEFS.filter(d=> !((DUTY[d.key]||[]).length));
+  const dutyShort = d => d.grp ? `${d.grp.replace(/^\S+\s/, '')}(${d.sub})` : (d.short||d.label);
   const warn = empty.length
-    ? `<div class="duty-warn">⚠️ 따로 지정한 담당자가 없는 기능 —
-        <b>${empty.map(d=>esc(d.label)).join(' · ')}</b>
-        <span>지금은 관리자만 고칠 수 있습니다. 맡을 분이 있으면 아래에서 골라주세요.</span></div>`
+    ? `<div class="duty-warn">⚠️ 따로 지정한 담당자가 없는 기능 <b>${empty.length}곳</b> —
+        ${empty.map(d=>esc(dutyShort(d))).join(' · ')}
+        <span>— 지금은 «늘» 칸(관리자)만 고칠 수 있어요. 맡을 분이 있으면 아래에서 골라 주세요.</span></div>`
     : '';
 
   if(DUTY_VIEW === 'duty'){
     // 기능별 — 무엇을 누가 맡고 있나 (선생님은 기관·부서로 묶어 보여준다)
-    const rows = DUTY_DEFS.map(d=>{
+    const rows = DUTY_DEFS.map((d,ix)=>{
+      const secHead = (ix===0 || DUTY_DEFS[ix-1].sec!==d.sec) ? `<div class="duty-sec-t">${esc(d.sec||'')}</div>` : '';
       const list = DUTY[d.key]||[];
       const autos = staff.filter(s=>d.always(s));
       const names = list.map(u=>STAFF_CACHE[u]?.name).filter(Boolean);
@@ -3366,7 +3440,7 @@ function renderDutyPanel(){
         return `<div class="duty-cg"><span class="duty-cg-l">${esc(g.key)}</span>
           <div class="duty-chips">${chips}</div></div>`;
       }).join('');
-      return `<div class="duty-row">
+      return secHead + `<div class="duty-row">
         <div class="duty-rh"><span class="duty-ic">${d.icon}</span>
           <b>${esc(d.label)}</b>
           <span class="duty-d">${esc(d.desc)}</span>
@@ -3380,31 +3454,39 @@ function renderDutyPanel(){
   }
 
   // ── 사람별 — 한 줄에서 그 사람의 모든 담당을 켜고 끈다 ──
-  // 표 머리 2단: grp가 같은 연속 칸(학사일정)은 윗줄에서 한 지붕으로 묶는다
-  const th1=[], th2=[];
+  // 표 머리 3단: ① 구역(학사 · 근무·행정 · 경비 · 소통 — 사이드바와 같은 순서)
+  //             ② 기능 — grp가 같은 연속 칸(학사일정 · 수행성 경비)은 한 지붕으로 묶는다 ③ 묶인 칸의 이름
+  const th0=[], th1=[], th2=[];
+  for(let i=0;i<DUTY_DEFS.length;){
+    let j=i; while(j<DUTY_DEFS.length && DUTY_DEFS[j].sec===DUTY_DEFS[i].sec) j++;
+    th0.push(`<th colspan="${j-i}" class="duty-sh">${esc(DUTY_DEFS[i].sec||'')}</th>`);
+    i=j;
+  }
   for(let i=0;i<DUTY_DEFS.length;i++){
     const d = DUTY_DEFS[i];
+    const secEnd = (k) => k===DUTY_DEFS.length-1 || DUTY_DEFS[k+1].sec!==DUTY_DEFS[k].sec;
     if(d.grp){
       let j=i; while(j<DUTY_DEFS.length && DUTY_DEFS[j].grp===d.grp) j++;
-      th1.push(`<th colspan="${j-i}" class="duty-gh">${d.grp}</th>`);
+      th1.push(`<th colspan="${j-i}" class="duty-gh${secEnd(j-1)?' duty-se':''}">${d.grp}</th>`);
       for(let k=i;k<j;k++){
         const dd = DUTY_DEFS[k];
-        th2.push(`<th title="${esc(dd.desc)}"><span class="duty-th">${esc(dd.sub||dd.label)}</span></th>`);
+        th2.push(`<th title="${esc(dd.desc)}" class="${secEnd(k)?'duty-se':''}"><span class="duty-th">${esc(dd.sub||dd.label)}</span></th>`);
       }
       i=j-1;
     } else {
-      th1.push(`<th rowspan="2" title="${esc(d.desc)}"><span class="duty-th">${d.icon}<br>${esc(d.short||d.label)}</span></th>`);
+      th1.push(`<th rowspan="2" title="${esc(d.label)} — ${esc(d.desc)}" class="${secEnd(i)?'duty-se':''}"><span class="duty-th">${d.icon}<br>${esc(d.short||d.label)}</span></th>`);
     }
   }
+  const seCls = k => (k===DUTY_DEFS.length-1 || DUTY_DEFS[k+1].sec!==DUTY_DEFS[k].sec) ? ' class="duty-se"' : '';
 
   const colN = 2 + DUTY_DEFS.length;   // 이름 + 기능들 + 합계
   const rows = groups.map(g=>{
     const sec = `<tr class="duty-sec"><td colspan="${colN}"><span>🏫 ${esc(g.key)} <i>${g.list.length}명</i></span></td></tr>`;
     const trs = g.list.map(s=>{
-      const cells = DUTY_DEFS.map(d=>{
+      const cells = DUTY_DEFS.map((d,k)=>{
         const auto = d.always(s);
         const on = auto || (DUTY[d.key]||[]).includes(s.uid);
-        return `<td><button class="duty-cell ${on?'on':''} ${auto?'auto':''}"
+        return `<td${seCls(k)}><button class="duty-cell ${on?'on':''} ${auto?'auto':''}"
           ${auto?'disabled title="관리자라 늘 열려 있습니다"':''}
           onclick="toggleDuty('${d.key}','${s.uid}')">${auto?'늘':(on?'✓':'')}</button></td>`;
       }).join('');
@@ -3424,7 +3506,8 @@ function renderDutyPanel(){
   box.innerHTML = head + warn + `<div class="duty-tw">
     <table class="duty-t">
       <thead>
-        <tr><th class="duty-nmh" rowspan="2">선생님</th>${th1.join('')}<th rowspan="2">합계</th></tr>
+        <tr><th class="duty-nmh" rowspan="3">선생님</th>${th0.join('')}<th rowspan="3">합계</th></tr>
+        <tr>${th1.join('')}</tr>
         <tr>${th2.join('')}</tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -4665,14 +4748,14 @@ window.delDept = delDept;
 /* ═══════════════ 🚪 퇴사 원클릭 ═══════════════
    계정 잠금(acStatus:'quit') + 모든 기능별 담당 해제 + 학년별 출석 담당 해제
    + 담임·대리 해제를 한 번에 처리한다. */
-const RETIRE_DUTY_DOCS = [
-  {col:'timetableConfig', id:'editors',  fields:['uids']},
-  {col:'academicConfig',  id:'editors',  fields:['all','daniel','jihyebit','uids']},
-  {col:'payConfig',       id:'managers', fields:['list']},
-  {col:'expenseConfig',   id:'managers', fields:['list']},
-  {col:'attendConfig',    id:'editors',  fields:['uids']},
-  {col:'classConfig',     id:'editors',  fields:['uids','studentUids']},
-];
+/* 🏛 v138 — 기능별 담당자 표(DUTY_DEFS)에 있는 모든 기능 + 예전 칸 (새 기능을 표에 더하면 퇴사 정리에도 저절로 들어감) */
+const RETIRE_DUTY_DOCS = (()=>{
+  const m = {};
+  const add = (col, id, f) => { const k = col+'/'+id; (m[k] = m[k] || {col, id, fields:[]}); if(f && !m[k].fields.includes(f)) m[k].fields.push(f); };
+  DUTY_DEFS.forEach(d=>{ add(d.doc[0], d.doc[1], d.field); if(d.legacy) add(d.doc[0], d.doc[1], d.legacy); });
+  add('academicConfig','editors','uids');   // 학사일정 예전 칸
+  return Object.values(m);
+})();
 
 function openRetire(uid){
   const s = STAFF_CACHE[uid]; if(!s) return toast('교직원 정보를 찾을 수 없습니다.','err');
@@ -4716,33 +4799,37 @@ async function retireStaff(uid){
     await updateDoc(doc(db,'staff',uid), {acStatus:'quit', ...(dt?{leaveDate:dt}:{})});
     s.acStatus = 'quit'; if(dt) s.leaveDate = dt;
     // ② 기능별 담당 해제
-    let dn = 0;
+    let dn = 0, dfail = 0;   // 🔒 v138 해제가 실제로 저장된 것만 센다 (담당자 명단은 수퍼관리자만 고칠 수 있음)
     for(const cfg of RETIRE_DUTY_DOCS){
+      let k = 0;
       try {
         const g = await getDoc(doc(db,cfg.col,cfg.id));
         if(!g.exists()) continue;
         const data = g.data(); const upd = {}; let hit = false;
         for(const f of cfg.fields){
           if(Array.isArray(data[f]) && data[f].includes(uid)){
-            upd[f] = data[f].filter(u=>u!==uid); hit = true; dn++;
+            upd[f] = data[f].filter(u=>u!==uid); hit = true; k++;
           }
         }
-        if(hit) await setDoc(doc(db,cfg.col,cfg.id), {...upd, updatedAt:Timestamp.now(), updatedByUid:CU.uid, updatedByName:CU.name||''}, {merge:true});
-      } catch(e){}
+        // 가정통신문은 담당자 이름 목록(names)을 함께 적어 둔다 — 빠진 분 이름도 함께 뺀다
+        if(hit && DUTY_DEFS.some(d=>d.names && d.doc[0]===cfg.col && d.doc[1]===cfg.id) && Array.isArray(upd.uids)) upd.names = upd.uids.map(u=>STAFF_CACHE[u]?.name||'');
+        if(hit){ await setDoc(doc(db,cfg.col,cfg.id), {...upd, updatedAt:Timestamp.now(), updatedByUid:CU.uid, updatedByName:CU.name||''}, {merge:true}); dn += k; }
+      } catch(e){ dfail += (k || 1); }   // 읽기부터 실패하면 몇 건인지 몰라 1건으로
     }
     // ③ 학년별 출석 담당 해제
+    { let k = 0;
     try {
       const g = await getDoc(doc(db,'attendConfig','gradeAssign'));
       if(g.exists() && g.data().v){
         const v = {...g.data().v}; let hit = false;
-        Object.keys(v).forEach(k=>{
-          if(Array.isArray(v[k]) && v[k].includes(uid)){
-            v[k] = v[k].filter(u=>u!==uid); if(!v[k].length) delete v[k]; hit = true; dn++;
+        Object.keys(v).forEach(gk=>{
+          if(Array.isArray(v[gk]) && v[gk].includes(uid)){
+            v[gk] = v[gk].filter(u=>u!==uid); if(!v[gk].length) delete v[gk]; hit = true; k++;
           }
         });
-        if(hit) await setDoc(doc(db,'attendConfig','gradeAssign'), {v, updatedAt:Timestamp.now(), updatedByUid:CU.uid, updatedByName:CU.name||''});
+        if(hit){ await setDoc(doc(db,'attendConfig','gradeAssign'), {v, updatedAt:Timestamp.now(), updatedByUid:CU.uid, updatedByName:CU.name||''}); dn += k; }
       }
-    } catch(e){}
+    } catch(e){ dfail += (k || 1); } }
     // ④ 담임·대리 해제
     let hn = 0;
     try {
@@ -4756,7 +4843,8 @@ async function retireStaff(uid){
     } catch(e){}
     logActivity('권한','퇴사',`${s.name} 퇴사 처리`, `담당 ${dn}건 · 담임/대리 ${hn}반 해제${dt?' · 퇴직일 '+dt:''}`);
     document.getElementById('retire-mod')?.remove();
-    toast(`${s.name} 선생님 퇴사 처리 완료 — 담당 ${dn}건 · 담임/대리 ${hn}반 해제`,'ok');
+    if(dfail) toast(`${s.name} 선생님 퇴사 처리 — 담임/대리 ${hn}반 해제 · ⚠️ 기능별 담당 ${dfail}건은 수퍼관리자만 해제할 수 있어요 (접근 권한 › 기능별 담당자에서)`,'err');
+    else toast(`${s.name} 선생님 퇴사 처리 완료 — 담당 ${dn}건 · 담임/대리 ${hn}반 해제`,'ok');
     loadStaff();
   } catch(e){ toast('퇴사 처리 실패: '+(e.message||''),'err'); }
 }

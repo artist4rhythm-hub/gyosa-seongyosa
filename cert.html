@@ -390,9 +390,12 @@ function deptCourse(dept){
   if(dept==='고등부') return '고등교육과정';
   return '교육과정';
 }
+// 🏛 v138 증명서 발급 담당 — 내 기관의 모든 학생 · 교직원 증명서 (기관관리자와 같은 범위 · 직인 등록 · 삭제는 수퍼관리자)
+let CERT_ISSUERS = [];
+const isCertIssuer = () => !!CU && CERT_ISSUERS.includes(CU.uid);
 // 이 학생을 담임이 발급할 수 있는지 (자기 반 학생) 또는 관리자
 function canIssue(s){
-  if(CU.role==='super' || CU.role==='org_admin') return myOrgs().includes(s.org);
+  if(CU.role==='super' || CU.role==='org_admin' || isCertIssuer()) return myOrgs().includes(s.org);
   if(CU.role==='tab_admin'){
     // 부서장: 같은 기관+같은 부서
     if(!myOrgs().includes(s.org)) return false;
@@ -440,6 +443,8 @@ onAuthStateChanged(auth, async (user) => {
   window.ORGS = ORGS;
   if(window.guardPage && !guardPage(CU, 'cert')) return;
   renderShell('cert', CU);
+  // 🏛 v138 — 관리자 › 접근 권한 › 기능별 담당자 «증명서 발급»(config/certIssuers.uids)
+  try { const g = await getDoc(doc(db,'config','certIssuers')); CERT_ISSUERS = (g.exists() && Array.isArray(g.data().uids)) ? g.data().uids : []; } catch(e){ CERT_ISSUERS = []; }
 
   await loadData();
   // 기관 선택 바 (모든 탭 공통)
@@ -830,7 +835,7 @@ window.logActivity = logActivity;
 
 // 경력증명서 발급 권한: 부서장(행정실장) 이상
 function canIssueCareer(){
-  return ['super','org_admin','tab_admin'].includes(CU?.role);
+  return ['super','org_admin','tab_admin'].includes(CU?.role) || isCertIssuer();
 }
 
 /* ── 누구의 재직·경력증명서까지 발급할 수 있나 ──
@@ -843,7 +848,7 @@ function canIssueStaffCert(s){
   if(s.uid === CU.uid) return true;                       // 본인은 언제나
   const so = s.orgs && s.orgs.length ? s.orgs : [s.org];
   if(CU.role === 'super') return true;
-  if(CU.role === 'org_admin') return so.some(o => myOrgs().includes(o));
+  if(CU.role === 'org_admin' || isCertIssuer()) return so.some(o => myOrgs().includes(o));
   if(CU.role === 'tab_admin'){
     if(CU.dept === '행정실') return so.includes(CU.org);  // 행정실장: 기관 전체
     return s.org === CU.org && s.dept === CU.dept;        // 부서장: 자기 부서
@@ -1156,7 +1161,10 @@ async function doIssueStaff(uid, org, mode){
     if(isCareer && leaveDate !== (s.leaveDate||'')) updates.leaveDate = leaveDate;
     if(position !== (s.position||'')) updates.position = position;
     if(isCareer && duty !== (s.duty||'')) updates.duty = duty;
-    if(Object.keys(updates).length){
+    // 인사정보 저장은 보안 규칙상 관리자(수퍼 · 기관관리자)와 본인만 — 그 밖의 분(부서장 · 발급 담당)은 증명서에만 넣고 인사정보는 그대로 둔다
+    // 🔒 v138 직책은 결재선·지급 결재를 정하므로 본인이 바꾸지 못한다 (보안 규칙 v33) — 본인 발급이면 직책은 증명서에만
+    if(!['super','org_admin'].includes(CU.role)) delete updates.position;
+    if(Object.keys(updates).length && (['super','org_admin'].includes(CU.role) || uid === CU.uid)){
       await updateDoc(doc(db,'staff',uid), updates); dropLists('staff');
       Object.assign(s, updates);
     }

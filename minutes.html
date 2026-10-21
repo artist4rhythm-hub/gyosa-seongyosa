@@ -441,6 +441,10 @@ function popMenu(anchor, items){
 }
 const nameOf = uid => (SMAP[uid] && SMAP[uid].name) || '';
 const isSuper = () => CU && CU.role === 'super';
+/* 🏛 v138 회의록 담당자 (관리자 › 접근 권한 › 기능별 담당자 «회의록» = minutesConfig/managers.uids)
+   — 설정의 회의 종류 · 불참 사유 · 휴지통(되살리기)과 다른 분 회의록을 휴지통으로 · 열람 기관 허락 · 예전 PDF · 완전히 지우기는 수퍼관리자만 */
+let MIN_MGRS = [];
+const isMinMgr = () => isSuper() || (!!CU && MIN_MGRS.includes(CU.uid));
 const canWrite = o => WRITE.includes(o);
 const canSee = o => SEE.includes(o);
 const orgTag = o => `<span class="mt-otag" style="background:${MCOLOR[o] || '#555'}">${esc(C.MORG_SHORT[o] || o)}</span>`;
@@ -456,10 +460,12 @@ let DEPTS = { daniel: ['초등부', '중고등부', '행정실'], jihyebit: ['�
 
 /* ── 불러오기 ── */
 async function loadCfg(){
-  const [mS, tS, dS] = await Promise.all([
+  const [mS, tS, dS, gS] = await Promise.all([
     getDoc(doc(db, 'minutesConfig', 'main')).catch(() => null),
     getDoc(doc(db, 'minutesConfig', 'types')).catch(() => null),
-    getDoc(doc(db, 'adminConfig', 'depts')).catch(() => null)]);
+    getDoc(doc(db, 'adminConfig', 'depts')).catch(() => null),
+    getDoc(doc(db, 'minutesConfig', 'managers')).catch(() => null)]);
+  MIN_MGRS = (gS && gS.exists() && Array.isArray(gS.data().uids)) ? gS.data().uids : [];
   const d = mS && mS.exists() ? mS.data() : {};
   const td = tS && tS.exists() ? tS.data() : null;
   /* 회의 종류: 새 목록(types)이 있으면 그것 · 없으면 예전 설정에서 «훈련센터» 같은 안 쓰는 이름을 빼고 */
@@ -594,7 +600,7 @@ function headHTML(){
   const anyW = WRITE.length > 0;
   return `<div class="mt-head">
     <div><div class="cr">학사 › 회의록</div><h1>회의록</h1></div><div class="mt-sp"></div>
-    ${isSuper() ? `<button class="mt-btn" data-act="settings">⚙ 설정</button><button class="mt-btn" data-act="import">예전 PDF 가져오기</button>` : ''}
+    ${isSuper() ? `<button class="mt-btn" data-act="settings">⚙ 설정</button><button class="mt-btn" data-act="import">예전 PDF 가져오기</button>` : (isMinMgr() ? `<button class="mt-btn" data-act="settings">⚙ 설정</button>` : '')}
     <button class="mt-btn" data-act="exportmany">여러 건 출력 (PDF · 워드)</button>
     ${anyW ? `<button class="mt-btn p" data-act="new">＋ 새 회의록</button>` : ''}
   </div>
@@ -846,7 +852,7 @@ function paintDoc(focus){
       <div class="dd" id="dd-more"><button class="mt-btn" data-act="moremenu" aria-label="더 보기">⋯</button>
         <div class="dd-m"><button data-act="copylink">🔗 이 회의록 주소 복사</button>
           ${canWrite(m.org) ? `<button data-act="dup">📋 이 회의록으로 새 회의록 쓰기</button>` : ''}
-          ${(mine || isSuper()) && canWrite(m.org) ? `<hr><button data-act="trash" style="color:#C0392B">🗑 휴지통으로</button>` : ''}</div></div>
+          ${(mine || isMinMgr()) && canWrite(m.org) ? `<hr><button data-act="trash" style="color:#C0392B">🗑 휴지통으로</button>` : ''}</div></div>
     </div>
     <div class="dv-grid">${DVIEW === 'b'
       ? `<div class="dv-paper mb" id="dv-paper"></div><div class="dv-rail"><nav class="mb-toc" id="mb-toc" aria-label="이 회의 주제"></nav><div class="mb-att" id="mb-att"></div><aside class="dv-side" id="dv-side"></aside></div>`
@@ -1255,13 +1261,16 @@ function paintMine(){
 
 /* ═══ 설정 (수퍼) ═══ */
 async function openSettings(tab){
+  if(!isMinMgr()) return;
   tab = tab || 'types';
   const draft = JSON.parse(JSON.stringify({ types: CFG.types, absence: CFG.absence, viewers: CFG.viewers || {} }));
   const md = modal('⚙ 회의록 설정', '', `<button class="mt-btn" data-x2>닫기</button><button class="mt-btn p" id="st-save">설정 저장</button>`, 'wide');
   md.box.querySelector('[data-x2]').onclick = md.close;
   const body = md.box.querySelector('.mm-b');
   const paint = () => {
-    const tabs = [['types', '회의 종류'], ['abs', '불참 사유'], ['view', '열람 기관'], ['import', '예전 회의록 넣기'], ['trash', '휴지통']];
+    const tabs = isSuper() ? [['types', '회의 종류'], ['abs', '불참 사유'], ['view', '열람 기관'], ['import', '예전 회의록 넣기'], ['trash', '휴지통']]
+      : [['types', '회의 종류'], ['abs', '불참 사유'], ['trash', '휴지통']];   // 담당자: 열람 기관 · 예전 회의록 넣기는 수퍼관리자만
+    if(!tabs.some(([k]) => k === tab)) tab = 'types';
     let h = `<div class="set-tabs">${tabs.map(([k, l]) => `<button class="mt-chip${tab === k ? ' on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
     if(tab === 'types'){
       h += `<div class="dv-hint" style="margin-bottom:10px">회의록을 쓸 때 고르는 회의 종류예요. 회의록 쓰는 화면에서도 선생님들이 바로 넣고 뺄 수 있어요. 목록에서 빼도 이미 쓴 회의록은 그대로예요.</div>`;
@@ -1308,7 +1317,8 @@ async function openSettings(tab){
   });
   md.box.querySelector('#st-save').onclick = async () => {
     try{
-      await setDoc(doc(db, 'minutesConfig', 'main'), { types: draft.types, absence: draft.absence, viewers: draft.viewers, updatedAt: serverTimestamp(), updatedBy: CU.name || '' });
+      if(isSuper()) await setDoc(doc(db, 'minutesConfig', 'main'), { types: draft.types, absence: draft.absence, viewers: draft.viewers, updatedAt: serverTimestamp(), updatedBy: CU.name || '' });
+      else await setDoc(doc(db, 'minutesConfig', 'main'), { types: draft.types, absence: draft.absence, updatedAt: serverTimestamp(), updatedBy: CU.name || '' }, { merge: true });   // 담당자는 열람 기관(viewers)을 건드리지 않음
       await setDoc(doc(db, 'minutesConfig', 'types'), { ...Object.fromEntries(MORDER.map(o => [o, draft.types[o] || []])), updatedAt: serverTimestamp(), updatedByName: CU.name || '' });
       CFG = { ...CFG, ...draft }; computeOrgs(); toast('설정을 저장했어요'); md.close();
       if(VIEW === 'list') renderList();
@@ -1329,10 +1339,11 @@ async function paintTrash(box){
   for(const o of SEE){ try{ const s = await getDocs(query(collection(db, 'meetings'), where('org', '==', o), where('deleted', '==', true))); s.forEach(d => out.push({ id: d.id, ...d.data() })); }catch(e){} }
   if(!out.length){ box.innerHTML = `<div class="dv-hint">휴지통이 비었어요.</div>`; return; }
   box.innerHTML = `<table class="vt"><tbody>${out.map(m => `<tr><td>${esc(C.fmtMDY(m.date))} ${esc(C.titleOf(m))} <span style="color:var(--ink-3)">${esc(C.MORG_SHORT[m.org])} · ${esc(m.deletedByName || '')}</span></td>
-    <td style="text-align:right"><button class="mt-btn sm" data-restore="${esc(m.id)}">되살리기</button> <button class="mt-btn sm" data-purge="${esc(m.id)}" style="color:#C0392B">완전히 지우기</button></td></tr>`).join('')}</tbody></table>`;
+    <td style="text-align:right">${canWrite(m.org) ? `<button class="mt-btn sm" data-restore="${esc(m.id)}">되살리기</button>` : `<span style="color:var(--ink-3);font-size:12px" title="이 기관은 열람만 허락되어 있어요">열람만</span>`}${isSuper() ? ` <button class="mt-btn sm" data-purge="${esc(m.id)}" style="color:#C0392B">완전히 지우기</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
   box.onclick = async e => {
     const r = e.target.closest('[data-restore]'), p = e.target.closest('[data-purge]');
-    if(r){ await updateDoc(doc(db, 'meetings', r.dataset.restore), { deleted: false }); await markTasks(r.dataset.restore, false); toast('되살렸어요'); paintTrash(box); }
+    if(r){ try{ await updateDoc(doc(db, 'meetings', r.dataset.restore), { deleted: false }); }catch(err){ toast('되살리지 못했어요 — ' + (err.code || err.message), 'err'); return; }
+      await markTasks(r.dataset.restore, false); toast('되살렸어요'); paintTrash(box); }
     if(p && confirm('완전히 지우면 되돌릴 수 없어요 (수정 이력은 남아요). 지울까요?')){ await deleteDoc(doc(db, 'meetings', p.dataset.purge)); toast('지웠어요'); paintTrash(box); }
   };
 }

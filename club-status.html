@@ -355,6 +355,8 @@ async function logShareView(kind, shareId, title){
     CU = { uid:user.uid, ...st.data() };
     window.ORGS = ORGS;
     if(window.renderShell) renderShell('clubstat', CU);
+    // 🏛 v138 — 동아리 관리자(config/clubManagers.uids)도 «📊 현황 게시»
+    try{ const g = await getDoc(doc(db,'config','clubManagers')); CLUB_MGRS = (g.exists() && Array.isArray(g.data().uids)) ? g.data().uids : []; }catch(_){ CLUB_MGRS = []; }
     const ss = await getDocs(collection(db,'clubSemesters'));
     const orgs = orgCore.myOrgs(CU,'stdDF');   // 🏛 org-core 원장 위임
     SEMS = ss.docs.map(d=>({id:d.id, ...d.data()})).filter(s=>orgs.includes(s.org))
@@ -385,9 +387,11 @@ async function reloadSem(){
 }
 window.pickSem = async id=>{ const s=SEMS.find(x=>x.id===id); if(!s) return; SEM=s; window.showLoading&&showLoading(); await reloadSem(); window.hideLoading&&hideLoading(); };
 
-/* ── 📊 현황 게시 도장 (수퍼) ── */
+/* ── 📊 현황 게시 도장 (수퍼 · 동아리 관리자) ── */
+let CLUB_MGRS = [];
+const canStamp = () => !!CU && (CU.role==='super' || CLUB_MGRS.includes(CU.uid));
 window.stampStatus = async ()=>{
-  if(!CU || CU.role!=='super') return;
+  if(!canStamp()) return;
   const colors={}; CLUBS.forEach(c=>{ colors[c.id]=colorOf(c.id); });
   const clubs = CLUBS.map(c=>({ id:c.id, title:c.title||'', roster:rosterOf(c.id) }));
   const acid = ACID || await pickAcadId();
@@ -491,7 +495,7 @@ function render(){
   if(!SHARE){
     h += `<div class="tools">
       <select onchange="pickSem(this.value)">${SEMS.map(s=>`<option value="${s.id}"${s.id===SEM.id?' selected':''}>${esc(ORGS[s.org]||s.org)} · ${esc(s.name||s.id)}</option>`).join('')}</select>
-      ${CU?.role==='super'?`<button class="tb-btn pr" onclick="stampStatus()">📊 현황 게시</button>`:''}
+      ${canStamp()?`<button class="tb-btn pr" onclick="stampStatus()">📊 현황 게시</button>`:''}
       ${SNAP?`<button class="tb-btn" onclick="copyShare()">🔗 링크 복사</button>`:''}
       <button class="tb-btn" onclick="printStatus()">🖨 현황 출력</button>
       <div class="pubnote">${SNAP?`게시됨 · ${SNAP.byName?esc(SNAP.byName)+' · ':''}공유 링크의 명단·색은 도장 시점 기준 — <b>이 화면의 명단은 실시간</b>입니다 (다시 게시하면 공유본도 갱신)`:'아직 게시 전 — 「📊 현황 게시」를 누르면 학부모 공유 링크가 생깁니다 (명단은 도장 시점으로 담겨요)'}</div>

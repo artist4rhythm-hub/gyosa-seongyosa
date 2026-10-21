@@ -138,7 +138,9 @@ function toast(msg, type=''){
   clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
 }
 const isAdmin = () => CU && ['super','org_admin','tab_admin'].includes(CU.role);
-const canManage = () => CU && ['super','org_admin'].includes(CU.role);
+// 🏛 v138 — 관리자 › 접근 권한 › 기능별 담당자 «구글 캘린더»(config/gcalManagers.uids)에 지정된 분도
+let GCAL_MGRS = [];
+const canManage = () => CU && (['super','org_admin'].includes(CU.role) || GCAL_MGRS.includes(CU.uid));
 
 async function logActivity(action, category, target){
   if(!CU) return;
@@ -162,7 +164,7 @@ onAuthStateChanged(auth, async (user) => {
     if(ac==='leave'||ac==='quit'){ $I('gate-msg').textContent = ac==='quit'?'퇴직 처리된 계정입니다.':'휴직 중인 계정입니다.'; $I('gate-btn').style.display='inline-block'; return; }
     $I('gate').style.display='none'; $I('ms').style.display='flex';
     window.ORGS = ORGS;
-  if(window.guardPage && !guardPage(CU, 'calendar')) return;
+  if(window.guardPage && !guardPage(CU, 'gcal')) return;   // v138: 이 화면의 열쇠는 gcal (calendar 는 학사일정)
   renderShell('gcal', CU);           // 사이드바에서 '구글 캘린더'가 켜지도록
   if(window.setCrumb) setCrumb(['구글 캘린더']);
     window.showLoading && window.showLoading('불러오는 중…');
@@ -175,6 +177,7 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 async function loadCals(){
+  try { const g = await getDoc(doc(db,'config','gcalManagers')); GCAL_MGRS = (g.exists() && Array.isArray(g.data().uids)) ? g.data().uids : []; } catch(e){ GCAL_MGRS = []; }
   const snap = await getDocs(collection(db,'calendars'));
   CALS = [];
   snap.forEach(d=>CALS.push({id:d.id, ...d.data()}));

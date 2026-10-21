@@ -189,10 +189,17 @@ function toast(msg, type=''){
   t.className = 'toast show ' + type;
   clearTimeout(window.__tt); window.__tt = setTimeout(()=>t.className='toast', 2500);
 }
-function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }   // 🔒 v138 따옴표까지
+// 🔒 v138 onclick 안에 넣는 글자 — JS 글자로 만든 뒤 HTML 로 한 번 더 (문서 id 를 기안자가 정할 수 있어서)
+function jsq(s){ return esc(JSON.stringify(String(s??''))); }
+// 🔒 v138 서명 그림은 data:image 만 · 첨부 링크는 http(s) 만
+const safeSig = s => /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/.test(String(s||'')) ? String(s) : '';
+const safeUrl = s => { const t = String(s||'').trim(); if(/^https?:\/\//i.test(t)) return t; return /^[\w-]+(\.[\w-]+)+(\/|$)/.test(t) ? 'https://' + t : ''; };
 function fmtFull(ts){ if(!ts) return ''; const d=ts.toDate?ts.toDate():new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
 function fmtShort(ts){ if(!ts) return ''; const d=ts.toDate?ts.toDate():new Date(ts); return `${d.getMonth()+1}/${d.getDate()}`; }
-const canManagePos = () => CU && ['super','org_admin'].includes(CU.role);
+// 🏛 v138 — 직책 관리: 수퍼 · 기관관리자 + 관리자 › 접근 권한 › 기능별 담당자 «전자결재»(approvalConfig/managers.uids) · 결재선은 수퍼관리자만
+let APV_MGRS = [];
+const canManagePos = () => CU && (['super','org_admin'].includes(CU.role) || APV_MGRS.includes(CU.uid));
 
 onAuthStateChanged(auth, async (user) => {
   if(!user){ $I('gate-msg').textContent='로그인이 필요합니다. 메인 화면에서 먼저 로그인해주세요.'; $I('gate-btn').style.display='inline-block'; return; }
@@ -209,6 +216,7 @@ onAuthStateChanged(auth, async (user) => {
     window.showLoading && window.showLoading('불러오는 중…');
     
     
+    try { const g = await getDoc(doc(db,'approvalConfig','managers')); APV_MGRS = (g.exists() && Array.isArray(g.data().uids)) ? g.data().uids : []; } catch(e){ APV_MGRS = []; }
     if(canManagePos()) $I('tb-pos').style.display='';
     // ✍️ v137 — 내 서명은 «본인만 읽는 곳»(staffSign)에서 · 예전 칸에 있으면 그리로 옮김
     try { const ms = await loadMySign(db, CU.uid, snap.data()); CU.signature = ms.sig || ''; } catch(e){}
@@ -353,7 +361,7 @@ function openCompose(){
   // 결재선 미리보기
   const previewLine = buildLine(CU);
   const lineHtml = previewLine.length
-    ? previewLine.map((st,i)=>`<div class="line-step"><div class="line-no">${i+1}</div><div class="line-info"><div class="line-name">${st.name||'(미지정)'}</div><div class="line-pos">${st.position}${st.uid?'':' · 해당 직책자 없음'}</div></div></div>`).join('')
+    ? previewLine.map((st,i)=>`<div class="line-step"><div class="line-no">${i+1}</div><div class="line-info"><div class="line-name">${esc(st.name||'(미지정)')}</div><div class="line-pos">${esc(st.position)}${st.uid?'':' · 해당 직책자 없음'}</div></div></div>`).join('')
     : '<div class="empty" style="padding:14px">결재선이 비어 있습니다. (본인이 최종 직책이거나 직책 미설정)</div>';
   const hasUnset = previewLine.some(st=>!st.uid);
   $I('mwrap').innerHTML = `
@@ -363,7 +371,7 @@ function openCompose(){
       <div class="msub">제목과 내용을 입력하면, 소속·직책에 따라 결재선이 자동으로 만들어집니다.</div>
       <div class="fgrp"><label>문서 종류</label>
         <select id="cp-type" onchange="onDocTypeChange()">
-          ${DOC_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}
+          ${DOC_TYPES.map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join('')}
           ${CUSTOM_TYPES.length?`<optgroup label="맞춤 양식">${CUSTOM_TYPES.map(c=>`<option value="custom:${esc(c.name)}">🧩 ${esc(c.name)}</option>`).join('')}</optgroup>`:''}
         </select></div>
       <div id="cp-custom-fields"></div>
@@ -549,13 +557,13 @@ function statusPill(d){
   if(d.status==='approved') return '<span class="st-pill st-ok">승인 완료</span>';
   if(d.status==='rejected') return '<span class="st-pill st-no">반려</span>';
   const step = d.line?.[d.currentStep];
-  return `<span class="st-pill st-prog">진행 중 · ${step?.position||''} 차례</span>`;
+  return `<span class="st-pill st-prog">진행 중 · ${esc(step?.position||'')} 차례</span>`;
 }
 function docRow(d, highlight){
-  return `<div class="doc-item ${highlight?'mine-turn':''}" onclick="openDoc('${d.id}')">
+  return `<div class="doc-item ${highlight?'mine-turn':''}" onclick="openDoc(${jsq(d.id)})">
     <div class="doc-body">
       <div class="doc-top"><span class="doc-title">${d.docType?`<span style="font-size:10px;background:var(--gp);color:var(--gm);padding:1px 7px;border-radius:100px;margin-right:5px;font-weight:700">${esc(d.docType)}</span>`:''}${esc(d.title)}</span><span class="doc-date">${fmtShort(d.createdAt)}</span></div>
-      <div class="doc-meta">기안: ${esc(d.drafterName)} (${ORGS[d.org]||d.org})${d.attach?' · 📎':''} · ${statusPill(d)}</div>
+      <div class="doc-meta">기안: ${esc(d.drafterName)} (${esc(ORGS[d.org]||d.org)})${d.attach?' · 📎':''} · ${statusPill(d)}</div>
     </div>
   </div>`;
 }
@@ -607,9 +615,9 @@ function openDoc(id){
     else if(st.state==='rejected'){ cls+=' rejected'; stateTxt='❌ 반려'; }
     else if(st.state==='skipped'){ stateTxt='— 생략(전결)'; }
     else if(d.status==='progress' && i===d.currentStep){ cls+=' current'; stateTxt='⏳ 결재 차례'; }
-    const sigImg = st.sign ? `<img src="${st.sign}" style="max-width:70px;max-height:40px;margin-left:6px" title="서명">` : '';
+    const sigImg = safeSig(st.sign) ? `<img src="${esc(safeSig(st.sign))}" style="max-width:70px;max-height:40px;margin-left:6px" title="서명">` : '';
     return `<div class="${cls}"><div class="line-no">${i+1}</div>
-      <div class="line-info"><div class="line-name">${esc(st.name||'(미지정)')}</div><div class="line-pos">${st.position}</div></div>
+      <div class="line-info"><div class="line-name">${esc(st.name||'(미지정)')}</div><div class="line-pos">${esc(st.position)}</div></div>
       <div class="line-state" style="display:flex;align-items:center">${stateTxt}${st.actAt?` · ${fmtShort(st.actAt)}`:''}${sigImg}</div></div>`;
   }).join('');
   const myTurn = isMyTurn(d);
@@ -617,17 +625,18 @@ function openDoc(id){
     <div class="mov"><div class="mbk" onclick="closeMod()"></div>
     <div class="mbox">
       <div class="mtitle">${esc(d.title)}</div>
-      <div class="msub">${d.docType?`<span style="display:inline-block;background:var(--gp);color:var(--gm);font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;margin-bottom:4px">${esc(d.docType)}</span><br>`:''}기안: <b>${esc(d.drafterName)}</b> (${ORGS[d.org]||d.org}${d.dept&&d.dept!=='전체'?'·'+d.dept:''}) · ${fmtFull(d.createdAt)}<br>상태: ${statusPill(d)}</div>
+      <div class="msub">${d.docType?`<span style="display:inline-block;background:var(--gp);color:var(--gm);font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;margin-bottom:4px">${esc(d.docType)}</span><br>`:''}기안: <b>${esc(d.drafterName)}</b> (${esc(ORGS[d.org]||d.org)}${d.dept&&d.dept!=='전체'?'·'+esc(d.dept):''}) · ${fmtFull(d.createdAt)}<br>상태: ${statusPill(d)}</div>
       ${d.customFields&&d.customFields.length?`<table style="width:100%;border-collapse:collapse;margin-bottom:12px;font-size:13px">${d.customFields.map(f=>`<tr><td style="border:1px solid var(--ivd);padding:8px 10px;background:var(--iv);font-weight:600;width:35%;vertical-align:top">${esc(f.label)}</td><td style="border:1px solid var(--ivd);padding:8px 10px;white-space:pre-wrap">${esc(f.value)||'<span style=\'color:var(--tl)\'>-</span>'}</td></tr>`).join('')}</table>`:''}
       ${d.content?`<div class="readbox">${esc(d.content)}</div>`:''}
-      ${d.attach?`<div class="fgrp"><label>첨부 링크</label><a href="${esc(d.attach)}" target="_blank" style="color:var(--gm);word-break:break-all;font-size:13px">📎 ${esc(d.attach)}</a></div>`:''}
+      ${d.attach&&!safeUrl(d.attach)?`<div class="fgrp"><label>첨부 링크</label><span style="word-break:break-all;font-size:13px">📎 ${esc(d.attach)}</span></div>`:''}
+      ${d.attach&&safeUrl(d.attach)?`<div class="fgrp"><label>첨부 링크</label><a href="${esc(safeUrl(d.attach))}" target="_blank" rel="noopener" style="color:var(--gm);word-break:break-all;font-size:13px">📎 ${esc(d.attach)}</a></div>`:''}
       <div class="fgrp"><label>결재선</label>${lineHtml}</div>
       ${d.rejectReason?`<div style="background:var(--danger-bg);color:var(--danger);border-radius:8px;padding:10px;font-size:13px">반려 사유: ${esc(d.rejectReason)}</div>`:''}
       <div class="mact">
-        ${myTurn?`<button class="bno" onclick="actReject('${d.id}')">반려</button>
-          <button class="bs" style="background:var(--warn-bg);color:var(--warn);border-color:#fcd34d" onclick="actFinal('${d.id}')">전결</button>
-          <button class="bok" onclick="actApprove('${d.id}')">승인</button>`:''}
-        ${(d.drafterUid===CU.uid && d.status==='progress')?`<button class="bs" style="color:var(--danger)" onclick="cancelDoc('${d.id}')">상신 취소</button>`:''}
+        ${myTurn?`<button class="bno" onclick="actReject(${jsq(d.id)})">반려</button>
+          <button class="bs" style="background:var(--warn-bg);color:var(--warn);border-color:#fcd34d" onclick="actFinal(${jsq(d.id)})">전결</button>
+          <button class="bok" onclick="actApprove(${jsq(d.id)})">승인</button>`:''}
+        ${(d.drafterUid===CU.uid && d.status==='progress')?`<button class="bs" style="color:var(--danger)" onclick="cancelDoc(${jsq(d.id)})">상신 취소</button>`:''}
         <button class="bs" onclick="closeMod()">닫기</button>
       </div>
       ${myTurn && !CU.signature ? '<p style="font-size:12px;color:var(--danger);text-align:right;margin-top:8px">⚠️ 등록된 서명이 없습니다. "내 서명"에서 먼저 등록하면 결재란에 서명이 들어갑니다.</p>':''}
@@ -714,22 +723,23 @@ function renderPos(){
   if(!canManagePos()){ $I('c-pos').innerHTML='<div class="acard"><p class="empty">권한이 없습니다.</p></div>'; return; }
   posDrawers();
   // 직책 목록
-  const tags = POSITIONS.map(p=>`<span class="tag">${p}<span class="x" onclick="delPosition('${p}')">✕</span></span>`).join('');
+  const tags = POSITIONS.map((p,i)=>`<span class="tag">${esc(p)}<span class="x" onclick="delPositionAt(${i})">✕</span></span>`).join('');   // 🔒 v138 이름 대신 순번으로
   // 교직원별 직책 지정 표
   const rows = STAFF.map(s=>{
-    const opts = `<option value="">미지정</option>` + POSITIONS.map(p=>`<option value="${p}"${s.position===p?' selected':''}>${p}</option>`).join('');
+    const lk = posLocked(s), dis = lk ? ' disabled title="본인 · 수퍼관리자의 직책은 관리자만 바꿉니다"' : '';
+    const opts = `<option value="">미지정</option>` + POSITIONS.map(p=>`<option value="${esc(p)}"${s.position===p?' selected':''}>${esc(p)}</option>`).join('');
     // 적용 기관 (기본: 본인 소속 기관 / positionOrgs가 있으면 그것)
     const pOrgs = s.positionOrgs && s.positionOrgs.length ? s.positionOrgs : (s.position ? [s.org] : []);
     const orgChecks = s.position ? `
       <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-right:8px;cursor:pointer">
-        <input type="checkbox" ${pOrgs.includes('jihyebit')?'checked':''} onchange="setPosOrg('${s.uid}','jihyebit',this.checked)" style="width:15px;height:15px"> 지혜빛</label>
+        <input type="checkbox" ${pOrgs.includes('jihyebit')?'checked':''} onchange="setPosOrg('${s.uid}','jihyebit',this.checked)"${dis} style="width:15px;height:15px"> 지혜빛</label>
       <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
-        <input type="checkbox" ${pOrgs.includes('daniel')?'checked':''} onchange="setPosOrg('${s.uid}','daniel',this.checked)" style="width:15px;height:15px"> 다니엘</label>
+        <input type="checkbox" ${pOrgs.includes('daniel')?'checked':''} onchange="setPosOrg('${s.uid}','daniel',this.checked)"${dis} style="width:15px;height:15px"> 다니엘</label>
     ` : '<span style="font-size:12px;color:var(--tl)">직책 지정 후 선택</span>';
     return `<tr>
       <td style="font-weight:600">${esc(s.name)}</td>
-      <td>${ORGS[s.org]||s.org}${s.dept&&s.dept!=='전체'?' · '+s.dept:''}</td>
-      <td><select onchange="setPosition('${s.uid}',this.value)" style="height:34px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 8px;font-size:13px;background:var(--iv)">${opts}</select></td>
+      <td>${esc(ORGS[s.org]||s.org)}${s.dept&&s.dept!=='전체'?' · '+esc(s.dept):''}</td>
+      <td><select onchange="setPosition('${s.uid}',this.value)"${dis} style="height:34px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 8px;font-size:13px;background:var(--iv)">${opts}</select>${lk?'<div style="font-size:11px;color:var(--tl);margin-top:3px">🔒 관리자만</div>':''}</td>
       <td>${orgChecks}</td>
     </tr>`;
   }).join('');
@@ -746,7 +756,7 @@ function renderPos(){
     <div class="acard" data-dw="ap-doc">
       <h3 class="actitle">📄 결재 문서 종류 (자유서식)</h3>
       <p class="adesc">기안할 때 고를 수 있는 기본 문서 종류입니다. 입력칸 없이 제목·내용으로 자유롭게 작성합니다.</p>
-      <div class="taglist" style="margin-bottom:12px">${DOC_TYPES.map(t=>`<span class="tag">${t}<span class="x" onclick="delDocType('${t}')">✕</span></span>`).join('')}</div>
+      <div class="taglist" style="margin-bottom:12px">${DOC_TYPES.map((t,i)=>`<span class="tag">${esc(t)}<span class="x" onclick="delDocTypeAt(${i})">✕</span></span>`).join('')}</div>
       <div style="display:flex;gap:8px">
         <input type="text" id="new-doctype" placeholder="새 문서 종류 (예: 출장신청서)" style="flex:1;min-width:0;border:1.5px solid var(--ivd);border-radius:8px;padding:10px 12px;font-size:14px;background:var(--iv)">
         <button class="bp" onclick="addDocType()">추가</button>
@@ -904,7 +914,7 @@ function renderLineEditor(org){
   const stepHtml = steps.map((p,i)=>`
     <div class="line-step" style="background:var(--gp)">
       <div class="line-no">${i+1}</div>
-      <div class="line-info"><div class="line-name">${p}</div></div>
+      <div class="line-info"><div class="line-name">${esc(p)}</div></div>
       ${isSuper?`<div style="display:flex;gap:4px">
         ${i>0?`<button class="bm" onclick="moveLineStep('${org}',${i},-1)">↑</button>`:''}
         ${i<steps.length-1?`<button class="bm" onclick="moveLineStep('${org}',${i},1)">↓</button>`:''}
@@ -912,7 +922,7 @@ function renderLineEditor(org){
       </div>`:''}
     </div>`).join('');
   // 추가 가능한 직책 옵션 (부서장 + 직책 목록)
-  const addOpts = ['부서장', ...POSITIONS].map(p=>`<option value="${p}">${p}</option>`).join('');
+  const addOpts = ['부서장', ...POSITIONS].map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join('');
   return `
     <div style="margin-bottom:18px">
       <div style="font-weight:700;color:var(--gd);margin-bottom:8px">${ORGS[org]} <span style="font-size:12px;color:var(--ts);font-weight:400">(교사 기안 → ${steps.join(' → ')||'(비어있음)'})</span></div>
@@ -970,6 +980,7 @@ async function delDocType(t){
   catch(e){ toast('실패: '+e.message,'err'); }
 }
 window.delDocType = delDocType;
+window.delDocTypeAt = i => { const t = DOC_TYPES[i]; if(t !== undefined) delDocType(t); };   // 🔒 v138
 
 async function addPosition(){  const v = $I('new-pos').value.trim();
   if(!v) return toast('직책 이름을 입력하세요.','err');
@@ -993,10 +1004,14 @@ async function delPosition(p){
   } catch(e){ toast('실패: '+e.message,'err'); }
 }
 window.delPosition = delPosition;
+window.delPositionAt = i => { const p = POSITIONS[i]; if(p !== undefined) delPosition(p); };   // 🔒 v138
 
+// 🔒 v138 전자결재 담당(관리자 아님)은 본인 · 수퍼관리자의 직책을 바꾸지 못한다 (보안 규칙 v33 — 스스로 결재선 바꾸기 차단)
+function posLocked(s){ return !!s && !['super','org_admin'].includes(CU.role) && (s.uid === CU.uid || s.role === 'super'); }
 async function setPosition(uid, pos){
   try {
     const s = STAFF.find(x=>x.uid===uid);
+    if(posLocked(s)){ toast('본인 · 수퍼관리자의 직책은 관리자만 바꿀 수 있어요.','err'); renderPos(); return; }
     const update = {position: pos};
     // 직책을 새로 지정하면 적용 기관 기본값 = 본인 소속 기관
     if(pos && (!s.positionOrgs || !s.positionOrgs.length)){
@@ -1014,6 +1029,7 @@ window.setPosition = setPosition;
 // 직책 적용 기관 토글
 async function setPosOrg(uid, org, on){
   const s = STAFF.find(x=>x.uid===uid); if(!s) return;
+  if(posLocked(s)){ toast('본인 · 수퍼관리자의 직책은 관리자만 바꿀 수 있어요.','err'); renderPos(); return; }
   let orgs = s.positionOrgs && s.positionOrgs.length ? [...s.positionOrgs] : [s.org];
   if(on){ if(!orgs.includes(org)) orgs.push(org); }
   else { orgs = orgs.filter(o=>o!==org); }

@@ -722,6 +722,8 @@ const $I = id => document.getElementById(id);
 window.$I = $I;   // 인라인 onclick에서도 쓸 수 있게
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m=>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+// 🔒 v138 onclick 안에 넣는 글자 — JS 글자로 만든 뒤 HTML 로 한 번 더 (이름 · 칸 id 를 다른 선생님이 적을 수 있어서)
+const jq = s => esc(JSON.stringify(String(s==null?'':s)));
 const fmt = n => (Number(n)||0).toLocaleString('ko-KR');
 const dtStr = ts => { if(!ts) return '';
   const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -916,17 +918,17 @@ function famRowHTML(d){
   const st = !pub ? '<span class="pill gray">작성 중</span>'
     : stale ? '<span class="pill req">재발행 필요</span>'
     : '<span class="pill ok">발행됨</span>';
-  return `<tr class="rowbtn" onclick="openDoc('${d.id}')">
+  return `<tr class="rowbtn" onclick="openDoc(${jq(d.id)})">
     <td><b>${esc(d.title||'(제목 없음)')}</b></td>
     <td class="c"><span class="pill blue">${TYPE_L[d.type]||'자유'}</span></td>
     <td class="c">${st}${d.listed?' <span class="pill gray">게시판</span>':''}</td>
     <td class="c">${esc(d.ownerName||'')}</td>
     <td class="c">${(d.editorNames||[]).map(esc).join(', ')||'<span style="color:var(--tl)">—</span>'}
       ${(canFamAdmin() || d.ownerUid===CU.uid)?`<button class="iconbtn" style="margin-left:4px" title="입력·협력 담당자 변경"
-        onclick="event.stopPropagation();openMgrFromList('${d.id}')">👥</button>`:''}</td>
+        onclick="event.stopPropagation();openMgrFromList(${jq(d.id)})">👥</button>`:''}</td>
     <td class="c" style="color:var(--ts);font-size:11px;white-space:nowrap">${dtStr(d.updatedAt)}
       ${canFamAdmin()?`<button class="iconbtn" style="margin-left:5px" title="폴더 지정"
-        onclick="event.stopPropagation();openFolderPick('${d.id}')">📁</button>`:''}</td>
+        onclick="event.stopPropagation();openFolderPick(${jq(d.id)})">📁</button>`:''}</td>
   </tr>`;
 }
 function renderList(){
@@ -939,13 +941,14 @@ function renderList(){
   const folders = {};
   DOCS.filter(d=>d.folder).forEach(d=>{ (folders[d.folder]=folders[d.folder]||[]).push(d); });
   const fnames = Object.keys(folders).sort((a,b)=>a.localeCompare(b,'ko'));
+  window.__FAM_FN = fnames;   // 🔒 v138 폴더 이름은 순번으로 넘긴다 (이름에 따옴표가 있어도 안전)
   let body = loose.map(famRowHTML).join('');
-  fnames.forEach(fn=>{
+  fnames.forEach((fn,fi)=>{
     const open = openMap[fn]!==0;
     const list = folders[fn];
-    body += `<tr class="fam-folder" onclick="toggleFamFolder('${esc(fn).replace(/'/g,"\\'")}')" data-fn="${esc(fn)}">
+    body += `<tr class="fam-folder" onclick="toggleFamFolder(__FAM_FN[${fi}])" data-fn="${esc(fn)}">
       <td colspan="6" style="cursor:pointer;background:var(--gp);font-weight:800;color:var(--gd);padding:9px 12px">
-        ${open?'▾':'▸'} 📁 ${esc(fn)} <span style="font-weight:600;color:var(--tl);font-size:11px">(${list.length}개)</span>${canFamAdmin()?`<span class="fam-fbtns" onclick="event.stopPropagation()"><button class="iconbtn" title="폴더 이름 바꾸기" onclick="famFolderRename('${esc(fn).replace(/'/g,"\\'")}')">✏️</button><button class="iconbtn" title="폴더 풀기 (통신문은 남고 폴더만 사라져요)" onclick="famFolderDissolve('${esc(fn).replace(/'/g,"\\'")}')">🗑</button></span>`:''}
+        ${open?'▾':'▸'} 📁 ${esc(fn)} <span style="font-weight:600;color:var(--tl);font-size:11px">(${list.length}개)</span>${canFamAdmin()?`<span class="fam-fbtns" onclick="event.stopPropagation()"><button class="iconbtn" title="폴더 이름 바꾸기" onclick="famFolderRename(__FAM_FN[${fi}])">✏️</button><button class="iconbtn" title="폴더 풀기 (통신문은 남고 폴더만 사라져요)" onclick="famFolderDissolve(__FAM_FN[${fi}])">🗑</button></span>`:''}
       </td></tr>`;
     if(open) body += list.map(famRowHTML).join('');
   });
@@ -999,15 +1002,15 @@ window.openFolderPick = function(docId){
     <div class="mtitle">📁 폴더 지정 — ${esc(d.title||'')}</div>
     <p class="msub" style="margin:0 0 10px">폴더로 묶으면 목록에서 접었다 펼 수 있어요.</p>
     ${existing.length?`<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">
-      ${existing.map(f=>`<button class="btn gray sm" onclick="setFolder('${docId}', this.textContent.trim())">${esc(f)}</button>`).join('')}
+      ${existing.map(f=>`<button class="btn gray sm" onclick="setFolder(${jq(docId)}, this.textContent.trim())">${esc(f)}</button>`).join('')}
     </div>`:''}
     <div class="frow"><label class="flab">새 폴더 이름 (또는 직접 입력)</label>
       <input class="fin" id="fp-name" value="${esc(d.folder||'')}" placeholder="예: 2026-2학기 교재·준비물"
-        onkeydown="if(event.key==='Enter')setFolder('${docId}', this.value)"></div>
+        onkeydown="if(event.key==='Enter')setFolder(${jq(docId)}, this.value)"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
-      ${d.folder?`<button class="btn gray sm" onclick="setFolder('${docId}','')">폴더에서 빼기</button>`:''}
+      ${d.folder?`<button class="btn gray sm" onclick="setFolder(${jq(docId)},'')">폴더에서 빼기</button>`:''}
       <button class="btn gray sm" onclick="closeModal()">닫기</button>
-      <button class="btn" onclick="setFolder('${docId}', $I('fp-name').value)">저장</button>
+      <button class="btn" onclick="setFolder(${jq(docId)}, $I('fp-name').value)">저장</button>
     </div>`);
 };
 window.setFolder = async function(docId, name){
@@ -1401,8 +1404,8 @@ function renderClipList(){
       <div class="ci-t"><span style="font-size:16px">${icon}</span><b>${esc(c.name||'')}</b></div>
       <div class="ci-m">${c.fromTitle?esc(c.fromTitle)+' · ':''}${fmt(c.createdAt)}</div>
       <div class="ci-b">
-        <button class="cd-put" onclick="clipPut('${c.id}')">＋ 붙여넣기</button>
-        <button class="cd-del" onclick="clipDel('${c.id}')" title="저장소에서 삭제">🗑</button>
+        <button class="cd-put" onclick="clipPut(${jq(c.id)})">＋ 붙여넣기</button>
+        <button class="cd-del" onclick="clipDel(${jq(c.id)})" title="저장소에서 삭제">🗑</button>
       </div>
     </div>`;
   }).join('') : `<div class="empty" style="padding:20px 6px;line-height:1.8;font-size:12px">저장소가 비어 있어요.<br>블록 머리의 <b>📥 담기</b>를 누르면 여기에 쌓입니다.</div>`;
@@ -1785,11 +1788,11 @@ function renderScheduleV2(d){
 function renderAssign(d){
   const units=(d.units||[]).filter(u=>u.students?.length || u.name || u.tN);
   if(!units.length) return '';
-  const nm=st=>`${esc(st.n)}${st.g||st.x?` <small>(${[String(st.g||'').replace('학년','')+(st.g?'학년':''),st.x].filter(Boolean).join('/')})</small>`:''}`;
+  const nm=st=>`${esc(st.n)}${st.g||st.x?` <small>(${esc([String(st.g||'').replace('학년','')+(st.g?'학년':''),st.x].filter(Boolean).join('/'))})</small>`:''}`;
   let core='';
   if(d.kind==='vehicle'){
     core=`<div style="overflow-x:auto"><table class="rv-ag">
-      <tr><th class="lb"></th>${units.map(u=>`<th>${esc(u.name||'차량')}${u.cap?` <small>${u.cap}인승</small>`:''}</th>`).join('')}</tr>
+      <tr><th class="lb"></th>${units.map(u=>`<th>${esc(u.name||'차량')}${u.cap?` <small>${esc(u.cap)}인승</small>`:''}</th>`).join('')}</tr>
       <tr><td class="lb">운전자</td>${units.map(u=>`<td class="c">${esc(u.drvN||'')}</td>`).join('')}</tr>
       <tr><td class="lb">교사</td>${units.map(u=>`<td class="c">${esc(String(u.tN||'').split(',').map(x=>x.trim()).filter(n=>n&&n!==u.drvN).join(', '))}</td>`).join('')}</tr>
       <tr><td class="lb">학생 <small>${units.reduce((a,u)=>a+u.students.length,0)}명</small></td>
@@ -2214,7 +2217,7 @@ window.tbClipToggle = async function(){
     <div style="display:flex;align-items:center;gap:9px;background:#fff;border:1px solid var(--ivd);border-radius:9px;padding:8px 11px;margin-bottom:6px">
       <span style="flex:1;min-width:0;font-size:12.5px"><b>${esc(c.name||'')}</b>
         <span style="font-size:10px;color:var(--tl)"> ${c.fromTitle?esc(c.fromTitle)+' · ':''}${c._rows}줄</span></span>
-      <button class="ed-mini" style="background:#8A6410;color:#fff;border-color:#8A6410;font-weight:800" onclick="tbClipAppend('${c.id}')">⤵ 이어붙이기</button>
+      <button class="ed-mini" style="background:#8A6410;color:#fff;border-color:#8A6410;font-weight:800" onclick="tbClipAppend(${jq(c.id)})">⤵ 이어붙이기</button>
     </div>`).join('')
     : '<span style="font-size:11.5px;color:var(--tl)">표가 들어있는 저장 블록이 없어요 — 표 블록 머리의 📥 담기로 먼저 담아주세요.</span>';
 };
@@ -2761,12 +2764,13 @@ function edBudget(b){
     <div class="calc-live" id="bg-live"></div>`;
 }
 let BG_CATS = [];
+window.BG_CATS_W = () => BG_CATS;   // 🔒 v138 구분 이름은 순번으로
 /* 구분 관리 칩 — 만들기·지우기, 줄에서는 골라서 쓴다 */
 function bgPaintCats(){
   const box=$I('bg-cats'); if(!box) return;
   box.innerHTML = `<span class="bg-cats-lb">🏷 구분 관리</span>
-    ${BG_CATS.map(c=>`<span class="bg-cat-chip">${esc(c)}
-      <i onclick="bgDelCat('${esc(c)}')" title="목록에서 지우기 (이미 쓰인 줄은 그대로)">✕</i></span>`).join('')}
+    ${BG_CATS.map((c,i)=>`<span class="bg-cat-chip">${esc(c)}
+      <i onclick="bgDelCat(BG_CATS_W()[${i}])" title="목록에서 지우기 (이미 쓰인 줄은 그대로)">✕</i></span>`).join('')}
     <input class="fin" id="bg-newcat" placeholder="새 구분" style="width:92px;padding:4px 8px;font-size:11.5px"
       onkeydown="if(event.key==='Enter')bgAddCat()">
     <button class="ed-mini" onclick="bgAddCat()">추가</button>`;
@@ -3682,8 +3686,8 @@ window.fnPickStudents = async function(cb){
         <span class="fnp-cnt">${list.length}명</span></label>
       <div class="fnp-list">${list.map(st=>`
         <label class="fnp-it"><input type="checkbox" data-g="${esc(g)}" ${isOn(st)?'checked':''}
-          data-gen="${st.gender||''}" data-sid="${esc(st.id)}" value="${esc(st.name||'')}">
-          ${esc(st.name||'')}<span class="fnp-gd ${st.gender==='남'?'m':st.gender==='여'?'f':''}">${st.gender||''}</span></label>`).join('')}</div>
+          data-gen="${esc(st.gender||'')}" data-sid="${esc(st.id)}" value="${esc(st.name||'')}">
+          ${esc(st.name||'')}<span class="fnp-gd ${st.gender==='남'?'m':st.gender==='여'?'f':''}">${esc(st.gender||'')}</span></label>`).join('')}</div>
     </div>`;}).join('');
   openModal2(`
     <div class="mtitle">👥 재학생 명단 선택 <span class="fnp-cnt" id="fu-n"></span></div>
@@ -3780,7 +3784,7 @@ window.fnPickStaffEvent = async function(cb, cur, opt){
       ${items.map(it=>`<label class="fnp-it"><input type="${opt.single?'radio':'checkbox'}" name="fe-pick"
         value="${esc(it.n)}" data-gen="${esc(it.g)}" ${already.has(it.n)?'checked':''}>
         ${esc(it.n)}<span class="fnp-gd ${it.g==='남'?'m':it.g==='여'?'f':'n'} ${(canGd&&it.uid)?'gd-edit':''}" data-guid="${esc(it.uid)}"
-          title="${(canGd&&it.uid)?'누르면 남 → 여 → 미정 순으로 바뀌고 명부에 저장돼요':''}">${it.g||'?'}</span>
+          title="${(canGd&&it.uid)?'누르면 남 → 여 → 미정 순으로 바뀌고 명부에 저장돼요':''}">${esc(it.g||'?')}</span>
         ${it.extra?'<span class="fnp-coopbadge">추가</span>':''}</label>`).join('')}
     </div></div>
     <div class="mfoot">
@@ -3880,16 +3884,16 @@ const agChip = (st,from)=>{
   if(from!=='pool' && AG.kind==='team' && (AG.roles||[]).length){
     const u=AG.units.find(x=>x.id===from);
     const r=(u&&u.roleOf&&u.roleOf[st.id])||'';
-    roleBadge=`<span class="ag-role${r?' on':''}" title="누르면 역할이 바뀌어요 (${[...AG.roles.map(x=>x.n),'팀원'].join(' → ')})"
-      onclick="event.stopPropagation();agCycleRole('${esc(from)}','${st.id}')">${esc(r||'팀원')}</span>`;
+    roleBadge=`<span class="ag-role${r?' on':''}" title="누르면 역할이 바뀌어요 (${esc([...AG.roles.map(x=>x.n),'팀원'].join(' → '))})"
+      onclick="event.stopPropagation();agCycleRole(${jq(from)},${jq(st.id)})">${esc(r||'팀원')}</span>`;
   }
   return `<button class="ag-stu${AG.selSet&&AG.selSet.has(st.id)?' sel':''}${st._warn?' warn':''}"
     data-sid="${esc(st.id)}" data-from="${esc(from)}"
-    onclick="agSel(event,'${from}','${st.id}')">${roleBadge}
+    onclick="agSel(event,${jq(from)},${jq(st.id)})">${roleBadge}
     <span class="n">${esc(st.n)}</span>
-    <span class="meta"><span class="fnp-gd ${st.x==='남'?'m':st.x==='여'?'f':''}">${st.x||'?'}</span>
+    <span class="meta"><span class="fnp-gd ${st.x==='남'?'m':st.x==='여'?'f':''}">${esc(st.x||'?')}</span>
       ${st.g?`<b>${esc(String(st.g).replace('학년',''))}학년</b>`:''}</span>
-    ${from!=='pool'?`<i onclick="event.stopPropagation();agOut('${from}','${st.id}')">✕</i>`:''}</button>`;
+    ${from!=='pool'?`<i onclick="event.stopPropagation();agOut(${jq(from)},${jq(st.id)})">✕</i>`:''}</button>`;
 };
 /* 🎩 선생님 카드 — 끌어서 조·차량·호실에 담당으로 배치 */
 const agTchCard = (t, from)=>{
@@ -3898,13 +3902,13 @@ const agTchCard = (t, from)=>{
   const isDrv = u && AG.kind==='vehicle' && u.drvN===t.n;
   const drvBtn = (u && AG.kind==='vehicle')
     ? `<span class="ag-drv${isDrv?' on':''}" title="${isDrv?'운전자 해제':'운전자로 지정'}"
-        onclick="event.stopPropagation();agSetDriver('${esc(from)}','${esc(t.n)}')">🚗</span>` : '';
+        onclick="event.stopPropagation();agSetDriver(${jq(from)},${jq(t.n)})">🚗</span>` : '';
   return `<button class="ag-tch${isDrv?' drv':''}" data-tname="${esc(t.n)}" data-tfrom="${esc(from||'')}">${drvBtn}
     <span class="n">${esc(t.n)}</span>
     <span class="meta"><span class="fnp-gd ${t.g==='남'?'m':t.g==='여'?'f':'n'} ${canGd?'gd-edit':''}"
       data-guid="${esc(t.uid)}" data-gname="${esc(t.n)}"
-      title="${canGd?'누르면 남 → 여 → 미정 순으로 바뀌고 명부에 저장돼요':''}">${t.g||'?'}</span><b>교사</b></span>
-    ${from?`<i onclick="event.stopPropagation();agTeacherTo('${esc(t.n)}', null)">✕</i>`:''}</button>`;
+      title="${canGd?'누르면 남 → 여 → 미정 순으로 바뀌고 명부에 저장돼요':''}">${esc(t.g||'?')}</span><b>교사</b></span>
+    ${from?`<i onclick="event.stopPropagation();agTeacherTo(${jq(t.n)}, null)">✕</i>`:''}</button>`;
 };
 /* 배정 화면에서 선생님 성별 칩 클릭 → 지정·명부 저장 */
 document.addEventListener('click', async e=>{
@@ -4003,36 +4007,36 @@ function agPaint(){
       head=`<div class="ag-drvbar">${u.drvN
           ? `<span class="ag-drvlb">🚗 운전자: <b>${esc(u.drvN)}</b></span>`
           : '<span class="ag-hint">배치된 교사 카드의 🚗를 눌러 운전자를 정하세요</span>'}
-        <span class="ag-gauge${over?' over':''}" style="margin-left:auto">${used}/${u.cap||'?'}명</span></div>
+        <span class="ag-gauge${over?' over':''}" style="margin-left:auto">${used}/${esc(u.cap||'?')}명</span></div>
       <div class="ag-uh2 ag-tus">
         ${agUnitTch(u)}
-        <button class="ed-mini" onclick="agTeachers('${u.id}')" title="목록에서 고르기">👩‍🏫</button></div>`;
+        <button class="ed-mini" onclick="agTeachers(${jq(u.id)})" title="목록에서 고르기">👩‍🏫</button></div>`;
     } else if(AG.kind==='lodging'){
       if(u.gender) u.students.forEach(x=>{ x._warn = x.x && x.x!==u.gender; });
       warnRoom = u.gender && u.students.some(x=>x._warn) ? ' ⚠️' : '';
       head=`<div class="ag-uh2">
-        <select class="fsel ag-gsel" onchange="agSet('${u.id}','gender',this.value)">
+        <select class="fsel ag-gsel" onchange="agSet(${jq(u.id)},'gender',this.value)">
           <option value="">성별</option><option value="남"${u.gender==='남'?' selected':''}>남</option>
           <option value="여"${u.gender==='여'?' selected':''}>여</option></select>
         <input class="fin ag-min" placeholder="구분 (예: 4학년+3학년)" value="${esc(u.label||'')}"
-          oninput="agSet('${u.id}','label',this.value)">
+          oninput="agSet(${jq(u.id)},'label',this.value)">
         ${agUnitTch(u)}
-        <button class="ed-mini" onclick="agTeachers('${u.id}')" title="목록에서 고르기">👩‍🏫</button></div>
-        <input class="fin ag-min" placeholder="비고" value="${esc(u.memo||'')}" oninput="agSet('${u.id}','memo',this.value)" style="margin-top:4px">`;
+        <button class="ed-mini" onclick="agTeachers(${jq(u.id)})" title="목록에서 고르기">👩‍🏫</button></div>
+        <input class="fin ag-min" placeholder="비고" value="${esc(u.memo||'')}" oninput="agSet(${jq(u.id)},'memo',this.value)" style="margin-top:4px">`;
     } else {
       head=`<div class="ag-uh2 ag-tus">${agUnitTch(u)}
-        <button class="ed-mini" onclick="agTeachers('${u.id}')" title="목록에서 고르기">👩‍🏫</button></div>`;
+        <button class="ed-mini" onclick="agTeachers(${jq(u.id)})" title="목록에서 고르기">👩‍🏫</button></div>`;
     }
-    return `<div class="ag-unit${(AG.selSet&&AG.selSet.size)?' drop':''}" data-uid="${u.id}" onclick="agDrop('${u.id}')">
+    return `<div class="ag-unit${(AG.selSet&&AG.selSet.size)?' drop':''}" data-uid="${esc(u.id)}" onclick="agDrop(${jq(u.id)})">
       <div class="ag-uh">
         <input class="ag-uname" value="${esc(u.name||'')}" placeholder="${K.unit} 이름"
-          onclick="event.stopPropagation()" oninput="agSet('${u.id}','name',this.value)">
+          onclick="event.stopPropagation()" oninput="agSet(${jq(u.id)},'name',this.value)">
         ${AG.kind==='vehicle'?`<span class="ag-caps" onclick="event.stopPropagation()">
-          ${[45,25,11,9,6].map(c=>`<b class="${u.cap===c?'on':''}" onclick="agSet('${u.id}','cap',${c});agPaint()">${c}</b>`).join('')}
-          <input class="fin" style="width:44px;padding:3px" placeholder="정원" value="${u.cap&&![45,25,11,9,6].includes(u.cap)?u.cap:''}"
-            oninput="agSet('${u.id}','cap',Number(this.value)||0)"></span>`:''}
-        <span class="ag-cnt">${u.students.length}명 · 남${m} 여${f}${gs?' · '+gs:''}${warnRoom}</span>
-        <button class="ed-mini" style="color:var(--red)" onclick="event.stopPropagation();agDelUnit('${u.id}')">✕</button>
+          ${[45,25,11,9,6].map(c=>`<b class="${u.cap===c?'on':''}" onclick="agSet(${jq(u.id)},'cap',${c});agPaint()">${c}</b>`).join('')}
+          <input class="fin" style="width:44px;padding:3px" placeholder="정원" value="${esc(u.cap&&![45,25,11,9,6].includes(u.cap)?u.cap:'')}"
+            oninput="agSet(${jq(u.id)},'cap',Number(this.value)||0)"></span>`:''}
+        <span class="ag-cnt">${u.students.length}명 · 남${m} 여${f}${gs?' · '+esc(gs):''}${warnRoom}</span>
+        <button class="ed-mini" style="color:var(--red)" onclick="event.stopPropagation();agDelUnit(${jq(u.id)})">✕</button>
       </div>
       ${head}
       <div class="ag-us">${(()=>{
@@ -4786,7 +4790,7 @@ window.openRevisions = async function(){
     const rows = revs.map(r=>`<tr>
       <td>${dtStr(r.at)} ${r.auto?'<span class="pill gray">자동</span>':'<span class="pill ok">발행</span>'}</td>
       <td>${esc(r.byName||'')}</td>
-      <td class="c"><button class="btn line sm" onclick="restoreRev('${r.id}')">이 판으로 복원</button></td>
+      <td class="c"><button class="btn line sm" onclick="restoreRev(${jq(r.id)})">이 판으로 복원</button></td>
     </tr>`).join('');
     openModal(`
       <div class="mtitle">🕰 이전 판 (발행·저장 시 자동 보관)</div>
