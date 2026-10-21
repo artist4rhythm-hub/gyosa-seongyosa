@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>증명서 진위 확인</title>
+<meta name="theme-color" content="#1b2a52">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=Noto+Serif+KR:wght@700;900&display=swap" rel="stylesheet">
+<!--
+  🔎 v139 증명서 진위 확인 — 로그인 없이 누구나 (일정 확인서의 QR · 확인 코드)
+  · 문서에 찍힌 QR 을 찍으면 verify.html?c=확인코드 로 열린다
+  · 읽는 곳: certVerify/{확인 코드} 한 건 — 가린 정보만 (문서 종류 · 문서번호 · 발급일 · 이름 일부 · 출생 연도 · 기간 · 상태)
+  · 보안 규칙 v34: 코드 하나로 «한 건 읽기»만 · 목록 보기는 아무도 못 함 · 쓰기는 교직원만
+  · 이 화면은 교사 선교사 로그인 · 메뉴 · 알림을 쓰지 않는다 (회사 담당자가 휴대폰으로 여는 화면)
+-->
+<style>
+:root{
+  --ink:#1b2a52; --ink2:#0f1a36; --gold:#d8b45a; --sub:#c8d0e4;
+  --bg:#f6f4ee; --card:#ffffff; --line:#e4e0d5; --line2:#f0ede5; --tx:#1c1f26; --ts:#5a5f6b;
+  --ok:#135c3a; --okbg:#dff3e7; --bad:#9b1c1c; --badbg:#fde8e8; --warnbg:#fff8e8; --warnln:#f3dda8; --warntx:#5b4310;
+}
+body.jh{ --ink:#4c2a7a; --ink2:#341b57; --gold:#e2cdf5; --sub:#ddd0ef; }
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg)}
+body{font-family:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:var(--tx);word-break:keep-all;overflow-wrap:break-word;min-height:100vh;display:flex;justify-content:center}
+.wrap{width:100%;max-width:480px;min-height:100vh;display:flex;flex-direction:column}
+.hd{background:var(--ink);color:#fff;padding:22px 20px 26px;border-radius:0 0 22px 22px}
+.brand{display:flex;align-items:center;gap:10px}
+.emb{width:38px;height:38px;border-radius:10px;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;overflow:hidden}
+.emb img{width:28px;height:28px;object-fit:contain}
+.emb.none{background:rgba(255,255,255,.16);font-size:18px}
+.bn{font-family:'Noto Serif KR',serif;font-weight:900;font-size:16px;letter-spacing:.08em}
+.bs{font-size:12px;color:var(--sub)}
+.res{margin-top:22px;display:flex;align-items:center;gap:12px}
+.res svg{flex:none}
+.rt{font-size:22px;font-weight:900;line-height:1.3}
+.rd{margin-top:2px;font-size:13px;color:#dfe4f0;line-height:1.5}
+.main{padding:16px;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px 16px}
+.grid{display:grid;grid-template-columns:78px 1fr;font-size:14px;line-height:1.5}
+.grid > *{padding:11px 0;border-bottom:1px solid var(--line2)}
+.grid > .k{color:var(--ts)}
+.grid > .last{border-bottom:none}
+.grid .s{display:block;color:var(--ts);font-size:13px}
+.st{display:inline-block;font-size:13px;font-weight:800;border-radius:7px;padding:3px 10px}
+.st.ok{color:var(--ok);background:var(--okbg)}
+.st.bad{color:var(--bad);background:var(--badbg)}
+.note{background:var(--warnbg);border:1px solid var(--warnln);border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.65;color:var(--warntx)}
+.note.bad{background:var(--badbg);border-color:#f5c2c2;color:#7a1d1d}
+.tel{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;background:var(--card);border:1px solid var(--line);border-radius:12px;font-size:14px;font-weight:700;text-decoration:none;color:var(--ink);padding:8px 12px;text-align:center}
+.tel:hover{border-color:var(--ink)}
+.ask{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.ask label{display:flex;flex-direction:column;gap:8px;font-size:13px;font-weight:700;color:#3a3f4c}
+.ask .row{display:flex;gap:8px}
+.ask input{flex:1;min-width:0;height:46px;border:1.5px solid var(--line);border-radius:10px;padding:0 12px;font-family:inherit;font-size:16px;letter-spacing:.06em;text-transform:uppercase;background:#fff;color:var(--tx)}
+.ask input:focus{outline:none;border-color:var(--ink)}
+.ask button{height:46px;padding:0 16px;border:none;border-radius:10px;background:var(--ink);color:#fff;font-family:inherit;font-size:14px;font-weight:800;cursor:pointer;flex:none}
+.ask .err{font-size:12.5px;color:var(--bad);font-weight:600;display:none}
+.ft{margin-top:auto;padding:4px 16px 18px;text-align:center;font-size:12px;color:#6b6f78}
+.spin{width:40px;height:40px;border-radius:50%;border:4px solid rgba(255,255,255,.25);border-top-color:#fff;animation:sp 1s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){ .spin{animation:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hd">
+    <div class="brand">
+      <div class="emb none" id="v-emb">🔎</div>
+      <div><div class="bn" id="v-org">증명서 진위 확인</div><div class="bs" id="v-sub">교사 선교사 · 발급 기록 확인</div></div>
+    </div>
+    <div class="res" id="v-res">
+      <div class="spin" aria-hidden="true"></div>
+      <div><div class="rt">확인하는 중…</div><div class="rd">발급 기록을 찾고 있어요.</div></div>
+    </div>
+  </header>
+  <main class="main" id="v-main"></main>
+  <div class="ft">교사 선교사 · 증명서 발급 시스템</div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, initializeFirestore, doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
+  authDomain: "daniel-amatz.firebaseapp.com",
+  projectId: "daniel-amatz",
+  storageBucket: "daniel-amatz.firebasestorage.app",
+  messagingSenderId: "455744290312",
+  appId: "1:455744290312:web:3ce7e7d3e58f6f1d185bbd"
+};
+const app = initializeApp(firebaseConfig);
+const db = (()=>{ try{ return initializeFirestore(app, { experimentalAutoDetectLongPolling: true }); }catch(e){ return getFirestore(app); } })();
+
+/* 기관 안내 — 문서에 적힌 것과 같은 이름 · 전화 (발급 기록에는 기관 코드만 있다) */
+const ORG = {
+  daniel:   { name:'다니엘 아마츠', emblem:'cert-emblem-daniel.png', tel:'031) 548-1703', cls:'' },
+  jihyebit: { name:'지혜빛 선교원', emblem:'logo-jihyebit.png',      tel:'031) 548-1703', cls:'jh' },
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const CODE_RE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
+/* 손으로 넣은 코드 다듬기 — 소문자 · 빈칸 · 줄표 없이 넣어도 (헷갈리는 0→O 같은 글자는 코드에 없음) */
+function normCode(s){
+  const t = String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return t.length === 8 ? t.slice(0, 4) + '-' + t.slice(4) : String(s || '').trim().toUpperCase();
+}
+/* 이름 뒤 «이/가» — 받침이 있으면 «이» (지혜빛 선교원이 · 다니엘 아마츠가) */
+const iga = w => { const c = String(w || '').trim().slice(-1).charCodeAt(0); return (c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28) ? '이' : '가'; };
+const dot = ds => { const m = String(ds || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[1]}. ${+m[2]}. ${+m[3]}.` : esc(ds); };
+const ICON_OK = `<svg width="44" height="44" viewBox="0 0 44 44" role="img" aria-label="확인됨"><circle cx="22" cy="22" r="21" fill="var(--gold)"/><path d="M13 22.5l6 6 12-13" fill="none" stroke="var(--ink)" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const ICON_BAD = `<svg width="44" height="44" viewBox="0 0 44 44" role="img" aria-label="취소됨"><circle cx="22" cy="22" r="21" fill="#f4b4b4"/><path d="M15 15l14 14M29 15L15 29" stroke="#7a1d1d" stroke-width="3.4" stroke-linecap="round"/></svg>`;
+const ICON_Q = `<svg width="44" height="44" viewBox="0 0 44 44" role="img" aria-label="찾지 못함"><circle cx="22" cy="22" r="21" fill="rgba(255,255,255,.18)"/><path d="M17 17.5a5 5 0 1 1 7 4.6c-1.3.6-2 1.6-2 3v.9" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="22" cy="31" r="1.9" fill="#fff"/></svg>`;
+
+function head(o, icon, title, sub){
+  document.body.className = o ? (o.cls || '') : '';
+  if(o){
+    $('v-emb').className = 'emb';
+    $('v-emb').innerHTML = `<img src="${o.emblem}" alt="${esc(o.name)} 엠블럼" onerror="this.parentNode.className='emb none';this.parentNode.textContent='🔎'">`;
+    $('v-org').textContent = o.name;
+    $('v-sub').textContent = '증명서 진위 확인';
+  } else {                                   // 기관을 모를 때(코드 없음 · 기록 없음)는 처음 모양으로
+    $('v-emb').className = 'emb none'; $('v-emb').textContent = '🔎';
+    $('v-org').textContent = '증명서 진위 확인';
+    $('v-sub').textContent = '교사 선교사 · 발급 기록 확인';
+  }
+  $('v-res').innerHTML = `${icon}<div><div class="rt">${esc(title)}</div><div class="rd">${esc(sub)}</div></div>`;
+}
+function askBox(code, msg){
+  return `<form class="ask" id="v-form" autocomplete="off">
+    <label>${msg ? esc(msg) : '다른 확인서도 확인하기'}
+      <span class="row"><input id="v-code" inputmode="text" maxlength="12" placeholder="확인 코드 (예: K7Q3-9MXA)" value="${esc(code || '')}" aria-label="확인 코드"><button type="submit">확인</button></span>
+      <span class="err" id="v-err">코드는 영문 · 숫자 8자리예요 (예: K7Q3-9MXA).</span>
+    </label>
+  </form>`;
+}
+function telBox(o){
+  const t = o ? o.tel : ORG.daniel.tel;
+  return `<a class="tel" href="tel:${t.replace(/[^\d]/g, '')}"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>${o ? esc(o.name) + '에 ' : ''}전화로 문의 · ${esc(t)}</a>`;
+}
+function bindAsk(){
+  const f = $('v-form'); if(!f) return;
+  f.addEventListener('submit', e => {
+    e.preventDefault();
+    const c = normCode($('v-code').value);
+    if(!CODE_RE.test(c)){ $('v-err').style.display = 'block'; $('v-code').focus(); return; }
+    history.replaceState(null, '', '?c=' + encodeURIComponent(c));
+    run(c);
+  });
+}
+
+async function run(code){
+  window.scrollTo(0, 0);
+  if(!code){
+    head(null, ICON_Q, '확인 코드를 넣어 주세요', '문서 아래쪽 «진위 확인» 칸의 QR을 찍거나 코드를 넣으면 돼요.');
+    $('v-main').innerHTML = askBox('', '확인 코드') + telBox(null);
+    bindAsk(); setTimeout(() => $('v-code') && $('v-code').focus(), 50);
+    return;
+  }
+  if(!CODE_RE.test(code)){
+    head(null, ICON_Q, '코드 모양이 맞지 않아요', '영문 · 숫자 8자리예요 (예: K7Q3-9MXA). 다시 넣어 주세요.');
+    $('v-main').innerHTML = askBox(code, '확인 코드') + telBox(null);
+    bindAsk(); return;
+  }
+  head(null, '<div class="spin" aria-hidden="true"></div>', '확인하는 중…', '발급 기록을 찾고 있어요.');
+  $('v-main').innerHTML = '';
+  let snap;
+  try{ snap = await getDoc(doc(db, 'certVerify', code)); }
+  catch(e){
+    head(null, ICON_Q, '지금은 확인할 수 없어요', '잠시 뒤 다시 열어 주세요. 급하면 발급 기관에 전화로 확인해 주세요.');
+    $('v-main').innerHTML = `<div class="note">인터넷 연결을 확인하고 다시 시도해 주세요.</div>` + telBox(null) + askBox(code);
+    bindAsk(); return;
+  }
+  if(!snap.exists()){
+    head(null, ICON_Q, '발급 기록이 없어요', '이 코드로 발급된 문서를 찾지 못했어요.');
+    $('v-main').innerHTML = `<div class="note bad">코드를 잘못 넣었거나 이 기관에서 발급한 문서가 아닐 수 있어요.<br>코드 <b>${esc(code)}</b>를 문서와 다시 맞춰 보고, 그래도 없으면 발급 기관에 문의해 주세요.</div>` + telBox(null) + askBox('');
+    bindAsk(); return;
+  }
+  const d = snap.data() || {};
+  const o = ORG[d.org] || null;
+  const name = o ? o.name : (d.orgName || '발급 기관');
+  const revoked = d.status === 'revoked';
+  if(revoked) head(o, ICON_BAD, '취소된 문서예요', `${name}${iga(name)} 이 문서의 발급을 취소했어요.`);
+  else head(o, ICON_OK, '확인된 진본입니다', `${name}${iga(name)} 발급한 기록과 같아요.`);
+  const pd = String(d.period || ''), cut = pd.indexOf(' · ');          // 첫 « · » 에서만 나눔 (일수 글에도 « · »가 들어갈 수 있음)
+  const per = cut < 0 ? pd : pd.slice(0, cut), days = cut < 0 ? '' : pd.slice(cut + 3);
+  const rows = [
+    ['문서 종류', `<b>${esc(d.title || '확인서')}</b>`],
+    ['문서번호', `<span style="letter-spacing:.02em">${esc(d.docNo || '')}</span>`],
+    ['발급 기관', esc(name)],
+    ['발급일', dot(d.issueDate)],
+    ['대상', `${esc(d.maskedName || '')}${d.birthYear ? ` <span style="color:var(--ts)">(${esc(d.birthYear)}년생)</span>` : ''}`],
+  ];
+  if(d.period) rows.push(['기간', `${esc(per || '')}${days ? `<span class="s">${esc(days)}</span>` : ''}`]);
+  rows.push(['상태', revoked ? '<span class="st bad">발급 취소</span>' : '<span class="st ok">유효</span>']);
+  $('v-main').innerHTML = `
+    <div class="card"><div class="grid">${rows.map(([k, v], i) => `<span class="k${i === rows.length - 1 ? ' last' : ''}">${esc(k)}</span><span class="${i === rows.length - 1 ? 'last' : ''}">${v}</span>`).join('')}</div></div>
+    ${revoked
+      ? `<div class="note bad">이 문서는 <b>더 이상 쓸 수 없어요.</b> 새로 발급한 문서가 있는지 제출하신 분께 확인해 주세요.</div>`
+      : `<div class="note">종이(또는 파일) 문서의 <b>문서번호 · 기간</b>이 위와 같은지 확인해 주세요.<br>개인정보 보호를 위해 이름 일부와 생일은 가려서 보여 드려요.</div>`}
+    ${telBox(o)}
+    ${askBox('')}`;
+  bindAsk();
+}
+
+const q = new URLSearchParams(location.search);
+run(normCode(q.get('c') || q.get('code') || ''));
+</script>
+</body>
+</html>
