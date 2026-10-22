@@ -158,6 +158,10 @@ html[data-theme="dark"] .pv-pages{background:#0C1512}
 .st-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px}
 .st-list .st{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;font-size:13px}
 .st-list .st b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:800}
+.st-list .st.st2{display:block}
+.st2 .st-h{display:flex;align-items:center;gap:6px}
+.st2 .st-l{font-size:12px;color:var(--ink-2);margin:4px 0 7px;min-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st2 .st-b{display:flex;gap:4px;flex-wrap:wrap}
 /* 출력본 편집 */
 .ed-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;align-items:start}
 .ed-side{position:sticky;top:10px;background:var(--surface);border:1px solid var(--line);border-radius:14px;max-height:calc(100vh - 40px);overflow:auto;padding:14px 16px}
@@ -226,11 +230,11 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
   onSnapshot, serverTimestamp, Timestamp, writeBatch, runTransaction }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol } from './listcache.js?v=137';
-import * as C from './nhp-core.js?v=141';
-import * as P from './nhp-print.js?v=141';
-import * as ENTRY from './nhp-entry.js?v=141';
-import * as SETUP from './nhp-setup.js?v=141';
-import * as EDIT from './nhp-edition.js?v=141';
+import * as C from './nhp-core.js?v=142';
+import * as P from './nhp-print.js?v=142';
+import * as ENTRY from './nhp-entry.js?v=142';
+import * as SETUP from './nhp-setup.js?v=142';
+import * as EDIT from './nhp-edition.js?v=142';
 import { notifyStaff } from './push-client.js';
 P.ensureCSS();   // 나학평 문서 모양 (미리보기 · 출력본 · 인쇄 공통)
 
@@ -388,9 +392,56 @@ async function loadStaff(){
   snap.forEach(d => { const s = Object.assign({ uid: d.id }, d.data()); A.STAFF.push(s); A.SMAP[d.id] = s; });
 }
 async function loadStudents(){
-  const snap = await cachedCol(db, 'students', { uid: A.CU.uid });
+  // v142: 늘 서버에서 — 탭에 기억해 둔 학생 명단은 이름 · 학번 · 반만 남겨 두어서(listcache) 생년월일 · 영문 이름이 빠진다
+  const snap = await cachedCol(db, 'students', { uid: A.CU.uid, fresh: true });
   A.STU = {}; snap.forEach(d => { A.STU[d.id] = Object.assign({ id: d.id }, d.data()); });
 }
+/* 학생 알아보기 — 생년월일 · 학번 · 올해 반 (같은 이름 학생을 가르기 위해) */
+A.stuClassOf = function(sid){
+  const y = A.TERM ? Number(A.TERM.year) : new Date().getFullYear();
+  const c = (A.CLASSES || []).find(x => x.org === C.ORG && Number(x.year) === y && (x.students || []).includes(sid));
+  if(!c) return '';
+  const g = (c.grades && c.grades[sid]) || (Array.isArray(c.gradeList) && c.gradeList.length === 1 ? c.gradeList[0] : c.grade) || '';
+  return `${c.name || ''}${g ? ' ' + g : ''}`;
+};
+A.stuInfo = function(sid){
+  const s = A.STU[sid]; if(!s) return '';
+  const st = window.StuStatus ? StuStatus.status(s) : (s.status || 'active');
+  const ST = { leave: '휴학', quit: '자퇴', grad: '졸업', egrad: '조기졸업' };
+  return [s.birth ? s.birth : '생일 없음', s.studentNo ? '학번 ' + s.studentNo : '', A.stuClassOf(sid), ST[st] || ''].filter(Boolean).join(' · ');
+};
+/* 학생 고르기 (한 명) — 같은 이름 · 비슷한 출생연도를 위에 · «잇지 않음»도 고를 수 있음
+   돌려주는 값: 학생 id · '' (잇지 않음) · null (취소) */
+A.pickStudent = function(title, opt){
+  opt = opt || {};
+  return new Promise(res => {
+    const nm = String(opt.name || '').replace(/\s+/g, '');
+    const eb = opt.birthYear || 0;
+    const by = s => Number(String(s.birth || '').slice(0, 4)) || 0;
+    const all = Object.values(A.STU).filter(s => s.org === C.ORG && !s.deleted);
+    const score = s => (String(s.name || '').replace(/\s+/g, '') === nm ? 100 : 0) + (eb && by(s) ? Math.max(0, 10 - Math.abs(by(s) - eb) * 5) : 0);
+    all.sort((a, b) => score(b) - score(a) || String(a.name).localeCompare(String(b.name), 'ko'));
+    const m = A.modal(esc(title), `${opt.help ? `<div class="nh-desc">${opt.help}</div>` : ''}
+      <input class="nh-in" data-q placeholder="이름 찾기" style="width:100%;margin:6px 0 10px">
+      <label class="ck" style="display:flex;margin-bottom:6px"><input type="radio" name="pk-stu" value=""${!opt.current ? ' checked' : ''}><b>— 잇지 않음 (이름으로만 보관) —</b></label>
+      <div data-list style="max-height:52vh;overflow:auto"></div>`,
+      '<button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>저장</button>', 'mid');
+    const box = m.box.querySelector('[data-list]');
+    let cur = opt.current || '';
+    const draw = () => {
+      const q = m.box.querySelector('[data-q]').value.trim();
+      const list = all.filter(s => !q || String(s.name || '').includes(q)).slice(0, 200);
+      box.innerHTML = list.map(s => { const same = score(s) >= 100; return `<label class="ck" style="display:flex;align-items:baseline;gap:6px;padding:4px 0;border-bottom:1px solid var(--line-soft)"><input type="radio" name="pk-stu" value="${esc(s.id)}"${cur === s.id ? ' checked' : ''}><b>${esc(s.name || '')}</b><small style="color:var(--ink-2)">${esc(A.stuInfo(s.id))}</small>${same ? '<span class="ch mint" style="margin-left:auto">이름 같음</span>' : ''}</label>`; }).join('') || '<div class="nh-desc">찾는 학생이 없어요.</div>';
+    };
+    m.box.addEventListener('change', e => { if(e.target.name === 'pk-stu') cur = e.target.value; });
+    m.box.querySelector('[data-q]').addEventListener('input', draw);
+    let done = false;
+    m.onClose = () => { if(!done) res(null); };
+    m.box.querySelector('[data-c]').onclick = () => m.close();
+    m.box.querySelector('[data-ok]').onclick = () => { done = true; m.close(); res(cur); };
+    draw();
+  });
+};
 A.loadClasses = async function(){
   if(A.CLASSES) return A.CLASSES;
   const snap = await cachedCol(db, 'classes', { uid: A.CU.uid });
@@ -754,27 +805,60 @@ async function issueOriginals(secId){
 async function pastHTML(termId){
   const terms = A.TERMS;
   const t = terms.find(x => x.id === termId) || null;
-  let h = `<div class="nh-card"><h3>🗂 지난 나학평</h3><p class="nh-desc">예전 나학평 프로그램에서 옮겨 온 자료와, 원본을 확정한 학기를 봅니다. <b>원본은 그대로 보존</b>되고, 용어를 바꾸거나 일부를 가리거나 영문으로 내보낼 때는 «출력본»을 만들어요.</p>
+  let h = `<div class="nh-card"><h3>🗂 지난 나학평</h3><p class="nh-desc">예전 나학평 프로그램에서 옮겨 온 자료와, 원본을 확정한 학기를 봅니다. <b>원본은 그대로 보존</b>되고, 용어를 바꾸거나 일부를 가리거나 영문으로 내보낼 때는 «출력본»을 만들어요.${A.isMgr ? ' 옮겨 온 원본이 다른 학생과 이어졌거나 «연결 안 됨»이면 «🔗 잇기»로 고칠 수 있어요 (내용은 그대로).' : ''}</p>
     <div class="frow"><div class="fl" style="max-width:360px"><label>학기</label><select class="nh-sel" id="ps-term"><option value="">학기를 고르세요</option>${terms.map(x => `<option value="${esc(x.id)}"${x.id === termId ? ' selected' : ''}>${esc(C.termLabel(x))}${x.src === 'import' ? ' · 옮겨 온 자료' : ''}</option>`).join('')}</select></div></div></div>`;
   if(!t) return h;
   const secs = (t.sections || []).slice().sort((a, b) => (a.gradeNo || 99) - (b.gradeNo || 99) || String(a.name).localeCompare(String(b.name), 'ko'));
   if(!secs.length) return h + `<div class="nh-empty">이 학기에는 반이 없어요.</div>`;
-  h += secs.map(s => `<details class="dr" data-pastsec="${esc(s.id)}" data-term="${esc(t.id)}"><summary>${esc(C.secLabel(s))} <small>${(s.students || []).length || s.n || ''}${(s.students || []).length || s.n ? '명' : ''}</small></summary><div class="db"><div class="nh-desc">여는 중…</div></div></details>`).join('');
+  h += secs.map(s => { const n = t.src === 'import' ? (s.n || (s.students || []).length) : (s.students || []).length;
+    return `<details class="dr" data-pastsec="${esc(s.id)}" data-term="${esc(t.id)}"><summary>${esc(C.secLabel(s))} <small>${n ? n + '명' : ''}</small></summary><div class="db"><div class="nh-desc">여는 중…</div></div></details>`; }).join('');
   return h;
 }
-async function loadPastSec(det){
-  if(det.dataset.loaded) return;
+const PAST_REPS = {};
+async function loadPastSec(det, force){
+  if(det.dataset.loaded && !force) return;
   det.dataset.loaded = '1';
   const box = det.querySelector('.db');
+  try{ await A.loadClasses(); }catch(e){}
   let reps = [];
   try{
     const q = await getDocs(query(collection(db, 'nhpReports'), where('termId', '==', det.dataset.term), where('secId', '==', det.dataset.pastsec)));
-    q.forEach(d => { const x = d.data(); if(!x.superseded) reps.push({ id: d.id, sid: x.sid || '', stuName: x.stuName || (x.doc && x.doc.cover && x.doc.cover.name) || '', stuNo: x.stuNo || '', ver: x.ver || 1 }); });
+    q.forEach(d => { const x = d.data(); if(!x.superseded) reps.push({ id: d.id, sid: x.sid || '', src: x.src || '', stuName: x.stuName || (x.doc && x.doc.cover && x.doc.cover.name) || '', stuNo: x.stuNo || '', ver: x.ver || 1, termId: x.termId, secName: x.secName || '' }); });
   }catch(e){ box.innerHTML = `<div class="nh-warn">원본을 읽지 못했어요 — ${esc(A.errText(e))}</div>`; return; }
   if(!reps.length){ box.innerHTML = `<div class="nh-desc">확정한 원본이 없어요.</div>`; return; }
-  box.innerHTML = `<div class="st-list">${reps.sort((a, b) => String(a.stuNo).localeCompare(String(b.stuNo)) || a.stuName.localeCompare(b.stuName, 'ko')).map(r =>
-    `<div class="st"><b title="${esc(r.stuName)} ${esc(r.stuNo)}">${esc(r.stuName || A.stuName(r.sid))}</b>${r.sid ? '' : '<span class="ch warn" title="교사 선교사 학생과 아직 연결되지 않음">연결 안 됨</span>'}${r.ver > 1 ? `<span class="ch gray">v${r.ver}</span>` : ''}
-      <button class="nh-btn xs" data-rp="${esc(r.id)}">원본 보기</button><button class="nh-btn xs" data-red="${esc(r.id)}">출력본</button></div>`).join('')}</div>`;
+  reps.forEach(r => { PAST_REPS[r.id] = r; });
+  const canLink = A.isMgr;
+  box.innerHTML = `<div class="st-list">${reps.sort((a, b) => String(a.stuNo).localeCompare(String(b.stuNo)) || a.stuName.localeCompare(b.stuName, 'ko')).map(r => {
+    // v142: 옮겨 온 원본은 «어느 학생인지»(잇기)만 나중에 고칠 수 있다 — 내용은 그대로
+    const link = r.src !== 'import' ? '' : r.sid ? `<span title="${esc(A.stuInfo(r.sid))}">🔗 ${esc(A.stuName(r.sid))}${A.STU[r.sid] && A.STU[r.sid].birth ? ' · ' + esc(A.STU[r.sid].birth) : ''}</span>` : '<span class="ch warn" title="교사 선교사 학생과 아직 연결되지 않음">연결 안 됨</span>';
+    return `<div class="st st2"><div class="st-h"><b title="${esc(r.stuName)} ${esc(r.stuNo)}">${esc(r.stuName || A.stuName(r.sid))}</b>${r.ver > 1 ? `<span class="ch gray">v${r.ver}</span>` : ''}</div>
+      <div class="st-l">${link}</div>
+      <div class="st-b"><button class="nh-btn xs" data-rp="${esc(r.id)}">원본 보기</button><button class="nh-btn xs" data-red="${esc(r.id)}">출력본</button>${canLink && r.src === 'import' ? `<button class="nh-btn xs" data-rlink="${esc(r.id)}" title="이 원본이 교사 선교사의 어느 학생인지 고치기 (내용은 그대로)">🔗 잇기</button>` : ''}</div></div>`;
+  }).join('')}</div>`;
+}
+/* 🔗 옮겨 온 원본 — 학생 잇기 고치기 (나학평 담당) · 같은 예전 학번의 다른 학기 원본도 함께 고칠지 묻는다 */
+async function relinkReport(rid){
+  const r = PAST_REPS[rid]; if(!r) return;
+  try{ await A.loadClasses(); }catch(e){}
+  const by = /^\d{8}$/.test(r.stuNo) ? Number(r.stuNo.slice(0, 4)) - 7 : 0;
+  const sid = await A.pickStudent(`🔗 ${r.stuName} (예전 학번 ${r.stuNo || '-'}) — 어느 학생인가요?`, { name: r.stuName, birthYear: by, current: r.sid,
+    help: `원본 내용은 그대로 두고, 교사 선교사의 어느 학생 것인지만 고쳐요.${by ? ` 예전 학번으로 보면 ${by}년생쯤이에요.` : ''}` });
+  if(sid == null || sid === r.sid) return;
+  // 같은 예전 학번의 다른 원본 (다른 학기) — 함께 고칠지
+  let others = [];
+  if(r.stuNo){
+    try{ const q = await getDocs(query(collection(db, 'nhpReports'), where('stuNo', '==', r.stuNo))); q.forEach(d => { const x = d.data(); if(d.id !== rid && x.src === 'import' && (x.sid || '') !== sid && String(x.stuName || '') === String(r.stuName || '')) others.push({ id: d.id, termId: x.termId }); }); }catch(e){}
+  }
+  let all = false;
+  if(others.length) all = await A.confirm('🔗 다른 학기도 함께?', `같은 예전 학번(${esc(r.stuNo)} · ${esc(r.stuName)})의 다른 학기 원본 <b>${others.length}개</b>도 같은 학생으로 고칠까요?<br><span style="color:var(--ink-2)">${others.map(o => esc(C.termLabel(A.TERMS.find(t => t.id === o.termId) || { id: o.termId }))).join(', ')}</span>`, '모두 고치기');
+  const ids = [rid].concat(all ? others.map(o => o.id) : []);
+  try{
+    const bt = writeBatch(db);
+    ids.forEach(id => bt.update(doc(db, 'nhpReports', id), { sid: sid || '', linkedBy: A.CU.uid, linkedByName: A.CU.name || '', linkedAt: serverTimestamp() }));
+    await bt.commit();
+    A.toast(sid ? `${ids.length}개 원본을 «${A.stuName(sid)}» 학생과 이었어요 ✓ (내용은 그대로)` : `${ids.length}개 원본의 연결을 풀었어요 (이름으로 보관)`);
+  }catch(e){ A.toast('고치지 못했어요 — ' + A.errText(e) + (/permission/.test((e && e.code) || '') ? ' (보안 규칙 v36이 필요해요)' : ''), 'err'); return; }
+  document.querySelectorAll('details[data-pastsec]').forEach(d => { if(d.dataset.loaded) loadPastSec(d, true); });
 }
 document.addEventListener('toggle', e => { const d = e.target; if(d && d.matches && d.matches('details[data-pastsec]') && d.open) loadPastSec(d); }, true);
 async function viewReport(rid){
@@ -791,7 +875,7 @@ async function viewReport(rid){
 
 /* ═══ 누르기 (한 곳에서) ═══ */
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-go],[data-act],[data-open],[data-notif],[data-board],[data-printsec],[data-bdf],[data-bulk],[data-pv],[data-edo],[data-prall],[data-prprint],[data-issue],[data-rp],[data-red]');
+  const t = e.target.closest('[data-go],[data-act],[data-open],[data-notif],[data-board],[data-printsec],[data-bdf],[data-bulk],[data-pv],[data-edo],[data-prall],[data-prprint],[data-issue],[data-rp],[data-red],[data-rlink]');
   if(!t || !$I('nh').contains(t)) return;
   if(t.dataset.go){ A.go(t.dataset.go); return; }
   if(t.dataset.open){ A.go('s/' + t.dataset.open); return; }
@@ -806,6 +890,7 @@ document.addEventListener('click', async e => {
   if(t.dataset.issue){ issueOriginals(t.dataset.issue); return; }
   if(t.dataset.rp){ viewReport(t.dataset.rp); return; }
   if(t.dataset.red){ A.go(`edit/past:${t.dataset.red}`); return; }
+  if(t.dataset.rlink){ relinkReport(t.dataset.rlink); return; }
   if(t.dataset.notif){ const n = A.NOTIFS.find(x => x.id === t.dataset.notif); if(n){ A.readNotif(n); if(n.subjectId) A.go('s/' + n.subjectId); } return; }
   const a = t.dataset.act;
   if(a === 'newterm'){ SETUP.openWizard(A); return; }

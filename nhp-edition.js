@@ -54,7 +54,8 @@ async function loadEditions(){
     const q = await FS.getDocs(FS.query(FS.collection(A.db, 'nhpEditions'), FS.where('termId', '==', SRC.termId), FS.where('sid', '==', SRC.sid || ('?' + (SRC.reportId || '')))));
     q.forEach(d => EDS.push(Object.assign({ id: d.id }, d.data())));
   }catch(e){}
-  if(!SRC.sid && SRC.reportId){
+  // 원본에 매단 출력본도 (학생 잇기를 나중에 고쳐도 그대로 보이게)
+  if(SRC.reportId){
     try{ const q = await FS.getDocs(FS.query(FS.collection(A.db, 'nhpEditions'), FS.where('reportId', '==', SRC.reportId))); q.forEach(d => { if(!EDS.find(x => x.id === d.id)) EDS.push(Object.assign({ id: d.id }, d.data())); }); }catch(e){}
   }
   EDS.sort((a, b) => ((b.updatedAt && b.updatedAt.seconds) || 0) - ((a.updatedAt && a.updatedAt.seconds) || 0));

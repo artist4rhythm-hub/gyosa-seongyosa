@@ -5,7 +5,7 @@
    · 아주 긴 글 한 칸은 문단 · 문장에서 나눠 다음 쪽으로 잇는다
    · 인쇄와 PDF가 같은 쪽을 쓴다 (화면에서 본 그대로 나온다)
    ═══════════════════════════════════════════════════════════ */
-import * as C from './nhp-core.js?v=141';
+import * as C from './nhp-core.js?v=142';
 
 export const PAGE = { w: 794, h: 1123, m: 57, foot: 22 };   // A4 · 여백 15mm
 const INNER_H = PAGE.h - PAGE.m * 2 - PAGE.foot;
