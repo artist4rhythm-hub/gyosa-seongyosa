@@ -11,6 +11,7 @@
    tabs   : 하위 탭 목록 (검색·홈 지도에 노출)
    badge  : 뱃지 키 (BADGE_SOURCES에서 계산)
    admin  : true면 관리자만
+   orgs   : 그 기관에 접근하는 선생님만 (예: ['daniel'] — 나학평)
    ═══════════════════════════════════════════════ */
 
 const MENU = [
@@ -35,6 +36,9 @@ const MENU = [
       { key:'minutes', label:'회의록', icon:'edit_note', href:'minutes.html',
         desc:'주간 회의 · 참석 · 결정 · 임무 · 댓글 — 기관별 · DA전체 · PDF·워드 출력', badge:'minutes',
         tabs:['회의록 목록','주제 찾기','내가 맡은 임무','출력 (PDF · 워드)'] },
+      { key:'nhp', label:'나학평', icon:'menu_book', href:'nhp.html', badge:'nhp', orgs:['daniel'],
+        desc:'나의 학교생활 평가서 — 과목 담당 입력 · 담임 · 검토관 · 최종 승인 · PDF · 영문판 · 지난 나학평',
+        tabs:['내 할 일','진행 현황','출력 · 원본','지난 나학평','학기 설정'] },
       { key:'history', label:'연혁', icon:'auto_stories', href:'history.html',
         desc:'학년도 책장 — 해마다의 반·담임·학생과 반별 학부모 공지' },
       { key:'club', label:'동아리', icon:'palette', href:'club-admin.html',

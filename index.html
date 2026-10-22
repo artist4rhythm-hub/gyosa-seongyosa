@@ -1370,7 +1370,7 @@ function renderHome(){
   // ── ④ 전체 기능 (접기) ──
   const groups = (window.MENU||[]).filter(g=>!g.admin || isAdmin);
   const mapHtml = groups.map(g=>{
-    const items = g.items.filter(it=>!it.admin || isAdmin);
+    const items = g.items.filter(it=>(!it.admin || isAdmin) && menuOrgOk(it));
     if(!items.length) return '';
     return `<div class="hm-grp">
       <div class="hm-gt">${g.group}</div>
@@ -2265,6 +2265,13 @@ function setQuickKeys(arr){
   try { localStorage.setItem('gyosa_quick', JSON.stringify(arr)); } catch(e){}
 }
 
+// v141 그 기관 선생님만 쓰는 메뉴 (예: 나학평 — 다니엘 아마츠) · 수퍼관리자는 늘
+function menuOrgOk(it){
+  if(!it || !Array.isArray(it.orgs) || !it.orgs.length || !CU) return true;
+  if(CU.role === 'super') return true;
+  const mine = (Array.isArray(CU.orgs) && CU.orgs.length) ? CU.orgs : [CU.org];
+  return it.orgs.some(o => mine.includes(o));
+}
 // 메뉴에서 key로 항목 찾기
 function findMenuItem(key){
   for(const g of (window.MENU||[])){
@@ -2291,7 +2298,7 @@ function renderQuickTiles(){
     const keys = getQuickKeys();
     let html = '<div class="hm-qhint">별표를 눌러 홈에 표시할 기능을 선택하세요.</div>';
     (window.MENU||[]).filter(g=>!g.admin||admin).forEach(g=>{
-      (g.items||[]).filter(it=>(!it.admin||admin) && !(it.deny||[]).includes(CU?.role)).forEach(it=>{
+      (g.items||[]).filter(it=>(!it.admin||admin) && !(it.deny||[]).includes(CU?.role) && menuOrgOk(it)).forEach(it=>{
         const on = keys.includes(it.key);
         html += `<div class="hm-qt ${on?'':'faded'}">
           <span class="hm-qt-star" onclick="toggleQuick('${it.key}')">${on?'⭐':'☆'}</span>
