@@ -263,12 +263,19 @@ function sbIsAdmin(){
   return r === 'super' || r === 'org_admin' || r === 'tab_admin';
 }
 
+/* ── 🏛 v141 그 기관 선생님만 쓰는 메뉴 (예: 나학평 — 다니엘 아마츠) · 수퍼관리자는 늘 ── */
+function sbOrgOk(it){
+  if(!it || !Array.isArray(it.orgs) || !it.orgs.length || !SB_USER) return true;
+  if(SB_USER.role === 'super') return true;
+  const mine = (Array.isArray(SB_USER.orgs) && SB_USER.orgs.length) ? SB_USER.orgs : [SB_USER.org];
+  return it.orgs.some(o => mine.includes(o));
+}
 /* ── 아이템 필터 (권한) ── */
 function sbVisibleGroups(){
   const admin = sbIsAdmin();
   return MENU
     .filter(g => !g.admin || admin)
-    .map(g => ({ ...g, items: g.items.filter(it => (!it.admin || admin || ((SB_USER?.pageAllow)||[]).includes(it.key)) && !(it.deny||[]).includes(SB_USER?.role) && !((SB_USER?.pageDeny)||[]).includes(it.key)) }))
+    .map(g => ({ ...g, items: g.items.filter(it => (!it.admin || admin || ((SB_USER?.pageAllow)||[]).includes(it.key)) && !(it.deny||[]).includes(SB_USER?.role) && !((SB_USER?.pageDeny)||[]).includes(it.key) && sbOrgOk(it)) }))
     .filter(g => g.items.length);
 }
 
