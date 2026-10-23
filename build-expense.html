@@ -117,7 +117,7 @@ table.tb tr:nth-child(even) td{background:#FBFAF6}
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
-  collection, getDocs, query, where, Timestamp }
+  collection, getDocs, query, where, Timestamp, arrayRemove }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 // 🧾 영수증 · 증빙 사진 — 글자 보존 · 문서 1MB 안 (v125) · 따로 불러온다: 이 파일이 없거나 늦게 와도 화면은 그대로 열리게
@@ -652,6 +652,9 @@ window.saveLedger = async (id)=>{
       try{ const st = await getDoc(doc(db,'staff',u));
         const cur = (st.exists() && Array.isArray(st.data().pageAllow)) ? st.data().pageAllow : [];
         if(!cur.includes('buildexp')){ await setDoc(doc(db,'staff',u), { pageAllow:[...cur,'buildexp'] }, { merge:true }); dropLists('staff'); }
+        // 🔐 v143 수퍼관리자가 담당으로 고르면 접근 권한의 «닫음»도 푼다 (총괄 담당은 규칙상 «열어 줌» 더하기만 할 수 있음)
+        const dn = (st.exists() && Array.isArray(st.data().pageDeny)) ? st.data().pageDeny : [];
+        if(IS_SUPER && dn.includes('buildexp')){ await updateDoc(doc(db,'staff',u), { pageDeny: arrayRemove('buildexp') }); dropLists('staff'); }
       }catch(_){}
     }
     closeModal(); CUR ? renderDetail() : renderList(); toast('저장했습니다');
@@ -673,6 +676,8 @@ onAuthStateChanged(auth, async user=>{
     if(window.setCrumb) setCrumb(['공사 경비']);
     try{ const c = await getDoc(doc(db,'bldConfig','editors'));
       BLD_ADMIN = c.exists() && Array.isArray(c.data().uids) && c.data().uids.includes(CU.uid); }catch(_){}
+    // 🔐 v143 관리자 › 접근 권한에서 «닫음»한 분은 막는다 (총괄 담당은 늘 · 그 밖은 아래 «맡은 공사» 확인 그대로)
+    if(!BLD_ADMIN && Array.isArray(CU.pageDeny) && CU.pageDeny.includes('buildexp') && window.guardPage && !guardPage(CU, 'buildexp')){ window.hideLoading && hideLoading(); return; }
     await loadLedgers();
     if(!canAdmin() && !LEDGERS.length){
       $I('gate-msg').innerHTML='공사 경비는 <b>총괄 담당자와 공사별 담당자</b>만 볼 수 있습니다.<br>필요하시면 총괄 담당자에게 요청해 주세요.';

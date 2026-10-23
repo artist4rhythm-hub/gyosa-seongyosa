@@ -1368,9 +1368,9 @@ function renderHome(){
   const _worder = WORDER();
 
   // ── ④ 전체 기능 (접기) ──
-  const groups = (window.MENU||[]).filter(g=>!g.admin || isAdmin);
+  const groups = (window.MENU||[]);
   const mapHtml = groups.map(g=>{
-    const items = g.items.filter(it=>(!it.admin || isAdmin) && menuOrgOk(it));
+    const items = g.items.filter(it=>menuOk(it, g));
     if(!items.length) return '';
     return `<div class="hm-grp">
       <div class="hm-gt">${g.group}</div>
@@ -2272,6 +2272,15 @@ function menuOrgOk(it){
   const mine = (Array.isArray(CU.orgs) && CU.orgs.length) ? CU.orgs : [CU.org];
   return it.orgs.some(o => mine.includes(o));
 }
+// 🔐 v143 홈에서도 사이드바와 같은 기준 (menu.js menuCanSee — 관리자용 · 협력교사 닫힘 · 개인 차단 · 다른 기관 · 개인 «열어 주기»)
+function menuOk(it, g){
+  if(!it) return false;
+  const x = (g && g.admin) ? { ...it, groupAdmin:true } : it;
+  if(typeof window.menuCanSee === 'function') return window.menuCanSee(x, CU);
+  const admin = ['super','org_admin','tab_admin'].includes(CU?.role);
+  return (!(x.admin || x.groupAdmin) || admin) && !(x.deny||[]).includes(CU?.role) && menuOrgOk(x);
+}
+function menuGroupOf(key){ return (window.MENU||[]).find(g => (g.items||[]).some(it => it.key === key)) || null; }
 // 메뉴에서 key로 항목 찾기
 function findMenuItem(key){
   for(const g of (window.MENU||[])){
@@ -2297,8 +2306,8 @@ function renderQuickTiles(){
     // 편집 모드: 접근 가능한 모든 기능을 별표로 on/off
     const keys = getQuickKeys();
     let html = '<div class="hm-qhint">별표를 눌러 홈에 표시할 기능을 선택하세요.</div>';
-    (window.MENU||[]).filter(g=>!g.admin||admin).forEach(g=>{
-      (g.items||[]).filter(it=>(!it.admin||admin) && !(it.deny||[]).includes(CU?.role) && menuOrgOk(it)).forEach(it=>{
+    (window.MENU||[]).forEach(g=>{
+      (g.items||[]).filter(it=>menuOk(it, g)).forEach(it=>{
         const on = keys.includes(it.key);
         html += `<div class="hm-qt ${on?'':'faded'}">
           <span class="hm-qt-star" onclick="toggleQuick('${it.key}')">${on?'⭐':'☆'}</span>
@@ -2315,7 +2324,7 @@ function renderQuickTiles(){
   // 일반 모드: 선택된 즐겨찾기만
   box.classList.remove('editing');
   const keys = getQuickKeys();
-  const tiles = keys.map(k=>findMenuItem(k)).filter(it=>it && (!it.admin||admin) && !(it.deny||[]).includes(CU?.role));
+  const tiles = keys.map(k=>findMenuItem(k)).filter(it=>it && menuOk(it, menuGroupOf(it.key)));
   if(!tiles.length){
     box.innerHTML = '<div class="hm-qhint">「편집」을 눌러 자주 쓰는 기능을 골라보세요.</div>';
     return;

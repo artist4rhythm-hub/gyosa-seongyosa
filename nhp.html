@@ -139,6 +139,8 @@ html[data-theme="dark"] .nh-t tr.grp td{background:#1A2621}
 .frow>.fl{flex:1;min-width:160px}
 .pk{display:flex;flex-wrap:wrap;gap:6px}
 .pk .p{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:100px;padding:4px 6px 4px 11px;font-size:12.5px;font-weight:700;background:var(--surface)}
+.pk .p.off{border-color:#F3D58A;background:#FEF3C7;color:#7A4E00}
+html[data-theme="dark"] .pk .p.off{background:var(--warn-bg);border-color:#5A4A20;color:var(--warn)}
 .pk .p button{border:0;background:var(--sb-mint-2);border-radius:50%;width:20px;height:20px;cursor:pointer;color:var(--ink-2);font-size:11px;padding:0}
 .stg{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;background:var(--surface)}
 .stg .h{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
@@ -232,8 +234,8 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
 import { cachedCol } from './listcache.js?v=137';
 import * as C from './nhp-core.js?v=142';
 import * as P from './nhp-print.js?v=142';
-import * as ENTRY from './nhp-entry.js?v=142';
-import * as SETUP from './nhp-setup.js?v=142';
+import * as ENTRY from './nhp-entry.js?v=143';
+import * as SETUP from './nhp-setup.js?v=143';
 import * as EDIT from './nhp-edition.js?v=142';
 import { notifyStaff } from './push-client.js';
 P.ensureCSS();   // 나학평 문서 모양 (미리보기 · 출력본 · 인쇄 공통)
@@ -332,7 +334,7 @@ A.popMenu = function(anchor, items){
 };
 A.errText = function(e){
   const c = (e && e.code) || '';
-  if(/permission/.test(c)) return A.ruleMissing ? '보안 규칙 v35가 아직 게시되지 않았어요' : '권한이 없어요 (이미 다음 단계로 넘어갔거나 맡은 칸이 아니에요)';
+  if(/permission/.test(c)) return A.ruleMissing ? '보안 규칙 v37이 아직 게시되지 않았어요' : '권한이 없어요 (이미 다음 단계로 넘어갔거나 맡은 칸이 아니에요)';
   if(/unavailable|network/.test(c)) return '인터넷 연결을 확인해 주세요';
   return (e && (e.message || e.code)) || '알 수 없는 오류';
 };
@@ -343,8 +345,18 @@ A.stuName = sid => (A.STU[sid] && A.STU[sid].name) || '(이름 없음)';
 A.stuLabel = sid => { const s = A.STU[sid]; return s ? `${s.name}${s.studentNo ? ` (${s.studentNo})` : ''}` : '(학생 정보 없음)'; };
 A.subStudents = sub => C.subStudents(sub, A.secOf(sub.secId)).slice().sort((a, b) => String(A.STU[a] && A.STU[a].studentNo || 'z').localeCompare(String(A.STU[b] && A.STU[b].studentNo || 'z')) || A.stuName(a).localeCompare(A.stuName(b), 'ko'));
 A.subLabel = sub => sub ? (sub.kind === 'subj' ? sub.name : (sub.name || (C.KINDS[sub.kind] || {}).ko || sub.kind)) : '';
+/* 🔐 v143 나학평을 열 수 있는 분 — 관리자 › 접근 권한과 같은 기준 (menu.js menuAccess · 보안 규칙 v37 nhpReader)
+   다니엘 아마츠 선생님은 기본으로 열림(닫은 분 빼고) · 다른 기관 선생님은 «열어 준» 분만 · 퇴직 계정은 아님 */
+A.nhpOpen = s => {
+  if(!s || (s.acStatus || 'active') === 'quit') return false;
+  const it = window.menuFind && menuFind('nhp');
+  if(it && window.menuCanSee) return menuCanSee(it, s);
+  const orgs = (Array.isArray(s.orgs) && s.orgs.length) ? s.orgs : [s.org];
+  return s.role === 'super' || (!(s.pageDeny || []).includes('nhp') && (orgs.includes('daniel') || (s.pageAllow || []).includes('nhp')));
+};
+A.nhpOk = uid => { const s = A.SMAP[uid]; return !s || A.nhpOpen(s); };   // 명부에 없는 분(퇴직 · 지움)은 이름이 «(퇴직?)»으로 따로 보임
 A.staffPick = () => A.STAFF.filter(s => (s.acStatus || 'active') !== 'quit' && !s.noAuth)
-  .filter(s => s.role === 'super' || s.org === 'daniel' || (s.orgs || []).includes('daniel'))
+  .filter(s => A.nhpOpen(s))
   .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
 A.stateChip = sub => { const s = C.stateOf(sub); return `<span class="ch ${s.tone}">${esc(s.ko)}</span>`; };
 A.typeChip = sub => sub.kind === 'subj' ? `<span class="ch type">${esc((C.TYPES[sub.type] || C.TYPES.E).short)}</span>` : `<span class="ch type">${esc((C.KINDS[sub.kind] || {}).icon || '')} ${esc(((C.KINDS[sub.kind] || {}).ko || '').split(' (')[0])}</span>`;
@@ -555,7 +567,7 @@ function headHTML(on){
     <div class="nh-tabs">
       ${tab('home', '🏠 내 할 일', (turn + nn) || '')}${tab('board', '📊 진행 현황')}${tab('print', '🖨 출력 · 원본')}${tab('past', '🗂 지난 나학평')}${A.isMgr ? tab('setup', '⚙️ 학기 설정') : ''}
     </div>
-    ${A.ruleMissing ? `<div class="nh-warn">🔒 <b>보안 규칙 v35가 아직 게시되지 않은 것 같아요.</b> Firebase 콘솔 › Firestore › 규칙에 v35 전문을 붙여넣고 «게시»해 주세요. (게시 전에는 나학평 자료를 읽고 쓸 수 없어요)</div>` : ''}`;
+    ${A.ruleMissing ? `<div class="nh-warn">🔒 <b>보안 규칙 v37이 아직 게시되지 않은 것 같아요.</b> Firebase 콘솔 › Firestore › 규칙에 v37 전문을 붙여넣고 «게시»해 주세요. (게시 전에는 나학평 자료를 읽고 쓸 수 없어요 — 다른 기관 선생님을 «열어 준» 경우도 v37 부터 읽혀요)</div>` : ''}`;
 }
 function bindHead(){
   const sel = $I('nh-term');
@@ -914,16 +926,17 @@ function boot(){
     if(window.guardPage && !guardPage(A.CU, 'nhp')) return;
     window.fileNameContext = () => ['나학평', A.TERM ? C.termLabel(A.TERM) : ''];
     const orgs = (A.CU.orgs && A.CU.orgs.length) ? A.CU.orgs : [A.CU.org];
-    const reader = A.CU.role === 'super' || orgs.includes('daniel');
+    const reader = A.nhpOpen(A.CU);
     $I('ls').style.display = 'none'; $I('ms').style.display = 'block';
-    if(!reader || (A.CU.acStatus || 'active') === 'quit'){
-      $I('nh').innerHTML = `<div class="nh-empty" style="margin-top:30px">📒 나학평은 <b>다니엘 아마츠</b> 선생님들이 쓰는 화면이에요.<br>접근 기관에 다니엘 아마츠가 없으면 볼 수 없어요. (관리자 › 인사정보에서 접근 기관을 확인해 주세요)</div>`;
+    if(!reader){
+      $I('nh').innerHTML = `<div class="nh-empty" style="margin-top:30px">📒 나학평은 <b>다니엘 아마츠</b> 선생님들이 쓰는 화면이에요.<br>다른 기관 선생님은 수퍼관리자가 <b>관리자 › 접근 권한 › 🗂 화면별 › 나학평</b>에서 열어 주면 볼 수 있어요.</div>`;
       window.hideLoading && hideLoading(); return;
     }
     try{
       let mgr = [];
       try{ const m = await getDoc(doc(db, 'config', 'nhpManagers')); mgr = m.exists() ? (m.data().uids || []) : []; }catch(e){}
-      A.isMgr = A.CU.role === 'super' || (A.CU.role === 'org_admin' && orgs.includes('daniel')) || mgr.includes(A.CU.uid);
+      // 나학평 담당 — 보안 규칙 nhpMgr 와 같게: 수퍼 · 다니엘 접근 (기관관리자 또는 담당 명단) — 열어 준 다른 기관 선생님은 담당이 아님
+      A.isMgr = A.CU.role === 'super' || (orgs.includes('daniel') && (A.CU.role === 'org_admin' || mgr.includes(A.CU.uid)));
       await Promise.all([loadStaff(), loadStudents()]);
       try{ await A.loadTerms(); }
       catch(e){ if(/permission/.test(e.code || '')) A.ruleMissing = true; else throw e; }

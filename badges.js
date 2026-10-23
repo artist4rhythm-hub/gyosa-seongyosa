@@ -155,7 +155,7 @@ async function computeBadges(db, uid){
   try { const m = await import('./pb-badge.js?v=124'); b.myparents = await m.badgeFor(db, uid); } catch(e){}
 
   /* 📒 v141 나학평 — 지금 내 차례인 검토 칸 + 안 읽은 나학평 알림 (다니엘 아마츠 선생님만 · 따로 불러와서) */
-  try { const m = await import('./nhp-badge.js?v=141'); b.nhp = await m.badgeFor(db, uid, me); } catch(e){}
+  try { const m = await import('./nhp-badge.js?v=143'); b.nhp = await m.badgeFor(db, uid, me); } catch(e){}
 
   /* 🩺 v121 수퍼관리자 — 오류 알림판에 새로 들어온 오류 (마지막으로 알림판을 본 뒤 · 최근 7일) */
   if(me && me.role === 'super'){

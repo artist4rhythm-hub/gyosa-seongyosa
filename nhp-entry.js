@@ -5,7 +5,7 @@
    · 최종 검토관: «최종 승인»(잠김) · «다시 열기»
    · 입력은 칸 하나씩 바로 저장 (0.5초 모아서) — 함께 맡은 선생님이 같은 칸을 써도 서로 덮어쓰지 않게 «바뀐 칸만» 저장
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=142';
+import * as SETUP from './nhp-setup.js?v=143';
 
 let A = null, C = null, esc = null, FS = null;
 let SUB = null, ENT = null, TAB = 'in', EL = null, CAN = null, SEC = null, SIDS = [];

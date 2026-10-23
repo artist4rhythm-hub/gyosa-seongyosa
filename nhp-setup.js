@@ -9,19 +9,24 @@ let A = null, C = null, esc = null, FS = null;
 const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
 
 /* ── 사람 고르기 ── */
+// 🔐 v143 다니엘 아마츠에 접근하지 않는 분(열어 준 지혜빛 선생님) — 이름 옆에 «지혜빛»
+const otherOrg = s => s && s.role !== 'super' && !((Array.isArray(s.orgs) && s.orgs.length) ? s.orgs : [s.org]).includes(C.ORG);
 export function pickPeople(a, title, selected, opt){
   bind(a); opt = opt || {};
   return new Promise(res => {
     const sel = new Set(selected || []);
-    const list = A.staffPick();
+    // 🔐 v143 나학평을 열 수 있는 분만 · 이미 고른 분 중 나학평이 닫힌 분은 ⚠ 로 보여 빼기 쉽게
+    const list = A.staffPick().concat((selected || []).filter(u => A.SMAP[u] && !A.nhpOk(u)).map(u => A.SMAP[u]));
     const m = A.modal(esc(title), `<input class="nh-in" data-q placeholder="이름 찾기" style="width:100%;margin-bottom:10px">
       ${opt.help ? `<div class="nh-desc">${opt.help}</div>` : ''}
+      <div class="nh-desc" style="margin-top:-2px">나학평을 열 수 있는 선생님만 나와요. 다른 분이 필요하면 수퍼관리자가 <b>관리자 › 접근 권한 › 🗂 화면별 › 나학평</b>에서 열어 주세요.</div>
       <div data-list style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:4px 12px;max-height:52vh;overflow:auto"></div>`,
       `<span class="nh-desc" data-n style="margin:0 auto 0 0"></span><button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>고르기</button>`, 'mid');
     const box = m.box.querySelector('[data-list]');
     const draw = () => {
       const q = m.box.querySelector('[data-q]').value.trim();
-      box.innerHTML = list.filter(s => !q || String(s.name || '').includes(q)).map(s => `<label class="ck"><input type="checkbox" value="${esc(s.uid)}"${sel.has(s.uid) ? ' checked' : ''}>${esc(s.name || '')}<small style="color:var(--ink-3)">${s.role === 'partner' ? '협력' : ''}${s.position ? ' ' + esc(s.position) : ''}</small></label>`).join('');
+      box.innerHTML = list.filter(s => !q || String(s.name || '').includes(q)).map(s => { const off = !A.nhpOk(s.uid);
+        return `<label class="ck"${off ? ' title="나학평이 닫힌 분이에요 — 이 칸을 볼 수 없어요"' : ''}><input type="checkbox" value="${esc(s.uid)}"${sel.has(s.uid) ? ' checked' : ''}>${off ? '⚠ ' : ''}${esc(s.name || '')}<small style="color:var(--ink-3)">${s.role === 'partner' ? '협력' : ''}${s.position ? ' ' + esc(s.position) : ''}${otherOrg(s) ? ' 지혜빛' : ''}${off ? ' 나학평 닫힘' : ''}</small></label>`; }).join('');
       m.box.querySelector('[data-n]').textContent = `${sel.size}명 고름`;
     };
     box.addEventListener('change', e => { const v = e.target.value; if(e.target.checked){ if(opt.single) sel.clear(); sel.add(v); } else sel.delete(v); if(opt.single) draw(); else m.box.querySelector('[data-n]').textContent = `${sel.size}명 고름`; });
@@ -34,7 +39,22 @@ export function pickPeople(a, title, selected, opt){
   });
 }
 const names = uids => (uids || []).map(u => A.staffName(u)).filter(Boolean);
-const peopleChips = (uids, key) => `<span class="pk">${(uids || []).map(u => `<span class="p">${esc(A.staffName(u) || '(퇴직?)')}${key ? `<button data-rmp="${esc(key)}" data-uid="${esc(u)}" title="빼기">✕</button>` : ''}</span>`).join('') || '<span class="nh-desc" style="margin:0">없음</span>'}</span>`;
+/* 담임 고르기 — 나학평이 열린 분만 · 지금 담임이 닫힌 분이면 ⚠ 로 남겨 보임 (학기 열기 · 학기 설정 같은 모양) */
+const hrOpts = cur => `<option value="">— 없음 —</option>` + A.staffPick().concat(cur && A.SMAP[cur] && !A.nhpOk(cur) ? [A.SMAP[cur]] : []).map(s => `<option value="${esc(s.uid)}"${s.uid === cur ? ' selected' : ''}>${A.nhpOk(s.uid) ? '' : '⚠ '}${esc(s.name)}${A.nhpOk(s.uid) ? '' : ' (나학평 닫힘)'}${otherOrg(s) ? ' · 지혜빛' : ''}</option>`).join('');
+const peopleChips = (uids, key) => `<span class="pk">${(uids || []).map(u => { const off = !A.nhpOk(u);
+  return `<span class="p${off ? ' off' : ''}"${off ? ' title="나학평이 닫힌 분이에요 — 관리자 › 접근 권한에서 열어 주거나 다른 분으로 바꿔 주세요"' : ''}>${off ? '⚠ ' : ''}${esc(A.staffName(u) || '(퇴직?)')}${key ? `<button data-rmp="${esc(key)}" data-uid="${esc(u)}" title="빼기">✕</button>` : ''}</span>`; }).join('') || '<span class="nh-desc" style="margin:0">없음</span>'}</span>`;
+/* 🔐 v143 나학평이 닫힌 분이 맡은 자리 (칸 · 담임 · 검토관 · 목록 담당) — 학기 설정 맨 위에 알림 */
+function closedSeats(t){
+  const seat = new Map();
+  const add = (u, what) => { if(!u || A.nhpOk(u)) return; if(!seat.has(u)) seat.set(u, new Set()); seat.get(u).add(what); };
+  (t.sections || []).forEach(sec => add(sec.hrUid, '담임'));
+  A.SUBS.filter(s => !s.removed).forEach(s => {
+    (s.teacherUids || []).forEach(u => add(u, '맡은 칸'));
+    Object.values(s.rv || {}).forEach(l => (l || []).forEach(u => add(u, '검토관')));
+  });
+  (t.listEditors || []).forEach(u => add(u, '목록 담당'));
+  return [...seat.entries()].map(([u, w]) => `${esc(A.staffName(u) || '(퇴직?)')} <small>(${[...w].join(' · ')})</small>`);
+}
 
 /* ── 칸 기본 모양 ── */
 function specialCell(kind, sec, termId, hrItems){
@@ -121,7 +141,6 @@ export async function openWizard(a){
         st.secs = C.sectionsFromClasses(cls, A.STU, s => (window.StuStatus ? StuStatus.enrolled(s) : (s.status || 'active') !== 'quit'));
         st.secs.forEach(s => { st.useSec[s.id] = true; });
       }
-      const hrOpts = cur => `<option value="">— 없음 —</option>` + A.staffPick().map(s => `<option value="${esc(s.uid)}"${s.uid === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
       W.innerHTML = head() + (cls.length ? '' : `<div class="nh-warn">${st.year}학년도 다니엘 아마츠 반편성이 없어요. 반편성에서 반을 먼저 만들어 주세요.</div>`) +
         `<div class="nh-desc">반편성 ${st.year}학년도 반을 그대로 가져와요. <b>한 반에 학년이 여럿이면(합반) 학년마다 따로</b> 나학평을 써요 (예전 나학평처럼). 담임은 반편성 담임이 기본 — 나학평에서만 다른 분으로 바꿀 수 있어요.</div>
         <div class="nh-tw"><table class="nh-t"><thead><tr><th class="c">쓰기</th><th>반</th><th>학생</th><th>나학평 담임</th><th>확인할 것</th></tr></thead><tbody>${st.secs.map(s => `<tr>
@@ -369,7 +388,9 @@ export async function render(a, el, pane){
   if(!SEC || !secs.find(s => s.id === SEC)) SEC = (secs[0] || {}).id || '';
   const live = A.SUBS.filter(s => !s.removed);
   const open = k => PANE === k ? ' open' : '';
+  const closed = t.src === 'import' ? [] : closedSeats(t);
   el.innerHTML = `<div id="st-live" class="nh-info" style="display:none">다른 분이 칸을 고쳤어요. <button class="nh-btn xs" data-st="redraw">다시 그리기</button></div>
+    ${closed.length ? `<div class="nh-warn" data-closed>⚠ <b>나학평이 닫힌 선생님 ${closed.length}분</b>이 맡은 자리가 있어요 — ${closed.join(', ')}<br><span>이분들은 나학평을 열 수 없어 입력 · 검토를 못 해요. 수퍼관리자가 <b>관리자 › 접근 권한 › 🗂 화면별 › 나학평</b>에서 열어 주거나, 아래에서 다른 분으로 바꿔 주세요.</span></div>` : ''}
     <div class="nh-desc">${esc(C.termLabel(t))} · ${t.src === 'import' ? '옮겨 온 지난 자료' : `반 ${secs.length}개 · 칸 ${live.length}개`} · 열린 서랍은 이 기기에서 기억해요.</div>
     ${t.src === 'import' ? '' : `
     <details class="dr" data-pane="info"${open('info')}><summary>🗓 학기 정보 · 마감 <small>${esc(t.start || '')} ~ ${esc(t.end || '')}${t.status === 'closed' ? ' · 마감됨' : ''}</small></summary><div class="db">${infoHTML(t)}</div></details>
@@ -407,7 +428,6 @@ function infoHTML(t){
 }
 /* ── 반 · 담임 ── */
 function secsHTML(t){
-  const hrOpts = cur => `<option value="">— 없음 —</option>` + A.staffPick().map(s => `<option value="${esc(s.uid)}"${s.uid === cur ? ' selected' : ''}>${esc(s.name)}</option>`).join('');
   return `<div class="nh-desc">나학평 담임을 바꾸면 그 반의 «담임 검토» 단계와 담임이 맡은 칸(출결 · 특별활동 …)의 담당도 함께 바뀔지 물어봐요.</div>
     <div class="nh-tw"><table class="nh-t"><thead><tr><th>반</th><th>학생</th><th>나학평 담임</th><th></th></tr></thead><tbody>${(t.sections || []).map(s => `<tr>
       <td><b>${esc(C.secLabel(s))}</b></td><td>${(s.students || []).length}명</td>

@@ -12,6 +12,11 @@
    badge  : 뱃지 키 (BADGE_SOURCES에서 계산)
    admin  : true면 관리자만
    orgs   : 그 기관에 접근하는 선생님만 (예: ['daniel'] — 나학평)
+   ── 🔐 v143 화면 열기 권한 (관리자 › 접근 권한 표가 이 값을 그대로 씀) ──
+   deny   : 이 역할은 늘 닫힘 (예: ['partner'] — 협력교사)
+   roles  : 이 역할만 (예: 학부모 관리 = 수퍼 · 기관관리자)
+   allow  : 관리자용이지만 사람마다 «열어 주기»(staff.pageAllow) 가능
+   acc    : false 면 접근 권한 표에 안 나옴 (바깥 주소 · 관리자 화면 자체)
    ═══════════════════════════════════════════════ */
 
 const MENU = [
@@ -90,7 +95,7 @@ const MENU = [
         desc:'행사별 회비 · 지출 · 회계 보고',
         tabs:['활동 목록','참가자·회비','지출','회계 보고'] },
       { key:'buildexp', label:'공사 경비', icon:'construction', href:'build-expense.html',
-        desc:'선입금 · 집행 · 정산 (지정된 담당자만)', admin:true,
+        desc:'선입금 · 집행 · 정산 (지정된 담당자만)', admin:true, allow:true,
         tabs:['공사 목록','선입금','집행','정산 보고'] },
     ]
   },
@@ -109,10 +114,10 @@ const MENU = [
       { key:'sharecenter', label:'공유 링크', icon:'link', href:'share-center.html',
         desc:'발행한 모든 공유 링크의 대장·조회 이력 — 살아있는 링크를 한눈에' },
       { key:'psite', label:'학부모 사이트', icon:'diversity_3',
-        href:'https://artist4rhythm-hub.github.io/daniel-parents/index.html?stay=1',
+        href:'https://artist4rhythm-hub.github.io/daniel-parents/index.html?stay=1', acc:false,
         desc:'학부모에게 보이는 그 화면 — 교사 모드로 열람·참여' },
       { key:'pubsite', label:'공개 홈페이지', icon:'public',
-        href:'https://artist4rhythm-hub.github.io/public-web/index.html',
+        href:'https://artist4rhythm-hub.github.io/public-web/index.html', acc:false,
         desc:'대외 안내용 홈페이지 — 다니엘 대문 (지혜빛은 안에서 이동)' },
     ]
   },
@@ -123,12 +128,12 @@ const MENU = [
     items: [
       { key:'parentadm', label:'학부모 관리', icon:'family_restroom', href:'parent-admin.html',
         desc:'학부모 사이트 — 가입 코드·게시판·바로가기 링크·연결 현황',
-        tabs:['가입 코드','바로가기 링크','게시판 관리','금칙어','연결 현황'], admin:true },
+        tabs:['가입 코드','바로가기 링크','게시판 관리','금칙어','연결 현황'], admin:true, roles:['super','org_admin'] },
       { key:'siteadm', label:'홈페이지 관리', icon:'language', href:'site-admin.html',
-        desc:'공개 홈페이지 소식 — 작성·사진·게시/내리기 (별도 관리자 열쇠 필요)', admin:true },
+        desc:'공개 홈페이지 소식 — 작성·사진·게시/내리기 (별도 관리자 열쇠 필요)', admin:true, allow:true },
       { key:'adm', label:'관리자', icon:'admin_panel_settings', href:'admin.html',
         desc:'교직원 · 인사 · 보안 · 로그 · 오류 알림판', badge:'err',
-        tabs:['통합관리','접근 권한','인사정보','부서·새 학년도','출근부 설정','접속·보안','로그인 기록','활동 로그','오류 알림판'], admin:true },
+        tabs:['통합관리','접근 권한','인사정보','부서·새 학년도','출근부 설정','접속·보안','로그인 기록','활동 로그','오류 알림판'], admin:true, acc:false },
     ]
   },
 ];
@@ -143,12 +148,42 @@ function menuAllItems(){
 /* 키로 찾기 */
 function menuFind(key){ return menuAllItems().find(i => i.key === key) || null; }
 
-/* 검색: 페이지명 · 설명 · 하위탭까지 매칭 */
-function menuSearch(q){
+/* ═══ 🔐 v143 화면 열기 권한 — 한 곳에서 판단 ═══
+   사이드바 · 폰 «전체» · 홈 «전체 기능»·즐겨찾기 · 검색 · 주소로 바로 들어오기(guardPage) ·
+   관리자 › 접근 권한 표 · 나학평 검토관 고르기가 모두 이 함수 하나를 쓴다.
+   차례: 수퍼관리자는 늘 열림 → 역할로 닫힘(deny · roles) → 기본 열림이면 개인 차단(pageDeny)만 보고
+         기본 닫힘(관리자용 allow 화면 · 다른 기관 화면)은 개인 «열어 주기»(pageAllow)가 있을 때만
+   돌려주는 kind: super · base(기본 열림) · deny(닫음) · off(기본 닫힘) · allow(열어 줌) · role(역할로 늘 닫힘)
+   why: off · allow 일 때 왜 기본이 닫혔는지 — 'admin'(관리자용) · 'org'(다른 기관) */
+const MENU_ADMIN_ROLES = ['super','org_admin','tab_admin'];
+function menuOrgsOf(u){ return (u && Array.isArray(u.orgs) && u.orgs.length) ? u.orgs : [u && u.org]; }
+function menuAccess(it, u){
+  if(!it) return { ok:false, kind:'role' };
+  const adm = !!(it.admin || it.groupAdmin);
+  if(!u) return { ok:!adm, kind:'base' };
+  if(u.role === 'super') return { ok:true, kind:'super' };
+  if((it.deny||[]).includes(u.role) || (Array.isArray(it.roles) && !it.roles.includes(u.role))) return { ok:false, kind:'role' };
+  const denied = Array.isArray(u.pageDeny) && u.pageDeny.includes(it.key);
+  const allowed = Array.isArray(u.pageAllow) && u.pageAllow.includes(it.key);
+  let why = '';
+  if(adm && !MENU_ADMIN_ROLES.includes(u.role)){
+    if(!it.allow) return { ok:false, kind:'role' };
+    why = 'admin';
+  } else if(Array.isArray(it.orgs) && it.orgs.length && !menuOrgsOf(u).some(o => it.orgs.includes(o))){
+    why = 'org';
+  }
+  if(!why) return { ok:!denied, kind: denied ? 'deny' : 'base' };
+  if(denied) return { ok:false, kind:'deny', why };
+  return allowed ? { ok:true, kind:'allow', why } : { ok:false, kind:'off', why };
+}
+function menuCanSee(it, u){ return menuAccess(it, u).ok; }
+
+/* 검색: 페이지명 · 설명 · 하위탭까지 매칭 (ok 를 주면 열 수 있는 화면만) */
+function menuSearch(q, ok){
   const s = (q||'').trim().toLowerCase();
   if(!s) return [];
   const out = [];
-  menuAllItems().forEach(it => {
+  menuAllItems().filter(it => !ok || ok(it)).forEach(it => {
     // 페이지 자체 매칭
     if((it.label||'').toLowerCase().includes(s) || (it.desc||'').toLowerCase().includes(s) || (it.group||'').toLowerCase().includes(s)){
       out.push({ ...it, matchTab:null });
@@ -171,3 +206,7 @@ window.MENU = MENU;
 window.menuAllItems = menuAllItems;
 window.menuFind = menuFind;
 window.menuSearch = menuSearch;
+window.menuAccess = menuAccess;
+window.menuCanSee = menuCanSee;
+window.menuOrgsOf = menuOrgsOf;
+window.MENU_ADMIN_ROLES = MENU_ADMIN_ROLES;
