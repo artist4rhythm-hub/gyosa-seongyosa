@@ -263,19 +263,18 @@ function sbIsAdmin(){
   return r === 'super' || r === 'org_admin' || r === 'tab_admin';
 }
 
-/* ── 🏛 v141 그 기관 선생님만 쓰는 메뉴 (예: 나학평 — 다니엘 아마츠) · 수퍼관리자는 늘 ── */
-function sbOrgOk(it){
-  if(!it || !Array.isArray(it.orgs) || !it.orgs.length || !SB_USER) return true;
-  if(SB_USER.role === 'super') return true;
-  const mine = (Array.isArray(SB_USER.orgs) && SB_USER.orgs.length) ? SB_USER.orgs : [SB_USER.org];
-  return it.orgs.some(o => mine.includes(o));
-}
-/* ── 아이템 필터 (권한) ── */
-function sbVisibleGroups(){
+/* ── 🔐 v143 아이템 필터 (권한) — menu.js menuCanSee 한 곳에서 판단
+      (관리자용 · 협력교사 닫힘 · 개인 차단 · 다른 기관 화면 · 개인 «열어 주기» 모두) ── */
+function sbCanSee(it, g){
+  const x = (g && g.admin) ? { ...it, groupAdmin:true } : it;
+  if(typeof menuCanSee === 'function') return menuCanSee(x, SB_USER);
+  // menu.js 가 예전 것이면 예전 기준 그대로
   const admin = sbIsAdmin();
+  return (!(x.admin || x.groupAdmin) || admin || ((SB_USER?.pageAllow)||[]).includes(x.key)) && !(x.deny||[]).includes(SB_USER?.role) && !((SB_USER?.pageDeny)||[]).includes(x.key);
+}
+function sbVisibleGroups(){
   return MENU
-    .filter(g => !g.admin || admin)
-    .map(g => ({ ...g, items: g.items.filter(it => (!it.admin || admin || ((SB_USER?.pageAllow)||[]).includes(it.key)) && !(it.deny||[]).includes(SB_USER?.role) && !((SB_USER?.pageDeny)||[]).includes(it.key) && sbOrgOk(it)) }))
+    .map(g => ({ ...g, items: g.items.filter(it => sbCanSee(it, g)) }))
     .filter(g => g.items.length);
 }
 
@@ -333,7 +332,8 @@ function renderSidebar(){
   if(!sb) return;
   const pins = getPins();
   const all = menuAllItems();
-  const pinned = pins.map(k => all.find(i => i.key === k)).filter(Boolean);
+  // 🔐 v143 고정해 둔 메뉴도 지금 열 수 있는 것만 (나중에 닫힌 화면이 «자주 쓰는»에 남지 않게)
+  const pinned = pins.map(k => all.find(i => i.key === k)).filter(Boolean).filter(it => sbCanSee(it, it.groupAdmin ? { admin:true } : null));
 
   const itemHTML = (it, isPinned) => {
     const on = it.key === SB_ACTIVE;
@@ -430,7 +430,7 @@ function onSearch(q){
   const box = document.getElementById('sb-res');
   const nav = document.getElementById('sb-nav');
   if(!box) return;
-  const rs = menuSearch(q);
+  const rs = menuSearch(q, it => typeof menuCanSee === 'function' ? menuCanSee(it, SB_USER) : true);   // 🔐 v143 열 수 있는 화면만
   if(!q.trim()){
     box.innerHTML = ''; box.classList.remove('show');
     if(nav) nav.style.display = '';
@@ -761,21 +761,32 @@ html[data-theme="dark"] .fs-pick button.on{color:#06130E;}
 
 /* ── 역할 차단 가드 ──
    차단된 역할이 페이지에 직접 접근하면 안내 후 홈으로 보냄.
-   사용: guardPage(CU, 'att')  → true면 통과, false면 차단됨 */
+   사용: guardPage(CU, 'att')  → true면 통과, false면 차단됨
+   🔐 v143 — 사이드바와 같은 판단(menu.js menuAccess): 협력교사 닫힘 · 관리자용 · 개인 차단 · 다른 기관 화면 · 개인 «열어 주기» */
 function guardPage(user, key){
   if(!user) return true;
   const it = (window.menuAllItems ? menuAllItems() : []).find(i => i.key === key);
   if(!it) return true;
-  const roleDeny = (it.deny || []).includes(user.role);
-  const persDeny = (user.pageDeny || []).includes(key);
-  if(roleDeny || persDeny){
+  let blocked, why = '';
+  if(typeof menuAccess === 'function'){
+    const a = menuAccess(it, user);
+    blocked = !a.ok;
+    why = a.kind === 'deny' ? '관리자가 이 화면을 닫아 두었어요.'
+        : a.kind === 'off' && a.why === 'org' ? `${(it.orgs||[]).map(o => (window.ORGS && window.ORGS[o]) || ({daniel:'다니엘 아마츠', jihyebit:'지혜빛'})[o] || o).join(' · ')} 선생님이 쓰는 화면이에요.`
+        : a.kind === 'off' ? '관리자용 화면이에요 — 관리자가 따로 열어 주면 쓸 수 있어요.'
+        : (it.deny || []).includes(user.role) ? '협력교사는 쓰지 않는 화면이에요.'
+        : '관리자용 화면이에요.';
+  } else {
+    blocked = (it.deny || []).includes(user.role) || (user.pageDeny || []).includes(key);
+  }
+  if(blocked){
     document.body.innerHTML = `
       <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F2F0EB;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;padding:20px">
         <div style="background:#fff;border:1px solid #E3E1DA;border-radius:18px;padding:36px 40px;text-align:center;max-width:380px">
           <div style="font-size:40px;margin-bottom:12px">🔒</div>
           <div style="font-size:17px;font-weight:800;color:#1E3932;margin-bottom:8px">접근 권한이 없습니다</div>
           <div style="font-size:13px;color:#5A6560;line-height:1.7;margin-bottom:20px">
-            이 메뉴에 대한 접근 권한이 없습니다.<br>필요하시면 관리자에게 문의해 주세요.
+            이 메뉴에 대한 접근 권한이 없습니다.<br>${why ? why.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]) + '<br>' : ''}필요하시면 관리자에게 문의해 주세요.
           </div>
           <button onclick="location.href='index.html'" style="background:#00704A;color:#fff;border:none;border-radius:10px;padding:12px 24px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">홈으로 가기</button>
         </div>

@@ -166,13 +166,14 @@ onAuthStateChanged(auth, async user=>{
   CU = { uid:user.uid, ...st.data() };
   window.ORGS = ORGS;
   if(window.renderShell) renderShell('siteadm', CU);
-  $I('ls').style.display='none'; $I('ms').style.display='';
   window.hideLoading&&hideLoading();
-  if(window.guardPage && !guardPage(CU,'siteadm')) return;
+  if(window.guardPage && !guardPage(CU,'siteadm')) return;   // 🔐 v143 보여 주기 전에 먼저 (관리자 · 열어 준 분만)
+  $I('ls').style.display='none'; $I('ms').style.display='';
 });
 
 /* 공개 프로젝트 열쇠 상태 */
 onAuthStateChanged(pubAuth, u=>{
+  if(!$I('pub-gate')) return;      // 접근 권한으로 막혀 화면이 바뀐 뒤
   $I('pub-gate').style.display = u ? 'none' : '';
   $I('editor').style.display = u ? '' : 'none';
   if(u) paintOrgs();
@@ -184,6 +185,7 @@ window.pubLogin = async function(){
 };
 
 function paintOrgs(){
+  if(!$I('sa-orgs')) return;
   $I('sa-orgs').innerHTML = Object.entries(ORGS).map(([k,v])=>
     `<button class="${k===ORG?'on':''}" onclick="pickOrg('${k}')">${v}</button>`).join('');
   $I('preview-link').href = ORG==='daniel' ? `${SITE}/news-daniel.html` : `${SITE}/news-jihyebit.html`;
@@ -192,11 +194,13 @@ function paintOrgs(){
 window.pickOrg = k => { ORG=k; resetForm(); paintOrgs(); };
 
 async function loadList(){
+  if(!$I('list')) return;          // 접근 권한으로 막혀 화면이 바뀐 뒤
   $I('list').innerHTML = '<div style="color:var(--tl);font-size:13px;padding:14px 0">불러오는 중…</div>';
   try{
     const snap = await getDocs(query(collection(pubDb,'publicSite'), where('org','==',ORG)));
     ITEMS = snap.docs.map(d=>({id:d.id, ...d.data()}))
       .sort((a,b)=>(b.at?.seconds||0)-(a.at?.seconds||0));
+    if(!$I('list')) return;
     $I('list').innerHTML = ITEMS.length ? ITEMS.map(p=>{
       const d = p.at?.seconds ? new Date(p.at.seconds*1000) : null;
       const ds = d ? `${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}.` : '';
@@ -214,6 +218,7 @@ async function loadList(){
       </div>`;
     }).join('') : '<div style="color:var(--tl);font-size:13px;padding:14px 0">아직 올린 소식이 없습니다 — 위에서 첫 소식을 써 보세요.</div>';
   }catch(e){
+    if(!$I('list')) return;
     $I('list').innerHTML = `<div class="alert err" style="display:block">불러오지 못했습니다: ${esc(e.message||'')}</div>`;
   }
 }
