@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   🖍 nhp-edition.js — 나학평 출력본 (가리기 · 부분 수정 · 용어 바꾸기 · 영문판) · v141
+   🖍 nhp-edition.js — 나학평 출력본 (가리기 · 부분 수정 · 용어 바꾸기 · 영문판) · v141 · v144 고른 속지 모양으로 보기
    · 원본(확정한 원본 · 옮겨 온 지난 나학평 · 지금 입력)은 그대로 — 출력본에는 «바꾼 것»만 따로 저장한다
    · 문서의 글을 누르면: 고치기 · 원래대로 · 이 줄 가리기 · (영문) 번역 표에 저장
    · 영문판: 고정 문구 · 날짜 · 반 이름은 저절로, 내용은 번역 표(같은 글은 한 번 번역하면 모두)
@@ -84,7 +84,7 @@ function draw(){
         <span class="nh-sp"></span>${ed ? `<span class="ch ${ed.lang === 'en' ? 'info' : 'gray'}">${ed.lang === 'en' ? '🌐 English' : '한글'}</span>` : '<span class="ch warn">원본 그대로 보는 중</span>'}
         <button class="nh-btn sm g" data-ed="pages">👀 쪽 보기 · PDF</button></div>
       ${ed ? `<div class="nh-desc">글을 누르면 고치거나 가릴 수 있어요. <span class="ch ovr" style="background:#E9F7EF">고친 글</span> ${ed.lang === 'en' ? '<span class="ch" style="background:#FFF4C2;color:#7A5A00">번역 안 된 글</span>' : ''} — 원본은 바뀌지 않아요.</div>` : '<div class="nh-info">오른쪽에서 <b>«＋ 새 출력본»</b>을 만들면 원본을 그대로 둔 채 가리기 · 고치기 · 영문판을 할 수 있어요.</div>'}
-      <div class="nr-wrap" id="ed-doc">${coverMini(doc)}${C.docHTML(doc, { edit: !!ed })}</div>
+      <div class="nr-wrap" id="ed-doc">${coverMini(doc)}${C.docHTML(doc, { edit: !!ed, theme: A.design().inner })}</div>
     </div>
     <aside class="ed-side">${sideHTML(doc, nOv, nHide)}</aside></div>`;
   EL.onclick = onClick; EL.onchange = onChange;
@@ -286,7 +286,7 @@ async function showPagesNow(){
   try{
     const pages = await A.pagesOf(doc);
     window.hideLoading && hideLoading();
-    A.showPages(pages, `${esc(doc.cover.name)} — ${ED ? esc(ED.name || '출력본') : '원본'}`, doc, { suffix: ED ? (ED.lang === 'en' ? 'English' : (ED.name || '출력본')) : '원본' });
+    A.showPages(pages, `${esc(doc.cover.name)} — ${ED ? esc(ED.name || '출력본') : '원본'}`, doc, { suffix: ED ? (ED.lang === 'en' ? 'English' : (ED.name || '출력본')) : '원본', pageOpt: {} });
   }catch(e){ window.hideLoading && hideLoading(); A.toast('만들지 못했어요 — ' + (e.message || e), 'err'); }
 }
 async function onClick(e){

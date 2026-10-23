@@ -4,7 +4,10 @@
    · 학기 열기(반편성 → 반 · 시간표 수업 정의 → 과목 칸) · 지난 학기 이어받기
    · 검토 흐름(작성 중 → 검토 단계들 → 최종 검토 → 승인) — 보안 규칙 v35 와 같은 기준
    · 학생별 나학평 문서 모양(ReportDoc) 만들기 · 출력본(가리기 · 고치기 · 용어 바꾸기) · 영문판
+   · v144 평가 틀 «세부» 칸 · 칸 너비(표 모양) · 조별 칸(학년 · 반이 섞인 칸) · 출력 디자인(표지 · 속지 모양)은 nhp-theme.js
    ═══════════════════════════════════════════════════════════ */
+import * as TH from './nhp-theme.js?v=144';
+export { TH };
 
 export const ORG = 'daniel';
 export const ORG_NAME = '다니엘 아마츠';
@@ -187,6 +190,55 @@ export function setupForType(prevSetup, type){
     p.narr && p.narr.length ? { narr: p.narr } : {}, p.score ? { score: p.score } : {}, p.a ? { a: p.a } : {}, p.r ? { r: p.r } : {});
 }
 
+/* ═══ v144 평가 틀 양식 (평가 틀 › ① 양식) — 고른 뒤에도 칸 · 항목은 자유롭게 ═══ */
+export const FORMS = [
+  { k: 'e', ko: '5단계 표', d: '평가 내용 + 5단계', type: 'E', lay: { sOn: false } },
+  { k: 'eg', ko: '범위 + 5단계', d: '같은 범위는 한 칸으로 묶임 (예: 태도 · 이론)', type: 'E', lay: { sOn: false, g: 'n' }, hint: 'g' },
+  { k: 'egs', ko: '범위 + 세부 + 5단계', d: '범위 · 세부(예: 수업 준비) · 내용 세 칸', type: 'E', lay: { sOn: true, g: 'n', s: 'n' }, hint: 'gs' },
+  { k: 's', ko: '시험 성적 (비율)', d: '시험 항목 점수 · 비율 → 총점 · 반 평균', type: 'S' },
+  { k: 'm', ko: '시험 + 5단계', d: '5단계 표와 시험 성적을 함께', type: 'M', lay: { sOn: false } },
+  { k: 'a', ko: '서술만', d: '제목 · 항목마다 글 (자치활동 · 프로젝트)', type: 'A' },
+  { k: 'r', ko: '암송 · 읽기', d: '전체 제목 + 내용 1~3칸', type: 'R' },
+];
+export const formOf = (sub) => {
+  const t = sub.type || 'E', st = sub.setup || {};
+  if(t === 'E'){ if(hasSub(st)) return 'egs'; if((st.items || []).some(it => String(it.g || '').trim()) || (st.lay && st.lay.g)) return 'eg'; return 'e'; }
+  return { S: 's', M: 'm', A: 'a', R: 'r' }[t] || 'e';
+};
+/* 가져온 틀의 항목 · 서술 칸 · 시험 항목 id — 지금 틀에 같은 글이 있으면 그 id 를 이어 쓴다 (이미 넣은 5단계 · 글이 끊기지 않게) */
+export function reuseIds(oldSt, newSt){
+  const o = oldSt || {}, n = JSON.parse(JSON.stringify(newSt || {}));
+  // 같은 글 → 지금 id 그대로 · 짝이 없는 항목은 id 가 겹치거나 «지금 다른 글이 쓰는 id»면 새 id (다른 항목의 5단계가 엉뚱하게 붙지 않게)
+  const re = (olds, news, key, pre) => {
+    const idx = {}; (olds || []).forEach(x => { const k = normKey(key(x)); if(k && !idx[k]) idx[k] = x.id; });
+    const oldIds = new Set((olds || []).map(x => x.id));
+    const used = new Set(), hit = new Set();
+    (news || []).forEach((x, i) => { const k = normKey(key(x)); const id = idx[k]; if(id && !used.has(id)){ x.id = id; used.add(id); hit.add(i); } });
+    (news || []).forEach((x, i) => { if(hit.has(i)) return; if(!x.id || used.has(x.id) || oldIds.has(x.id)) x.id = rid(pre); used.add(x.id); });
+  };
+  re(o.items, n.items, x => x.t || '', 'i');
+  re(o.narr, n.narr, x => x.t || '', 'n');
+  if(n.score && o.score) re(o.score.cols, n.score.cols, x => x.t || '', 'c');
+  return n;
+}
+/* 🔗 함께 쓰기 — 칸의 묶음 열쇠: 스스로 적은 share, 아니면 다른 칸이 «sh_내 id»로 나를 가리킬 때 */
+//   · share 'x_…' = 이 칸만 묶음에서 빠짐 (다른 칸이 «sh_내 id»로 가리켜도 나는 빠짐)
+export const shareOf = (sub, subs) => { if(!sub) return ''; const s = sub.share || ''; if(s.startsWith('x_')) return ''; if(s) return s;
+  return (subs || []).some(x => x !== sub && x.id !== sub.id && x.share === 'sh_' + sub.id && !x.removed) ? 'sh_' + sub.id : ''; };
+export const shareMembers = (key, subs) => !key ? [] : (subs || []).filter(x => !x.removed && (x.share === key || (('sh_' + x.id) === key && !x.share)));
+/* 틀이 바뀔 때 학생 입력 이어 주기 — 같은 글의 항목 · 서술 · 점수 칸끼리 (예전 id 값은 지우지 않고 남김)
+   → nhpEntries 에 쓸 { 'rows.<학생>.e': {...}, … } (바뀐 것만) */
+export function remapPatch(rows, from, to){
+  const up = {};
+  Object.keys(rows || {}).forEach(sid => {
+    const r0 = rows[sid] || {}; const mr = mapRow(r0, from, to); if(!mr) return;
+    ['e', 'n', 's'].forEach(k => { if(!mr[k] || !Object.keys(mr[k]).length) return;
+      const merged = Object.assign({}, r0[k] || {}, mr[k]);
+      if(JSON.stringify(merged) !== JSON.stringify(r0[k] || {})) up[`rows.${sid}.${k}`] = merged; });
+  });
+  return up;
+}
+
 /* ═══ 검토 순서 → 칸마다 검토관 명단 ═══
    term.review = { stages:[{ id, label, mode:'homeroom'|'people', uids:[], per:{ secId:[uids] } }], final:{ label, uids:[], per:{} } }
    · 담임 단계는 그 반 담임 · 사람 단계는 «모든 반 같은 분» 또는 «반마다 따로»
@@ -231,10 +283,30 @@ export function rvForSub(term, sec, sub){
   rv.fin = f.some(x => !me.has(x)) ? f.filter(x => !me.has(x)) : f.slice();
   return { rv, rvL, finL: r.finL };
 }
+/* v144 조별 칸(학년 · 반이 섞인 칸)의 «반» 자리 — 담임 검토 단계는 건너뛰고(담임이 없음) 검토관 → 최종 승인
+   검토 순서에서 «반마다 다른 분»을 정할 때 열쇠 '__grp' 로 조별 칸만 따로 정할 수 있다 */
+export const GRP_SEC = { id: '__grp', name: '조별 칸', grade: '', hrUid: '', students: [] };
+export const secForSub = (term, sub) => (sub && sub.grp) ? GRP_SEC : (((term && term.sections) || []).find(x => x.id === (sub && sub.secId)) || null);
 export function finAllOf(term, sections){
   const s = new Set();
-  (sections || []).forEach(sec => rvFor(term, sec).rv.fin.forEach(u => s.add(u)));
+  (sections || []).concat([GRP_SEC]).forEach(sec => rvFor(term, sec).rv.fin.forEach(u => s.add(u)));
   return Array.from(s);
+}
+/* 평가 틀이 다른 칸 사이에서 학생 입력 옮기기 — 같은 글(항목 · 서술 칸 제목 · 시험 항목)끼리 이어 준다
+   (조별 칸으로 바꿀 때 · 가져오기로 틀을 바꿀 때 · 학생이 다른 조로 옮길 때) */
+export function mapRow(row, from, to){
+  if(!row) return null;
+  from = from || {}; to = to || {};
+  const byText = (a, b, key) => { const m = {}; const idx = {}; (b || []).forEach(x => { idx[normKey(key(x))] = x.id; }); (a || []).forEach(x => { const k = normKey(key(x)); if(k && idx[k]) m[x.id] = idx[k]; }); (a || []).forEach(x => { if(!m[x.id] && (b || []).some(y => y.id === x.id)) m[x.id] = x.id; }); return m; };
+  const out = JSON.parse(JSON.stringify(row));
+  const im = byText(from.items, to.items, x => `${x.g || ''}|${x.s || ''}|${x.t || ''}`);
+  const im2 = byText(from.items, to.items, x => x.t || '');
+  if(out.e){ const e = {}; Object.keys(out.e).forEach(k => { const t = im[k] || im2[k]; if(t) e[t] = out.e[k]; }); out.e = e; }
+  const nm = byText(from.narr, to.narr, x => x.t || '');
+  if(out.n){ const n = {}; Object.keys(out.n).forEach(k => { if(/^c[123]$/.test(k)) n[k] = out.n[k]; else if(nm[k]) n[nm[k]] = out.n[k]; }); out.n = n; }
+  const cm = byText((from.score || {}).cols, (to.score || {}).cols, x => x.t || '');
+  if(out.s){ const sc = {}; Object.keys(out.s).forEach(k => { if(k === '__tot') sc[k] = out.s[k]; else if(cm[k]) sc[cm[k]] = out.s[k]; }); out.s = sc; }
+  return out;
 }
 export const stageKeyOf = d => d.state === 'final' ? 'fin' : 'r' + ((d.stage || 0) + 1);
 export const hasNext = d => ('r' + ((d.stage || 0) + 2)) in (d.rv || {});
@@ -454,11 +526,32 @@ function narrRows(bid, sub, row, opt){
   });
   return rows;
 }
+/* ═══ v144 표 모양 (평가 틀 › ② 표 모양) — 5단계 표 왼쪽 칸 (범위 · 세부 · 내용) 너비 ═══
+   lay = { g:'n'|'m'|'w', s:'n'|'m'|'w', sOn:false } — 12칸 격자(왼쪽 이름 칸 92px + 49px 칸)에 붙는 세 가지 너비
+   · 범위: 좁게 92 · 보통 141 · 넓게 190 / 세부: 좁게 98 · 보통 147 · 넓게 196 / 내용 = 나머지 · 5단계 다섯 칸은 늘 49px × 5 */
+export const LAY_W = { g: { n: 92, m: 141, w: 190 }, s: { n: 98, m: 147, w: 196 } };
+export const LAY_NAME = { n: '좁게', m: '보통', w: '넓게' };
+export const hasSub = st => !!(st && st.lay && st.lay.sOn) || ((st && st.items) || []).some(it => String(it.s || '').trim());
+export function evalCols(st, hasG, hasS){
+  const lay = (st && st.lay) || {};
+  const gw = LAY_W.g[lay.g] || 92, sw = LAY_W.s[lay.s] || 98, lv = 5 * 49;
+  const g = [];
+  if(hasS){ g.push(gw, sw, 680 - gw - sw - lv); }
+  else g.push(gw, 680 - gw - lv);
+  for(let i = 0; i < 5; i++) g.push(49);
+  // 예전 모양(%) — 세부 칸이 없고 너비를 고치지 않았으면 예전 그대로 (12 · 53 · 7 × 5)
+  const cols = (!hasS && !lay.g) ? [12, 53, 7, 7, 7, 7, 7] : TH.toPct(g);
+  void hasG;
+  return { cols, g };
+}
 function evalTable(bid, sub, row){
-  const items = (sub.setup || {}).items || [];
+  const st = sub.setup || {};
+  const items = st.items || [];
   if(!items.length) return null;
   const groups = items.some(it => String(it.g || '').trim());
-  const rows = [{ id: `${bid}:eh`, hd: 1, cells: [C(`${bid}:eh:0`, '평가', Object.assign({ cs: 2, kd: 'lab' }, HD)),
+  const subOn = hasSub(st);
+  const left = subOn ? 3 : 2;
+  const rows = [{ id: `${bid}:eh`, hd: 1, cells: [C(`${bid}:eh:0`, '평가', Object.assign({ cs: left, kd: 'lab' }, HD)),
     ...LEVELS.map(l => C(`${bid}:eh:${l.v}`, l.br, Object.assign({ kd: 'lvl', lv: l.v }, HD)))] }];
   // 같은 범위가 이어지는 동안 한 칸으로 묶는다 (예전 나학평 «범위» 칸)
   for(let i = 0; i < items.length; i++){
@@ -466,18 +559,25 @@ function evalTable(bid, sub, row){
     const v = Number((row.e || {})[it.id]) || 0;
     const marks = LEVELS.map(l => C(`${bid}:i:${it.id}:${l.v}`, v === l.v ? 'O' : '', { al: 'c', mk: 1 }));
     const g = String(it.g || '').trim();
+    const sd = String(it.s || '').trim();
     const cells = [];
-    if(groups && g){
+    const inGroup = groups && g;
+    if(inGroup){
       let span = 1; while(i + span < items.length && String(items[i + span].g || '').trim() === g) span++;
-      if(!(i > 0 && String(items[i - 1].g || '').trim() === g)) cells.push(C(`${bid}:g:${it.id}`, g, { rs: span, al: 'c', b: 1, kd: 'tx' }));
+      if(!(i > 0 && String(items[i - 1].g || '').trim() === g)) cells.push(C(`${bid}:g:${it.id}`, g, { rs: span, al: 'c', b: 1, kd: 'tx', gp: 1 }));
+    }
+    if(subOn){
+      // 범위가 없는 줄은 범위 칸을 세부와 합친다
+      cells.push(C(`${bid}:i:${it.id}:s`, sd, Object.assign({ kd: 'sd' }, inGroup ? {} : { cs: 2 })));
       cells.push(C(`${bid}:i:${it.id}:t`, it.t, { kd: 'tx' }));
     } else {
-      cells.push(C(`${bid}:i:${it.id}:t`, it.t, { cs: 2, kd: 'tx' }));
+      cells.push(C(`${bid}:i:${it.id}:t`, it.t, Object.assign({ kd: 'tx' }, inGroup ? {} : { cs: 2 })));
     }
     rows.push({ id: `${bid}:i:${it.id}`, gid: g && groups ? `${bid}:g:${g}` : '', cells: cells.concat(marks) });
   }
   // 범위 칸(rowspan)이 이어지는 줄 — 한 줄로 묶어 쪽 나눔에서 떨어지지 않게
-  return { id: `${bid}:E`, cls: 'eval', cols: [12, 53, 7, 7, 7, 7, 7], rows };
+  const w = evalCols(st, groups, subOn);
+  return { id: `${bid}:E`, cls: 'eval', cols: w.cols, g: w.g, rows };
 }
 function scoreTable(bid, sub, row, entry, sids0){
   const sc = (sub.setup || {}).score;
@@ -555,7 +655,9 @@ export function blockFor(sub, ctx){
       if(nr.length) tables.push({ id: `${bid}:N`, cls: 'narr', cols: [18, 82], rows: nr });
     }
     if(!tables.length) return null;
-    return { id: bid, k: 'subj', h: { t: 'subj', name: sub.printName || sub.name, teacher, tid: bid + ':h' }, tables };
+    // v144 머리글 곁 — 교과 · 방식 / 조별 · 3조 (A · C 속지에 작게)
+    const kd = sub.grp ? `조별 · ${sub.grp.name || ''}` : `교과 · ${(TYPES[t] || TYPES.E).short}`;
+    return { id: bid, k: 'subj', h: { t: 'subj', name: sub.printName || sub.name, teacher, tid: bid + ':h', kd, grp: sub.grp ? (sub.grp.name || '') : '' }, tables };
   }
   if(sub.kind === 'hr'){
     const items = (st.narr || []).map(n => ({ n, x: isEach(n) ? ((row.n || {})[n.id] || '') : (n.fixed || '') })).filter(o => String(o.x).trim());
@@ -611,7 +713,8 @@ export function blockFor(sub, ctx){
     const rows = actsFor(lists, sub.secId).filter(a => joined(a, row)).map(a => ({ id: `${bid}:a:${a.id}`, cells: [
       C(`${bid}:a:${a.id}:t`, a.t, { al: 'c', kd: 'tx' }), C(`${bid}:a:${a.id}:d`, a.d || '', { al: 'c', kd: 'dt' }), C(`${bid}:a:${a.id}:c`, a.c || '', { kd: 'tx' })] }));
     if(!rows.length) return null;
-    return { id: bid, k: 'act', h: { t: 'fixed', key: 'act', tid: bid + ':h' }, tables: [{ id: `${bid}:T`, cls: 'list', cols: [20, 20, 60], rows: [
+    const ag = ctx.actGroup ? ctx.actGroup(stu.id) : '';
+    return { id: bid, k: 'act', h: Object.assign({ t: 'fixed', key: 'act', tid: bid + ':h' }, ag ? { meta: `활동조 ${ag}` } : {}), tables: [{ id: `${bid}:T`, cls: 'list', cols: [20, 20, 60], rows: [
       { id: `${bid}:hd`, hd: 1, cells: [C(`${bid}:hd:0`, '특별활동', Object.assign({ kd: 'lab' }, HD)), C(`${bid}:hd:1`, '일시', Object.assign({ kd: 'lab' }, HD)), C(`${bid}:hd:2`, '활동 사항', Object.assign({ kd: 'lab' }, HD))] }].concat(rows) }] };
   }
   if(sub.kind === 'book'){
@@ -653,19 +756,21 @@ export function blockFor(sub, ctx){
 export function buildReport(o){
   const { term, sec, stu, subs, entries, lists } = o;
   const staffName = o.staffName || (u => u);
-  const mine = (subs || []).filter(s => !s.removed && (!(s.studentIds || []).length || (s.studentIds || []).includes(stu.id)))
+  // v144 조별 칸(학년 · 반이 섞인 칸)도 — 그 학생이 든 칸만 (subs 에 함께 넘긴다)
+  const mine = (subs || []).filter(s => !s.removed && (s.grp ? (s.studentIds || []).includes(stu.id) : (!(s.studentIds || []).length || (s.studentIds || []).includes(stu.id))))
     .sort((a, b) => (a.order || 0) - (b.order || 0));
   const blocks = [];
   let subjHead = false;
   mine.forEach(s => {
-    const b = blockFor(s, { stu, sec, entry: (entries || {})[s.id], lists, staffName, term });
+    const b = blockFor(s, { stu, sec, entry: (entries || {})[s.id], lists, staffName, term, actGroup: o.actGroupOf || null });
     if(!b) return;
     if(b.k === 'subj' && !subjHead){ blocks.push({ id: 'h_subj', k: 'sec', h: { t: 'fixed', key: 'subjects', tid: 'h_subj:h' }, tables: [] }); subjHead = true; }
     blocks.push(b);
   });
   return {
     v: 1, lang: 'ko', org: ORG, termId: term && term.id, sid: stu.id,
-    cover: { term: termLabel(term), cls: sec ? sec.name : '', grade: sec ? sec.grade : '', name: stu.name || '', no: stu.studentNo || '' },
+    cover: Object.assign({ term: termLabel(term), cls: sec ? sec.name : '', grade: sec ? sec.grade : '', name: stu.name || '', no: stu.studentNo || '' },
+      (sec && sec.hrUid && staffName(sec.hrUid)) ? { hr: staffName(sec.hrUid) } : {}),
     blocks,
   };
 }
@@ -725,6 +830,8 @@ export function enTermLabel(label){
   const m = /^(\d{4})\s*학년도\s*(.*)$/.exec(String(label || '').trim());
   return m ? `${m[1]} School Year · ${enTerm(m[2])}` : String(label || '');
 }
+/* v144 조 이름 — «3조» → «Group 3» */
+export function enGroup(g){ const m = /^\s*(\d+)\s*조\s*$/.exec(String(g || '')); return m ? `Group ${m[1]}` : String(g || ''); }
 export function enGrade(g){ const n = gradeNoOf(g); return n ? `Grade ${n}` : String(g || ''); }
 export function enClass(name, extra){
   const s = String(name || '').trim();
@@ -887,12 +994,15 @@ export function applyEdition(doc, ed, opt){
   // 표지
   const cv = out.cover || {};
   const cvo = {};
-  [['term', 'cv.term', 'dt'], ['cls', 'cv.cls', 'cls'], ['grade', 'cv.grade', 'lab'], ['name', 'cv.name', 'nm']].forEach(([k, id, kd]) => {
+  // v144 담임(hr) — 새 표지 · 첫 쪽 정보 줄에 나옴 (영문판은 번역 표의 이름 · 없으면 로마자)
+  [['term', 'cv.term', 'dt'], ['cls', 'cv.cls', 'cls'], ['grade', 'cv.grade', 'lab'], ['name', 'cv.name', 'nm'], ['hr', 'cv.hr', 'nm']].forEach(([k, id, kd]) => {
+    if(k === 'hr' && !cv.hr && ov[id] == null) return;
     let v = cv[k] || '';
     if(lang === 'en'){
       if(k === 'term') v = enTermLabel(v);
       else if(k === 'grade') v = enGrade(v);
       else if(k === 'name') v = ed.nameEn || (opt.nameEn || '') || romanName(v);
+      else if(k === 'hr') v = names[v] || tr.tx(v, 'nm').x;
       else if(k === 'cls') v = tr.tx(v, 'cls').x;
     }
     cvo[k] = ov[id] != null ? String(ov[id]) : applyRep(v, rep);
@@ -907,6 +1017,7 @@ export function applyEdition(doc, ed, opt){
         if(ov[b.id + ':hn'] != null) nb.h.name = String(ov[b.id + ':hn']);
         else { const r = tr.tx(nb.h.name, 'tx'); nb.h.name = r.x; if(!r.ok) untr++; }
         nb.h.teacher = String(nb.h.teacher || '').split(/\s*,\s*/).filter(Boolean).map(n => names[n] || tr.tx(n, 'nm').x).join(', ');
+        if(nb.h.grp) nb.h.grp = enGroup(nb.h.grp);
       } else if(ov[b.id + ':hn'] != null) nb.h.name = String(ov[b.id + ':hn']);
       nb.h.name = applyRep(nb.h.name, rep); nb.h.teacher = applyRep(nb.h.teacher || '', rep);
     } else if(nb.h.t === 'text'){
@@ -914,6 +1025,7 @@ export function applyEdition(doc, ed, opt){
     } else if(nb.h.t === 'fixed'){
       nb.h.x = (nb.h.x && lang !== 'en') ? nb.h.x : (KEY_HEAD[nb.h.key] || ['', ''])[lang === 'en' ? 1 : 0];
       nb.h.x = applyRep(nb.h.x, rep);
+      if(nb.h.meta && lang === 'en') nb.h.meta = String(nb.h.meta).replace(/^활동조\s*(.*)$/, (m, g) => `Activity ${enGroup(g)}`);
     }
     if(ov[b.id + ':h'] != null) nb.h = { t: 'text', x: String(ov[b.id + ':h']), tid: b.id + ':h' };
     nb.tables = (b.tables || []).filter(t => !hide[t.id]).map(t => {
@@ -1000,24 +1112,37 @@ export const REPORT_CSS = `
 .nrc.en .tl{font-size:22px;margin-top:0}
 .nrc.en .who{font-size:20px;font-weight:700;margin-top:6mm;line-height:1.7}
 .nrc.en .who b{font-weight:900}
-`;
-function cellHTML(c, edit){
-  const cls = [c.b ? 'b' : '', c.al === 'c' ? 'c' : c.al === 'r' ? 'r' : '', c.mk ? 'mk' : '', c.sm ? 'sm' : '', edit && c.ut ? 'ut' : '', edit && c.ov ? 'ovr' : '', edit && c.hid ? 'hid' : ''].filter(Boolean).join(' ');
-  const at = (c.cs > 1 ? ` colspan="${Number(c.cs) | 0}"` : '') + (c.rs > 1 ? ` rowspan="${Number(c.rs) | 0}"` : '') + (cls ? ` class="${cls}"` : '') + (edit && c.id && !c.mk ? ` data-c="${esc(c.id)}"` : '');
-  const x = edit && c.hid ? '(가림)' : esc(c.x).replace(/\n/g, '<br>');
-  return `<td${at}>${x}</td>`;
+` + TH.THEME_CSS;
+/* v144 theme: 'old'(예전) · 'a' · 'c' — 칸 종류 표시(lb 이름 칸 · gp 범위 묶음 · sd 세부)는 A · C 속지 모양에만 쓰인다 */
+export function cellClass(c, edit, hd){
+  return [c.b ? 'b' : '', c.al === 'c' ? 'c' : c.al === 'r' ? 'r' : '', c.mk ? 'mk' : '', c.sm ? 'sm' : '',
+    !hd && c.kd === 'lab' ? 'lb' : '', !hd && (c.gp || (c.rs > 1 && c.kd === 'tx' && c.b)) ? 'gp' : '', !hd && c.kd === 'sd' ? 'sd' : '',
+    edit && c.ut ? 'ut' : '', edit && c.ov ? 'ovr' : '', edit && c.hid ? 'hid' : ''].filter(Boolean).join(' ');
 }
-export function tableHTML(t, edit){
-  const cols = (t.cols || []).length ? `<colgroup>${t.cols.map(w => `<col style="width:${Number(w) || 0}%">`).join('')}</colgroup>` : '';
-  return `<table class="${esc((t.cls || '') + (t.auto ? ' auto' : ''))}" data-t="${esc(t.id || '')}">${cols}<tbody>${(t.rows || []).map(r =>
-    `<tr${r.hd ? ' class="hd"' : ''} data-r="${esc(r.id || '')}">${(r.cells || []).map(c => cellHTML(c, edit)).join('')}</tr>`).join('')}</tbody></table>`;
+export function cellText(c, edit, theme){
+  if(edit && c.hid) return '(가림)';
+  if(c.mk && theme && theme !== 'old' && String(c.x || '').trim()) return TH.markHTML(theme);
+  return esc(c.x).replace(/\n/g, '<br>');
+}
+function cellHTML(c, edit, hd, theme){
+  const cls = cellClass(c, edit, hd);
+  const at = (c.cs > 1 ? ` colspan="${Number(c.cs) | 0}"` : '') + (c.rs > 1 ? ` rowspan="${Number(c.rs) | 0}"` : '') + (cls ? ` class="${cls}"` : '') + (edit && c.id && !c.mk ? ` data-c="${esc(c.id)}"` : '');
+  return `<td${at}>${cellText(c, edit, theme)}</td>`;
+}
+export function colgroupHTML(t, theme){
+  const cw = TH.colsFor(t, theme);
+  return (cw || []).length ? `<colgroup>${cw.map(w => `<col style="width:${Number(w) || 0}%">`).join('')}</colgroup>` : '';
+}
+export function tableHTML(t, edit, theme){
+  return `<table class="${esc((t.cls || '') + (t.auto ? ' auto' : ''))}" data-t="${esc(t.id || '')}">${colgroupHTML(t, theme)}<tbody>${(t.rows || []).map(r =>
+    `<tr${r.hd ? ' class="hd"' : ''} data-r="${esc(r.id || '')}">${(r.cells || []).map(c => cellHTML(c, edit, r.hd, theme)).join('')}</tr>`).join('')}</tbody></table>`;
 }
 export function headText(b, lang, no){
   const h = b.h || {};
   const en = lang === 'en';
-  if(h.t === 'subj') return `${no ? no + '. ' : ''}${h.name || ''}${h.teacher ? (en ? ` — Teacher: ${h.teacher}` : ` - 교사 ${h.teacher}`) : ''}`;
+  if(h.t === 'subj') return `${no ? no + '. ' : ''}${h.name || ''}${h.grp ? ` (${h.grp})` : ''}${h.teacher ? (en ? ` — Teacher: ${h.teacher}` : ` - ${h.grp ? '조 담당' : '교사'} ${h.teacher}`) : ''}`;
   if(h.t === 'hr') return `${h.name || (en ? KEY_HEAD.hr[1] : '담임평가')}${h.teacher ? (en ? ` — Teacher: ${h.teacher}` : ` - 교사 ${h.teacher}`) : ''}`;
-  if(h.t === 'fixed') return h.x || (KEY_HEAD[h.key] || ['', ''])[en ? 1 : 0];
+  if(h.t === 'fixed') return (h.x || (KEY_HEAD[h.key] || ['', ''])[en ? 1 : 0]) + (h.meta ? ` (${h.meta})` : '');
   return h.x || '';
 }
 export function noteHTML(n, edit){
@@ -1026,10 +1151,14 @@ export function noteHTML(n, edit){
   return `<div class="nn${edit && n.ut ? ' ut' : ''}"${edit ? ` data-nt="${esc(n.id)}"` : ''}>${h ? `<b>${esc(h)}</b><br>` : ''}${esc(p).replace(/\n/g, '<br>')}</div>`;
 }
 /* 블록 하나 — 쪽 나눔이 «머리글 / 표 / 설명» 조각으로 다시 나눠 쓴다 */
-export function blockParts(b, lang, no, edit){
-  const head = `<div class="nh"${edit ? ` data-h="${esc(b.id)}"` : ''}><span class="tri"></span><span class="t">${esc(headText(b, lang, no))}</span></div>`;
+export function blockParts(b, lang, no, edit, theme){
+  const head = (theme && theme !== 'old') ? TH.headHTML(b, lang, no, edit, theme, KEY_HEAD)
+    : `<div class="nh"${edit ? ` data-h="${esc(b.id)}"` : ''}><span class="tri"></span><span class="t">${esc(headText(b, lang, no))}</span></div>`;
   return { head, tables: (b.tables || []).map(t => t), notes: (b.notes || []).map(n => noteHTML(n, edit)).filter(Boolean) };
 }
+/* 번호 — 예전 모양은 교과만 (1. 2. …) · A · C 는 모든 칸에 차례로 (01 02 …) */
+export const numbersFor = (doc, theme) => (theme && theme !== 'old') ? TH.numberAll(doc) : numberSubjects(doc);
+export const themeClass = theme => (theme && theme !== 'old') ? ` th-${theme}` : '';
 export function numberSubjects(doc){
   let n = 0; const m = {};
   (doc.blocks || []).forEach(b => { if(b.k === 'subj') m[b.id] = ++n; });
@@ -1037,14 +1166,14 @@ export function numberSubjects(doc){
 }
 export function docHTML(doc, opt){
   opt = opt || {};
-  const edit = !!opt.edit, lang = doc.lang || 'ko';
-  const nos = numberSubjects(doc);
+  const edit = !!opt.edit, lang = doc.lang || 'ko', theme = opt.theme || 'old';
+  const nos = numbersFor(doc, theme);
   const body = (doc.blocks || []).map(b => {
-    const p = blockParts(b, lang, nos[b.id], edit);
+    const p = blockParts(b, lang, nos[b.id], edit, theme);
     const cls = b.k === 'sec' ? 'nb ns' : b.k === 'subj' ? 'nb nsub' : 'nb';
-    return `<section class="${cls}" data-b="${esc(b.id)}" data-k="${esc(b.k)}">${p.head}${p.tables.map(t => tableHTML(t, edit)).join('')}${p.notes.join('')}</section>`;
+    return `<section class="${cls}" data-b="${esc(b.id)}" data-k="${esc(b.k)}">${p.head}${p.tables.map(t => tableHTML(t, edit, theme)).join('')}${p.notes.join('')}</section>`;
   }).join('');
-  return `<div class="nr${lang === 'en' ? ' en' : ''}${edit ? ' ed' : ''}">${body}</div>`;
+  return `<div class="nr${lang === 'en' ? ' en' : ''}${edit ? ' ed' : ''}${themeClass(theme)}">${body}</div>`;
 }
 export function coverHTML(doc, opt){
   opt = opt || {};

@@ -1,11 +1,12 @@
 /* ═══════════════════════════════════════════════════════════
    ✏️ nhp-entry.js — 나학평 칸 하나 (입력 · 평가 틀 · 학기 중 기록 · 미리보기 · 기록) · v141
+   · v144 평가 틀: ① 양식 ② 표 모양(범위 · 세부 칸 · 폭) ③ 평가 항목 ④ 서술 칸 + 오른쪽 출력 미리보기 · 📥 가져오기 · 🔗 함께 쓰기 · 👥 조별 칸
    · 맡은 선생님: 작성 중에 입력 → «작성완료»로 검토에 보냄
    · 검토관: 지금 단계면 오타를 바로 고치고 «검토완료» 또는 «수정 요청»
    · 최종 검토관: «최종 승인»(잠김) · «다시 열기»
    · 입력은 칸 하나씩 바로 저장 (0.5초 모아서) — 함께 맡은 선생님이 같은 칸을 써도 서로 덮어쓰지 않게 «바뀐 칸만» 저장
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=143';
+import * as SETUP from './nhp-setup.js?v=144';
 
 let A = null, C = null, esc = null, FS = null;
 let SUB = null, ENT = null, TAB = 'in', EL = null, CAN = null, SEC = null, SIDS = [];
@@ -160,7 +161,7 @@ function draw(){
   const last = (SUB.log || []).slice().reverse().find(l => l.act === 'redo');
   EL.innerHTML = `<div style="margin-bottom:10px"><button class="nh-btn sm ghost" data-go="home">← 내 할 일</button> <button class="nh-btn sm ghost" data-go="board">📊 진행 현황</button></div>
     ${SUB.removed ? '<div class="nh-warn">이 칸은 학기 설정에서 «빠진 칸»이에요 (보관 중). 출력에 나오지 않아요.</div>' : ''}
-    <div class="sj-top"><div class="tt"><div class="k">${esc(C.secLabel(SEC))} · ${esc(kind.icon || '')} ${esc(isSubj ? '교과' : (kind.ko || '').split(' (')[0])}</div>
+    <div class="sj-top"><div class="tt"><div class="k">${esc(A.whereOf(SUB))} · ${esc(kind.icon || '')} ${esc(isSubj ? (SUB.grp ? '조별 과목' : '교과') : (kind.ko || '').split(' (')[0])}</div>
       <h2>${esc(A.subLabel(SUB))} ${A.typeChip(SUB)} ${A.stateChip(SUB)}</h2>
       <div class="m">${stageChain()}</div>
       <div class="m" style="margin-top:6px"><span>학생 ${SIDS.length}명 · <b style="color:var(--ink)">${p.done}명 채움</b></span><span class="sv-dot" id="ej-save">${LAST_OK ? '' : ''}</span>
@@ -196,7 +197,7 @@ function drawBody(){
   const B = document.getElementById('ej-body'); if(!B) return;
   A.lsSet('nhp_tab_' + SUB.id, TAB);
   if(TAB === 'in') B.innerHTML = inputHTML();
-  else if(TAB === 'set') B.innerHTML = setupHTML();
+  else if(TAB === 'set'){ B.innerHTML = setupHTML(); setTimeout(pvFit, 0); }
   else if(TAB === 'mk'){ B.innerHTML = '<div class="nh-desc">학기 중 기록을 여는 중…</div>'; loadMarks().then(() => { if(TAB === 'mk') B.innerHTML = marksHTML(); }); }
   else if(TAB === 'pv'){ B.innerHTML = previewHTML(); }
   else if(TAB === 'log') B.innerHTML = logHTML();
@@ -411,20 +412,21 @@ function setupHTML(){
   let h = '';
   if(!CAN.setup) h += `<div class="nh-info">평가 틀은 맡은 선생님이 «작성 중»일 때 고칠 수 있어요.</div>`;
   if(k === 'subj'){
-    h += `<div class="st-card"><div class="frow" style="align-items:center"><b style="font-size:14px">평가 방식</b><span class="nh-sp"></span>${A.isMgr ? '' : `<span class="nh-desc" style="margin:0">방식 바꾸기는 나학평 담당이 «학기 설정 › 칸»에서 해요</span>`}</div>
-      <div class="pk" style="margin-top:6px">${C.TYPE_ORDER.map(t => `<span class="ch ${SUB.type === t ? 'mint' : 'gray'}" title="${esc(C.TYPES[t].d)}">${esc(C.TYPES[t].ko)}</span>`).join('')}</div>
-      <div class="nh-desc" style="margin-top:6px">${esc((C.TYPES[SUB.type] || {}).d || '')}${SUB.inheritedFrom ? ` · 지난 학기에서 이어받은 틀이에요` : ''}</div>
-      <div class="frow" style="align-items:center;margin-top:4px"><span class="nh-desc" style="margin:0">듣는 학생: ${(SUB.studentIds || []).length ? `<b>${SUB.studentIds.length}명</b>만` : '반 모두'}</span>${(A.isMgr || (SUB.state === 'draft' && CAN.teacher)) ? '<button class="nh-btn xs" data-ej="students">학생 고르기</button>' : ''}
-        <span class="nh-desc" style="margin:0 0 0 12px">출력 이름: <b>${esc(SUB.printName || SUB.name)}</b> · 교사 <b>${esc(SUB.printTeacher || (SUB.teacherUids || []).map(A.staffName).join(', ') || '—')}</b></span></div></div>`;
+    // v144 평가 틀 — 왼쪽 «고치기» (① 양식 ② 표 모양 ③ 평가 항목 ④ 서술 칸) + 오른쪽 «출력 미리보기» (고치는 즉시 바뀜)
     const t = SUB.type;
-    if(t === 'E' || t === 'M') h += itemsEditorHTML(st, dis);
-    if(t === 'S' || t === 'M') h += scoreEditorHTML(st, dis);
-    if(t === 'A') h += `<div class="st-card"><b style="font-size:14px">활동 서술 모양</b><div class="frow" style="margin-top:8px"><div class="fl"><label>상단 제목 (선택)</label><input class="nh-in" data-sa="t1" value="${esc((st.a || {}).t1 || '')}"${dis}></div><div class="fl"><label>상단 제목 2 (선택)</label><input class="nh-in" data-sa="t2" value="${esc((st.a || {}).t2 || '')}"${dis}></div></div>
+    let L = shareStripHTML();
+    L += formsHTML(dis);
+    if(t === 'E' || t === 'M') L += layoutHTML(st, dis) + itemsEditorHTML(st, dis);
+    if(t === 'S' || t === 'M') L += scoreEditorHTML(st, dis);
+    if(t === 'A') L += `<div class="st-card"><b style="font-size:14px">활동 서술 모양</b><div class="frow" style="margin-top:8px"><div class="fl"><label>상단 제목 (선택)</label><input class="nh-in" data-sa="t1" value="${esc((st.a || {}).t1 || '')}"${dis}></div><div class="fl"><label>상단 제목 2 (선택)</label><input class="nh-in" data-sa="t2" value="${esc((st.a || {}).t2 || '')}"${dis}></div></div>
       <label class="ck"><input type="checkbox" data-sa="noTitle"${(st.a || {}).noTitle ? ' checked' : ''}${dis}>항목 제목 없이 글만 (예전 «서술항목 타이틀 사용 안 함»)</label></div>`;
-    if(t === 'R') h += `<div class="st-card"><b style="font-size:14px">암송 · 읽기 모양</b><div class="frow" style="margin-top:8px"><div class="fl"><label>전체 제목</label><input class="nh-in" data-sr="title" value="${esc((st.r || {}).title || '')}"${dis}></div><div class="fl"><label>항목 제목</label><input class="nh-in" data-sr="it" value="${esc((st.r || {}).it || '')}"${dis}></div>
+    if(t === 'R') L += `<div class="st-card"><b style="font-size:14px">암송 · 읽기 모양</b><div class="frow" style="margin-top:8px"><div class="fl"><label>전체 제목</label><input class="nh-in" data-sr="title" value="${esc((st.r || {}).title || '')}"${dis}></div><div class="fl"><label>항목 제목</label><input class="nh-in" data-sr="it" value="${esc((st.r || {}).it || '')}"${dis}></div>
       <div class="fl" style="max-width:120px"><label>내용 칸 수</label><select class="nh-sel" data-sr="n"${dis}>${[1, 2, 3].map(n => `<option${Number((st.r || {}).n || 1) === n ? ' selected' : ''}>${n}</option>`).join('')}</select></div></div></div>`;
-    if(t !== 'R') h += narrEditorHTML(st, dis);
-    return h;
+    if(t !== 'R') L += narrEditorHTML(st, dis);
+    L += `<div class="st-card"><div class="frow" style="align-items:center"><span class="nh-desc" style="margin:0">듣는 학생: ${(SUB.studentIds || []).length ? `<b>${SUB.studentIds.length}명</b>${SUB.grp ? ' (조원)' : '만'}` : '반 모두'}</span>${(!SUB.grp && (A.isMgr || (SUB.state === 'draft' && CAN.teacher))) ? '<button class="nh-btn xs" data-ej="students">학생 고르기</button>' : ''}
+        <span class="nh-desc" style="margin:0 0 0 12px">출력 이름: <b>${esc(SUB.printName || SUB.name)}</b> · ${SUB.grp ? '조 담당' : '교사'} <b>${esc(SUB.printTeacher || (SUB.teacherUids || []).map(A.staffName).join(', ') || '—')}</b></span>
+        ${SUB.inheritedFrom ? '<span class="ch gray">지난 학기에서 이어받은 틀</span>' : ''}<span class="nh-sp"></span>${A.isMgr && CAN.setup ? '<button class="nh-btn xs" data-ej="saveform">⭐ 기관 양식으로 저장</button>' : ''}</div></div>`;
+    return h + `<div class="ed2"><div class="ed2-l">${L}</div><aside class="ed2-r" id="ej-pv">${pvPaneHTML()}</aside></div>`;
   }
   if(k === 'hr') return h + `<div class="st-card"><div class="fl"><label>표 왼쪽 이름</label><input class="nh-in" data-hrl value="${esc(st.label || '담임 평가')}"${dis}></div></div>` + narrEditorHTML(st, dis, true);
   if(k === 'parent'){
@@ -448,15 +450,97 @@ function setupHTML(){
   if(k === 'serve') return h + `<div class="nh-desc">따로 설정할 것이 없어요 — «✏️ 입력»에서 학생마다 넣어요.</div>`;
   return h;
 }
+/* ① 양식 — 고르면 방식 · 표 모양이 바뀜 (이미 쓴 항목 · 입력은 그대로) */
+function formsHTML(dis){
+  const cur = C.formOf(SUB);
+  const nForms = ((A.FORMS || {}).list || []).length;
+  return `<div class="st-card"><div class="frow" style="align-items:center"><b style="font-size:14px">① 양식</b><span class="nh-desc" style="margin:0">골라서 시작 — 고른 뒤에도 칸 · 항목은 자유롭게</span><span class="nh-sp"></span>
+      ${STRUCT() ? `<button class="nh-btn xs g" data-ej="import">📥 가져오기 <small>다른 반 · 지난 학기 · 기관 양식${nForms ? ' ' + nForms : ''}</small></button>` : ''}</div>
+    ${CAN.setup && !STRUCT() ? '<div class="nh-desc" style="margin:4px 0 0">검토 중에는 항목 글 · 오타만 고칠 수 있어요 — 양식 · 가져오기 · 함께 쓰기는 맡은 선생님(작성 중)과 나학평 담당이 바꿔요.</div>' : ''}
+    <div class="fm-tiles">${C.FORMS.map(f => `<button class="fm-tile${f.k === cur ? ' on' : ''}" data-form="${esc(f.k)}"${STRUCT() ? '' : ' disabled'} title="${esc(f.d)}"><b>${esc(f.ko)}</b><small>${esc(f.d)}</small></button>`).join('')}</div></div>`;
+}
+/* ② 표 모양 — 5단계 표 왼쪽 칸 (범위 · 세부 · 내용) · 12칸 격자에 붙는 너비 */
+function layoutHTML(st, dis){
+  const lay = st.lay || {};
+  const sOn = C.hasSub(st);
+  const gw = C.LAY_W.g[lay.g] || 92, sw = C.LAY_W.s[lay.s] || 98, lv = 245;
+  const tw = 680 - gw - (sOn ? sw : 0) - lv;
+  const seg = (lab, w, k, sub) => `<div class="lw-c${k ? ' k' : ''}" style="flex:0 0 ${(w / 680 * 100).toFixed(2)}%"><b>${esc(lab)}</b><small>${sub}</small></div>`;
+  const wbtn = (k, cur) => ['n', 'm', 'w'].map(v => `<button class="nh-btn xs${(cur || 'n') === v ? ' p' : ''}" data-lay="${k}" data-v="${v}"${dis}>${C.LAY_NAME[v]}</button>`).join('');
+  return `<div class="st-card"><div class="frow" style="align-items:center"><b style="font-size:14px">② 표 모양</b><span class="nh-desc" style="margin:0">칸을 나누고 넓혀요 — 출력에 그대로 · 다섯 단계 칸은 늘 같은 자리</span></div>
+    <div class="lw-strip">${seg('범위', gw, 1, '묶음')}${sOn ? seg('세부', sw, 1, '예: 수업 준비') : ''}${seg('평가 내용', tw, 0, '')}<div class="lw-c lvz" style="flex:0 0 ${(lv / 680 * 100).toFixed(2)}%"><b>매우 잘함 ~ 노력 요함</b><small>5칸</small></div></div>
+    <div class="frow" style="align-items:center;margin-top:8px;gap:14px">
+      <span class="lw-g"><span>범위 너비</span>${wbtn('g', lay.g)}</span>
+      <label class="ck"><input type="checkbox" data-lay="sOn"${sOn ? ' checked' : ''}${dis}${((st.items || []).some(it => String(it.s || '').trim())) ? ' disabled title="세부가 적힌 항목이 있어 켜져 있어요"' : ''}>＋ 세부 칸 나누기</label>
+      ${sOn ? `<span class="lw-g"><span>세부 너비</span>${wbtn('s', lay.s)}</span>` : ''}
+      ${CAN.setup && (lay.g || lay.s) ? '<button class="nh-btn xs ghost" data-lay="reset">폭 처음대로</button>' : ''}</div></div>`;
+}
+/* ③ 평가 항목 — 입력 칸이 출력 표와 같은 줄 맞춤 (범위 · 세부 · 내용) */
 function itemsEditorHTML(st, dis){
   const items = st.items || [];
-  return `<div class="st-card"><div class="frow" style="align-items:center"><b style="font-size:14px">평가 항목</b><span class="ch gray">${items.length}개</span><span class="nh-sp"></span>
-      ${CAN.setup ? '<button class="nh-btn xs" data-ej="itempaste">📋 여러 줄 붙여넣기</button><button class="nh-btn xs g" data-ej="itemadd">＋ 항목</button>' : ''}</div>
-    <div class="nh-desc">«범위»(묶음)는 선택이에요 — 같은 범위를 이어서 쓰면 출력에서 한 칸으로 묶여요 (예: 경청 · 성실 · 개념이해).</div>
-    ${items.map((it, i) => `<div class="frow" style="align-items:center;margin-top:6px;flex-wrap:nowrap"><b style="color:var(--ink-3);width:22px;text-align:right">${i + 1}</b>
-      <input class="nh-in" style="width:130px;flex:none" placeholder="범위 (선택)" data-itf="${i}" data-f="g" value="${esc(it.g || '')}"${dis}>
-      <input class="nh-in" style="flex:1;min-width:0" placeholder="평가 내용" data-itf="${i}" data-f="t" value="${esc(it.t || '')}"${dis}>
-      ${CAN.setup ? `<button class="nh-btn xs" data-itup="${i}" ${i ? '' : 'disabled'}>↑</button><button class="nh-btn xs" data-itdn="${i}" ${i < items.length - 1 ? '' : 'disabled'}>↓</button><button class="nh-btn xs r" data-itdel="${i}">✕</button>` : ''}</div>`).join('') || '<div class="nh-desc" style="margin-top:8px">아직 없어요. «＋ 항목» 또는 엑셀 · 수업 계획서에서 «여러 줄 붙여넣기».</div>'}</div>`;
+  const sOn = C.hasSub(st);
+  const pre = items.filter(it => /^\s*[\[［【(（][^\]］】)）]{1,20}[\]］】)）]\s*\S/.test(it.t || '')).length;
+  const span = i => { const g = String(items[i].g || '').trim(); if(!g || (i > 0 && String(items[i - 1].g || '').trim() === g)) return 0; let n = 1; while(i + n < items.length && String(items[i + n].g || '').trim() === g) n++; return n; };
+  return `<div class="st-card"><div class="frow" style="align-items:center"><b style="font-size:14px">③ 평가 항목</b><span class="ch gray">${items.length}개</span><span class="nh-desc" style="margin:0">같은 범위는 출력에서 한 칸으로 묶여요</span><span class="nh-sp"></span>
+      ${CAN.setup ? `${pre ? `<button class="nh-btn xs" data-ej="splitpre" title="«[수업 준비성] …» 같은 머리말을 세부 칸으로">✂ [머리말] ${pre}개 → 세부</button>` : ''}<button class="nh-btn xs" data-ej="itempaste">📋 여러 줄 붙여넣기</button><button class="nh-btn xs g" data-ej="itemadd">＋ 항목</button>` : ''}</div>
+    <div class="it-grid${sOn ? ' s' : ''}"><div class="it-h"><span></span><span>범위</span>${sOn ? '<span>세부</span>' : ''}<span>평가 내용</span><span></span></div>
+    ${items.map((it, i) => { const g = String(it.g || '').trim(); const cont = g && i > 0 && String(items[i - 1].g || '').trim() === g; const n = span(i);
+      return `<div class="it-r${cont ? ' cont' : ''}${g ? ' gp' : ''}"><b class="no">${i + 1}</b>
+      <span class="gcell"><input class="nh-in" placeholder="범위 (선택)" data-itf="${i}" data-f="g" value="${esc(it.g || '')}"${dis}>${n > 1 ? `<small class="gn">${n}줄 묶음</small>` : ''}</span>
+      ${sOn ? `<input class="nh-in" placeholder="세부" data-itf="${i}" data-f="s" value="${esc(it.s || '')}"${dis}>` : ''}
+      <input class="nh-in" placeholder="평가 내용" data-itf="${i}" data-f="t" value="${esc(it.t || '')}"${dis}>
+      <span class="it-b">${CAN.setup ? `<button class="nh-btn xs" data-itup="${i}" ${i ? '' : 'disabled'} aria-label="위로">↑</button><button class="nh-btn xs" data-itdn="${i}" ${i < items.length - 1 ? '' : 'disabled'} aria-label="아래로">↓</button><button class="nh-btn xs r" data-itdel="${i}" aria-label="빼기">✕</button>` : ''}</span></div>`; }).join('')}</div>
+    ${items.length ? '' : '<div class="nh-desc" style="margin-top:8px">아직 없어요. «＋ 항목» · «📋 여러 줄 붙여넣기»(엑셀 칸: 범위 · 세부 · 내용) · «📥 가져오기»(다른 반 · 지난 학기 · 기관 양식).</div>'}</div>`;
+}
+/* 🔗 함께 쓰기 띠 — 같은 평가 틀을 쓰는 칸들 */
+function shareKey(){ return C.shareOf(SUB, A.SUBS); }
+/* 평가 방식(양식) · 가져오기 · 함께 쓰기 묶기/풀기 — 맡은 선생님(작성 중) · 나학평 담당만 (검토관은 글 고치기만 — 규칙 v38 과 같은 기준) */
+const STRUCT = () => !!SUB && SUB.state !== 'done' && (A.isMgr || (SUB.state === 'draft' && !!(CAN && CAN.teacher)));
+function shareStripHTML(){
+  const key = shareKey(); if(!key) return '';
+  const mem = C.shareMembers(key, A.SUBS).filter(x => x.id !== SUB.id);
+  if(!mem.length) return '';
+  const me = A.CU.uid;
+  const same = x => JSON.stringify(x.setup || {}) === JSON.stringify(SUB.setup || {}) && (x.type || 'E') === (SUB.type || 'E');
+  const why = x => x.state !== 'draft' ? C.stateOf(x).ko : (!A.isMgr && !(x.teacherUids || []).includes(me)) ? '다른 선생님 칸' : '';
+  const diff = mem.filter(x => !same(x));
+  return `<div class="nh-info sh-strip">🔗 <b>함께 쓰기</b> — 이 평가 틀을 ${mem.length}칸이 함께 써요. 여기서 고치면 함께 바뀌어요 (학생 입력 · 점수는 칸마다).
+    <div class="pk" style="margin-top:6px">${mem.map(x => `<span class="p" style="padding-right:11px" title="${esc(why(x))}">${esc(A.whereOf(x))} ${same(x) ? '<span class="ch ok">같음</span>' : `<span class="ch warn">다름${why(x) ? ' · ' + esc(why(x)) : ''}</span>`}</span>`).join('')}</div>
+    ${STRUCT() ? `<div class="frow" style="margin-top:6px">${diff.length ? '<button class="nh-btn xs" data-ej="sharesync" title="다른 칸의 틀을 이 칸 틀로 (그 칸 입력은 같은 글끼리 이어짐)">다른 칸을 이 틀로 맞추기</button><button class="nh-btn xs" data-ej="sharepull" title="이 칸을 함께 쓰는 틀로 (이 칸 입력은 같은 글끼리 이어짐)">↙ 함께 쓰는 틀로 이 칸 바꾸기</button>' : ''}<button class="nh-btn xs ghost" data-ej="unshare">이 칸만 함께 쓰기 풀기</button></div>` : ''}</div>`;
+}
+/* 오른쪽 출력 미리보기 — 실제 A4 쪽 폭 그대로 · 예시 학생 · 속지 모양 */
+let PV_SID = '', PV_T = null;
+function pvPaneHTML(){
+  const sids = SIDS; if(!sids.length) return '<div class="nh-desc">학생이 없어요.</div>';
+  if(!PV_SID || !sids.includes(PV_SID)) PV_SID = sids.find(x => (ENT.rows || {})[x]) || sids[0];
+  const d = A.design();
+  return `<div class="pv2-h"><b>출력 미리보기</b><select class="nh-sel" data-pvs style="height:30px;font-size:12px">${sids.map(x => `<option value="${esc(x)}"${x === PV_SID ? ' selected' : ''}>${esc(A.stuName(x))} (예시)</option>`).join('')}</select>
+      <select class="nh-sel" data-pvth style="height:30px;font-size:12px">${C.TH.INNERS.map(x => `<option value="${esc(x.k)}"${x.k === d.inner ? ' selected' : ''}>${esc(x.ko)}</option>`).join('')}</select></div>
+    <div class="pv2-pg"><div class="pv2-sc" id="ej-pv-sc">${pvBlockHTML(d.inner)}</div></div>
+    <div class="nh-desc" style="margin:6px 0 0">고치면 바로 바뀌어요 · 실제 A4 쪽 폭(180mm) 그대로 · 쪽 나눔은 «👀 미리보기 › 전체»에서</div>`;
+}
+function pvBlockHTML(theme){
+  const b = C.blockFor(SUB, { stu: { id: PV_SID, name: A.stuName(PV_SID) }, sec: SEC, entry: ENT, lists: A.LISTS, staffName: A.staffName, term: A.TERM, actGroup: A.actGroupOf });
+  if(!b) return `<div class="nh-desc" style="padding:20px">이 학생은 이 칸이 출력되지 않아요 (비었거나 «출력에서 빼기»).</div>`;
+  const peers = A.SUBS.filter(s => !s.removed && (SUB.grp ? s.secId === (((A.TERM.sections || []).find(x => (x.students || []).includes(PV_SID)) || {}).id) || (s.grp && (s.studentIds || []).includes(PV_SID)) : (s.secId === SUB.secId || (s.grp && (s.studentIds || []).includes(PV_SID)))));
+  const ord = peers.sort((x, y) => (x.order || 0) - (y.order || 0));
+  const no = (theme && theme !== 'old') ? Math.max(1, ord.findIndex(x => x.id === SUB.id) + 1) : ord.filter(x => x.kind === 'subj' && (x.order || 0) <= (SUB.order || 0)).length;
+  const p = C.blockParts(b, 'ko', no, false, theme);
+  return `<div class="nr${C.themeClass(theme)}" style="width:680px"><section class="nb nsub">${p.head}${p.tables.map(t => C.tableHTML(t, false, theme)).join('')}${p.notes.join('')}</section></div>`;
+}
+function pvRefresh(){
+  clearTimeout(PV_T);
+  PV_T = setTimeout(() => {
+    const sc = document.getElementById('ej-pv-sc'); if(!sc || TAB !== 'set') return;
+    const th = (document.querySelector('[data-pvth]') || {}).value || A.design().inner;
+    sc.innerHTML = pvBlockHTML(th);
+    pvFit();
+  }, 220);
+}
+function pvFit(){
+  const sc = document.getElementById('ej-pv-sc'); if(!sc) return;
+  const box = sc.parentElement; const w = box.clientWidth - 28; const k = Math.min(1, w / 680);
+  sc.style.transform = `scale(${k})`; box.style.height = Math.ceil(sc.scrollHeight * k + 28) + 'px';
 }
 function scoreEditorHTML(st, dis){
   const sc = st.score || { cols: [] };
@@ -492,6 +576,7 @@ function saveSetup(now){
   SPEND[SUB.id] = SUB.setup;
   clearTimeout(ST);
   showSave('ing');
+  pvRefresh();
   if(now) return flushSetup();
   ST = setTimeout(flushSetup, 600);
 }
@@ -499,12 +584,58 @@ async function flushSetup(){
   clearTimeout(ST); ST = null;
   for(const id of Object.keys(SPEND)){
     const setup = SPEND[id];
-    try{ await A.saveSub(id, { setup }); if(SPEND[id] === setup) delete SPEND[id]; if(SUB && SUB.id === id) showSave('ok'); }
+    try{
+      await A.saveSub(id, { setup }); if(SPEND[id] === setup) delete SPEND[id]; if(SUB && SUB.id === id) showSave('ok');
+      await propagate(id, setup);
+    }
     catch(e){
       if(/permission/.test((e && e.code) || '')) delete SPEND[id];
       A.toast('평가 틀을 저장하지 못했어요 — ' + A.errText(e), 'err'); if(SUB && SUB.id === id) showSave('err');
     }
   }
+}
+/* 🔗 함께 쓰는 칸에 같은 틀 — 작성 중이고 내가 고칠 수 있는 칸만 (검토 중 · 다른 선생님 칸은 그대로 «다름»으로 보임) */
+async function propagate(id, setup){
+  const me = A.subOf(id); if(!me) return 0;
+  const key = C.shareOf(me, A.SUBS); if(!key) return 0;
+  const uid = A.CU.uid; let n = 0;
+  for(const x of C.shareMembers(key, A.SUBS)){
+    if(x.id === id || x.state !== 'draft' || !(A.isMgr || (x.teacherUids || []).includes(uid))) continue;
+    if(JSON.stringify(x.setup || {}) === JSON.stringify(setup) && (x.type || 'E') === (me.type || 'E')) continue;
+    try{ await applySetupTo(x, setup, me.type || 'E'); n++; }catch(e){ console.warn('함께 쓰기 맞추기', x.id, e); }
+  }
+  return n;
+}
+/* 다른 칸의 평가 틀을 바꿀 때 — 그 칸 학생 입력을 먼저 같은 글끼리 이어 둔 뒤(예전 값은 남김) 틀을 바꾼다
+   · 입력을 못 읽으면 틀도 바꾸지 않음 (빈 입력으로 잘못 판단해 값이 안 보이게 되는 일 막기) */
+async function applySetupTo(x, setup, type){
+  const ref = FS.doc(A.db, 'nhpEntries', x.id);
+  const snap = await FS.getDoc(ref);   // 실패하면 그대로 던짐
+  const rows = (snap.exists() && snap.data().rows) || {};
+  const nu = JSON.parse(JSON.stringify(setup || {}));
+  const up = C.remapPatch(rows, x.setup || {}, nu);
+  if(Object.keys(up).length) await FS.updateDoc(ref, Object.assign(up, { updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }));
+  await A.saveSub(x.id, Object.assign({ setup: nu }, (x.type || 'E') !== (type || 'E') ? { type: type || 'E' } : {}));
+}
+/* ↙ 함께 쓰는 틀로 이 칸 바꾸기 — 묶음의 기준 칸(sh_<id>) 틀, 없으면 가장 많은 칸이 쓰는 틀 */
+async function pullShared(){
+  const key = shareKey(); if(!key) return;
+  const mem = C.shareMembers(key, A.SUBS).filter(x => x.id !== SUB.id);
+  if(!mem.length) return;
+  const owner = mem.find(x => 'sh_' + x.id === key);
+  let src = owner;
+  if(!src){ const cnt = {}; mem.forEach(x => { const k = JSON.stringify([x.type || 'E', x.setup || {}]); cnt[k] = (cnt[k] || 0) + 1; }); const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0]; src = mem.find(x => JSON.stringify([x.type || 'E', x.setup || {}]) === top); }
+  if(!src) return;
+  if(!(await A.confirm('함께 쓰는 틀로 바꾸기', `이 칸의 평가 틀을 <b>${esc(A.whereOf(src))}</b> 칸의 틀로 바꿔요. 이미 넣은 5단계 · 글 · 점수는 <b>같은 글의 항목끼리</b> 이어지고, 맞는 짝이 없는 값은 지우지 않고 남겨 둬요.`, '바꾸기'))) return;
+  await flush(); await flushSetup();
+  try{
+    window.showLoading && showLoading('바꾸는 중…');
+    await applySetupTo(SUB, src.setup || {}, src.type || 'E');
+    SUB = A.subOf(SUB.id) || SUB; ENT = await A.getEntry(SUB.id, true);
+    A.toast('함께 쓰는 틀로 바꿨어요 🔗');
+  }catch(e){ A.toast('바꾸지 못했어요 — ' + A.errText(e), 'err'); }
+  window.hideLoading && hideLoading();
+  draw();
 }
 
 /* ═══════════ 학기 중 기록 (수업 계획서 · 회차 점수 → 평균) ═══════════ */
@@ -583,16 +714,17 @@ function previewHTML(){
   if(!SIDS.length) return '<div class="nh-empty">학생이 없어요.</div>';
   PV_I = Math.min(PV_I, SIDS.length - 1);
   const sid = SIDS[PV_I];
-  const b = C.blockFor(SUB, { stu: { id: sid, name: A.stuName(sid) }, sec: SEC, entry: ENT, lists: A.LISTS, staffName: A.staffName, term: A.TERM });
-  const nos = {}; if(b && b.k === 'subj') nos[b.id] = A.SUBS.filter(s => s.secId === SUB.secId && s.kind === 'subj' && !s.removed && (s.order || 0) <= (SUB.order || 0)).length;
+  const b = C.blockFor(SUB, { stu: { id: sid, name: A.stuName(sid) }, sec: SEC, entry: ENT, lists: A.LISTS, staffName: A.staffName, term: A.TERM, actGroup: A.actGroupOf });
+  const nos = {}; if(b && b.k === 'subj') nos[b.id] = A.SUBS.filter(s => s.secId === SUB.secId && s.kind === 'subj' && !s.removed && (s.order || 0) <= (SUB.order || 0)).length || 1;
   const doc = { lang: 'ko', blocks: b ? [b] : [] };
   return `<div class="st-nav"><button class="nh-btn sm" data-pvi="-1" ${PV_I ? '' : 'disabled'}>◀</button><b>${esc(A.stuName(sid))}</b><span class="nh-desc" style="margin:0">${PV_I + 1} / ${SIDS.length}</span><button class="nh-btn sm" data-pvi="1" ${PV_I < SIDS.length - 1 ? '' : 'disabled'}>▶</button>
       <span class="nh-sp"></span><button class="nh-btn sm" data-ej="pvfull">📄 이 학생 나학평 전체 미리보기</button></div>
     <div class="nr-wrap">${b ? docWithNo(doc, nos) : '<div class="nh-desc">이 학생은 이 칸이 출력되지 않아요 (비었거나 «출력에서 빼기»).</div>'}</div>`;
 }
 function docWithNo(doc, nos){
-  const p = C.blockParts(doc.blocks[0], 'ko', nos[doc.blocks[0].id], false);
-  return `<div class="nr"><section class="nb">${p.head}${p.tables.map(t => C.tableHTML(t, false)).join('')}${p.notes.join('')}</section></div>`;
+  const th = A.design().inner;
+  const p = C.blockParts(doc.blocks[0], 'ko', nos[doc.blocks[0].id], false, th);
+  return `<div class="nr${C.themeClass(th)}"><section class="nb">${p.head}${p.tables.map(t => C.tableHTML(t, false, th)).join('')}${p.notes.join('')}</section></div>`;
 }
 function logHTML(){
   const L = (SUB.log || []).slice().reverse();
@@ -668,6 +800,11 @@ async function onClick(e){
     if(d.nrdel){ if(!(await A.confirm('서술 칸 빼기', `«${esc(N[i].t || '서술')}» 칸을 뺄까요? (학생들이 쓴 글은 보관돼요)`, '빼기', true))) return; N.splice(i, 1); } else { [N[i - 1], N[i]] = [N[i], N[i - 1]]; }
     SUB.setup = Object.assign({}, SUB.setup, { narr: N }); saveSetup(true); drawBody(); return; }
   if(d.bkdel){ const B = (SUB.setup.books || []).slice(); B.splice(+d.bkdel, 1); SUB.setup = Object.assign({}, SUB.setup, { books: B }); saveSetup(true); drawBody(); return; }
+  if(d.form){ if(!STRUCT()) return; await pickForm(d.form); return; }
+  if(d.lay && t.tagName === 'BUTTON'){ if(!CAN.setup) return; const lay = Object.assign({}, SUB.setup.lay || {});
+    if(d.lay === 'reset'){ delete lay.g; delete lay.s; } else lay[d.lay] = d.v === 'n' ? undefined : d.v;
+    Object.keys(lay).forEach(k => { if(lay[k] === undefined) delete lay[k]; });
+    SUB.setup = Object.assign({}, SUB.setup, { lay }); saveSetup(true); drawBody(); return; }
   const a = d.ej; if(!a) return;
   if(['submit', 'withdraw', 'ok', 'redo', 'approve', 'reopen', 'cmt'].includes(a)) return doAct(a);
   if(a === 'retry') return flush();
@@ -678,6 +815,15 @@ async function onClick(e){
   if(a === 'students'){ await SETUP.editCellStudents(SUB.id, A); SUB = A.subOf(SUB.id); SIDS = A.subStudents(SUB); draw(); return; }
   if(a === 'itemadd'){ const it = (SUB.setup.items || []).concat([{ id: C.rid('i'), g: '', t: '' }]); SUB.setup = Object.assign({}, SUB.setup, { items: it }); saveSetup(true); drawBody(); setTimeout(() => { const ins = EL.querySelectorAll('[data-itf][data-f="t"]'); if(ins.length) ins[ins.length - 1].focus(); }, 30); return; }
   if(a === 'itempaste') return pasteItems();
+  if(a === 'import'){ if(!STRUCT()) return; return importDialog(); }
+  if(a === 'splitpre'){ const it = (SUB.setup.items || []).map(x => { const m = /^\s*[\[［【(（]([^\]］】)）]{1,20})[\]］】)）]\s*(\S[\s\S]*)$/.exec(x.t || ''); return m && !String(x.s || '').trim() ? Object.assign({}, x, { s: m[1].trim(), t: m[2].trim() }) : x; });
+    SUB.setup = Object.assign({}, SUB.setup, { items: it, lay: Object.assign({}, SUB.setup.lay || {}, { sOn: true }) }); saveSetup(true); drawBody(); A.toast('머리말을 «세부» 칸으로 옮겼어요 ✓'); return; }
+  if(a === 'saveform') return saveAsForm();
+  if(a === 'sharesync'){ if(!STRUCT()) return; await flushSetup(); window.showLoading && showLoading('맞추는 중…'); const n = await propagate(SUB.id, SUB.setup); window.hideLoading && hideLoading(); A.toast(n ? `${n}칸을 이 틀로 맞췄어요 ✓ (그 칸 입력은 같은 글끼리 이어짐)` : '맞출 수 있는 칸이 없어요 (검토 중이거나 다른 선생님 칸 — 나학평 담당에게)'); drawBody(); return; }
+  if(a === 'sharepull'){ if(!STRUCT()) return; return pullShared(); }
+  if(a === 'unshare'){ if(!STRUCT()) return; if(!(await A.confirm('함께 쓰기 풀기', '이 칸만 함께 쓰기에서 빠져요. 지금 평가 틀은 그대로 남아요.', '풀기'))) return;
+    // 묶음의 기준 칸(다른 칸이 «sh_이 칸»으로 가리킴)이어도 이 칸만 빠지게 — «x_» 표시
+    try{ await A.saveSub(SUB.id, { share: 'x_' + SUB.id }); SUB = A.subOf(SUB.id) || SUB; A.toast('이 칸만 함께 쓰기에서 뺐어요'); drawBody(); }catch(err){ A.toast('풀지 못했어요 — ' + A.errText(err), 'err'); } return; }
   if(a === 'coladd'){ const sc = Object.assign({ title: '성적', cols: [], tot: { on: false, t: '총 점수' }, r1: '개인점수', r2: '반 평균', avgOn: true, avg: {} }, SUB.setup.score || {}); sc.cols = (sc.cols || []).concat([{ id: C.rid('c'), t: '', w: '' }]); SUB.setup = Object.assign({}, SUB.setup, { score: sc }); saveSetup(true); drawBody(); return; }
   if(a === 'narradd'){ const N = (SUB.setup.narr || []).concat([{ id: C.rid('n'), t: d.t || '', each: d.each === '1', fixed: '' }]); SUB.setup = Object.assign({}, SUB.setup, { narr: N }); saveSetup(true); drawBody(); return; }
   if(a === 'bookadd'){ const B = (SUB.setup.books || []); if(B.length >= 25) return A.toast('25권까지예요.', 'err'); SUB.setup = Object.assign({}, SUB.setup, { books: B.concat([{ id: C.rid('b'), t: '', p: '' }]) }); saveSetup(true); drawBody(); return; }
@@ -685,7 +831,8 @@ async function onClick(e){
     if(!v) return; const B = (SUB.setup.books || []).slice(); v.split(/\r?\n/).map(l => l.split('\t')).filter(c => c[0] && c[0].trim()).forEach(c => { if(B.length < 25) B.push({ id: C.rid('b'), t: c[0].trim(), p: (c[1] || '').trim() }); });
     SUB.setup = Object.assign({}, SUB.setup, { books: B }); saveSetup(true); drawBody(); return; }
   if(a === 'pvfull'){ const sid = SIDS[PV_I]; window.showLoading && showLoading('문서를 만드는 중…');
-    try{ const doc = await A.liveDoc(SUB.secId, sid); const pages = await A.pagesOf(doc); window.hideLoading && hideLoading(); A.showPages(pages, `${esc(doc.cover.name)} — 미리보기`, doc, { draft: true }); }
+    const secId = SUB.grp ? (((A.TERM.sections || []).find(x => (x.students || []).includes(sid))) || {}).id : SUB.secId;
+    try{ if(!secId) throw new Error('이 학생이 든 반이 이 학기 나학평에 없어요'); const doc = await A.liveDoc(secId, sid); const pages = await A.pagesOf(doc, { draft: true }); window.hideLoading && hideLoading(); A.showPages(pages, `${esc(doc.cover.name)} — 미리보기`, doc, { draft: true, pageOpt: { draft: true } }); }
     catch(err){ window.hideLoading && hideLoading(); A.toast('만들지 못했어요 — ' + A.errText(err), 'err'); } return; }
   if(a === 'mkadd' || a === 'mkedit'){
     const ses = a === 'mkedit' ? MARKS.sessions.find(s => s.id === MK_SES) : null;
@@ -724,6 +871,10 @@ function onChange(e){
   if(d.pep){ const pick = new Set(SUB.setup.pick || []); if(x.checked) pick.add(d.pep); else pick.delete(d.pep); SUB.setup = Object.assign({}, SUB.setup, { pick: Array.from(pick) }); saveSetup(); return; }
   if(x.hasAttribute('data-pen')){ SUB.setup = Object.assign({}, SUB.setup, { note: x.value }); saveSetup(); return; }
   if(x.hasAttribute('data-vcp')){ SUB.setup = Object.assign({}, SUB.setup, { pick: x.value }); saveSetup(); return; }
+  if(x.hasAttribute('data-pvs')){ PV_SID = x.value; pvRefresh(); return; }
+  if(d.itf != null && x.hasAttribute('data-itf') && (d.f === 'g' || (d.f === 't' && /^\s*[\[［【(（]/.test(x.value)))){ drawBody(); return; }   // 범위 묶음 · [머리말] 단추를 다시 그림 (칸을 떠날 때)
+  if(x.hasAttribute('data-pvth')){ pvRefresh(); return; }
+  if(d.lay === 'sOn'){ const lay = Object.assign({}, SUB.setup.lay || {}, { sOn: x.checked }); SUB.setup = Object.assign({}, SUB.setup, { lay }); saveSetup(true); drawBody(); return; }
   if(x.hasAttribute('data-nreach')){ const N = (SUB.setup.narr || []).map(y => Object.assign({}, y)); N[+d.nreach].each = x.value === '1'; SUB.setup = Object.assign({}, SUB.setup, { narr: N }); saveSetup(true); drawBody(); return; }
 }
 function onInput(e){
@@ -773,10 +924,14 @@ async function pasteGrid(){
   };
 }
 async function pasteItems(){
-  const v = await A.prompt('📋 평가 항목 여러 줄 붙여넣기', '한 줄에 하나씩 — 범위가 있으면 «범위[탭]평가 내용» (엑셀 두 칸)', '', { multi: true, ph: '경청\t선생님의 말씀과 친구들의 말을 경청한다.\n성실\t매시간 꾸준히 학습 분량을 완수한다.' });
+  const v = await A.prompt('📋 평가 항목 여러 줄 붙여넣기', '한 줄에 하나씩 — 엑셀 칸 그대로: «내용» 한 칸 · «범위 | 내용» 두 칸 · «범위 | 세부 | 내용» 세 칸', '', { multi: true, ph: '태도\t수업 준비\t수업에 필요한 준비를 갖추고 참여한다.\n태도\t경청\t설명을 조용히 듣고 집중한다.' });
   if(!v) return;
-  const add = v.replace(/\r/g, '').split('\n').map(l => l.trim()).filter(Boolean).map(l => { const c = l.split('\t'); return c.length > 1 ? { id: C.rid('i'), g: c[0].trim(), t: c.slice(1).join(' ').trim() } : { id: C.rid('i'), g: '', t: c[0].trim() }; });
-  SUB.setup = Object.assign({}, SUB.setup, { items: (SUB.setup.items || []).filter(x => String(x.t || '').trim()).concat(add) });
+  // v144 세 칸(범위 · 세부 · 내용)이면 세부 칸도 켠다
+  const add = v.replace(/\r/g, '').split('\n').filter(l => l.trim()).map(l => { const c = l.split('\t').map(x => x.trim());
+    if(c.length >= 3) return { id: C.rid('i'), g: c[0], s: c[1], t: c.slice(2).join(' ').trim() };
+    return c.length > 1 ? { id: C.rid('i'), g: c[0], t: c.slice(1).join(' ').trim() } : { id: C.rid('i'), g: '', t: c[0] }; }).filter(x => x.t);
+  const lay = Object.assign({}, SUB.setup.lay || {}); if(add.some(x => String(x.s || '').trim())) lay.sOn = true;
+  SUB.setup = Object.assign({}, SUB.setup, { lay, items: (SUB.setup.items || []).filter(x => String(x.t || '').trim()).concat(add) });
   await saveSetup(true); drawBody(); A.toast(`${add.length}개 더했어요 ✓`);
 }
 async function serveBulk(){
@@ -796,3 +951,175 @@ async function serveBulk(){
     m.close(); drawBody(); A.toast(`${sel.size}명에게 넣었어요 ✓`);
   };
 }
+
+/* ═══════════ v144 ① 양식 고르기 ═══════════ */
+async function pickForm(k){
+  const f = C.FORMS.find(x => x.k === k); if(!f) return;
+  const cur = SUB.type || 'E';
+  let setup = SUB.setup || {};
+  if(f.type !== cur){
+    const ok = await A.confirm('양식 바꾸기', `«${esc(A.subLabel(SUB))}»을(를) <b>${esc(f.ko)}</b>(으)로 바꿀까요?<br>이미 만든 항목 · 입력은 지우지 않고 남겨 둬요 (양식을 되돌리면 다시 보여요).`, '바꾸기');
+    if(!ok) return;
+    setup = C.setupForType(setup, f.type);
+  }
+  if(f.lay){ const lay = Object.assign({}, setup.lay || {}); lay.sOn = !!f.lay.sOn; if(!lay.sOn) delete lay.s; setup = Object.assign({}, setup, { lay }); }
+  try{
+    await flush(); await flushSetup();
+    if(f.type !== cur){ await A.saveSub(SUB.id, { type: f.type, setup }); SUB.type = f.type; }
+    SUB.setup = setup; await saveSetup(true);
+    draw();
+  }catch(e){ A.toast('바꾸지 못했어요 — ' + A.errText(e) + (/permission/.test((e && e.code) || '') ? ' (보안 규칙 v38이 필요해요)' : ''), 'err'); }
+}
+
+/* ═══════════ v144 📥 가져오기 — 다른 반 · 지난 학기 · 기관 양식 · 다른 과목 ═══════════ */
+let IMPSRC = null;
+async function loadImportSources(){
+  const out = [];
+  const nameK = C.normKey(SUB.name);
+  // 이번 학기 — 모든 과목 칸 (같은 이름이 위에)
+  A.SUBS.filter(s => s.kind === 'subj' && !s.removed && s.id !== SUB.id).forEach(s => out.push({ g: C.normKey(s.name) === nameK ? 'same' : 'other', key: 's:' + s.id, sub: s, name: s.name, where: A.whereOf(s), term: C.termLabel(A.TERM), type: s.type || 'E', setup: s.setup || {}, teacher: (s.teacherUids || []).map(A.staffName).filter(Boolean).join(', '), share: true }));
+  // 기관 양식 모음
+  ((A.FORMS || {}).list || []).forEach(f => out.push({ g: 'forms', key: 'f:' + f.id, name: f.name, where: f.d || '', term: '기관 양식', type: f.type || 'E', setup: f.setup || {}, teacher: f.byName || '' }));
+  // 지난 학기 — 나학평에서 연 학기는 칸 · 옮겨 온 학기는 목록
+  for(const t of A.TERMS.filter(x => x.id !== A.TERM.id)){
+    try{
+      if(t.src === 'import'){
+        const d = await FS.getDoc(FS.doc(A.db, 'nhpLists', t.id));
+        ((d.exists() && d.data().setups) || []).forEach((p, i) => out.push({ g: C.normKey(p.name) === nameK ? 'prev' : 'old', key: `p:${t.id}:${i}`, name: p.name, where: p.gradeNo ? `${p.gradeNo}학년` : '', term: C.termLabel(t) + ' · 옮겨 온 자료', type: p.type || 'E', setup: p.setup || {}, teacher: '' }));
+      } else {
+        const q = await FS.getDocs(FS.query(FS.collection(A.db, 'nhpSubjects'), FS.where('termId', '==', t.id)));
+        q.forEach(d => { const s = d.data(); if(s.kind !== 'subj' || s.removed) return; const sec = (t.sections || []).find(x => x.id === s.secId);
+          out.push({ g: C.normKey(s.name) === nameK ? 'prev' : 'old', key: 'q:' + d.id, name: s.name, where: s.grp ? `${s.grp.setName || ''} ${s.grp.name || ''}` : (sec ? C.secLabel(sec) : ''), term: C.termLabel(t), type: s.type || 'E', setup: s.setup || {}, teacher: '' }); });
+      }
+    }catch(e){}
+  }
+  return out;
+}
+function srcShape(x){
+  const st = x.setup || {}; const n = (st.items || []).length;
+  const shape = (x.type === 'E' || x.type === 'M') ? (C.hasSub(st) ? '범위 + 세부' : (st.items || []).some(i => String(i.g || '').trim()) ? '범위 + 5단계' : '5단계') : (C.TYPES[x.type] || {}).short || x.type;
+  return `${shape}${n ? ` · 항목 ${n}` : ''}${x.type === 'S' || x.type === 'M' ? ` · 시험 ${((st.score || {}).cols || []).length}` : ''}`;
+}
+async function importDialog(){
+  window.showLoading && showLoading('가져올 곳을 찾는 중…');
+  try{ IMPSRC = await loadImportSources(); }catch(e){ IMPSRC = []; }
+  window.hideLoading && hideLoading();
+  const G = [['same', '같은 과목 · 이번 학기'], ['prev', '지난 학기 · 같은 과목'], ['forms', '기관 양식 모음'], ['other', '다른 과목 · 이번 학기'], ['old', '다른 과목 · 지난 학기']];
+  let cur = (IMPSRC.find(x => x.g === 'same') || IMPSRC.find(x => x.g === 'prev') || IMPSRC[0] || {}).key || '';
+  let pick = null;
+  const m = A.modal(`📥 평가 틀 가져오기 <small style="font-weight:700;color:var(--ink-2)">${esc(A.subLabel(SUB))} · ${esc(A.whereOf(SUB))}에 넣어요</small>`, `<div class="imp2"><div class="imp2-l"><input class="nh-in" data-q placeholder="찾기 (예: 생각나무 · 이레)" style="width:100%;margin-bottom:8px"><div data-list></div></div><div class="imp2-r" data-r></div></div>`,
+    `<span class="nh-desc" data-cnt style="margin:0 auto 0 0"></span><button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>가져오기</button>`, 'wide');
+  const list = m.box.querySelector('[data-list]'), R = m.box.querySelector('[data-r]');
+  const drawList = () => {
+    const q = m.box.querySelector('[data-q]').value.trim();
+    const hit = x => !q || `${x.name} ${x.where} ${x.term} ${x.teacher}`.includes(q);
+    list.innerHTML = G.map(([g, lab]) => { const xs = IMPSRC.filter(x => x.g === g && hit(x)); if(!xs.length) return '';
+      return `<div class="imp2-g">${esc(lab)}</div>` + xs.slice(0, g === 'other' || g === 'old' ? (q ? 60 : 8) : 60).map(x => `<button class="imp2-s${x.key === cur ? ' on' : ''}" data-k="${esc(x.key)}"><b>${esc(x.name)}${x.where ? ` <span>· ${esc(x.where)}</span>` : ''}</b><small>${esc(x.term)} · ${esc(srcShape(x))}${x.teacher ? ' · ' + esc(x.teacher) : ''}</small></button>`).join(''); }).join('') || '<div class="nh-desc">가져올 곳이 없어요.</div>';
+  };
+  const drawRight = () => {
+    const x = IMPSRC.find(y => y.key === cur);
+    if(!x){ R.innerHTML = '<div class="nh-desc">왼쪽에서 고르세요.</div>'; return; }
+    const st = x.setup || {}; const items = st.items || []; const sOn = C.hasSub(st);
+    pick = pick && pick.key === cur ? pick : { key: cur, items: new Set(items.map(i => i.id)) };
+    const canShare = x.g === 'same' && x.sub && (x.type || 'E') !== 'R';
+    R.innerHTML = `<div class="frow" style="align-items:center"><b style="font-size:14px">${esc(x.name)}</b><span class="ch gray">${esc(x.where || x.term)}</span><span class="nh-desc" style="margin:0">표 모양: ${esc(srcShape(x))}</span></div>
+      ${items.length ? `<div class="nh-tw" style="max-height:38vh;margin-top:8px"><table class="nh-t"><thead><tr><th class="c"><input type="checkbox" data-all checked></th><th>범위</th>${sOn ? '<th>세부</th>' : ''}<th>평가 내용</th></tr></thead><tbody>${items.map(i => `<tr><td class="c"><input type="checkbox" data-it="${esc(i.id)}"${pick.items.has(i.id) ? ' checked' : ''}></td><td>${esc(i.g || '')}</td>${sOn ? `<td>${esc(i.s || '')}</td>` : ''}<td>${esc(i.t || '')}</td></tr>`).join('')}</tbody></table></div>` : `<div class="nh-desc" style="margin-top:8px">평가 항목이 없는 틀이에요 (${esc((C.TYPES[x.type] || {}).ko || '')}).</div>`}
+      <div class="frow" style="margin-top:10px;gap:18px;align-items:flex-start">
+        <div><div class="nh-desc" style="margin:0 0 4px"><b>넣는 방법</b></div><label class="ck" style="display:flex"><input type="radio" name="im-how" value="rep" checked>지금 틀을 바꾸기</label><label class="ck" style="display:flex"><input type="radio" name="im-how" value="add">지금 틀 뒤에 붙이기 (항목만)</label></div>
+        <div><div class="nh-desc" style="margin:0 0 4px"><b>함께 가져올 것</b></div><label class="ck" style="display:flex"><input type="checkbox" data-o="lay" checked>표 모양 (칸 · 폭)</label><label class="ck" style="display:flex"><input type="checkbox" data-o="narr" checked>서술 칸 · 시험 항목</label><label class="ck" style="display:flex"><input type="checkbox" data-o="ov">«수업 내용 개관» 글</label></div></div>
+      ${canShare ? `<label class="ck sh-opt"><input type="checkbox" data-o="share"><span><b>🔗 앞으로 함께 쓰기</b> — ${esc(A.whereOf(SUB))}와(과) ${esc(x.where)}이(가) 같은 평가 틀을 써요. 한 곳에서 고치면 모두 바뀌어요 (학생 입력 · 점수는 칸마다 따로).</span></label>` : ''}
+      ${(SUB.type || 'E') !== (x.type || 'E') ? `<div class="nh-warn" style="margin-top:8px">평가 방식이 달라요 (지금 ${esc((C.TYPES[SUB.type] || C.TYPES.E).short)} → ${esc((C.TYPES[x.type] || C.TYPES.E).short)}). «바꾸기»로 가져오면 방식도 바뀌어요 (이미 쓴 입력은 남아 있어요).</div>` : ''}`;
+    m.box.querySelector('[data-cnt]').textContent = items.length ? `${items.length}개 중 ${pick.items.size}개 고름` : '';
+    const sh = R.querySelector('[data-o="share"]');
+    if(sh) sh.onchange = () => { if(sh.checked){ R.querySelector('input[name="im-how"][value="rep"]').checked = true; R.querySelectorAll('[data-it],[data-all]').forEach(c => { c.checked = true; c.disabled = true; }); x.setup && (pick.items = new Set(items.map(i => i.id))); } else R.querySelectorAll('[data-it],[data-all]').forEach(c => { c.disabled = false; }); };
+  };
+  m.box.querySelector('[data-q]').oninput = drawList;
+  list.onclick = e => { const b = e.target.closest('[data-k]'); if(!b) return; cur = b.dataset.k; pick = null; drawList(); drawRight(); };
+  R.onchange = e => {
+    const c = e.target;
+    if(c.dataset.it){ if(c.checked) pick.items.add(c.dataset.it); else pick.items.delete(c.dataset.it); }
+    if(c.hasAttribute('data-all')){ const x = IMPSRC.find(y => y.key === cur); pick.items = new Set(c.checked ? ((x.setup || {}).items || []).map(i => i.id) : []); R.querySelectorAll('[data-it]').forEach(i => { i.checked = c.checked; }); }
+    const x = IMPSRC.find(y => y.key === cur); const n = ((x && x.setup || {}).items || []).length;
+    m.box.querySelector('[data-cnt]').textContent = n ? `${n}개 중 ${pick.items.size}개 고름` : '';
+  };
+  m.box.querySelector('[data-c]').onclick = () => m.close();
+  m.box.querySelector('[data-ok]').onclick = async () => {
+    const x = IMPSRC.find(y => y.key === cur); if(!x) return;
+    const how = (R.querySelector('input[name="im-how"]:checked') || {}).value || 'rep';
+    const o = k => { const c = R.querySelector(`[data-o="${k}"]`); return !!(c && c.checked); };
+    m.close();
+    await applyImport(x, { how, items: pick ? pick.items : null, lay: o('lay'), narr: o('narr'), ov: o('ov'), share: o('share') });
+  };
+  drawList(); drawRight();
+}
+async function applyImport(x, o){
+  await flush(); await flushSetup();
+  const src = JSON.parse(JSON.stringify(x.setup || {}));
+  const old = SUB.setup || {};
+  const items0 = (src.items || []).filter(i => !o.items || o.items.has(i.id));
+  let setup, type = SUB.type || 'E';
+  if(o.share && x.sub){
+    // 함께 쓰기 — 틀을 그대로 (같은 id) · 이 칸의 학생 입력은 같은 글 항목으로 이어 준다
+    setup = src; type = x.type || 'E';
+  } else if(o.how === 'add'){
+    const have = new Set((old.items || []).map(i => C.normKey(i.t)));
+    const add = items0.filter(i => !have.has(C.normKey(i.t))).map(i => Object.assign({}, i, { id: C.rid('i') }));
+    setup = Object.assign({}, old, { items: (old.items || []).filter(i => String(i.t || '').trim()).concat(add) });
+    if(o.lay && src.lay) setup.lay = Object.assign({}, src.lay, { sOn: !!(src.lay.sOn || (setup.lay || {}).sOn) });
+    if(add.some(i => String(i.s || '').trim())) setup.lay = Object.assign({}, setup.lay || {}, { sOn: true });
+  } else {
+    type = x.type || type;
+    const base = C.setupForType(old, type);
+    setup = Object.assign({}, base, { items: items0 });
+    if(o.lay) setup.lay = src.lay ? Object.assign({}, src.lay) : {}; 
+    if(o.narr){ setup.narr = (src.narr || []).map(n => Object.assign({}, n, { fixed: (!C.isEach(n) && o.ov) ? (n.fixed || '') : (C.isEach(n) ? '' : ((old.narr || []).find(y => C.normKey(y.t) === C.normKey(n.t)) || {}).fixed || '') })); if(src.score) setup.score = src.score; if(src.a) setup.a = src.a; if(src.r) setup.r = src.r; }
+    setup = C.reuseIds(old, setup);        // 같은 글 항목은 지금 id 그대로 (이미 넣은 5단계가 끊기지 않게)
+  }
+  try{
+    // 학생 입력 이어 주기 — 5단계 · 서술 · 점수 모두 같은 글끼리 (예전 id 값은 그대로 남김 — 되돌리면 다시 보임)
+    //   입력을 다시 읽어서(다른 기기에서 넣은 것까지) 먼저 이어 둔 뒤 틀을 바꾼다
+    const ref = FS.doc(A.db, 'nhpEntries', SUB.id);
+    const snap = await FS.getDoc(ref);
+    const rows = (snap.exists() && snap.data().rows) || {};
+    const up = C.remapPatch(rows, old, setup);
+    if(Object.keys(up).length) await FS.updateDoc(ref, Object.assign(up, { updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }));
+    const patch = { setup };
+    if(type !== (SUB.type || 'E')) patch.type = type;
+    let shareNote = '';
+    if(o.share && x.sub){
+      const k0 = C.shareOf(x.sub, A.SUBS);
+      if(k0) patch.share = k0;
+      else {
+        // 가져온 칸이 아직 아무와도 안 묶였거나 «이 칸만 빠짐»이면 그 칸도 같은 열쇠로 (고칠 수 있을 때만)
+        const key = 'sh_' + x.sub.id;
+        const canW = x.sub.state === 'draft' && (A.isMgr || (x.sub.teacherUids || []).includes(A.CU.uid)) || (A.isMgr && x.sub.state !== 'done');
+        if(!x.sub.share){ patch.share = key; }
+        else if(canW){ await A.saveSub(x.sub.id, { share: key }); patch.share = key; }
+        else shareNote = ' (그 칸은 함께 쓰기를 풀어 둔 칸이라 묶지는 못했어요 — 틀만 가져왔어요)';
+      }
+    }
+    await A.saveSub(SUB.id, patch);
+    Object.assign(SUB, patch);
+    ENT = await A.getEntry(SUB.id, true);
+    A.toast(o.share && patch.share ? '가져와서 «함께 쓰기»로 묶었어요 🔗' : '가져왔어요 ✓ — 오른쪽 미리보기에서 확인하세요' + shareNote);
+    draw();
+  }catch(e){ A.toast('가져오지 못했어요 — ' + A.errText(e) + (/permission/.test((e && e.code) || '') ? ' (보안 규칙 v38이 필요해요)' : ''), 'err'); }
+}
+/* ⭐ 기관 양식으로 저장 (나학평 담당) — nhpConfig/forms */
+async function saveAsForm(){
+  const nm = await A.prompt('⭐ 기관 양식으로 저장', '양식 이름 (선생님들이 «가져오기 › 기관 양식 모음»에서 골라요)', `${SUB.name} 기본`, { required: '이름을 넣어 주세요' });
+  if(!nm) return;
+  const d0 = await A.prompt('설명 (선택)', '예: 수업 태도 기본 · 모든 과목에 쓰기 좋음', '', {});
+  const st = JSON.parse(JSON.stringify(SUB.setup || {}));
+  (st.narr || []).forEach(n => { if(!C.isEach(n)) n.fixed = ''; });   // 개관 글은 학기마다 바뀜
+  try{
+    const ref = FS.doc(A.db, 'nhpConfig', 'forms');
+    const snap = await FS.getDoc(ref);
+    const list = (snap.exists() && snap.data().list) || [];
+    list.push({ id: C.rid('f'), name: nm.trim(), d: (d0 || '').trim(), type: SUB.type || 'E', setup: st, by: A.CU.uid, byName: A.CU.name || '', at: new Date().toISOString() });
+    await FS.setDoc(ref, { list, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }, { merge: true });
+    A.FORMS = { list };
+    A.toast('기관 양식 모음에 넣었어요 ⭐');
+  }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); }
+}
+window.addEventListener('resize', () => { if(TAB === 'set') pvFit(); });

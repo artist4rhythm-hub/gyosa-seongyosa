@@ -4,8 +4,10 @@
      (범위 칸처럼 위아래로 묶인 줄은 함께 · 출결 · 시험 표는 통째로 · 제목만 쪽 끝에 홀로 남지 않게)
    · 아주 긴 글 한 칸은 문단 · 문장에서 나눠 다음 쪽으로 잇는다
    · 인쇄와 PDF가 같은 쪽을 쓴다 (화면에서 본 그대로 나온다)
+   · v144 표지 모양(opt.cover) · 속지 모양(opt.inner: old · a · c) — A · C 는 쪽 머리 · 첫 쪽 학생 정보 줄 · 바닥 쪽 번호가 따로
    ═══════════════════════════════════════════════════════════ */
-import * as C from './nhp-core.js?v=142';
+import * as C from './nhp-core.js?v=144';
+const TH = C.TH;
 
 export const PAGE = { w: 794, h: 1123, m: 57, foot: 22 };   // A4 · 여백 15mm
 const INNER_H = PAGE.h - PAGE.m * 2 - PAGE.foot;
@@ -27,7 +29,7 @@ export const PAGE_CSS = `
   #np-print-root .np:last-child{page-break-after:auto;break-after:auto}
 }
 #np-print-root{display:none}
-`;
+` + TH.CHROME_CSS + TH.COVER_CSS;
 export function ensureCSS(){
   if(!document.getElementById('nr-css')){ const s = document.createElement('style'); s.id = 'nr-css'; s.textContent = C.REPORT_CSS; document.head.appendChild(s); }
   if(!document.getElementById('np-css')){ const s = document.createElement('style'); s.id = 'np-css'; s.textContent = PAGE_CSS; document.head.appendChild(s); }
@@ -56,14 +58,14 @@ export function rowGroups(t){
   }
   return { heads, groups };
 }
+let THEME = 'old';      // 지금 쪽 나눔이 쓰는 속지 모양 (paginate 안에서만 바뀜)
 function tableShell(t){
-  const cols = (t.cols || []).length ? `<colgroup>${t.cols.map(w => `<col style="width:${Number(w) || 0}%">`).join('')}</colgroup>` : '';
-  return el(`<table class="${C.esc((t.cls || '') + (t.auto ? ' auto' : ''))}">${cols}<tbody></tbody></table>`);
+  return el(`<table class="${C.esc((t.cls || '') + (t.auto ? ' auto' : ''))}">${C.colgroupHTML(t, THEME)}<tbody></tbody></table>`);
 }
 function rowEl(r){
   const tb = el(`<table><tbody>${`<tr${r.hd ? ' class="hd"' : ''}>${(r.cells || []).map(c => {
-    const cls = [c.b ? 'b' : '', c.al === 'c' ? 'c' : c.al === 'r' ? 'r' : '', c.mk ? 'mk' : '', c.sm ? 'sm' : ''].filter(Boolean).join(' ');
-    return `<td${c.cs > 1 ? ` colspan="${Number(c.cs) | 0}"` : ''}${c.rs > 1 ? ` rowspan="${Number(c.rs) | 0}"` : ''}${cls ? ` class="${cls}"` : ''}>${C.esc(c.x).replace(/\n/g, '<br>')}</td>`;
+    const cls = C.cellClass(c, false, r.hd);
+    return `<td${c.cs > 1 ? ` colspan="${Number(c.cs) | 0}"` : ''}${c.rs > 1 ? ` rowspan="${Number(c.rs) | 0}"` : ''}${cls ? ` class="${cls}"` : ''}>${C.cellText(c, false, THEME)}</td>`;
   }).join('')}</tr>`}</tbody></table>`);
   return tb.querySelector('tr');
 }
@@ -90,18 +92,26 @@ function refine(ps, k){
 }
 
 /* ═══ 쪽 나누기 — 문서 하나 → 쪽 요소들 ═══
-   opt = { cover:true, coverImg, logoImg, footL:'다니엘 아마츠 · 나의 학교생활', footR:'이름' } */
+   opt = { cover:true|false, coverKey:'cc1'…'old', inner:'old'|'a'|'c', sign:{on,…}, draft, coverImg, logoImg, footL, footR(예전 모양) } */
 export async function paginate(doc, opt){
   opt = opt || {};
   ensureCSS();
+  const theme = (opt.inner === 'a' || opt.inner === 'c') ? opt.inner : 'old';
+  const coverKey = TH.coverOf(opt.coverKey || (theme === 'old' ? 'old' : TH.DEF.cover)).k;
+  THEME = theme;
   await fontsReady();
+  await TH.fontsFor(coverKey, theme);
   const lang = doc.lang || 'ko';
+  const G = TH.CHROME[theme] || TH.CHROME.old;
+  const IH = G.innerH;
   const host = el('<div class="np-host"></div>');
   document.body.appendChild(host);
   const pages = [];
   const newPage = () => {
     if(pages.length > 300){ host.remove(); throw new Error('쪽이 너무 많아요 (300쪽 넘음) — 나학평 담당에게 알려 주세요'); }   // 혹시 모를 끝없는 쪽 나눔 막기
-    const p = el(`<div class="np"><div class="np-in nr${lang === 'en' ? ' en' : ''}"></div><div class="np-ft"><span></span><span></span></div></div>`);
+    const p = theme === 'old'
+      ? el(`<div class="np"><div class="np-in nr${lang === 'en' ? ' en' : ''}"></div><div class="np-ft"><span></span><span></span></div></div>`)
+      : el(`<div class="np np-th"><div class="np-in nr${lang === 'en' ? ' en' : ''} th-${theme}" style="top:${G.top}px;height:${IH}px"></div>${TH.runHeadHTML(theme, doc)}<div class="np-fx"></div></div>`);
     host.appendChild(p); pages.push(p); return p.querySelector('.np-in');
   };
   // 내용의 실제 아래 끝(여백 빼고)으로 잰다 · 6px 여유 — 화면 확대(미리보기) · 브라우저 인쇄에서 줄바꿈이 조금 달라져도 쪽 끝이 잘리지 않게
@@ -109,18 +119,21 @@ export async function paginate(doc, opt){
     const top = inner.getBoundingClientRect().top;
     let bot = top;
     for(const c of inner.children){ const b = c.getBoundingClientRect().bottom; if(b > bot) bot = b; }
-    return bot - top <= INNER_H - 6;
+    return bot - top <= IH - 6;
   };
   if(opt.cover !== false){
-    const p = el(`<div class="np np-cover"><div class="np-cv">${C.coverHTML(doc, { cover: opt.coverImg, logo: opt.logoImg })}</div></div>`);
+    const p = coverKey === 'old'
+      ? el(`<div class="np np-cover"><div class="np-cv">${C.coverHTML(doc, { cover: opt.coverImg, logo: opt.logoImg })}</div></div>`)
+      : el(`<div class="np np-cover">${TH.coverHTML(doc, coverKey, { emblem: opt.logoImg, contents: TH.contentsOf(doc, C.KEY_HEAD) })}</div>`);
     host.appendChild(p); pages.push(p);
     await imgsReady(p);
   }
   let inner = newPage();
-  const nos = C.numberSubjects(doc);
+  if(theme !== 'old') inner.appendChild(el(TH.infoStripHTML(doc, theme)));     // 첫 쪽 학생 정보 줄
+  const nos = C.numbersFor(doc, theme);
   const blocks = doc.blocks || [];
   for(const b of blocks){
-    const parts = C.blockParts(b, lang, nos[b.id], false);
+    const parts = C.blockParts(b, lang, nos[b.id], false, theme);
     const secCls = b.k === 'sec' ? 'nb ns' : b.k === 'subj' ? 'nb nsub' : 'nb';
     let sec = el(`<section class="${secCls}"></section>`);
     const head = el(parts.head);
@@ -175,7 +188,7 @@ export async function paginate(doc, opt){
         if(put(g.map(i => t.rows[i]))){ bodyRows += g.length; headAlone = false; continue; }
         // 묶음 높이 — 쪽의 절반 아래면 새 쪽에 통째로 (범위 칸이 둘로 갈라지지 않게) · 더 크면 지금 쪽부터 나눠 채운다
         const gh = (() => { const els = g.map(i => rowEl(t.rows[i])); els.forEach(x => tb.appendChild(x)); const h = els[els.length - 1].getBoundingClientRect().bottom - els[0].getBoundingClientRect().top; els.forEach(x => x.remove()); return h; })();
-        if((g.length <= 2 || t.keep || gh <= INNER_H * 0.45) && !fresh()){
+        if((g.length <= 2 || t.keep || gh <= IH * 0.45) && !fresh()){
           nextPage();
           if(put(g.map(i => t.rows[i]))){ bodyRows += g.length; headAlone = false; continue; }
         }
@@ -222,18 +235,23 @@ export async function paginate(doc, opt){
       }
     }
   }
+  // v144 마지막 «확인» 칸 (학기 설정 › 출력 모양에서 켰을 때) — 안 들어가면 새 쪽
+  const sg = TH.signHTML(doc, theme === 'old' ? 'c' : theme, opt.sign);
+  if(sg){ let x = el(sg); inner.appendChild(x); if(!fits(inner)){ x.remove(); inner = newPage(); inner.appendChild(el(sg)); } }
   // 빈 마지막 쪽 지우기
   const last = pages[pages.length - 1];
   if(last && !last.classList.contains('np-cover') && !last.querySelector('.np-in').childElementCount){ last.remove(); pages.pop(); }
   // 쪽 번호
   const body = pages.filter(p => !p.classList.contains('np-cover'));
   body.forEach((p, i) => {
+    if(theme !== 'old'){ const fx = p.querySelector('.np-fx'); if(fx) fx.outerHTML = TH.footHTML(theme, doc, i + 1, body.length, { draft: opt.draft }); return; }
     const f = p.querySelectorAll('.np-ft span');
     if(f[0]) f[0].textContent = opt.footL || '';
     if(f[1]) f[1].textContent = `${opt.footR ? opt.footR + '  ·  ' : ''}${i + 1} / ${body.length}`;
   });
   host.remove();
   pages.forEach(p => p.remove());
+  THEME = 'old';
   return pages;
 }
 

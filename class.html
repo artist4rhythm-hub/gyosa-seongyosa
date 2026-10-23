@@ -94,6 +94,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:999;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 .toast.err{background:#dc2626;} .toast.ok{background:var(--gm);}
+/* 👥 v144 반 편성 · 조 편성 탭 */
+.g-tabs{display:flex;gap:6px;margin-bottom:12px}
+.g-tabs button{font-family:inherit;font-size:14px;font-weight:800;border:1.5px solid var(--ivd);background:var(--wh);color:var(--ts);height:40px;padding:0 18px;border-radius:10px;cursor:pointer}
+.g-tabs button.on{background:var(--gd);border-color:var(--gd);color:#fff}
 </style>
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
@@ -334,13 +338,36 @@ async function loadClasses(){
   });
 }
 
+// ── 👥 v144 조 편성 탭 (groups.js) — 지혜의 계단 · 예배 · 특별활동 활동조 ──
+let TAB = /#groups/.test(location.hash) ? 'groups' : 'class';
+let GRP = null;
+function tabsHTML(){
+  return `<div class="g-tabs" role="tablist"><button role="tab" data-ctab="class" class="${TAB === 'class' ? 'on' : ''}" onclick="setClsTab('class')">🏫 반 편성</button><button role="tab" data-ctab="groups" class="${TAB === 'groups' ? 'on' : ''}" onclick="setClsTab('groups')">👥 조 편성</button></div>`;
+}
+async function renderGroups(){
+  $I('main-body').innerHTML = tabsHTML() + '<div id="grp-body"></div>';
+  try{
+    if(!GRP){ GRP = await import('./groups.js?v=144'); const st = document.createElement('style'); st.textContent = GRP.CSS; document.head.appendChild(st); }
+    await loadClasses();
+    await GRP.render($I('grp-body'), { db, me: () => CU, students: () => STUDENTS, staff: () => STAFF, classes: () => CLASSES, year: () => curYear, canEdit: () => isAdmin(), orgs: () => myOrgs(), toast });
+  }catch(e){ $I('grp-body').innerHTML = `<div class="acard"><p class="empty">조 편성을 열지 못했어요 — ${e.message || e}</p></div>`; }
+}
+function setClsTab(t){
+  TAB = t;
+  try{ history.replaceState(null, '', t === 'groups' ? '#groups' : location.pathname + location.search); }catch(e){}
+  if(GRP && t !== 'groups') GRP.stop();
+  if(t === 'groups') renderGroups(); else renderMain();
+}
+window.setClsTab = setClsTab;
+
 // ── 메인 화면 ──
 async function renderMain(){
+  if(TAB === 'groups') return renderGroups();
   // 연도 옵션 (올해 기준 ±2년)
   const ty = new Date().getFullYear();
   const years = [];
   for(let y=ty+1; y>=ty-3; y--) years.push(y);
-  $I('main-body').innerHTML = `
+  $I('main-body').innerHTML = tabsHTML() + `
     <div class="acard">
       <h3 class="actitle">${curYear}년 반 편성</h3>
       <p class="adesc">연도별로 반을 만들고 담임을 지정한 뒤, 각 반에 학생을 배정합니다.</p>
