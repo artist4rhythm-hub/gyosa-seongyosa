@@ -406,7 +406,7 @@ function renderSidebar(){
           <div class="sb-mr">${sbOrgLabel()}</div>
         </div>
       </div>
-      <div id="sb-ver" class="sb-ver"></div>
+      <div id="sb-ver" class="sb-ver">${window.__APPVER ? '교사 선교사 v' + esc(window.__APPVER) : ''}</div>
       </div>
     </div>`;
   // 버튼이 방금 그려졌으니 지금 고른 글자 크기를 표시해 준다
@@ -963,7 +963,8 @@ window.guardPage = guardPage;
     draw();
   })();
 
-  /* ── 🏷 버전 배지 — version.json 한 곳만 올리면 전 화면에 반영 ── */
+  /* ── 🏷 버전 배지 — version.json 한 곳만 올리면 전 화면에 반영
+     · v146: 뱃지가 바뀌면 사이드바를 통째로 다시 그려서 버전 줄이 비던 것 → 다시 그릴 때도 window.__APPVER 로 바로 넣음 ── */
   (async function fillVer(tries){
     tries = tries || 0;
     let v = window.__APPVER;
