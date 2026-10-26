@@ -6,7 +6,7 @@
    · 최종 검토관: «최종 승인»(잠김) · «다시 열기»
    · 입력은 칸 하나씩 바로 저장 (0.5초 모아서) — 함께 맡은 선생님이 같은 칸을 써도 서로 덮어쓰지 않게 «바뀐 칸만» 저장
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=146';
+import * as SETUP from './nhp-setup.js?v=148';
 
 let A = null, C = null, esc = null, FS = null;
 let SUB = null, ENT = null, TAB = 'in', EL = null, CAN = null, SEC = null, SIDS = [];
@@ -172,6 +172,7 @@ function draw(){
     <div class="sj-tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${TAB === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div id="ej-body"></div>`;
   EL.onclick = onClick; EL.onchange = onChange; EL.oninput = onInput; EL.onkeydown = onKey;
+  EL.onpointerdown = onGrip;
   drawBody();
 }
 function lockNote(){
@@ -426,7 +427,7 @@ function setupHTML(){
     L += `<div class="st-card"><div class="frow" style="align-items:center"><span class="nh-desc" style="margin:0">듣는 학생: ${(SUB.studentIds || []).length ? `<b>${SUB.studentIds.length}명</b>${SUB.grp ? ' (조원)' : '만'}` : '반 모두'}</span>${(!SUB.grp && (A.isMgr || (SUB.state === 'draft' && CAN.teacher))) ? '<button class="nh-btn xs" data-ej="students">학생 고르기</button>' : ''}
         <span class="nh-desc" style="margin:0 0 0 12px">출력 이름: <b>${esc(SUB.printName || SUB.name)}</b> · ${SUB.grp ? '조 담당' : '교사'} <b>${esc(SUB.printTeacher || (SUB.teacherUids || []).map(A.staffName).join(', ') || '—')}</b></span>
         ${SUB.inheritedFrom ? '<span class="ch gray">지난 학기에서 이어받은 틀</span>' : ''}<span class="nh-sp"></span>${A.isMgr && CAN.setup ? '<button class="nh-btn xs" data-ej="saveform">⭐ 기관 양식으로 저장</button>' : ''}</div></div>`;
-    return h + `<div class="ed2"><div class="ed2-l">${L}</div><aside class="ed2-r" id="ej-pv">${pvPaneHTML()}</aside></div>`;
+    return h + `<div class="ed2" style="--pvw:${PVW}px"><div class="ed2-l">${L}</div><aside class="ed2-r" id="ej-pv"><span class="pv-grip" title="끌어서 미리보기 폭 바꾸기" aria-label="미리보기 폭"></span>${pvPaneHTML()}</aside></div>`;
   }
   if(k === 'hr') return h + `<div class="st-card"><div class="fl"><label>표 왼쪽 이름</label><input class="nh-in" data-hrl value="${esc(st.label || '담임 평가')}"${dis}></div></div>` + narrEditorHTML(st, dis, true);
   if(k === 'parent'){
@@ -508,14 +509,38 @@ function shareStripHTML(){
     <div class="pk" style="margin-top:6px">${mem.map(x => `<span class="p" style="padding-right:11px" title="${esc(why(x))}">${esc(A.whereOf(x))} ${same(x) ? '<span class="ch ok">같음</span>' : `<span class="ch warn">다름${why(x) ? ' · ' + esc(why(x)) : ''}</span>`}</span>`).join('')}</div>
     ${STRUCT() ? `<div class="frow" style="margin-top:6px">${diff.length ? '<button class="nh-btn xs" data-ej="sharesync" title="다른 칸의 틀을 이 칸 틀로 (그 칸 입력은 같은 글끼리 이어짐)">다른 칸을 이 틀로 맞추기</button><button class="nh-btn xs" data-ej="sharepull" title="이 칸을 함께 쓰는 틀로 (이 칸 입력은 같은 글끼리 이어짐)">↙ 함께 쓰는 틀로 이 칸 바꾸기</button>' : ''}<button class="nh-btn xs ghost" data-ej="unshare">이 칸만 함께 쓰기 풀기</button></div>` : ''}</div>`;
 }
+/* v148 미리보기 손잡이 끌기 — 왼쪽으로 끌면 넓어짐 */
+function onGrip(e){
+  const g = e.target.closest && e.target.closest('.pv-grip'); if(!g) return;
+  e.preventDefault();
+  const ed = g.closest('.ed2'); if(!ed) return;
+  const right = ed.getBoundingClientRect().right;
+  const maxW = Math.min(PVW_MAX, ed.clientWidth - 360);
+  g.classList.add('on'); try{ g.setPointerCapture(e.pointerId); }catch(x){}
+  const mv = ev => setPvw(Math.min(maxW, right - ev.clientX), false);
+  const up = () => { g.classList.remove('on'); window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); setPvw(PVW, true); };
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+}
 /* 오른쪽 출력 미리보기 — 실제 A4 쪽 폭 그대로 · 예시 학생 · 속지 모양 */
 let PV_SID = '', PV_T = null;
+/* v148 미리보기 폭 — 좁게 · 보통 · 넓게 · 크게(실제 크기) + 가운데 손잡이로 끌기 (이 기기에서 기억) */
+const PVW_SET = [['좁게', 360], ['보통', 460], ['넓게', 600], ['크게', 760]];
+const PVW_MIN = 320, PVW_MAX = 980;
+let PVW = (() => { try{ const v = Number(localStorage.getItem('nhp_pvw')); return v >= PVW_MIN && v <= PVW_MAX ? v : 460; }catch(e){ return 460; } })();
+function setPvw(v, save){
+  PVW = Math.max(PVW_MIN, Math.min(PVW_MAX, Math.round(v)));
+  const ed = document.querySelector('.ed2'); if(ed) ed.style.setProperty('--pvw', PVW + 'px');
+  document.querySelectorAll('[data-pvw]').forEach(b => b.classList.toggle('on', Math.abs(Number(b.dataset.pvw) - PVW) < 2));
+  if(save){ try{ localStorage.setItem('nhp_pvw', String(PVW)); }catch(e){} }
+  pvFit();
+}
 function pvPaneHTML(){
   const sids = SIDS; if(!sids.length) return '<div class="nh-desc">학생이 없어요.</div>';
   if(!PV_SID || !sids.includes(PV_SID)) PV_SID = sids.find(x => (ENT.rows || {})[x]) || sids[0];
   const d = A.design();
   return `<div class="pv2-h"><b>출력 미리보기</b><select class="nh-sel" data-pvs style="height:30px;font-size:12px">${sids.map(x => `<option value="${esc(x)}"${x === PV_SID ? ' selected' : ''}>${esc(A.stuName(x))} (예시)</option>`).join('')}</select>
-      <select class="nh-sel" data-pvth style="height:30px;font-size:12px" title="속지">${C.TH.listOptionsHTML(C.TH.INNERS, d.inner)}</select></div>
+      <select class="nh-sel" data-pvth style="height:30px;font-size:12px" title="속지">${C.TH.listOptionsHTML(C.TH.INNERS, d.inner)}</select>
+      <span class="pv-wb" title="미리보기 폭 — 가운데 손잡이(⋮)를 끌어도 돼요">${PVW_SET.map(([l, w]) => `<button type="button" data-pvw="${w}" class="${Math.abs(w - PVW) < 2 ? 'on' : ''}">${l}</button>`).join('')}</span></div>
     <div class="pv2-pg"><div class="pv2-sc" id="ej-pv-sc">${pvBlockHTML(d.inner)}</div></div>
     <div class="nh-desc" style="margin:6px 0 0">고치면 바로 바뀌어요 · 실제 A4 쪽 폭(180mm) 그대로 · 쪽 나눔은 «👀 미리보기 › 전체»에서</div>`;
 }
@@ -664,13 +689,21 @@ function marksHTML(){
   const ses = S.find(s => s.id === MK_SES);
   const dis = canMark() ? '' : ' disabled';
   let h = `<div class="nh-info">📈 <b>학기 중 기록</b> — 수업 계획서의 평가 항목으로 회차마다 5단계(또는 점수)를 적어 두면, 학기 말에 <b>평균으로 단계를 제안</b>해요. 제안을 «학기 말 평가»에 채워 넣은 뒤 선생님이 고칠 수 있어요. (기록은 출력에 나오지 않아요)</div>
+    <div class="mk-how"><div><b>1️⃣ 한 번만 넣어도 돼요</b><span>회차마다 평가하지 못했으면 <b>1회만</b> 넣어도 그 값이 학기 말 제안이 돼요.</span></div>
+      <div><b>🔁 여러 번 넣으면 평균</b><span>여러 회차에 넣으면 <b>넣은 회차들만의 평균</b>이에요 (빈 회차는 세지 않음).</span></div>
+      <div><b>👤 학생마다 따로</b><span>평균은 학생마다 따로 내요 — <b>몇 명만</b> 평가해도 그 학생들만 제안돼요.</span></div></div>
     <div class="frow" style="align-items:center;margin-bottom:8px"><b>회차</b>${S.map(s => `<button class="nh-btn xs ${s.id === MK_SES ? 'p' : ''}" data-mks="${esc(s.id)}">${esc(s.date ? s.date.slice(5).replace('-', '/') : '')} ${esc(s.title || '')}</button>`).join('') || '<span class="nh-desc" style="margin:0">아직 없어요</span>'}
       ${canMark() ? '<button class="nh-btn xs g" data-ej="mkadd">＋ 회차</button>' : ''}<span class="nh-sp"></span>${S.length ? '<button class="nh-btn sm" data-ej="mkavg">🧮 평균 보기 · 채우기</button>' : ''}</div>`;
   if(!ses) return h;
   h += `<div class="st-card"><div class="frow" style="align-items:center"><b>${esc(ses.date || '')} ${esc(ses.title || '')}</b>${canMark() ? `<button class="nh-btn xs" data-ej="mkedit">이름 · 날짜</button><button class="nh-btn xs r" data-ej="mkdel">회차 빼기</button>` : ''}</div>`;
   if(items.length && (SUB.type === 'E' || SUB.type === 'M')){
     const on = ses.items && ses.items.length ? items.filter(it => ses.items.includes(it.id)) : items;
-    h += `<div class="nh-tw" style="margin-top:8px;max-height:60vh"><table class="nh-t" data-grid="mk"><thead><tr><th class="fc">평가 항목</th>${SIDS.map(sid => `<th class="c sv">${esc(shortName(sid))}</th>`).join('')}</tr></thead><tbody>${on.map(it => `<tr><td class="fc" style="min-width:220px;font-size:12px">${esc(it.t)}</td>${SIDS.map(sid => { const v = Number((((MARKS.m[sid] || {})[ses.id]) || {})[it.id]) || 0; return `<td class="c"><button class="lv${v ? ' v' + v : ''}" data-mk="${esc(sid)}" data-it="${esc(it.id)}"${dis}>${v || '·'}</button></td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+    // v148 범위(묶음) · 세부도 보이게 — 범위가 비면 위 항목과 같은 범위 (평가 틀과 같은 규칙)
+    let prevG = '', shownG = null; const rowsH = [];
+    items.forEach(it => { const g = String(it.g || '').trim() || prevG; prevG = g; if(!on.includes(it) || !String(it.t || '').trim()) return;
+      if(g && g !== shownG){ rowsH.push(`<tr class="grp mk-g"><td class="fc"><b>${esc(g)}</b></td><td colspan="${SIDS.length}"></td></tr>`); shownG = g; }
+      rowsH.push(`<tr><td class="fc mk-t${g ? ' in' : ''}">${String(it.s || '').trim() ? `<b class="mk-s">${esc(it.s)}</b>` : ''}<span>${esc(it.t)}</span></td>${SIDS.map(sid => { const v = Number((((MARKS.m[sid] || {})[ses.id]) || {})[it.id]) || 0; return `<td class="c"><button class="lv${v ? ' v' + v : ''}" data-mk="${esc(sid)}" data-it="${esc(it.id)}"${dis}>${v || '·'}</button></td>`; }).join('')}</tr>`); });
+    h += `<div class="nh-tw" style="margin-top:8px;max-height:60vh"><table class="nh-t mk-tb" data-grid="mk"><thead><tr><th class="fc">평가 항목</th>${SIDS.map(sid => `<th class="c sv">${esc(shortName(sid))}</th>`).join('')}</tr></thead><tbody>${rowsH.join('')}</tbody></table></div>
       ${canMark() ? `<div class="nh-desc" style="margin-top:6px">이 회차에 볼 항목만 고를 수도 있어요: <button class="nh-btn xs" data-ej="mkitems">항목 고르기</button></div>` : ''}`;
   }
   if(cols.length && (SUB.type === 'S' || SUB.type === 'M')){
@@ -692,7 +725,7 @@ function marksAverage(){
 async function marksFill(){
   const avg = marksAverage();
   const st = SUB.setup || {}; const items = st.items || []; const cols = ((st.score || {}).cols) || [];
-  const m = A.modal('🧮 학기 중 기록 평균', `<div class="nh-desc">회차 ${MARKS.sessions.length}번의 평균이에요 (5단계는 반올림해서 제안). 학기 말 평가에 채우면 선생님이 하나씩 고칠 수 있어요.</div>
+  const m = A.modal('🧮 학기 중 기록 평균', `<div class="nh-desc">학생마다 <b>넣은 회차들만의 평균</b>이에요 (회차 ${MARKS.sessions.length}번 중 · 빈 회차는 세지 않음 · 5단계는 반올림해서 제안). 1회만 넣은 학생은 그 값 그대로, 아무것도 안 넣은 학생 · 항목은 비워 둬요 (·). 학기 말 평가에 채우면 선생님이 하나씩 고칠 수 있어요.</div>
     <div class="nh-tw" style="max-height:55vh"><table class="nh-t"><thead><tr><th class="fc">학생</th>${items.map(it => `<th class="c sv" title="${esc(it.t)}">${esc(it.t.slice(0, 8))}…</th>`).join('')}${cols.map(c => `<th class="c">${esc(c.t)}</th>`).join('')}</tr></thead>
     <tbody>${SIDS.map(sid => `<tr><td class="fc"><b>${esc(A.stuName(sid))}</b></td>${items.map(it => { const r = avg[sid].e[it.id]; return `<td class="c">${r ? `<span class="lv v${r.lv}" style="cursor:default" title="평균 ${r.avg} · ${r.n}회">${r.lv}</span>` : '·'}</td>`; }).join('')}${cols.map(c => `<td class="c">${esc(avg[sid].s[c.id] || '·')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`,
     CAN.edit ? `<button class="nh-btn" data-c>닫기</button><button class="nh-btn" data-fill="empty">빈 칸만 채우기</button><button class="nh-btn p" data-fill="all">모두 덮어 채우기</button>` : `<button class="nh-btn" data-c>닫기</button>`, 'wide');
@@ -776,6 +809,7 @@ async function onClick(e){
   const t = e.target.closest('button,[data-ej],[data-tab],[data-mode]');
   if(!t) return;
   const d = t.dataset;
+  if(d.pvw){ setPvw(Number(d.pvw), true); return; }
   if(d.tab){ await flush(); TAB = d.tab; draw(); return; }
   if(d.mode){ VIEWMODE = d.mode; drawBody(); return; }
   if(d.one){ CUR = Math.max(0, Math.min(SIDS.length - 1, CUR + Number(d.one))); drawBody(); return; }

@@ -40,6 +40,8 @@ export function pickPeople(a, title, selected, opt){
   });
 }
 const names = uids => (uids || []).map(u => A.staffName(u)).filter(Boolean);
+/* v148 서랍 머리 — 색 배지 아이콘 + 제목 */
+const dh = (icon, title, tone) => `<span class="dr-ic t-${tone || 'g'}">${icon}</span><span class="dr-tt">${esc(title)}</span>`;
 /* 담임 고르기 — 나학평이 열린 분만 · 지금 담임이 닫힌 분이면 ⚠ 로 남겨 보임 (학기 열기 · 학기 설정 같은 모양) */
 const hrOpts = cur => `<option value="">— 없음 —</option>` + A.staffPick().concat(cur && A.SMAP[cur] && !A.nhpOk(cur) ? [A.SMAP[cur]] : []).map(s => `<option value="${esc(s.uid)}"${s.uid === cur ? ' selected' : ''}>${A.nhpOk(s.uid) ? '' : '⚠ '}${esc(s.name)}${A.nhpOk(s.uid) ? '' : ' (나학평 닫힘)'}${otherOrg(s) ? ' · 지혜빛' : ''}</option>`).join('');
 const peopleChips = (uids, key) => `<span class="pk">${(uids || []).map(u => { const off = !A.nhpOk(u);
@@ -393,16 +395,18 @@ export async function render(a, el, pane){
   const closed = t.src === 'import' ? [] : closedSeats(t);
   el.innerHTML = `<div id="st-live" class="nh-info" style="display:none">다른 분이 칸을 고쳤어요. <button class="nh-btn xs" data-st="redraw">다시 그리기</button></div>
     ${closed.length ? `<div class="nh-warn" data-closed>⚠ <b>나학평이 닫힌 선생님 ${closed.length}분</b>이 맡은 자리가 있어요 — ${closed.join(', ')}<br><span>이분들은 나학평을 열 수 없어 입력 · 검토를 못 해요. 수퍼관리자가 <b>관리자 › 접근 권한 › 🗂 화면별 › 나학평</b>에서 열어 주거나, 아래에서 다른 분으로 바꿔 주세요.</span></div>` : ''}
-    <div class="nh-desc">${esc(C.termLabel(t))} · ${t.src === 'import' ? '옮겨 온 지난 자료' : `반 ${secs.length}개 · 칸 ${live.length}개`} · 열린 서랍은 이 기기에서 기억해요.</div>
+    <div class="st-top"><div class="st-ttl"><b>${esc(C.termLabel(t))}</b><small>${t.src === 'import' ? '옮겨 온 지난 자료' : `반 ${secs.length}개 · 칸 ${live.length}개 · 학생 ${secs.reduce((n, s) => n + (s.students || []).length, 0)}명`}</small></div>
+      <div class="st-jump">${(t.src === 'import' ? [] : [['info', '🗓', '학기 정보'], ['secs', '🏫', '반 · 담임'], ['cells', '🧩', '칸'], ['review', '🧐', '검토 순서'], ['hr', '💬', '담임평가'], ['lists', '📋', '공통 목록']]).concat([['print', '🖨', '출력 모양'], ['lang', '🌐', '영문판'], ['import', '🗂', '가져오기']]).map(([k, i, l]) => `<button class="sj${PANE === k ? ' on' : ''}" data-jump="${k}"><i>${i}</i>${l}</button>`).join('')}</div>
+      <div class="nh-desc" style="margin:0">서랍을 누르면 열리고 닫혀요 · 열린 서랍은 이 기기에서 기억해요</div></div>
     ${t.src === 'import' ? '' : `
-    <details class="dr" data-pane="info"${open('info')}><summary>🗓 학기 정보 · 마감 <small>${esc(t.start || '')} ~ ${esc(t.end || '')}${t.status === 'closed' ? ' · 마감됨' : ''}</small></summary><div class="db">${infoHTML(t)}</div></details>
-    <details class="dr" data-pane="secs"${open('secs')}><summary>🏫 반 · 나학평 담임 <small>${secs.length}반 · ${secs.reduce((n, s) => n + (s.students || []).length, 0)}명</small></summary><div class="db">${secsHTML(t)}</div></details>
-    <details class="dr" data-pane="cells"${open('cells')}><summary>🧩 칸 (과목 · 출결 · 담임평가 …) <small>맡은 선생님 · 평가 방식 · 순서</small></summary><div class="db">${cellsHTML(t)}</div></details>
-    <details class="dr" data-pane="review"${open('review')}><summary>🧐 검토 순서 · 검토관 <small>${esc((t.review && t.review.stages || []).map(s => s.label).concat([(t.review && t.review.final && t.review.final.label) || '최종 승인']).join(' → '))}</small></summary><div class="db" data-rv></div></details>
-    <details class="dr" data-pane="hr"${open('hr')}><summary>💬 담임평가 <small>${t.hr && t.hr.on ? '쓰는 중' : '안 씀'}</small></summary><div class="db">${hrHTML(t)}</div></details>
-    <details class="dr" data-pane="lists"${open('lists')}><summary>📋 공통 목록 <small>특별활동 ${(A.LISTS.activities || []).length} · 부모교육 ${(A.LISTS.parentEdu || []).length} · 비전트립 ${(A.LISTS.visions || []).length} · 캠프 ${(A.LISTS.camps || []).length}</small></summary><div class="db">${listsHTML(t)}</div></details>`}
-    <details class="dr" data-pane="print"${open('print')}><summary>🖨 출력 모양 <small>${esc(printSummary())}</small></summary><div class="db" data-prt>${printPaneHTML()}</div></details>
-    <details class="dr" data-pane="lang"${open('lang')}><summary>🌐 영문판 · 용어 바꾸기 · 번역 담당</summary><div class="db">${langHTML()}</div></details>
+    <details class="dr" data-pane="info"${open('info')}><summary>${dh('🗓', '학기 정보 · 마감', 'b')}<small>${esc(t.start || '')} ~ ${esc(t.end || '')}${t.status === 'closed' ? ' · 마감됨' : ''}${(t.due || {}).entry ? ` · 입력 마감 ${esc(t.due.entry)}` : ''}</small></summary><div class="db">${infoHTML(t)}</div></details>
+    <details class="dr" data-pane="secs"${open('secs')}><summary>${dh('🏫', '반 · 나학평 담임', 'g')}<small>${secs.length}반 · ${secs.reduce((n, s) => n + (s.students || []).length, 0)}명</small></summary><div class="db">${secsHTML(t)}</div></details>
+    <details class="dr" data-pane="cells"${open('cells')}><summary>${dh('🧩', '칸 (과목 · 출결 · 담임평가 …)', 'm')}<small>칸 ${live.length}개 · 맡은 선생님 · 평가 방식 · 순서</small></summary><div class="db">${cellsHTML(t)}</div></details>
+    <details class="dr" data-pane="review"${open('review')}><summary>${dh('🧐', '검토 순서 · 검토관', 'p')}<small>${esc((t.review && t.review.stages || []).map(s => s.label).concat([(t.review && t.review.final && t.review.final.label) || '최종 승인']).join(' → '))}</small></summary><div class="db" data-rv></div></details>
+    <details class="dr" data-pane="hr"${open('hr')}><summary>${dh('💬', '담임평가', 'y')}<small>${t.hr && t.hr.on ? '쓰는 중' : '안 씀'}</small></summary><div class="db">${hrHTML(t)}</div></details>
+    <details class="dr" data-pane="lists"${open('lists')}><summary>${dh('📋', '공통 목록', 'b')}<small>특별활동 ${(A.LISTS.activities || []).length} · 부모교육 ${(A.LISTS.parentEdu || []).length} · 비전트립 ${(A.LISTS.visions || []).length} · 캠프 ${(A.LISTS.camps || []).length}</small></summary><div class="db">${listsHTML(t)}</div></details>`}
+    <details class="dr" data-pane="print"${open('print')}><summary>${dh('🖨', '출력 모양', 'g')}<small>${esc(printSummary())}</small></summary><div class="db" data-prt>${printPaneHTML()}</div></details>
+    <details class="dr" data-pane="lang"${open('lang')}><summary>${dh('🌐', '영문판 · 용어 바꾸기 · 번역 담당', 'm')}<small>영문 학년 · 용어 표 · 번역 담당</small></summary><div class="db">${langHTML()}</div></details>
     ${importCardHTML()}`;
   const rv = el.querySelector('[data-rv]');
   if(rv){
@@ -451,14 +455,16 @@ function cellsHTML(t){
       <span class="nh-sp"></span><button class="nh-btn sm g" data-st="addsubj">＋ 과목 더하기</button>
       <button class="nh-btn sm" data-st="fromtt">📅 시간표에서 새 과목</button><button class="nh-btn sm" data-st="inherit">↩ 지난 학기 평가 틀</button></div>
     <div class="pk" style="margin-bottom:8px">${kinds.filter(k => !has(k)).map(k => `<button class="nh-btn xs" data-addk="${k}">＋ ${esc(C.KINDS[k].icon)} ${esc(C.KINDS[k].ko.split(' (')[0])}</button>`).join('')}</div>
-    <div>${ss.map((s, i) => `<div class="cell-row">
+    ${ss.length ? `<div class="cell-tb"><div class="cell-row cell-hd"><span></span><span>칸</span><span class="hide-m">평가 방식</span><span class="hide-m">맡은 선생님</span><span class="hide-m">듣는 학생</span><span style="text-align:right">고치기</span></div>
+      ${ss.map((s, i) => { const grpHead = i === 0 || (ss[i - 1].kind === 'subj') !== (s.kind === 'subj') ? `<div class="cell-sub">${s.kind === 'subj' ? '📘 교과' : '🗂 담임 칸 · 공통'}</div>` : '';
+        return grpHead + `<div class="cell-row">
         <div class="ord"><button data-up="${esc(s.id)}" ${i ? '' : 'disabled'} aria-label="위로">▲</button><button data-dn="${esc(s.id)}" ${i < ss.length - 1 ? '' : 'disabled'} aria-label="아래로">▼</button></div>
-        <div><b style="cursor:pointer" data-open="${esc(s.id)}">${esc(A.subLabel(s))}</b>${s.printName ? ` <small style="color:var(--ink-3)">출력: ${esc(s.printName)}</small>` : ''}<div>${A.stateChip(s)}</div></div>
-        <div class="hide-m">${s.kind === 'subj' ? `<select class="nh-sel" style="height:30px;font-size:12px" data-type="${esc(s.id)}">${C.TYPE_ORDER.map(k => `<option value="${k}"${s.type === k ? ' selected' : ''}>${esc(C.TYPES[k].ko)}</option>`).join('')}</select>` : A.typeChip(s)}</div>
-        <div class="hide-m">${peopleChips(s.teacherUids)} <button class="nh-btn xs" data-tch="${esc(s.id)}">바꾸기</button></div>
+        <div class="cl-n"><span class="cl-ic">${esc(s.kind === 'subj' ? '📘' : ((C.KINDS[s.kind] || {}).icon || '•'))}</span><span class="cl-t"><b data-open="${esc(s.id)}" title="이 칸 열기">${esc(A.subLabel(s))}</b>${s.printName ? `<small>출력: ${esc(s.printName)}</small>` : ''}</span>${A.stateChip(s)}</div>
+        <div class="hide-m">${s.kind === 'subj' ? `<select class="nh-sel" style="height:30px;font-size:12px;width:100%" data-type="${esc(s.id)}">${C.TYPE_ORDER.map(k => `<option value="${k}"${s.type === k ? ' selected' : ''}>${esc(C.TYPES[k].ko)}</option>`).join('')}</select>` : A.typeChip(s)}</div>
+        <div class="hide-m cl-p">${peopleChips(s.teacherUids)}<button class="nh-btn xs ic" data-tch="${esc(s.id)}" title="맡은 선생님 바꾸기">✏️ 바꾸기</button></div>
         <div class="hide-m">${(s.studentIds || []).length ? `<span class="ch warn" title="일부 학생만 듣는 칸">${s.studentIds.length}명</span>` : '<span class="ch gray">반 모두</span>'}</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end"><button class="nh-btn xs" data-cedit="${esc(s.id)}">이름 · 출력</button><button class="nh-btn xs" data-cstu="${esc(s.id)}">학생</button><button class="nh-btn xs r" data-cdel="${esc(s.id)}">빼기</button></div>
-      </div>`).join('') || '<div class="nh-desc">이 반에 칸이 없어요.</div>'}</div>
+        <div class="cl-a"><button class="nh-btn xs ic" data-cedit="${esc(s.id)}" title="이름 · 출력 이름">🏷 이름</button><button class="nh-btn xs ic" data-cstu="${esc(s.id)}" title="듣는 학생 고르기">👥 학생</button><button class="nh-btn xs r ic" data-cdel="${esc(s.id)}" title="이 칸 빼기">🗑</button></div>
+      </div>`; }).join('')}</div>` : '<div class="nh-desc">이 반에 칸이 없어요.</div>'}
     <div data-grp>${GRP.paneHTML(A)}</div>
     <div class="nh-desc" style="margin-top:12px">💡 같은 과목을 여러 반이 같은 평가 틀로 쓰면 <b>«🔗 함께 쓰기»</b>로 묶어 두세요 — 한 곳에서 고치면 묶인 반 모두 바뀌어요 (학생 입력 · 점수는 반마다). <button class="nh-btn xs" data-st="shareall">🔗 같은 과목 모든 반 함께 쓰기…</button></div>`;
 }
@@ -590,7 +596,7 @@ async function printSample(){
 }
 function importCardHTML(){
   if(!(A.CU.role === 'super' || A.isMgr)) return '';
-  return `<details class="dr" data-pane="import"${PANE === 'import' ? ' open' : ''}><summary>🗂 지난 나학평 가져오기 <small>예전 프로그램에서 옮긴 파일 (7_보관)</small></summary><div class="db" data-imp>${IMP.cardHTML(A)}</div></details>`;
+  return `<details class="dr" data-pane="import"${PANE === 'import' ? ' open' : ''}><summary>${dh('🗂', '지난 나학평 가져오기', 'y')}<small>예전 프로그램에서 옮긴 파일 (7_보관)</small></summary><div class="db" data-imp>${IMP.cardHTML(A)}</div></details>`;
 }
 function bindImport(el){ const box = el.querySelector('[data-imp]'); if(box) IMP.bind(A, box); }
 
@@ -638,6 +644,8 @@ function bindSetup(el){
   el.onclick = async e => {
     const b = e.target.closest('button'); if(!b) return;
     const d = b.dataset;
+    if(d.jump){ const det = el.querySelector(`details[data-pane="${d.jump}"]`); if(!det) return; det.open = true; PANE = d.jump; paneSave(PANE);
+      el.querySelectorAll('[data-jump]').forEach(x => x.classList.toggle('on', x === b)); det.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if(d.st === 'redraw'){ rerender(); return; }
     if(d.st === 'saveprint'){ await savePrint(); return; }
     if(d.st === 'shareall'){ await shareAll(); return; }
