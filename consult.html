@@ -212,6 +212,21 @@ html[data-theme="dark"] .cs-spot{background:var(--panel)}
 .cs-want button.on{background:var(--sb-mint-2);border-color:var(--sb-green);color:var(--sb-green)}
 .cs-want button.cur{background:#FFF7E6;border-color:#F3D58A;color:#7A4B00}
 .cs-want .hd{font-size:11px;font-weight:900;color:var(--ink-2);display:flex;align-items:center;justify-content:center}
+/* 🧩 가정 특이 사항 */
+.cs-cdw summary{cursor:pointer;font-size:13px;padding:6px 0;list-style-position:inside}
+.cs-cdw[open] summary{margin-bottom:6px}
+.cs-cond{display:flex;flex-direction:column;gap:10px;border:1px dashed #C4B5FD;background:#FAF7FF;border-radius:12px;padding:12px}
+html[data-theme="dark"] .cs-cond{background:var(--panel)}
+.cs-cond .cd-days{display:flex;flex-wrap:wrap;gap:6px}
+.cs-cond .cd-days button,.cs-cond .cs-want button{font-family:inherit;height:32px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-size:12.5px;font-weight:800;cursor:pointer;color:var(--ink-2)}
+.cs-cond .cs-want button{padding:0}
+.cs-cond button.no{background:#FEE2E2;border-color:#DC2626;color:#B91C1C;text-decoration:line-through}
+.cs-cond .cd-tm{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.cs-chip .cdm{position:absolute;left:3px;top:1px;font-size:10px;line-height:1}
+.cs-cell.nc{background:repeating-linear-gradient(135deg,rgba(220,38,38,.10) 0 5px,transparent 5px 10px)}
+.cs-cell.nc.can{outline:2px dashed #DC2626;outline-offset:-3px}
+.cs-fam .sl.nc{background:repeating-linear-gradient(135deg,rgba(220,38,38,.14) 0 4px,transparent 4px 8px)}
+.cs-me .w .s.cd{color:#6D28D9;font-weight:700}
 /* 지난 상담 · 예전 상담표 */
 .cs-past{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
 .cs-pc{font-family:inherit;text-align:left;border-radius:12px;border:1px solid var(--line);background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:6px;cursor:pointer;color:var(--ink);position:relative}
@@ -264,7 +279,7 @@ html[data-theme="dark"] .cs-spot{background:var(--panel)}
 .toast.err{background:#B42318}
 .toast button{font-family:inherit;border:0;background:rgba(255,255,255,.18);color:#fff;font-weight:800;border-radius:8px;padding:5px 10px;cursor:pointer;white-space:nowrap;flex:none}
 @media(max-width:768px){.toast{bottom:calc(var(--tab-h, 56px) * var(--zoom, 1) + 14px + env(safe-area-inset-bottom))}}
-.pop{position:fixed;z-index:1300;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-md);padding:6px;min-width:180px}
+.pop{position:fixed;z-index:1300;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-md);padding:6px;min-width:180px;max-width:340px}
 .pop .ph{font-size:12px;font-weight:900;color:var(--ink-2);padding:6px 10px 4px}
 .pop button{display:flex;width:100%;gap:8px;align-items:center;font-family:inherit;font-size:13px;font-weight:800;border:0;background:transparent;color:var(--ink);padding:8px 10px;border-radius:8px;cursor:pointer;text-align:left}
 .pop button:hover{background:var(--sb-mint-2)}
@@ -321,11 +336,11 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
   onSnapshot, serverTimestamp, Timestamp, writeBatch, increment, arrayUnion }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol } from './listcache.js?v=137';
-import * as C from './consult-core.js?v=151';
-import * as BOARD from './consult-board.js?v=151';
-import * as SETUP from './consult-setup.js?v=151';
-import * as REQ from './consult-reqs.js?v=151';
-import * as PAST from './consult-past.js?v=151';
+import * as C from './consult-core.js?v=152';
+import * as BOARD from './consult-board.js?v=152';
+import * as SETUP from './consult-setup.js?v=152';
+import * as REQ from './consult-reqs.js?v=152';
+import * as PAST from './consult-past.js?v=152';
 import { notifyStaff } from './push-client.js';
 
 const __cfg = ({
@@ -390,6 +405,55 @@ A.confirm = function(title, msg, okLabel, danger){
     m.onClose = () => { if(!done) res(false); };
     m.box.querySelector('[data-n]').onclick = () => m.close();
     m.box.querySelector('[data-y]').onclick = () => { done = true; m.close(); res(true); };
+  });
+};
+/* 🧩 가정 특이 사항 입력 칸 — 요청 창 · 담당 창이 함께 씀 (slots: 안 되는 칸 고르기까지) */
+A.condFormHTML = function(cond, opt){
+  opt = opt || {}; cond = cond || {};
+  const r = A.R, days = C.dayList(r);
+  const maxN = Math.max(1, ...days.map((x, d) => C.dayN(r, d)));
+  const nd = new Set(cond.noDays || []), ns = new Set(cond.noSlots || []);
+  return `<div class="cs-cond">
+    <div class="cs-fl"><span>안 되는 날 <span class="cs-mut">(누르면 «안 됨»)</span></span><div class="cd-days">${days.map(x => `<button type="button" data-cdd="${esc(x.date)}" class="${nd.has(x.date) ? 'no' : ''}">${esc(C.dayLabel(x.date, true))}</button>`).join('')}</div></div>
+    <div class="cd-tm"><label class="cs-fl">이 시각 이후만<input type="time" class="cs-in" data-cda step="300" value="${esc(cond.after || '')}"></label><label class="cs-fl">이 시각 전까지만 (끝나는 때)<input type="time" class="cs-in" data-cdb step="300" value="${esc(cond.before || '')}"></label></div>
+    ${opt.slots ? `<div class="cs-fl"><span>안 되는 칸 <span class="cs-mut">(콕 집어서 · 누르면 «안 됨»)</span></span><div class="cs-want" style="grid-template-columns:90px repeat(${maxN},minmax(0,1fr))"><span></span>${[...Array(maxN).keys()].map(s2 => `<span class="hd">${C.NO_KO[s2]}</span>`).join('')}
+      ${days.map((x, d) => `<span class="hd" style="justify-content:flex-start">${esc(C.dayLabel(x.date, true))}</span>${[...Array(maxN).keys()].map(s2 => s2 < C.dayN(r, d) ? `<button type="button" data-cds="${esc(x.date)}_${s2}" class="${ns.has(x.date + '_' + s2) ? 'no' : ''}">${C.slotTime(r, d, s2)}</button>` : '<span></span>').join('')}`).join('')}</div></div>` : ''}
+    <label class="cs-fl">메모 (특이 사항)<input class="cs-in" data-cdn value="${esc(cond.note || '')}" placeholder="예: 어머니 퇴근 뒤 · 아버님 오심 · 동생 하원 시간"></label></div>`;
+};
+A.condRead = function(box){
+  const q = k => box.querySelector(k);
+  return { noDays: [...box.querySelectorAll('[data-cdd].no')].map(b => b.dataset.cdd), after: (q('[data-cda]') || {}).value || '', before: (q('[data-cdb]') || {}).value || '',
+    noSlots: [...box.querySelectorAll('[data-cds].no')].map(b => b.dataset.cds), note: String((q('[data-cdn]') || {}).value || '').trim() };
+};
+A.condWire = function(box, onChange){
+  box.addEventListener('click', e => { const b = e.target.closest('[data-cdd],[data-cds]'); if(!b || !box.contains(b)) return; b.classList.toggle('no'); if(onChange) onChange(); });
+  box.addEventListener('input', e => { if(e.target.matches('[data-cda],[data-cdb],[data-cdn]') && onChange) onChange(); });
+};
+/* 담당 — 가정 특이 사항 고치기 (형제 모두 · 저장하면서 안 맞는 자리는 맞는 빈자리로) */
+A.condEdit = function(sid){
+  const r = A.R; const ids = A.famIds(sid).filter(id => A.inSet.has(id));
+  const cur = C.condOf(r, A.famIds(sid));
+  return new Promise(res => {
+    const m = A.modal('🧩 가정 특이 사항', `<div style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:13.5px"><b>${esc(ids.length > 1 ? String(A.stuName(ids[0])).slice(0, 1) + ' 가정 — ' + ids.map(A.stuName).join(' · ') : A.stuName(sid))}</b> <span class="cs-mut">· 이번 상담 동안 ${ids.length > 1 ? '형제 모두' : ''} 적용 · 기본은 «다 됨»</span></div>
+      ${A.condFormHTML(cur, { slots: true })}
+      <div data-cdp class="cs-desc" style="margin:0"></div>
+      <label class="ck"><input type="checkbox" data-cdfix checked> 저장하면서 안 맞는 자리는 맞는 빈자리로 옮기기 (형제 함께 · 다른 가정은 그대로)</label></div>`,
+      `${C.condAny(cur) ? '<button class="cs-btn r" data-cdx style="margin-right:auto">특이 사항 지우기</button>' : ''}<button class="cs-btn" data-n>취소</button><button class="cs-btn g" data-y>저장</button>`, 'mid');
+    const pv = () => { const c = A.condRead(m.box); const seats = r.seats || {};
+      m.box.querySelector('[data-cdp]').innerHTML = ids.map(id => { const st = seats[id]; if(!st || st.k !== 'face') return `${esc(A.stuName(id))} — ${st ? esc(C.KINDS[st.k]) : '자리 없음'}`; const why = C.slotWhy(r, c, st.d, st.s); return `${esc(A.stuName(id))} — 지금 ${esc(C.dayLabel(C.dayList(r)[st.d].date, true))} ${C.slotTime(r, st.d, st.s)} ${why ? `<b style="color:#B42318">✕ ${esc(why)}</b>` : '<b style="color:var(--sb-green)">✓ 맞음</b>'}`; }).join('<br>'); };
+    A.condWire(m.box, pv); pv();
+    let done = false;
+    m.onClose = () => { if(!done) res(null); };
+    const save = async c => {
+      done = true; m.close();
+      const p = {}; A.famIds(sid).forEach(id => { p['cond.' + id] = C.condAny(c) ? Object.assign({}, c, { by: A.CU.uid, at: Date.now() }) : deleteField(); });
+      try{ await A.saveRound(p); A.derive(); }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); res(null); return; }
+      res({ cond: c, fix: m.box.querySelector('[data-cdfix]').checked });
+    };
+    m.box.querySelector('[data-n]').onclick = () => m.close();
+    m.box.querySelector('[data-y]').onclick = () => save(A.condRead(m.box));
+    const x = m.box.querySelector('[data-cdx]'); if(x) x.onclick = () => save({ noDays: [], after: '', before: '', noSlots: [], note: '' });
   });
 };
 /* ☎ 전화 상담 때 고르기 — 날짜(상담 날 · 다른 날) · 시각 · 메모 → { pd, pt, note } | null
@@ -461,7 +525,7 @@ A.popMenu = function(anchor, items, head){
 };
 A.errText = function(e){
   const c = (e && e.code) || '';
-  if(/permission/.test(c)) return A.ruleMissing ? '보안 규칙 v40이 아직 게시되지 않았어요' : '권한이 없어요 (편성 담당만 고칠 수 있거나 · 끝난 상담이에요)';
+  if(/permission/.test(c)) return A.ruleMissing ? '보안 규칙 v41이 아직 게시되지 않았어요' : '권한이 없어요 (편성 담당만 고칠 수 있거나 · 끝난 상담이에요)';
   if(/unavailable|network/.test(c)) return '인터넷 연결을 확인해 주세요';
   return (e && (e.message || e.code)) || '알 수 없는 오류';
 };
@@ -505,6 +569,8 @@ A.derive = function(){
 };
 A.famOf = sid => A.fam[sid] || sid;
 A.famIds = sid => (A.members[A.famOf(sid)] || [sid]);
+/* 🧩 가정 특이 사항 (이번 상담만) — 형제 모두 합쳐서 */
+A.famCond = (sid, seatsR) => C.condOf(seatsR || A.R, A.famIds(sid));
 A.styleOf = sid => A.styles[A.famOf(sid)] || null;
 A.prevRounds = () => {
   const r = A.R; if(!r) return [];
@@ -681,7 +747,7 @@ A.render = function(soft){
   const y = scrollY;
   const keepScroll = soft && document.querySelector('.cs-scroll') ? [...document.querySelectorAll('.cs-scroll')].map(x => x.scrollLeft) : null;
   let body = '';
-  if(A.ruleMissing) body = `<div class="cs-card cs-empty">🔐 학부모 상담 자료를 읽지 못했어요.<br>Firebase 콘솔 › Firestore › 규칙에 <b>보안 규칙 v40</b>을 게시해 주세요.</div>`;
+  if(A.ruleMissing) body = `<div class="cs-card cs-empty">🔐 학부모 상담 자료를 읽지 못했어요.<br>Firebase 콘솔 › Firestore › 규칙에 <b>보안 규칙 v41</b>을 게시해 주세요.</div>`;
   else if(A.VIEW === 'kids') body = REQ.kidsHTML(A);
   else if(A.VIEW === 'past') body = PAST.pastHTML(A, A.SUB);
   else if(!A.R) body = emptyHTML();

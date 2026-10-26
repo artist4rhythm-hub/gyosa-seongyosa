@@ -1,4 +1,4 @@
-/* ═══ 📅 consult-board.js — 편성 보드 (v149 · v151 학부모 안내판 · 전화 상담 시간) ═══
+/* ═══ 📅 consult-board.js — 편성 보드 (v149 · v151 학부모 안내판 · 전화 상담 시간 · v152 🧩 가정 특이 사항) ═══
    · 보기 셋: 표(3일 한 화면 · 기본) · 날짜별(크게) · 가정별(한 줄 = 한 가정 · 형제를 함께 끌기)
    · 담당: 이름을 끌어 같은 세로줄의 다른 칸에 놓으면 옮기고, 사람이 있으면 서로 바꿈 · «그 외» 줄로 끌면 전화 · 별도
      (휴대폰 · 끌기가 안 될 때: 이름을 누르고 «옮기기» → 칸 누르기)
@@ -49,12 +49,13 @@ function chipHTML(sid, opt){
   const style = fs ? `background:${fs.bg};color:${fs.fg};border-color:${fs.bg};--cs-fg:${fs.fg}` : '';
   const sub = subText(sid, opt.big);
   const note = noteOf(sid) || (opt.etc ? '' : '');
-  const lines = opt.big ? [sibLine(sid), note ? '📝 ' + note : ''].filter(Boolean) : [];
-  const title = [A.stuName(sid), sub, note].filter(Boolean).join(' · ');
+  const cd = A.famCond(sid); const cdT = C.condAny(cd) ? '🧩 ' + C.condText(cd) : '';
+  const lines = opt.big ? [sibLine(sid), note ? '📝 ' + note : '', cdT].filter(Boolean) : [];
+  const title = [A.stuName(sid), sub, note, cdT].filter(Boolean).join(' · ');
   return `<button class="${cls.join(' ')}" data-sid="${esc(sid)}"${editable() ? ' draggable="true"' : ''} style="${style}" title="${esc(title)}" aria-label="${esc(title)}">
     <span class="n">${esc(A.stuName(sid))}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}${st.k === 'phone' ? `<span class="ptm${st.pd && st.pt ? '' : ' no'}">☎ ${esc(C.phoneWhen(st))}</span>` : ''}${opt.etc && note ? `<span class="sub">${esc(note)}</span>` : ''}
     ${lines.map(l => `<span class="ln">${esc(l)}</span>`).join('')}
-    ${st.pin ? `<span class="pin" aria-hidden="true">${ICON_PIN}</span>` : ''}${!opt.big && !opt.etc && note ? '<span class="memo" aria-hidden="true">✎</span>' : ''}</button>`;
+    ${cdT ? '<span class="cdm" aria-hidden="true">🧩</span>' : ''}${st.pin ? `<span class="pin" aria-hidden="true">${ICON_PIN}</span>` : ''}${!opt.big && !opt.etc && note ? '<span class="memo" aria-hidden="true">✎</span>' : ''}</button>`;
 }
 
 /* ── 단계 띠 ── */
@@ -190,9 +191,11 @@ function famViewHTML(){
   let fams = Object.entries(A.members).map(([k, ids]) => ({ k, ids: ids.slice().sort((a, b) => (C.gradeNoOf(A.colByKey(A.colOf[b]) && A.colByKey(A.colOf[b]).grades) - C.gradeNoOf(A.colByKey(A.colOf[a]) && A.colByKey(A.colOf[a]).grades))) }));
   const isKidFam = f => f.ids.some(id => kidOf(id));
   const warnSet = new Set(((A.chk && A.chk.issues) || []).filter(i => i.lvl !== 'info' && i.code !== 'unplaced').flatMap(i => i.sids));
-  const nSib = fams.filter(f => f.ids.length > 1 || isKidFam(f)).length, nWarn = fams.filter(f => f.ids.some(id => warnSet.has(id))).length;
+  const isCond = f => C.condAny(C.condOf(r, f.ids));
+  const nSib = fams.filter(f => f.ids.length > 1 || isKidFam(f)).length, nWarn = fams.filter(f => f.ids.some(id => warnSet.has(id))).length, nCond = fams.filter(isCond).length;
   if(filt === 'sib') fams = fams.filter(f => f.ids.length > 1 || isKidFam(f));
   else if(filt === 'warn') fams = fams.filter(f => f.ids.some(id => warnSet.has(id)));
+  else if(filt === 'cond') fams = fams.filter(isCond);
   const firstIdx = f => Math.min(...f.ids.map(id => { const st = seats[id]; return st && st.k === 'face' ? C.slotIdx(r, st.d, st.s) : 9999; }));
   fams.sort((a, b) => firstIdx(a) - firstIdx(b) || String(A.stuName(a.ids[0])).localeCompare(String(A.stuName(b.ids[0])), 'ko'));
   const maxN = Math.max(1, ...days.map((x, d) => C.dayN(r, d)));
@@ -200,6 +203,7 @@ function famViewHTML(){
   const rows = fams.map((f, i) => {
     const fs = A.styleOf(f.ids[0]);
     const busy = busyOf(f);
+    const fcd = C.condOf(r, f.ids);
     const warn = f.ids.some(id => warnSet.has(id));
     const nm = f.ids.length > 1 ? `${String(A.stuName(f.ids[0])).slice(0, 1)} 가정` : A.stuName(f.ids[0]);
     const kidT = f.ids.map(kidOf).filter(Boolean).map(u => A.staffName(u) + ' 자녀')[0];
@@ -210,7 +214,7 @@ function famViewHTML(){
       for(let s = 0; s < maxN; s++){
         const here = f.ids.filter(id => { const st = seats[id]; return st && st.k === 'face' && st.d === d && st.s === s; });
         const inDay = s < C.dayN(r, d);
-        const cls = ['sl']; if(busy.has(`${d}|${s}`)) cls.push('busy');
+        const cls = ['sl']; if(busy.has(`${d}|${s}`)) cls.push('busy'); if(inDay && C.slotWhy(r, fcd, d, s)) cls.push('nc');
         cells += `<div class="${cls.join(' ')}" data-fd="${d}" data-fs="${s}" data-fk="${esc(f.k)}"${inDay ? '' : ' style="opacity:.3"'}>${here.map(id => {
           const c = A.colByKey(A.colOf[id]);
           const prevHere = f.ids.some(o => { const st = seats[o]; return st && st.k === 'face' && st.d === d && st.s === s - 1; });
@@ -225,13 +229,13 @@ function famViewHTML(){
     const etcs = f.ids.filter(id => { const st = seats[id]; return st && st.k !== 'face'; }).map(id => `${A.stuName(id)} · ${C.KINDS[seats[id].k]}${seats[id].note ? ' ' + seats[id].note : ''}`);
     const none = f.ids.filter(id => !seats[id]).map(id => A.stuName(id) + ' · 자리 없음');
     return `<div class="cs-fam${warn ? ' warn' : ''}" style="--cs-dn:${days.length}"><div style="font-size:13px;font-weight:900;color:var(--ink-2);text-align:center">${i + 1}</div>
-      <div style="display:flex;align-items:center;gap:8px">${fs ? `<span style="width:12px;height:12px;border-radius:3px;background:${fs.bg};border:1px solid ${fs.fg};flex:none"></span>` : ''}<div style="display:flex;flex-direction:column;min-width:0"><b style="font-size:13.5px">${esc(nm)} ${fs ? `<span style="color:${fs.fg}">${fs.mark}</span>` : ''}</b><span class="cs-mut">${esc(f.ids.map(id => (A.colByKey(A.colOf[id]) || {}).grades + ' ' + A.stuName(id)).join(' · '))}</span>${kidT ? `<span class="cs-mut" style="color:var(--sb-green);font-weight:800">${esc(kidT)}</span>` : ''}</div></div>
+      <div style="display:flex;align-items:center;gap:8px">${fs ? `<span style="width:12px;height:12px;border-radius:3px;background:${fs.bg};border:1px solid ${fs.fg};flex:none"></span>` : ''}<div style="display:flex;flex-direction:column;min-width:0"><b style="font-size:13.5px">${esc(nm)} ${fs ? `<span style="color:${fs.fg}">${fs.mark}</span>` : ''}</b><span class="cs-mut">${esc(f.ids.map(id => (A.colByKey(A.colOf[id]) || {}).grades + ' ' + A.stuName(id)).join(' · '))}</span>${kidT ? `<span class="cs-mut" style="color:var(--sb-green);font-weight:800">${esc(kidT)}</span>` : ''}${C.condAny(fcd) ? `<span class="cs-mut" style="color:#6D28D9;font-weight:800">🧩 ${esc(C.condText(fcd))}</span>` : ''}</div></div>
       <div style="display:flex;flex-direction:column;justify-content:center"><span class="cs-mut">지난: ${esc(lastTxt)}</span>${warn ? '<span style="font-size:11px;font-weight:800;color:#92400E">확인 필요</span>' : ''}</div>
       ${tl}<div style="border-left:1px solid var(--line-soft);font-size:11.5px;color:var(--ink-2);display:flex;flex-direction:column;justify-content:center;gap:2px">${etcs.concat(none).map(esc).join('<br>')}</div></div>`;
   }).join('');
   const head = `<div class="cs-fam hd" style="--cs-dn:${days.length}"><div style="text-align:center">#</div><div>가정</div><div>지난 자리</div>${days.map(x => `<div style="border-left:1px solid var(--sb-mint);padding:6px 8px"><div>${esc(C.dayLabel(x.date))}</div><div style="display:grid;grid-template-columns:repeat(${maxN},minmax(0,1fr));font-size:10.5px;font-variant-numeric:tabular-nums;margin-top:2px">${[...Array(maxN).keys()].map(s => `<span>${C.slotTime(r, 0, s)}</span>`).join('')}</div></div>`).join('')}<div style="border-left:1px solid var(--sb-mint)">그 외</div></div>`;
-  return `<div class="cs-tools"><button class="cs-btn sm${filt === 'sib' ? ' p' : ''}" data-ff="sib">형제 · 교직원 자녀 가정 ${nSib}</button><button class="cs-btn sm${filt === 'all' ? ' p' : ''}" data-ff="all">모든 가정 ${Object.keys(A.members).length}</button><button class="cs-btn sm${filt === 'warn' ? ' w' : ''}" data-ff="warn">확인 필요 ${nWarn}</button>
-    <span class="cs-mut" style="margin-left:6px">한 줄 = 한 가정${editable() ? ' · 색칸을 끌면 형제가 함께 옮겨져요' : ''} · 회색 빗금 = 그 가정 선생님(교직원)이 상담 중인 시간</span></div>
+  return `<div class="cs-tools"><button class="cs-btn sm${filt === 'sib' ? ' p' : ''}" data-ff="sib">형제 · 교직원 자녀 가정 ${nSib}</button><button class="cs-btn sm${filt === 'all' ? ' p' : ''}" data-ff="all">모든 가정 ${Object.keys(A.members).length}</button><button class="cs-btn sm${filt === 'warn' ? ' w' : ''}" data-ff="warn">확인 필요 ${nWarn}</button><button class="cs-btn sm${filt === 'cond' ? ' p' : ''}" data-ff="cond">🧩 특이 사항 ${nCond}</button>
+    <span class="cs-mut" style="margin-left:6px">한 줄 = 한 가정${editable() ? ' · 색칸을 끌면 형제가 함께 옮겨져요' : ''} · 회색 빗금 = 그 가정 선생님(교직원)이 상담 중인 시간 · 붉은 빗금 = 🧩 특이 사항으로 안 되는 시간</span></div>
     <div class="cs-board"><div class="cs-scroll"><div style="min-width:${44 + 200 + 140 + days.length * 260 + 120}px">${head}${rows || '<div class="cs-empty">해당하는 가정이 없어요.</div>'}</div></div></div>`;
 }
 
@@ -251,6 +255,8 @@ function sideMgrHTML(){
     ${row('두 번 연속 맨 앞', s.frontRep || 0, s.frontRep ? 'w' : '', 'front')}
     ${errs.filter(i => ['double', 'off', 'range'].includes(i.code)).length ? row('한 칸 두 명 · 못 하는 시간 · 없는 칸', errs.filter(i => ['double', 'off', 'range'].includes(i.code)).length, 'e', 'err') : ''}
     ${row('대면 · 전화 · 별도', `${s.n.face || 0} · ${s.n.phone || 0} · ${s.n.sep || 0}`, '')}
+    ${s.condN ? row('🧩 가정 특이 사항', `${s.condN}가정${s.condBad ? ' · 안 맞음 ' + s.condBad : ' · 모두 맞음'}`, s.condBad ? 'e' : '', 'cond') : ''}
+    ${s.condBad && editable() ? `<button class="cs-btn sm g" data-b="condfix" style="margin:6px 0 2px;width:100%">🧩 조건 맞춰 옮기기 (${s.condBad}가정)</button>` : ''}
     ${s.phoneN ? row('☎ 전화 시간', `${s.phoneNoTime ? '미정 ' + s.phoneNoTime : '모두 정함'}${cnt('phone') ? ' · 겹침 ' + cnt('phone') : ''}`, s.phoneNoTime || cnt('phone') ? 'w' : '', 'phone') : ''}
     ${row('대상 학생', `${s.total || 0}명`, '')}
   </div>`;
@@ -308,7 +314,8 @@ function sideTeacherHTML(){
       const fs = A.styleOf(sid);
       const tm = !st ? '—' : st.k === 'face' ? C.slotTime(r, st.d, st.s) : st.k === 'phone' ? '☎' : '🗓';
       const sub = [].concat(st && st.k === 'phone' ? ['☎ ' + C.phoneWhen(st)] : [], st && st.k === 'sep' && st.note ? ['🗓 ' + st.note] : [], sibOf(sid), kidOf(sid) ? [A.staffName(kidOf(sid)) + ' 선생님 자녀'] : [], st && st.k !== 'sep' && st.note ? ['📝 ' + st.note] : []);
-      return `<div class="cs-me"><span class="t">${esc(tm)}</span><span class="w"><span><b>${esc(A.stuName(sid))}</b>${fs ? ` <span class="mk" style="background:${fs.bg};color:${fs.fg}">${fs.mark}</span>` : ''}</span>${sub.map(t => `<span class="s">${esc(t)}</span>`).join('')}</span>${rq ? '<span class="ch red">요청함</span>' : (['review', 'final'].includes(r.state) ? `<button class="cs-btn xs" data-req="${esc(sid)}">변경 요청</button>` : '<span></span>')}</div>`;
+      const cd = A.famCond(sid, Object.assign({}, r, { seats })); const cdW = st && st.k === 'face' ? C.slotWhy(r, cd, st.d, st.s) : '';
+      return `<div class="cs-me"><span class="t">${esc(tm)}</span><span class="w"><span><b>${esc(A.stuName(sid))}</b>${fs ? ` <span class="mk" style="background:${fs.bg};color:${fs.fg}">${fs.mark}</span>` : ''}</span>${sub.map(t => `<span class="s">${esc(t)}</span>`).join('')}${C.condAny(cd) ? `<span class="s cd">🧩 ${esc(C.condText(cd))}${cdW ? ` — <b style="color:#B42318">지금 자리 안 맞음</b>` : ''}</span>` : ''}</span>${rq ? '<span class="ch red">요청함</span>' : (['review', 'final'].includes(r.state) ? `<button class="cs-btn xs" data-req="${esc(sid)}">변경 요청</button>` : '<span></span>')}</div>`;
     };
     const gl = g => g[0] === 'd' ? C.dayLabel(days[+g.slice(1)].date) : g === 'phone' ? '☎ 전화 상담' : g === 'sep' ? '🗓 별도 일정' : '자리 없음';
     h += `<div class="cs-card cs-mine"><h3><span>우리 반 · ${esc(C.colLabel(c))}</span><span class="cs-mut">${list.length}명</span></h3><div class="cs-mut" style="margin:-4px 0 6px">${esc(c.tname || '')} · ${roomHTML(c.room) || '교실 미정'}</div>
@@ -395,9 +402,14 @@ function startMove(sid){
 }
 function markCan(sid){
   const col = A.colOf[sid];
-  document.querySelectorAll('.cs-cell[data-col]').forEach(c => { if(c.dataset.col === col && !c.classList.contains('off')) c.classList.add('can'); });
+  const cd = A.famCond(sid); const has = C.condHas(cd);
+  document.querySelectorAll('.cs-cell[data-col]').forEach(c => {
+    if(c.dataset.col !== col || c.classList.contains('off')) return;
+    c.classList.add('can');
+    if(has && c.dataset.d != null && !c.dataset.k){ const why = C.slotWhy(A.R, cd, +c.dataset.d, +c.dataset.s); if(why){ c.classList.add('nc'); c.title = '🧩 ' + why; } }
+  });
 }
-function clearMarks(){ document.querySelectorAll('.cs-cell.can,.cs-cell.over,.cs-fam .sl.over').forEach(c => c.classList.remove('can', 'over')); }
+function clearMarks(){ document.querySelectorAll('.cs-cell.can,.cs-cell.over,.cs-cell.nc,.cs-fam .sl.over').forEach(c => { c.classList.remove('can', 'over', 'nc'); if(c.title && c.title.startsWith('🧩')) c.title = ''; }); }
 const targetOf = cell => cell.dataset.k ? { k: cell.dataset.k } : { k: 'face', d: +cell.dataset.d, s: +cell.dataset.s };
 
 /* 대상 학생 하나 고르기 (이름 찾기) */
@@ -422,7 +434,8 @@ function chipMenu(btn, sid){
   const r = A.R, seats = r.seats || {}, st = seats[sid];
   const c = A.colByKey(A.colOf[sid]);
   const fam = A.famIds(sid);
-  const head = `${esc(A.stuName(sid))} · ${esc(C.colLabel(c))}${fam.length > 1 ? ` · 형제 ${fam.length}` : ''}${kidOf(sid) ? ' · ' + esc(A.staffName(kidOf(sid))) + ' 자녀' : ''}`;
+  const cdx = A.famCond(sid);
+  const head = `${esc(A.stuName(sid))} · ${esc(C.colLabel(c))}${fam.length > 1 ? ` · 형제 ${fam.length}` : ''}${kidOf(sid) ? ' · ' + esc(A.staffName(kidOf(sid))) + ' 자녀' : ''}${C.condAny(cdx) ? `<br><span style="color:#6D28D9;font-weight:800">🧩 ${esc(C.condText(cdx))}</span>` : ''}`;
   if(!editable()){
     const items = [];
     if(fam.length > 1) items.push({ l: '👪 가정 시간 보기', f: () => { A.FAM_SEL = A.famOf(sid); A.render(true); } });
@@ -434,6 +447,7 @@ function chipMenu(btn, sid){
     { l: '✋ 옮기기 (칸 누르기)', f: () => startMove(sid) },
     fam.length > 1 ? { l: '👪 가정 보기 · 함께 옮기기', f: () => { A.FAM_SEL = A.famOf(sid); A.render(true); } } : null,
     st ? { l: st.pin ? '📌 고정 풀기' : '📌 고정 (자동 배치가 안 건드림)', f: () => A.applySeats({ [sid]: Object.assign({}, st, { pin: !st.pin }) }, st.pin ? '고정을 풀었어요' : '고정했어요') } : null,
+    { l: C.condAny(A.famCond(sid)) ? '🧩 가정 특이 사항 고치기…' : '🧩 가정 특이 사항 (안 되는 날 · 시간)…', f: () => condEditFlow(sid) },
     { l: '📝 메모', f: async () => { const v = await A.prompt('📝 메모', `${esc(A.stuName(sid))} — 학부모 사정 · 오시는 분 등 (선생님들께 보여요)`, (st && st.note) || '', { ph: '예: 4시 이후 가능 · 아버님 오심' }); if(v == null) return; const base = st || null; if(!base){ A.toast('자리를 먼저 잡아 주세요', 'err'); return; } A.applySeats({ [sid]: Object.assign({}, base, { note: v.trim() }) }, '메모를 남겼어요'); } },
     { l: st && st.k === 'phone' ? '☎ 전화 시간 바꾸기…' : '☎ 전화 상담으로…', f: () => moveTo(sid, { k: 'phone' }) },
     !st || st.k !== 'sep' ? { l: '🗓 별도 일정으로…', f: () => moveTo(sid, { k: 'sep' }) } : null,
@@ -505,7 +519,7 @@ export function after(a){
 async function act(k){
   const r = A.R;
   if(k === 'order'){ A.go('setup'); setTimeout(() => { const el = document.getElementById('cs-s6'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }, 80); return; }
-  if(k === 'print'){ const P = await import('./consult-past.js?v=151'); P.printRound(A, r, A.viewSeats()); return; }
+  if(k === 'print'){ const P = await import('./consult-past.js?v=152'); P.printRound(A, r, A.viewSeats()); return; }
   if(k === 'vers'){ versModal(); return; }
   if(k === 'ack'){
     try{ await A.FS.updateDoc(A.roundRef(), { ['acks.' + A.CU.uid]: r.sentVer }); r.acks = Object.assign({}, r.acks, { [A.CU.uid]: r.sentVer }); A.toast('확인했어요 — 고맙습니다'); A.render(true); }
@@ -517,6 +531,7 @@ async function act(k){
   if(k === 'save') return saveVer(false);
   if(k === 'send') return send();
   if(k === 'pub') return publish();
+  if(k === 'condfix') return condFixFlow();
   if(k === 'final') return finalize();
   if(k === 'close') return closeRound();
   if(k === 'reopen'){ if(await A.confirm('다시 열기', '끝난 상담을 «확정» 상태로 다시 열까요?', '다시 열기')) await A.saveRound({ state: 'final' }); return; }
@@ -591,6 +606,38 @@ async function send(){
     A.toast(`판 ${n}을(를) 선생님 ${to.length}분께 보냈어요`);
   }catch(e){ A.toast('보내지 못했어요 — ' + A.errText(e), 'err'); }
 }
+/* 🧩 가정 특이 사항 — 고치고, 안 맞는 자리는 바로 맞는 빈자리로 */
+async function condEditFlow(sid){
+  const res = await A.condEdit(sid); if(!res) return;
+  A.render(true);
+  const fam = A.famOf(sid);
+  if(res.fix && C.condHas(res.cond)){
+    const out = C.condFix(A.R, A.colOf, { [fam]: A.members[fam] || [sid] }, A.inSet);
+    if(!out.length){ A.toast('🧩 특이 사항을 적었어요 — 지금 자리가 맞아요'); return; }
+    const o = out[0];
+    if(!o.ok){ A.toast('🧩 적었어요 — ' + o.why + ' (표에서 다른 가정과 바꿔 주세요)', 'err'); return; }
+    await A.applySeats(o.patch, `🧩 ${o.ids.map(id => A.stuName(id) + ' ' + C.dayLabel(C.dayList(A.R)[o.patch[id].d].date, true) + ' ' + C.slotTime(A.R, o.patch[id].d, o.patch[id].s)).join(' · ')}(으)로 옮겼어요`);
+  } else A.toast(C.condAny(res.cond) ? '🧩 특이 사항을 적었어요' : '특이 사항을 지웠어요');
+}
+async function condFixFlow(){
+  const r = A.R;
+  const out = C.condFix(r, A.colOf, A.members, A.inSet);
+  if(!out.length){ A.toast('특이 사항에 안 맞는 가정이 없어요'); return; }
+  const pos = (id, st) => `${C.dayLabel(C.dayList(r)[st.d].date, true)} ${C.slotTime(r, st.d, st.s)}`;
+  const m = A.modal('🧩 조건 맞춰 옮기기', `<div class="cs-desc" style="margin-bottom:10px">특이 사항에 안 맞는 가정만 맞는 빈자리로 옮겨요 — <b>다른 가정은 그대로</b> · 옮긴 자리는 📌 고정 · 담임 선생님들께는 «고친 것 보내기»로.</div>
+    <div style="display:flex;flex-direction:column;gap:6px">${out.map((o, i) => { const c = C.condOf(r, A.famIds(o.ids[0]));
+      return `<label class="cs-fr" style="grid-template-columns:24px minmax(0,1fr) minmax(0,1.2fr);align-items:start"><input type="checkbox" data-cf="${i}"${o.ok ? ' checked' : ' disabled'} style="margin-top:3px">
+        <span><b>${esc(o.ids.map(A.stuName).join(' · '))}</b><br><span class="cs-mut" style="color:#6D28D9">🧩 ${esc(C.condText(c))}</span></span>
+        <span>${o.ok ? `<b style="color:var(--sb-green)">✔ ${esc(o.ids.map(id => `${A.stuName(id)} ${pos(id, (r.seats || {})[id])} → ${pos(id, o.patch[id])}`).join(' · '))}</b>` : `<b style="color:#C2410C">✗ ${esc(o.why)}</b><br><span class="cs-mut">표에서 다른 가정과 바꿔 주세요</span>`}</span></label>`; }).join('')}</div>`,
+    `<button class="cs-btn" data-n>취소</button><button class="cs-btn g" data-y${out.some(o => o.ok) ? '' : ' disabled'}>고른 가정 옮기기</button>`, 'mid');
+  m.box.querySelector('[data-n]').onclick = () => m.close();
+  m.box.querySelector('[data-y]').onclick = async () => {
+    const pick = [...m.box.querySelectorAll('[data-cf]:checked')].map(x => out[+x.dataset.cf]).filter(o => o && o.ok);
+    m.close(); if(!pick.length) return;
+    const patch = {}; pick.forEach(o => Object.assign(patch, o.patch));
+    try{ await A.applySeats(patch, `🧩 ${pick.length}가정 ${Object.keys(patch).length}명을 조건에 맞게 옮겼어요`); }catch(e){ A.toast('옮기지 못했어요 — ' + A.errText(e), 'err'); }
+  };
+}
 /* 📨 학부모께 보내기 — 초안 → 수정 1 → 수정 2 … (판으로 기록 · 인쇄 · PDF 창 · 담임 알림) */
 async function verSeats(ver){
   if(!ver) return null;
@@ -622,7 +669,7 @@ async function publish(){
     await A.saveRound(p);
     A.notify(A.colNotifyUids(), 'pub', `📨 학부모 상담 일정 «${label}» — 학부모님께 나가요`, `${r.title} — ${label} (판 ${n}) · 학부모님 변경 요청은 «변경 요청»으로 보내 주세요`, 'consult.html#board');
     A.toast(`«${label}»${C.ro(label)} 기록했어요 — 인쇄 · PDF로 나눠 주세요`);
-    const P = await import('./consult-past.js?v=151'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + pubs.length);
+    const P = await import('./consult-past.js?v=152'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + pubs.length);
   }catch(e){ A.toast('보내지 못했어요 — ' + A.errText(e), 'err'); console.error(e); }
 }
 async function finalize(){

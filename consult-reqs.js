@@ -1,4 +1,4 @@
-/* ═══ 📅 consult-reqs.js — 변경 요청 · 답글 · 교직원 자녀 (v149 · v151 상담 방법 · 요청 모아 반영) ═══
+/* ═══ 📅 consult-reqs.js — 변경 요청 · 답글 · 교직원 자녀 (v149 · v151 상담 방법 · 요청 모아 반영 · v152 🧩 가정 특이 사항) ═══
    · 담임: 이름 → «변경 요청» (상담 방법 대면 / ☎ 전화 / 🗓 별도 · 사유 · 원하는 때 · 형제 함께) · 답글
    · 편성 담당: «요청 모아 반영» — 열린 요청을 들어온 차례대로 한 번에 (다른 가정은 그대로 · 자동 배치를 다시 돌리지 않음)
    · 편성 담당: 들어갈 자리 찾기 → «이 자리로 옮기기» 한 번에 (판 저장 · 선생님께 보냄 · 처리됨 · 알림)
@@ -10,8 +10,10 @@ const ST = { new: ['새 요청', 'red'], answered: ['답함', 'blue'], done: ['�
 const when = ts => { const s = ts && ts.seconds; if(!s) return ''; const d = new Date(s * 1000); const now = Date.now(); const m = Math.round((now - d.getTime()) / 60000); if(m < 1) return '방금'; if(m < 60) return m + '분 전'; if(m < 60 * 24) return Math.round(m / 60) + '시간 전'; return `${d.getMonth() + 1}/${d.getDate()}`; };
 const posTxt = (r, st) => !st ? '자리 없음' : st.k !== 'face' ? C.KINDS[st.k] : `${C.dayLabel((C.dayList(r)[st.d] || {}).date, true)} ${C.slotTime(r, st.d, st.s)}`;
 const HOW = { face: '대면 · 시간 바꾸기', phone: '☎ 전화 상담', sep: '🗓 별도 일정' };
+const wantTxt = (r, q) => wantTxt0(r, q).concat(condTxt(q) ? [condTxt(q)] : []);
 const phTxt = (r, q) => { const p = q.ph || {}; const a = [p.pd ? C.dayLabel(p.pd, true) : '', p.pt || ''].filter(Boolean).join(' '); return a || '편한 시간 미정'; };
-const wantTxt = (r, q) => q.how === 'phone' ? [`희망 ${phTxt(r, q)}`].concat(q.wantText ? [q.wantText] : []) : q.how === 'sep' ? (q.wantText ? [q.wantText] : []) : (q.want || []).map(w => w.s == null ? `${C.dayLabel((C.dayList(r)[w.d] || {}).date, true)} 아무 때나` : `${C.dayLabel((C.dayList(r)[w.d] || {}).date, true)} ${C.slotTime(r, w.d, w.s)}`).concat(q.wantText ? [q.wantText] : []);
+const condTxt = q => C.condAny(q.cond) ? '🧩 ' + C.condText(q.cond) : '';
+const wantTxt0 = (r, q) => q.how === 'phone' ? [`희망 ${phTxt(r, q)}`].concat(q.wantText ? [q.wantText] : []) : q.how === 'sep' ? (q.wantText ? [q.wantText] : []) : (q.want || []).map(w => w.s == null ? `${C.dayLabel((C.dayList(r)[w.d] || {}).date, true)} 아무 때나` : `${C.dayLabel((C.dayList(r)[w.d] || {}).date, true)} ${C.slotTime(r, w.d, w.s)}`).concat(q.wantText ? [q.wantText] : []);
 
 /* ═══ 변경 요청 ═══ */
 export function reqsHTML(a, sub){
@@ -47,6 +49,8 @@ export function reqsHTML(a, sub){
         ① 여기 왼쪽 위 <b>«+ 새 요청»</b><br>② <b>이번 상담</b> 오른쪽 «우리 반» 목록에서 학생 옆 <b>«변경 요청»</b><br>③ 표에서 우리 반 학생 <b>이름을 눌러 «💬 변경 요청»</b><br>
         <span class="cs-mut">학생 · 형제도 함께 · 사유 · 원하는 때(칸 고르기 / 글)를 적어 보내면 편성 담당 선생님이 자리를 찾아 바꾸고 답글로 알려 드려요.</span></div>` : !['review', 'final'].includes(r.state) ? '고를 요청이 없어요.' : '이 상담에 담임 · 부담임으로 맡은 반이 없어서 변경 요청은 할 수 없어요 — 다른 분 요청은 «모두»에서 볼 수 있어요.<br><span class="cs-mut">반이 빠졌으면 편성 담당 선생님께 알려 주세요.</span>'}</div>`}</div></div>`;
 }
+/* 요청의 특이 사항 + 이미 적힌 가정 특이 사항 */
+function reqCond(q){ const ids = (q.sids || []).filter(Boolean); const fam = C.uniq(ids.flatMap(id => A.famIds(id))); return C.condMerge([C.condOf(A.R, fam), q.cond]); }
 function detailHTML(q){
   const r = A.R, seats = A.isMgr ? (r.seats || {}) : A.viewSeats();
   const s = ST[q.state] || ST.new;
@@ -61,12 +65,16 @@ function detailHTML(q){
       <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="applyk">${q.how === 'phone' ? '☎ 전화 상담으로 배정…' : '🗓 별도 일정으로 배정…'}</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`;
   } else if(A.isMgr && ['new', 'answered'].includes(q.state) && r.state !== 'closed'){
     const live = A.inSet ? ids.filter(id => A.inSet.has(id)) : ids;
-    const plan = C.findSpot(r, A.colOf, live, q.want || []);
-    spot = plan ? `<div class="cs-spot"><b style="font-size:13.5px">✔ 들어갈 자리를 찾았어요 — ${plan.length > 1 ? '형제 함께 · ' : ''}다른 가정은 그대로</b>
+    const qc = reqCond(q);
+    const keepOk = !((q.want || []).length) && C.condHas(qc) && live.length && live.every(id => { const st = seats[id]; return st && st.k === 'face' && C.slotOk(r, qc, st.d, st.s); });
+    const plan = keepOk ? null : C.findSpot(r, A.colOf, live, q.want || [], { cond: qc });
+    spot = keepOk ? `<div class="cs-spot"><b style="font-size:13.5px">✔ 지금 자리가 특이 사항(${esc(C.condText(qc, { noNote: true }))})에 맞아요 — 그대로 두고 특이 사항만 적어요</b>
+        <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="condkeep">특이 사항만 적고 처리</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button></div></div>` : plan ? `<div class="cs-spot"><b style="font-size:13.5px">✔ 들어갈 자리를 찾았어요 — ${plan.length > 1 ? '형제 함께 · ' : ''}다른 가정은 그대로</b>
         <div style="display:flex;flex-wrap:wrap;gap:6px">${plan.map(([id, d, s2]) => { const c = A.colByKey(A.colOf[id]); return `<span class="ch" style="height:32px;padding:0 10px;background:${fs ? fs.bg : 'var(--sb-mint-2)'};color:${fs ? fs.fg : 'var(--sb-green)'}">${esc(C.dayLabel(C.dayList(r)[d].date, true))} ${C.slotTime(r, d, s2)} · ${esc(A.stuName(id))} · ${esc(c ? c.tname || c.name : '')}</span>`; }).join('')}</div>
+        ${C.condHas(qc) ? `<div class="cs-mut" style="color:#6D28D9">🧩 특이 사항(${esc(C.condText(qc, { noNote: true }))})에 맞는 칸만 찾았어요 · 처리하면 이 가정 특이 사항으로 남아요</div>` : ''}
         ${(() => { const offHit = plan.filter(([id, d, s2]) => { const c = A.colByKey(A.colOf[id]); return c && (c.off || []).includes(d + '_' + s2); }); return offHit.length ? '<div class="cs-isl">선생님 «못 하는 시간»과 겹쳐요</div>' : ''; })()}
         <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="apply" data-plan="${esc(JSON.stringify(plan))}">이 자리로 옮기기 (${plan.length}명)</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`
-      : `<div class="cs-spot" style="border-color:#D97706;background:#FFFBF0"><b style="font-size:13.5px">원하시는 때에 ${ids.length > 1 ? '형제가 함께 ' : ''}들어갈 빈 자리가 없어요</b><span class="cs-mut">표에서 다른 가정과 바꾸거나 · 날짜 · 칸을 늘리거나 · 답글로 다른 시간을 여쭤 보세요.</span>
+      : `<div class="cs-spot" style="border-color:#D97706;background:#FFFBF0"><b style="font-size:13.5px">원하시는 때${C.condHas(qc) ? ' · 특이 사항' : ''}에 ${ids.length > 1 ? '형제가 함께 ' : ''}들어갈 빈 자리가 없어요</b><span class="cs-mut">표에서 다른 가정과 바꾸거나 · 날짜 · 칸을 늘리거나 · 답글로 다른 시간을 여쭤 보세요.</span>
         <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`;
   }
   return `<div class="cs-card" style="display:flex;flex-direction:column;gap:12px">
@@ -74,7 +82,7 @@ function detailHTML(q){
       <span style="flex:1"></span>${mine && q.state === 'new' ? '<button class="cs-btn xs" data-rq="edit">고치기</button><button class="cs-btn xs r" data-rq="cancel">거두기</button>' : ''}${A.isMgr && ['done', 'no'].includes(q.state) ? '<button class="cs-btn xs" data-rq="reopen">다시 열기</button>' : ''}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">${ids.map(id => { const c = A.colByKey(A.colOf[id]); return `<div class="cs-fr" style="grid-template-columns:1fr;margin:0"><b>${esc(A.stuName(id))} <span class="cs-mut">${esc(C.colLabel(c))} · ${esc(c ? c.tname || '' : '')}</span></b><span style="font-variant-numeric:tabular-nums">지금 ${esc(posTxt(r, seats[id]))}</span></div>`; }).join('')}</div>
     <div class="cs-msg"><span class="cs-av">${esc(String(q.byName || '?').slice(0, 1))}</span><div class="cs-bub"><div class="w"><b>${esc(q.byName || '')}</b> · ${esc(when(q.at))}</div><div class="tx">${esc(q.text || '')}</div>
-      ${wantTxt(r, q).length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="cs-mut">원하는 때</span>${wantTxt(r, q).map(t => `<span class="ch mint">${esc(t)}</span>`).join('')}${ids.length > 1 ? '<span class="ch">형제 함께</span>' : ''}</div>` : ''}${q.how && q.how !== 'face' ? `<div><span class="ch blue">${esc(HOW[q.how])} 요청</span></div>` : ''}</div></div>
+      ${wantTxt(r, q).length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="cs-mut">${C.condAny(q.cond) ? (wantTxt0(r, q).length ? "원하는 때 · 특이 사항" : "특이 사항") : "원하는 때"}</span>${wantTxt(r, q).map(t => `<span class="ch mint">${esc(t)}</span>`).join('')}${ids.length > 1 ? '<span class="ch">형제 함께</span>' : ''}</div>` : ''}${q.how && q.how !== 'face' ? `<div><span class="ch blue">${esc(HOW[q.how])} 요청</span></div>` : ''}</div></div>
     ${reps.map(p => { const m = A.mgrUids().includes(p.uid); return `<div class="cs-msg"><span class="cs-av${m ? ' m' : ''}">${esc(String(p.name || '?').slice(0, 1))}</span><div class="cs-bub"><div class="w"><b>${esc(p.name || '')}</b>${m ? ' · 편성 담당' : ''} · ${esc(when(p.at))}${p.uid === A.CU.uid && !p.del ? ` <button class="cs-btn xs" data-rdel="${esc(p.id)}" style="margin-left:6px">지우기</button>` : ''}</div><div class="tx">${p.del ? '<span class="cs-mut">(지운 답글)</span>' : esc(p.text || '')}</div></div></div>`; }).join('')}
     ${spot}
     ${q.state !== 'cancel' ? `<div class="cs-msg"><span class="cs-av${A.isMgr ? ' m' : ''}">${esc(String(A.CU.name || '?').slice(0, 1))}</span><div style="flex:1;display:flex;flex-direction:column;gap:8px"><label class="cs-mut"><b style="color:var(--ink)">${esc(A.CU.name || '')}</b>${A.isMgr ? ' · 편성 담당' : ''} · 답글</label>
@@ -151,8 +159,15 @@ export function after(a){
       const msg = (tx && tx.value.trim()) || `${plan.map(([id, d, s]) => `${A.stuName(id)} ${C.dayLabel(C.dayList(r0)[d].date, true)} ${C.slotTime(r0, d, s)}`).join(' · ')}(으)로 옮겼어요.`;
       if(!(await A.confirm('이 자리로 옮기기', `${esc(msg)}<br><span class="cs-mut">판으로 저장하고 선생님들께 바로 보내요 · 요청은 «처리됨»${otherUnsent ? ` · 보내지 않은 다른 변경 ${otherUnsent}명도 함께 보내져요` : ''}</span>`, '옮기고 보내기'))) return;
       const patch = {}; plan.forEach(([id, d, s]) => { patch[id] = Object.assign({}, (r0.seats || {})[id] || {}, { k: 'face', d, s, pin: true }); delete patch[id].pd; delete patch[id].pt; });
-      try{ const n = await applyMany([{ q, patch, msg }]); A.toast(`옮기고 판 ${n}을(를) 보냈어요 · 📌 고정됨`); if(tx) tx.value = ''; A.go('reqs/' + q.id); }
+      try{ const n = await applyMany([{ q, patch, msg, cond: C.condAny(q.cond) ? reqCond(q) : null }]); A.toast(`옮기고 판 ${n}을(를) 보냈어요 · 📌 고정됨`); if(tx) tx.value = ''; A.go('reqs/' + q.id); }
       catch(err){ A.toast('옮기지 못했어요 — ' + A.errText(err), 'err'); console.error(err); }
+      return;
+    }
+    if(k === 'condkeep'){
+      const tx = root.querySelector('[data-rtx]');
+      const msg = (tx && tx.value.trim()) || `🧩 특이 사항(${C.condText(reqCond(q))})을 적었어요 — 지금 자리가 맞아서 그대로예요.`;
+      try{ await applyMany([{ q, patch: {}, msg, cond: reqCond(q) }], { noVer: true }); A.toast('특이 사항을 적고 «처리됨»으로 바꿨어요'); if(tx) tx.value = ''; A.go('reqs/' + q.id); }
+      catch(err){ A.toast('저장하지 못했어요 — ' + A.errText(err), 'err'); console.error(err); }
       return;
     }
     if(k === 'applyk'){
@@ -171,7 +186,7 @@ export function after(a){
         ids.forEach(id => { patch[id] = Object.assign({}, (r0.seats || {})[id] || {}, { k: 'sep', note: v.trim(), pin: true }); delete patch[id].d; delete patch[id].s; delete patch[id].pd; delete patch[id].pt; });
         msg = (tx && tx.value.trim()) || `🗓 ${ids.map(A.stuName).join(' · ')} — 별도 일정으로 잡았어요${v.trim() ? ' (' + v.trim() + ')' : ''}.`;
       }
-      try{ const n = await applyMany([{ q, patch, msg }]); A.toast(`배정하고 판 ${n}을(를) 보냈어요`); if(tx) tx.value = ''; A.go('reqs/' + q.id); }
+      try{ const n = await applyMany([{ q, patch, msg, cond: C.condAny(q.cond) ? reqCond(q) : null }]); A.toast(`배정하고 판 ${n}을(를) 보냈어요`); if(tx) tx.value = ''; A.go('reqs/' + q.id); }
       catch(err){ A.toast('저장하지 못했어요 — ' + A.errText(err), 'err'); console.error(err); }
       return;
     }
@@ -179,9 +194,22 @@ export function after(a){
   root.onkeydown = e => { if(e.key === 'Enter' && e.target.matches('[data-rqid]')) A.go('reqs/' + e.target.dataset.rqid); };
 }
 /* 요청 반영 — 자리 고치기 → 판 저장 → 선생님들께 보냄 → 요청 «처리됨» → 답글 · 알림 (한 건이든 여러 건이든) */
-async function applyMany(items){
-  const patch = {}; items.forEach(it => Object.assign(patch, it.patch));
-  await A.applySeats(patch, '옮겼어요', { noUndo: true });
+async function applyMany(items, o){
+  o = o || {};
+  const patch = {}; items.forEach(it => Object.assign(patch, it.patch || {}));
+  // 🧩 요청에 적힌 특이 사항 → 그 가정(형제 모두) 조건으로
+  const cp = {};
+  items.forEach(it => { if(!C.condAny(it.cond)) return; const fam = C.uniq(Object.keys(it.patch || {}).concat(it.q.sids || []).flatMap(id => A.famIds(id))); fam.forEach(id => { cp['cond.' + id] = Object.assign({}, it.cond, { by: A.CU.uid, at: Date.now(), req: it.q.id }); }); });
+  if(Object.keys(cp).length) await A.saveRound(cp);
+  if(o.noVer && !Object.keys(patch).length){
+    const bt = A.FS.writeBatch(A.db);
+    items.forEach(it => bt.update(A.FS.doc(A.db, 'consultReqs', it.q.id), { state: 'done', doneVer: A.R.sentVer || A.R.ver || 0, doneAt: A.FS.serverTimestamp(), doneBy: A.CU.uid }));
+    await bt.commit();
+    for(const it of items){ await reply(it.q, it.msg, true, true); A.notify([it.q.byUid], 'done', '🧩 상담 특이 사항을 적었어요', it.msg, 'consult.html#reqs/' + it.q.id, { reqId: it.q.id }); }
+    A.derive();
+    return A.R.sentVer || A.R.ver || 0;
+  }
+  if(Object.keys(patch).length) await A.applySeats(patch, '옮겼어요', { noUndo: true });
   const r = A.R;   // 옮긴 뒤 상태 (그사이 새로 받은 문서일 수 있음)
   const n = (Number(r.ver) || 0) + 1;
   const bt = A.FS.writeBatch(A.db);
@@ -204,13 +232,13 @@ async function batchFlow(){
   const r = A.R;
   const open = A.REQS.filter(q => ['new', 'answered'].includes(q.state)).sort((a, b) => ((a.at && a.at.seconds) || 0) - ((b.at && b.at.seconds) || 0));
   if(!open.length){ A.toast('열린 요청이 없어요'); return; }
-  const res = C.batchPlan(r, A.colOf, open, A.inSet);
+  const res = C.batchPlan(r, A.colOf, open, A.inSet, id => A.famIds(id));
   const res0 = {}; res.forEach(x => { res0[x.id] = x; });
   const pos = (id, st) => !st ? '자리 없음' : st.k === 'phone' ? '☎ ' + C.phoneWhen(st) : st.k === 'sep' ? '🗓 ' + (st.note || '별도') : `${C.dayLabel(C.dayList(r)[st.d].date, true)} ${C.slotTime(r, st.d, st.s)}`;
   const line = q => { const x = res0[q.id]; const ids = (q.sids || []).filter(id => A.inSet.has(id));
     return `<label class="cs-fr" style="grid-template-columns:24px minmax(0,1fr) minmax(0,1.2fr);align-items:start;cursor:${x.ok ? 'pointer' : 'default'}"><input type="checkbox" data-bq="${esc(q.id)}"${x.ok ? ' checked' : ' disabled'} style="margin-top:3px">
       <span><b>${esc(ids.map(A.stuName).join(' · '))}</b><br><span class="cs-mut">${esc(q.byName || '')} · ${esc(HOW[q.how || 'face'])} · ${esc(wantTxt(r, q).join(' · ') || '원하는 때 없음')}</span><br><span class="cs-mut" style="color:var(--ink)">${esc(String(q.text || '').slice(0, 60))}</span></span>
-      <span>${x.ok ? `<b style="color:var(--sb-green)">✔ ${esc(ids.map(id => A.stuName(id) + ' ' + pos(id, x.patch[id])).join(' · '))}</b>` : `<b style="color:#C2410C">✗ ${esc(x.why)}</b><br><span class="cs-mut">답글로 여쭙거나 표에서 직접</span>`}</span></label>`; };
+      <span>${x.ok ? (x.keep ? `<b style="color:var(--sb-green)">✔ 지금 자리 그대로 (특이 사항에 맞음)</b>` : `<b style="color:var(--sb-green)">✔ ${esc(Object.keys(x.patch).map(id => A.stuName(id) + ' ' + pos(id, x.patch[id])).join(' · '))}</b>`) + (C.condAny(x.cond) ? `<br><span class="cs-mut" style="color:#6D28D9">🧩 ${esc(C.condText(x.cond))} — 이 가정 특이 사항으로 남김</span>` : '') : `<b style="color:#C2410C">✗ ${esc(x.why)}</b><br><span class="cs-mut">답글로 여쭙거나 표에서 직접</span>`}</span></label>`; };
   const nOk = res.filter(x => x.ok).length;
   const m = A.modal('📥 요청 모아 반영', `<div class="cs-desc" style="margin-bottom:10px">들어온 차례대로 자리를 찾았어요 — <b>다른 가정은 그대로</b>이고, 옮긴 자리는 📌 고정돼요 (나중에 자동 배치를 다시 돌려도 안 바뀜).<br>반영하면 판으로 저장해 담임 선생님들께 보내고, 요청마다 «처리됨» + 답글 · 알림이 가요. 그다음 «📨 학부모께 ${esc(C.nextPubLabel(r))} 보내기»로 나눠 주세요.</div>
       <div style="display:flex;flex-direction:column;gap:6px">${open.map(line).join('')}</div>`,
@@ -219,10 +247,11 @@ async function batchFlow(){
   m.box.querySelector('[data-y]').onclick = async () => {
     const pick = new Set([...m.box.querySelectorAll('[data-bq]:checked')].map(x => x.dataset.bq));
     const qs = open.filter(q => pick.has(q.id)); if(!qs.length){ A.toast('반영할 요청을 골라 주세요', 'err'); return; }
-    const res2 = C.batchPlan(A.R, A.colOf, qs, A.inSet).filter(x => x.ok);
+    const res2 = C.batchPlan(A.R, A.colOf, qs, A.inSet, id => A.famIds(id)).filter(x => x.ok);
     const items = res2.map(x => { const q = qs.find(y => y.id === x.id); const ids = Object.keys(x.patch);
+      if(x.keep) return { q, patch: {}, cond: x.cond, msg: `🧩 특이 사항(${C.condText(x.cond)})을 적었어요 — 지금 자리가 맞아서 그대로예요.` };
       const msg = x.how === 'phone' ? `☎ ${ids.map(A.stuName).join(' · ')} — 전화 상담으로 바꿨어요 (${C.phoneWhen(x.patch[ids[0]])}).` : x.how === 'sep' ? `🗓 ${ids.map(A.stuName).join(' · ')} — 별도 일정으로 잡았어요${x.patch[ids[0]].note ? ' (' + x.patch[ids[0]].note + ')' : ''}.` : `${ids.map(id => `${A.stuName(id)} ${pos(id, x.patch[id])}`).join(' · ')}(으)로 옮겼어요.`;
-      return { q, patch: x.patch, msg }; });
+      return { q, patch: x.patch, msg: msg + (C.condAny(x.cond) && x.how === 'face' ? ` 🧩 특이 사항(${C.condText(x.cond, { noNote: true })})도 적어 두었어요.` : ''), cond: x.cond }; });
     m.close();
     window.showLoading && showLoading('요청을 반영하는 중…');
     try{ const n = await applyMany(items); window.hideLoading && hideLoading(); A.toast(`요청 ${items.length}건 반영 · 판 ${n} 보냄 — 이제 «📨 학부모께 ${C.nextPubLabel(A.R)} 보내기»`); A.go('reqs'); }
@@ -242,11 +271,14 @@ export async function newReq(a, sid, old){
   let want = (old && old.want ? old.want.map(w => w.s == null ? `${w.d}` : `${w.d}_${w.s}`) : []);
   let sibs = old ? (old.sids || []).length > 1 : true;
   let how = (old && old.how) || 'face';
+  let cond0 = (old && old.cond) || {};
   const ph0 = (old && old.ph) || {};
   const days = C.dayList(r);
   const maxN = Math.max(1, ...days.map((x, d) => C.dayN(r, d)));
   const body = () => {
     const fam = cur ? A.famIds(cur).filter(id => A.inSet.has(id)) : [];
+    const cc = cur ? A.famCond(cur) : null; const curCond = C.condAny(cc) ? C.condText(cc) : '';
+    const condOn = C.condAny(cond0);
     const ids = sibs ? fam : [cur];
     const curSlots = new Set(ids.map(id => seats[id]).filter(st => st && st.k === 'face').map(st => `${st.d}_${st.s}`));
     return `<div style="display:flex;flex-direction:column;gap:12px">
@@ -254,6 +286,8 @@ export async function newReq(a, sid, old){
       ${fam.length > 1 ? `<label class="ck"><input type="checkbox" data-sib${sibs ? ' checked' : ''}> 형제도 함께 옮기기 — ${esc(fam.filter(id => id !== cur).map(id => `${A.stuName(id)} (${posTxt(r, seats[id])})`).join(' · '))}</label>` : ''}
       <div class="cs-fl">상담 방법<div class="cs-seg" role="group" aria-label="상담 방법" style="align-self:flex-start">${['face', 'phone', 'sep'].map(k => `<button type="button" data-how="${k}" class="${how === k ? 'on' : ''}">${HOW[k]}</button>`).join('')}</div></div>
       <label class="cs-fl">사유 · 학부모 사정<textarea class="cs-ta" data-t placeholder="${how === 'phone' ? '예: 어머님이 그 주에 출장이셔서 전화로 상담하고 싶어 하세요.' : how === 'sep' ? '예: 상담 주간에는 어려워서 다음 주 목요일에 따로 뵙기로 했어요.' : '예: 어머님이 월요일은 퇴근이 늦으셔서 화요일 4시 이후로 부탁하셨어요.'}">${esc(old ? old.text || '' : '')}</textarea></label>
+      <details class="cs-cdw"${condOn ? ' open' : ''}><summary><b>🧩 가정 특이 사항</b> <span class="cs-mut">— 안 되는 날 · 몇 시 이후만 등 (있으면 · 이번 상담 동안 형제 모두)</span></summary>
+        ${curCond ? `<div class="cs-desc" style="margin:6px 0">지금 적힌 특이 사항: <b style="color:#6D28D9">${esc(curCond)}</b> <span class="cs-mut">(지우거나 바꾸는 건 편성 담당이)</span></div>` : ''}${A.condFormHTML(cond0)}</details>
       ${how === 'phone' ? `<div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:10px"><label class="cs-fl">전화 받기 편한 날<select class="cs-sel" data-ppd><option value="">— 아무 날이나 —</option>${days.map(x => `<option value="${esc(x.date)}"${ph0.pd === x.date ? ' selected' : ''}>${esc(C.dayLabel(x.date))}</option>`).join('')}</select></label>
         <label class="cs-fl">편한 시각<input type="time" class="cs-in" data-ppt step="300" value="${esc(ph0.pt || '')}"></label></div>
         <label class="cs-fl">더 적을 것 (글로)<input class="cs-in" data-wt value="${esc(old ? old.wantText || '' : '')}" placeholder="예: 6시 이후 · 아버님 휴대폰으로"></label></div>` : how === 'sep' ? `<label class="cs-fl">원하는 날짜 · 시간 (글로)<input class="cs-in" data-wt value="${esc(old ? old.wantText || '' : '')}" placeholder="예: 11/12(목) 16:00 · 담임과 따로"></label></div>` : `
@@ -263,9 +297,10 @@ export async function newReq(a, sid, old){
       <label class="cs-fl">원하는 때 (글로)<input class="cs-in" data-wt value="${esc(old ? old.wantText || '' : '')}" placeholder="예: 16시 이후 · 수요일이면 아무 때나"></label></div>`}`;
   };
   const m = A.modal(old ? '💬 변경 요청 고치기' : '💬 변경 요청', `<div data-b>${body()}</div>`, `<button class="cs-btn" data-n>취소</button><button class="cs-btn g" data-y>${old ? '고치기' : '요청 보내기'}</button>`, 'mid');
-  const keep = () => { const g = q => m.box.querySelector(q); const t = g('[data-t]'), w = g('[data-wt]'); if(g('[data-ppd]')){ ph0.pd = g('[data-ppd]').value; ph0.pt = g('[data-ppt]').value; } return { t: t ? t.value : '', w: w ? w.value : '' }; };
+  const keep = () => { const g = q => m.box.querySelector(q); const t = g('[data-t]'), w = g('[data-wt]'); if(g('[data-ppd]')){ ph0.pd = g('[data-ppd]').value; ph0.pt = g('[data-ppt]').value; } if(g('.cs-cond')) cond0 = A.condRead(g('.cs-cond')); return { t: t ? t.value : '', w: w ? w.value : '' }; };
   const redraw = () => { const k = keep(); m.box.querySelector('[data-b]').innerHTML = body(); m.box.querySelector('[data-t]').value = k.t; const w = m.box.querySelector('[data-wt]'); if(w) w.value = k.w; };
   m.box.addEventListener('change', e => { if(e.target.matches('[data-s]')){ cur = e.target.value; redraw(); } if(e.target.matches('[data-sib]')){ sibs = e.target.checked; redraw(); } });
+  A.condWire(m.box);
   m.box.addEventListener('click', e => { const hb = e.target.closest('[data-how]'); if(hb){ how = hb.dataset.how; redraw(); return; } const b = e.target.closest('[data-w]'); if(!b) return; const k = b.dataset.w; want = want.includes(k) ? want.filter(x => x !== k) : want.concat([k]); redraw(); });
   m.box.querySelector('[data-n]').onclick = () => m.close();
   m.box.querySelector('[data-y]').onclick = async () => {
@@ -273,12 +308,14 @@ export async function newReq(a, sid, old){
     keep();
     const text = m.box.querySelector('[data-t]').value.trim(), wantText = (m.box.querySelector('[data-wt]') || { value: '' }).value.trim();
     if(!text){ A.toast('사유를 적어 주세요', 'err'); return; }
+    const cond = C.condAny(cond0) ? { noDays: cond0.noDays || [], after: cond0.after || '', before: cond0.before || '', noSlots: [], note: cond0.note || '' } : null;
+    if(cond && cond.after && cond.before && C.toMin(cond.after) >= C.toMin(cond.before)){ A.toast('«이후만» 시각이 «전까지만» 시각보다 앞이어야 해요', 'err'); return; }
     const ids = sibs ? A.famIds(cur).filter(id => A.inSet.has(id)) : [cur];
     const w = how === 'face' ? want.map(k => { const [d, s] = k.split('_'); return s == null ? { d: +d } : { d: +d, s: +s }; }) : [];
     const ph = how === 'phone' ? { pd: ph0.pd || '', pt: ph0.pt || '' } : null;
     try{
-      if(old){ await A.FS.updateDoc(A.FS.doc(A.db, 'consultReqs', old.id), { text, want: w, wantText, sibs: ids.length > 1, sids: ids, how, ph, updatedAt: A.FS.serverTimestamp() }); m.close(); A.toast('요청을 고쳤어요'); return; }
-      const ref = await A.FS.addDoc(A.FS.collection(A.db, 'consultReqs'), { org: C.ORG, rid: r.id, sids: ids, col: A.colOf[cur] || '', byUid: A.CU.uid, byName: A.CU.name || '', text, want: w, wantText, how, ph,
+      if(old){ await A.FS.updateDoc(A.FS.doc(A.db, 'consultReqs', old.id), { text, want: w, wantText, sibs: ids.length > 1, sids: ids, how, ph, cond, updatedAt: A.FS.serverTimestamp() }); m.close(); A.toast('요청을 고쳤어요'); return; }
+      const ref = await A.FS.addDoc(A.FS.collection(A.db, 'consultReqs'), { org: C.ORG, rid: r.id, sids: ids, col: A.colOf[cur] || '', byUid: A.CU.uid, byName: A.CU.name || '', text, want: w, wantText, how, ph, cond,
         sibs: ids.length > 1, state: 'new', nRep: 0, ver: r.sentVer || 0, at: A.FS.serverTimestamp(), lastAt: A.FS.serverTimestamp() });
       m.close();
       A.notify(A.mgrUids(), 'req', how === 'phone' ? '☎ 상담 변경 요청 (전화 상담)' : how === 'sep' ? '🗓 상담 변경 요청 (별도 일정)' : '💬 상담 변경 요청', `${A.CU.name || ''} — ${ids.map(A.stuName).join(' · ')}: ${text.slice(0, 80)}`, 'consult.html#reqs/' + ref.id, { reqId: ref.id });
