@@ -286,11 +286,11 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
   onSnapshot, serverTimestamp, Timestamp, writeBatch, increment, arrayUnion }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol } from './listcache.js?v=137';
-import * as C from './consult-core.js?v=149';
-import * as BOARD from './consult-board.js?v=149';
-import * as SETUP from './consult-setup.js?v=149';
-import * as REQ from './consult-reqs.js?v=149';
-import * as PAST from './consult-past.js?v=149';
+import * as C from './consult-core.js?v=150';
+import * as BOARD from './consult-board.js?v=150';
+import * as SETUP from './consult-setup.js?v=150';
+import * as REQ from './consult-reqs.js?v=150';
+import * as PAST from './consult-past.js?v=150';
 import { notifyStaff } from './push-client.js';
 
 const __cfg = ({
@@ -406,10 +406,14 @@ A.canOpen = s => {
   const orgs = (Array.isArray(s.orgs) && s.orgs.length) ? s.orgs : [s.org];
   return s.role === 'super' || (!(s.pageDeny || []).includes('consult') && (orgs.includes('daniel') || (s.pageAllow || []).includes('consult')));
 };
-A.staffPick = () => A.STAFF.filter(s => (s.acStatus || 'active') !== 'quit' && !s.noAuth && A.canOpen(s))
+A.staffPick = () => A.STAFF.filter(s => (s.acStatus || 'active') !== 'quit' && !s.noAuth && !s.isTest && A.canOpen(s))
   .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
-/* 내 반 (담임 · 부담임) — 이 상담의 세로줄 가운데 */
-A.myCols = () => ((A.R && A.R.cols) || []).filter(c => c.uid === A.CU.uid || ((A.CBYID[c.classId || c.key] || {}).deputies || []).includes(A.CU.uid)).map(c => c.key);
+/* 내 반 (담임 · 부담임) — 이 상담의 세로줄 가운데
+   v150 🧪 권한 테스트 계정: 복제한 선생님(cloneOf)의 반 · 반 문서의 숨은 칸(shadowUids)도 «내 반»으로 본다 (출석부 · 증명서와 같게) */
+A.ACT = '';
+A.colHas = (c, uid) => { if(!uid || !c) return false; const k = A.CBYID[c.classId || c.key] || {}; return c.uid === uid || (k.deputies || []).includes(uid) || (k.shadowUids || []).includes(uid); };
+A.isMine = c => A.colHas(c, A.CU.uid) || (!!A.ACT && A.colHas(c, A.ACT));
+A.myCols = () => ((A.R && A.R.cols) || []).filter(A.isMine).map(c => c.key);
 /* 지금 보이는 자리 — 담당은 고치는 자리(seats) · 선생님들은 보낸 판(sentSeats) */
 A.liveSeats = () => (A.R && A.R.seats) || {};
 A.viewSeats = () => { const r = A.R; if(!r) return {}; if(A.isMgr) return r.seats || {}; return (r.state === 'review' || r.state === 'final' || r.state === 'closed') ? (r.sentSeats || r.seats || {}) : {}; };
@@ -486,7 +490,7 @@ A.notify = async function(uids, kind, title, body, link, extra){
 A.mgrUids = () => C.uniq(A.MGRS.concat(A.STAFF.filter(s => s.role === 'super' || (s.role === 'org_admin' && ((s.orgs || [s.org]).includes('daniel')))).map(s => s.uid)))
   .filter(u => { const s = A.SMAP[u]; return s && (s.acStatus || 'active') !== 'quit'; });
 /* 담임 확인 — 내 반이 마지막으로 바뀐 판 뒤에 확인했으면 «확인함» (다른 반만 바뀐 판은 다시 확인하지 않아도 됨) */
-A.teacherCols = uid => ((A.R && A.R.cols) || []).filter(c => c.uid === uid || ((A.CBYID[c.classId || c.key] || {}).deputies || []).includes(uid)).map(c => c.key);
+A.teacherCols = uid => ((A.R && A.R.cols) || []).filter(c => uid === A.CU.uid ? A.isMine(c) : A.colHas(c, uid)).map(c => c.key);
 A.ackNeed = uid => { const r = A.R; if(!r) return 0; const cv = r.colVer || {}; const cs = A.teacherCols(uid); return cs.length ? Math.max(1, ...cs.map(k => Number(cv[k]) || 1)) : 0; };
 A.ackOk = uid => { const r = A.R; if(!r || !r.sentVer) return false; const a = Number((r.acks || {})[uid]) || 0; return a >= A.ackNeed(uid) && a > 0; };
 /* 보낼 때 — 바뀐 반에 판 번호 (colVer) */
@@ -498,6 +502,8 @@ A.colVerPatch = (n, from, to) => {
   return cv;
 };
 A.colTeachers = () => C.uniq(((A.R && A.R.cols) || []).flatMap(c => [c.uid].concat((A.CBYID[c.classId || c.key] || {}).deputies || []))).filter(Boolean);
+/* 알림 받을 분 — 담임 · 부담임 + 그 반을 복제한 테스트 계정 (확인 현황 숫자에는 넣지 않음) */
+A.colNotifyUids = () => C.uniq(A.colTeachers().concat(((A.R && A.R.cols) || []).flatMap(c => (A.CBYID[c.classId || c.key] || {}).shadowUids || [])));
 
 /* ── 읽기 ── */
 async function loadStaff(){
@@ -656,6 +662,7 @@ function boot(){
     try{ st = await getDoc(doc(db, 'staff', user.uid)); }catch(e){ st = null; }
     if(!st || !st.exists()){ $I('l-msg').textContent = '교사 계정이 아니에요 — 교사 아이디로 로그인해 주세요.'; $I('ls').style.display = 'flex'; window.hideLoading && hideLoading(); return; }
     A.CU = Object.assign({ uid: user.uid }, st.data());
+    A.ACT = (A.CU.isTest && A.CU.cloneOf && A.CU.cloneOf.uid) || '';
     window.ORGS = { daniel: '다니엘 아마츠', jihyebit: '지혜빛 선교원' };
     if(window.renderShell) renderShell('consult', A.CU);
     if(window.guardPage && !guardPage(A.CU, 'consult')) return;

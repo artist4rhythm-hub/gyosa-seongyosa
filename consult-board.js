@@ -267,13 +267,13 @@ function sideTeacherHTML(){
   const r = A.R, seats = A.viewSeats();
   const mine = A.myCols();
   let h = '';
-  if(['review', 'final'].includes(r.state) && r.sentVer){
+  if(['review', 'final'].includes(r.state) && r.sentVer && mine.length){
     const ok = A.ackOk(A.CU.uid);
     h += `<div class="cs-card" style="background:${ok ? 'var(--sb-mint-2)' : '#1E3A2F'};color:${ok ? 'var(--ink)' : '#fff'};border:0"><b style="font-size:14px">${ok ? `✓ 판 ${r.sentVer} 확인했어요` : `판 ${r.sentVer} 확인 부탁드려요`}</b>
       <div style="font-size:12.5px;margin-top:4px;opacity:.9">${r.state === 'final' ? '확정된 일정이에요 · 바꿔야 하면 «변경 요청»' : '우리 반 시간을 보고 «이대로 확인했어요» 또는 이름을 눌러 «변경 요청»'}</div>
-      ${ok || !mine.length ? '' : '<button class="cs-btn" data-b="ack" style="margin-top:10px;width:100%;background:#fff;color:#1E3A2F;border:0">이대로 확인했어요</button>'}</div>`;
+      ${ok ? '' : '<button class="cs-btn" data-b="ack" style="margin-top:10px;width:100%;background:#fff;color:#1E3A2F;border:0">이대로 확인했어요</button>'}</div>`;
   }
-  if(!mine.length){ h += `<div class="cs-card"><h3>우리 반</h3><div class="cs-mut">이 상담에 담임 · 부담임으로 맡은 반이 없어요. 전체 표는 볼 수 있어요.</div></div>`; return h; }
+  if(!mine.length){ h += `<div class="cs-card"><h3>우리 반</h3><div class="cs-mut" style="line-height:1.65">이 상담에 담임 · 부담임으로 맡은 반이 없어요. 전체 표는 볼 수 있어요.<br>«확인»과 «변경 요청»은 그 반 담임 · 부담임 선생님이 해요 — 반이 빠졌으면 편성 담당께 알려 주세요.</div></div>`; return h; }
   mine.forEach(k => {
     const c = A.colByKey(k);
     const list = A.scope.filter(x => x.col === k && x.in).map(x => ({ sid: x.sid, st: seats[x.sid] }))
@@ -447,7 +447,7 @@ export function after(a){
 async function act(k){
   const r = A.R;
   if(k === 'order'){ A.go('setup'); setTimeout(() => { const el = document.getElementById('cs-s6'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }, 80); return; }
-  if(k === 'print'){ const P = await import('./consult-past.js?v=149'); P.printRound(A, r, A.viewSeats()); return; }
+  if(k === 'print'){ const P = await import('./consult-past.js?v=150'); P.printRound(A, r, A.viewSeats()); return; }
   if(k === 'vers'){ versModal(); return; }
   if(k === 'ack'){
     try{ await A.FS.updateDoc(A.roundRef(), { ['acks.' + A.CU.uid]: r.sentVer }); r.acks = Object.assign({}, r.acks, { [A.CU.uid]: r.sentVer }); A.toast('확인했어요 — 고맙습니다'); A.render(true); }
@@ -526,7 +526,7 @@ async function send(){
     if(r.state === 'prep' || r.state === 'draft') p.state = 'review';
     await A.saveRound(p);
     const to = A.colTeachers();
-    A.notify(to, 'sent', first ? '📅 학부모 상담 일정 확인 부탁' : '📅 학부모 상담 일정이 바뀌었어요', `${r.title} — 판 ${n}${first ? ' · 우리 반 시간을 확인해 주세요' : ' · 바뀐 시간을 확인해 주세요'}`, 'consult.html#board');
+    A.notify(A.colNotifyUids(), 'sent', first ? '📅 학부모 상담 일정 확인 부탁' : '📅 학부모 상담 일정이 바뀌었어요', `${r.title} — 판 ${n}${first ? ' · 우리 반 시간을 확인해 주세요' : ' · 바뀐 시간을 확인해 주세요'}`, 'consult.html#board');
     A.toast(`판 ${n}을(를) 선생님 ${to.length}분께 보냈어요`);
   }catch(e){ A.toast('보내지 못했어요 — ' + A.errText(e), 'err'); }
 }
@@ -540,7 +540,7 @@ async function finalize(){
     let n = r.sentVer;
     if(unsent || !n) n = await saveVer(true, '확정');
     await A.saveRound({ state: 'final', colVer: (unsent || !r.sentVer) ? A.colVerPatch(n, r.sentSeats || null, r.seats || {}) : (r.colVer || {}), sentSeats: r.seats || {}, sentVer: n, pubVer: n, pubAt: A.FS.serverTimestamp(), stu: C.stuSnap(A.scope, A.members, A.KIDS) });
-    A.notify(C.uniq(A.colTeachers().concat(A.mgrUids())), 'final', '📌 학부모 상담 일정 확정', `${r.title} — 판 ${n}으로 확정됐어요`, 'consult.html#board');
+    A.notify(C.uniq(A.colNotifyUids().concat(A.mgrUids())), 'final', '📌 학부모 상담 일정 확정', `${r.title} — 판 ${n}으로 확정됐어요`, 'consult.html#board');
     A.toast('확정했어요');
   }catch(e){ A.toast('확정하지 못했어요 — ' + A.errText(e), 'err'); }
 }

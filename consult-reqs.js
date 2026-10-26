@@ -38,7 +38,9 @@ export function reqsHTML(a, sub){
       ${list.map(q => { const s = ST[q.state] || ST.new; const fs = A.styleOf((q.sids || [])[0]); return `<div class="cs-rqi${cur && cur.id === q.id ? ' on' : ''}" data-rqid="${esc(q.id)}" tabindex="0" role="button"><div class="h"><span class="ch ${s[1]}">${s[0]}</span><b>${esc((q.sids || []).map(A.stuName).join(' · '))}</b>${fs ? `<span style="width:10px;height:10px;border-radius:3px;background:${fs.bg};border:1px solid ${fs.fg}"></span>` : ''}<span class="at">${esc(when(q.lastAt || q.at))}</span></div>
         <span class="cs-mut" style="color:var(--ink);font-size:12.5px">${esc(String(q.text || '').slice(0, 70))}</span><span class="cs-mut">${esc(q.byName || '')} 요청${q.nRep ? ` · 답글 ${q.nRep}` : ''}</span></div>`; }).join('') || '<div class="cs-empty">요청이 없어요.</div>'}
     </div>
-    <div class="cs-rqd">${cur ? detailHTML(cur) : `<div class="cs-card cs-empty">${A.isMgr ? '이 칸에 해당하는 요청이 없어요 — «처리됨 · 모두»에서 지난 요청을 볼 수 있어요.' : canNew ? '우리 반 학생의 시간을 바꿔야 하면 «+ 새 요청» 또는 표에서 이름을 눌러 «변경 요청»을 해 주세요.<br>편성 담당 선생님이 자리를 찾아 바꾸고 답글로 알려 드려요.' : '고를 요청이 없어요.'}</div>`}</div></div>`;
+    <div class="cs-rqd">${cur ? detailHTML(cur) : `<div class="cs-card cs-empty">${A.isMgr ? '이 칸에 해당하는 요청이 없어요 — «처리됨 · 모두»에서 지난 요청을 볼 수 있어요.' : canNew ? `<div style="text-align:left;max-width:520px;margin:0 auto;line-height:1.75"><b style="font-size:14px">💬 변경 요청하는 법</b> <span class="cs-mut">(우리 반 학생만)</span><br>
+        ① 여기 왼쪽 위 <b>«+ 새 요청»</b><br>② <b>이번 상담</b> 오른쪽 «우리 반» 목록에서 학생 옆 <b>«변경 요청»</b><br>③ 표에서 우리 반 학생 <b>이름을 눌러 «💬 변경 요청»</b><br>
+        <span class="cs-mut">학생 · 형제도 함께 · 사유 · 원하는 때(칸 고르기 / 글)를 적어 보내면 편성 담당 선생님이 자리를 찾아 바꾸고 답글로 알려 드려요.</span></div>` : !['review', 'final'].includes(r.state) ? '고를 요청이 없어요.' : '이 상담에 담임 · 부담임으로 맡은 반이 없어서 변경 요청은 할 수 없어요 — 다른 분 요청은 «모두»에서 볼 수 있어요.<br><span class="cs-mut">반이 빠졌으면 편성 담당 선생님께 알려 주세요.</span>'}</div>`}</div></div>`;
 }
 function detailHTML(q){
   const r = A.R, seats = A.isMgr ? (r.seats || {}) : A.viewSeats();
