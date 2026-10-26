@@ -16,6 +16,7 @@
    · 회의록 알림 — 안 읽은 것만
    👨‍👩‍👧 v124 우리 반 학부모 — 내 반 학부모 게시판에 «본 뒤» 늘어난 글 · 댓글 (pb-badge.js · 개수 세기 · 5분 기억)
    📒 v141 나학평 — 내 차례인 검토 칸(turn 칸) + 안 읽은 나학평 알림 (nhp-badge.js)
+   📅 v149 학부모 상담 — 안 읽은 상담 알림 (consult-badge.js)
    ═══════════════════════════════════════════════ */
 import { getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
@@ -84,7 +85,7 @@ async function fillUnreadOnce(db, uid){
 window.__fillUnreadOnce = fillUnreadOnce;
 
 async function computeBadges(db, uid){
-  const b = { message: 0, approval: 0, payreq: 0, minutes: 0, err: 0, myparents: 0, nhp: 0 };
+  const b = { message: 0, approval: 0, payreq: 0, minutes: 0, err: 0, myparents: 0, nhp: 0, consult: 0 };
 
   /* 내 계정 + 회계 담당자 여부를 먼저 확인 (지급 대기 집계에 필요) */
   let me = null, isPayMgr = false;
@@ -156,6 +157,9 @@ async function computeBadges(db, uid){
 
   /* 📒 v141 나학평 — 지금 내 차례인 검토 칸 + 안 읽은 나학평 알림 (다니엘 아마츠 선생님만 · 따로 불러와서) */
   try { const m = await import('./nhp-badge.js?v=143'); b.nhp = await m.badgeFor(db, uid, me); } catch(e){}
+
+  /* 📅 v149 학부모 상담 — 안 읽은 상담 알림 (확인 부탁 · 변경 요청 · 답글 · 처리 · 확정) */
+  try { const m = await import('./consult-badge.js?v=149'); b.consult = await m.badgeFor(db, uid, me); } catch(e){}
 
   /* 🩺 v121 수퍼관리자 — 오류 알림판에 새로 들어온 오류 (마지막으로 알림판을 본 뒤 · 최근 7일) */
   if(me && me.role === 'super'){
