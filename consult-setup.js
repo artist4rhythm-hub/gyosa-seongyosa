@@ -236,7 +236,7 @@ export function after(a){
     const nos = t.closest('[data-nosib]'); if(nos){ await save({ notSib: (r.notSib || []).concat([nos.dataset.nosib.split('|')]) }); return; }
     const oc = t.closest('[data-opt][data-val]'); if(oc){ await save({ opt: Object.assign({}, C.optOf(r), { [oc.dataset.opt]: oc.dataset.val }) }); return; }
     const sb = t.closest('[data-sb]'); if(sb){
-      if(sb.dataset.sb === 'auto'){ const B = await import('./consult-board.js?v=150'); await B.runAuto(A); A.go('board'); return; }
+      if(sb.dataset.sb === 'auto'){ const B = await import('./consult-board.js?v=151'); await B.runAuto(A); A.go('board'); return; }
       if(sb.dataset.sb === 'del'){ if(!(await A.confirm('상담 지우기', `«${esc(r.title)}»을(를) 지울까요? 되돌릴 수 없어요.`, '지우기', true))) return; try{ await A.FS.deleteDoc(A.roundRef()); A.ROUNDS = A.ROUNDS.filter(x => x.id !== r.id); await A.useRound((A.ROUNDS.find(x => x.state !== 'closed') || {}).id || ''); A.go('board'); A.toast('지웠어요'); }catch(err){ A.toast('지우지 못했어요 — ' + A.errText(err), 'err'); } return; }
     }
   };

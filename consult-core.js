@@ -1,10 +1,12 @@
-/* ═══ 📅 consult-core.js — 학부모 상담 스케줄 (v149) · 화면 없이 계산만 ═══
+/* ═══ 📅 consult-core.js — 학부모 상담 스케줄 (v149 · v151 전화 상담 시간 · 학부모 안내판) · 화면 없이 계산만 ═══
    · 상담 한 번 = consultRounds/{기관_연도_학기}
        tpl   기본 틀 { start:'15:30', len:25, gap:5, n:5 }  (상담 25분 + 쉼 5분 · 하루 5칸)
        days  [{ date, start?, n?, off? }]   날마다 시작 · 칸 수를 따로 바꿀 수 있음
        cols  [{ key, classId, name, grades, uid, tname, room, off:['d_s'] }]   세로줄 = 반편성의 반 (담임 = 상담 교사)
        inc   { sid: 1 | 0 }   대상 학생 직접 넣기(1) · 빼기(0) — 없으면 상담 첫날 재학 · 휴학으로 저절로
-       seats { sid: { d, s, k:'face'|'phone'|'sep', pin, note } }   자리 (세로줄은 학생의 반)
+       seats { sid: { d, s, k:'face'|'phone'|'sep', pin, note, pd?, pt? } }   자리 (세로줄은 학생의 반)
+             전화 상담(phone)은 표 밖 — pd 날짜('YYYY-MM-DD') · pt 시각('HH:MM') 을 따로 (비면 «시간 미정»)
+       pubs  [{ n, label:'초안'|'수정 n'|'확정', ver, at(ms), by, byName }]   학부모께 나간 판 (v151)
        vac   { 'c|d|s': { n, why } }   초안 뒤에 빠진 학생 자리 («비움»)
        opt   { order:'flip'|'asc'|'desc'|'fair', guardFront, guardBack, fill:'front'|'even', sib:'next'|'gap1'|'day', kid:'after'|'last'|'sep' }
    · 이 파일은 계산만 — 화면(consult.html)과 시험(Node)이 함께 쓴다 */
@@ -59,6 +61,40 @@ export function allSlots(r){
   return out;
 }
 export const slotIdx = (r, d, s) => { let i = 0; for(let k = 0; k < d; k++) i += dayN(r, k); return i + s; };
+/* 시각(pd · pt)이 상담 칸 안이면 그 칸 { d, s } — 아니면 null */
+export function slotAt(r, pd, pt){
+  const d = dayList(r).findIndex(x => x.date === pd); if(d < 0) return null;
+  const m = toMin(pt); if(isNaN(m)) return null;
+  const len = Number(tplOf(r).len) || 25;
+  for(let s = 0; s < dayN(r, d); s++){ const a = slotStart(r, d, s); if(m >= a && m < a + len) return { d, s }; }
+  return null;
+}
+/* 전화 상담 때 — «11/10(화) 18:00» · 비면 «시간 미정» */
+export function phoneWhen(st){
+  if(!st || st.k !== 'phone') return '';
+  const a = st.pd ? dayLabel(st.pd, true) : '', b = st.pt || '';
+  return (a || b) ? [a, b].filter(Boolean).join(' ') : '시간 미정';
+}
+export const phoneKey = st => `${(st && st.pd) || '9999-99-99'} ${(st && st.pt) || '99:99'}`;
+/* 학부모께 나간 판 (초안 → 수정 1 → 수정 2 … → 확정) */
+export const pubsOf = r => ((r && r.pubs) || []).slice().sort((a, b) => (a.n || 0) - (b.n || 0));
+export const pubLabel = n => n ? `수정 ${n}` : '초안';
+/* «…으로 / …로» — 받침이 있으면(ㄹ 빼고) 으로 · 숫자는 3 · 6 · 0 만 으로 */
+export function ro(w){
+  const c = String(w || '').trim().slice(-1);
+  if(/[0-9]/.test(c)) return /[360]/.test(c) ? '으로' : '로';
+  const k = c.charCodeAt(0) - 0xAC00; if(k < 0 || k > 11171) return '로';
+  const jong = k % 28; return jong && jong !== 8 ? '으로' : '로';
+}
+export function nextPubLabel(r){ const p = pubsOf(r).filter(x => x.label !== '확정'); return pubLabel(p.length); }
+/* 단계 (띠) — 1 준비 · 2 초안 편성 · 3 담임 확인 · 4 학부모 안내 · 변경 · 5 확정 */
+export function stepNo(r){
+  if(!r) return 1;
+  if(r.state === 'closed') return 6;
+  if(r.state === 'final') return 5;
+  if(r.state === 'review') return pubsOf(r).length ? 4 : 3;
+  return r.state === 'draft' ? 2 : 1;
+}
 
 /* ── 학년 · 세로줄 ── */
 export function gradeNoOf(g){ const m = /(\d+)\s*학년/.exec(String(g || '')); return m ? +m[1] : 0; }
@@ -449,12 +485,28 @@ export function check(r, ctx){
     frontRep = reps.length;
     reps.forEach(ids => issues.push({ lvl: 'warn', code: 'front', sids: ids, text: `두 번 연속 맨 앞 — ${ids.map(nm).join(' · ')}` }));
   }
+  // ☎ 전화 상담 — 그 시간에 담임이 대면 상담 중 · 가정이 대면 상담 중 · 같은 선생님 전화 두 건
+  let phoneN = 0, phoneNoTime = 0;
+  const phAt = {};
+  Object.entries(seats).forEach(([id, st]) => {
+    if(!st || st.k !== 'phone' || colOf[id] === undefined) return;
+    phoneN++;
+    if(!st.pd || !st.pt){ phoneNoTime++; return; }
+    const pk = `${colOf[id]}|${st.pd}|${st.pt}`; (phAt[pk] = phAt[pk] || []).push(id);
+    const sl = slotAt(r, st.pd, st.pt); if(!sl) return;
+    const busy = (at[`${colOf[id]}|${sl.d}|${sl.s}`] || []).filter(o => o !== id);
+    const c = (r.cols || []).find(c => c.key === colOf[id]);
+    if(busy.length) issues.push({ lvl: 'warn', code: 'phone', sids: [id].concat(busy), text: `☎ ${nm(id)} 전화 시간에 ${c ? c.tname || c.name : '담임'} 대면 상담 중 (${busy.map(nm).join(' · ')})` });
+    const k = fam[id]; const sib = k ? (members[k] || []).filter(o => o !== id && seats[o] && seats[o].k === 'face' && seats[o].d === sl.d && seats[o].s === sl.s) : [];
+    if(sib.length) issues.push({ lvl: 'warn', code: 'phone', sids: [id].concat(sib), text: `☎ ${nm(id)} 전화 시간에 형제 ${sib.map(nm).join(' · ')} 대면 상담` });
+  });
+  Object.values(phAt).forEach(ids => { if(ids.length > 1) issues.push({ lvl: 'warn', code: 'phone', sids: ids, text: `☎ 같은 선생님 같은 시각 전화 ${ids.length}건 — ${ids.map(nm).join(' · ')}` }); });
   const unplaced = scope.filter(x => !seats[x.sid]).map(x => x.sid);
   if(unplaced.length) issues.push({ lvl: 'warn', code: 'unplaced', sids: unplaced, text: `자리 없는 학생 ${unplaced.length}명 — ${unplaced.slice(0, 6).map(nm).join(' · ')}${unplaced.length > 6 ? ' …' : ''}` });
   const vac = Object.keys(r.vac || {}).length;
   const n = { face: 0, phone: 0, sep: 0 };
   scope.forEach(x => { const st = seats[x.sid]; if(st) n[st.k || 'face']++; });
-  return { issues, sum: { famN, famOk, kidN, frontRep, unplaced: unplaced.length, vac, n, total: scope.length } };
+  return { issues, sum: { famN, famOk, kidN, frontRep, unplaced: unplaced.length, vac, n, total: scope.length, phoneN, phoneNoTime } };
 }
 
 /* ── 손으로 옮기기 — 같은 세로줄 안: 빈 칸이면 옮기고 · 사람이 있으면 서로 바꿈 ──
@@ -463,10 +515,16 @@ export function movePatch(r, colOf, sid, to){
   const seats = r.seats || {};
   const cur = seats[sid] || null;
   const patch = {};
-  if(to.k === 'phone' || to.k === 'sep'){ patch[sid] = Object.assign({}, cur || {}, { k: to.k, d: null, s: null, note: to.note != null ? to.note : ((cur && cur.note) || '') }); delete patch[sid].d; delete patch[sid].s; return patch; }
+  if(to.k === 'phone' || to.k === 'sep'){
+    patch[sid] = Object.assign({}, cur || {}, { k: to.k, note: to.note != null ? to.note : ((cur && cur.note) || '') });
+    delete patch[sid].d; delete patch[sid].s;
+    if(to.k === 'phone'){ patch[sid].pd = to.pd != null ? to.pd : ((cur && cur.pd) || ''); patch[sid].pt = to.pt != null ? to.pt : ((cur && cur.pt) || ''); }
+    else { delete patch[sid].pd; delete patch[sid].pt; }
+    return patch;
+  }
   if(to.k === 'none'){ patch[sid] = null; return patch; }
   const other = Object.keys(seats).find(o => o !== sid && colOf[o] === colOf[sid] && seats[o] && seats[o].k === 'face' && seats[o].d === to.d && seats[o].s === to.s);
-  patch[sid] = Object.assign({}, cur || {}, { k: 'face', d: to.d, s: to.s });
+  patch[sid] = Object.assign({}, cur || {}, { k: 'face', d: to.d, s: to.s }); delete patch[sid].pd; delete patch[sid].pt;
   if(other){
     if(cur && cur.k === 'face') patch[other] = Object.assign({}, seats[other], { d: cur.d, s: cur.s });
     else patch[other] = null;   // 빈 자리에서 끌어와 사람 칸에 놓으면 그 사람은 «자리 없음»으로
@@ -487,7 +545,7 @@ export function remapDays(r, newDays){
 /* 판 비교 — 바뀐 학생 */
 export function diffSeats(a, b){
   const ks = uniq(Object.keys(a || {}).concat(Object.keys(b || {})));
-  const J = v => JSON.stringify(v ? { d: v.d, s: v.s, k: v.k } : null);
+  const J = v => JSON.stringify(v ? (v.k === 'phone' ? { k: 'phone', pd: v.pd || '', pt: v.pt || '' } : v.k === 'sep' ? { k: 'sep', note: v.note || '' } : { d: v.d, s: v.s, k: v.k }) : null);
   return ks.filter(k => J((a || {})[k]) !== J((b || {})[k]));
 }
 
@@ -516,6 +574,35 @@ export function findSpot(r, colOf, ids, want, opt){
     }
   }
   return null;
+}
+
+/* ── 변경 요청 모아 반영 — 들어온 차례대로 (앞 요청이 잡은 칸은 뒤 요청이 못 씀) · 다른 가정은 그대로
+   reqs [{ id, sids, how:'face'|'phone'|'sep', want, wantText, ph:{pd,pt} }]
+   돌려줌 [{ id, ok, how, patch, plan, why }] — patch 는 고정(pin) 자리 */
+export function batchPlan(r, colOf, reqs, inSet){
+  const work = Object.assign({}, r, { seats: Object.assign({}, r.seats || {}) });
+  return (reqs || []).map(q => {
+    const ids = (q.sids || []).filter(id => !inSet || inSet.has(id));
+    const how = q.how || 'face';
+    if(!ids.length) return { id: q.id, ok: false, how, why: '대상 학생이 없어요' };
+    const patch = {};
+    if(how === 'phone'){
+      const ph = q.ph || {};
+      ids.forEach(id => { patch[id] = Object.assign({}, work.seats[id] || {}, { k: 'phone', pd: ph.pd || '', pt: ph.pt || '', note: (work.seats[id] && work.seats[id].note) || '', pin: true }); delete patch[id].d; delete patch[id].s; });
+    } else if(how === 'sep'){
+      const note = String(q.wantText || '').trim();
+      ids.forEach(id => { patch[id] = Object.assign({}, work.seats[id] || {}, { k: 'sep', note: note || ((work.seats[id] && work.seats[id].note) || ''), pin: true }); delete patch[id].d; delete patch[id].s; delete patch[id].pd; delete patch[id].pt; });
+    } else {
+      if(!(q.want || []).length) return { id: q.id, ok: false, how, why: '원하는 칸을 고르지 않은 요청 — 글을 보고 손으로' };
+      const plan = findSpot(work, colOf, ids, q.want);
+      if(!plan) return { id: q.id, ok: false, how, why: '원하는 때에 빈 자리가 없어요' };
+      plan.forEach(([id, d, s]) => { patch[id] = Object.assign({}, work.seats[id] || {}, { k: 'face', d, s, pin: true }); delete patch[id].pd; delete patch[id].pt; });
+      Object.assign(work.seats, patch);
+      return { id: q.id, ok: true, how, patch, plan };
+    }
+    Object.assign(work.seats, patch);
+    return { id: q.id, ok: true, how, patch };
+  });
 }
 
 /* ── 이름 (원본 학생이 지워져도 표에 남게 — 상담 문서 안 stu 사진) ── */

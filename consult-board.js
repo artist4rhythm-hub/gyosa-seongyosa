@@ -1,4 +1,4 @@
-/* ═══ 📅 consult-board.js — 편성 보드 (v149) ═══
+/* ═══ 📅 consult-board.js — 편성 보드 (v149 · v151 학부모 안내판 · 전화 상담 시간) ═══
    · 보기 셋: 표(3일 한 화면 · 기본) · 날짜별(크게) · 가정별(한 줄 = 한 가정 · 형제를 함께 끌기)
    · 담당: 이름을 끌어 같은 세로줄의 다른 칸에 놓으면 옮기고, 사람이 있으면 서로 바꿈 · «그 외» 줄로 끌면 전화 · 별도
      (휴대폰 · 끌기가 안 될 때: 이름을 누르고 «옮기기» → 칸 누르기)
@@ -52,18 +52,19 @@ function chipHTML(sid, opt){
   const lines = opt.big ? [sibLine(sid), note ? '📝 ' + note : ''].filter(Boolean) : [];
   const title = [A.stuName(sid), sub, note].filter(Boolean).join(' · ');
   return `<button class="${cls.join(' ')}" data-sid="${esc(sid)}"${editable() ? ' draggable="true"' : ''} style="${style}" title="${esc(title)}" aria-label="${esc(title)}">
-    <span class="n">${esc(A.stuName(sid))}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}${opt.etc && note ? `<span class="sub">${esc(note)}</span>` : ''}
+    <span class="n">${esc(A.stuName(sid))}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}${st.k === 'phone' ? `<span class="ptm${st.pd && st.pt ? '' : ' no'}">☎ ${esc(C.phoneWhen(st))}</span>` : ''}${opt.etc && note ? `<span class="sub">${esc(note)}</span>` : ''}
     ${lines.map(l => `<span class="ln">${esc(l)}</span>`).join('')}
     ${st.pin ? `<span class="pin" aria-hidden="true">${ICON_PIN}</span>` : ''}${!opt.big && !opt.etc && note ? '<span class="memo" aria-hidden="true">✎</span>' : ''}</button>`;
 }
 
 /* ── 단계 띠 ── */
 function stepsHTML(){
-  const r = A.R; const cur = (C.STATES[r.state] || C.STATES.prep).no;
-  const st = [['준비', 1], ['초안 편성', 2], ['담임 확인 · 변경 요청', 3], ['확정 · 공지', 4]];
+  const r = A.R; const cur = C.stepNo(r);
+  const pubs = C.pubsOf(r).filter(p => p.label !== '확정'), lp = pubs[pubs.length - 1];
+  const st = [['준비', 1], ['초안 편성', 2], ['담임 확인', 3], [`학부모 안내 · 변경${lp ? ` <span style="font-weight:600;opacity:.85">(${esc(lp.label)})</span>` : ''}`, 4], ['확정', 5]];
   const at = r.updatedAt && r.updatedAt.seconds ? new Date(r.updatedAt.seconds * 1000) : null;
   const when = at ? `${at.getMonth() + 1}월 ${at.getDate()}일 ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : '';
-  return `<div class="cs-steps">${st.map(([l, n], i) => `${i ? '<span class="dash">—</span>' : ''}<div class="cs-step${n < cur || r.state === 'closed' ? ' dn' : (n === cur ? ' on' : '')}"><span class="no">${n < cur || r.state === 'closed' ? '✓' : n}</span><span class="lb">${l}</span>${n === cur && r.ver ? ` <span style="font-weight:500;opacity:.85">· 판 ${r.ver}</span>` : ''}</div>`).join('')}
+  return `<div class="cs-steps">${st.map(([l, n], i) => `${i ? '<span class="dash">—</span>' : ''}<div class="cs-step${n < cur ? ' dn' : (n === cur ? ' on' : '')}"><span class="no">${n < cur ? '✓' : n}</span><span class="lb">${l}</span>${n === cur && r.ver && n < 4 ? ` <span style="font-weight:500;opacity:.85">· 판 ${r.ver}</span>` : ''}</div>`).join('')}
     <span class="sp"></span><span class="cs-mut">${r.state === 'closed' ? '끝난 상담 · 보기만' : (when ? `저장됨 · ${when}${r.updatedBy ? ' · ' + esc(A.staffName(r.updatedBy)) : ''}` : '')}</span></div>`;
 }
 
@@ -77,7 +78,8 @@ function toolsHTML(view){
   }
   const opt = C.optOf(r);
   const dir = r.dir || C.dirFor(opt, A.prevDir());
-  const ordL = { flip: '지난번과 반대', asc: 'ㄱ→ㅎ', desc: 'ㅎ→ㄱ', fair: '지난 자리로 고르게' }[opt.order] + (opt.order === 'fair' ? '' : ` (${dir === 'desc' ? 'ㅎ→ㄱ' : 'ㄱ→ㅎ'})`) + (opt.guardFront ? ' + 앞자리 점검' : '');
+  const ordL = opt.order === 'fair' ? '지난 자리로 고르게' : (dir === 'desc' ? 'ㅎ→ㄱ' : 'ㄱ→ㅎ');
+  const ordT = { flip: '지난번과 반대', asc: 'ㄱ→ㅎ', desc: 'ㅎ→ㄱ', fair: '지난 자리로 고르게' }[opt.order] + (opt.guardFront ? ' + 앞자리 점검' : '') + ' — 준비 › 순서에서 바꿔요';
   const unsent = r.sentSeats ? C.diffSeats(r.sentSeats, r.seats).length : 0;
   const pins = Object.values(r.seats || {}).filter(s => s && (s.pin || s.k === 'phone' || s.k === 'sep')).length;
   let main = '';
@@ -85,12 +87,12 @@ function toolsHTML(view){
   else if(r.state === 'prep' || r.state === 'draft') main = `<button class="cs-btn g" data-b="send"${Object.keys(r.seats || {}).length ? '' : ' disabled'}>담임 확인 보내기 →</button>`;
   else{
     if(unsent) main += `<button class="cs-btn w" data-b="send">고친 것 보내기 (${unsent}명)</button>`;
-    if(r.state === 'review') main += `<button class="cs-btn g" data-b="final">확정하기 →</button>`;
+    if(r.state === 'review') main += `<button class="cs-btn ${C.pubsOf(r).length ? '' : 'g'}" data-b="pub" title="학부모님께 나눠 줄 판으로 기록하고 인쇄 · PDF">📨 학부모께 ${esc(C.nextPubLabel(r))} 보내기</button><button class="cs-btn ${C.pubsOf(r).length ? 'g' : ''}" data-b="final">확정하기 →</button>`;
     if(r.state === 'final') main += `<button class="cs-btn sm" data-b="close">상담 끝내기</button>`;
   }
   return `<div class="cs-tools">${seg}
-    ${r.state !== 'closed' ? `<button class="cs-btn sm" data-b="order" title="준비 › 순서에서 바꿔요">↕ 순서 · ${esc(ordL)}</button>
-    <button class="cs-btn sm m" data-b="auto">↻ 자동 배치${Object.keys(r.seats || {}).length ? ' 다시' : ''}${pins ? ` <span style="font-weight:500">(고정 · 전화 · 별도 ${pins}명은 그대로)</span>` : ''}</button>` : ''}
+    ${r.state !== 'closed' ? `<button class="cs-btn sm" data-b="order" title="${esc(ordT)}">↕ 순서 · ${esc(ordL)}</button>
+    <button class="cs-btn sm m" data-b="auto" title="📌 고정한 자리 · 전화 상담 · 별도 일정은 그대로 둬요">↻ 자동 배치${Object.keys(r.seats || {}).length ? ' 다시' : ''}${pins ? ` <span style="font-weight:500">(고정 ${pins}명 그대로)</span>` : ''}</button>` : ''}
     <span class="sp"></span>
     <button class="cs-btn sm" data-b="vers">판 비교</button>
     <button class="cs-btn sm" data-b="print">🖨 인쇄 · PDF</button>${main}</div>`;
@@ -108,10 +110,11 @@ function colsShown(){
   if(!A.isMgr && A.lsGet('cs_mine', '') === '1'){ const mine = A.myCols(); const f = cols.filter(c => mine.includes(c.key)); if(f.length) return f; }
   return cols;
 }
+const roomHTML = t => { const x = String(t || '').trim(); if(!x) return ''; const m = /^(.*[\]\)])\s*(\S.*)$/.exec(x); return (m ? [m[1], m[2]] : x.split(/\s+/)).map(w => `<span class="nw">${esc(w)}</span>`).join(' '); };
 function gridVars(n, cw, tc){ return `--cs-n:${n};--cs-cw:${cw}px;--cs-tc:${tc}px;--cs-minw:${tc + n * cw}px`; }
 function colHeadHTML(cols, counts){
   const mine = A.myCols();
-  return `<div class="cs-row hd"><div>시간</div>${cols.map(c => `<div class="cs-ch${mine.includes(c.key) ? ' me' : ''}"><div class="g">${esc(c.grades || '')} <span>${esc(c.name || '')}</span></div><div class="t">${esc(c.tname || A.staffName(c.uid) || '담임 없음')}</div><div class="r">${esc(c.room || '교실 미정')} · ${counts[c.key] || 0}명</div></div>`).join('')}</div>`;
+  return `<div class="cs-row hd"><div>시간</div>${cols.map(c => `<div class="cs-ch${mine.includes(c.key) ? ' me' : ''}"><div class="g">${esc(c.grades || '')} <span>${esc(c.name || '')}</span></div><div class="t">${esc(c.tname || A.staffName(c.uid) || '담임 없음')}</div><div class="r">${roomHTML(c.room) || '교실 미정'} · ${counts[c.key] || 0}명</div></div>`).join('')}</div>`;
 }
 function gridHTML(dayIdx, big){
   const r = A.R, seats = A.viewSeats();
@@ -147,6 +150,22 @@ function gridHTML(dayIdx, big){
   }
   const cw = big ? 130 : 92, tc = 104;
   return `<div class="cs-board${big ? ' cs-big' : ''}"><div class="cs-scroll"><div class="cs-grid" style="${gridVars(cols.length, cw, tc)}">${h}</div></div></div>`;
+}
+/* ── ☎ 전화 상담 · 🗓 별도 일정 목록 (표 아래 · 담당은 여기서 시간을 정함) ── */
+function etcListHTML(){
+  const r = A.R, seats = A.viewSeats(), mine = A.myCols();
+  const list = Object.entries(seats).filter(([sid, st]) => st && st.k !== 'face' && A.inSet.has(sid) && (A.isMgr || A.lsGet('cs_mine', '') !== '1' || mine.includes(A.colOf[sid])));
+  const ph = list.filter(([, st]) => st.k === 'phone').sort((a, b) => C.phoneKey(a[1]).localeCompare(C.phoneKey(b[1])) || String(A.stuName(a[0])).localeCompare(String(A.stuName(b[0])), 'ko'));
+  const sp = list.filter(([, st]) => st.k === 'sep');
+  if(!ph.length && !sp.length && !editable()) return '';
+  const who = sid => { const c = A.colByKey(A.colOf[sid]); return `<span><b>${esc(A.stuName(sid))}</b> <span class="cs-mut">${esc(C.colLabel(c))}</span>${kidOf(sid) ? ` <span class="cs-mut" style="color:var(--sb-green)">· ${esc(A.staffName(kidOf(sid)))} 자녀</span>` : ''}</span><span class="cs-mut">${esc(c ? c.tname || '' : '')}</span>`; };
+  const iss = sid => ((A.chk && A.chk.issues) || []).find(i => i.code === 'phone' && i.sids[0] === sid);
+  const row = (sid, st) => `<div class="er"${mine.includes(A.colOf[sid]) ? ' style="background:var(--sb-mint-2);border-radius:8px"' : ''}><span class="tm${st.k === 'phone' && !(st.pd && st.pt) ? ' no' : ''}">${st.k === 'phone' ? '☎ ' + esc(C.phoneWhen(st)) : '🗓 ' + esc(st.note || '날짜 미정')}</span>${who(sid)}
+    <span class="cs-mut">${esc(st.k === 'phone' ? (st.note || '') : '')}${A.isMgr && iss(sid) ? `<br><b style="color:#92400E">${esc(iss(sid).text)}</b>` : ''}</span>
+    <span class="bt">${editable() ? `${st.k === 'phone' ? `<button class="cs-btn xs" data-ph="${esc(sid)}">시간 정하기</button>` : `<button class="cs-btn xs" data-spn="${esc(sid)}">날짜 · 시간 고치기</button>`}<button class="cs-btn xs" data-toface="${esc(sid)}">↩ 표로 (대면)</button>` : ''}</span></div>`;
+  return `<div class="cs-card cs-etcl"><h3 style="margin:0 0 6px;font-size:14px;font-weight:900;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span>☎ 전화 상담 ${ph.length}명 · 🗓 별도 일정 ${sp.length}명</span>${A.isMgr && A.chk && A.chk.sum.phoneNoTime ? `<span class="ch" style="background:#FFF1E6;color:#C2410C">시간 미정 ${A.chk.sum.phoneNoTime}</span>` : ''}<span style="flex:1"></span>${editable() ? '<button class="cs-btn sm" data-phadd>+ 전화 상담 넣기</button>' : ''}</h3>
+    ${ph.length || sp.length ? `<div class="er hd"><span>때</span><span>학생</span><span>담임</span><span>메모</span><span></span></div>${ph.map(([sid, st]) => row(sid, st)).join('')}${sp.map(([sid, st]) => row(sid, st)).join('')}`
+      : `<div class="cs-mut" style="line-height:1.7">전화로 상담할 가정은 표에서 이름을 눌러 <b>«☎ 전화 상담으로…»</b> 또는 위 <b>«+ 전화 상담 넣기»</b> — 날짜 · 시각을 정하면 여기에 시간 순으로 모이고, 인쇄본 «그 외»에도 시각이 함께 나가요. 선생님이 «☎ 전화 상담» 요청을 보내면 변경 요청에서 바로 배정해요.</div>`}</div>`;
 }
 /* ── 날짜별 ── */
 function dayViewHTML(sub){
@@ -232,6 +251,7 @@ function sideMgrHTML(){
     ${row('두 번 연속 맨 앞', s.frontRep || 0, s.frontRep ? 'w' : '', 'front')}
     ${errs.filter(i => ['double', 'off', 'range'].includes(i.code)).length ? row('한 칸 두 명 · 못 하는 시간 · 없는 칸', errs.filter(i => ['double', 'off', 'range'].includes(i.code)).length, 'e', 'err') : ''}
     ${row('대면 · 전화 · 별도', `${s.n.face || 0} · ${s.n.phone || 0} · ${s.n.sep || 0}`, '')}
+    ${s.phoneN ? row('☎ 전화 시간', `${s.phoneNoTime ? '미정 ' + s.phoneNoTime : '모두 정함'}${cnt('phone') ? ' · 겹침 ' + cnt('phone') : ''}`, s.phoneNoTime || cnt('phone') ? 'w' : '', 'phone') : ''}
     ${row('대상 학생', `${s.total || 0}명`, '')}
   </div>`;
   // 선택한 가정
@@ -270,16 +290,29 @@ function sideTeacherHTML(){
   if(['review', 'final'].includes(r.state) && r.sentVer && mine.length){
     const ok = A.ackOk(A.CU.uid);
     h += `<div class="cs-card" style="background:${ok ? 'var(--sb-mint-2)' : '#1E3A2F'};color:${ok ? 'var(--ink)' : '#fff'};border:0"><b style="font-size:14px">${ok ? `✓ 판 ${r.sentVer} 확인했어요` : `판 ${r.sentVer} 확인 부탁드려요`}</b>
-      <div style="font-size:12.5px;margin-top:4px;opacity:.9">${r.state === 'final' ? '확정된 일정이에요 · 바꿔야 하면 «변경 요청»' : '우리 반 시간을 보고 «이대로 확인했어요» 또는 이름을 눌러 «변경 요청»'}</div>
+      <div style="font-size:12.5px;margin-top:4px;opacity:.9">${r.state === 'final' ? '확정된 일정이에요 · 바꿔야 하면 «변경 요청»' : '우리 반 시간을 보고 «이대로 확인했어요» 또는 이름을 눌러 «변경 요청»'}${(() => { const lp = C.pubsOf(r).slice(-1)[0]; return lp ? `<br>📨 학부모님께 «${esc(lp.label)}» 나감 (${new Date(lp.at || 0).getMonth() + 1}/${new Date(lp.at || 0).getDate()}) — 학부모님 요청은 «변경 요청»으로 (☎ 전화 상담 요청도)` : ''; })()}</div>
       ${ok ? '' : '<button class="cs-btn" data-b="ack" style="margin-top:10px;width:100%;background:#fff;color:#1E3A2F;border:0">이대로 확인했어요</button>'}</div>`;
   }
   if(!mine.length){ h += `<div class="cs-card"><h3>우리 반</h3><div class="cs-mut" style="line-height:1.65">이 상담에 담임 · 부담임으로 맡은 반이 없어요. 전체 표는 볼 수 있어요.<br>«확인»과 «변경 요청»은 그 반 담임 · 부담임 선생님이 해요 — 반이 빠졌으면 편성 담당께 알려 주세요.</div></div>`; return h; }
+  // 우리 반 — 날짜마다 묶어서 (시각은 한 줄 · 형제 · 메모는 줄바꿈해서 다 보이게)
+  const days = C.dayList(r);
   mine.forEach(k => {
     const c = A.colByKey(k);
-    const list = A.scope.filter(x => x.col === k && x.in).map(x => ({ sid: x.sid, st: seats[x.sid] }))
-      .sort((a, b) => (a.st && a.st.k === 'face' ? C.slotIdx(r, a.st.d, a.st.s) : 9999) - (b.st && b.st.k === 'face' ? C.slotIdx(r, b.st.d, b.st.s) : 9999));
-    h += `<div class="cs-card"><h3><span>우리 반 · ${esc(C.colLabel(c))}</span><span class="cs-mut">${list.length}명</span></h3><div class="cs-mut" style="margin-bottom:4px">${esc(c.room || '교실 미정')}</div>
-      ${list.map(({ sid, st }) => { const rq = A.REQS.find(q => (q.sids || []).includes(sid) && q.state === 'new'); const sl = sibLine(sid); return `<div class="cs-me"><span class="t">${st ? (st.k === 'face' ? `${C.dayLabel(C.dayList(r)[st.d].date, true)} ${C.slotTime(r, st.d, st.s)}` : C.KINDS[st.k]) : '자리 없음'}</span><span style="flex:1;min-width:0"><b>${esc(A.stuName(sid))}</b>${sl || kidOf(sid) || noteOf(sid) ? `<br><span class="cs-mut">${esc([sl, kidOf(sid) ? A.staffName(kidOf(sid)) + ' 자녀' : '', noteOf(sid)].filter(Boolean).join(' · '))}</span>` : ''}</span>${rq ? '<span class="ch red">요청함</span>' : `<button class="cs-btn xs" data-req="${esc(sid)}">변경 요청</button>`}</div>`; }).join('')}</div>`;
+    const list = A.scope.filter(x => x.col === k && x.in).map(x => ({ sid: x.sid, st: seats[x.sid] }));
+    const grp = {};
+    list.forEach(x => { const g = !x.st ? 'none' : x.st.k === 'face' ? 'd' + x.st.d : x.st.k; (grp[g] = grp[g] || []).push(x); });
+    const order = days.map((x, d) => 'd' + d).concat(['phone', 'sep', 'none']).filter(g => grp[g]);
+    const sibOf = sid => { const ids = A.famIds(sid).filter(o => o !== sid && A.inSet.has(o)); return ids.map(o => { const st = seats[o]; const oc = A.colByKey(A.colOf[o]); const where = !st ? '자리 없음' : st.k === 'face' ? `${C.dayLabel(days[st.d].date, true)} ${C.slotTime(r, st.d, st.s)}` : st.k === 'phone' ? '☎ ' + C.phoneWhen(st) : C.KINDS[st.k]; return `형제 ${A.stuName(o)} (${oc ? oc.grades || oc.name : ''}) · ${where}`; }); };
+    const row = ({ sid, st }) => {
+      const rq = A.REQS.find(q => (q.sids || []).includes(sid) && q.state === 'new');
+      const fs = A.styleOf(sid);
+      const tm = !st ? '—' : st.k === 'face' ? C.slotTime(r, st.d, st.s) : st.k === 'phone' ? '☎' : '🗓';
+      const sub = [].concat(st && st.k === 'phone' ? ['☎ ' + C.phoneWhen(st)] : [], st && st.k === 'sep' && st.note ? ['🗓 ' + st.note] : [], sibOf(sid), kidOf(sid) ? [A.staffName(kidOf(sid)) + ' 선생님 자녀'] : [], st && st.k !== 'sep' && st.note ? ['📝 ' + st.note] : []);
+      return `<div class="cs-me"><span class="t">${esc(tm)}</span><span class="w"><span><b>${esc(A.stuName(sid))}</b>${fs ? ` <span class="mk" style="background:${fs.bg};color:${fs.fg}">${fs.mark}</span>` : ''}</span>${sub.map(t => `<span class="s">${esc(t)}</span>`).join('')}</span>${rq ? '<span class="ch red">요청함</span>' : (['review', 'final'].includes(r.state) ? `<button class="cs-btn xs" data-req="${esc(sid)}">변경 요청</button>` : '<span></span>')}</div>`;
+    };
+    const gl = g => g[0] === 'd' ? C.dayLabel(days[+g.slice(1)].date) : g === 'phone' ? '☎ 전화 상담' : g === 'sep' ? '🗓 별도 일정' : '자리 없음';
+    h += `<div class="cs-card cs-mine"><h3><span>우리 반 · ${esc(C.colLabel(c))}</span><span class="cs-mut">${list.length}명</span></h3><div class="cs-mut" style="margin:-4px 0 6px">${esc(c.tname || '')} · ${roomHTML(c.room) || '교실 미정'}</div>
+      <div class="cs-mel">${order.map(g => `<div class="cs-meg"><div class="gh"><b>${esc(gl(g))}</b><span>${grp[g].length}명</span></div>${grp[g].sort((a, b) => (a.st && a.st.k === 'face' ? a.st.s : 99) - (b.st && b.st.k === 'face' ? b.st.s : 99) || C.phoneKey(a.st).localeCompare(C.phoneKey(b.st))).map(row).join('')}</div>`).join('')}</div></div>`;
   });
   return h;
 }
@@ -301,7 +334,7 @@ export function boardHTML(a, sub){
   return `${stepsHTML()}${toolsHTML(view)}${legendHTML()}
     ${ended && A.isMgr ? `<div class="cs-card" style="margin-bottom:12px;background:#FFF7E6;border-color:#F3D58A;font-size:13px">상담 날짜가 지났어요 — «상담 끝내기»를 누르면 지난 상담으로 옮겨지고, 다음 학기 순번 점검에 쓰여요.</div>` : ''}
     ${empty ? `<div class="cs-card" style="margin-bottom:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><b>아직 자리가 없어요.</b><span class="cs-mut">대상 ${A.inSet.size}명 · 반 ${(r.cols || []).length}줄 · ${C.dayList(r).length}일 × 하루 ${C.tplOf(r).n}칸</span><span style="flex:1"></span><a class="cs-btn" href="#setup">⚙️ 준비 확인</a><button class="cs-btn g" data-b="auto">↻ 초안 만들기 (자동 배치)</button></div>` : ''}
-    <div class="cs-main${A.isMgr ? '' : ' tch'}"><div class="cs-boardw">${view === 'day' ? dayViewHTML(daySub) : view === 'fam' ? famViewHTML() : gridHTML(null, false)}</div>
+    <div class="cs-main${A.isMgr ? '' : ' tch'}"><div class="cs-boardw">${view === 'day' ? dayViewHTML(daySub) : view === 'fam' ? famViewHTML() : gridHTML(null, false)}${view === 'fam' ? '' : etcListHTML()}</div>
     ${view === 'fam' ? '' : `<aside class="cs-side">${A.isMgr ? sideMgrHTML() : sideTeacherHTML()}</aside>`}</div>`;
 }
 
@@ -310,12 +343,16 @@ async function moveTo(sid, to){
   const r = A.R;
   const cur = (r.seats || {})[sid];
   if(cur && to.k === 'face' && cur.k === 'face' && cur.d === to.d && cur.s === to.s) return;
-  if(cur && to.k !== 'face' && cur.k === to.k) return;
+  if(cur && to.k !== 'face' && to.k !== 'phone' && cur.k === to.k) return;
   let note = null;
+  if(to.k === 'phone' && to.pd == null){
+    const v = await A.phonePick(sid, cur && cur.k === 'phone' ? cur : { note: (cur && cur.note) || '' }, { ok: cur && cur.k === 'phone' ? '시간 바꾸기' : '전화 상담으로' }); if(!v) return;
+    to = Object.assign({}, to, { pd: v.pd, pt: v.pt }); note = v.note;
+  }
   if(to.k === 'sep'){ note = await A.prompt('🗓 별도 일정', `${esc(A.stuName(sid))} — 날짜 · 시간`, (cur && cur.note) || '', { ph: '예: 11/12(목) 16:00 · 담임과 따로', ok: '별도 일정으로' }); if(note == null) return; }
   const patch = C.movePatch(r, A.colOf, sid, Object.assign({}, to, note != null ? { note } : {}));
   const other = Object.keys(patch).find(k => k !== sid);
-  try{ await A.applySeats(patch, other ? `${A.stuName(sid)} ↔ ${A.stuName(other)} 서로 바꿨어요` : (to.k === 'face' ? `${A.stuName(sid)} 옮겼어요` : `${A.stuName(sid)} → ${C.KINDS[to.k]}`)); }
+  try{ await A.applySeats(patch, other ? `${A.stuName(sid)} ↔ ${A.stuName(other)} 서로 바꿨어요` : (to.k === 'face' ? `${A.stuName(sid)} 옮겼어요` : `${A.stuName(sid)} → ${C.KINDS[to.k]}${to.k === 'phone' ? ' · ' + C.phoneWhen(patch[sid]) : ''}`)); }
   catch(e){ A.toast('옮기지 못했어요 — ' + A.errText(e), 'err'); return; }
   // 옮긴 뒤 새로 생긴 문제 알려 주기
   const iss = ((A.chk && A.chk.issues) || []).filter(i => i.lvl !== 'info' && i.code !== 'unplaced' && i.sids.includes(sid));
@@ -363,6 +400,23 @@ function markCan(sid){
 function clearMarks(){ document.querySelectorAll('.cs-cell.can,.cs-cell.over,.cs-fam .sl.over').forEach(c => c.classList.remove('can', 'over')); }
 const targetOf = cell => cell.dataset.k ? { k: cell.dataset.k } : { k: 'face', d: +cell.dataset.d, s: +cell.dataset.s };
 
+/* 대상 학생 하나 고르기 (이름 찾기) */
+function pickScope(title, filt){
+  return new Promise(res => {
+    const seats = A.R.seats || {};
+    const all = A.scope.filter(x => x.in && (!filt || filt(x))).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
+    const pos = st => !st ? '자리 없음' : st.k !== 'face' ? C.KINDS[st.k] : `${C.dayLabel(C.dayList(A.R)[st.d].date, true)} ${C.slotTime(A.R, st.d, st.s)}`;
+    const m = A.modal(esc(title), `<input class="cs-in" data-q placeholder="이름 찾기" style="width:100%;margin-bottom:10px"><div data-l style="max-height:52vh;overflow:auto"></div>`, '<button class="cs-btn" data-n>취소</button>', 'sm');
+    const draw = () => { const q = m.box.querySelector('[data-q]').value.trim(); const l = all.filter(x => !q || String(x.name || '').includes(q)).slice(0, 80);
+      m.box.querySelector('[data-l]').innerHTML = l.map(x => `<button class="cs-iss" data-p="${esc(x.sid)}" style="width:100%;border:0;background:transparent;font-family:inherit;text-align:left;margin:0"><span><b>${esc(x.name || '')}</b> <span class="cs-mut">${esc(C.colLabel(A.colByKey(x.col)))}</span></span><span class="cs-mut">${esc(pos(seats[x.sid]))}</span></button>`).join('') || '<div class="cs-mut">찾는 학생이 없어요.</div>'; };
+    let done = false;
+    m.onClose = () => { if(!done) res(null); };
+    m.box.querySelector('[data-q]').addEventListener('input', draw);
+    m.box.querySelector('[data-l]').addEventListener('click', e => { const b = e.target.closest('[data-p]'); if(!b) return; done = true; m.close(); res(b.dataset.p); });
+    m.box.querySelector('[data-n]').onclick = () => m.close();
+    draw(); setTimeout(() => m.box.querySelector('[data-q]').focus(), 30);
+  });
+}
 /* 이름 누르기 — 메뉴 */
 function chipMenu(btn, sid){
   const r = A.R, seats = r.seats || {}, st = seats[sid];
@@ -381,7 +435,7 @@ function chipMenu(btn, sid){
     fam.length > 1 ? { l: '👪 가정 보기 · 함께 옮기기', f: () => { A.FAM_SEL = A.famOf(sid); A.render(true); } } : null,
     st ? { l: st.pin ? '📌 고정 풀기' : '📌 고정 (자동 배치가 안 건드림)', f: () => A.applySeats({ [sid]: Object.assign({}, st, { pin: !st.pin }) }, st.pin ? '고정을 풀었어요' : '고정했어요') } : null,
     { l: '📝 메모', f: async () => { const v = await A.prompt('📝 메모', `${esc(A.stuName(sid))} — 학부모 사정 · 오시는 분 등 (선생님들께 보여요)`, (st && st.note) || '', { ph: '예: 4시 이후 가능 · 아버님 오심' }); if(v == null) return; const base = st || null; if(!base){ A.toast('자리를 먼저 잡아 주세요', 'err'); return; } A.applySeats({ [sid]: Object.assign({}, base, { note: v.trim() }) }, '메모를 남겼어요'); } },
-    !st || st.k !== 'phone' ? { l: '☎ 전화 상담으로', f: () => moveTo(sid, { k: 'phone' }) } : null,
+    { l: st && st.k === 'phone' ? '☎ 전화 시간 바꾸기…' : '☎ 전화 상담으로…', f: () => moveTo(sid, { k: 'phone' }) },
     !st || st.k !== 'sep' ? { l: '🗓 별도 일정으로…', f: () => moveTo(sid, { k: 'sep' }) } : null,
     { l: '🔎 추천 자리로 (형제 함께)', f: async () => { const ids = A.famIds(sid).filter(id => A.inSet.has(id)); const plan = C.findSpot(r, A.colOf, ids, []); if(!plan){ A.toast('들어갈 빈 자리가 없어요', 'err'); return; } const p = {}; plan.forEach(([id, d, s]) => { p[id] = Object.assign({}, seats[id] || {}, { k: 'face', d, s }); }); A.applySeats(p, '추천 자리로 옮겼어요'); } },
     st ? { l: '↩ 자리 빼기 (넣을 학생으로)', f: () => A.applySeats({ [sid]: null }, `${A.stuName(sid)} 자리를 뺐어요`) } : null,
@@ -406,6 +460,10 @@ export function after(a){
     const vc = t.closest('[data-vclear]'); if(vc){ const id = vc.dataset.vclear; if(await A.confirm('자리 지우기', `${esc(A.stuName(id))}의 자리를 지울까요?<br><span class="cs-mut">대상에서 빠진 학생이에요. 그 칸은 빈 칸이 돼요.</span>`, '지우기')) A.applySeats({ [id]: null }, '자리를 지웠어요'); return; }
     const iss = t.closest('[data-iss]'); if(iss){ const code = iss.dataset.iss; const list = ((A.chk && A.chk.issues) || []).filter(i => code === 'sib' ? /sib/.test(i.code) : code === 'err' ? i.lvl === 'err' : i.code === code); A.HL = C.uniq(list.flatMap(i => i.sids)); A.render(true); if(A.HL.length){ const el = document.querySelector('.cs-chip.hl'); if(el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => { A.HL = []; }, 100); } return; }
     const rq = t.closest('[data-req]'); if(rq){ A.REQ_NEW && A.REQ_NEW(rq.dataset.req); return; }
+    const ph = t.closest('[data-ph]'); if(ph){ moveTo(ph.dataset.ph, { k: 'phone' }); return; }
+    const spn = t.closest('[data-spn]'); if(spn){ const sid = spn.dataset.spn; const cur = (A.R.seats || {})[sid] || {}; const v = await A.prompt('🗓 별도 일정', `${esc(A.stuName(sid))} — 날짜 · 시간`, cur.note || '', { ph: '예: 11/12(목) 16:00 · 담임과 따로', ok: '고치기' }); if(v == null) return; A.applySeats({ [sid]: Object.assign({}, cur, { note: v.trim() }) }, '별도 일정을 고쳤어요'); return; }
+    const tf = t.closest('[data-toface]'); if(tf){ const sid = tf.dataset.toface; const plan = C.findSpot(A.R, A.colOf, [sid], []); if(!plan){ A.toast('표에 빈 자리가 없어요 — 칸을 늘리거나 다른 학생과 바꿔 주세요', 'err'); return; } const [[, d, s2]] = plan; const cur = (A.R.seats || {})[sid] || {}; const p = Object.assign({}, cur, { k: 'face', d, s: s2 }); delete p.pd; delete p.pt; A.applySeats({ [sid]: p }, `${A.stuName(sid)} → 표 ${C.dayLabel(C.dayList(A.R)[d].date, true)} ${C.slotTime(A.R, d, s2)} (대면)`); return; }
+    if(t.closest('[data-phadd]')){ const sid = await pickScope('☎ 전화 상담 넣기', x => !((A.R.seats || {})[x.sid] && A.R.seats[x.sid].k === 'phone')); if(sid) moveTo(sid, { k: 'phone' }); return; }
     const b = t.closest('[data-b]'); if(b){ act(b.dataset.b); return; }
     // 옮기기 모드 — 칸 누르기
     if(A.MOVE){
@@ -447,7 +505,7 @@ export function after(a){
 async function act(k){
   const r = A.R;
   if(k === 'order'){ A.go('setup'); setTimeout(() => { const el = document.getElementById('cs-s6'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }, 80); return; }
-  if(k === 'print'){ const P = await import('./consult-past.js?v=150'); P.printRound(A, r, A.viewSeats()); return; }
+  if(k === 'print'){ const P = await import('./consult-past.js?v=151'); P.printRound(A, r, A.viewSeats()); return; }
   if(k === 'vers'){ versModal(); return; }
   if(k === 'ack'){
     try{ await A.FS.updateDoc(A.roundRef(), { ['acks.' + A.CU.uid]: r.sentVer }); r.acks = Object.assign({}, r.acks, { [A.CU.uid]: r.sentVer }); A.toast('확인했어요 — 고맙습니다'); A.render(true); }
@@ -458,6 +516,7 @@ async function act(k){
   if(k === 'auto') return autoRun();
   if(k === 'save') return saveVer(false);
   if(k === 'send') return send();
+  if(k === 'pub') return publish();
   if(k === 'final') return finalize();
   if(k === 'close') return closeRound();
   if(k === 'reopen'){ if(await A.confirm('다시 열기', '끝난 상담을 «확정» 상태로 다시 열까요?', '다시 열기')) await A.saveRound({ state: 'final' }); return; }
@@ -481,7 +540,9 @@ export async function runAuto(a){ A = a; C = a.C; esc = a.esc; return autoRun();
 async function autoRun(){
   const r = A.R;
   const has = Object.keys(r.seats || {}).length;
-  if(has && !(await A.confirm('↻ 자동 배치 다시', `지금 자리를 지우고 처음부터 다시 배치할까요?<br><span class="cs-mut">📌 고정한 자리 · 전화 상담 · 별도 일정은 그대로 둬요. 되돌리기는 «판 비교»에서 지난 판으로.</span>`, '다시 배치'))) return;
+  const lp = C.pubsOf(r).slice(-1)[0];
+  const warn = lp ? `<br><b style="color:#B42318">학부모님께 «${esc(lp.label)}»이 이미 나갔어요</b> — 다시 배치하면 고정하지 않은 가정의 시간이 대부분 바뀌어요.<br>변경 요청은 «💬 변경 요청 › 요청 모아 반영»으로 그 가정만 옮기는 걸 추천해요.` : (r.sentVer ? '<br><b style="color:#C2410C">담임 선생님들께 이미 보낸 표예요</b> — 다시 배치하면 많은 자리가 바뀌어요. 변경 요청은 «요청 모아 반영»을 추천해요.' : '');
+  if(has && !(await A.confirm('↻ 자동 배치 다시', `지금 자리를 지우고 처음부터 다시 배치할까요?${warn}<br><span class="cs-mut">📌 고정한 자리(처리한 변경 요청 포함) · 전화 상담 · 별도 일정은 그대로 둬요. 되돌리기는 «판 비교»에서 지난 판으로.</span>`, '다시 배치', !!(lp || r.sentVer)))) return;
   window.showLoading && showLoading('자리를 잡는 중…');
   try{
     if(has) await saveVer(true, '자동 배치 전');
@@ -530,6 +591,40 @@ async function send(){
     A.toast(`판 ${n}을(를) 선생님 ${to.length}분께 보냈어요`);
   }catch(e){ A.toast('보내지 못했어요 — ' + A.errText(e), 'err'); }
 }
+/* 📨 학부모께 보내기 — 초안 → 수정 1 → 수정 2 … (판으로 기록 · 인쇄 · PDF 창 · 담임 알림) */
+async function verSeats(ver){
+  if(!ver) return null;
+  try{ const d = await A.FS.getDoc(A.FS.doc(A.db, 'consultRounds', A.R.id, 'vers', String(ver))); return d.exists() ? (d.data().seats || {}) : null; }catch(e){ return null; }
+}
+async function publish(){
+  const r = A.R;
+  const label = C.nextPubLabel(r);
+  const pubs = C.pubsOf(r).filter(p => p.label !== '확정');
+  const last = pubs[pubs.length - 1];
+  const unsent = r.sentSeats ? C.diffSeats(r.sentSeats, r.seats || {}).length : Object.keys(r.seats || {}).length;
+  let nCh = 0;
+  if(last){ const ps = await verSeats(last.ver); nCh = ps ? C.diffSeats(ps, r.seats || {}).length : 0; if(ps && !nCh){ A.toast(`«${last.label}»와 같아요 — 바뀐 자리가 없어요`, 'err'); return; } }
+  const errs = ((A.chk && A.chk.issues) || []).filter(i => i.lvl === 'err');
+  const nReq = A.REQS.filter(q => ['new', 'answered'].includes(q.state)).length;
+  const msg = `지금 표를 <b>«${esc(label)}»</b>${C.ro(label)} 기록하고 인쇄 · PDF 창을 열어요 — 가정통신문 · 문자로 학부모님께 나눠 주세요.
+    ${last ? `<br>· «${esc(last.label)}»에서 바뀐 학생 <b>${nCh}명</b> — 인쇄본에 ★로 표시돼요` : ''}${unsent ? `<br>· 아직 보내지 않은 변경 ${unsent}명은 담임 선생님들께도 함께 보내요` : ''}
+    ${nReq ? `<br>· <b style="color:#C2410C">처리 안 한 변경 요청 ${nReq}건</b>` : ''}${errs.length ? `<br>· <b style="color:#B42318">오류 ${errs.length}건</b> (${esc(errs[0].text)} …)` : ''}
+    <br><span class="cs-mut">학부모 변경 요청은 담임 선생님이 «변경 요청»으로 모아 주시고 → «요청 모아 반영» → 다시 «학부모께 ${esc(C.pubLabel(pubs.length + 1))} 보내기». 학부모 사이트 공개는 다음 버전에서 더해요 (그때부터 이 판이 학부모 화면에 떠요).</span>`;
+  if(!(await A.confirm(`📨 학부모께 «${label}» 보내기`, msg, `${label}${C.ro(label)} 보내기`))) return;
+  try{
+    let n = r.sentVer;
+    const p = {};
+    if(unsent || !n){
+      n = await saveVer(true, label + ' · 학부모 안내');
+      Object.assign(p, { sentSeats: r.seats || {}, sentVer: n, sentAt: A.FS.serverTimestamp(), stu: C.stuSnap(A.scope, A.members, A.KIDS), colVer: A.colVerPatch(n, r.sentSeats || null, r.seats || {}) });
+    }
+    p.pubs = (r.pubs || []).concat([{ n: pubs.length, label, ver: n, at: Date.now(), by: A.CU.uid, byName: A.CU.name || '' }]);
+    await A.saveRound(p);
+    A.notify(A.colNotifyUids(), 'pub', `📨 학부모 상담 일정 «${label}» — 학부모님께 나가요`, `${r.title} — ${label} (판 ${n}) · 학부모님 변경 요청은 «변경 요청»으로 보내 주세요`, 'consult.html#board');
+    A.toast(`«${label}»${C.ro(label)} 기록했어요 — 인쇄 · PDF로 나눠 주세요`);
+    const P = await import('./consult-past.js?v=151'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + pubs.length);
+  }catch(e){ A.toast('보내지 못했어요 — ' + A.errText(e), 'err'); console.error(e); }
+}
 async function finalize(){
   const r = A.R;
   const unsent = r.sentSeats ? C.diffSeats(r.sentSeats, r.seats).length : 0;
@@ -539,9 +634,11 @@ async function finalize(){
   try{
     let n = r.sentVer;
     if(unsent || !n) n = await saveVer(true, '확정');
-    await A.saveRound({ state: 'final', colVer: (unsent || !r.sentVer) ? A.colVerPatch(n, r.sentSeats || null, r.seats || {}) : (r.colVer || {}), sentSeats: r.seats || {}, sentVer: n, pubVer: n, pubAt: A.FS.serverTimestamp(), stu: C.stuSnap(A.scope, A.members, A.KIDS) });
+    const pubs = C.pubsOf(r);
+    await A.saveRound({ state: 'final', colVer: (unsent || !r.sentVer) ? A.colVerPatch(n, r.sentSeats || null, r.seats || {}) : (r.colVer || {}), sentSeats: r.seats || {}, sentVer: n, pubVer: n, pubAt: A.FS.serverTimestamp(), stu: C.stuSnap(A.scope, A.members, A.KIDS),
+      pubs: (r.pubs || []).concat([{ n: pubs.length, label: '확정', ver: n, at: Date.now(), by: A.CU.uid, byName: A.CU.name || '' }]) });
     A.notify(C.uniq(A.colNotifyUids().concat(A.mgrUids())), 'final', '📌 학부모 상담 일정 확정', `${r.title} — 판 ${n}으로 확정됐어요`, 'consult.html#board');
-    A.toast('확정했어요');
+    A.toast('확정했어요 — «🖨 인쇄 · PDF»에서 «확정»판을 뽑아 나눠 주세요');
   }catch(e){ A.toast('확정하지 못했어요 — ' + A.errText(e), 'err'); }
 }
 async function closeRound(){
