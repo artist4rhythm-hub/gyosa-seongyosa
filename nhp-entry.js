@@ -6,7 +6,7 @@
    · 최종 검토관: «최종 승인»(잠김) · «다시 열기»
    · 입력은 칸 하나씩 바로 저장 (0.5초 모아서) — 함께 맡은 선생님이 같은 칸을 써도 서로 덮어쓰지 않게 «바뀐 칸만» 저장
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=144';
+import * as SETUP from './nhp-setup.js?v=146';
 
 let A = null, C = null, esc = null, FS = null;
 let SUB = null, ENT = null, TAB = 'in', EL = null, CAN = null, SEC = null, SIDS = [];
@@ -515,7 +515,7 @@ function pvPaneHTML(){
   if(!PV_SID || !sids.includes(PV_SID)) PV_SID = sids.find(x => (ENT.rows || {})[x]) || sids[0];
   const d = A.design();
   return `<div class="pv2-h"><b>출력 미리보기</b><select class="nh-sel" data-pvs style="height:30px;font-size:12px">${sids.map(x => `<option value="${esc(x)}"${x === PV_SID ? ' selected' : ''}>${esc(A.stuName(x))} (예시)</option>`).join('')}</select>
-      <select class="nh-sel" data-pvth style="height:30px;font-size:12px">${C.TH.INNERS.map(x => `<option value="${esc(x.k)}"${x.k === d.inner ? ' selected' : ''}>${esc(x.ko)}</option>`).join('')}</select></div>
+      <select class="nh-sel" data-pvth style="height:30px;font-size:12px" title="속지">${C.TH.listOptionsHTML(C.TH.INNERS, d.inner)}</select></div>
     <div class="pv2-pg"><div class="pv2-sc" id="ej-pv-sc">${pvBlockHTML(d.inner)}</div></div>
     <div class="nh-desc" style="margin:6px 0 0">고치면 바로 바뀌어요 · 실제 A4 쪽 폭(180mm) 그대로 · 쪽 나눔은 «👀 미리보기 › 전체»에서</div>`;
 }
@@ -526,7 +526,7 @@ function pvBlockHTML(theme){
   const ord = peers.sort((x, y) => (x.order || 0) - (y.order || 0));
   const no = (theme && theme !== 'old') ? Math.max(1, ord.findIndex(x => x.id === SUB.id) + 1) : ord.filter(x => x.kind === 'subj' && (x.order || 0) <= (SUB.order || 0)).length;
   const p = C.blockParts(b, 'ko', no, false, theme);
-  return `<div class="nr${C.themeClass(theme)}" style="width:680px"><section class="nb nsub">${p.head}${p.tables.map(t => C.tableHTML(t, false, theme)).join('')}${p.notes.join('')}</section></div>`;
+  return `<div class="nr${C.themeClass(theme, A.design().shade)}" style="width:680px"><section class="nb nsub">${p.head}${p.tables.map(t => C.tableHTML(t, false, theme)).join('')}${p.notes.join('')}</section></div>`;
 }
 function pvRefresh(){
   clearTimeout(PV_T);
@@ -724,7 +724,7 @@ function previewHTML(){
 function docWithNo(doc, nos){
   const th = A.design().inner;
   const p = C.blockParts(doc.blocks[0], 'ko', nos[doc.blocks[0].id], false, th);
-  return `<div class="nr${C.themeClass(th)}"><section class="nb">${p.head}${p.tables.map(t => C.tableHTML(t, false, th)).join('')}${p.notes.join('')}</section></div>`;
+  return `<div class="nr${C.themeClass(th, A.design().shade)}"><section class="nb">${p.head}${p.tables.map(t => C.tableHTML(t, false, th)).join('')}${p.notes.join('')}</section></div>`;
 }
 function logHTML(){
   const L = (SUB.log || []).slice().reverse();

@@ -1,32 +1,52 @@
 /* ═══════════════════════════════════════════════════════════
    🎨 nhp-theme.js — 나학평 출력 디자인 (v144)
-   · 표지 8가지 (예전 모양 · 최초 C · 최초 C 발전 ①②③ · 3차 A · B · C) — 한글 · 영문
-   · 속지 3가지 (예전 모양 · A 클래식 라인 · C 모던 블록)
+   · 표지 8가지 — 모던(최초 C안 계열: 띠 · 가는 선 · 띠에 이름 · 처음 C안) · 3차 시안(증서 · 그리드 · 책등) · 예전 모양 — 한글 · 영문
+   · 속지 3가지 (모던 · 클래식 · 예전 모양) + v145 표 음영 (보통 · 진하게 · 없음)
      A · C 는 «같은 12칸 격자»: 본문 폭 680px = 왼쪽 이름 칸 92px + 49px × 12칸
      → 출결 · 5단계 · 시험 · 목록 표의 세로줄이 쪽 전체에서 위아래로 맞는다 (5단계 다섯 칸은 늘 맨 오른쪽 같은 자리)
-   · 인쇄 원칙: 흰 종이 · 넓게 칠하지 않음 · 선과 글은 가장자리에서 12mm 안 (최초 C 표지의 띠만 예외 — 원안 그대로)
+   · 인쇄 원칙: 흰 종이 · 넓게 칠하지 않음(표 음영은 아주 옅은 색만 · v145) · 선과 글은 가장자리에서 12mm 안 (처음 C안 표지의 띠만 예외 — 원안 그대로)
    · 원본(문서 내용)은 그대로 — 디자인은 그릴 때만 바뀐다
    ═══════════════════════════════════════════════════════════ */
 
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/* ── 고를 수 있는 모양 ── */
+/* ── 고를 수 있는 모양 — 이름은 짧게, 묶음(g)으로 나눠 보임 ── */
+export const COVER_GROUPS = [
+  { k: 'm', ko: '모던 (최초 C안 계열)' },
+  { k: 'p', ko: '3차 시안' },
+  { k: 'o', ko: '예전' },
+];
 export const COVERS = [
-  { k: 'cc1', ko: '최초 C 발전 ① 원안 다듬기', fam: 'c', d: '왼쪽 짙은 띠 (가장자리 12mm 안) · 아주 큰 «나의 / 학교 / 생활» · 아래 정보표 + 교표' },
-  { k: 'cc2', ko: '최초 C 발전 ② 가는 띠', fam: 'c', d: '띠를 가는 선으로 — 잉크가 가장 적게 듦' },
-  { k: 'cc3', ko: '최초 C 발전 ③ 띠에 이름', fam: 'c', d: '띠에 반 · 이름을 세로로 (책등처럼 — 모아 꽂아도 찾기 쉬움)' },
-  { k: 'c0', ko: '최초 C · 모던 타이포', fam: 'c', d: '1차 C안 그대로 — 띠가 종이 끝까지 (프린터에 따라 가장자리가 조금 덜 찍힐 수 있음)' },
-  { k: 'af', ko: '3차 A · 고전 증서', fam: 'a', d: '금선 테 · 교표 원 · 명조 제목 · 세 줄 이름표' },
-  { k: 'cf', ko: '3차 B · 모던 그리드', fam: 'c', d: '윤곽선 «2026» · 이번 학기 표시 · 표지에 목차' },
-  { k: 'acf', ko: '3차 C · 세로 선 책등', fam: 'a', d: '왼쪽 두 세로선 + 세로 글씨 · 명조 큰 제목' },
-  { k: 'old', ko: '예전 모양', fam: 'old', d: '예전 나학평 표지 (그림 + 글)' },
+  { k: 'cc1', g: 'm', ko: '띠', tag: '기본', fam: 'c', d: '왼쪽 짙은 띠 (가장자리 12mm 안) · 아주 큰 «나의 / 학교 / 생활» · 아래 정보표 + 교표' },
+  { k: 'cc2', g: 'm', ko: '가는 선', fam: 'c', d: '띠 대신 가는 두 선 — 잉크가 가장 적게 듦' },
+  { k: 'cc3', g: 'm', ko: '띠에 이름', fam: 'c', d: '띠에 반 · 이름을 세로로 (책등처럼 — 모아 꽂아도 찾기 쉬움)' },
+  { k: 'c0', g: 'm', ko: '처음 C안', fam: 'c', d: '1차 C안 그대로 — 띠가 종이 끝까지 (프린터에 따라 가장자리가 조금 덜 찍힐 수 있음)' },
+  { k: 'af', g: 'p', ko: '증서', fam: 'a', d: '금선 테 · 교표 원 · 명조 제목 · 세 줄 이름표' },
+  { k: 'cf', g: 'p', ko: '그리드', fam: 'c', d: '윤곽선 «2026» · 이번 학기 표시 · 표지에 목차' },
+  { k: 'acf', g: 'p', ko: '책등', fam: 'a', d: '왼쪽 두 세로선 + 세로 글씨 · 명조 큰 제목' },
+  { k: 'old', g: 'o', ko: '예전 모양', fam: 'old', d: '예전 나학평 표지 (그림 + 글)' },
 ];
 export const INNERS = [
-  { k: 'c', ko: 'C 모던 블록', d: '고딕 · 큰 초록 번호 · 세로선 없음 · 고른 단계는 초록 네모' },
-  { k: 'a', ko: 'A 클래식 라인', d: '명조 제목 · 금선 · 가는 세로선 · 고른 단계는 초록 점' },
+  { k: 'c', ko: '모던', tag: '기본', d: '고딕 · 큰 초록 번호 · 세로선 없음 · 고른 단계는 초록 네모' },
+  { k: 'a', ko: '클래식', d: '명조 제목 · 금선 · 가는 세로선 · 고른 단계는 초록 점' },
   { k: 'old', ko: '예전 모양', d: '예전 나학평 그대로 (파란 표 · O 표시)' },
 ];
-export const DEF = { cover: 'cc1', inner: 'c' };
+/* 음영 — 표 머리 줄 · 이름 칸 · 범위 칸 + 줄이 많은 표는 한 줄 걸러 아주 옅게 (속지 모던 · 클래식) */
+export const SHADES = [
+  { k: '1', ko: '보통', tag: '기본', d: '모든 표 — 머리 줄 · 이름 칸은 옅게 · 줄이 둘 이상이면 한 줄 걸러 더 옅게' },
+  { k: '2', ko: '진하게', d: '같은 자리를 조금 더 짙게 — 흑백 프린터에서 잘 안 보일 때' },
+  { k: '0', ko: '없음', d: '선만 (잉크 가장 적게)' },
+];
+export const ZEBRA_MIN = 2;     // v146 몸 줄이 이만큼 이상이면 한 줄 걸러 음영 (모든 표)
+export const DEF = { cover: 'cc1', inner: 'c', shade: '1' };
+/* 고르기 칸 글 — «띠 (기본)» · 요약 글 — «모던 · 띠» */
+export const optText = x => x.ko + (x.tag ? ` (${x.tag})` : '');
+export const coverLabel = k => { const c = coverOf(k); const g = COVER_GROUPS.find(x => x.k === c.g); return c.k === 'old' ? c.ko : `${g ? g.ko.replace(/\s*\(.*\)$/, '') : ''} · ${c.ko}`; };
+export const innerLabel = k => innerOf(k).ko;
+export const shadeLabel = k => (SHADES.find(x => x.k === String(k)) || SHADES[0]).ko;
+/* <select> 안 — 묶음별 <optgroup> */
+export const coverOptionsHTML = cur => COVER_GROUPS.map(g => `<optgroup label="${esc(g.ko)}">${COVERS.filter(c => c.g === g.k).map(c => `<option value="${esc(c.k)}"${c.k === cur ? ' selected' : ''}>${esc(optText(c))}</option>`).join('')}</optgroup>`).join('');
+export const listOptionsHTML = (list, cur) => list.map(c => `<option value="${esc(c.k)}"${c.k === String(cur) ? ' selected' : ''}>${esc(optText(c))}</option>`).join('');
 export const coverOf = k => COVERS.find(c => c.k === k) || COVERS.find(c => c.k === DEF.cover);
 export const innerOf = k => INNERS.find(c => c.k === k) || INNERS.find(c => c.k === DEF.inner);
 /* 표지에 어울리는 속지 (속지를 따로 고르지 않았을 때) */
@@ -36,7 +56,8 @@ export function pick(cfg, over){
   const p = Object.assign({}, (cfg && cfg.print) || {}, over || {});
   const cover = coverOf(p.cover).k;
   const inner = p.inner ? innerOf(p.inner).k : innerForCover(cover);
-  return { cover, inner, sign: p.sign || null };
+  const sh = String(p.shade == null ? DEF.shade : p.shade);
+  return { cover, inner, shade: SHADES.some(x => x.k === sh) ? sh : DEF.shade, sign: p.sign || null };
 }
 
 /* ═══ 12칸 격자 ═══ */
@@ -82,10 +103,10 @@ export function colsFor(t, theme){
 const SERIF = "'Noto Serif KR','Nanum Myeongjo','AppleMyungjo',serif";
 export const THEME_CSS = `
 .nr.th-a,.nr.th-c{color:#1F2320;font-size:12.4px;line-height:1.55}
-.nr.th-a .nb,.nr.th-c .nb{margin:0 0 22px}
+.nr.th-a .nb,.nr.th-c .nb{margin:0 0 16px}
 .nr.th-a .nb.cont,.nr.th-c .nb.cont{margin-top:0}
-.nr.th-a table,.nr.th-c table{margin:0 0 10px}
-.nr.th-a td,.nr.th-c td{border:0;padding:7px 8px;background:none}
+.nr.th-a table,.nr.th-c table{margin:0 0 8px}
+.nr.th-a td,.nr.th-c td{border:0;padding:6px 8px;background:none}
 .nr.th-a tr.hd td,.nr.th-c tr.hd td{background:none;line-height:1.3}
 .nr.th-a td.mk,.nr.th-c td.mk{padding-left:0;padding-right:0}
 .nr .mkd{display:inline-block;vertical-align:middle}
@@ -105,7 +126,7 @@ export const THEME_CSS = `
 .nr .nsg .who b{font-size:15px;font-weight:700}
 .nr .nsg .who i{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;border:1px dashed #B08D3C;font-style:normal;font-size:11px;font-weight:700;color:#8A6410}
 /* — A 클래식 라인 — */
-.nr.th-a .nh{display:flex;align-items:baseline;gap:10px;padding-bottom:7px;border-bottom:1px solid #1E3932;position:relative;margin:0 0 12px;font-size:inherit;font-weight:inherit}
+.nr.th-a .nh{display:flex;align-items:baseline;gap:10px;padding-bottom:7px;border-bottom:1px solid #1E3932;position:relative;margin:0 0 10px;font-size:inherit;font-weight:inherit}
 .nr.th-a .nh:after{content:"";position:absolute;left:0;right:0;bottom:-4px;height:1px;background:#B08D3C}
 .nr.th-a .nh .no{font-family:${SERIF};font-size:15px;font-weight:900;color:#B08D3C;flex:0 0 auto}
 .nr.th-a .nh .t{font-family:${SERIF};font-size:18px;font-weight:900;color:#1E3932;min-width:0}
@@ -117,11 +138,11 @@ export const THEME_CSS = `
 .nr.th-a .ns .nh .t{font-size:13px;letter-spacing:.14em;color:#8A6410;font-weight:700}
 .nr.th-a .ns .nh .rl{flex:1 1 auto;height:1px;background:#B08D3C}
 .nr.th-a .ns{margin-bottom:10px}
-.nr.th-a table{border-bottom:1.5px solid #1E3932}
+.nr.th-a table{border-bottom:1px solid #A9B9B0}
 .nr.th-a td{border-bottom:1px solid #E1E8E4}
 .nr.th-a td:not(:last-child){border-right:1px solid #E1E8E4}
 .nr.th-a tr:last-child td{border-bottom:0}
-.nr.th-a tr.hd td{font-size:11.5px;font-weight:700;color:#1E3932;padding:7px 3px;border-bottom:1px solid #1E3932;text-align:center}
+.nr.th-a tr.hd td{font-size:11.5px;font-weight:700;color:#1E3932;padding:7px 3px;border-bottom:1px solid #B4C3BA;text-align:center}
 .nr.th-a tr.hd td.sm{font-weight:500;font-size:10.6px}
 .nr.th-a td.gp{font-family:${SERIF};font-weight:900;color:#1E3932;text-align:center;border-right:1px solid #C9D6D0}
 .nr.th-a td.sd{font-weight:700;color:#00704A;font-size:11.8px}
@@ -130,7 +151,7 @@ export const THEME_CSS = `
 .nr.th-a .nn{font-size:12px;line-height:1.75;margin:4px 0 8px}
 .nr.th-a .nn b{font-family:${SERIF};color:#00704A;font-weight:700}
 /* — C 모던 블록 — */
-.nr.th-c .nh{display:grid;grid-template-columns:${L}px minmax(0,1fr) auto;align-items:end;margin:0 0 10px;font-size:inherit;font-weight:inherit}
+.nr.th-c .nh{display:grid;grid-template-columns:${L}px minmax(0,1fr) auto;align-items:end;margin:0 0 8px;font-size:inherit;font-weight:inherit}
 .nr.th-c .nh .no{display:flex;flex-direction:column;gap:5px;font-size:30px;font-weight:900;line-height:.9;letter-spacing:-.04em;color:#00704A}
 .nr.th-c .nh .no i{display:block;width:22px;height:4px;background:#B08D3C}
 .nr.th-c .nh .t{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:18px;font-weight:900;color:#1E3932;padding-bottom:9px;min-width:0}
@@ -142,23 +163,36 @@ export const THEME_CSS = `
 .nr.th-c .ns .nh .t{font-size:13px;letter-spacing:.06em;padding:0}
 .nr.th-c .ns .nh .rl{flex:1 1 auto;height:1px;background:#1E3932}
 .nr.th-c .ns{margin-bottom:8px}
-.nr.th-c tr.hd td{font-size:10.5px;font-weight:800;letter-spacing:.04em;color:#5A6560;padding:6px 3px;border-bottom:2px solid #1E3932;text-align:center}
+.nr.th-c tr.hd td{font-size:10.5px;font-weight:800;letter-spacing:.04em;color:#5A6560;padding:6px 3px;border-bottom:1px solid #9DB5AA;text-align:center}
 .nr.th-c tr.hd + tr.hd td{border-top:0}
 .nr.th-c tr.hd td.sm{font-weight:700;font-size:10px}
-.nr.th-c td{border-bottom:1px solid #E3E1DA}
-.nr.th-c td.gp{vertical-align:top;font-size:11px;font-weight:900;letter-spacing:.08em;color:#00704A;padding-top:9px;text-align:left;border-bottom:1px solid #1E3932}
+.nr.th-c td{border-bottom:1px solid #E2E8E4}
+.nr.th-c td.gp{vertical-align:top;font-size:11px;font-weight:900;letter-spacing:.08em;color:#00704A;padding-top:8px;text-align:left;border-bottom:1px solid #C8D7CF}
 .nr.th-c td.sd{font-weight:800;color:#1E3932;font-size:11.8px}
-.nr.th-c td.lb{font-size:11px;font-weight:800;letter-spacing:.06em;color:#00704A;text-align:left;vertical-align:top;padding-top:9px}
+.nr.th-c td.lb{font-size:11px;font-weight:800;letter-spacing:.06em;color:#00704A;text-align:left;vertical-align:top;padding-top:8px}
 .nr.th-c table.score tr:not(.hd) td.b:last-child{font-size:17px;font-weight:900;color:#00704A}
-.nr.th-c table.att tr.hd:first-child td:not(:first-child){color:#00704A;border-bottom:1px solid #00704A}
+.nr.th-c table.att tr.hd:first-child td:not(:first-child){color:#00704A;border-bottom:1px solid #B5CBC0}
 .nr.th-c .nn{font-size:12px;line-height:1.75;margin:4px 0 8px}
 .nr.th-c .nn b{color:#00704A;font-weight:800;letter-spacing:.04em}
 /* 출결 — 결석 · 지각 · 조퇴 · 체험학습 묶음 경계 */
-.nr.th-a table.att tr:nth-child(2) td:nth-child(3n+2),.nr.th-a table.att tr:nth-child(3) td:nth-child(3n+1){border-left:1px solid #9DB5AA}
-.nr.th-a table.att tr:first-child td:not(:first-child){border-left:1px solid #9DB5AA}
+.nr.th-a table.att tr:nth-child(2) td:nth-child(3n+2),.nr.th-a table.att tr:nth-child(3) td:nth-child(3n+1){border-left:1px solid #C3D1C9}
+.nr.th-a table.att tr:first-child td:not(:first-child){border-left:1px solid #C3D1C9}
 .nr.th-a .ed-zone,.nr.th-c .ed-zone{outline:0}
 .nr.th-a.en .nh .t,.nr.th-c.en .nh .t{letter-spacing:0}
 .nr.th-a.en tr.hd td,.nr.th-c.en tr.hd td{font-size:9.8px}
+/* — v145 음영 (v146: 모든 표 · 선은 옅게 · 모던 보통을 한 단계 짙게) — 머리 줄 · 이름 칸 · 범위 칸은 옅게 · 줄이 둘 이상이면 한 줄 걸러 더 옅게
+     머리 줄이 없는 표는 첫 칸(이름 칸)을 칠함 (흑백 인쇄에서는 옅은 회색)
+     sh0 = 없음(선만) · sh2 = 진하게 · 색은 넓게 칠해도 잉크가 적게 드는 아주 옅은 색만 */
+.nr.th-c{--hd:#D2E3D9;--hd2:#E0ECE5;--zb:#EDF4F0;--gp:#E3EEE8;--hdc:#1E3932}
+.nr.th-c.sh2{--hd:#C2D9CB;--hd2:#D3E5DA;--zb:#E3EEE8;--gp:#D6E6DD}
+.nr.th-a{--hd:#F0ECDF;--hd2:#F6F3EA;--zb:#FAF8F2;--gp:#F5F2E8;--hdc:#1E3932}
+.nr.th-a.sh2{--hd:#E4DDC8;--hd2:#EEE9DA;--zb:#F4F1E7;--gp:#EDE8DA}
+.nr.th-a.sh0,.nr.th-c.sh0{--hd:transparent;--hd2:transparent;--zb:transparent;--gp:transparent;--hdc:#5A6560}
+.nr.th-a tr.hd td,.nr.th-c tr.hd td{background:var(--hd);color:var(--hdc)}
+.nr.th-a tr.hd + tr.hd td,.nr.th-c tr.hd + tr.hd td{background:var(--hd2)}
+.nr.th-a tr.z td,.nr.th-c tr.z td{background:var(--zb)}
+.nr.th-a tr td.gp,.nr.th-c tr td.gp,.nr.th-a tr td.lb,.nr.th-c tr td.lb,.nr.th-a tr td.l0,.nr.th-c tr td.l0{background:var(--gp)}
+.nr.th-c tr.hd td{border-bottom-color:#9DB5AA}
 `;
 
 /* ── 칸 · 머리글 (A · C) ── */

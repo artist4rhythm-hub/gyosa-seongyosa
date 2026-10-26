@@ -513,7 +513,21 @@ function langHTML(){
 }
 /* ── 🖨 출력 모양 (v144) — 표지 · 속지 · 마지막 확인 칸 (nhpConfig/main.print · 모든 학기 기본) ── */
 let PRT = null;
-function printSummary(){ const d = C.TH.pick(A.CFG); return `${C.TH.coverOf(d.cover).ko} · 속지 ${C.TH.innerOf(d.inner).ko}${d.sign && d.sign.on ? ' · 확인 칸' : ''}`; }
+function printSummary(){ const d = C.TH.pick(A.CFG); return `표지 ${C.TH.coverLabel(d.cover)} · 속지 ${C.TH.innerLabel(d.inner)}${d.inner !== 'old' ? ' · 음영 ' + C.TH.shadeLabel(d.shade) : ''}${d.sign && d.sign.on ? ' · 확인 칸' : ''}`; }
+/* 음영 보기 — 예시 5단계 표 (가상 글) */
+function shadeSampleHTML(){
+  const inner = PRT.inner || C.TH.innerForCover(PRT.cover);
+  if(inner === 'old') return '<div class="nh-desc" style="margin:4px 0 0">예전 모양 속지는 예전 그대로 (머리 줄 파란 음영)예요.</div>';
+  const mk = v => [1, 2, 3, 4, 5].map(i => ({ mk: 1, x: i === v ? 'O' : '' }));
+  const t = { cls: 'eval', cols: [12, 53, 7, 7, 7, 7, 7], rows: [
+    { hd: 1, cells: [{ x: '평가', cs: 2 }].concat(C.LEVELS.map(l => ({ x: l.ko, sm: 1 }))) },
+    { cells: [{ x: '태도', rs: 2, b: 1, kd: 'tx', gp: 1 }, { x: '수업 준비를 갖추고 바른 자세로 참여한다.' }].concat(mk(1)) },
+    { cells: [{ x: '설명을 조용히 듣고 집중한다.' }].concat(mk(2)) },
+    { cells: [{ x: '이해', rs: 3, b: 1, kd: 'tx', gp: 1 }, { x: '배운 내용을 자기 말로 설명한다.' }].concat(mk(2)) },
+    { cells: [{ x: '질문에 알맞게 답한다.' }].concat(mk(3)) },
+    { cells: [{ x: '모둠 활동에서 맡은 일을 해낸다.' }].concat(mk(1)) }] };
+  return `<div class="shd-pv"><div class="nr${C.themeClass(inner, PRT.shade)}" style="width:680px"><section class="nb nsub">${C.tableHTML(t, false, inner)}</section></div></div>`;
+}
 function sampleDoc(){
   const t = A.TERM || {}; const sec = (t.sections || [])[0] || {};
   return { lang: 'ko', cover: { term: C.termLabel(t) || '2026학년도 2학기', cls: sec.name || '이레반', grade: sec.grade || '1학년', name: '예시 학생', hr: A.staffName(sec.hrUid) || '담임' },
@@ -521,36 +535,40 @@ function sampleDoc(){
 }
 function printPaneHTML(){
   const cur = C.TH.pick(A.CFG);
-  PRT = PRT || { cover: cur.cover, inner: ((A.CFG.print || {}).inner) || '', sign: Object.assign({ on: false, title: '학교장', principal: '', dateText: '' }, (A.CFG.print || {}).sign || {}) };
+  PRT = PRT || { cover: cur.cover, inner: ((A.CFG.print || {}).inner) || '', shade: cur.shade, sign: Object.assign({ on: false, title: '학교장', principal: '', dateText: '' }, (A.CFG.print || {}).sign || {}) };
   const doc = sampleDoc();
   const tile = c => `<label class="cv-tile${PRT.cover === c.k ? ' on' : ''}" title="${esc(c.d)}"><input type="radio" name="prt-cover" value="${esc(c.k)}"${PRT.cover === c.k ? ' checked' : ''}>
       <span class="cv-mini">${c.k === 'old' ? `<span class="cv-old"><img src="${esc(A.COVER)}" alt=""><b>${esc(doc.cover.term)}</b><small>${esc(doc.cover.cls)} ${esc(doc.cover.grade)} 이름 : ${esc(doc.cover.name)}</small></span>` : `<span class="np cv-np">${C.TH.coverHTML(doc, c.k, { emblem: A.LOGO, contents: C.TH.contentsOf(doc, C.KEY_HEAD) })}</span>`}</span>
-      <b>${esc(c.ko)}</b><small>${esc(c.d)}</small></label>`;
+      <b>${esc(C.TH.optText(c))}</b><small>${esc(c.d)}</small></label>`;
   const autoInner = C.TH.innerForCover(PRT.cover);
+  const groups = C.TH.COVER_GROUPS.map(g => `<div class="cv-g">${esc(g.ko)}</div><div class="cv-tiles">${C.TH.COVERS.filter(c => c.g === g.k).map(tile).join('')}</div>`).join('');
   return `<div class="nh-desc">표지와 속지 모양을 골라요 — <b>모든 학기 · 원본 · 출력본</b>에 기본으로 쓰여요 (원본은 «내용»만 보관하므로 모양을 바꿔도 내용은 그대로). 출력 화면과 미리보기에서 이번에만 다른 모양으로 뽑을 수도 있어요.</div>
     <div class="nh-sec">📕 <b>표지</b></div>
-    <div class="cv-tiles">${C.TH.COVERS.map(tile).join('')}</div>
+    ${groups}
     <div class="nh-sec">📄 <b>속지</b> <small>표지를 고르면 어울리는 속지가 저절로 — 따로 고를 수도 있어요</small></div>
-    <div class="pk">${[{ k: '', ko: `표지에 맞춤 (지금: ${C.TH.innerOf(autoInner).ko})`, d: '' }].concat(C.TH.INNERS).map(x => `<label class="ck" style="margin-right:14px" title="${esc(x.d || '')}"><input type="radio" name="prt-inner" value="${esc(x.k)}"${(PRT.inner || '') === x.k ? ' checked' : ''}><b>${esc(x.ko)}</b>${x.d ? ` <small style="color:var(--ink-3)">${esc(x.d)}</small>` : ''}</label>`).join('')}</div>
+    <div class="pk">${[{ k: '', ko: `표지에 맞춤 (지금: ${C.TH.innerLabel(autoInner)})`, d: '' }].concat(C.TH.INNERS).map(x => `<label class="ck" style="margin-right:14px" title="${esc(x.d || '')}"><input type="radio" name="prt-inner" value="${esc(x.k)}"${(PRT.inner || '') === x.k ? ' checked' : ''}><b>${esc(C.TH.optText(x))}</b>${x.d ? ` <small style="color:var(--ink-3)">${esc(x.d)}</small>` : ''}</label>`).join('')}</div>
+    <div class="nh-sec">🎨 <b>표 음영</b> <small>모든 표 — 머리 줄 · 이름 칸은 옅게, 줄이 둘 이상이면 한 줄 걸러 더 옅게 · 선은 옅게 — 읽기 편하게 (흑백 프린터에서는 옅은 회색)</small></div>
+    <div class="pk">${C.TH.SHADES.map(x => `<label class="ck" style="margin-right:14px" title="${esc(x.d)}"><input type="radio" name="prt-shade" value="${esc(x.k)}"${PRT.shade === x.k ? ' checked' : ''}><b>${esc(C.TH.optText(x))}</b> <small style="color:var(--ink-3)">${esc(x.d)}</small></label>`).join('')}</div>
+    <div data-shpv>${shadeSampleHTML()}</div>
     <div class="nh-sec">✍️ <b>마지막 «확인» 칸</b> <small>«위와 같이 … 학교생활을 평가합니다» · 날짜 · 담임 / 학교장 이름과 도장 자리</small></div>
     <label class="ck"><input type="checkbox" data-prs="on"${PRT.sign.on ? ' checked' : ''}>넣기</label>
     <div class="frow" style="margin-top:6px"><div class="fl" style="max-width:160px"><label>두 번째 이름 칸</label><input class="nh-in" data-prs="title" value="${esc(PRT.sign.title || '학교장')}"></div>
       <div class="fl" style="max-width:200px"><label>이름</label><input class="nh-in" data-prs="principal" value="${esc(PRT.sign.principal || '')}" placeholder="비우면 담임만"></div>
       <div class="fl" style="max-width:240px"><label>날짜 글 (비우면 학기 끝 날짜)</label><input class="nh-in" data-prs="dateText" value="${esc(PRT.sign.dateText || '')}" placeholder="예: 2026년 12월 18일"></div></div>
     <div class="frow" style="margin-top:4px"><button class="nh-btn p sm" data-st="saveprint">💾 출력 모양 저장</button><button class="nh-btn sm" data-st="prtsample">👀 첫 반 첫 학생으로 미리보기</button>
-      <span class="nh-desc" style="margin:0">흰 종이 · 선과 글자만 · 가장자리 12mm 안 (최초 C 표지의 띠만 종이 끝까지)</span></div>`;
+      <span class="nh-desc" style="margin:0">흰 종이 · 표는 아주 옅은 음영만 · 가장자리 12mm 안 («처음 C안» 표지의 띠만 종이 끝까지)</span></div>`;
 }
 function bindPrint(el){
   const box = el.querySelector('[data-prt]'); if(!box) return;
   box.onchange = e => {
     const x = e.target;
     if(x.name === 'prt-cover'){ PRT.cover = x.value; box.innerHTML = printPaneHTML(); return; }
-    if(x.name === 'prt-inner'){ PRT.inner = x.value; return; }
+    if(x.name === 'prt-inner' || x.name === 'prt-shade'){ PRT[x.name === 'prt-inner' ? 'inner' : 'shade'] = x.value; const pv = box.querySelector('[data-shpv]'); if(pv) pv.innerHTML = shadeSampleHTML(); return; }
     if(x.dataset.prs){ PRT.sign[x.dataset.prs] = x.type === 'checkbox' ? x.checked : x.value.trim(); }
   };
 }
 async function savePrint(){
-  const patch = { print: { cover: PRT.cover, inner: PRT.inner || '', sign: PRT.sign }, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid };
+  const patch = { print: { cover: PRT.cover, inner: PRT.inner || '', shade: PRT.shade || '1', sign: PRT.sign }, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid };
   try{ await FS.setDoc(FS.doc(A.db, 'nhpConfig', 'main'), patch, { merge: true }); A.CFG.print = patch.print; A.SEL = null; A.toast('출력 모양을 저장했어요 ✓'); PANE = 'print'; rerender(); }
   catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); }
 }

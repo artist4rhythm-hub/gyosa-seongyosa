@@ -84,7 +84,7 @@ function draw(){
         <span class="nh-sp"></span>${ed ? `<span class="ch ${ed.lang === 'en' ? 'info' : 'gray'}">${ed.lang === 'en' ? '🌐 English' : '한글'}</span>` : '<span class="ch warn">원본 그대로 보는 중</span>'}
         <button class="nh-btn sm g" data-ed="pages">👀 쪽 보기 · PDF</button></div>
       ${ed ? `<div class="nh-desc">글을 누르면 고치거나 가릴 수 있어요. <span class="ch ovr" style="background:#E9F7EF">고친 글</span> ${ed.lang === 'en' ? '<span class="ch" style="background:#FFF4C2;color:#7A5A00">번역 안 된 글</span>' : ''} — 원본은 바뀌지 않아요.</div>` : '<div class="nh-info">오른쪽에서 <b>«＋ 새 출력본»</b>을 만들면 원본을 그대로 둔 채 가리기 · 고치기 · 영문판을 할 수 있어요.</div>'}
-      <div class="nr-wrap" id="ed-doc">${coverMini(doc)}${C.docHTML(doc, { edit: !!ed, theme: A.design().inner })}</div>
+      <div class="nr-wrap" id="ed-doc">${coverMini(doc)}${C.docHTML(doc, { edit: !!ed, theme: A.design().inner, shade: A.design().shade })}</div>
     </div>
     <aside class="ed-side">${sideHTML(doc, nOv, nHide)}</aside></div>`;
   EL.onclick = onClick; EL.onchange = onChange;

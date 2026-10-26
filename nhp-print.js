@@ -6,7 +6,7 @@
    · 인쇄와 PDF가 같은 쪽을 쓴다 (화면에서 본 그대로 나온다)
    · v144 표지 모양(opt.cover) · 속지 모양(opt.inner: old · a · c) — A · C 는 쪽 머리 · 첫 쪽 학생 정보 줄 · 바닥 쪽 번호가 따로
    ═══════════════════════════════════════════════════════════ */
-import * as C from './nhp-core.js?v=144';
+import * as C from './nhp-core.js?v=146';
 const TH = C.TH;
 
 export const PAGE = { w: 794, h: 1123, m: 57, foot: 22 };   // A4 · 여백 15mm
@@ -59,12 +59,19 @@ export function rowGroups(t){
   return { heads, groups };
 }
 let THEME = 'old';      // 지금 쪽 나눔이 쓰는 속지 모양 (paginate 안에서만 바뀜)
+let NOHD = false, NCOL = 0;       // v146 지금 그리는 표에 머리 줄이 없음 → 줄 첫 칸 음영 · 표의 칸 수
 function tableShell(t){
-  return el(`<table class="${C.esc((t.cls || '') + (t.auto ? ' auto' : ''))}">${C.colgroupHTML(t, THEME)}<tbody></tbody></table>`);
+  NOHD = !(t.rows || []).some(r => r.hd); NCOL = C.colCount(t);
+  // v145 줄이 둘 이상인 표(몸 줄 ZEBRA_MIN 이상)는 모던 · 클래식 속지에서 한 줄 걸러 옅은 음영 — 쪽 나눔이 끝난 뒤 쪽 조각마다 칠함 (재는 높이는 그대로)
+  const zb = THEME !== 'old' && (t.rows || []).filter(r => !r.hd).length >= TH.ZEBRA_MIN;
+  return el(`<table class="${C.esc((t.cls || '') + (t.auto ? ' auto' : ''))}"${zb ? ' data-zb="1"' : ''}>${C.colgroupHTML(t, THEME)}<tbody></tbody></table>`);
+}
+function stripe(root){
+  root.querySelectorAll('table[data-zb]').forEach(tb => { let k = 0; tb.querySelectorAll('tr').forEach(tr => { if(tr.classList.contains('hd')) return; if(k % 2 === 1) tr.classList.add('z'); k++; }); });
 }
 function rowEl(r){
-  const tb = el(`<table><tbody>${`<tr${r.hd ? ' class="hd"' : ''}>${(r.cells || []).map(c => {
-    const cls = C.cellClass(c, false, r.hd);
+  const tb = el(`<table><tbody>${`<tr${r.hd ? ' class="hd"' : ''}>${(r.cells || []).map((c, i) => {
+    const cls = C.cellClass(c, false, r.hd, i, NOHD, C.rowFull(r, NCOL));
     return `<td${c.cs > 1 ? ` colspan="${Number(c.cs) | 0}"` : ''}${c.rs > 1 ? ` rowspan="${Number(c.rs) | 0}"` : ''}${cls ? ` class="${cls}"` : ''}>${C.cellText(c, false, THEME)}</td>`;
   }).join('')}</tr>`}</tbody></table>`);
   return tb.querySelector('tr');
@@ -92,7 +99,7 @@ function refine(ps, k){
 }
 
 /* ═══ 쪽 나누기 — 문서 하나 → 쪽 요소들 ═══
-   opt = { cover:true|false, coverKey:'cc1'…'old', inner:'old'|'a'|'c', sign:{on,…}, draft, coverImg, logoImg, footL, footR(예전 모양) } */
+   opt = { cover:true|false, coverKey:'cc1'…'old', inner:'old'|'a'|'c', shade:'0'|'1'|'2' (v145 음영), sign:{on,…}, draft, coverImg, logoImg, footL, footR(예전 모양) } */
 export async function paginate(doc, opt){
   opt = opt || {};
   ensureCSS();
@@ -111,7 +118,7 @@ export async function paginate(doc, opt){
     if(pages.length > 300){ host.remove(); throw new Error('쪽이 너무 많아요 (300쪽 넘음) — 나학평 담당에게 알려 주세요'); }   // 혹시 모를 끝없는 쪽 나눔 막기
     const p = theme === 'old'
       ? el(`<div class="np"><div class="np-in nr${lang === 'en' ? ' en' : ''}"></div><div class="np-ft"><span></span><span></span></div></div>`)
-      : el(`<div class="np np-th"><div class="np-in nr${lang === 'en' ? ' en' : ''} th-${theme}" style="top:${G.top}px;height:${IH}px"></div>${TH.runHeadHTML(theme, doc)}<div class="np-fx"></div></div>`);
+      : el(`<div class="np np-th"><div class="np-in nr${lang === 'en' ? ' en' : ''}${C.themeClass(theme, opt.shade)}" style="top:${G.top}px;height:${IH}px"></div>${TH.runHeadHTML(theme, doc)}<div class="np-fx"></div></div>`);
     host.appendChild(p); pages.push(p); return p.querySelector('.np-in');
   };
   // 내용의 실제 아래 끝(여백 빼고)으로 잰다 · 6px 여유 — 화면 확대(미리보기) · 브라우저 인쇄에서 줄바꿈이 조금 달라져도 쪽 끝이 잘리지 않게
@@ -249,6 +256,7 @@ export async function paginate(doc, opt){
     if(f[0]) f[0].textContent = opt.footL || '';
     if(f[1]) f[1].textContent = `${opt.footR ? opt.footR + '  ·  ' : ''}${i + 1} / ${body.length}`;
   });
+  if(theme !== 'old') stripe(host);
   host.remove();
   pages.forEach(p => p.remove());
   THEME = 'old';

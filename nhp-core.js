@@ -6,7 +6,7 @@
    · 학생별 나학평 문서 모양(ReportDoc) 만들기 · 출력본(가리기 · 고치기 · 용어 바꾸기) · 영문판
    · v144 평가 틀 «세부» 칸 · 칸 너비(표 모양) · 조별 칸(학년 · 반이 섞인 칸) · 출력 디자인(표지 · 속지 모양)은 nhp-theme.js
    ═══════════════════════════════════════════════════════════ */
-import * as TH from './nhp-theme.js?v=144';
+import * as TH from './nhp-theme.js?v=146';
 export { TH };
 
 export const ORG = 'daniel';
@@ -1114,9 +1114,14 @@ export const REPORT_CSS = `
 .nrc.en .who b{font-weight:900}
 ` + TH.THEME_CSS;
 /* v144 theme: 'old'(예전) · 'a' · 'c' — 칸 종류 표시(lb 이름 칸 · gp 범위 묶음 · sd 세부)는 A · C 속지 모양에만 쓰인다 */
-export function cellClass(c, edit, hd){
+//   v145: 옮겨 온 지난 나학평(칸 종류 없음)도 — 위아래로 묶인 굵은 칸 = 범위(gp) · 줄 첫 칸이 굵은 글 = 이름 칸 음영(l0, 글 모양은 그대로)
+//   v146: 머리 줄이 없는 표(nohd)는 줄 첫 칸을 음영 (모든 표에 음영)
+//         first=false — 위 줄에서 묶여 내려온 칸 때문에 이 줄 첫 칸이 실제로는 첫 칸이 아님 (음영 안 함)
+export function cellClass(c, edit, hd, idx, nohd, first){
+  const gp = !hd && (c.gp || (c.rs > 1 && c.b && (!c.kd || c.kd === 'tx')));
   return [c.b ? 'b' : '', c.al === 'c' ? 'c' : c.al === 'r' ? 'r' : '', c.mk ? 'mk' : '', c.sm ? 'sm' : '',
-    !hd && c.kd === 'lab' ? 'lb' : '', !hd && (c.gp || (c.rs > 1 && c.kd === 'tx' && c.b)) ? 'gp' : '', !hd && c.kd === 'sd' ? 'sd' : '',
+    !hd && c.kd === 'lab' ? 'lb' : '', gp ? 'gp' : '', !hd && c.kd === 'sd' ? 'sd' : '',
+    !hd && !gp && !c.mk && idx === 0 && first !== false && c.kd !== 'lab' && c.kd !== 'sd' && ((!c.kd && c.b) || nohd) ? 'l0' : '',
     edit && c.ut ? 'ut' : '', edit && c.ov ? 'ovr' : '', edit && c.hid ? 'hid' : ''].filter(Boolean).join(' ');
 }
 export function cellText(c, edit, theme){
@@ -1124,8 +1129,8 @@ export function cellText(c, edit, theme){
   if(c.mk && theme && theme !== 'old' && String(c.x || '').trim()) return TH.markHTML(theme);
   return esc(c.x).replace(/\n/g, '<br>');
 }
-function cellHTML(c, edit, hd, theme){
-  const cls = cellClass(c, edit, hd);
+function cellHTML(c, edit, hd, theme, idx, nohd, first){
+  const cls = cellClass(c, edit, hd, idx, nohd, first);
   const at = (c.cs > 1 ? ` colspan="${Number(c.cs) | 0}"` : '') + (c.rs > 1 ? ` rowspan="${Number(c.rs) | 0}"` : '') + (cls ? ` class="${cls}"` : '') + (edit && c.id && !c.mk ? ` data-c="${esc(c.id)}"` : '');
   return `<td${at}>${cellText(c, edit, theme)}</td>`;
 }
@@ -1133,9 +1138,21 @@ export function colgroupHTML(t, theme){
   const cw = TH.colsFor(t, theme);
   return (cw || []).length ? `<colgroup>${cw.map(w => `<col style="width:${Number(w) || 0}%">`).join('')}</colgroup>` : '';
 }
+/* 표의 칸 수 · 이 줄이 첫 칸부터 시작하는지 (위에서 묶여 내려온 칸이 없으면 칸 수가 다 참) */
+export const colCount = t => (t.cols || []).length || Math.max(0, ...(t.rows || []).map(r => (r.cells || []).reduce((n, c) => n + Math.max(1, Number(c.cs) || 1), 0)));
+export const rowFull = (r, nc) => !nc || (r.cells || []).reduce((n, c) => n + Math.max(1, Number(c.cs) || 1), 0) >= nc;
+/* v145 줄이 둘 이상인 표(몸 줄 ZEBRA_MIN 이상)는 모던 · 클래식 속지에서 한 줄 걸러 옅은 음영(z) — 쪽이 나뉘면 그 쪽 조각에서 다시 셈 */
 export function tableHTML(t, edit, theme){
-  return `<table class="${esc((t.cls || '') + (t.auto ? ' auto' : ''))}" data-t="${esc(t.id || '')}">${colgroupHTML(t, theme)}<tbody>${(t.rows || []).map(r =>
-    `<tr${r.hd ? ' class="hd"' : ''} data-r="${esc(r.id || '')}">${(r.cells || []).map(c => cellHTML(c, edit, r.hd, theme)).join('')}</tr>`).join('')}</tbody></table>`;
+  const rows = t.rows || [];
+  const nohd = !rows.some(r => r.hd);
+  const nc = colCount(t);
+  const zon = !!theme && theme !== 'old' && rows.filter(r => !r.hd).length >= TH.ZEBRA_MIN;
+  let bi = 0;
+  return `<table class="${esc((t.cls || '') + (t.auto ? ' auto' : ''))}" data-t="${esc(t.id || '')}">${colgroupHTML(t, theme)}<tbody>${rows.map(r => {
+    let cls = 'hd';
+    if(!r.hd){ cls = zon && bi % 2 === 1 ? 'z' : ''; bi++; }
+    return `<tr${cls ? ` class="${cls}"` : ''} data-r="${esc(r.id || '')}">${(r.cells || []).map((c, i) => cellHTML(c, edit, r.hd, theme, i, nohd, rowFull(r, nc))).join('')}</tr>`;
+  }).join('')}</tbody></table>`;
 }
 export function headText(b, lang, no){
   const h = b.h || {};
@@ -1158,7 +1175,7 @@ export function blockParts(b, lang, no, edit, theme){
 }
 /* 번호 — 예전 모양은 교과만 (1. 2. …) · A · C 는 모든 칸에 차례로 (01 02 …) */
 export const numbersFor = (doc, theme) => (theme && theme !== 'old') ? TH.numberAll(doc) : numberSubjects(doc);
-export const themeClass = theme => (theme && theme !== 'old') ? ` th-${theme}` : '';
+export const themeClass = (theme, shade) => (theme && theme !== 'old') ? ` th-${theme}${shade != null && String(shade) !== '1' ? ' sh' + String(shade).replace(/[^0-9]/g, '') : ''}` : '';
 export function numberSubjects(doc){
   let n = 0; const m = {};
   (doc.blocks || []).forEach(b => { if(b.k === 'subj') m[b.id] = ++n; });
@@ -1166,14 +1183,14 @@ export function numberSubjects(doc){
 }
 export function docHTML(doc, opt){
   opt = opt || {};
-  const edit = !!opt.edit, lang = doc.lang || 'ko', theme = opt.theme || 'old';
+  const edit = !!opt.edit, lang = doc.lang || 'ko', theme = opt.theme || 'old', shade = opt.shade;
   const nos = numbersFor(doc, theme);
   const body = (doc.blocks || []).map(b => {
     const p = blockParts(b, lang, nos[b.id], edit, theme);
     const cls = b.k === 'sec' ? 'nb ns' : b.k === 'subj' ? 'nb nsub' : 'nb';
     return `<section class="${cls}" data-b="${esc(b.id)}" data-k="${esc(b.k)}">${p.head}${p.tables.map(t => tableHTML(t, edit, theme)).join('')}${p.notes.join('')}</section>`;
   }).join('');
-  return `<div class="nr${lang === 'en' ? ' en' : ''}${edit ? ' ed' : ''}${themeClass(theme)}">${body}</div>`;
+  return `<div class="nr${lang === 'en' ? ' en' : ''}${edit ? ' ed' : ''}${themeClass(theme, shade)}">${body}</div>`;
 }
 export function coverHTML(doc, opt){
   opt = opt || {};
