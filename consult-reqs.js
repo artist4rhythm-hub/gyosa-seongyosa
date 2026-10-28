@@ -2,11 +2,16 @@
    · 담임: 이름 → «변경 요청» (상담 방법 대면 / ☎ 전화 / 🗓 별도 · 사유 · 원하는 때 · 형제 함께) · 답글
    · 편성 담당: «요청 모아 반영» — 열린 요청을 들어온 차례대로 한 번에 (다른 가정은 그대로 · 자동 배치를 다시 돌리지 않음)
    · 편성 담당: 들어갈 자리 찾기 → «이 자리로 옮기기» 한 번에 (판 저장 · 선생님께 보냄 · 처리됨 · 알림)
+   · v155 «✔ 수동 반영 완료» — 표에서 직접 고친 요청을 «처리됨 · 직접»으로 닫기 (답글 · 요청한 선생님 알림 · 고친 자리도 함께 보내기 선택)
+     요청을 닫으면 그 요청의 내 알림(새 요청 · 답글)은 «읽음»으로 — 더 뜨지 않음
    · 교직원 자녀: 선생님이 «내 자녀 잇기» · 담당은 누구 것이든 */
 let A = null, C = null, esc = null;
 const REPL = {};   // reqId → [답글]
 let unRep = null, repFor = '';
 const ST = { new: ['새 요청', 'red'], answered: ['답함', 'blue'], done: ['처리됨', 'ok'], no: ['못 함', ''], cancel: ['거둠', ''] };
+const stOf = q => (q.state === 'done' && q.manual) ? ['처리됨 · 직접', 'ok'] : (ST[q.state] || ST.new);   // v155 수동 반영
+/* v155 요청을 닫으면 그 요청의 내 알림은 읽음으로 (다른 담당 선생님 것은 각자 화면이 열릴 때 consult.html 이 정리) */
+const readReqNotifs = id => { (A.NOTIFS || []).filter(n => n.reqId === id).forEach(n => A.readNotif && A.readNotif(n)); };
 const when = ts => { const s = ts && ts.seconds; if(!s) return ''; const d = new Date(s * 1000); const now = Date.now(); const m = Math.round((now - d.getTime()) / 60000); if(m < 1) return '방금'; if(m < 60) return m + '분 전'; if(m < 60 * 24) return Math.round(m / 60) + '시간 전'; return `${d.getMonth() + 1}/${d.getDate()}`; };
 const posTxt = (r, st) => !st ? '자리 없음' : st.k !== 'face' ? C.KINDS[st.k] : `${C.dayLabel((C.dayList(r)[st.d] || {}).date, true)} ${C.slotTime(r, st.d, st.s)}`;
 const HOW = { face: '대면 · 시간 바꾸기', phone: '☎ 전화 상담', sep: '🗓 별도 일정' };
@@ -42,7 +47,7 @@ export function reqsHTML(a, sub){
     <div class="cs-rql"><div style="display:flex;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;align-items:center">
       ${A.isMgr ? fb('new', '새 요청') + fb('answered', '답함') + fb('done', '처리됨') : fb('mine', '내 요청')}${fb('all', '모두')}
       ${canNew ? '<span style="flex:1"></span><button class="cs-btn sm g" data-rq="new">+ 새 요청</button>' : ''}</div>
-      ${list.map(q => { const s = ST[q.state] || ST.new; const fs = A.styleOf((q.sids || [])[0]); return `<div class="cs-rqi${cur && cur.id === q.id ? ' on' : ''}" data-rqid="${esc(q.id)}" tabindex="0" role="button"><div class="h"><span class="ch ${s[1]}">${s[0]}</span><b>${esc((q.sids || []).map(A.stuName).join(' · '))}</b>${q.how && q.how !== 'face' ? `<span class="ch mint" style="height:20px">${q.how === 'phone' ? '☎ 전화' : '🗓 별도'}</span>` : ''}${fs ? `<span style="width:10px;height:10px;border-radius:3px;background:${fs.bg};border:1px solid ${fs.fg}"></span>` : ''}<span class="at">${esc(when(q.lastAt || q.at))}</span></div>
+      ${list.map(q => { const s = stOf(q); const fs = A.styleOf((q.sids || [])[0]); return `<div class="cs-rqi${cur && cur.id === q.id ? ' on' : ''}" data-rqid="${esc(q.id)}" tabindex="0" role="button"><div class="h"><span class="ch ${s[1]}">${s[0]}</span><b>${esc((q.sids || []).map(A.stuName).join(' · '))}</b>${q.how && q.how !== 'face' ? `<span class="ch mint" style="height:20px">${q.how === 'phone' ? '☎ 전화' : '🗓 별도'}</span>` : ''}${fs ? `<span style="width:10px;height:10px;border-radius:3px;background:${fs.bg};border:1px solid ${fs.fg}"></span>` : ''}<span class="at">${esc(when(q.lastAt || q.at))}</span></div>
         <span class="cs-mut" style="color:var(--ink);font-size:12.5px">${esc(String(q.text || '').slice(0, 70))}</span><span class="cs-mut">${esc(q.byName || '')} 요청${q.nRep ? ` · 답글 ${q.nRep}` : ''}</span></div>`; }).join('') || '<div class="cs-empty">요청이 없어요.</div>'}
     </div>
     <div class="cs-rqd">${cur ? detailHTML(cur) : `<div class="cs-card cs-empty">${A.isMgr ? '이 칸에 해당하는 요청이 없어요 — «처리됨 · 모두»에서 지난 요청을 볼 수 있어요.' : canNew ? `<div style="text-align:left;max-width:520px;margin:0 auto;line-height:1.75"><b style="font-size:14px">💬 변경 요청하는 법</b> <span class="cs-mut">(우리 반 학생만)</span><br>
@@ -53,7 +58,7 @@ export function reqsHTML(a, sub){
 function reqCond(q){ const ids = (q.sids || []).filter(Boolean); const fam = C.uniq(ids.flatMap(id => A.famIds(id))); return C.condMerge([C.condOf(A.R, fam), q.cond]); }
 function detailHTML(q){
   const r = A.R, seats = A.isMgr ? (r.seats || {}) : A.viewSeats();
-  const s = ST[q.state] || ST.new;
+  const s = stOf(q);
   const ids = (q.sids || []).filter(Boolean);
   const fs = A.styleOf(ids[0]);
   const reps = REPL[q.id] || [];
@@ -62,22 +67,22 @@ function detailHTML(q){
   if(A.isMgr && ['new', 'answered'].includes(q.state) && r.state !== 'closed' && (q.how === 'phone' || q.how === 'sep')){
     spot = `<div class="cs-spot"><b style="font-size:13.5px">${q.how === 'phone' ? `☎ 전화 상담으로 바꾸기 — 희망 ${esc(phTxt(r, q))}` : `🗓 별도 일정으로 바꾸기${q.wantText ? ' — ' + esc(q.wantText) : ''}`}</b>
       <span class="cs-mut">${ids.length > 1 ? '형제 함께 · ' : ''}표 칸은 비워지고 «그 외»와 표 아래 «☎ 전화 상담 · 🗓 별도 일정» 목록에 들어가요${q.how === 'phone' ? ' · 날짜 · 시각을 정하면 인쇄본에도 나가요' : ''}</span>
-      <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="applyk">${q.how === 'phone' ? '☎ 전화 상담으로 배정…' : '🗓 별도 일정으로 배정…'}</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`;
+      <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="applyk">${q.how === 'phone' ? '☎ 전화 상담으로 배정…' : '🗓 별도 일정으로 배정…'}</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn" data-rq="manual" title="«이 자리로 옮기기» 없이 표에서 직접 고친 요청을 «처리됨»으로 닫아요">✔ 수동 반영 완료</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`;
   } else if(A.isMgr && ['new', 'answered'].includes(q.state) && r.state !== 'closed'){
     const live = A.inSet ? ids.filter(id => A.inSet.has(id)) : ids;
     const qc = reqCond(q);
     const keepOk = !((q.want || []).length) && C.condHas(qc) && live.length && live.every(id => { const st = seats[id]; return st && st.k === 'face' && C.slotOk(r, qc, st.d, st.s); });
     const plan = keepOk ? null : C.findSpot(r, A.colOf, live, q.want || [], { cond: qc });
     spot = keepOk ? `<div class="cs-spot"><b style="font-size:13.5px">✔ 지금 자리가 특이 사항(${esc(C.condText(qc, { noNote: true }))})에 맞아요 — 그대로 두고 특이 사항만 적어요</b>
-        <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="condkeep">특이 사항만 적고 처리</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button></div></div>` : plan ? `<div class="cs-spot"><b style="font-size:13.5px">✔ 들어갈 자리를 찾았어요 — ${plan.length > 1 ? '형제 함께 · ' : ''}다른 가정은 그대로</b>
+        <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="condkeep">특이 사항만 적고 처리</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn" data-rq="manual" title="«이 자리로 옮기기» 없이 표에서 직접 고친 요청을 «처리됨»으로 닫아요">✔ 수동 반영 완료</button></div></div>` : plan ? `<div class="cs-spot"><b style="font-size:13.5px">✔ 들어갈 자리를 찾았어요 — ${plan.length > 1 ? '형제 함께 · ' : ''}다른 가정은 그대로</b>
         <div style="display:flex;flex-wrap:wrap;gap:6px">${plan.map(([id, d, s2]) => { const c = A.colByKey(A.colOf[id]); return `<span class="ch" style="height:32px;padding:0 10px;background:${fs ? fs.bg : 'var(--sb-mint-2)'};color:${fs ? fs.fg : 'var(--sb-green)'}">${esc(C.dayLabel(C.dayList(r)[d].date, true))} ${C.slotTime(r, d, s2)} · ${esc(A.stuName(id))} · ${esc(c ? c.tname || c.name : '')}</span>`; }).join('')}</div>
         ${C.condHas(qc) ? `<div class="cs-mut" style="color:#6D28D9">🧩 특이 사항(${esc(C.condText(qc, { noNote: true }))})에 맞는 칸만 찾았어요 · 처리하면 이 가정 특이 사항으로 남아요</div>` : ''}
         ${(() => { const offHit = plan.filter(([id, d, s2]) => { const c = A.colByKey(A.colOf[id]); return c && (c.off || []).includes(d + '_' + s2); }); return offHit.length ? '<div class="cs-isl">선생님 «못 하는 시간»과 겹쳐요</div>' : ''; })()}
-        <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="apply" data-plan="${esc(JSON.stringify(plan))}">이 자리로 옮기기 (${plan.length}명)</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`
+        <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn g" data-rq="apply" data-plan="${esc(JSON.stringify(plan))}">이 자리로 옮기기 (${plan.length}명)</button><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn" data-rq="manual" title="«이 자리로 옮기기» 없이 표에서 직접 고친 요청을 «처리됨»으로 닫아요">✔ 수동 반영 완료</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`
       : `<div class="cs-spot" style="border-color:#D97706;background:#FFFBF0"><b style="font-size:13.5px">원하시는 때${C.condHas(qc) ? ' · 특이 사항' : ''}에 ${ids.length > 1 ? '형제가 함께 ' : ''}들어갈 빈 자리가 없어요</b><span class="cs-mut">표에서 다른 가정과 바꾸거나 · 날짜 · 칸을 늘리거나 · 답글로 다른 시간을 여쭤 보세요.</span>
-        <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`;
+        <div style="display:flex;flex-wrap:wrap;gap:8px"><button class="cs-btn" data-rq="board">표에서 직접 고르기</button><button class="cs-btn" data-rq="manual" title="«이 자리로 옮기기» 없이 표에서 직접 고친 요청을 «처리됨»으로 닫아요">✔ 수동 반영 완료</button><button class="cs-btn r" data-rq="no">어려워요 (답글로 이유)</button></div></div>`;
   }
-  return `<div class="cs-card" style="display:flex;flex-direction:column;gap:12px">
+  return `<div class="cs-card" data-curq="${esc(q.id)}" style="display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px"><span class="ch ${s[1]}">${s[0]}</span><b style="font-size:17px">${esc(ids.length > 1 ? `${String(A.stuName(ids[0])).slice(0, 1)} 가정 — ${ids.map(A.stuName).join(' · ')}` : A.stuName(ids[0]))}</b>${fs ? `<span style="width:14px;height:14px;border-radius:4px;background:${fs.bg}"></span>` : ''}
       <span style="flex:1"></span>${mine && q.state === 'new' ? '<button class="cs-btn xs" data-rq="edit">고치기</button><button class="cs-btn xs r" data-rq="cancel">거두기</button>' : ''}${A.isMgr && ['done', 'no'].includes(q.state) ? '<button class="cs-btn xs" data-rq="reopen">다시 열기</button>' : ''}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">${ids.map(id => { const c = A.colByKey(A.colOf[id]); return `<div class="cs-fr" style="grid-template-columns:1fr;margin:0"><b>${esc(A.stuName(id))} <span class="cs-mut">${esc(C.colLabel(c))} · ${esc(c ? c.tname || '' : '')}</span></b><span style="font-variant-numeric:tabular-nums">지금 ${esc(posTxt(r, seats[id]))}</span></div>`; }).join('')}</div>
@@ -119,8 +124,9 @@ async function reply(q, text, quiet, keepState){
 export function after(a){
   A = a; C = a.C; esc = a.esc;
   const root = document.getElementById('cs'); if(!root) return;
-  const sel = root.querySelector('.cs-rqi.on');
-  watchReplies(sel ? sel.dataset.rqid : '');
+  // v155 지금 연 요청 — 왼쪽 목록에 없어도(거른 칸 밖 · 방금 처리됨) 오른쪽에 열린 요청으로
+  const curId = () => { const sel = root.querySelector('.cs-rqi.on'); const d = root.querySelector('[data-curq]'); return (sel && sel.dataset.rqid) || (d && d.dataset.curq) || ''; };
+  watchReplies(curId());
   root.onclick = async e => {
     const t = e.target;
     const f = t.closest('[data-rqf]'); if(f){ A.lsSet('cs_rqf', f.dataset.rqf); A.go('reqs'); return; }
@@ -128,7 +134,7 @@ export function after(a){
     const rd = t.closest('[data-rdel]'); if(rd){ if(!(await A.confirm('답글 지우기', '이 답글을 지울까요? «지운 답글»로 남아요.', '지우기', true))) return; try{ await A.FS.updateDoc(A.FS.doc(A.db, 'consultReplies', rd.dataset.rdel), { del: true, text: '' }); }catch(err){ A.toast('지우지 못했어요 — ' + A.errText(err), 'err'); } return; }
     const b = t.closest('[data-rq]'); if(!b) return;
     const k = b.dataset.rq;
-    const q = A.REQS.find(x => x.id === (root.querySelector('.cs-rqi.on') || {}).dataset?.rqid);
+    const q = A.REQS.find(x => x.id === curId());
     if(k === 'new'){ newReq(A, ''); return; }
     if(k === 'batch'){ batchFlow(); return; }
     if(k === 'nudge'){
@@ -139,15 +145,16 @@ export function after(a){
     if(!q) return;
     if(k === 'reply'){ const tx = root.querySelector('[data-rtx]'); try{ if(await reply(q, tx.value)){ tx.value = ''; A.toast('답글을 달았어요'); } }catch(err){ A.toast('답글을 달지 못했어요 — ' + A.errText(err), 'err'); } return; }
     if(k === 'board'){ A.FAM_SEL = A.famOf((q.sids || [])[0]); A.go('board'); return; }
+    if(k === 'manual'){ const tx = root.querySelector('[data-rtx]'); if(await manualDone(A, q, tx && tx.value.trim()) && tx) tx.value = ''; return; }
     if(k === 'cancel'){ if(!(await A.confirm('요청 거두기', '이 변경 요청을 거둘까요?', '거두기'))) return; try{ await A.FS.updateDoc(A.FS.doc(A.db, 'consultReqs', q.id), { state: 'cancel', updatedAt: A.FS.serverTimestamp() }); A.toast('요청을 거뒀어요'); }catch(err){ A.toast('거두지 못했어요 — ' + A.errText(err), 'err'); } return; }
     if(k === 'edit'){ newReq(A, (q.sids || [])[0], q); return; }
-    if(k === 'reopen'){ try{ await A.FS.updateDoc(A.FS.doc(A.db, 'consultReqs', q.id), { state: 'answered', updatedAt: A.FS.serverTimestamp() }); }catch(err){ A.toast('열지 못했어요 — ' + A.errText(err), 'err'); } return; }
+    if(k === 'reopen'){ try{ await A.FS.updateDoc(A.FS.doc(A.db, 'consultReqs', q.id), { state: 'answered', manual: A.FS.deleteField(), updatedAt: A.FS.serverTimestamp() }); }catch(err){ A.toast('열지 못했어요 — ' + A.errText(err), 'err'); } return; }
     if(k === 'no'){
       const tx = root.querySelector('[data-rtx]');
       const why = (tx && tx.value.trim()) || await A.prompt('어려워요', '이유 (요청한 선생님께 보여요)', '', { multi: true, ph: '예: 화요일은 모두 차 있어요 — 수요일 16:00은 어떠세요?', required: '이유를 적어 주세요' });
       if(!why) return;
       try{ await reply(q, why, true, true); await A.FS.updateDoc(A.FS.doc(A.db, 'consultReqs', q.id), { state: 'no', doneAt: A.FS.serverTimestamp(), doneBy: A.CU.uid });
-        A.notify([q.byUid], 'no', '🙏 상담 변경 요청 — 어려워요', `${(q.sids || []).map(A.stuName).join(' · ')} — ${why.slice(0, 80)}`, 'consult.html#reqs/' + q.id, { reqId: q.id }); A.toast('답글을 달고 «못 함»으로 바꿨어요'); }
+        A.notify([q.byUid], 'no', '🙏 상담 변경 요청 — 어려워요', `${(q.sids || []).map(A.stuName).join(' · ')} — ${why.slice(0, 80)}`, 'consult.html#reqs/' + q.id, { reqId: q.id }); readReqNotifs(q.id); A.toast('답글을 달고 «못 함»으로 바꿨어요'); }
       catch(err){ A.toast('저장하지 못했어요 — ' + A.errText(err), 'err'); }
       return;
     }
@@ -203,9 +210,9 @@ async function applyMany(items, o){
   if(Object.keys(cp).length) await A.saveRound(cp);
   if(o.noVer && !Object.keys(patch).length){
     const bt = A.FS.writeBatch(A.db);
-    items.forEach(it => bt.update(A.FS.doc(A.db, 'consultReqs', it.q.id), { state: 'done', doneVer: A.R.sentVer || A.R.ver || 0, doneAt: A.FS.serverTimestamp(), doneBy: A.CU.uid }));
+    items.forEach(it => bt.update(A.FS.doc(A.db, 'consultReqs', it.q.id), Object.assign({ state: 'done', doneVer: A.R.sentVer || A.R.ver || 0, doneAt: A.FS.serverTimestamp(), doneBy: A.CU.uid }, o.manual ? { manual: true } : {})));
     await bt.commit();
-    for(const it of items){ await reply(it.q, it.msg, true, true); A.notify([it.q.byUid], 'done', '🧩 상담 특이 사항을 적었어요', it.msg, 'consult.html#reqs/' + it.q.id, { reqId: it.q.id }); }
+    for(const it of items){ await reply(it.q, it.msg, true, true); A.notify([it.q.byUid], 'done', o.title || '🧩 상담 특이 사항을 적었어요', it.msg, 'consult.html#reqs/' + it.q.id, { reqId: it.q.id }); readReqNotifs(it.q.id); }
     A.derive();
     return A.R.sentVer || A.R.ver || 0;
   }
@@ -213,19 +220,60 @@ async function applyMany(items, o){
   const r = A.R;   // 옮긴 뒤 상태 (그사이 새로 받은 문서일 수 있음)
   const n = (Number(r.ver) || 0) + 1;
   const bt = A.FS.writeBatch(A.db);
-  bt.set(A.FS.doc(A.db, 'consultRounds', r.id, 'vers', String(n)), { n, seats: r.seats || {}, days: r.days || [], tpl: C.tplOf(r), note: items.length > 1 ? `변경 요청 ${items.length}건 반영` : '변경 요청 처리', reqIds: items.map(it => it.q.id), at: A.FS.serverTimestamp(), by: A.CU.uid, byName: A.CU.name || '' });
+  bt.set(A.FS.doc(A.db, 'consultRounds', r.id, 'vers', String(n)), { n, seats: r.seats || {}, days: r.days || [], tpl: C.tplOf(r), note: items.length > 1 ? `변경 요청 ${items.length}건 반영` : (o.manual ? '변경 요청 수동 반영' : '변경 요청 처리'), reqIds: items.map(it => it.q.id), at: A.FS.serverTimestamp(), by: A.CU.uid, byName: A.CU.name || '' });
   const colVer = A.colVerPatch(n, r.sentSeats || null, r.seats || {});
   bt.update(A.roundRef(), { ver: n, sentVer: n, sentSeats: r.seats || {}, colVer, sentAt: A.FS.serverTimestamp(), updatedAt: A.FS.serverTimestamp(), updatedBy: A.CU.uid });
-  items.forEach(it => bt.update(A.FS.doc(A.db, 'consultReqs', it.q.id), { state: 'done', doneVer: n, doneAt: A.FS.serverTimestamp(), doneBy: A.CU.uid }));
+  items.forEach(it => bt.update(A.FS.doc(A.db, 'consultReqs', it.q.id), Object.assign({ state: 'done', doneVer: n, doneAt: A.FS.serverTimestamp(), doneBy: A.CU.uid }, o.manual ? { manual: true } : {})));
   await bt.commit();
   r.ver = n; r.sentVer = n; r.colVer = colVer; r.sentSeats = JSON.parse(JSON.stringify(r.seats || {}));
   for(const it of items){
     await reply(it.q, it.msg, true, true);
-    const cols = C.uniq(Object.keys(it.patch).map(id => A.colOf[id]));
+    const cols = C.uniq(Object.keys(it.patch).concat(it.notifyIds || []).map(id => A.colOf[id]).filter(Boolean));
     const tUids = C.uniq([it.q.byUid].concat((r.cols || []).filter(c => cols.includes(c.key)).flatMap(c => [c.uid].concat((A.CBYID[c.classId || c.key] || {}).deputies || []))));
-    A.notify(tUids, 'done', '✅ 상담 시간이 바뀌었어요', `${it.msg} (판 ${n})`, 'consult.html#reqs/' + it.q.id, { reqId: it.q.id });
+    A.notify(tUids, 'done', o.title || '✅ 상담 시간이 바뀌었어요', `${it.msg} (판 ${n})`, 'consult.html#reqs/' + it.q.id, { reqId: it.q.id });
+    readReqNotifs(it.q.id);
   }
   return n;
+}
+/* ═══ v155 ✔ 수동 반영 완료 — 표에서 직접 고친 요청 닫기 (요청 화면 · 편성 보드 «선택한 가정» · 이름 메뉴에서) ═══
+   · 요청 «처리됨 · 직접»(manual) · 답글(요청한 선생님께 보임) · 요청한 선생님께 «✅ 반영» 알림 · 그 요청의 내 알림은 읽음
+   · 아직 선생님들께 보내지 않은 변경이 있으면 «함께 보내기»(판 저장 · 담임 선생님께 보냄)를 고를 수 있음 — 이 가정이 바뀌었으면 기본으로 켬
+   · 요청에 적힌 🧩 특이 사항은 «이 자리로 옮기기»와 같이 이 가정 특이 사항으로 남김 */
+export async function manualDone(a, q, pre){
+  A = a; C = a.C; esc = a.esc;
+  const r = A.R; if(!r || !q || !['new', 'answered'].includes(q.state)) return false;
+  const seats = r.seats || {};
+  const ids = (q.sids || []).filter(Boolean);
+  const fam = C.uniq(ids.flatMap(id => A.famIds(id)));
+  const unsentAll = r.sentSeats ? C.diffSeats(r.sentSeats, seats) : [];
+  const unsentFam = unsentAll.filter(id => fam.includes(id));
+  const def = pre || `표에서 직접 반영했어요 — ${ids.map(id => `${A.stuName(id)} ${posTxt(r, seats[id])}`).join(' · ')}`;
+  const hasCond = C.condAny(q.cond);
+  const m = A.modal('✔ 수동 반영 완료', `<div class="cs-desc" style="margin-bottom:10px">«이 자리로 옮기기» 없이 표에서 직접 고친 요청을 <b>«처리됨 · 직접»</b>으로 닫아요 — 이 요청 알림은 더 뜨지 않아요.</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">${ids.map(id => { const sent = (r.sentSeats || {})[id]; const ch = unsentAll.includes(id);
+        return `<div class="cs-fr" style="grid-template-columns:110px minmax(0,1fr)"><b>${esc(A.stuName(id))}</b><span>지금 <b>${esc(posTxt(r, seats[id]))}</b>${ch ? ` <span class="cs-mut" style="color:#92400E">(선생님들께 보낸 것: ${esc(posTxt(r, sent))} — 아직 안 보냄)</span>` : ''}</span></div>`; }).join('')}</div>
+      <label class="cs-mut" style="display:block;margin-bottom:4px"><b style="color:var(--ink)">답글</b> — 요청한 ${esc(q.byName || '선생님')}께 보여요</label>
+      <textarea class="cs-ta" data-mtx style="min-height:70px">${esc(def)}</textarea>
+      ${unsentAll.length ? `<label class="ck" style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;line-height:1.55"><input type="checkbox" data-msend${unsentFam.length ? ' checked' : ''} style="margin-top:3px"><span>보내지 않은 변경 <b>${unsentAll.length}명</b>을 지금 담임 선생님들께 함께 보내기 (판 저장)${unsentFam.length ? '' : '<br><span class="cs-mut">이 가정은 이미 보낸 자리 그대로예요</span>'}</span></label>` : ''}
+      ${hasCond ? `<div class="cs-mut" style="margin-top:8px;color:#6D28D9">🧩 요청의 특이 사항(${esc(C.condText(q.cond))})은 이 가정 특이 사항으로 남겨요</div>` : ''}`,
+    '<button class="cs-btn" data-n>취소</button><button class="cs-btn g" data-y>✔ 수동 반영 완료</button>', 'mid');
+  return await new Promise(res => {
+    let done = false;
+    m.onClose = () => { if(!done) res(false); };
+    m.box.querySelector('[data-n]').onclick = () => m.close();
+    m.box.querySelector('[data-y]').onclick = async () => {
+      const msg = (m.box.querySelector('[data-mtx]').value || '').trim() || def;
+      const sb = m.box.querySelector('[data-msend]'); const send = !!(sb && sb.checked);
+      const b = m.box.querySelector('[data-y]'); b.disabled = true;
+      try{
+        const n = await applyMany([{ q, patch: {}, msg, cond: hasCond ? reqCond(q) : null, notifyIds: send ? unsentAll : [] }], { noVer: !send, manual: true, title: '✅ 상담 변경 요청을 반영했어요' });
+        done = true; m.close();
+        A.toast(send ? `«처리됨 · 직접»으로 닫고 판 ${n}을(를) 보냈어요` : '«처리됨 · 직접»으로 닫았어요 — 알림이 더 뜨지 않아요');
+        if(A.VIEW === 'reqs') A.go('reqs/' + q.id); else A.render(true);
+        res(true);
+      }catch(err){ b.disabled = false; A.toast('저장하지 못했어요 — ' + A.errText(err), 'err'); console.error(err); }
+    };
+  });
 }
 /* 📥 요청 모아 반영 — 열린 요청을 들어온 차례대로 · 미리 보고 고른 것만 */
 async function batchFlow(){

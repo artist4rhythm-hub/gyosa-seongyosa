@@ -1,5 +1,5 @@
 /* ═══ 📅 consult-past.js — 지난 상담 (보기만) · 예전 상담표 PDF · 인쇄 · PDF (v149) ═══
-   · 끝난 상담: 확정본을 A4 일정표 모양으로 보기 · 인쇄 · PDF
+   · 끝난 상담: 최종본을 A4 일정표 모양으로 보기 · 인쇄 · PDF (v155 예전 «확정»판도 «최종»으로 보여 줌)
    · 예전 상담표: 손으로 만든 일정표 PDF 를 담당이 올리면 쪽마다 그림으로 (선생님들은 보기만 · 원본 PDF 받기)
      저장: consultArchive/{id} (정보) + consultArchive/{id}/parts/{p쪽_조각 · c조각} — 문서 한 장 1MB 한도 아래로 나눠서 */
 let A = null, C = null, esc = null;
@@ -75,7 +75,7 @@ export function a4Pages(a, r, seats, opt){
   const p2 = v => String(v).padStart(2, '0');
   const ymd = `${at.getFullYear()}. ${p2(at.getMonth() + 1)}. ${p2(at.getDate())}.`;
   const stamp = opt.label ? `${opt.label} · ${ymd}` : `${opt.ver ? '판 ' + opt.ver + ' · ' : ''}${ymd} ${p2(at.getHours())}:${p2(at.getMinutes())}`;
-  const edTag = opt.label ? `<span class="ed${opt.label === '확정' ? '' : ' w'}">${esc(opt.label)}</span>` : '';
+  const edTag = opt.label ? `<span class="ed${opt.label === C.FINAL_LABEL ? '' : ' w'}">${esc(opt.label)}</span>` : '';
   const ttl = `<div class="ttl"><div>다니엘 아마츠 · ${esc(r.year)}학년도 ${esc(r.term)}학기</div><b>학부모 상담 일정표${edTag}</b></div>`;
   const meta = i => `<div class="meta"><span>같은 색 · 같은 번호 = 한 가정 (이어진 시간) · 점선 = 교직원 자녀${chg && chg.size ? ` · ★ = ${esc(opt.prevLabel || '지난 안내')}에서 바뀐 시간` : ''}</span><span>${esc(stamp)}__PG${i}__</span></div>`;
   const foot = `<div class="ft">상담 시간 ${C.tplOf(r).len}분 · 시간 변경은 꼭 담임 선생님께 먼저 연락해 주세요 · 교사 선교사</div>`;
@@ -118,7 +118,7 @@ export async function printRound(a, r, seats, pick){
   const liveMgr = A.isMgr && r.id === (A.R || {}).id && r.state !== 'closed';
   const pubs = C.pubsOf(r);
   // 고를 것: 학부모께 나간 판 (최근부터) + 지금 표 (담당) / 보낸 판 (선생님)
-  const opts = pubs.slice().reverse().map(p => ({ v: 'p' + p.n, l: `${p.label} · ${new Date(p.at || 0).getMonth() + 1}/${new Date(p.at || 0).getDate()} 학부모 안내`, pub: p }));
+  const opts = pubs.slice().reverse().map(p => ({ v: 'p' + p.n, l: `${C.pubName(p)} · ${new Date(p.at || 0).getMonth() + 1}/${new Date(p.at || 0).getDate()} 학부모 안내`, pub: p }));
   if(liveMgr) opts.push({ v: 'live', l: `지금 표 (작업 중 · 판 ${r.ver || 0})` });
   else if(!pubs.length || (r.sentVer && !pubs.some(p => p.ver === r.sentVer))) opts.push({ v: 'sent', l: `보낸 판 ${r.sentVer || r.ver || 0}` });
   let sel = pick || (opts[0] && opts[0].v) || 'live';
@@ -135,12 +135,12 @@ export async function printRound(a, r, seats, pick){
     const o = opts.find(x => x.v === sel) || { v: 'live' };
     let st = seats, label = '', prevLabel = '', changed = null, at = 0, ver = 0;
     if(o.pub){
-      st = (await seatsOfVer(r, o.pub.ver)) || seats; label = o.pub.label; at = o.pub.at; ver = o.pub.ver;
+      st = (await seatsOfVer(r, o.pub.ver)) || seats; label = C.pubName(o.pub); at = o.pub.at; ver = o.pub.ver;
       const i = pubs.indexOf(o.pub); const prev = i > 0 ? pubs[i - 1] : null;
-      if(prev){ const ps = await seatsOfVer(r, prev.ver); if(ps){ changed = new Set(C.diffSeats(ps, st).filter(id => st[id])); prevLabel = prev.label; } }
+      if(prev){ const ps = await seatsOfVer(r, prev.ver); if(ps){ changed = new Set(C.diffSeats(ps, st).filter(id => st[id])); prevLabel = C.pubName(prev); } }
     } else if(o.v === 'live'){
       ver = r.ver || 0; const last = pubs[pubs.length - 1];
-      if(last){ const ps = await seatsOfVer(r, last.ver); if(ps){ changed = new Set(C.diffSeats(ps, st).filter(id => st[id])); prevLabel = last.label; } }
+      if(last){ const ps = await seatsOfVer(r, last.ver); if(ps){ changed = new Set(C.diffSeats(ps, st).filter(id => st[id])); prevLabel = C.pubName(last); } }
       label = pubs.length && changed && changed.size ? `${C.nextPubLabel(r)} (준비 중)` : '';
     } else { st = r.sentSeats || seats; ver = r.sentVer || r.ver || 0; }
     m.box.querySelector('[data-chgw]').style.display = changed ? '' : 'none';
@@ -199,7 +199,7 @@ export function pastHTML(a, sub){
   return `<div style="margin-top:12px;display:flex;flex-direction:column;gap:14px">
     <div class="cs-card cs-desc">🗂 지난 상담은 <b>보기만</b> 할 수 있어요 — 예전엔 어떻게 잡았는지 참고하세요. 끝난 상담의 가정마다 자리(앞 · 가운데 · 뒤)는 다음 학기 순번 점검에 저절로 쓰여요.</div>
     <div><h3 style="margin:0 0 8px;font-size:15px;font-weight:900">교사 선교사에서 만든 상담</h3>
-      <div class="cs-past">${rs.map(r => `<button class="cs-pc" data-pr="${esc(r.id)}"><b>${esc(r.title || r.id)}</b><span>${esc(C.dayList(r).map(d => C.dayLabel(d.date, true)).join(' · '))}</span><span>${Object.keys(r.sentSeats || r.seats || {}).length}명 · ${(r.cols || []).length}반 · ${r.state === 'closed' ? '끝남' : '확정'}${r.dir ? ' · ' + (r.dir === 'desc' ? 'ㅎ→ㄱ' : 'ㄱ→ㅎ') : ''}</span></button>`).join('') || '<div class="cs-mut">아직 끝난 상담이 없어요.</div>'}</div></div>
+      <div class="cs-past">${rs.map(r => `<button class="cs-pc" data-pr="${esc(r.id)}"><b>${esc(r.title || r.id)}</b><span>${esc(C.dayList(r).map(d => C.dayLabel(d.date, true)).join(' · '))}</span><span>${Object.keys(r.sentSeats || r.seats || {}).length}명 · ${(r.cols || []).length}반 · ${r.state === 'closed' ? '끝남' : '최종 반영'}${r.dir ? ' · ' + (r.dir === 'desc' ? 'ㅎ→ㄱ' : 'ㄱ→ㅎ') : ''}</span></button>`).join('') || '<div class="cs-mut">아직 끝난 상담이 없어요.</div>'}</div></div>
     <div><h3 style="margin:0 0 8px;font-size:15px;font-weight:900;display:flex;align-items:center;gap:10px;flex-wrap:wrap">예전 상담표 (PDF · 보기만) ${A.isMgr ? '<label class="cs-btn sm g" style="cursor:pointer">+ PDF 올리기 (여러 개)<input type="file" accept="application/pdf,.pdf" multiple data-up style="display:none"></label>' : ''}</h3>
       ${arch == null ? '<div class="cs-mut">불러오는 중…</div>' : `<div class="cs-past">${arch.map(x => `<button class="cs-pc" data-pa="${esc(x.id)}"><b>${esc(x.title || yt(x))}</b><span>${esc(yt(x))} · ${x.pages || 0}쪽</span><span class="cs-mut">${esc(x.name || '')}</span></button>`).join('') || `<div class="cs-mut">아직 올린 예전 상담표가 없어요.${A.isMgr ? ' 손으로 만든 일정표 PDF를 «+ PDF 올리기»로 여러 개 한꺼번에 올려 주세요 — 파일 이름에서 학년도 · 학기를 읽어요.' : ''}</div>`}</div>`}</div></div>`;
 }
@@ -207,8 +207,8 @@ function roundView(id){
   const r = A.ROUNDS.find(x => x.id === id);
   if(!r) return '<div class="cs-card cs-empty" style="margin-top:12px">찾지 못했어요. <a href="#past">← 지난 상담</a></div>';
   const seats = r.sentSeats || r.seats || {};
-  return `<div style="margin-top:12px;display:flex;flex-direction:column;gap:12px"><div class="cs-tools"><a class="cs-btn sm" href="#past">← 지난 상담</a><b style="font-size:16px">${esc(r.title || r.id)}</b><span class="cs-mut">${r.state === 'closed' ? '끝남 · 보기만' : '확정'} · 판 ${r.sentVer || r.ver || 0}</span><span class="sp"></span><button class="cs-btn sm" data-prp="${esc(r.id)}">🖨 인쇄 · PDF</button></div>
-    <div data-a4w style="overflow:auto">${(() => { const lp = C.pubsOf(r).slice(-1)[0]; return a4Pages(A, r, seats, lp && lp.ver === (r.sentVer || r.ver) ? { ver: lp.ver, label: lp.label, at: lp.at } : { ver: r.sentVer || r.ver }); })()}</div></div>`;
+  return `<div style="margin-top:12px;display:flex;flex-direction:column;gap:12px"><div class="cs-tools"><a class="cs-btn sm" href="#past">← 지난 상담</a><b style="font-size:16px">${esc(r.title || r.id)}</b><span class="cs-mut">${r.state === 'closed' ? '끝남 · 보기만' : '최종 반영'} · 판 ${r.sentVer || r.ver || 0}</span><span class="sp"></span><button class="cs-btn sm" data-prp="${esc(r.id)}">🖨 인쇄 · PDF</button></div>
+    <div data-a4w style="overflow:auto">${(() => { const lp = C.pubsOf(r).slice(-1)[0]; return a4Pages(A, r, seats, lp && lp.ver === (r.sentVer || r.ver) ? { ver: lp.ver, label: C.pubName(lp), at: lp.at } : { ver: r.sentVer || r.ver }); })()}</div></div>`;
 }
 function archView(id){
   const x = (A.ARCH || []).find(v => v.id === id);

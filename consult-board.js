@@ -1,4 +1,4 @@
-/* ═══ 📅 consult-board.js — 편성 보드 (v149 · v151 학부모 안내판 · 전화 상담 시간 · v152 🧩 가정 특이 사항) ═══
+/* ═══ 📅 consult-board.js — 편성 보드 (v149 · v151 학부모 안내판 · 전화 상담 시간 · v152 🧩 가정 특이 사항 · v155 학부모 확인 → 최종 반영 · 선택한 가정의 열린 요청) ═══
    · 보기 셋: 표(3일 한 화면 · 기본) · 날짜별(크게) · 가정별(한 줄 = 한 가정 · 형제를 함께 끌기)
    · 담당: 이름을 끌어 같은 세로줄의 다른 칸에 놓으면 옮기고, 사람이 있으면 서로 바꿈 · «그 외» 줄로 끌면 전화 · 별도
      (휴대폰 · 끌기가 안 될 때: 이름을 누르고 «옮기기» → 칸 누르기)
@@ -35,6 +35,12 @@ function sibLine(sid){
   if(!ids.length) return '';
   return '형제 ' + ids.map(o => { const st = seats[o]; const c = A.colByKey(A.colOf[o]); const where = c ? (c.grades || c.name) : ''; if(!st) return `${where} 자리 없음`; if(st.k !== 'face') return `${where} ${C.KINDS[st.k]}`; return `${C.dayLabel(C.dayList(A.R)[st.d].date, true)} ${C.slotTime(A.R, st.d, st.s)} ${where}`; }).join(' · ');
 }
+/* v155 이 학생 가정의 열린 변경 요청 (새 요청 · 답함) — 편성 담당 화면에서 💬 표시 · «수동 반영 완료» */
+function openReqsOf(sid){
+  if(!A.isMgr || !(A.REQS || []).length) return [];
+  const f = A.famOf(sid);
+  return A.REQS.filter(q => ['new', 'answered'].includes(q.state) && (q.sids || []).some(id => id === sid || A.famOf(id) === f));
+}
 function chipHTML(sid, opt){
   opt = opt || {};
   const fs = A.styleOf(sid);
@@ -51,22 +57,37 @@ function chipHTML(sid, opt){
   const note = noteOf(sid) || (opt.etc ? '' : '');
   const cd = A.famCond(sid); const cdT = C.condAny(cd) ? '🧩 ' + C.condText(cd) : '';
   const lines = opt.big ? [sibLine(sid), note ? '📝 ' + note : '', cdT].filter(Boolean) : [];
-  const title = [A.stuName(sid), sub, note, cdT].filter(Boolean).join(' · ');
+  const oq = openReqsOf(sid);
+  const title = [A.stuName(sid), sub, note, cdT, oq.length ? `💬 열린 변경 요청 ${oq.length}건 — 고친 뒤 «✔ 수동 반영 완료»` : ''].filter(Boolean).join(' · ');
   return `<button class="${cls.join(' ')}" data-sid="${esc(sid)}"${editable() ? ' draggable="true"' : ''} style="${style}" title="${esc(title)}" aria-label="${esc(title)}">
     <span class="n">${esc(A.stuName(sid))}</span>${sub ? `<span class="sub">${esc(sub)}</span>` : ''}${st.k === 'phone' ? `<span class="ptm${st.pd && st.pt ? '' : ' no'}">☎ ${esc(C.phoneWhen(st))}</span>` : ''}${opt.etc && note ? `<span class="sub">${esc(note)}</span>` : ''}
     ${lines.map(l => `<span class="ln">${esc(l)}</span>`).join('')}
-    ${cdT ? '<span class="cdm" aria-hidden="true">🧩</span>' : ''}${st.pin ? `<span class="pin" aria-hidden="true">${ICON_PIN}</span>` : ''}${!opt.big && !opt.etc && note ? '<span class="memo" aria-hidden="true">✎</span>' : ''}</button>`;
+    ${cdT ? '<span class="cdm" aria-hidden="true">🧩</span>' : ''}${st.pin ? `<span class="pin" aria-hidden="true">${ICON_PIN}</span>` : ''}${!opt.big && !opt.etc && note ? '<span class="memo" aria-hidden="true">✎</span>' : ''}${oq.length ? '<span class="rqm" aria-hidden="true">💬</span>' : ''}</button>`;
 }
 
 /* ── 단계 띠 ── */
 function stepsHTML(){
   const r = A.R; const cur = C.stepNo(r);
-  const pubs = C.pubsOf(r).filter(p => p.label !== '확정'), lp = pubs[pubs.length - 1];
-  const st = [['준비', 1], ['초안 편성', 2], ['담임 확인', 3], [`학부모 안내 · 변경${lp ? ` <span style="font-weight:600;opacity:.85">(${esc(lp.label)})</span>` : ''}`, 4], ['확정', 5]];
+  const pubs = C.pubsOf(r).filter(p => !C.isFinalPub(p)), lp = pubs[pubs.length - 1];
+  const st = [['준비', 1], ['초안 편성', 2], ['담임 확인', 3], [`학부모 확인${lp ? ` <span style="font-weight:600;opacity:.85">(${esc(lp.label)})</span>` : ''}`, 4], ['최종 반영', 5]];
   const at = r.updatedAt && r.updatedAt.seconds ? new Date(r.updatedAt.seconds * 1000) : null;
   const when = at ? `${at.getMonth() + 1}월 ${at.getDate()}일 ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}` : '';
   return `<div class="cs-steps">${st.map(([l, n], i) => `${i ? '<span class="dash">—</span>' : ''}<div class="cs-step${n < cur ? ' dn' : (n === cur ? ' on' : '')}"><span class="no">${n < cur ? '✓' : n}</span><span class="lb">${l}</span>${n === cur && r.ver && n < 4 ? ` <span style="font-weight:500;opacity:.85">· 판 ${r.ver}</span>` : ''}</div>`).join('')}
-    <span class="sp"></span><span class="cs-mut">${r.state === 'closed' ? '끝난 상담 · 보기만' : (when ? `저장됨 · ${when}${r.updatedBy ? ' · ' + esc(A.staffName(r.updatedBy)) : ''}` : '')}</span></div>`;
+    <span class="sp"></span><span class="cs-mut">${r.state === 'closed' ? '끝난 상담 · 보기만' : (when ? `저장됨 · ${when}${r.updatedBy ? ' · ' + esc(A.staffName(r.updatedBy)) : ''}` : '')}</span>${A.isMgr ? stepNoteHTML(cur) : ''}</div>`;
+}
+/* v155 지금 단계에서 할 일 — 편성 담당에게만 한 줄 */
+function stepNoteHTML(cur){
+  const r = A.R;
+  const nOpen = A.REQS.filter(q => ['new', 'answered'].includes(q.state)).length;
+  const t = {
+    1: '«⚙️ 준비 · 설정»에서 날짜 · 반을 정하고 «자동 배치» → 초안 편성',
+    2: '표를 다듬고 «담임 확인 보내기»',
+    3: '담임 선생님 확인 · 변경 요청을 반영하고 «📨 학부모께 초안 보내기» → 학부모 확인',
+    4: `학부모님 요청은 담임 선생님이 «💬 변경 요청»으로 보내요 → 반영 → «📨 학부모께 ${esc(C.nextPubLabel(r))} 보내기» · 다 반영했으면 «최종 반영»`,
+    5: '최종판이 학부모께 나갔어요 · 더 고쳐야 하면 «↩ 학부모 확인으로» (상담이 다 끝나면 «상담 끝내기»)',
+  }[cur];
+  if(!t) return '';
+  return `<div class="cs-stepnote"><b>지금 할 일</b> ${t}${nOpen && cur >= 3 && cur <= 5 ? ` · <a href="#reqs" style="color:#C2410C;font-weight:800">열린 요청 ${nOpen}건</a>` : ''}</div>`;
 }
 
 /* ── 도구 줄 ── */
@@ -88,8 +109,9 @@ function toolsHTML(view){
   else if(r.state === 'prep' || r.state === 'draft') main = `<button class="cs-btn g" data-b="send"${Object.keys(r.seats || {}).length ? '' : ' disabled'}>담임 확인 보내기 →</button>`;
   else{
     if(unsent) main += `<button class="cs-btn w" data-b="send">고친 것 보내기 (${unsent}명)</button>`;
-    if(r.state === 'review') main += `<button class="cs-btn ${C.pubsOf(r).length ? '' : 'g'}" data-b="pub" title="학부모님께 나눠 줄 판으로 기록하고 인쇄 · PDF">📨 학부모께 ${esc(C.nextPubLabel(r))} 보내기</button><button class="cs-btn ${C.pubsOf(r).length ? 'g' : ''}" data-b="final">확정하기 →</button>`;
-    if(r.state === 'final') main += `<button class="cs-btn sm" data-b="close">상담 끝내기</button>`;
+    // v155 담임 확인(3) → 학부모께 초안 보내기 → 학부모 확인(4) → 최종 반영(5) — 최종 반영은 학부모 확인을 거친 뒤에만
+    if(r.state === 'review') main += `<button class="cs-btn ${C.canFinal(r) ? '' : 'g'}" data-b="pub" title="학부모님께 나눠 줄 판으로 기록하고 인쇄 · PDF">📨 학부모께 ${esc(C.nextPubLabel(r))} 보내기</button><button class="cs-btn ${C.canFinal(r) ? 'g' : ''}" data-b="final"${C.canFinal(r) ? ' title="학부모 확인 · 수정을 모두 반영한 판을 «최종»으로"' : ' disabled title="먼저 «학부모께 초안 보내기»로 학부모 확인을 받아요"'}>최종 반영 →</button>`;
+    if(r.state === 'final') main += `<button class="cs-btn sm" data-b="back" title="최종 반영을 풀고 학부모 확인 단계로 — 변경 요청을 더 반영해요">↩ 학부모 확인으로</button><button class="cs-btn sm" data-b="close">상담 끝내기</button>`;
   }
   return `<div class="cs-tools">${seg}
     ${r.state !== 'closed' ? `<button class="cs-btn sm" data-b="order" title="${esc(ordT)}">↕ 순서 · ${esc(ordL)}</button>
@@ -267,7 +289,10 @@ function sideMgrHTML(){
     h += `<div class="cs-card"><h3><span>👪 선택한 가정</span><button class="cs-btn xs" data-famx>닫기</button></h3>
       <div style="display:flex;align-items:center;gap:8px">${fs ? `<span style="width:14px;height:14px;border-radius:4px;background:${fs.bg}"></span>` : ''}<b>${esc(String(A.stuName(ids[0])).slice(0, 1))} 가정 ${fs ? fs.mark : ''}</b><span class="cs-mut">${ids.length}명</span></div>
       ${ids.map(id => { const st = seats[id]; const c = A.colByKey(A.colOf[id]); return `<div class="cs-fr"><b style="font-variant-numeric:tabular-nums">${st ? (st.k === 'face' ? `${C.dayLabel(C.dayList(r)[st.d].date, true)} ${C.slotTime(r, st.d, st.s)}` : C.KINDS[st.k]) : '자리 없음'}</b><span>${esc(A.stuName(id))} <span class="cs-mut">· ${esc(C.colLabel(c))} ${esc(c ? c.tname || '' : '')}</span></span></div>`; }).join('')}
-      ${editable() && ids.length > 1 ? `<div class="cs-mut" style="margin-top:8px">가정 함께 옮기기 (형제 이어서 · 다른 가정은 그대로)</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${C.dayList(r).map((x, d) => `<button class="cs-btn xs" data-fammove="${d}">${esc(C.dayLabel(x.date, true))}로</button>`).join('')}</div>` : ''}</div>`;
+      ${editable() && ids.length > 1 ? `<div class="cs-mut" style="margin-top:8px">가정 함께 옮기기 (형제 이어서 · 다른 가정은 그대로)</div><div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${C.dayList(r).map((x, d) => `<button class="cs-btn xs" data-fammove="${d}">${esc(C.dayLabel(x.date, true))}로</button>`).join('')}</div>` : ''}
+      ${(() => { const oq = openReqsOf(ids[0]); return oq.length ? `<div class="cs-fq"><div class="cs-fq-h">💬 열린 변경 요청 ${oq.length}건</div>${oq.map(q => `<div class="cs-fq-i"><span><b>${esc(q.byName || '')}</b> ${esc(String(q.text || '').slice(0, 70))}</span>
+        <span class="cs-fq-b"><a class="cs-btn xs" href="#reqs/${esc(q.id)}">요청 보기</a>${r.state !== 'closed' ? `<button class="cs-btn xs g" data-rqdone="${esc(q.id)}">✔ 수동 반영 완료</button>` : ''}</span></div>`).join('')}
+        <div class="cs-mut" style="margin-top:4px">표에서 고친 뒤 누르면 요청이 «처리됨 · 직접»으로 닫히고 알림이 더 뜨지 않아요.</div></div>` : ''; })()}</div>`;
   }
   // 넣을 학생
   const seats = r.seats || {};
@@ -296,7 +321,7 @@ function sideTeacherHTML(){
   if(['review', 'final'].includes(r.state) && r.sentVer && mine.length){
     const ok = A.ackOk(A.CU.uid);
     h += `<div class="cs-card" style="background:${ok ? 'var(--sb-mint-2)' : '#1E3A2F'};color:${ok ? 'var(--ink)' : '#fff'};border:0"><b style="font-size:14px">${ok ? `✓ 판 ${r.sentVer} 확인했어요` : `판 ${r.sentVer} 확인 부탁드려요`}</b>
-      <div style="font-size:12.5px;margin-top:4px;opacity:.9">${r.state === 'final' ? '확정된 일정이에요 · 바꿔야 하면 «변경 요청»' : '우리 반 시간을 보고 «이대로 확인했어요» 또는 이름을 눌러 «변경 요청»'}${(() => { const lp = C.pubsOf(r).slice(-1)[0]; return lp ? `<br>📨 학부모님께 «${esc(lp.label)}» 나감 (${new Date(lp.at || 0).getMonth() + 1}/${new Date(lp.at || 0).getDate()}) — 학부모님 요청은 «변경 요청»으로 (☎ 전화 상담 요청도)` : ''; })()}</div>
+      <div style="font-size:12.5px;margin-top:4px;opacity:.9">${r.state === 'final' ? '최종 반영된 일정이에요 · 바꿔야 하면 «변경 요청»' : '우리 반 시간을 보고 «이대로 확인했어요» 또는 이름을 눌러 «변경 요청»'}${(() => { const lp = C.pubsOf(r).slice(-1)[0]; return lp ? `<br>📨 학부모님께 «${esc(C.pubName(lp))}» 나감 (${new Date(lp.at || 0).getMonth() + 1}/${new Date(lp.at || 0).getDate()}) — 학부모님 요청은 «변경 요청»으로 (☎ 전화 상담 요청도)` : ''; })()}</div>
       ${ok ? '' : '<button class="cs-btn" data-b="ack" style="margin-top:10px;width:100%;background:#fff;color:#1E3A2F;border:0">이대로 확인했어요</button>'}</div>`;
   }
   if(!mine.length){ h += `<div class="cs-card"><h3>우리 반</h3><div class="cs-mut" style="line-height:1.65">이 상담에 담임 · 부담임으로 맡은 반이 없어요. 전체 표는 볼 수 있어요.<br>«확인»과 «변경 요청»은 그 반 담임 · 부담임 선생님이 해요 — 반이 빠졌으면 편성 담당께 알려 주세요.</div></div>`; return h; }
@@ -445,6 +470,7 @@ function chipMenu(btn, sid){
   }
   const items = [
     { l: '✋ 옮기기 (칸 누르기)', f: () => startMove(sid) },
+    ...openReqsOf(sid).map(q => ({ l: `✔ 수동 반영 완료 — ${esc(q.byName || '')} 요청`, f: () => A.REQ_DONE && A.REQ_DONE(q) })),
     fam.length > 1 ? { l: '👪 가정 보기 · 함께 옮기기', f: () => { A.FAM_SEL = A.famOf(sid); A.render(true); } } : null,
     st ? { l: st.pin ? '📌 고정 풀기' : '📌 고정 (자동 배치가 안 건드림)', f: () => A.applySeats({ [sid]: Object.assign({}, st, { pin: !st.pin }) }, st.pin ? '고정을 풀었어요' : '고정했어요') } : null,
     { l: C.condAny(A.famCond(sid)) ? '🧩 가정 특이 사항 고치기…' : '🧩 가정 특이 사항 (안 되는 날 · 시간)…', f: () => condEditFlow(sid) },
@@ -474,6 +500,7 @@ export function after(a){
     const vc = t.closest('[data-vclear]'); if(vc){ const id = vc.dataset.vclear; if(await A.confirm('자리 지우기', `${esc(A.stuName(id))}의 자리를 지울까요?<br><span class="cs-mut">대상에서 빠진 학생이에요. 그 칸은 빈 칸이 돼요.</span>`, '지우기')) A.applySeats({ [id]: null }, '자리를 지웠어요'); return; }
     const iss = t.closest('[data-iss]'); if(iss){ const code = iss.dataset.iss; const list = ((A.chk && A.chk.issues) || []).filter(i => code === 'sib' ? /sib/.test(i.code) : code === 'err' ? i.lvl === 'err' : i.code === code); A.HL = C.uniq(list.flatMap(i => i.sids)); A.render(true); if(A.HL.length){ const el = document.querySelector('.cs-chip.hl'); if(el) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => { A.HL = []; }, 100); } return; }
     const rq = t.closest('[data-req]'); if(rq){ A.REQ_NEW && A.REQ_NEW(rq.dataset.req); return; }
+    const rqd = t.closest('[data-rqdone]'); if(rqd){ const q = A.REQS.find(x => x.id === rqd.dataset.rqdone); if(q && A.REQ_DONE) await A.REQ_DONE(q); return; }
     const ph = t.closest('[data-ph]'); if(ph){ moveTo(ph.dataset.ph, { k: 'phone' }); return; }
     const spn = t.closest('[data-spn]'); if(spn){ const sid = spn.dataset.spn; const cur = (A.R.seats || {})[sid] || {}; const v = await A.prompt('🗓 별도 일정', `${esc(A.stuName(sid))} — 날짜 · 시간`, cur.note || '', { ph: '예: 11/12(목) 16:00 · 담임과 따로', ok: '고치기' }); if(v == null) return; A.applySeats({ [sid]: Object.assign({}, cur, { note: v.trim() }) }, '별도 일정을 고쳤어요'); return; }
     const tf = t.closest('[data-toface]'); if(tf){ const sid = tf.dataset.toface; const plan = C.findSpot(A.R, A.colOf, [sid], []); if(!plan){ A.toast('표에 빈 자리가 없어요 — 칸을 늘리거나 다른 학생과 바꿔 주세요', 'err'); return; } const [[, d, s2]] = plan; const cur = (A.R.seats || {})[sid] || {}; const p = Object.assign({}, cur, { k: 'face', d, s: s2 }); delete p.pd; delete p.pt; A.applySeats({ [sid]: p }, `${A.stuName(sid)} → 표 ${C.dayLabel(C.dayList(A.R)[d].date, true)} ${C.slotTime(A.R, d, s2)} (대면)`); return; }
@@ -519,7 +546,7 @@ export function after(a){
 async function act(k){
   const r = A.R;
   if(k === 'order'){ A.go('setup'); setTimeout(() => { const el = document.getElementById('cs-s6'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }, 80); return; }
-  if(k === 'print'){ const P = await import('./consult-past.js?v=152'); P.printRound(A, r, A.viewSeats()); return; }
+  if(k === 'print'){ const P = await import('./consult-past.js?v=155'); P.printRound(A, r, A.viewSeats()); return; }
   if(k === 'vers'){ versModal(); return; }
   if(k === 'ack'){
     try{ await A.FS.updateDoc(A.roundRef(), { ['acks.' + A.CU.uid]: r.sentVer }); r.acks = Object.assign({}, r.acks, { [A.CU.uid]: r.sentVer }); A.toast('확인했어요 — 고맙습니다'); A.render(true); }
@@ -533,8 +560,9 @@ async function act(k){
   if(k === 'pub') return publish();
   if(k === 'condfix') return condFixFlow();
   if(k === 'final') return finalize();
+  if(k === 'back') return backToParent();
   if(k === 'close') return closeRound();
-  if(k === 'reopen'){ if(await A.confirm('다시 열기', '끝난 상담을 «확정» 상태로 다시 열까요?', '다시 열기')) await A.saveRound({ state: 'final' }); return; }
+  if(k === 'reopen'){ if(await A.confirm('다시 열기', '끝난 상담을 «최종 반영» 상태로 다시 열까요?', '다시 열기')) await A.saveRound({ state: 'final' }); return; }
   if(k === 'fillun'){
     const seats = r.seats || {};
     const un = A.scope.filter(x => x.in && !seats[x.sid]).map(x => x.sid);
@@ -646,7 +674,7 @@ async function verSeats(ver){
 async function publish(){
   const r = A.R;
   const label = C.nextPubLabel(r);
-  const pubs = C.pubsOf(r).filter(p => p.label !== '확정');
+  const pubs = C.pubsOf(r).filter(p => !C.isFinalPub(p));
   const last = pubs[pubs.length - 1];
   const unsent = r.sentSeats ? C.diffSeats(r.sentSeats, r.seats || {}).length : Object.keys(r.seats || {}).length;
   let nCh = 0;
@@ -656,7 +684,7 @@ async function publish(){
   const msg = `지금 표를 <b>«${esc(label)}»</b>${C.ro(label)} 기록하고 인쇄 · PDF 창을 열어요 — 가정통신문 · 문자로 학부모님께 나눠 주세요.
     ${last ? `<br>· «${esc(last.label)}»에서 바뀐 학생 <b>${nCh}명</b> — 인쇄본에 ★로 표시돼요` : ''}${unsent ? `<br>· 아직 보내지 않은 변경 ${unsent}명은 담임 선생님들께도 함께 보내요` : ''}
     ${nReq ? `<br>· <b style="color:#C2410C">처리 안 한 변경 요청 ${nReq}건</b>` : ''}${errs.length ? `<br>· <b style="color:#B42318">오류 ${errs.length}건</b> (${esc(errs[0].text)} …)` : ''}
-    <br><span class="cs-mut">학부모 변경 요청은 담임 선생님이 «변경 요청»으로 모아 주시고 → «요청 모아 반영» → 다시 «학부모께 ${esc(C.pubLabel(pubs.length + 1))} 보내기». 학부모 사이트 공개는 다음 버전에서 더해요 (그때부터 이 판이 학부모 화면에 떠요).</span>`;
+    <br><span class="cs-mut">${pubs.length ? '' : '보내면 «학부모 확인» 단계가 돼요. '}학부모 변경 요청은 담임 선생님이 «변경 요청»으로 모아 주시고 → «요청 모아 반영» → 다시 «학부모께 ${esc(C.pubLabel(pubs.length + 1))} 보내기» · 다 반영했으면 «최종 반영». 학부모 사이트 공개는 다음 버전에서 더해요 (그때부터 이 판이 학부모 화면에 떠요).</span>`;
   if(!(await A.confirm(`📨 학부모께 «${label}» 보내기`, msg, `${label}${C.ro(label)} 보내기`))) return;
   try{
     let n = r.sentVer;
@@ -669,24 +697,49 @@ async function publish(){
     await A.saveRound(p);
     A.notify(A.colNotifyUids(), 'pub', `📨 학부모 상담 일정 «${label}» — 학부모님께 나가요`, `${r.title} — ${label} (판 ${n}) · 학부모님 변경 요청은 «변경 요청»으로 보내 주세요`, 'consult.html#board');
     A.toast(`«${label}»${C.ro(label)} 기록했어요 — 인쇄 · PDF로 나눠 주세요`);
-    const P = await import('./consult-past.js?v=152'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + pubs.length);
+    const P = await import('./consult-past.js?v=155'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + pubs.length);
   }catch(e){ A.toast('보내지 못했어요 — ' + A.errText(e), 'err'); console.error(e); }
 }
 async function finalize(){
   const r = A.R;
+  // v155 최종 반영은 «학부모 확인»(학부모께 초안 · 수정 판을 보낸 뒤)을 거친 뒤에만
+  if(!C.canFinal(r)){ A.toast('먼저 «📨 학부모께 초안 보내기»로 학부모 확인을 받아 주세요', 'err'); return; }
   const unsent = r.sentSeats ? C.diffSeats(r.sentSeats, r.seats).length : 0;
-  const nReq = A.REQS.filter(q => q.state === 'new').length;
+  const nReq = A.REQS.filter(q => ['new', 'answered'].includes(q.state)).length;
   const acks = A.colTeachers().filter(A.ackOk).length;
-  if(!(await A.confirm('확정하기', `이 판으로 상담 일정을 확정할까요?<br>· 담임 확인 ${acks} / ${A.colTeachers().length}${nReq ? `<br>· <b style="color:#C2410C">처리 안 한 변경 요청 ${nReq}건</b>` : ''}${unsent ? `<br>· 보내지 않은 변경 ${unsent}명도 함께 확정돼요` : ''}<br><span class="cs-mut">확정 뒤에도 고칠 수 있고, 고치면 «고친 것 보내기»로 바뀐 반에 알려요. 학부모 사이트 공개는 다음 버전에서 더해요.</span>`, '확정하기'))) return;
+  const pubs = C.pubsOf(r).filter(p => !C.isFinalPub(p)), lp = pubs[pubs.length - 1];
+  let nCh = 0;
+  if(lp){ const ps = await verSeats(lp.ver); nCh = ps ? C.diffSeats(ps, r.seats || {}).length : 0; }
+  const msg = `학부모 확인 · 수정 사항을 모두 반영한 지금 표를 <b>«${C.FINAL_LABEL}»</b>판으로 기록하고 인쇄 · PDF 창을 열어요 — 학부모님께 나눠 주세요.
+    <br>· 학부모께 나간 판: ${esc(pubs.map(p => p.label).join(' → '))}${lp ? ` · «${esc(lp.label)}»에서 바뀐 학생 <b>${nCh}명</b>` : ''}
+    <br>· 담임 확인 ${acks} / ${A.colTeachers().length}${nReq ? `<br>· <b style="color:#C2410C">처리 안 한 변경 요청 ${nReq}건</b> — «💬 변경 요청»에서 반영하거나 «✔ 수동 반영 완료»로 닫아 주세요` : ''}${unsent ? `<br>· 보내지 않은 변경 ${unsent}명도 함께 반영돼요` : ''}
+    <br><span class="cs-mut">최종 반영 뒤에도 고칠 수 있어요 — «↩ 학부모 확인으로»를 누르면 다시 수정 판을 보낼 수 있어요.</span>`;
+  if(!(await A.confirm('최종 반영', msg, '최종 반영하기'))) return;
   try{
     let n = r.sentVer;
-    if(unsent || !n) n = await saveVer(true, '확정');
-    const pubs = C.pubsOf(r);
+    if(unsent || !n) n = await saveVer(true, C.FINAL_LABEL + ' 반영');
+    const all = C.pubsOf(r);
     await A.saveRound({ state: 'final', colVer: (unsent || !r.sentVer) ? A.colVerPatch(n, r.sentSeats || null, r.seats || {}) : (r.colVer || {}), sentSeats: r.seats || {}, sentVer: n, pubVer: n, pubAt: A.FS.serverTimestamp(), stu: C.stuSnap(A.scope, A.members, A.KIDS),
-      pubs: (r.pubs || []).concat([{ n: pubs.length, label: '확정', ver: n, at: Date.now(), by: A.CU.uid, byName: A.CU.name || '' }]) });
-    A.notify(C.uniq(A.colNotifyUids().concat(A.mgrUids())), 'final', '📌 학부모 상담 일정 확정', `${r.title} — 판 ${n}으로 확정됐어요`, 'consult.html#board');
-    A.toast('확정했어요 — «🖨 인쇄 · PDF»에서 «확정»판을 뽑아 나눠 주세요');
-  }catch(e){ A.toast('확정하지 못했어요 — ' + A.errText(e), 'err'); }
+      pubs: (r.pubs || []).concat([{ n: all.length, label: C.FINAL_LABEL, ver: n, at: Date.now(), by: A.CU.uid, byName: A.CU.name || '' }]) });
+    A.notify(C.uniq(A.colNotifyUids().concat(A.mgrUids())), 'final', '📌 학부모 상담 일정 최종 반영', `${r.title} — 판 ${n} «${C.FINAL_LABEL}»으로 학부모님께 나가요`, 'consult.html#board');
+    A.toast(`최종 반영했어요 — «${C.FINAL_LABEL}»판을 인쇄 · PDF로 나눠 주세요`);
+    const P = await import('./consult-past.js?v=155'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + all.length);
+  }catch(e){ A.toast('최종 반영하지 못했어요 — ' + A.errText(e), 'err'); console.error(e); }
+}
+/* v155 ↩ 학부모 확인으로 — 최종 반영을 풀고 4단계로 (변경 요청을 더 반영 → 수정 n 보내기 → 다시 최종 반영) */
+async function backToParent(){
+  const r = A.R;
+  if(r.state !== 'final') return;
+  const keep = C.pubsOf(r).filter(p => !C.isFinalPub(p));
+  const fin = C.pubsOf(r).filter(C.isFinalPub).slice(-1)[0];
+  const msg = `최종 반영을 풀고 <b>«학부모 확인»</b> 단계로 돌아갈까요?
+    <br>· 변경 요청을 더 반영한 뒤 «📨 학부모께 ${esc(C.pubLabel(keep.length))} 보내기» → 다시 «최종 반영»을 눌러요
+    <br><span class="cs-mut">자리 · 판 기록은 그대로예요${fin ? ` (이미 나간 «최종»판은 «판 비교»의 판 ${fin.ver}로 남아요)` : ''}. 선생님들께 따로 알림은 가지 않아요.</span>`;
+  if(!(await A.confirm('↩ 학부모 확인으로', msg, '학부모 확인으로'))) return;
+  try{
+    await A.saveRound({ state: 'review', pubs: (r.pubs || []).filter(p => !C.isFinalPub(p)), pubVer: A.FS.deleteField(), pubAt: A.FS.deleteField() });
+    A.toast('«학부모 확인» 단계로 돌아갔어요');
+  }catch(e){ A.toast('바꾸지 못했어요 — ' + A.errText(e), 'err'); }
 }
 async function closeRound(){
   const r = A.R;

@@ -1,4 +1,4 @@
-/* ═══ 📅 consult-core.js — 학부모 상담 스케줄 (v149 · v151 전화 상담 시간 · 학부모 안내판 · v152 가정 특이 사항) · 화면 없이 계산만 ═══
+/* ═══ 📅 consult-core.js — 학부모 상담 스케줄 (v149 · v151 전화 상담 시간 · 학부모 안내판 · v152 가정 특이 사항 · v155 단계: 학부모 확인 → 최종 반영) · 화면 없이 계산만 ═══
    · 상담 한 번 = consultRounds/{기관_연도_학기}
        tpl   기본 틀 { start:'15:30', len:25, gap:5, n:5 }  (상담 25분 + 쉼 5분 · 하루 5칸)
        days  [{ date, start?, n?, off? }]   날마다 시작 · 칸 수를 따로 바꿀 수 있음
@@ -6,7 +6,7 @@
        inc   { sid: 1 | 0 }   대상 학생 직접 넣기(1) · 빼기(0) — 없으면 상담 첫날 재학 · 휴학으로 저절로
        seats { sid: { d, s, k:'face'|'phone'|'sep', pin, note, pd?, pt? } }   자리 (세로줄은 학생의 반)
              전화 상담(phone)은 표 밖 — pd 날짜('YYYY-MM-DD') · pt 시각('HH:MM') 을 따로 (비면 «시간 미정»)
-       pubs  [{ n, label:'초안'|'수정 n'|'확정', ver, at(ms), by, byName }]   학부모께 나간 판 (v151)
+       pubs  [{ n, label:'초안'|'수정 n'|'최종', ver, at(ms), by, byName }]   학부모께 나간 판 (v151 · v155 마지막 판 «최종» — 예전 «확정»도 같은 뜻)
        cond  { sid: { noDays:['YYYY-MM-DD'], after:'HH:MM', before:'HH:MM', noSlots:['YYYY-MM-DD_s'], note } }   🧩 가정 특이 사항 (v152 · 이번 상담만)
              가정(형제) 모두의 자리에 같은 것을 적고, 읽을 때는 가정 안 것을 모두 합침 — 기본(적지 않음) = 다 됨
        vac   { 'c|d|s': { n, why } }   초안 뒤에 빠진 학생 자리 («비움»)
@@ -18,7 +18,7 @@ export const DEF_TPL = { start: '15:30', len: 25, gap: 5, n: 5 };
 export const DEF_OPT = { order: 'flip', guardFront: true, guardBack: true, fill: 'front', sib: 'next', kid: 'after' };
 export const STATES = {
   prep: { ko: '준비', no: 1 }, draft: { ko: '초안 편성', no: 2 }, review: { ko: '담임 확인', no: 3 },
-  final: { ko: '확정 · 공지', no: 4 }, closed: { ko: '끝남', no: 5 },
+  final: { ko: '최종 반영', no: 4 }, closed: { ko: '끝남', no: 5 },
 };
 export const KINDS = { face: '대면', phone: '전화 상담', sep: '별도 일정' };
 export const NO_KO = ['첫째', '둘째', '셋째', '넷째', '다섯째', '여섯째', '일곱째', '여덟째', '아홉째', '열째', '열한째', '열두째'];
@@ -120,8 +120,12 @@ export function condText(c, opt){
   if(c.note && !opt.noNote) bits.push(c.note);
   return bits.join(' · ');
 }
-/* 학부모께 나간 판 (초안 → 수정 1 → 수정 2 … → 확정) */
+/* 학부모께 나간 판 (초안 → 수정 1 → 수정 2 … → 최종) */
 export const pubsOf = r => ((r && r.pubs) || []).slice().sort((a, b) => (a.n || 0) - (b.n || 0));
+/* v155 마지막 판 — 새로는 «최종» · v154 까지 저장한 «확정»도 같은 판 · 화면 · 인쇄에는 모두 «최종» */
+export const FINAL_LABEL = '최종';
+export const isFinalPub = p => !!p && (p.label === FINAL_LABEL || p.label === '확정');
+export const pubName = p => !p ? '' : isFinalPub(p) ? FINAL_LABEL : String(p.label || '');
 export const pubLabel = n => n ? `수정 ${n}` : '초안';
 /* «…으로 / …로» — 받침이 있으면(ㄹ 빼고) 으로 · 숫자는 3 · 6 · 0 만 으로 */
 export function ro(w){
@@ -130,8 +134,9 @@ export function ro(w){
   const k = c.charCodeAt(0) - 0xAC00; if(k < 0 || k > 11171) return '로';
   const jong = k % 28; return jong && jong !== 8 ? '으로' : '로';
 }
-export function nextPubLabel(r){ const p = pubsOf(r).filter(x => x.label !== '확정'); return pubLabel(p.length); }
-/* 단계 (띠) — 1 준비 · 2 초안 편성 · 3 담임 확인 · 4 학부모 안내 · 변경 · 5 확정 */
+export function nextPubLabel(r){ const p = pubsOf(r).filter(x => !isFinalPub(x)); return pubLabel(p.length); }
+/* 단계 (띠) — 1 준비 · 2 초안 편성 · 3 담임 확인 · 4 학부모 확인 (초안 · 수정 n 을 학부모께 보내고 변경 요청 반영) · 5 최종 반영
+   · 4 는 «학부모께 초안 보내기»를 한 뒤부터 · 5 «최종 반영»은 4 를 거친 뒤에만 (canFinal) */
 export function stepNo(r){
   if(!r) return 1;
   if(r.state === 'closed') return 6;
@@ -139,6 +144,7 @@ export function stepNo(r){
   if(r.state === 'review') return pubsOf(r).length ? 4 : 3;
   return r.state === 'draft' ? 2 : 1;
 }
+export const canFinal = r => !!r && r.state === 'review' && pubsOf(r).some(p => !isFinalPub(p));
 
 /* ── 학년 · 세로줄 ── */
 export function gradeNoOf(g){ const m = /(\d+)\s*학년/.exec(String(g || '')); return m ? +m[1] : 0; }

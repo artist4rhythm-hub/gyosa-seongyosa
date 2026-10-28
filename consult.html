@@ -8,7 +8,14 @@
 <link rel="stylesheet" href="theme.css">
 <script src="loading.js"></script>
 <style>
-/* ═══ 📅 학부모 상담 스케줄 (v149) — 다니엘 아마츠 · 상담 기간 · 반별 · 형제 이어서 · 교직원 자녀 뒤로 · 변경 요청 · 확정 ═══ */
+/* ═══ 📅 학부모 상담 스케줄 (v149) — 다니엘 아마츠 · 상담 기간 · 반별 · 형제 이어서 · 교직원 자녀 뒤로 · 변경 요청 · 학부모 확인 · 최종 반영 (v155) ═══ */
+.cs-stepnote{flex:1 1 100%;font-size:12.5px;line-height:1.55;color:var(--ink-2);border-top:1px dashed var(--line);padding-top:8px;margin-top:2px}
+.cs-stepnote b{color:var(--sb-green);font-weight:900;margin-right:4px}
+.cs-chip .rqm{position:absolute;right:3px;bottom:2px;font-size:10px;line-height:1}
+.cs-fq{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+.cs-fq-h{font-size:12.5px;font-weight:900;color:#C2410C;margin-bottom:4px}
+.cs-fq-i{display:flex;flex-direction:column;gap:6px;padding:6px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px;line-height:1.55}
+.cs-fq-b{display:flex;gap:6px;flex-wrap:wrap}
 #cs{width:100%;max-width:var(--page-wide,1440px);margin:0 auto;font-family:'Noto Sans KR',-apple-system,'Apple SD Gothic Neo',sans-serif;color:var(--ink);padding-bottom:90px;word-break:keep-all;overflow-wrap:anywhere}
 #cs *{box-sizing:border-box}
 .cs-btn{font-family:inherit;font-size:13px;font-weight:800;border-radius:10px;padding:0 14px;height:38px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;text-decoration:none;line-height:1}
@@ -336,11 +343,11 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
   onSnapshot, serverTimestamp, Timestamp, writeBatch, increment, arrayUnion }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol } from './listcache.js?v=137';
-import * as C from './consult-core.js?v=152';
-import * as BOARD from './consult-board.js?v=152';
-import * as SETUP from './consult-setup.js?v=152';
-import * as REQ from './consult-reqs.js?v=152';
-import * as PAST from './consult-past.js?v=152';
+import * as C from './consult-core.js?v=155';
+import * as BOARD from './consult-board.js?v=155';
+import * as SETUP from './consult-setup.js?v=155';
+import * as REQ from './consult-reqs.js?v=155';
+import * as PAST from './consult-past.js?v=155';
 import { notifyStaff } from './push-client.js';
 
 const __cfg = ({
@@ -373,6 +380,7 @@ const A = {
 };
 window.__CS = A;
 A.REQ_NEW = sid => REQ.newReq(A, sid);
+A.REQ_DONE = q => REQ.manualDone(A, q);      // v155 ✔ 수동 반영 완료 (편성 보드 «선택한 가정» · 이름 메뉴)
 A.today = () => window.StuStatus ? StuStatus.today() : new Date().toISOString().slice(0, 10);
 
 /* ── 작은 부품 ── */
@@ -693,6 +701,7 @@ A.useRound = async function(id){
   unReqs = onSnapshot(query(collection(db, 'consultReqs'), where('rid', '==', id)), snap => {
     A.REQS = []; snap.forEach(d => A.REQS.push(Object.assign({ id: d.id }, d.data())));
     A.REQS.sort((a, b) => ((b.at && b.at.seconds) || 0) - ((a.at && a.at.seconds) || 0));
+    A.sweepNotifs();
     if(!A.DRAG) A.render(true);
   }, () => {});
   A.derive();
@@ -710,10 +719,16 @@ function watchNotifs(){
   unNotif = onSnapshot(query(collection(db, 'consultNotifs'), where('toUid', '==', A.CU.uid), where('read', '==', false)), snap => {
     A.NOTIFS = []; snap.forEach(d => A.NOTIFS.push(Object.assign({ id: d.id }, d.data())));
     A.NOTIFS.sort((a, b) => ((b.createdAt && b.createdAt.seconds) || 0) - ((a.createdAt && a.createdAt.seconds) || 0));
+    A.sweepNotifs();
     if(!A.DRAG) A.render(true);
   }, () => {});
 }
 A.readNotif = async n => { try{ await updateDoc(doc(db, 'consultNotifs', n.id), { read: true, readAt: serverTimestamp() }); }catch(e){} try{ window.refreshBadges && refreshBadges(); }catch(e){} };
+/* v155 이미 닫힌 요청(처리됨 · 못 함 · 거둠)의 «새 요청 · 답글» 알림은 저절로 읽음 — 다른 담당 선생님이 닫았어도 내 화면에서 정리
+   (요청을 닫은 결과 알림 «✅ 반영 · 🙏 어려워요»는 요청한 선생님이 봐야 하니 그대로) */
+const SWEPT = new Set();
+const staleNotif = n => { if(!n || !n.reqId || !['req', 'reply'].includes(n.kind)) return false; const q = A.REQS.find(x => x.id === n.reqId); return !!q && ['done', 'no', 'cancel'].includes(q.state); };
+A.sweepNotifs = () => { A.NOTIFS.filter(n => staleNotif(n) && !SWEPT.has(n.id)).forEach(n => { SWEPT.add(n.id); A.readNotif(n); }); };
 
 /* ═══ 화면 ═══ */
 const TABS = [
@@ -735,11 +750,12 @@ function headHTML(){
   </div>${notifHTML()}`;
 }
 function notifHTML(){
-  if(!A.NOTIFS.length) return '';
+  const NT = A.NOTIFS.filter(n => !staleNotif(n));     // v155 닫힌 요청의 알림은 빼고
+  if(!NT.length) return '';
   return `<div class="cs-card cs-nt${A.NTOPEN ? ' open' : ''}" style="margin-bottom:12px;display:flex;flex-direction:column;gap:6px">
-    <div style="display:flex;align-items:center;gap:8px"><b style="font-size:13.5px">새 알림 ${A.NOTIFS.length}</b><span class="sp" style="flex:1"></span><button class="cs-btn xs" data-act="readall">모두 읽음</button></div>
-    ${A.NOTIFS.slice(0, 5).map(n => `<button class="cs-iss" data-notif="${esc(n.id)}" style="border:0;background:transparent;font-family:inherit;text-align:left;width:calc(100% + 16px)"><span><b>${esc(n.title || '')}</b> ${esc(n.text || '')}</span><span class="cs-mut">${esc(n.fromName || '')}</span></button>`).join('')}
-    ${A.NOTIFS.length > 2 ? `<span class="cs-ntm" data-act="ntmore" role="button" tabindex="0">알림 ${Math.min(5, A.NOTIFS.length) - 2}개 더 보기 ▾</span>` : ''}
+    <div style="display:flex;align-items:center;gap:8px"><b style="font-size:13.5px">새 알림 ${NT.length}</b><span class="sp" style="flex:1"></span><button class="cs-btn xs" data-act="readall">모두 읽음</button></div>
+    ${NT.slice(0, 5).map(n => `<button class="cs-iss" data-notif="${esc(n.id)}" style="border:0;background:transparent;font-family:inherit;text-align:left;width:calc(100% + 16px)"><span><b>${esc(n.title || '')}</b> ${esc(n.text || '')}</span><span class="cs-mut">${esc(n.fromName || '')}</span></button>`).join('')}
+    ${NT.length > 2 ? `<span class="cs-ntm" data-act="ntmore" role="button" tabindex="0">알림 ${Math.min(5, NT.length) - 2}개 더 보기 ▾</span>` : ''}
   </div>`;
 }
 A.render = function(soft){
