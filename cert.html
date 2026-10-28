@@ -377,7 +377,6 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script src="orgbar.js"></script>
 <script src="menu.js"></script>
 <script src="filename.js"></script>
-<script src="qr.js?v=122"></script>
 <script src="sidebar.js"></script>
 <script type="module" src="union.js?v=64"></script>
 <script src="org-bar.js"></script>
@@ -1356,6 +1355,8 @@ window.doIssueStaff = doIssueStaff;
      → 문서의 QR · verify.html 에서 누구나 진본인지 확인 (보안 규칙 v34) · 잘못 발급하면 발급 목록에서 «취소»
      규칙 v34 를 아직 게시하지 않았으면 QR 없이 발급하고 알려 준다 (발급이 막히지 않게)
    · 문구는 «학교 · 재학 · 학적» 대신 «기관 · 교육 프로그램» (기획 문서 «학사일정-확인서-기획» 참고)
+   · v154 진위 확인 QR 뺌 — 교사 선교사를 바깥(회사 담당자)에 열 필요가 없어서. 새로 발급하는 확인서에는 QR · 확인 코드를 넣지 않고,
+     예전에 QR로 발급한 확인서도 다시 받으면 QR 없이 나온다. 예전 진위 기록(certVerify)은 «발급 취소 · 삭제» 때 함께 정리만 한다 (규칙 v42)
    ═══════════════════════════════════════════════════════════════ */
 /* v140 — 문장은 «틀»로: {일정} 일정 이름 · {학생} 학생(지혜빛 «원아») · {학년도} 2026 · {기관} 기관 이름
    «을(를) · 은(는) · 이(가) · 과(와)»는 앞 글자 받침에 맞춰 저절로 하나만 남긴다
@@ -1505,7 +1506,6 @@ function newVerifyCode(){
   let s = ''; for(let i = 0; i < 8; i++){ s += A[r[i] % A.length]; if(i === 3) s += '-'; }
   return s;
 }
-const verifyURL = code => { try{ return new URL('verify.html?c=' + encodeURIComponent(code), location.href).href; }catch(e){ return 'verify.html?c=' + code; } };
 
 /* 그림 조각 — html2canvas 가 확실히 그리도록 PNG(데이터 주소)로 만들어 둔다 */
 const SCHED_IMG = {};
@@ -1528,18 +1528,6 @@ function schedBand(org){
   }catch(e){ SCHED_IMG[k] = ''; }
   return SCHED_IMG[k];
 }
-function schedQR(code){
-  if(!code) return '';
-  const k = 'qr:' + code; if(k in SCHED_IMG) return SCHED_IMG[k];
-  try{
-    const q = window.QR.build(verifyURL(code)), mg = 2, n = q.n + mg * 2, S = 8;
-    const c = document.createElement('canvas'); c.width = c.height = n * S;
-    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, n * S, n * S); x.fillStyle = '#111';
-    for(let y = 0; y < q.n; y++) for(let xx = 0; xx < q.n; xx++) if(q.M[y][xx]) x.fillRect((xx + mg) * S, (y + mg) * S, S, S);
-    SCHED_IMG[k] = c.toDataURL('image/png');
-  }catch(e){ SCHED_IMG[k] = ''; }
-  return SCHED_IMG[k];
-}
 
 /* ── 문서 한 장 (B-2) ──
    r: { org, docNo, issueDate, title, body, rowLabel, name, birth, cls, guardian, start, end, wdays, skips,
@@ -1550,9 +1538,8 @@ function buildSchedCert(r){
   const who = schedWho(r.org);
   const repTitle = cfg.repTitle || '대표';
   const band = schedBand(r.org);
-  const code = r.verifyCode || '';
   const vars = `--sc-ink:${th.ink};--sc-gold:${th.goldText};--sc-lab:${th.lab};--sc-line:${th.line};`;
-  const microOne = [r.docNo, code, th.en, cfg.orgName].filter(Boolean).join(' · ');
+  const microOne = [r.docNo, th.en, cfg.orgName].filter(Boolean).join(' · ');
   const micro = Array(8).fill(microOne).join(' · ');
   const rows = [];
   rows.push([`대상 ${who}`, `<b>${esc(r.name || '')}</b>${r.birth ? `　${esc(scDot(r.birth))}생` : ''}${r.cls ? ` · ${esc(r.cls)}` : ''}`]);
@@ -1563,12 +1550,6 @@ function buildSchedCert(r){
   if(r.note) rows.push(['운영 내용', esc(r.note)]);
   // 직인은 «대표» 글자 뒤에 깔린다 (글자가 위 · 직인이 아래) — 도장 없이 받을 때는 빈자리
   const stamp = r.hideStamp ? '' : `<img class="sc-stamp" src="${cfg.stamp}" alt="" onerror="this.style.visibility='hidden'">`;
-  const qrBox = code ? `<div class="sc-qr">
-        <img src="${schedQR(code)}" alt="진위 확인 QR">
-        <div class="sc-qr-t"><b class="sc-qr-h">진위 확인</b>QR을 찍거나 확인 코드를 넣으세요<b class="sc-qr-c">${esc(code)}</b></div>
-      </div>`
-    : (r.preview && r.qrOn ? `<div class="sc-qr sc-qr-pre"><div class="sc-qr-ph">QR</div>
-        <div class="sc-qr-t"><b class="sc-qr-h">진위 확인</b>발급하면 이 자리에 QR과 확인 코드가 들어가요</div></div>` : '');
   return `
   <div class="cert-sheet sched" style="${vars}">
     <img class="sc-wm" src="${th.emblem}" alt="" onerror="this.style.display='none'">
@@ -1602,7 +1583,6 @@ function buildSchedCert(r){
           <b>주소</b><span>${esc(cfg.address)}</span>
           <b>전화</b><span>${esc(cfg.phone)}</span>
         </div>
-        ${qrBox}
       </div>
     </div>
   </div>`;
@@ -1649,7 +1629,7 @@ function scTexts(){
 function scFill(){ const t = scTexts(); ['title', 'body', 'reason', 'note', 'p1'].forEach(k => { if(!SC.dirty[k]) SC[k] = t[k]; }); }
 function scInit(org){
   SC = { org, kind:'break', pick:'', name:'', start:'', end:'', wdays:[], skips:[], title:'', body:'', reason:'', note:'', p1:'', dirty:{},
-         mode:'one', sid:'', group:'', search:'', guardOn:true, guardian:'', recv: scRecvDefault(org), qr:true, confirm:false,
+         mode:'one', sid:'', group:'', search:'', guardOn:true, guardian:'', recv: scRecvDefault(org), qr:false, confirm:false,
          items:null, other:false, pv:0, zoom:0, result:null, busy:false };
   scFill();
 }
@@ -1846,10 +1826,6 @@ function scDraw(){
             ${CU.role === 'super' ? `<button type="button" class="sc-save" onclick="scSaveRecvDefault()">⭐ 지금 문구를 기본으로</button>` : ''}</div>
           <div class="sc-hint2">학부모가 회사 이름을 알려 주면 «주식회사 ○○ 인사팀장 귀하»처럼 바꿔 넣으세요.${CU.role === 'super' ? '' : ' 기본 문구는 수퍼관리자가 바꿀 수 있어요.'}</div>
         </section>
-        <section class="sc-step">
-          <div class="sc-h">④ 진위 확인</div>
-          <label class="sc-chk"><input type="checkbox" id="sc-qr" ${SC.qr ? 'checked' : ''}> 진위 확인 QR · 확인 코드 넣기 <span class="sc-hint">회사에서 QR을 찍으면 진짜 문서인지 바로 확인돼요 (이름 일부만 보여요)</span></label>
-        </section>
       </div>
       <div class="sc-side">
         <div class="sc-pvhead"><b>미리보기</b><span id="sc-pvinfo"></span></div>
@@ -1884,7 +1860,6 @@ function scBind(){
   on('sc-guardon', 'change', e => { SC.guardOn = e.target.checked; const g = $I('sc-guardian'); if(g) g.disabled = !SC.guardOn; scPreview(); });
   txt('sc-guardian', 'guardian');
   txt('sc-recv', 'recv');
-  on('sc-qr', 'change', e => { SC.qr = e.target.checked; scPreview(); });
   on('sc-confirm', 'change', e => { SC.confirm = e.target.checked; });
 }
 function scHitsHTML(){
@@ -1923,7 +1898,7 @@ function scPreview(keepConfirm){
   if(SC.pv >= tg.length) SC.pv = 0;
   const s = tg[SC.pv] || { id: '', name: SC.mode === 'one' ? '(' + schedWho(SC.org) + '을 골라 주세요)' : '(대상을 골라 주세요)', birth: '', guardian: '' };
   const cfg = ORG_CONFIG[SC.org];
-  const rec = scRecFor(s, { docNo: `${cfg.code}-S-${todayYMD().slice(2).replace(/-/g, '')}-XX`, preview: true, qrOn: SC.qr });
+  const rec = scRecFor(s, { docNo: `${cfg.code}-S-${todayYMD().slice(2).replace(/-/g, '')}-XX`, preview: true });
   if(!s.id) rec.cls = '';
   if(info) info.innerHTML = tg.length > 1
     ? `<button type="button" class="sc-nav" onclick="scPv(-1)">◀</button> ${SC.pv + 1} / ${tg.length}명 <button type="button" class="sc-nav" onclick="scPv(1)">▶</button>`
@@ -2150,7 +2125,7 @@ async function scIssue(){
       }
       return saved;
     };
-    let list = mk(SC.qr), noQR = false, partial = null;
+    let list = mk(false), noQR = false, partial = null;          // v154 진위 확인 QR 없이만
     try{ await commit(list); }
     catch(e){
       const denied = e && (e.code === 'permission-denied' || /permission|insufficient/i.test(e.message || ''));
@@ -2613,7 +2588,7 @@ function certItemHTML(c, sub){
           <div class="citem${sub?' sub':''}${c.revoked?' revoked':''}">
             <div style="flex:1;min-width:180px">
               <div style="font-size:15px;font-weight:700;color:var(--gd)">${esc(c.studentName)} <span style="font-size:12px;color:var(--tl);font-weight:400">${label}</span>${c.revoked?'<span class="c-void">발급 취소</span>':''}</div>
-              <div style="font-size:12px;color:var(--tl);margin-top:2px">${esc(c.docNo)} · 발급일 ${esc(c.issueDate)} · ${esc(c.issuedByName||'')}${sch&&c.verifyCode?` <span class="c-qr" title="진위 확인 코드">QR ${esc(c.verifyCode)}</span>`:''}</div>
+              <div style="font-size:12px;color:var(--tl);margin-top:2px">${esc(c.docNo)} · 발급일 ${esc(c.issueDate)} · ${esc(c.issuedByName||'')}</div>
             </div>
             <button class="bm" onclick="previewCert('${c.id}')">미리보기</button>
             ${sch ? `<button class="bs" style="padding:8px 14px" onclick="pdfCert('${c.id}',1)">📄 PDF (직인 포함)</button>` : ''}
@@ -2667,20 +2642,20 @@ window.pdfCertGroup = (id, stamp) => {
   if(!list.length){ toast('받을 문서가 없어요 (모두 발급 취소됨).','err'); return; }
   return pdfCertMany(list, !!stamp);
 };
-/* 발급 취소 · 되돌리기 — 진위 확인 기록(certVerify)의 상태를 먼저 바꾸고, 그다음 발급 기록에 표시 */
+/* 발급 취소 · 되돌리기 — 발급 기록에 표시 (v154 예전에 QR로 발급한 것은 진위 기록(certVerify)도 함께 · 안 되어도 취소는 됨) */
 async function schedRevoke(ids, on){
   const list = ids.map(id=>CERTS.find(c=>c.id===id)).filter(c=>c && c.kind==='schedule' && canRevokeSched(c) && !!c.revoked !== !!on);
   if(!list.length) return;
   const one = list.length === 1;
   const msg = on
-    ? (one ? `${list[0].studentName} — ${list[0].docNo}\n이 확인서를 «발급 취소»로 바꿀까요?\n\nQR · 확인 코드로 확인하면 «취소된 문서»로 보여요.`
-           : `${list.length}장을 모두 «발급 취소»로 바꿀까요?\n\nQR · 확인 코드로 확인하면 «취소된 문서»로 보여요.`)
-    : `«발급 취소»를 되돌릴까요?\n진위 확인에 다시 «유효»로 보여요.`;
+    ? (one ? `${list[0].studentName} — ${list[0].docNo}\n이 확인서를 «발급 취소»로 바꿀까요?\n\n다시 받으면 «발급 취소» 표시가 크게 찍혀요.`
+           : `${list.length}장을 모두 «발급 취소»로 바꿀까요?\n\n다시 받으면 «발급 취소» 표시가 크게 찍혀요.`)
+    : `«발급 취소»를 되돌릴까요?`;
   if(!confirm(msg)) return;
   let ok = 0, fail = 0;
   for(const c of list){
     try{
-      if(c.verifyCode) await updateDoc(doc(db,'certVerify',c.verifyCode), { status: on ? 'revoked' : 'valid', revokedAt: Timestamp.now(), revokedByUid: CU.uid });
+      if(c.verifyCode){ try{ await updateDoc(doc(db,'certVerify',c.verifyCode), { status: on ? 'revoked' : 'valid', revokedAt: Timestamp.now(), revokedByUid: CU.uid }); }catch(e){ console.warn('[발급 취소 · 예전 진위 기록]', c.docNo, e); } }
       await updateDoc(doc(db,'certificates',c.id), { revoked: !!on, revokedAt: Timestamp.now(), revokedByUid: CU.uid, revokedByName: CU.name||'' });
       c.revoked = !!on; ok++;
     }catch(e){ fail++; console.warn('[발급 취소]', c.docNo, e); }
@@ -3075,7 +3050,7 @@ async function delCert(id){
   if(CU.role!=='super'){ toast('슈퍼관리자만 삭제할 수 있습니다.','err'); return; }
   const c = CERTS.find(x=>x.id===id); if(!c) return;
   const sch = c.kind === 'schedule';
-  if(!confirm(`${c.studentName} 학생의 ${sch ? '일정 확인서' : '증명서'}(${c.docNo})를 발급 목록에서 삭제할까요?${sch && c.verifyCode ? '\n\nQR · 확인 코드로 확인하면 «발급 기록이 없어요»로 나와요.' : ''}`)) return;
+  if(!confirm(`${c.studentName} 학생의 ${sch ? '일정 확인서' : '증명서'}(${c.docNo})를 발급 목록에서 삭제할까요?`)) return;
   try {
     if(sch && c.verifyCode){
       try{ await deleteDoc(doc(db,'certVerify',c.verifyCode)); }
