@@ -5,6 +5,7 @@
    · 검토관: 지금 단계면 오타를 바로 고치고 «검토완료» 또는 «수정 요청»
    · 최종 검토관: «최종 승인»(잠김) · «다시 열기»
    · 입력은 칸 하나씩 바로 저장 (0.5초 모아서) — 함께 맡은 선생님이 같은 칸을 써도 서로 덮어쓰지 않게 «바뀐 칸만» 저장
+   · v153 🔎 빈 곳 · 이름 점검 — 덜 채운 학생과 빈 곳 · 다른 학생 이름이 들어간 서술 (화면에서만 · 저장되는 것 없음) · 작성완료 창에도 요약
    ═══════════════════════════════════════════════════════════ */
 import * as SETUP from './nhp-setup.js?v=148';
 
@@ -152,6 +153,7 @@ function stageChain(){
   }).join('<span style="color:var(--ink-3)">→</span>');
 }
 function draw(){
+  NM_IX = null;
   CAN = C.canDo(SUB, A.CU.uid, A.isMgr);
   const p = C.progressOf(SUB, ENT, SIDS);
   const kind = C.KINDS[SUB.kind] || {};
@@ -206,6 +208,92 @@ function drawBody(){
 const ro = () => CAN.edit ? '' : ' disabled';
 const row = sid => (ENT.rows || {})[sid] || {};
 
+/* ═══════════ v153 🔎 빈 곳 · 이름 점검 (화면에서만 — 저장되는 것 없음) ═══════════ */
+//  빈 곳: C.rowFilled 와 같은 기준으로 «무엇이» 비었는지 · 이름: 서술을 복사해 붙이다 못 고친 다른 학생 이름
+let NM_IX = null;
+const hasJong = ch => { const c = ch.charCodeAt(0) - 0xAC00; return c >= 0 && c < 11172 && c % 28 !== 0; };
+function nameIx(){
+  if(NM_IX) return NM_IX;
+  const clean = sid => String(A.stuName(sid) || '').replace(/\s+/g, '');
+  const near = new Set(SIDS.concat((SEC && SEC.students) || []));
+  const all = new Set(near); ((A.TERM || {}).sections || []).forEach(x => (x.students || []).forEach(id => all.add(id)));
+  const full = [], given = [];
+  all.forEach(sid => { const n = clean(sid); if(n.length >= 2 && /[가-힣]/.test(n)) full.push({ sid, n }); });
+  // 같은 반 · 조 학생은 «하늘이는 · 하늘이가 · 지우는 …»처럼 성 없이 쓴 것도 (받침 있는 이름은 «이»가 붙은 것만 — «하늘을 보며» 같은 말은 빼려고)
+  near.forEach(sid => { const n = clean(sid); if(!/^[가-힣]{3,4}$/.test(n)) return; const g = n.slice(1);
+    const tail = '(는|가|의|를|도|와|랑|에게|한테|만)';
+    given.push({ sid, g, re: new RegExp('(^|[^가-힣])' + g + (hasJong(g.slice(-1)) ? '이' + tail : tail)) }); });
+  return (NM_IX = { full, given });
+}
+function otherNames(sid, text){
+  text = String(text || ''); if(!text.trim()) return [];
+  const ix = nameIx();
+  const me = String(A.stuName(sid) || '').replace(/\s+/g, '');
+  const myG = /^[가-힣]{3,4}$/.test(me) ? me.slice(1) : '';
+  const t = me ? text.split(me).join(' ') : text;
+  const hit = [];
+  const add = n => { if(n && !hit.includes(n)) hit.push(n); };
+  ix.full.forEach(x => { if(x.sid !== sid && x.n !== me && t.includes(x.n)) add(A.stuName(x.sid)); });
+  ix.given.forEach(x => { if(x.sid !== sid && x.g !== myG && x.re.test(t)) add(A.stuName(x.sid)); });
+  return hit;
+}
+function cntHTML(sid, nid, v){
+  v = String(v || '');
+  const h = otherNames(sid, v);
+  return `${v.length}자${h.length ? ` <b class="nm-warn">⚠ 다른 학생 이름 «${h.map(esc).join('» «')}» — 확인해 주세요</b>` : ''}`;
+}
+/* 이 칸에서 학생마다 쓰는 서술 칸 (출력에 나오는 것만) */
+function narrSlots(){
+  const st = SUB.setup || {};
+  if(SUB.kind === 'subj' && SUB.type === 'R'){ const n = Math.max(1, Math.min(3, Number((st.r || {}).n) || 1)); return [1, 2, 3].slice(0, n).map(i => ({ id: 'c' + i, t: `${(st.r || {}).it || '내용'}${n > 1 ? ' ' + i : ''}` })); }
+  if(!['subj', 'hr', 'vision', 'camp'].includes(SUB.kind)) return [];
+  return (st.narr || []).filter(C.isEach).map(n => ({ id: n.id, t: n.t || '서술' }));      // 입력 화면 · C.rowFilled 와 같은 칸
+}
+/* 한 학생의 빈 곳 — C.rowFilled 와 같은 기준 (출력에서 뺀 학생은 없음) */
+function missingOf(sid){
+  const r = row(sid); if(r.off) return [];
+  const st = SUB.setup || {}; const out = [];
+  if(SUB.kind === 'subj'){
+    const t = SUB.type || 'E';
+    if(t === 'R'){ narrSlots().forEach(x => { if(!String((r.n || {})[x.id] || '').trim()) out.push(x.t); }); return out; }
+    if(t === 'E' || t === 'M'){
+      const items = st.items || [];
+      const no = items.map((it, i) => C.levelOf((r.e || {})[it.id]) ? 0 : i + 1).filter(Boolean);
+      if(no.length) out.push(no.length === items.length ? `5단계 ${items.length}칸 모두` : `5단계 ${no.length}칸 (${no.slice(0, 6).join('·')}${no.length > 6 ? '…' : ''}번)`);
+    }
+    if(t === 'S' || t === 'M'){
+      const no = ((st.score || {}).cols || []).filter(c => String((r.s || {})[c.id] ?? '').trim() === '');
+      if(no.length) out.push('점수 ' + no.map(c => c.t || '항목').join('·'));
+    }
+  }
+  if(['subj', 'hr', 'vision', 'camp'].includes(SUB.kind)) narrSlots().forEach(x => { if(!String((r.n || {})[x.id] || '').trim()) out.push(x.t); });
+  return out;
+}
+function checkList(){
+  const miss = [], names = [];
+  const slots = narrSlots();
+  SIDS.forEach((sid, i) => {
+    const m = missingOf(sid); if(m.length) miss.push({ sid, i, m });
+    const r = row(sid); if(r.off) return;
+    slots.forEach(x => { const h = otherNames(sid, (r.n || {})[x.id]); if(h.length) names.push({ sid, i, t: x.t, h }); });
+  });
+  return { miss, names };
+}
+const canCheck = () => ['subj', 'hr', 'vision', 'camp'].includes(SUB.kind);
+function openCheck(){
+  const { miss, names } = checkList();
+  const go = i => `<button class="nh-btn xs" data-ckgo="${i}">고치러 가기</button>`;
+  const body = `<div class="nh-desc" style="margin-top:0">작성완료 전에 한 번 훑어보는 곳이에요. 여기서는 아무것도 바뀌지 않아요.</div>
+    <div class="ck-h">📝 덜 채운 학생 <b>${miss.length}명</b> <small>/ ${SIDS.length}명</small></div>
+    ${miss.length ? miss.map(x => `<div class="ck-row"><b>${esc(A.stuName(x.sid))}</b><span>${x.m.map(esc).join(' · ')}</span>${go(x.i)}</div>`).join('') : '<div class="nh-desc">모두 채웠어요 👏</div>'}
+    <div class="ck-h">⚠ 다른 학생 이름이 들어간 글 <b>${names.length}곳</b></div>
+    ${names.length ? names.map(x => `<div class="ck-row"><b>${esc(A.stuName(x.sid))}</b><span>${esc(x.t)} — «${x.h.map(esc).join('» «')}»</span>${go(x.i)}</div>`).join('') : '<div class="nh-desc">없어요 👍</div>'}
+    <div class="nh-desc" style="margin-top:10px">이름 점검은 이번 학기 학생 이름(성까지)과, 같은 반 · 조 학생의 «하늘이는 · 하늘이가»처럼 성 없이 쓴 이름을 찾아요. 일부러 쓴 이름(예: 짝 활동)이면 그대로 두셔도 돼요.</div>`;
+  const m = A.modal('🔎 빈 곳 · 이름 점검', body, '<button class="nh-btn" data-c>닫기</button>', 'wide');
+  m.box.querySelector('[data-c]').onclick = () => m.close();
+  m.box.querySelectorAll('[data-ckgo]').forEach(b => b.onclick = () => { m.close(); TAB = 'in'; VIEWMODE = 'one'; CUR = Math.max(0, Math.min(SIDS.length - 1, Number(b.dataset.ckgo) || 0)); draw(); });
+}
+
 /* ═══════════ 입력 ═══════════ */
 function inputHTML(){
   if(!SIDS.length) return `<div class="nh-empty">이 칸을 듣는 학생이 없어요. ${CAN.setup ? '«평가 틀 › 듣는 학생»에서 고를 수 있어요.' : ''}</div>`;
@@ -234,7 +322,7 @@ function inputHTML(){
 function modeBar(){
   return `<div class="frow" style="align-items:center;margin-bottom:10px">
     <div class="nh-tabs" style="border:0;padding:0;margin:0"><button data-mode="grid" class="${VIEWMODE === 'grid' ? 'on' : ''}">▦ 표로 한꺼번에</button><button data-mode="one" class="${VIEWMODE === 'one' ? 'on' : ''}">👤 한 명씩</button></div>
-    <span class="nh-sp"></span>${CAN.edit && SUB.kind === 'subj' && (SUB.type === 'E' || SUB.type === 'M') ? `<button class="nh-btn sm" data-ej="paste">📋 엑셀에서 붙여넣기</button>` : ''}</div>`;
+    <span class="nh-sp"></span>${canCheck() ? '<button class="nh-btn sm" data-ej="check" title="덜 채운 학생 · 빈 곳 · 다른 학생 이름이 들어간 글">🔎 빈 곳 · 이름 점검</button>' : ''}${CAN.edit && SUB.kind === 'subj' && (SUB.type === 'E' || SUB.type === 'M') ? `<button class="nh-btn sm" data-ej="paste">📋 엑셀에서 붙여넣기</button>` : ''}</div>`;
 }
 const lvBtn = (sid, it, v) => `<button class="lv${v ? ' v' + v : ''}" data-lv="${esc(sid)}" data-it="${esc(it)}" title="${esc(v ? C.levelOf(v).ko : '비어 있음')}"${ro()}>${v || '·'}</button>`;
 function shortName(sid){ const n = A.stuName(sid); return n.length > 4 ? n.slice(0, 4) : n; }
@@ -277,7 +365,7 @@ function narrGridHTML(withOff){
   if(!need.length && !withOff) return h;
   h += `<div class="st-card"><div class="frow" style="align-items:center"><b style="font-size:14px">학생별 글</b><span class="nh-desc" style="margin:0">쓰는 대로 저장돼요 · 글자 수는 출력 쪽수에 영향을 줘요</span></div>
     ${SIDS.map(sid => `<div class="it-row" style="grid-template-columns:150px minmax(0,1fr)"><div><b>${esc(A.stuName(sid))}</b>${C.rowFilled(SUB, row(sid)) ? ' <span class="ch ok">✓</span>' : ''}${(withOff || SUB.kind === 'hr') ? `<br><label class="ck" style="font-size:11.5px"><input type="checkbox" data-off="${esc(sid)}"${row(sid).off ? ' checked' : ''}${ro()}>출력에서 빼기</label>` : ''}</div>
-      <div>${need.map(n => `<div class="fl" style="margin-bottom:6px">${need.length > 1 || n.t ? `<span class="l" style="font-size:11.5px;font-weight:800;color:var(--ink-2)">${esc(n.t || '')}</span>` : ''}<textarea class="nh-ta" rows="3" data-nr="${esc(sid)}" data-ni="${esc(n.id)}"${ro()}${row(sid).off ? ' style="opacity:.5"' : ''}>${esc((row(sid).n || {})[n.id] || '')}</textarea><small class="nh-desc" style="margin:0" data-cnt="${esc(sid)}:${esc(n.id)}">${String((row(sid).n || {})[n.id] || '').length}자</small></div>`).join('') || '<span class="nh-desc">쓸 글이 없어요 (모두 같은 글)</span>'}</div></div>`).join('')}</div>`;
+      <div>${need.map(n => `<div class="fl" style="margin-bottom:6px">${need.length > 1 || n.t ? `<span class="l" style="font-size:11.5px;font-weight:800;color:var(--ink-2)">${esc(n.t || '')}</span>` : ''}<textarea class="nh-ta" rows="3" data-nr="${esc(sid)}" data-ni="${esc(n.id)}"${ro()}${row(sid).off ? ' style="opacity:.5"' : ''}>${esc((row(sid).n || {})[n.id] || '')}</textarea><small class="nh-desc" style="margin:0" data-cnt="${esc(sid)}:${esc(n.id)}">${cntHTML(sid, n.id, (row(sid).n || {})[n.id])}</small></div>`).join('') || '<span class="nh-desc">쓸 글이 없어요 (모두 같은 글)</span>'}</div></div>`).join('')}</div>`;
   return h;
 }
 function oneHTML(){
@@ -303,7 +391,7 @@ function oneHTML(){
   }
   (st.narr || []).forEach(n => {
     if(!C.isEach(n)){ if(String(n.fixed || '').trim()) h += `<div class="it-row"><div class="tx"><small>${esc(n.t)} · 모든 학생 같은 글</small>${esc(n.fixed).replace(/\n/g, '<br>')}</div></div>`; }
-    else h += `<div class="fl" style="margin-top:8px"><label>${esc(n.t || '서술')}</label><textarea class="nh-ta" rows="4" data-nr="${esc(sid)}" data-ni="${esc(n.id)}"${ro()}>${esc((r.n || {})[n.id] || '')}</textarea><small class="nh-desc" style="margin:0" data-cnt="${esc(sid)}:${esc(n.id)}">${String((r.n || {})[n.id] || '').length}자</small></div>`;
+    else h += `<div class="fl" style="margin-top:8px"><label>${esc(n.t || '서술')}</label><textarea class="nh-ta" rows="4" data-nr="${esc(sid)}" data-ni="${esc(n.id)}"${ro()}>${esc((r.n || {})[n.id] || '')}</textarea><small class="nh-desc" style="margin:0" data-cnt="${esc(sid)}:${esc(n.id)}">${cntHTML(sid, n.id, (r.n || {})[n.id])}</small></div>`;
   });
   h += `<label class="ck" style="margin-top:8px"><input type="checkbox" data-off="${esc(sid)}"${r.off ? ' checked' : ''}${ro()}>이 학생은 이 칸을 출력에서 빼기 (예: 이 과목을 듣지 않음 · 담임평가 쓰지 않음)</label></div>`;
   return h;
@@ -541,8 +629,22 @@ function pvPaneHTML(){
   return `<div class="pv2-h"><b>출력 미리보기</b><select class="nh-sel" data-pvs style="height:30px;font-size:12px">${sids.map(x => `<option value="${esc(x)}"${x === PV_SID ? ' selected' : ''}>${esc(A.stuName(x))} (예시)</option>`).join('')}</select>
       <select class="nh-sel" data-pvth style="height:30px;font-size:12px" title="속지">${C.TH.listOptionsHTML(C.TH.INNERS, d.inner)}</select>
       <span class="pv-wb" title="미리보기 폭 — 가운데 손잡이(⋮)를 끌어도 돼요">${PVW_SET.map(([l, w]) => `<button type="button" data-pvw="${w}" class="${Math.abs(w - PVW) < 2 ? 'on' : ''}">${l}</button>`).join('')}</span></div>
-    <div class="pv2-pg"><div class="pv2-sc" id="ej-pv-sc">${pvBlockHTML(d.inner)}</div></div>
-    <div class="nh-desc" style="margin:6px 0 0">고치면 바로 바뀌어요 · 실제 A4 쪽 폭(180mm) 그대로 · 쪽 나눔은 «👀 미리보기 › 전체»에서</div>`;
+    <div class="pv2-pg"><div class="pv2-fit"><div class="pv2-sc" id="ej-pv-sc">${pvPageHTML(d.inner)}</div></div></div>
+    <div class="nh-desc" style="margin:6px 0 0">고치면 바로 바뀌어요 · 실제 A4 종이(여백 15mm) 그대로 · 이 칸만 맨 위에 놓고 보여 줘요 — 쪽 나눔은 «👀 미리보기 › 전체»에서</div>`;
+}
+/* v153 종이 한 장 — 실제 출력(👀 미리보기 › 전체)과 같은 A4 쪽: 794×1123 · 여백 57px(15mm) · 속지 A · C 는 쪽 머리 · 바닥 줄
+   이 칸을 본문 맨 위에 놓는다 · 칸이 한 쪽보다 길면 종이가 아래로 길어짐 (쪽 나눔은 전체 미리보기에서) */
+function pvPageHTML(theme){
+  const TH = C.TH;
+  const th = (theme === 'a' || theme === 'c') ? theme : 'old';
+  const G = (TH.CHROME || {})[th] || { top: 57, innerH: 1123 - 57 * 2 - 22 };
+  const sec = ((A.TERM || {}).sections || []).find(x => (x.students || []).includes(PV_SID)) || SEC || {};
+  const name = A.stuName(PV_SID);
+  const doc = { lang: 'ko', cover: { term: C.termLabel(A.TERM), cls: sec.name || '', grade: sec.grade || '', name } };
+  const pad = `padding:${G.top}px 57px ${Math.max(57, 1123 - G.top - G.innerH)}px`;
+  const head = th === 'old' ? '' : TH.runHeadHTML(th, doc);
+  const foot = th === 'old' ? `<div class="np-ft"><span></span><span>${esc(name)}  ·  ·· / ··</span></div>` : TH.footHTML(th, doc, '··', '··');
+  return `<div class="np pv2-np${th === 'old' ? '' : ' np-th'}">${head}<div class="pv2-in" style="${pad}">${pvBlockHTML(theme)}</div>${foot}</div>`;
 }
 function pvBlockHTML(theme){
   const b = C.blockFor(SUB, { stu: { id: PV_SID, name: A.stuName(PV_SID) }, sec: SEC, entry: ENT, lists: A.LISTS, staffName: A.staffName, term: A.TERM, actGroup: A.actGroupOf });
@@ -558,14 +660,18 @@ function pvRefresh(){
   PV_T = setTimeout(() => {
     const sc = document.getElementById('ej-pv-sc'); if(!sc || TAB !== 'set') return;
     const th = (document.querySelector('[data-pvth]') || {}).value || A.design().inner;
-    sc.innerHTML = pvBlockHTML(th);
+    sc.innerHTML = pvPageHTML(th);
     pvFit();
   }, 220);
 }
 function pvFit(){
   const sc = document.getElementById('ej-pv-sc'); if(!sc) return;
-  const box = sc.parentElement; const w = box.clientWidth - 28; const k = Math.min(1, w / 680);
-  sc.style.transform = `scale(${k})`; box.style.height = Math.ceil(sc.scrollHeight * k + 28) + 'px';
+  const fit = sc.parentElement, box = fit.parentElement;
+  const cs = getComputedStyle(box);
+  const w = box.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+  const k = Math.max(0.2, Math.min(1, w / 794));
+  sc.style.transform = `scale(${k})`;
+  fit.style.width = Math.floor(794 * k) + 'px'; fit.style.height = Math.ceil(sc.offsetHeight * k) + 'px';
 }
 function scoreEditorHTML(st, dis){
   const sc = st.score || { cols: [] };
@@ -774,7 +880,13 @@ async function doAct(act){
   if(act === 'submit'){
     const p = C.progressOf(SUB, ENT, SIDS);
     const next = 'r1' in (SUB.rv || {}) ? (SUB.rvL || [])[0] : (SUB.finL || '최종 승인');
-    const ok = await A.confirm('📨 작성완료 · 검토로 보내기', `${p.done < p.total ? `<b style="color:var(--danger)">아직 ${p.total - p.done}명이 덜 채워졌어요.</b><br>` : '모든 학생을 채웠어요 👏<br>'}보내면 <b>${esc(next || '')}</b> 단계로 넘어가고 입력이 잠겨요. (첫 단계 검토가 시작되기 전이면 «되찾기»로 다시 고칠 수 있어요)`, '보내기');
+    // v153 무엇이 비었는지 · 다른 학생 이름 — 요약 (고치러 가려면 «🔎 빈 곳 · 이름 점검»)
+    const ck = canCheck() ? checkList() : { miss: [], names: [] };
+    const sum = (L, f, n) => `<div class="ck-sum">${L.slice(0, n).map(f).join('<br>')}${L.length > n ? `<br><small>외 ${L.length - n}</small>` : ''}</div>`;
+    const missH = p.done < p.total ? `<b style="color:var(--danger)">아직 ${p.total - p.done}명이 덜 채워졌어요.</b>${ck.miss.length ? sum(ck.miss, x => `${esc(A.stuName(x.sid))} <small>${x.m.map(esc).join(' · ')}</small>`, 8) : '<br>'}` : '모든 학생을 채웠어요 👏<br>';
+    const nameH = ck.names.length ? `<b style="color:#9A5B00">⚠ 다른 학생 이름이 들어간 글 ${ck.names.length}곳</b>${sum(ck.names, x => `${esc(A.stuName(x.sid))} <small>${esc(x.t)} — «${x.h.map(esc).join('» «')}»</small>`, 6)}` : '';
+    const tip = (ck.miss.length || ck.names.length) ? '<small style="color:var(--ink-2)">«✏️ 입력 › 🔎 빈 곳 · 이름 점검»에서 바로 고치러 갈 수 있어요.</small><br>' : '';
+    const ok = await A.confirm('📨 작성완료 · 검토로 보내기', `${missH}${nameH}${tip}보내면 <b>${esc(next || '')}</b> 단계로 넘어가고 입력이 잠겨요. (첫 단계 검토가 시작되기 전이면 «되찾기»로 다시 고칠 수 있어요)`, '보내기');
     if(!ok) return;
   }
   if(act === 'redo'){
@@ -842,6 +954,7 @@ async function onClick(e){
   const a = d.ej; if(!a) return;
   if(['submit', 'withdraw', 'ok', 'redo', 'approve', 'reopen', 'cmt'].includes(a)) return doAct(a);
   if(a === 'retry') return flush();
+  if(a === 'check') return openCheck();
   if(a === 'reload'){ ENT = await A.getEntry(SUB.id, true); drawBody(); const n = document.getElementById('ej-remote'); if(n) n.style.display = 'none'; return; }
   if(a === 'paste') return pasteGrid();
   if(a === 'attpull') return pullAttendance();
@@ -913,7 +1026,7 @@ function onChange(e){
 }
 function onInput(e){
   const x = e.target; const d = x.dataset;
-  if(d.nr){ put(`rows.${d.nr}.n.${d.ni}`, x.value); const c = EL.querySelector(`[data-cnt="${CSS.escape(d.nr + ':' + d.ni)}"]`); if(c) c.textContent = x.value.length + '자'; return; }
+  if(d.nr){ put(`rows.${d.nr}.n.${d.ni}`, x.value); const c = EL.querySelector(`[data-cnt="${CSS.escape(d.nr + ':' + d.ni)}"]`); if(c) c.innerHTML = cntHTML(d.nr, d.ni, x.value); return; }
   if(d.sc){ put(`rows.${d.sc}.s.${d.col}`, x.value.trim()); const tt = EL.querySelector(`[data-tot="${CSS.escape(d.sc)}"]`); if(tt) tt.textContent = C.scoreTotal(SUB.setup.score, row(d.sc).s || {}) || '—'; return; }
   if(d.pe){ put(`rows.${d.pe}.p.${d.p}.${d.w}`, x.value.trim()); return; }
   if(d.mksc){ MARKS.sc[d.mksc] = MARKS.sc[d.mksc] || {}; MARKS.sc[d.mksc][MK_SES] = MARKS.sc[d.mksc][MK_SES] || {}; MARKS.sc[d.mksc][MK_SES][d.col] = x.value.trim(); clearTimeout(x._t); x._t = setTimeout(() => saveMarks({ sc: MARKS.sc }), 600); return; }
