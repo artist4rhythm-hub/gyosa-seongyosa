@@ -148,7 +148,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     <button class="subtbtn" id="st-extract" onclick="showStudentTab('extract')">🔍 명단 추출</button>
     <button class="subtbtn" id="st-stat" onclick="showStudentTab('stat')">📈 재적 통계</button>
     <button class="subtbtn" id="st-birth" onclick="showStudentTab('birth')">🎂 생일 명단</button>
-    <button class="subtbtn" id="st-contact" onclick="showStudentTab('contact')">📞 연락처</button>
+    <button class="subtbtn" id="st-contact" onclick="showStudentTab('contact')">👪 학부모 명단</button>
+    <button class="subtbtn" id="st-info" onclick="showStudentTab('info')">📮 정보 수집</button>
   </div>
   <div class="tc" id="main-body"></div>
 </div>
@@ -163,6 +164,8 @@ import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, get
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 dropLists('students'); try{ addEventListener('pagehide', () => dropLists('students')); }catch(e){}   // 학생을 고치는 화면 — 들어올 때 · 나갈 때 기억한 학생 명단을 버림 (홈 출결 칸이 새 명단으로)
 import { gateRecalc } from './gate-client.js?v=122';   // 🎫 학부모 출입증 다시 계산 (v122)
+import * as PList from './parents-list.js?v=156';      // 👪 학부모 명단 · 엑셀 (v156)
+import * as InfoCol from './info-collect.js?v=156';    // 📮 보호자 정보 수집 (v156)
 
 const firebaseConfig = {
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -355,6 +358,7 @@ function showStudentTab(t){
   else if(t==='stat') renderStat();
   else if(t==='birth') renderBirth();
   else if(t==='contact') renderContact();
+  else if(t==='info') renderInfo();
 }
 window.showStudentTab = showStudentTab;
 
@@ -451,6 +455,7 @@ function liveRefresh(){
       else if(studentTab==='stat') renderStat();
       else if(studentTab==='birth') renderBirth();
       else if(studentTab==='contact') renderContact();
+      else if(studentTab==='info') renderInfo(true);
     } catch(e){ console.warn('[live]', e); }
   }, 150);
 }
@@ -787,7 +792,19 @@ window.setBirthOrg = setBirthOrg;
 // ── 연락처 명단 ──
 let contactOrg = '';     // '' = 전체
 let contactGrade = '';   // '' = 전체 학년
+/* 👪 v156 — «연락처» 탭은 «학부모 명단»으로 (어머니 · 아버지 · 집 주소 · 칸을 골라 엑셀) */
+const curOrgBar = () => { const c = (window.OrgBar && OrgBar.current) || '__all__'; return c === '__all__' ? '' : c; };
 function renderContact(){
+  return PList.renderTab({ el: $I('main-body'), db, students: () => STUDENTS, classes: () => CLASSES, orgs: myOrgs, orgNow: curOrgBar, toast });
+}
+/* 📮 v156 보호자 정보 수집 */
+let _infoInit = false;
+function renderInfo(live){
+  if(!_infoInit){ InfoCol.init({ db, CU, canManage: () => isAdmin(), students: () => STUDENTS, classes: () => CLASSES, staff: () => STAFF, orgs: myOrgs, orgNow: curOrgBar, toast, logActivity }); _infoInit = true; }
+  if(live) return;   // 학생이 바뀌어도 쓰던 화면은 그대로 (반영 뒤에는 정보 수집이 스스로 다시 그림)
+  InfoCol.render($I('main-body'));
+}
+function renderContactOld(){
   const myo = myOrgs();
   let list = STUDENTS.filter(s=>curSt(s)==='active');
   if(contactOrg) list = list.filter(s=>s.org===contactOrg);
@@ -1403,6 +1420,62 @@ async function genStudentNo(org, birthYear){
 
 window.renderList = renderList;
 
+// ── 👪 v156 어머니 · 아버지 · 그 외 보호자 (students.guardians.{m,f,o}) ──
+const GD_REL = { m:'어머니', f:'아버지', o:'그 외 보호자' };
+const GD_FL = { rel:'관계', name:'성함', phone:'휴대폰', gmail:'구글 메일', work:'직장' };
+const GD_KEYS = { m:['name','phone','gmail','work'], f:['name','phone','gmail','work'], o:['rel','name','phone','gmail','work'] };
+const escA = v => String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function guardiansFormHTML(s){
+  const G = (s && s.guardians) || {};
+  const card = p => {
+    const v = G[p] || {};
+    const fld = k => `<div class="fgrp"><label>${GD_FL[k]}${k==='gmail'&&v.gv?' <span style="font-size:10.5px;font-weight:800;color:var(--gm);background:var(--gp);border-radius:5px;padding:0 5px" title="학부모가 구글로 로그인해 보낸 메일">✓ 구글 확인</span>':''}</label>
+      <input id="g-${p}-${k}" value="${escA(v[k])}" placeholder="${k==='phone'?'010-0000-0000':k==='gmail'?'example@gmail.com':k==='rel'?'예: 할머니':''}"></div>`;
+    return `<div style="border:1px solid var(--ivd);border-radius:12px;padding:12px 12px 0;background:var(--wh)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;white-space:nowrap"><b style="font-size:13.5px">${p==='m'?'👩':p==='f'?'👨':'🧑'} ${GD_REL[p]}</b>
+        ${v.at?`<span style="font-size:11px;color:var(--tl)">${v.src==='info'?'📮 정보 수집':'고침'} ${new Date(v.at).getMonth()+1}/${new Date(v.at).getDate()}</span>`:''}
+        <span style="flex:1"></span><button type="button" class="bm" onclick="gdAsRep('${p}')" title="이 분을 대표 보호자 칸에">대표로</button></div>
+      <div class="fg" style="margin-bottom:12px;gap:8px">${GD_KEYS[p].map(fld).join('')}</div></div>`;
+  };
+  return `<div class="seclb">👪 어머니 · 아버지 <span style="font-weight:400;color:var(--tl);font-size:11px">(«📮 정보 수집»으로 받은 값이 여기에 들어와요 · 형제는 반영할 때 함께 바뀌어요)</span></div>
+    <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin-bottom:16px">${['m','f','o'].map(card).join('')}</div>`;
+}
+window.gdAsRep = p => {
+  const n = $I(`g-${p}-name`).value.trim(), ph = $I(`g-${p}-phone`).value.trim();
+  if(!n && !ph) return toast(`${GD_REL[p]} 성함 · 휴대폰을 먼저 써 주세요.`,'err');
+  if(n) $I('f-guardian').value = n; if(ph) $I('f-gphone').value = ph;
+  toast(`대표 보호자 칸을 ${GD_REL[p]}(으)로 채웠어요 — 저장해야 바뀌어요.`,'ok');
+};
+// 폼 → guardians (빈 칸은 빼고 · 구글 메일이 그대로면 «구글 확인» 표시 유지)
+function readGuardians(old){
+  const O = (old && old.guardians) || {}, out = {};
+  ['m','f','o'].forEach(p => {
+    const o = {}; GD_KEYS[p].forEach(k => { const el = $I(`g-${p}-${k}`); const v = el ? el.value.trim() : ''; if(v) o[k] = k==='gmail' ? v.toLowerCase() : v; });
+    if(!Object.keys(o).length) return;
+    const prev = O[p] || {};
+    if(o.gmail && prev.gmail === o.gmail && prev.gv) o.gv = true;
+    const changed = GD_KEYS[p].some(k => (prev[k]||'') !== (o[k]||''));
+    if(!changed){ if(prev.at) o.at = prev.at; if(prev.src) o.src = prev.src; }
+    else { o.at = Date.now(); o.src = 'edit'; }
+    out[p] = o;
+  });
+  return out;
+}
+function guardianChanges(a, b){
+  const out = []; a = a || {}; b = b || {};
+  ['m','f','o'].forEach(p => GD_KEYS[p].forEach(k => {
+    const x = ((a[p]||{})[k]||''), y = ((b[p]||{})[k]||'');
+    if(x !== y) out.push(`${GD_REL[p]} ${GD_FL[k]}: ${x||'(없음)'} → ${y||'(없음)'}`);
+  }));
+  return out;
+}
+function guardianRowsHTML(s, row){
+  const G = s.guardians || {};
+  return ['m','f','o'].map(p => { const v = G[p]; if(!v) return '';
+    const t = [v.rel, v.name, v.phone, v.gmail ? v.gmail + (v.gv ? ' ✓구글' : '') : '', v.work].filter(Boolean).map(esc).join(' · ');
+    return t ? row(GD_REL[p], t) : ''; }).join('');
+}
+
 // ── 학생 등록/수정 폼 ──
 function openStudentForm(editId){
   const s = editId ? STUDENTS.find(x=>x.id===editId) : null;
@@ -1437,10 +1510,13 @@ function openStudentForm(editId){
       <div class="fg">
         <div class="fgrp"><label>학생 연락처</label><input id="f-phone" value="${s?.phone||''}" placeholder="010-0000-0000"></div>
         <div class="fgrp"><label>학생 이메일</label><input id="f-email" value="${s?.email||''}" placeholder="student@email.com"></div>
-        <div class="fgrp"><label>보호자 이름</label><input id="f-guardian" value="${s?.guardian||''}"></div>
-        <div class="fgrp"><label>보호자 연락처</label><input id="f-gphone" value="${s?.guardianPhone||''}" placeholder="010-0000-0000"></div>
-        <div class="fgrp full"><label>주소</label><input id="f-addr" value="${s?.address||''}"></div>
+        <div class="fgrp"><label>대표 보호자 이름 <span style="font-weight:400;color:var(--tl);font-size:11px">(연락처 명단 · 상담 · 문자에 쓰는 분)</span></label><input id="f-guardian" value="${s?.guardian||''}"></div>
+        <div class="fgrp"><label>대표 보호자 연락처</label><input id="f-gphone" value="${s?.guardianPhone||''}" placeholder="010-0000-0000"></div>
+        <div class="fgrp full"><label>집 주소</label><input id="f-addr" value="${s?.address||''}"></div>
+        <div class="fgrp"><label>비상 연락처 <span style="font-weight:400;color:var(--tl);font-size:11px">(부모님 외)</span></label><input id="f-emerg" value="${escA(s?.emergency)}" placeholder="예: 이모 김○○ 010-…"></div>
+        <div class="fgrp"><label>집 전화</label><input id="f-htel" value="${escA(s?.homeTel)}" placeholder="02-000-0000"></div>
       </div>
+      ${guardiansFormHTML(s)}
 
       <div class="seclb">휴학 기간 <span style="font-weight:400;color:var(--tl);font-size:11px">(여러 번 가능 · 복학일을 모르면 끝 날짜를 비워 두세요 · 기간 안에는 재학생 명단·반편성·출석부에서 «휴학»으로 바뀌고 출결·통계에서 빠져요)</span></div>
       <div id="leave-list"></div>
@@ -1577,6 +1653,9 @@ async function saveStudent(editId){
     guardian: $I('f-guardian').value.trim(),
     guardianPhone: $I('f-gphone').value.trim(),
     address: $I('f-addr').value.trim(),
+    emergency: $I('f-emerg').value.trim(),
+    homeTel: $I('f-htel').value.trim(),
+    guardians: readGuardians(editId ? STUDENTS.find(x=>x.id===editId) : null),
     memo: $I('f-memo').value.trim(),
   };
 
@@ -1585,7 +1664,7 @@ async function saveStudent(editId){
       // 변경 이력 계산
       const old = STUDENTS.find(s=>s.id===editId);
       const changes = [];
-      const fieldNames = {name:'이름',gender:'성별',birth:'생년월일',admitDate:'입학일',transferDate:'편입일',quitDate:'자퇴일',status:'재적상태',phone:'학생연락처',email:'이메일',guardian:'보호자',guardianPhone:'보호자연락처',address:'주소',memo:'특이사항'};
+      const fieldNames = {name:'이름',gender:'성별',birth:'생년월일',admitDate:'입학일',transferDate:'편입일',quitDate:'자퇴일',status:'재적상태',phone:'학생연락처',email:'이메일',guardian:'보호자',guardianPhone:'보호자연락처',address:'주소',emergency:'비상연락처',homeTel:'집전화',memo:'특이사항'};
       for(const k of Object.keys(fieldNames)){
         const ov = old[k]||'', nv = newData[k]||'';
         let ovd = ov, nvd = nv;
@@ -1594,6 +1673,7 @@ async function saveStudent(editId){
       }
       const lvStr = a => StuStatus.periods({leaves:a}).map(l=>`${l.start}~${l.end||'미정'}`).join(', ');
       if(lvStr(old.leaves) !== lvStr(newData.leaves)) changes.push(`휴학기간: ${lvStr(old.leaves)||'(없음)'} → ${lvStr(newData.leaves)||'(없음)'}`);
+      changes.push(...guardianChanges(old.guardians, newData.guardians));   // 👪 v156 어머니 · 아버지 · 그 외
       const hist = old.history || [];
       if(changes.length){
         hist.push({ at: Date.now(), by: CU.name, changes });
@@ -1794,8 +1874,11 @@ function openStudentDetail(id){
       ${row('성별',s.gender)}${row('생년월일',s.birth)}
       ${row('입학일',s.admitDate)}${row('편입일',s.transferDate)}${row('자퇴일',s.quitDate)}
       ${row('학생 연락처',s.phone)}${row('학생 이메일',s.email)}
-      ${row('보호자',s.guardian)}${row('보호자 연락처',s.guardianPhone)}
-      ${row('주소',s.address)}${row('특이사항',s.memo)}
+      ${row('대표 보호자',s.guardian)}${row('보호자 연락처',s.guardianPhone)}
+      ${guardianRowsHTML(s, row)}
+      ${row('집 주소',s.address)}${row('비상 연락처',esc(s.emergency||''))}${row('집 전화',esc(s.homeTel||''))}
+      ${Object.entries(s.infoExtra||{}).map(([k,v])=>row(esc(k), esc(typeof v==='object'?(v&&v.v)||'':v))).join('')}
+      ${row('특이사항',s.memo)}
       ${StuStatus.periods(s).length?`<div class="seclb">휴학 기간</div>${StuStatus.periods(s).map(lv=>`<div style="font-size:14px;padding:4px 0">${lv.start} ~ ${lv.end||'복학일 미정'}${(todayStr()>=lv.start&&(!lv.end||todayStr()<=lv.end))?' <span class="badge b-leave">현재 휴학 중</span>':''}</div>`).join('')}`:''}
       ${st==='leave'?`<div style="font-size:12px;color:var(--warn);margin-top:4px">${esc(statusHint(s))} 반편성·출석부·재학생 명단도 같은 기준이에요.</div>`:''}
 

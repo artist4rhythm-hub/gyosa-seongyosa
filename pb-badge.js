@@ -5,6 +5,7 @@
    · 셈은 Firestore «개수 세기»(반 하나에 글 · 댓글 두 번 = 읽기 2건) — 글을 하나하나 읽지 않는다
    · 반 목록은 30분, 숫자는 5분 동안 기억 (페이지를 옮겨 다녀도 다시 세지 않음)
    · «본 것»은 이 기기(브라우저)에 적어 둔다 — 다른 기기에서는 처음 한 번 지금까지 것을 «본 것»으로
+   · v156 + 이름 · 생년월일로 우리 반 학생을 찾은 학부모의 «연결 확인 요청» 수
    ═══════════════════════════════════════════════ */
 import { collection, query, where, getDocs, getCountFromServer, doc, getDoc }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
@@ -72,6 +73,12 @@ export async function badgeFor(db, uid, fresh){
       n += Math.max(0, cur.p - b.p) + Math.max(0, cur.c - b.c);
     }
     if(changed) writeJ(localStorage, CNT_KEY(uid), base);
+    // 🙋 v156 이름 + 생년월일로 우리 반 학생을 찾은 학부모 — 담임 확인을 기다리는 수
+    try{
+      const ids = keys.map(k => k.slice(2)).slice(0, 10);
+      const q = await getDocs(query(collection(db, 'parentClaims'), where('classId', 'in', ids)));
+      n += q.docs.filter(d => d.data().status === 'pending').length;
+    }catch(e){}
   }
   writeJ(sessionStorage, BADGE_KEY, { uid, at: Date.now(), n });
   return n;

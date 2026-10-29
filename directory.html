@@ -2816,7 +2816,8 @@ function renderDirectory(){
         .dir-s:focus{border-color:var(--gm);background:var(--wh)}
       </style>
       ${orgTabs}
-      <input class="dir-s" id="dir-q" placeholder="🔍 이름 · 부서 · 직책으로 검색" value="${esc(dirQuery)}" oninput="setDirQuery(this.value)">
+      <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><input class="dir-s" id="dir-q" placeholder="🔍 이름 · 부서 · 직책으로 검색" value="${esc(dirQuery)}" oninput="setDirQuery(this.value)">
+        <button class="dir-b" style="height:40px;padding:0 14px;font-size:13px;font-weight:800;color:var(--gm);border-color:var(--gl)" onclick="openStaffExport()">⬇ 교직원 명단 엑셀</button></div>
       ${(Object.keys(groups).length || partners.length) ? `
         ${Object.keys(groups).length ? `
           <div class="dir-sec">👩‍🏫 풀타임선생님 <span style="color:var(--tl);font-weight:600;font-size:12px">${fulltime.length}명</span></div>
@@ -2834,6 +2835,93 @@ function renderDirectory(){
   if(q && dirQuery){ q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 }
 window.renderDirectory = renderDirectory;
+/* ⬇ v156 교직원 명단 엑셀 — 기관 · 풀타임/협력 · 재직 상태 · 칸을 골라서
+   · 휴대폰 · 이메일은 명부처럼 누구나 · 생년월일 · 집 주소 · 입사일 · 구분 · 근무 형태 · 비고 · 퇴직자는 관리자만 (명부의 🔒 기준) */
+const SX_COLS = [
+  { k:'name', l:'이름', w:10, v:s=>s.name||'' },
+  { k:'org', l:'기관', w:14, v:s=>(s.orgs&&s.orgs.length?s.orgs:[s.org]).map(o=>ORGS[o]||o).join(', ') },
+  { k:'kind', l:'풀타임 · 협력', w:9, v:s=>(s.role||'')==='partner'?'협력':'풀타임' },
+  { k:'dept', l:'부서', w:10, v:s=>s.dept||'' },
+  { k:'position', l:'직책', w:10, v:s=>s.position||'' },
+  { k:'duty', l:'담당', w:16, v:s=>s.duty||'' },
+  { k:'phone', l:'휴대폰', w:15, v:s=>s.phone||'' },
+  { k:'email', l:'이메일', w:26, v:s=>s.email||'' },
+  { k:'ac', l:'재직 상태', w:8, v:s=>({active:'재직',leave:'휴직',quit:'퇴직'})[s.acStatus||'active']||'' },
+  { k:'staffType', l:'구분', w:10, v:s=>s.staffType||'', adm:true },
+  { k:'workType', l:'근무 형태', w:10, v:s=>s.workType||'', adm:true },
+  { k:'birth', l:'생년월일', w:11, v:s=>s.birth||'', adm:true },
+  { k:'address', l:'집 주소', w:34, v:s=>s.address||'', adm:true },
+  { k:'hireDate', l:'입사일', w:11, v:s=>s.hireDate||'', adm:true },
+  { k:'leaveDate', l:'퇴사일', w:11, v:s=>s.leaveDate||'', adm:true },
+  { k:'note', l:'비고', w:24, v:s=>s.note||'', adm:true },
+];
+const SX_PRE = {
+  basic: { l:'기본', cols:['name','org','kind','dept','position','duty','phone','email','ac'] },
+  call:  { l:'📞 연락망', cols:['name','dept','position','phone','email'] },
+  hr:    { l:'🔒 인사 전체', cols:SX_COLS.map(c=>c.k), adm:true },
+};
+let SX = null;
+function openStaffExport(){
+  const isAdm = ['super','org_admin'].includes(CU.role);
+  const myo = myOrgs();
+  SX = SX || { orgs:[dirOrg||myo[0]], kinds:['full','partner'], ac:['active','leave'], cols:SX_PRE.basic.cols.slice(), pre:'basic' };
+  if(!isAdm){ SX.ac = SX.ac.filter(x=>x!=='quit'); SX.cols = SX.cols.filter(k=>!(SX_COLS.find(c=>c.k===k)||{}).adm); if(SX.pre==='hr') SX.pre='basic'; }
+  const pick = () => Object.values(STAFF_CACHE||{})
+    .filter(s => (s.orgs&&s.orgs.length?s.orgs:[s.org]).some(o=>SX.orgs.includes(o)))
+    .filter(s => SX.kinds.includes((s.role||'')==='partner'?'partner':'full'))
+    .filter(s => SX.ac.includes(s.acStatus||'active'));
+  let ov = document.getElementById('sx-ov'); if(ov) ov.remove();
+  ov = document.createElement('div'); ov.id = 'sx-ov';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(20,30,26,.42);display:flex;align-items:center;justify-content:center;padding:16px';
+  const chip = (on, attr, label, dis) => `<label style="display:inline-flex;align-items:center;gap:5px;min-height:34px;padding:0 12px;border-radius:9px;border:1.5px solid ${on?'var(--gm)':'var(--ivd)'};background:${on?'var(--gp)':'var(--wh)'};color:${on?'var(--gm)':'var(--ts)'};font-size:12.5px;font-weight:800;cursor:${dis?'not-allowed':'pointer'};opacity:${dis?'.45':'1'}"><input type="checkbox" ${attr} ${on?'checked':''} ${dis?'disabled':''} style="margin:0;accent-color:var(--gm)">${label}</label>`;
+  const h = t => `<div style="font-size:12.5px;font-weight:800;color:var(--ts);margin:16px 0 7px">${t}</div>`;
+  const paint = () => {
+    const n = pick().length;
+    ov.innerHTML = `<div style="background:var(--wh);border-radius:16px;width:min(640px,100%);max-height:92vh;overflow:auto;padding:20px 22px;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="font-size:17px;font-weight:900;color:var(--gd)">⬇ 교직원 명단 엑셀</div>
+      <div style="font-size:12.5px;color:var(--tl);margin-top:3px">고른 조건에 맞는 분 <b style="color:var(--gm)">${n}명</b> · 부서 → 직책 → 이름 순</div>
+      ${h('빠르게 고르기')}<div style="display:flex;gap:6px;flex-wrap:wrap">${Object.entries(SX_PRE).map(([k,p])=>`<button type="button" data-pre="${k}" ${p.adm&&!isAdm?'disabled title="관리자만"':''} style="min-height:34px;padding:0 12px;border-radius:9px;border:1.5px solid ${SX.pre===k?'var(--gm)':'var(--ivd)'};background:${SX.pre===k?'var(--gp)':'var(--wh)'};color:${SX.pre===k?'var(--gm)':'var(--ts)'};font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;opacity:${p.adm&&!isAdm?'.45':'1'}">${p.l}</button>`).join('')}</div>
+      ${myo.length>1?h('기관')+`<div style="display:flex;gap:6px;flex-wrap:wrap">${myo.map(o=>chip(SX.orgs.includes(o),`data-org="${o}"`,esc(ORGS[o]||o))).join('')}</div>`:''}
+      ${h('누구')}<div style="display:flex;gap:6px;flex-wrap:wrap">${chip(SX.kinds.includes('full'),'data-kind="full"','👩‍🏫 풀타임')}${chip(SX.kinds.includes('partner'),'data-kind="partner"','🤝 협력')}
+        <span style="width:10px"></span>${chip(SX.ac.includes('active'),'data-ac="active"','재직')}${chip(SX.ac.includes('leave'),'data-ac="leave"','휴직')}${chip(SX.ac.includes('quit'),'data-ac="quit"','퇴직 🔒',!isAdm)}</div>
+      ${h('넣을 칸')}<div style="display:flex;gap:6px;flex-wrap:wrap">${SX_COLS.map(c=>chip(SX.cols.includes(c.k),`data-col="${c.k}"`,esc(c.l)+(c.adm?' 🔒':''),(c.adm&&!isAdm)||c.k==='name')).join('')}</div>
+      <div style="font-size:11.5px;color:var(--tl);background:var(--iv);border-radius:9px;padding:8px 11px;margin-top:12px;line-height:1.6">🔒 표시는 관리자만 넣을 수 있어요 (명부에서 본인 · 관리자만 보는 칸). 받은 파일은 필요한 곳에만 쓰고, 다 쓰면 지워 주세요.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px"><span id="sx-msg" style="margin-right:auto;align-self:center;font-size:12px;color:var(--danger);font-weight:700"></span>
+        <button type="button" class="dir-b" style="height:40px;padding:0 16px;font-size:13px" data-x>닫기</button>
+        <button type="button" data-go style="height:40px;padding:0 18px;border-radius:10px;border:none;background:var(--gm);color:#fff;font:inherit;font-size:13px;font-weight:800;cursor:pointer">⬇ 엑셀로 받기 (${n}명)</button></div></div>`;
+    const tog = (arr, v, on) => on ? (arr.includes(v)?arr:[...arr,v]) : arr.filter(x=>x!==v);
+    ov.querySelectorAll('[data-pre]').forEach(b=>b.onclick=()=>{ const p=SX_PRE[b.dataset.pre]; if(p.adm&&!isAdm) return; SX.pre=b.dataset.pre; SX.cols=p.cols.filter(k=>isAdm||!(SX_COLS.find(c=>c.k===k)||{}).adm); paint(); });
+    ov.querySelectorAll('[data-org]').forEach(b=>b.onchange=()=>{ SX.orgs=tog(SX.orgs,b.dataset.org,b.checked); paint(); });
+    ov.querySelectorAll('[data-kind]').forEach(b=>b.onchange=()=>{ SX.kinds=tog(SX.kinds,b.dataset.kind,b.checked); paint(); });
+    ov.querySelectorAll('[data-ac]').forEach(b=>b.onchange=()=>{ SX.ac=tog(SX.ac,b.dataset.ac,b.checked); paint(); });
+    ov.querySelectorAll('[data-col]').forEach(b=>b.onchange=()=>{ SX.cols=tog(SX.cols,b.dataset.col,b.checked); SX.pre=''; paint(); });
+    ov.querySelector('[data-x]').onclick=()=>ov.remove();
+    ov.querySelector('[data-go]').onclick=async e=>{
+      const list = pick(); const msg = ov.querySelector('#sx-msg');
+      if(!list.length){ msg.textContent='조건에 맞는 분이 없어요.'; return; }
+      const POS = {'원장':1,'교장':2,'교감':3,'행정실장':4,'초등부장':5,'중고등부장':6,'교사':7};
+      list.sort((a,b)=>((a.role||'')==='partner'?1:0)-((b.role||'')==='partner'?1:0) || (a.dept||'').localeCompare(b.dept||'','ko') || (POS[a.position]||9)-(POS[b.position]||9) || (a.name||'').localeCompare(b.name||'','ko'));
+      const cols = SX_COLS.filter(c=>SX.cols.includes(c.k) && (isAdm||!c.adm));
+      const btn = e.currentTarget; btn.disabled = true;
+      try{
+        await loadSheetJS();
+        const ws = XLSX.utils.aoa_to_sheet([cols.map(c=>c.l), ...list.map(s=>cols.map(c=>c.v(s)))]);
+        ws['!cols'] = cols.map(c=>({wch:c.w}));
+        ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:list.length,c:cols.length-1} }) };
+        const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '교직원 명단');
+        const d = new Date(), ds = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        const orgName = SX.orgs.length===1 ? (ORGS[SX.orgs[0]]||SX.orgs[0]) : 'DA 전체';
+        const name = window.FN&&FN.make ? FN.make(['교직원명단', orgName, ds], {ext:'.xlsx'}) : `교직원명단_${orgName}_${ds}.xlsx`;
+        XLSX.writeFile(wb, name);
+        logActivity && logActivity('내보내기','교직원',`교직원 명단 엑셀 ${list.length}명 (${cols.map(c=>c.l).join('·')})`);
+        toast('⬇ '+name,'ok'); ov.remove();
+      }catch(err){ btn.disabled=false; msg.textContent='받지 못했어요: '+err.message; }
+    };
+  };
+  ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+  paint(); document.body.appendChild(ov);
+}
+window.openStaffExport = openStaffExport;
 function setDirOrg(o){ dirOrg = o; renderDirectory(); }
 window.setDirOrg = setDirOrg;
 function setDirQuery(v){ dirQuery = v; renderDirectory(); }

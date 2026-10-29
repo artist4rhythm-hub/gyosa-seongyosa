@@ -121,6 +121,7 @@
   <div class="cp-wrap">
     <div class="cp-hd"><span class="t">👨‍👩‍👧 우리 반 학부모</span><small id="who"></small></div>
     <div id="cp-top"></div>
+    <div class="cp-card" id="cp-info" style="display:none;margin-bottom:12px"></div>
     <div class="cp-grid" id="cp-grid" style="display:none">
       <div class="cp-card" id="cp-conn"></div>
       <div class="cp-card" id="cp-board"></div>
@@ -136,6 +137,8 @@ import { getFirestore, initializeFirestore, doc, getDoc, collection, getDocs, qu
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import * as Conn from './parent-conn.js?v=124';    // 👨‍👩‍👧 학부모 연결 (담임 모드)
 import * as Board from './parent-board.js?v=132';  // 💬 우리 반 게시판
+import * as InfoCol from './info-collect.js?v=156';  // 📮 보호자 정보 · 🙋 이름+생년월일 연결 확인 (v156)
+import { openExport } from './parents-list.js?v=156'; // ⬇ 우리 반 학부모 명단 (v156)
 
 const __cfg = ({
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -206,7 +209,26 @@ function renderTop(){
   $I('cp-top').innerHTML = c ? `<div class="cp-cls"><span class="cp-yr">${esc(String(c.year||''))}학년도</span>
       <span class="cp-cn">${esc([Board.subOf(c), c.name].filter(Boolean).join(' · '))}</span>
       <span class="cp-who">${t?'담임 '+esc(t):''}${ds.length?' · 부담임 '+esc(ds.join(', ')):''} · 학생 ${(c.students||[]).length}명${c.role?` · 나는 <b>${esc(c.role)}</b>`:''}</span>
-      <span class="cp-sp"></span>${pick}<a class="cp-link" href="history.html" title="해마다의 반 · 담임 · 학생과 그 반에 나간 학부모 공지">🗂 지난 학년도 기록</a></div>` : '';
+      <span class="cp-sp"></span>${pick}<button class="cp-link" style="background:var(--wh);cursor:pointer;font-family:inherit" onclick="cpExport()" title="어머니 · 아버지 연락처 · 집 주소 — 칸을 골라 엑셀로">⬇ 우리 반 학부모 명단</button><a class="cp-link" href="history.html" title="해마다의 반 · 담임 · 학생과 그 반에 나간 학부모 공지">🗂 지난 학년도 기록</a></div>` : '';
+}
+/* ⬇ v156 우리 반 학부모 명단 (엑셀) — 학생관리 › 학부모 명단과 같은 칸 */
+const cpStus = () => [...Conn.S.students.values()].filter(s => { const st = window.StuStatus ? StuStatus.status(s) : (s.status || 'active'); return st === 'active' || st === 'leave'; });
+window.cpExport = () => {
+  if(!CUR) return;
+  const org = CUR.org || 'daniel';
+  openExport({ db, list: cpStus(), allStudents: [...Conn.S.students.values()], classes: [CUR], orgs: [org], toast: cpToast, title: '우리 반 학부모 명단',
+    scope: `${CUR.label || CUR.name} · 재학 + 휴학`, nameParts: ['학부모명단', CUR.name, ORG_L[org]] });
+};
+function cpToast(msg, type){
+  let t = $I('cp-toast');
+  if(!t){ t = document.createElement('div'); t.id = 'cp-toast'; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9500;padding:11px 18px;border-radius:11px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.18);max-width:92vw'; document.body.appendChild(t); }
+  t.textContent = msg; t.style.background = type === 'err' ? 'var(--danger-bg)' : 'var(--gd)'; t.style.color = type === 'err' ? 'var(--danger)' : '#fff'; t.style.display = '';
+  clearTimeout(cpToast._t); cpToast._t = setTimeout(() => { t.style.display = 'none'; }, 3200);
+}
+async function paintInfo(){
+  if(!CUR) return;
+  InfoCol.init({ db, CU, canManage: () => isAdmin(), students: () => [...Conn.S.students.values()], classes: () => [CUR], staff: () => [], orgs: () => [CUR.org || 'daniel'], orgNow: () => '', toast: cpToast });
+  try{ await InfoCol.renderClassPanel($I('cp-info'), CUR); }catch(e){ console.warn('[정보 수집]', e && e.message); }
 }
 async function openClass(id){
   CUR = allCls().find(c=>c.id===id) || allCls()[0] || null;
@@ -218,6 +240,7 @@ async function openClass(id){
   try{ await Conn.loadClass(CUR); Conn.renderClassCard($I('cp-conn')); }
   catch(e){ $I('cp-conn').innerHTML = `<div class="cp-empty">불러오지 못했어요: ${esc(e.message||'')}</div>`; }
   renderTop();
+  paintInfo();
   try{ await Board.load(CUR); Board.render($I('cp-board')); await Board.seen(); }
   catch(e){ $I('cp-board').innerHTML = `<div class="cp-empty">게시판을 불러오지 못했어요: ${esc(e.message||'')}</div>`; }
 }
