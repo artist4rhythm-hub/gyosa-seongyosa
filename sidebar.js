@@ -485,10 +485,10 @@ function renderSidebar(){
         <div id="sb-ver" class="sb-ver">${window.__APPVER ? '교사 선교사 v' + esc(window.__APPVER) : ''}</div>
       </div>
       <div class="sb-me">
-        <div class="sb-av" style="overflow:hidden;display:flex;align-items:center;justify-content:center;padding:0">${window.staffAvatar ? staffAvatar(SB_USER, 30) : (SB_USER?.name||'?').slice(0,1)}</div>
+        <div class="sb-av" style="overflow:hidden;display:flex;align-items:center;justify-content:center;padding:0">${window.staffAvatar ? staffAvatar(SB_USER, 30) : esc((SB_USER?.name||'?').slice(0,1))}</div>
         <div class="sb-mi">
-          <div class="sb-mn">${SB_USER?.name || ''}</div>
-          <div class="sb-mr">${sbOrgLabel()}</div>
+          <div class="sb-mn">${esc(SB_USER?.name || '')}</div>
+          <div class="sb-mr">${esc(sbOrgLabel())}</div>
         </div>
         <button type="button" class="sb-more" id="sb-foot-arrow" onclick="toggleSbFoot(event)" title="글자 크기 · 화면 모드" aria-label="글자 크기 · 화면 모드">
           <span class="material-symbols-rounded">more_horiz</span>
@@ -605,8 +605,13 @@ function renderMobileTabs(){
       </span>
       <span class="mt-l">${label}</span>
     </a>`;
+  // 🏛 v158 출석부를 열 수 있는 선생님은 아래 탭에 «출석»도 (홈 · 출석 · 할 일 · 쪽지 · 전체)
+  let att = null;
+  try{ att = (typeof menuFind === 'function') ? menuFind('attend') : null; }catch(e){ att = null; }
+  const attOk = !!att && sbCanSee(att, att.groupAdmin ? { admin:true } : null);
   mt.innerHTML =
     tab('home', '홈', 'index.html', 0, SB_ACTIVE === 'home') +
+    (attOk ? tab('fact_check', '출석', att.href || 'attend.html', 0, SB_ACTIVE === 'attend') : '') +
     tab('approval', '할 일', 'payreq.html', todo, SB_ACTIVE === 'payreq') +
     tab('mail', '쪽지', 'message.html', msg, SB_ACTIVE === 'message') +
     `<button class="mt-i" onclick="openDrawer()">

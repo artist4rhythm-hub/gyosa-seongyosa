@@ -1296,15 +1296,26 @@ function renderHome(){
 
   // ── ① 할 일 ──
   const todos = [
-    { label:'경비 결재',    v:n.payCnt||0,      icon:'💳', href:'payreq.html',   hint:'내 차례인 지급 요청' },
-    { label:'지급 대기',    v:n.payWaitCnt||0,  icon:'💰', href:'payreq.html',   hint:'상신된 요청 지급 처리' },
-    { label:'전자결재',     v:n.approvalCnt||0, icon:'🗂️', href:'approval.html', hint:'내 차례인 문서' },
-    { label:'안 읽은 쪽지', v:n.msgCnt||0,      icon:'✉️', href:'message.html',  hint:'확인하지 않은 쪽지' },
-    { label:'새 게시글',    v:(n.newPostCnt||0)+(n.boardCnt||0), icon:'📌', href:'board.html', hint:'새 글·댓글' },
-    { label:'회의 임무',    v:n.mtgCnt||0,      icon:'📝', href:'minutes.html?mine=1', hint:'회의에서 맡은 일' },
-  ];
+    { label:'경비 결재',    v:n.payCnt||0,      icon:'💳', href:'payreq.html',   hint:'내 차례인 지급 요청', mi:'credit_card', c:3, key:'payreq', core:1 },
+    { label:'지급 대기',    v:n.payWaitCnt||0,  icon:'💰', href:'payreq.html',   hint:'상신된 요청 지급 처리', mi:'payments', c:3, key:'payreq' },
+    { label:'전자결재',     v:n.approvalCnt||0, icon:'🗂️', href:'approval.html', hint:'내 차례인 문서', mi:'approval', c:2, key:'approval', core:1 },
+    { label:'안 읽은 쪽지', v:n.msgCnt||0,      icon:'✉️', href:'message.html',  hint:'확인하지 않은 쪽지', mi:'mail', c:4, key:'message', core:1 },
+    { label:'새 게시글',    v:(n.newPostCnt||0)+(n.boardCnt||0), icon:'📌', href:'board.html', hint:'새 글·댓글', mi:'push_pin', c:4, key:'board' },
+    { label:'회의 임무',    v:n.mtgCnt||0,      icon:'📝', href:'minutes.html?mine=1', hint:'회의에서 맡은 일', mi:'edit_note', c:1, key:'minutes', core:1 },
+  ].filter(t => { const it = findMenuItem(t.key); return !it || menuOk(it, menuGroupOf(t.key)); });   // 🏛 v158 열 수 없는 화면의 칸은 빼고
   const active = todos.filter(t=>t.v>0);
   const idle   = todos.filter(t=>t.v===0);
+  /* 🏛 v158 로비 «지금 처리할 일» — 늘 보이는 네 칸(결재 · 경비 · 쪽지 · 회의 임무) + 지급 대기 · 새 게시글은 있을 때만
+     · 0건은 흐리게 · 숫자는 카테고리 색 */
+  const LOB_ORDER = ['전자결재','경비 결재','지급 대기','안 읽은 쪽지','새 게시글','회의 임무'];
+  const t4 = todos.filter(t => t.core || t.v > 0).sort((a,b) => LOB_ORDER.indexOf(a.label) - LOB_ORDER.indexOf(b.label));
+  const t4Html = t4.map(t => `
+    <a class="hm-t4${t.v>0?' on':''}" href="${t.href}" title="${esc(t.hint)}">
+      <span class="hm-t4-ic" style="background:var(--gx-c${t.c}b);color:var(--gx-c${t.c})"><span class="material-symbols-rounded">${t.mi}</span></span>
+      <span class="hm-t4-b"><span class="hm-t4-l">${esc(t.label)}</span><b class="hm-t4-v" style="${t.v>0?`color:var(--gx-c${t.c})`:''}">${t.v}<small>건</small></b></span>
+      <span class="material-symbols-rounded hm-t4-go">chevron_right</span>
+    </a>`).join('');
+  const sumAct = active.reduce((s,t)=>s+t.v,0);
 
   const bigCards = active.map(t=>`
     <div class="hm-todo on" onclick="location.href='${t.href}'">
@@ -1337,8 +1348,9 @@ function renderHome(){
         <div class="hm-tdi"><span class="hm-tdc">🎂</span><div><div class="hm-tdl">오늘 생일</div><div class="hm-tdv" id="td-bd">확인 중…</div></div></div>
       </div>` : '',
     tt: ()=> widgetOn('tt') ? `<div id="hm-tt"></div>` : '',
-    quick: ()=> widgetOn('quick') ? `<div class="hm-sec">⚡ 빠른 이동 <span class="hm-qedit" onclick="toggleQuickEdit()" id="quick-edit-btn">편집</span></div>
-      <div class="hm-quick" id="hm-quick"></div>` : '',
+    quick: ()=> widgetOn('quick') ? `<div class="hm-sec">⭐ 자주 여는 방 <span class="hm-qedit" onclick="toggleQuickEdit()" id="quick-edit-btn">${quickEditing?'완료':'고르기'}</span></div>
+      <div class="hm-quick hm-rooms" id="hm-quick"></div>
+      ${allRoomsHTML()}` : '',
     attend: ()=>{ if(!widgetOn('attend')) return '';
       let AS='cls'; try{ AS = window.getAttStyle ? getAttStyle() : 'cls'; }catch(e){}   // 선생님(계정)마다 · 기본 반별
       return `<div class="hm-sec">📋 오늘의 출결 <span class="hw-live">● 실시간</span>
@@ -1348,10 +1360,8 @@ function renderHome(){
           <button data-s="sum" class="${AS==='sum'?'on':''}" onclick="setAttStyle('sum')">요약</button>
         </span></div>
       <div id="w-attend" class="hw-stack"><div class="hw-dim">불러오는 중…</div></div>`; },
-    todo: ()=> widgetOn('todo') ? `<div class="hm-sec">📌 지금 처리할 일 ${active.length?`<span style="font-size:11.5px;font-weight:600;color:#fff;background:var(--gm);padding:2px 10px;border-radius:100px">${active.length}건</span>`:''}</div>
-      ${active.length ? `<div class="hm-todos">${bigCards}</div>${idle.length?`<div class="hm-idles">${smallChips}</div>`:''}`
-        : `<div class="hm-clear">🎉 <b>모두 처리했어요!</b><div style="font-size:12.5px;color:var(--ts);margin-top:5px">새로 온 결재·쪽지·게시글이 없습니다.</div>
-           ${idle.length?`<div class="hm-idles" style="justify-content:center;margin-top:12px">${smallChips}</div>`:''}</div>`}` : '',
+    todo: ()=> widgetOn('todo') ? `<div class="hm-sec">📌 지금 처리할 일 <span class="hm-sec-r">${sumAct ? `<b>${sumAct}건</b> 기다려요` : '모두 처리했어요'}</span></div>
+      <div class="hm-t4s" data-n="${t4.length}">${t4Html}</div>` : '',
     mtg: ()=> widgetOn('mtg') ? `<div class="hm-sec">📝 회의에서 맡은 일 <span class="hw-live" id="w-mtg-n"></span>
         <a href="minutes.html?mine=1" style="margin-left:auto;font-size:11.5px;font-weight:800;color:var(--gm);text-decoration:none">모두 보기 ›</a></div>
       <div id="w-mtg" class="hw-stack"><div class="hw-dim">불러오는 중…</div></div>` : '',
@@ -1366,31 +1376,6 @@ function renderHome(){
       <div id="w-acdday" class="hw-stack"><div class="hw-dim">확인 중…</div></div>` : '',
   };
   const _worder = WORDER();
-
-  // ── ④ 전체 기능 (접기) ──
-  const groups = (window.MENU||[]);
-  const mapHtml = groups.map(g=>{
-    const items = g.items.filter(it=>menuOk(it, g));
-    if(!items.length) return '';
-    return `<div class="hm-grp">
-      <div class="hm-gt">${g.group}</div>
-      <div class="hm-gi">
-        ${items.map(it=>{
-          const b = it.badge==='payreq' ? (n.payCnt||0)+(n.payWaitCnt||0)
-                  : it.badge==='approval' ? (n.approvalCnt||0)
-                  : it.badge==='message' ? (n.msgCnt||0) : 0;
-          return `<div class="hm-card" onclick="location.href='${it.href}'">
-            <div class="hm-ch">
-              <span class="hm-cl">${esc(it.label)}</span>
-              ${b>0?`<span class="hm-cb">${b}</span>`:''}
-            </div>
-            ${it.tabs&&it.tabs.length ? `<div class="hm-ct">${it.tabs.slice(0,5).map(t=>`<span>${esc(t)}</span>`).join('')}</div>`
-              : it.desc ? `<div class="hm-cd">${esc(it.desc)}</div>` : ''}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>`;
-  }).join('');
 
   body.innerHTML = `
     <style>
@@ -1885,9 +1870,143 @@ function renderHome(){
         .ck-time{font-size:25px}
         .ck-moon{margin-left:0;width:100%;padding-top:9px;border-top:1px solid rgba(255,255,255,.14)}
       }
+
+      /* ═══ 🏛 v158 오늘의 로비 ═══ */
+      .hm-lobby{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px 24px;margin:2px 0 22px}
+      .hm-lb-l{flex:1 1 300px;min-width:min(100%,300px)}
+      .hm-lb-date{font-size:13px;color:var(--ink-3,#6B756F);font-weight:600}
+      .hm-lb-hi{margin:4px 0 0;font-size:26px;font-weight:800;letter-spacing:-.5px;line-height:1.25;color:var(--ink,#1C2420)}
+      .hm-lb-sub{font-size:13px;color:var(--ink-2,#4D5852);margin-top:3px}
+      .hm-lb-verse{margin-top:8px;font-size:13.5px;color:var(--ink-2,#4D5852);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline}
+      .hm-lb-vt{font-family:'Nanum Brush Script','Nanum Pen Script',cursive;font-size:19px;color:var(--sb-house,#1E3932);line-height:1.3}
+      html[data-theme="dark"] .hm-lb-vt{color:#DCEFE6}
+      .hm-lb-vr{font-size:11.5px;font-weight:700;color:var(--ink-3,#6B756F);letter-spacing:.3px}
+      .hm-lb-r{display:flex;flex-direction:column;align-items:flex-end;gap:10px;flex:none}
+      .hm-lobby .hm-wgbtns{position:static;display:flex;gap:6px}
+      .hm-lobby .hm-wgset{position:static;border:1px solid var(--line,#E3E1DA);background:var(--surface,#fff);color:var(--ink-2,#4D5852);
+        border-radius:9px;font-size:12px;font-weight:700;padding:6px 11px;backdrop-filter:none}
+      .hm-lobby .hm-wgset:hover{border-color:var(--sb-green,#00704A);color:var(--sb-green,#00704A);background:var(--surface,#fff)}
+      /* 작은 시계 — 밝은 카드 */
+      .hm-lobby .hm-clock{margin:0;padding:10px 14px;gap:14px;border-radius:14px;background:var(--surface,#fff);border:1px solid var(--line,#E3E1DA);flex-wrap:nowrap}
+      .hm-lobby .ck-date{display:none}
+      .hm-lobby .ck-time{font-size:26px;font-weight:500;color:var(--ink,#1C2420);margin:0}
+      .hm-lobby .ck-time i{opacity:.35}
+      .hm-lobby .ck-sec{font-size:15px;opacity:.5}
+      .hm-lobby .ck-moon{gap:9px;margin-left:0;padding-left:14px;border-left:1px solid var(--line-soft,#EEECE6)}
+      .hm-lobby .ck-lunar{font-size:12.5px;color:var(--ink,#1C2420)}
+      .hm-lobby .ck-phase{font-size:11px;color:var(--ink-3,#6B756F)}
+      .hm-lobby .ck-term{background:var(--gold-bg,#F7EFD8);color:var(--gold,#8A6410)}
+      .hm-lobby .ck-moonimg svg{width:30px;height:30px}
+      /* 칸 제목 */
+      .hm-lob .hm-sec{font-size:16px;font-weight:800;color:var(--ink,#1C2420);margin:20px 2px 10px;letter-spacing:-.2px}
+      .hm-lob .hm-sec .gxe::before{color:var(--sb-green,#00704A)}
+      .hm-sec-r{margin-left:6px;font-size:12.5px;font-weight:600;color:var(--ink-3,#6B756F)}
+      .hm-sec-r b{color:var(--sb-green,#00704A)}
+      .hm-lob .hm-qedit{border:1px solid var(--line,#E3E1DA);color:var(--ink-2,#4D5852);border-radius:9px;padding:4px 11px;font-size:12px}
+      .hm-lob .hm-qedit:hover{background:var(--surface,#fff);border-color:var(--sb-green,#00704A);color:var(--sb-green,#00704A)}
+      /* 지금 처리할 일 — 네 칸 */
+      .hm-t4s{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:6px}
+      .hm-t4s[data-n="5"],.hm-t4s[data-n="6"]{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+      @supports (container-type:inline-size){
+        section.hm-b[data-k="todo"]{container-type:inline-size}
+        .hm-t4s[data-n="4"]{grid-template-columns:repeat(4,minmax(0,1fr))}
+        @container (max-width:719px){ .hm-t4s[data-n="4"]{grid-template-columns:1fr 1fr} }
+      }
+      .hm-side .hm-t4s,.hm-side .hm-t4s[data-n]{grid-template-columns:1fr 1fr;gap:8px}
+      .hm-t4{display:flex;align-items:center;gap:12px;padding:14px 14px 14px 16px;border-radius:14px;background:var(--surface,#fff);
+        border:1px solid var(--line,#E3E1DA);text-decoration:none;color:inherit;min-width:0;transition:border-color .12s,transform .12s}
+      .hm-t4:hover{border-color:var(--sb-green,#00704A);transform:translateY(-1px)}
+      .hm-t4-ic{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:none}
+      .hm-t4-ic .material-symbols-rounded{font-size:21px}
+      .hm-t4-b{display:flex;flex-direction:column;min-width:0;flex:1}
+      .hm-t4-l{font-size:12.5px;color:var(--ink-3,#6B756F);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .hm-t4-v{font-size:24px;font-weight:800;line-height:1.1;letter-spacing:-.5px;color:var(--ink-3,#9AA39E);font-variant-numeric:tabular-nums}
+      .hm-t4-v small{font-size:13px;font-weight:700;color:var(--ink-3,#6B756F);margin-left:2px}
+      .hm-t4:not(.on) .hm-t4-ic{filter:saturate(.35);opacity:.75}
+      .hm-t4-go{display:none}   /* 카드 전체가 눌리는 자리 — 좁은 네 칸에서 이름이 잘리지 않게 화살표는 뺀다 */
+      /* 자주 여는 방 */
+      .hm-rooms{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:12px}
+      .hm-rm{position:relative;display:flex;flex-direction:column;gap:2px;padding:16px 16px 14px;border-radius:14px;background:var(--surface,#fff);
+        border:1px solid var(--line,#E3E1DA);text-decoration:none;color:inherit;min-width:0;cursor:pointer;transition:border-color .12s,transform .12s}
+      .hm-rm:hover{border-color:var(--sb-green,#00704A);transform:translateY(-1px)}
+      .hm-rm-ic{width:44px;height:44px;border-radius:11px;display:grid;place-items:center;flex:none;margin-bottom:10px}
+      .hm-rm-ic .material-symbols-rounded{font-size:23px}
+      .hm-rm-t{font-size:15px;font-weight:800;color:var(--ink,#1C2420);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .hm-rm-s{font-size:12.5px;color:var(--ink-3,#6B756F);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .hm-rm-bd{position:absolute;top:12px;right:12px;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#D14B3A;color:#fff;
+        font-size:11px;font-weight:800;display:grid;place-items:center}
+      .hm-rooms.editing .hm-rm{padding-top:14px}
+      .hm-rooms.editing .hm-rm:hover{transform:none}
+      .hm-rooms .hm-qt-star{position:absolute;top:12px;right:12px;left:auto;opacity:1;font-size:16px;cursor:pointer}
+      .hm-rm.faded{opacity:.5}
+      /* 고르기 중(넓은 화면)에는 방을 작게 — 아이콘 왼쪽 · 이름 · 묶음 */
+      @media(min-width:761px){
+        .hm-rooms.editing{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+        .hm-rooms.editing .hm-rm{display:grid;grid-template-columns:34px 1fr;column-gap:10px;row-gap:0;align-items:center;padding:10px 34px 10px 12px}
+        .hm-rooms.editing .hm-rm-ic{width:34px;height:34px;border-radius:9px;margin:0;grid-row:1 / 3}
+        .hm-rooms.editing .hm-rm-ic .material-symbols-rounded{font-size:19px}
+        .hm-rooms.editing .hm-rm-t{font-size:13.5px}
+        .hm-rooms.editing .hm-rm-s{font-size:11.5px}
+        .hm-rooms.editing .hm-qt-star{top:50%;right:10px;transform:translateY(-50%)}
+      }
+      .hm-rooms .hm-qhint{grid-column:1/-1}
+      /* 모든 방 */
+      .hm-allrooms{display:flex;align-items:center;gap:14px;width:100%;padding:12px 16px;border-radius:14px;background:var(--surface,#fff);
+        border:1px solid var(--line,#E3E1DA);cursor:pointer;font-family:inherit;text-align:left;color:inherit;margin-bottom:6px}
+      .hm-allrooms:hover{border-color:var(--sb-green,#00704A)}
+      .hm-ar-ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--sb-mint-2,#F0EEE8);color:var(--ink-2,#4D5852);flex:none}
+      .hm-ar-t{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+      .hm-ar-t > b{font-size:14px;color:var(--ink,#1C2420)}
+      .hm-ar-cs{display:flex;flex-wrap:wrap;gap:4px 14px}
+      .hm-ar-c{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2,#4D5852)}
+      .hm-ar-c i{width:8px;height:8px;border-radius:2px;display:inline-block}
+      .hm-ar-go{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:700;color:var(--ink-2,#4D5852);flex:none;
+        border:1px solid var(--line,#E3E1DA);border-radius:9px;padding:5px 8px 5px 11px}
+      .hm-ar-go .material-symbols-rounded{font-size:18px;transition:transform .2s}
+      .hm-map{display:flex;flex-direction:column;gap:16px;margin:12px 0 8px}
+      .hm-mg-t{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;color:var(--ink,#1C2420);margin:0 2px 10px}
+      .hm-mg-t i{width:10px;height:10px;border-radius:3px;display:inline-block}
+      .hm-mg-t span{font-size:12px;font-weight:600;color:var(--ink-3,#6B756F)}
+      .hm-mg-i{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:10px}
+      .hm-mt{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;height:100px;border-radius:14px;
+        background:var(--surface,#fff);border:1px solid var(--line,#E3E1DA);text-decoration:none;color:inherit;text-align:center;padding:8px 6px}
+      .hm-mt:hover{border-color:var(--sb-green,#00704A)}
+      .hm-mt .hm-rm-ic{margin:0;border-radius:13px}
+      .hm-mt .hm-rm-bd{top:8px;right:10px}
+      .hm-mt-l{font-size:12.5px;font-weight:700;color:var(--ink,#1C2420);line-height:1.25}
+      /* 로비에서는 위젯 카드도 같은 모양 (얇은 선 · 둥근 14 · 그림자 없음) */
+      .hm-lob .hm-wx,.hm-lob .hm-memo,.hm-lob .hm-tool,.hm-lob .hm-world,.hm-lob .hm-panel,.hm-lob .hw-line,.hm-lob .att-card,.hm-lob .att-sum,.hm-lob .hm-tdi{border-radius:14px;box-shadow:none}
+      .hm-lob .hm-tdi{padding:12px 14px}
+      /* 휴대폰 */
+      @media(max-width:760px){
+        .hm-lobby{flex-direction:column;align-items:stretch;gap:12px;margin-bottom:14px}
+        .hm-lb-hi{font-size:21px}
+        .hm-lb-r{flex-direction:row;align-items:center;justify-content:space-between}
+        .hm-lobby .hm-clock{padding:8px 12px}
+        .hm-lobby .ck-time{font-size:20px}
+        .hm-lobby .ck-moon{display:none}
+        .hm-t4s,.hm-t4s[data-n]{grid-template-columns:1fr 1fr;gap:8px}
+        .hm-t4{padding:12px;gap:10px}
+        .hm-t4-ic{width:34px;height:34px}
+        .hm-t4-v{font-size:20px}
+        .hm-t4-l{white-space:normal;line-height:1.25}
+        .hm-rooms{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 6px}
+        .hm-rooms .hm-rm{align-items:center;padding:0;background:none;border:0;text-align:center}
+        .hm-rooms .hm-rm-ic{width:54px;height:54px;border-radius:15px;margin:0 0 6px}
+        .hm-rooms .hm-rm-ic .material-symbols-rounded{font-size:26px}
+        .hm-rooms .hm-rm-t{font-size:12px;font-weight:700;white-space:normal;line-height:1.25}
+        .hm-rooms .hm-rm-s{display:none}
+        .hm-rooms .hm-rm-bd{top:-4px;right:calc(50% - 34px)}
+        .hm-rooms.editing .hm-qt-star{top:-4px;right:calc(50% - 36px)}
+        .hm-ar-cs{display:none}
+        .hm-mg-i{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 6px}
+        .hm-mt{height:auto;background:none;border:0;padding:0;justify-content:flex-start}
+        .hm-mt .hm-rm-ic{width:52px !important;height:52px !important}
+      }
     </style>
 
-    <div class="hm-wrap">
+    <div class="hm-wrap${widgetOn('night')?'':' hm-lob'}">
+      ${widgetOn('night') ? `
       <div class="hm-hero">
         <div class="hm-hsky" id="hm-sky"></div>
         <div class="hm-wgbtns">
@@ -1898,13 +2017,29 @@ function renderHome(){
           <div class="hm-date">${dateStr}</div>
           <div class="hm-hi">${greet}, ${esc(CU.name)} 선생님</div>
           <div class="hm-sub">${esc(org)}${esc(dept)}${esc(pos)}</div>
-          ${clockHTML()}
+          ${widgetOn('clock') ? clockHTML() : ''}
           <div class="hm-verse">
             <div class="hm-vt">${esc(V.t)}</div>
             <div class="hm-vr">${esc(V.r)}</div>
           </div>
         </div>
-      </div>
+      </div>` : `
+      <!-- 🏛 v158 로비 머리 — 밝게 · 한 줄 인사 · 말씀 · 작은 시계 (밤하늘 카드는 «홈 고르기»에서 다시 켤 수 있음) -->
+      <div class="hm-lobby">
+        <div class="hm-lb-l">
+          <div class="hm-lb-date">${dateStr}</div>
+          <h1 class="hm-lb-hi">${greet}, ${esc(CU.name)} 선생님</h1>
+          <div class="hm-lb-sub">${esc(org)}${esc(dept)}${esc(pos)}</div>
+          <div class="hm-lb-verse"><span class="hm-lb-vt">${esc(V.t)}</span><span class="hm-lb-vr">${esc(V.r)}</span></div>
+        </div>
+        <div class="hm-lb-r">
+          ${widgetOn('clock') ? clockHTML() : ''}
+          <div class="hm-wgbtns">
+            <button class="hm-wgset hm-lyset" onclick="window.HomeLayout && HomeLayout.begin()" title="창 크기 · 자리 바꾸기 (모서리를 끌어서)">✏️ 배치 바꾸기</button>
+            <button class="hm-wgset" onclick="openWidgetSetup()" title="홈에 무엇을 띄울지 고르기">🧩 홈 고르기</button>
+          </div>
+        </div>
+      </div>`}
       <div id="nt-nudge"></div>
 
       <div class="hm-blocks">${_worder.map((k,i)=>{ const h = HW[k]?HW[k]():''; return h ? `<section class="hm-b" data-k="${k}" style="order:${i}">${h}</section>` : ''; }).join('\n\n      ')}</div>
@@ -1945,11 +2080,7 @@ function renderHome(){
         </div>
       </div>
 
-      <button class="hm-mapbtn hm-fold${homeMapOpen?' on':''}" onclick="toggleHomeMap()" aria-expanded="${homeMapOpen?'true':'false'}">
-        <span class="hf-ic"><span class="material-symbols-rounded">apps</span></span><span class="hf-t">전체 기능 ${homeMapOpen?'접기':'보기'}</span>
-        <span class="ar material-symbols-rounded" style="transform:rotate(${homeMapOpen?'180':'0'}deg)">expand_more</span>
-      </button>
-      ${homeMapOpen ? `<div style="margin-top:12px">${mapHtml}</div>` : ''}
+      ${widgetOn('quick') ? '' : `<div style="margin-top:6px">${allRoomsHTML()}</div>`}
     </div>`;
 
   // 히어로 별
@@ -2010,7 +2141,7 @@ window.renderHome = renderHome;
    위젯 블록(section.hm-b)을 «홈 고르기» 차례 그대로 왼쪽(넓은 단) · 오른쪽(좁은 단)에 나눠 담는다.
    좁아지면(패드·폰·큰 글자) 다시 한 줄로 — 블록을 옮기기만 하므로 안의 내용·실시간 갱신은 그대로 이어진다.
    한쪽 단에 들어갈 블록이 하나도 없으면 나누지 않는다. */
-const HM_SIDE = ['todo','mtg','appr','money','acdday','today','chk','dday','fav'];
+const HM_SIDE = ['mtg','appr','money','acdday','today','chk','dday','fav'];   // 🏛 v158 «지금 처리할 일»은 로비 왼쪽(넓은 단) 맨 위로
 function arrangeHome(){
   const bl = document.querySelector('#home-body .hm-blocks'); if(!bl) return;
   if(window.HomeLayout){ bl.classList.remove('hl-std','hl-memo','hl-one'); bl.classList.add('hl-' + HOME_LAYOUT); HomeLayout.apply(); return; }   // 🧱 v136
@@ -2049,13 +2180,14 @@ if(window.HomeLayout) HomeLayout.init({
 /* ═══ 🧩 홈 위젯 고르기 ═══
    홈에 무엇을 띄울지 각자 정한다. 고른 값은 이 기기에 남는다. */
 const HOME_WIDGETS = [
-  { key:'clock',  label:'시계·인사말',   hint:'맨 위 인사와 시계' },
+  { key:'clock',  label:'시계',          hint:'맨 위 인사 옆 작은 시계 · 음력' },
+  { key:'night',  label:'밤하늘 인사 카드', hint:'맨 위를 예전처럼 어두운 밤하늘 카드로 (끄면 밝은 로비)' },
   { key:'wx',     label:'날씨',          hint:'오늘 우리 지역 날씨' },
   { key:'memo',   label:'메모',          hint:'나만 보는 짧은 메모' },
   { key:'world',  label:'세계 시각',     hint:'선교지 시간 확인' },
   { key:'today',  label:'오늘 한눈에',   hint:'출근·일정·생일·수업' },
   { key:'tt',     label:'내 시간표',     hint:'오늘 수업을 시간 순서로' },
-  { key:'quick',  label:'빠른 이동',     hint:'자주 쓰는 화면 바로가기' },
+  { key:'quick',  label:'자주 여는 방',  hint:'자주 쓰는 화면 · 모든 방 서랍' },
   { key:'todo',   label:'지금 처리할 일', hint:'결재·쪽지·게시글' },
   { key:'attend', label:'오늘의 출결',    hint:'기관·반별 출결 실시간 현황' },
   { key:'mtg',    label:'회의에서 맡은 일', hint:'회의록 임무 — 진행 전 → 진행 중 → 완료' },
@@ -2065,15 +2197,17 @@ const HOME_WIDGETS = [
   { key:'acdday', label:'학사 D-Day',     hint:'다가오는 학사 일정 셋' },
 ];
 /* ── 🧲 위젯 순서 — 블록 단위로 끌어서 배치 ── */
+/* 🏛 v158 기본 차례 = «오늘의 로비» — 처리할 일 → 자주 여는 방 → 출결 … (내 차례를 저장한 분은 그대로 · «처음 상태로»를 누르면 이 차례) */
 const WBLOCKS = [
-  { k:'attend', l:'오늘의 출결' },
   { k:'todo',   l:'지금 처리할 일' },
+  { k:'quick',  l:'자주 여는 방' },
+  { k:'attend', l:'오늘의 출결' },
+  { k:'today',  l:'오늘 한눈에' },
   { k:'mtg',    l:'회의에서 맡은 일' },
   { k:'club',   l:'동아리 실황' },
   { k:'appr',   l:'결재 서랍' },
   { k:'money',  l:'경비 창구' },
   { k:'acdday', l:'학사 D-Day' },
-  { k:'today',  l:'오늘 한눈에' },
   { k:'tt',     l:'내 시간표' },
   { k:'wx',     l:'날씨' },
   { k:'memo',   l:'메모 · 포스트잇' },
@@ -2081,7 +2215,6 @@ const WBLOCKS = [
   { k:'dday',   l:'D-Day' },
   { k:'fav',    l:'내 즐겨찾기' },
   { k:'world',  l:'세계 시각' },
-  { k:'quick',  l:'빠른 이동' },
 ];
 function WORDER(){
   let o = WORDER_TMP || (HOME_ACC && Array.isArray(HOME_ACC.order) ? HOME_ACC.order : null);      // 🧱 v136 — (배치를 고치는 중이면 그 차례) · 내 계정에 저장한 차례가 먼저
@@ -2097,7 +2230,7 @@ function WORDER(){
   return out;
 }
 function saveWorder(o){ try{ localStorage.setItem('gyosa_worder', JSON.stringify(o)); }catch(e){} saveHomeAcc({ order: o.slice() }); }
-const WIDGET_DEFAULT = { clock:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1, attend:1, mtg:1, club:1, appr:1, money:1, acdday:1 };
+const WIDGET_DEFAULT = { clock:1, night:0, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1, attend:1, mtg:1, club:1, appr:1, money:1, acdday:1 };
 let WIDGET_ON = { ...WIDGET_DEFAULT };
 function loadWidgetPrefs(){
   homeAccLocal();
@@ -2192,12 +2325,12 @@ window.openWidgetSetup = function(){
       <div class="wg-h">🧩 홈 화면 고르기
         <button class="wg-x" onclick="closeWidgetSetup()" aria-label="닫기">✕</button></div>
       <div class="wg-d">⠿를 끌어 순서를 바꾸고, 아래에서 켜고 끄세요. 내 계정에 저장돼 어느 기기에서나 같아요. 창 크기는 «✏️ 배치 바꾸기».</div>
-      <div class="wg-st">🧲 순서 <span>맨 위 인사말은 고정</span></div>
+      <div class="wg-st">🧲 순서 <span>맨 위 인사는 고정 · «밤하늘 인사 카드»는 아래에서</span></div>
       <div class="wgo-list" id="wgo-list">${orows}</div>
       <div class="wg-st">👀 보이기 · 숨기기</div>
       <div class="wg-list">${rows}</div>
       <div class="wg-foot">
-        <button class="wg-reset" onclick="resetWidgets()">처음 상태로</button>
+        <button class="wg-reset" onclick="resetWidgets()" title="차례 · 보이기 · 창 크기와 자리를 처음(오늘의 로비)으로">처음 상태로 (로비)</button>
         <button class="wg-ok" onclick="closeWidgetSetup()">완료</button>
       </div>
     </div>`;
@@ -2241,7 +2374,17 @@ window.wDrag = function(ev){
 };
 window.closeWidgetSetup = function(){ $I('wg-mod')?.remove(); };
 window.setWidget = function(k, on){ WIDGET_ON[k] = on ? 1 : 0; saveWidgetPrefs(); renderHome(); };
-window.resetWidgets = function(){ WIDGET_ON = { ...WIDGET_DEFAULT }; try{ localStorage.removeItem('gyosa_worder'); }catch(e){} saveHomeAcc({ order: WBLOCKS.map(x=>x.k), on: { ...WIDGET_DEFAULT } }); saveWidgetPrefs(); closeWidgetSetup(); renderHome(); };
+/* «처음 상태로» = 🏛 로비 배치 — 차례 · 보이기에 더해 창 크기 · 자리(배치 바꾸기)도 처음으로 */
+window.resetWidgets = function(){
+  if(!confirm('홈을 처음 상태(오늘의 로비)로 되돌릴까요?\n차례 · 보이기 · 창 크기와 자리가 모두 처음으로 돌아가요.')) return;
+  try{ if(window.HomeLayout && HomeLayout.editing()) HomeLayout.end(false); }catch(e){}   // 🏛 v158 배치 바꾸는 중이면 먼저 나오고 (취소해도 예전 배치가 되살아나지 않게)
+  WORDER_TMP = null;
+  WIDGET_ON = { ...WIDGET_DEFAULT }; try{ localStorage.removeItem('gyosa_worder'); }catch(e){}
+  const lay = { w:{ it:{} }, n:{ it:{} } };
+  try{ window.HomeLayout && HomeLayout.set(lay); }catch(e){}
+  saveHomeAcc({ order: WBLOCKS.map(x=>x.k), on: { ...WIDGET_DEFAULT }, lay });
+  saveWidgetPrefs(); closeWidgetSetup(); renderHome();
+};
 
 // ⚡ 빠른 이동 타일 (즐겨찾기)
 const QUICK_ICON = {
@@ -2289,6 +2432,44 @@ function findMenuItem(key){
   return null;
 }
 
+/* 🏛 v158 «자주 여는 방» · «모든 방» — 메뉴 아이콘(선) + 묶음 색 + 한 줄 상태 */
+const ROOM_CAT = { '학사':1, '근무 · 행정':2, '경비':3, '소통':4, '관리':5 };
+function roomCatOf(key){ const g = menuGroupOf(key); return (g && ROOM_CAT[g.group]) || 5; }
+function roomStatus(it){
+  const n = window.__notif || {};
+  const c = (x) => Number(x) || 0;
+  switch(it.key){
+    case 'approval': return c(n.approvalCnt) ? `결재할 문서 ${c(n.approvalCnt)}` : '결재할 문서 없음';
+    case 'message':  return c(n.msgCnt) ? `새 쪽지 ${c(n.msgCnt)}` : '새 쪽지 없음';
+    case 'payreq':   { const k = c(n.payCnt) + c(n.payWaitCnt); return k ? `처리할 요청 ${k}` : '처리할 요청 없음'; }
+    case 'board':    { const k = c(n.newPostCnt) + c(n.boardCnt); return k ? `새 글 · 댓글 ${k}` : '새 글 없음'; }
+    case 'minutes':  if(c(n.mtgCnt)) return `맡은 일 ${c(n.mtgCnt)}`; break;
+  }
+  return String(it.desc || '').split(' — ')[0].split(' · ').slice(0, 2).join(' · ');
+}
+function roomIcon(it, size){
+  const k = roomCatOf(it.key);
+  return `<span class="hm-rm-ic" style="background:var(--gx-c${k}b);color:var(--gx-c${k})${size?`;width:${size}px;height:${size}px`:''}"><span class="material-symbols-rounded">${esc(it.icon || 'apps')}</span></span>`;
+}
+/* 모든 방 — 접힌 한 줄 + 펼치면 묶음마다 진열장 */
+function allRoomsHTML(){
+  const n = window.__notif || {};
+  const groups = (window.MENU || []).map(g => ({ g, items: (g.items || []).filter(it => menuOk(it, g)) })).filter(x => x.items.length);
+  const total = groups.reduce((s, x) => s + x.items.length, 0);
+  const cats = groups.map(x => `<span class="hm-ar-c"><i style="background:var(--gx-c${ROOM_CAT[x.g.group]||5})"></i>${esc(x.g.group)} <b>${x.items.length}</b></span>`).join('');
+  const badgeOf = it => it.badge==='payreq' ? (n.payCnt||0)+(n.payWaitCnt||0) : it.badge==='approval' ? (n.approvalCnt||0) : it.badge==='message' ? (n.msgCnt||0) : 0;
+  const map = homeMapOpen ? `<div class="hm-map">${groups.map(x => `
+      <div class="hm-mg"><div class="hm-mg-t"><i style="background:var(--gx-c${ROOM_CAT[x.g.group]||5})"></i>${esc(x.g.group)}<span>${x.items.length}</span></div>
+        <div class="hm-mg-i">${x.items.map(it => { const b = badgeOf(it);
+          return `<a class="hm-mt" href="${esc(it.href)}" title="${esc(it.desc || '')}">${roomIcon(it, 44)}${b>0?`<span class="hm-rm-bd">${b>99?'99+':b}</span>`:''}<span class="hm-mt-l">${esc(it.label)}</span></a>`; }).join('')}</div></div>`).join('')}</div>` : '';
+  return `<button type="button" class="hm-allrooms${homeMapOpen?' on':''}" onclick="toggleHomeMap()" aria-expanded="${homeMapOpen?'true':'false'}">
+      <span class="hm-ar-ic"><span class="material-symbols-rounded">apps</span></span>
+      <span class="hm-ar-t"><b>모든 방 ${total}개</b><span class="hm-ar-cs">${cats}</span></span>
+      <span class="hm-ar-go">${homeMapOpen?'접기':'펼쳐 보기'}<span class="material-symbols-rounded" style="transform:rotate(${homeMapOpen?'180':'0'}deg)">expand_more</span></span>
+    </button>${map}`;
+}
+window.allRoomsHTML = allRoomsHTML;
+
 function renderQuickTiles(){
   const box = $I('hm-quick'); if(!box) return;
   // 관리자 여부는 여기서 직접 판단한다 (다른 함수의 값을 빌려 쓰면 오류가 난다)
@@ -2305,14 +2486,15 @@ function renderQuickTiles(){
   if(quickEditing){
     // 편집 모드: 접근 가능한 모든 기능을 별표로 on/off
     const keys = getQuickKeys();
-    let html = '<div class="hm-qhint">별표를 눌러 홈에 표시할 기능을 선택하세요.</div>';
+    let html = '<div class="hm-qhint">별을 눌러 홈에 둘 방을 고르세요 (금색 별 = 홈에 있음). 다 고르면 «완료».</div>';
     (window.MENU||[]).forEach(g=>{
       (g.items||[]).filter(it=>menuOk(it, g)).forEach(it=>{
         const on = keys.includes(it.key);
-        html += `<div class="hm-qt ${on?'':'faded'}">
-          <span class="hm-qt-star" onclick="toggleQuick('${it.key}')">${on?'⭐':'☆'}</span>
-          <div class="hm-qt-ic">${QUICK_ICON[it.key]||'📋'}</div>
-          <div class="hm-qt-lb">${esc(it.label)}</div>
+        html += `<div class="hm-rm ${on?'':'faded'}" onclick="toggleQuick('${it.key}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleQuick('${it.key}')}" role="button" tabindex="0" aria-pressed="${on?'true':'false'}">
+          <span class="hm-qt-star">${on?'⭐':'☆'}</span>
+          ${roomIcon(it)}
+          <span class="hm-rm-t">${esc(it.label)}</span>
+          <span class="hm-rm-s">${esc(g.group)}</span>
         </div>`;
       });
     });
@@ -2326,16 +2508,17 @@ function renderQuickTiles(){
   const keys = getQuickKeys();
   const tiles = keys.map(k=>findMenuItem(k)).filter(it=>it && menuOk(it, menuGroupOf(it.key)));
   if(!tiles.length){
-    box.innerHTML = '<div class="hm-qhint">「편집」을 눌러 자주 쓰는 기능을 골라보세요.</div>';
+    box.innerHTML = '<div class="hm-qhint">«고르기»를 눌러 자주 여는 방을 골라 보세요.</div>';
     return;
   }
   box.innerHTML = tiles.map(it=>{
     const b = badgeOf(it.key);
-    return `<div class="hm-qt" onclick="location.href='${it.href}'">
-      ${b>0?`<span class="hm-qt-bd">${b}</span>`:''}
-      <div class="hm-qt-ic">${QUICK_ICON[it.key]||'📋'}</div>
-      <div class="hm-qt-lb">${esc(it.label)}</div>
-    </div>`;
+    return `<a class="hm-rm" href="${esc(it.href)}">
+      ${roomIcon(it)}
+      ${b>0?`<span class="hm-rm-bd">${b>99?'99+':b}</span>`:''}
+      <span class="hm-rm-t">${esc(it.label)}</span>
+      <span class="hm-rm-s">${esc(roomStatus(it))}</span>
+    </a>`;
   }).join('');
 }
 window.renderQuickTiles = renderQuickTiles;
@@ -2343,7 +2526,7 @@ window.renderQuickTiles = renderQuickTiles;
 function toggleQuickEdit(){
   quickEditing = !quickEditing;
   const btn = $I('quick-edit-btn');
-  if(btn) btn.textContent = quickEditing ? '완료' : '편집';
+  if(btn) btn.textContent = quickEditing ? '완료' : '고르기';
   renderQuickTiles();
 }
 window.toggleQuickEdit = toggleQuickEdit;
