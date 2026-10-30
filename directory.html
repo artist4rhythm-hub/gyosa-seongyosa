@@ -399,6 +399,7 @@ let CU = null;       // 현재 로그인 유저 (Firestore 데이터)
 let curMon = new Date();
 let selP = null, selS = null;
 let STAFF_CACHE = {};  // 전체 교직원 캐시 (uid -> data)
+let STAFF_ALL = {};    // 🤝 v157 연합으로 «보기만» 할 때 쓰는 두 기관 명단 (명부 화면에서만 씀)
 let TEACHER_INPUT = true;  // 교사 본인 출근부 직접 입력 허용 여부 (관리자가 끌 수 있음)
 let IDX = 0;         // 사용 안함 (Firebase auto ID)
 
@@ -1152,6 +1153,7 @@ async function showMain(){
   const actTab = $I('sa-act'); if(actTab) actTab.style.display = CU.role==='super' ? '' : 'none';
   // 전체 교직원 캐시 로드 (드롭다운 등에 사용)
   await reloadStaffCache();
+  await checkUnionMember();
   updateNoticeDot();
   // 공통 상단 메뉴 렌더 (컨테이너에)
   window.ORGS = ORGS;
@@ -1255,14 +1257,15 @@ function renderNotifBadges(approvalCnt, msgCnt, boardCnt, newPostCnt){
 async function reloadStaffCache(){
   try {
     const snap = await getDocs(collection(db,'staff')).then(s=>(window.hideTest?hideTest(s):s));
-    STAFF_CACHE = {};
+    STAFF_CACHE = {}; STAFF_ALL = {};
     const allowed = myOrgs();
     snap.forEach(d => {
       const s = { uid:d.id, ...d.data() };
       const sOrgs = s.orgs && s.orgs.length ? s.orgs : [s.org];
+      STAFF_ALL[d.id] = s;
       if (sOrgs.some(o => allowed.includes(o))) STAFF_CACHE[d.id] = s;
     });
-  } catch(e) { STAFF_CACHE = {}; }
+  } catch(e) { STAFF_CACHE = {}; STAFF_ALL = {}; }
 }
 
 function showTab(t){
@@ -2707,13 +2710,42 @@ function maskPhone(p){
 }
 function telHref(p){ return String(p||'').replace(/[^0-9]/g,''); }
 
+/* 🤝 v157 연합 명단에 든 분인지 — 연합 설정 문서는 수퍼관리자 · 명단에 든 분만 읽힌다 (보안 규칙)
+   · 탭에 «연합 열림» 표시만 있고 명단에 없는 계정이면 다른 기관 탭을 열지 않는다 */
+let UNION_MEMBER = false;
+async function checkUnionMember(){
+  UNION_MEMBER = false;
+  if(!CU) return;
+  if(CU.role === 'super'){ UNION_MEMBER = true; return; }
+  if(!(window.orgCore && orgCore.unionOpen())) return;
+  try{
+    const u = await getDoc(doc(db,'systemConfig','union'));
+    const d = u.exists() ? (u.data() || {}) : {};
+    UNION_MEMBER = d.enabled !== false && Array.isArray(d.uids) && d.uids.includes(CU.uid);
+  }catch(e){ UNION_MEMBER = false; }
+}
+/* 🤝 v157 연합 A — 연합을 연 분은 다른 기관 명부도 «보기만» 할 수 있다
+   · 볼 자격(접근 기관)이 없는 기관은 연합이 열렸을 때만 · 고치기 · 엑셀은 그대로 내 기관만
+   · 생일 · 주소는 그 기관을 관리하는 관리자와 본인만 (다른 기관 관리자는 못 봄) */
+// 고치기 · 생일 · 주소의 기준 = 지금 이 화면이 쓰는 내 기관 (STAFF_CACHE 와 같은 범위)
+function dirFullOrgs(){ return myOrgs(); }
+function dirOrgs(){
+  const own = myOrgs();
+  if(!(window.orgCore && orgCore.unionOpen()) || !UNION_MEMBER) return own;
+  return [...own, ...orgCore.DF.filter(o => !own.includes(o))];
+}
+function dirViewOnly(o){ return !dirFullOrgs().includes(o); }
+
 function renderDirectory(){
   const box = $I('c-dir');
   const isAdmin = ['super','org_admin'].includes(CU.role);
-  const myo = myOrgs();
+  const myo = dirOrgs();
+  const full = dirFullOrgs();
   if(!dirOrg || !myo.includes(dirOrg)) dirOrg = myo[0];
+  const viewOnly = dirViewOnly(dirOrg);
 
-  let list = Object.values(STAFF_CACHE||{})
+  const src = (window.orgCore && orgCore.unionOpen()) ? STAFF_ALL : STAFF_CACHE;   // 🤝 v157 연합이면 두 기관 명단에서
+  let list = Object.values(src||{})
     .filter(s => (s.orgs && s.orgs.length ? s.orgs : [s.org]).includes(dirOrg))
     .filter(s => (s.acStatus||'active') !== 'quit');
 
@@ -2746,7 +2778,8 @@ function renderDirectory(){
 
   const card = (s)=>{
     const isSelf = s.uid === CU.uid;
-    const canSee = isSelf || isAdmin;           // 주소·생일은 본인·관리자만
+    const sOrgs = (s.orgs && s.orgs.length ? s.orgs : [s.org]);
+    const canSee = isSelf || (isAdmin && sOrgs.some(o => full.includes(o)));   // 주소·생일은 본인·그 기관 관리자만 (🤝 v157: 연합으로 보는 다른 기관은 빼고)
     const initial = (s.name||'?').slice(0,1);
     const leave = (s.acStatus||'active')==='leave';
     return `<div class="dir-c">
@@ -2772,7 +2805,7 @@ function renderDirectory(){
           </div>` : ''}
       </div>
       <div style="display:flex;gap:5px;flex:none">
-        ${CU.role==='super'?`<button class="dir-b dir-ed" onclick="openDirEdit('${s.uid}')">✏️ 수정</button>`:''}
+        ${CU.role==='super' && !viewOnly?`<button class="dir-b dir-ed" onclick="openDirEdit('${s.uid}')">✏️ 수정</button>`:''}
         ${s.phone?`<button class="dir-b" onclick="copyText('${telHref(s.phone)}')">복사</button>`:''}
         <button class="dir-b" onclick="sendDirMsg('${s.uid}','${esc(s.name||'')}')">쪽지</button>
       </div>
@@ -2780,8 +2813,13 @@ function renderDirectory(){
   };
 
   const orgTabs = myo.length>1 ? `
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      ${myo.map(o=>`<button class="subtbtn ${o===dirOrg?'on':''}" style="padding:8px 18px" onclick="setDirOrg('${o}')">${ORGS[o]||o}</button>`).join('')}
+    <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      ${myo.map(o=>`<button class="subtbtn ${o===dirOrg?'on':''}" style="padding:8px 18px" onclick="setDirOrg('${o}')">${ORGS[o]||o}${dirViewOnly(o)?' <span style="font-size:11px;font-weight:700;opacity:.75">· 보기만</span>':''}</button>`).join('')}
+    </div>` : '';
+  const unionNote = viewOnly ? `
+    <div style="display:flex;align-items:center;gap:8px;margin:-4px 0 14px;padding:10px 13px;border-radius:11px;background:var(--info-bg,#E4EEF6);color:var(--info,#2B5C85);font-size:12.5px;font-weight:600;line-height:1.55">
+      <span class="material-symbols-rounded" style="font-size:18px">handshake</span>
+      <span><b>연합으로 보는 중</b> — ${esc(ORGS[dirOrg]||dirOrg)} 명부는 보기만 할 수 있어요. 생일 · 주소는 그 기관 관리자만 봐요.</span>
     </div>` : '';
 
   box.innerHTML = `
@@ -2815,7 +2853,7 @@ function renderDirectory(){
         .dir-s{width:100%;max-width:320px;height:40px;border:1.5px solid var(--ivd);border-radius:10px;padding:0 14px;font-size:14px;outline:none;background:var(--iv);font-family:inherit;margin-bottom:14px}
         .dir-s:focus{border-color:var(--gm);background:var(--wh)}
       </style>
-      ${orgTabs}
+      ${orgTabs}${unionNote}
       <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><input class="dir-s" id="dir-q" placeholder="🔍 이름 · 부서 · 직책으로 검색" value="${esc(dirQuery)}" oninput="setDirQuery(this.value)">
         <button class="dir-b" style="height:40px;padding:0 14px;font-size:13px;font-weight:800;color:var(--gm);border-color:var(--gl)" onclick="openStaffExport()">⬇ 교직원 명단 엑셀</button></div>
       ${(Object.keys(groups).length || partners.length) ? `
@@ -2865,6 +2903,8 @@ function openStaffExport(){
   const isAdm = ['super','org_admin'].includes(CU.role);
   const myo = myOrgs();
   SX = SX || { orgs:[dirOrg||myo[0]], kinds:['full','partner'], ac:['active','leave'], cols:SX_PRE.basic.cols.slice(), pre:'basic' };
+  // 🤝 v157 연합으로 «보기만» 하는 기관은 엑셀에 넣지 않는다 — 내 기관(접근 기관)만
+  SX.orgs = SX.orgs.filter(o => myo.includes(o)); if(!SX.orgs.length) SX.orgs = [myo[0]];
   if(!isAdm){ SX.ac = SX.ac.filter(x=>x!=='quit'); SX.cols = SX.cols.filter(k=>!(SX_COLS.find(c=>c.k===k)||{}).adm); if(SX.pre==='hr') SX.pre='basic'; }
   const pick = () => Object.values(STAFF_CACHE||{})
     .filter(s => (s.orgs&&s.orgs.length?s.orgs:[s.org]).some(o=>SX.orgs.includes(o)))

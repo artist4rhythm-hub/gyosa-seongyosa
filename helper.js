@@ -508,6 +508,11 @@ html[data-theme="dark"] .hp-btn.pr{color:#06130E}
         Drawer.reveal(hid); hit = all.find(ok);
       }
     }
+    /* 🏛 v157 사이드바 묶음이 접혀 메뉴가 안 그려져 있으면 그 묶음을 펼치고 다시 찾는다 */
+    if(!hit && !all.length && /#sb\b/.test(sel) && window.sbOpenFor && window.sbOpenFor(sel)){
+      try { all = [...document.querySelectorAll(sel)]; } catch(_){}
+      hit = all.find(ok);
+    }
     return hit || null;
   }
   function tourStart(a, step){

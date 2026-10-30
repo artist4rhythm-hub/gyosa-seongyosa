@@ -213,9 +213,12 @@ window.unionSave = async ()=>{
    · 높이는 재서 맞춘다 (글자 크기 · 폰 아래 탭 높이가 바뀌어도) */
 const UB_CSS = `
 #union-band{position:fixed;left:0;right:0;bottom:var(--union-b,0px);z-index:45;
-  background:linear-gradient(90deg,#4C2C86,#6D28D9);color:#fff;padding:7px 14px;
-  font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:800;
-  display:flex;align-items:center;gap:9px;box-shadow:0 -2px 14px rgba(76,44,134,.3)}
+  background:#5E4A86;color:#fff;padding:7px 14px;
+  font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:700;
+  display:flex;align-items:center;gap:9px;box-shadow:0 -2px 12px rgba(46,30,80,.22)}
+#union-band svg{flex:none;opacity:.9}
+#union-band .ub-s{font-weight:500;opacity:.82}
+@media(max-width:640px){ #union-band .ub-s{display:none} }
 #union-band button{margin-left:auto;background:rgba(255,255,255,.22);color:#fff;border:0;border-radius:8px;
   padding:4px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
 html.union-on #sb{height:calc(100vh - var(--union-h,0px) - var(--union-b,0px))}
@@ -285,7 +288,9 @@ function paintBanner(){
   }
   const b = document.createElement('div');
   b.id = 'union-band';
-  b.innerHTML = `<span>🤝 연합 — 두 기관을 함께 보는 중</span>
+  // 🏛 v157 정직한 안내 — 열쇠는 권한을 넓히지 않는다: 볼 자격이 있는 화면만 두 기관 · 교직원 명부는 다른 기관도 보기만
+  b.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5"/><path d="m3.5 16 8.5 4.5 8.5-4.5"/></svg>
+    <span>연합 열림</span><span class="ub-s">볼 수 있는 화면에서 두 기관을 함께 보여요 · 교직원 명부는 다른 기관도 보기만</span>
     <button onclick="unionClose()">잠그기</button>`;
   document.body.appendChild(b);
   root.classList.add('union-on');
@@ -476,7 +481,7 @@ window.unionAdminMount = async (elId)=>{
           ② <b>열쇠</b>로 그 자격을 <b>지금 드러냅니다</b>.
           그래서 다른 기관 권한이 없는 화면은 열쇠를 열어도 그대로입니다.<br>
           <span style="opacity:.85">· <b>🗝 보라</b> = 계정 소속이 두 기관 → 모든 화면에서 작동 &nbsp;·&nbsp;
-          <b>⚠️ 주황</b> = 계정 소속 한 곳 → 두 기관 권한을 준 기능(예: 경비 지급 요청서 담당)에서만 작동</span></div>
+          <b>⚠️ 주황</b> = 계정 소속 한 곳 → <b>교직원 명부(다른 기관은 보기만)</b>와 두 기관 권한을 준 기능(예: 경비 지급 요청서 담당)에서 작동</span></div>
       </div>
 
       <div style="display:flex;align-items:center;gap:10px;background:var(--iv);border-radius:11px;padding:12px 14px;margin:12px 0">
@@ -543,14 +548,14 @@ window.unionAdminMount = async (elId)=>{
     const cnt = document.getElementById('ua-count');
     const live = arr.filter(u=>!needsPerm(staffOf(u))).length;
     if(cnt) cnt.textContent = (arr.length && live < arr.length)
-      ? `${arr.length}명 켜짐 · ${arr.length-live}명은 기능별 권한에서만`
+      ? `${arr.length}명 켜짐 · ${arr.length-live}명은 명부 보기 · 기능별 권한에서만`
       : `${arr.length}명 켜짐`;
     const box = document.getElementById('ua-chips'); if(!box) return;
     box.innerHTML = arr.length ? arr.map(u=>`
       <span style="display:inline-flex;align-items:center;gap:5px;background:${needsPerm(staffOf(u))?'#FFF4E5':'#F1EBFD'};
         border:1.5px solid ${needsPerm(staffOf(u))?'#F0D9A8':'#D6C2F7'};
         color:${needsPerm(staffOf(u))?'#7C4A03':'#5B21B6'};border-radius:100px;padding:3px 6px 3px 10px;font-size:11.5px;font-weight:800"
-        title="${needsPerm(staffOf(u))?'계정 소속이 한 곳 — 두 기관 권한을 준 기능(예: 경비 담당)에서만 열쇠가 작동합니다':'접근 기관 두 곳 — 모든 화면에서 열쇠가 작동합니다'}">
+        title="${needsPerm(staffOf(u))?'계정 소속이 한 곳 — 교직원 명부(다른 기관은 보기만)와 두 기관 권한을 준 기능(예: 경비 담당)에서 열쇠가 작동합니다':'접근 기관 두 곳 — 모든 화면에서 열쇠가 작동합니다'}">
         ${needsPerm(staffOf(u))?'⚠️':'🗝'} ${esc(nameOf(u))}
         <button onclick="unionToggleUid('${u}')" title="끄기"
           style="border:0;background:#fff;color:#7C3AED;border-radius:100px;width:17px;height:17px;
@@ -600,7 +605,7 @@ window.unionAdminMount = async (elId)=>{
         <b style="color:${on?'#4C1D95':'#2A2E2B'}">${esc(s.name||'')}</b>
         <span style="color:#93A09A;font-size:10.8px;font-weight:700">${esc(s.position||s.role||'')}</span>
         <span style="display:inline-flex;gap:3px;margin-left:4px">${orgBadges(s)}</span>
-        ${on && needsPerm(s) ? '<span style="margin-left:auto;font-size:10.2px;font-weight:900;color:#B45309;background:#FFF4E5;border-radius:6px;padding:1px 7px" title="계정 소속이 한 곳 — 두 기관 권한을 준 기능에서만 열쇠가 작동합니다">기능별 권한만</span>'
+        ${on && needsPerm(s) ? '<span style="margin-left:auto;font-size:10.2px;font-weight:900;color:#B45309;background:#FFF4E5;border-radius:6px;padding:1px 7px" title="계정 소속이 한 곳 — 교직원 명부(다른 기관은 보기만)와 두 기관 권한을 준 기능에서 열쇠가 작동합니다">명부 보기 · 기능별</span>'
           : (on?'<span style="margin-left:auto;font-size:10.5px;font-weight:900;color:#6D28D9">켜짐</span>':'')}
       </button>`;
     }).join('') || '<div style="font-size:11.5px;color:#93A09A;padding:6px">검색 결과 없음</div>';

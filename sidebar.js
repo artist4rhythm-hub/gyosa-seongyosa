@@ -228,18 +228,68 @@ let SB_USER = null;
 let SB_BADGES = {};      // {payreq:3, approval:0, message:2}
 let SB_COLLAPSED = false;
 
-/* ── 핀(자주 쓰는) 저장 — 메모리 + 세션 ── */
-let _pins = null;
+/* ── 핀(자주 쓰는) 저장 — 🏛 v157: 이 기기에 계속 남긴다 (예전엔 탭을 닫으면 사라짐)
+      · 선생님마다 따로 (교무실 컴퓨터를 여럿이 써도 남의 «자주 쓰는»이 보이지 않게) ── */
+function sbKey(base){ const u = SB_USER && SB_USER.uid; return u ? base + ':' + u : base; }
+let _pins = null, _pinsFor = '';
 function getPins(){
-  if(_pins) return _pins;
-  try { _pins = JSON.parse(sessionStorage.getItem(SB_PIN_KEY) || '[]'); }
-  catch(e){ _pins = []; }
+  if(_pins && _pinsFor === sbKey(SB_PIN_KEY)) return _pins;
+  _pinsFor = sbKey(SB_PIN_KEY);
+  try { _pins = JSON.parse(localStorage.getItem(_pinsFor) || 'null'); } catch(e){ _pins = null; }
+  if(!Array.isArray(_pins)){
+    try { _pins = JSON.parse(sessionStorage.getItem(SB_PIN_KEY) || '[]'); } catch(e){ _pins = []; }   // 예전 것 이어받기
+    if(!Array.isArray(_pins)) _pins = [];
+  }
   return _pins;
 }
 function savePins(p){
-  _pins = p;
-  try { sessionStorage.setItem(SB_PIN_KEY, JSON.stringify(p)); } catch(e){}
+  _pins = p; _pinsFor = sbKey(SB_PIN_KEY);
+  try { localStorage.setItem(_pinsFor, JSON.stringify(p)); } catch(e){}
 }
+
+/* ── 🏛 v157 «자주 쓰는» — 고정한 것 먼저, 남는 자리는 자주 연 화면으로 (이 기기 기준 · 4개) ── */
+const SB_VISIT_KEY = 'gyosa_visits';
+function sbVisits(){ try { const v = JSON.parse(localStorage.getItem(sbKey(SB_VISIT_KEY)) || '{}'); return (v && typeof v === 'object') ? v : {}; } catch(e){ return {}; } }
+function sbBumpVisit(k){
+  if(!k || k === 'home') return;
+  try {
+    const v = sbVisits();
+    v[k] = Math.min(9999, (Number(v[k]) || 0) + 1);
+    localStorage.setItem(sbKey(SB_VISIT_KEY), JSON.stringify(v));
+  } catch(e){}
+}
+/* ── 🏛 v157 메뉴 묶음 접기 — 지금 화면이 든 묶음은 펼쳐 두고, 나머지는 이 기기에서 마지막으로 둔 대로 ── */
+const SB_GRP_KEY = 'gyosa_sbgrp';
+let SB_GRP_TMP = {};                       // 지금 화면에서만 (지금 묶음을 잠깐 접을 때)
+function sbGrpState(){ try { const v = JSON.parse(localStorage.getItem(sbKey(SB_GRP_KEY)) || '{}'); return (v && typeof v === 'object') ? v : {}; } catch(e){ return {}; } }
+function sbGrpOpen(g, hasActive){
+  if(g in SB_GRP_TMP) return !!SB_GRP_TMP[g];
+  if(hasActive) return true;
+  return sbGrpState()[g] === 1;
+}
+window.sbToggleGroup = function(g, hasActive){
+  const open = sbGrpOpen(g, !!hasActive);
+  if(hasActive) SB_GRP_TMP[g] = open ? 0 : 1;
+  else {
+    const s = sbGrpState(); s[g] = open ? 0 : 1;
+    try { localStorage.setItem(sbKey(SB_GRP_KEY), JSON.stringify(s)); } catch(e){}
+  }
+  renderSidebar();
+};
+/* 🧭 도우미 «같이 하기»가 접힌 묶음 안 메뉴를 짚을 때 — 그 묶음만 잠깐 펼친다 */
+window.sbOpenFor = function(sel){
+  const m = /href="([^"]+)"/.exec(String(sel || ''));
+  if(!m || typeof sbVisibleGroups !== 'function') return false;
+  const g = sbVisibleGroups().find(x => x.items.some(it => it.href === m[1]));
+  if(!g) return false;
+  const hasActive = g.items.some(it => it.key === SB_ACTIVE);
+  if(sbGrpOpen(g.group, hasActive)) return false;
+  SB_GRP_TMP[g.group] = 1;
+  renderSidebar();
+  return true;
+};
+/* 묶음 색 (부품 기준표의 카테고리 색 — 어두운 바탕 위라 밝은 쪽) */
+const SB_GCOL = { '학사':'#9FD8BD', '근무 · 행정':'#A9C9E8', '경비':'#E6C68F', '소통':'#C9B8E8', '관리':'#BFC8CF' };
 function togglePin(key){
   const p = getPins();
   const i = p.indexOf(key);
@@ -287,6 +337,8 @@ function renderShell(activeKey, user){
   try{ if(user && !window.__lpLoad && localStorage.getItem('staff_push_on') === '1'){ window.__lpLoad = 1; import('./live-push.js?v=131').catch(()=>{}); } }catch(e){}
 
   if(!document.getElementById('sb-style')) injectSidebarCSS();
+  loadShowroom();
+  sbBumpVisit(activeKey);
 
   // 기존 body의 콘텐츠를 main으로 이동
   let app = document.getElementById('app');
@@ -318,6 +370,20 @@ function renderShell(activeKey, user){
 }
 window.renderShell = renderShell;
 
+/* ── 🏛 v157 전시장 부품 (showroom.css · showroom.js) — 화면마다 넣지 않고 여기서 한 번 ── */
+function loadShowroom(){
+  if(!document.getElementById('gx-css')){
+    const l = document.createElement('link');
+    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=157';
+    document.head.appendChild(l);
+  }
+  if(!window.__gxOn && !document.getElementById('gx-js')){
+    const s = document.createElement('script');
+    s.id = 'gx-js'; s.src = 'showroom.js?v=157'; s.defer = true;
+    document.head.appendChild(s);
+  }
+}
+
 /* ── 🧭 도우미 (v-113) — 사용 방법 안내 · 화면에서 같이 하기. 화면마다 따로 넣지 않고 여기서 한 번 부른다 ── */
 function loadHelper(){
   if(window.__helperOn || document.getElementById('helper-js')) return;
@@ -334,11 +400,21 @@ function renderSidebar(){
   const all = menuAllItems();
   // 🔐 v143 고정해 둔 메뉴도 지금 열 수 있는 것만 (나중에 닫힌 화면이 «자주 쓰는»에 남지 않게)
   const pinned = pins.map(k => all.find(i => i.key === k)).filter(Boolean).filter(it => sbCanSee(it, it.groupAdmin ? { admin:true } : null));
+  // 🏛 v157 남는 자리(4개까지)는 이 기기에서 자주 연 화면으로 — 두 번 이상 연 것만 · 바깥 사이트 링크는 빼고
+  const visits = sbVisits();
+  const autoFav = all
+    .filter(it => !pins.includes(it.key) && (Number(visits[it.key]) || 0) >= 2 && it.acc !== false && !/^https?:/.test(it.href || ''))
+    .filter(it => sbCanSee(it, it.groupAdmin ? { admin:true } : null))
+    .sort((a, b) => (Number(visits[b.key]) || 0) - (Number(visits[a.key]) || 0))
+    .slice(0, Math.max(0, 4 - pinned.length));
+  const favs = [...pinned.map(it => [it, true]), ...autoFav.map(it => [it, false])];
 
-  const itemHTML = (it, isPinned) => {
-    const on = it.key === SB_ACTIVE;
+  const itemHTML = (it, isPinned, inFav) => {
+    // 🏛 v157 «자주 쓰는»에 든 지금 화면은 옅게만 (묶음 쪽에 진하게 한 번만 보이게)
+    const on = it.key === SB_ACTIVE && !inFav;
+    const cur = it.key === SB_ACTIVE && inFav;
     const b = SB_BADGES[it.badge] || 0;
-    return `<a class="sb-i${on ? ' on' : ''}" href="${it.href}" title="${it.label}">
+    return `<a class="sb-i${on ? ' on' : ''}${cur ? ' cur' : ''}" href="${it.href}" title="${it.label}">
       <span class="material-symbols-rounded">${it.icon}</span>
       <span class="sb-l">${it.label}</span>
       ${b > 0 ? `<span class="sb-b">${b > 99 ? '99+' : b}</span>` : ''}
@@ -371,42 +447,52 @@ function renderSidebar(){
         <span class="material-symbols-rounded">home</span>
         <span class="sb-l">홈</span>
       </a>
-      ${pinned.length ? `
-        <div class="sb-g">
-          <div class="sb-gt"><span class="material-symbols-rounded">keep</span>자주 쓰는</div>
-          ${pinned.map(it => itemHTML(it, true)).join('')}
+      ${favs.length ? `
+        <div class="sb-g sb-fav">
+          <div class="sb-gt"><span class="sb-gl">자주 쓰는</span><span class="sb-gh">${pinned.length ? '' : '자주 연 화면'}</span></div>
+          ${favs.map(([it, p]) => itemHTML(it, p, true)).join('')}
         </div>` : ''}
-      ${sbVisibleGroups().map(g => `
-        <div class="sb-g">
-          <div class="sb-gt">${g.group}</div>
-          ${g.items.map(it => itemHTML(it, pins.includes(it.key))).join('')}
-        </div>`).join('')}
+      ${sbVisibleGroups().map(g => {
+        const hasActive = g.items.some(it => it.key === SB_ACTIVE);
+        const open = sbGrpOpen(g.group, hasActive);
+        const bsum = g.items.reduce((s, it) => s + (Number(SB_BADGES[it.badge]) || 0), 0);
+        return `
+        <div class="sb-g${open ? ' open' : ''}">
+          <button type="button" class="sb-gt sb-gtb" data-g="${esc(g.group)}" onclick="sbToggleGroup(this.dataset.g, ${hasActive ? 1 : 0})" aria-expanded="${open ? 'true' : 'false'}">
+            <i class="sb-gd" style="background:${SB_GCOL[g.group] || '#BFC8CF'}"></i>
+            <span class="sb-gl">${g.group}</span>
+            ${!open && bsum > 0 ? `<span class="sb-b">${bsum > 99 ? '99+' : bsum}</span>` : ''}
+            <span class="sb-gn">${open ? '' : g.items.length}</span>
+            <span class="material-symbols-rounded sb-gc">${open ? 'expand_more' : 'chevron_right'}</span>
+          </button>
+          ${open ? g.items.map(it => itemHTML(it, pins.includes(it.key))).join('') : ''}
+        </div>`; }).join('')}
     </nav>
 
     <div class="sb-foot">
-      <button class="sb-foot-tg" onclick="toggleSbFoot()">
-        <span>설정</span><i id="sb-foot-arrow">⌄</i>
-      </button>
-      <div class="sb-foot-body" id="sb-foot-body">
-      <div class="fs-row">
-        <span class="fs-lab">글자 크기</span>
-        <div class="fs-pick">
-          <button id="fs-md" onclick="setFontSize('md')" title="보통">가</button>
-          <button id="fs-lg" onclick="setFontSize('lg')" title="크게">가</button>
-          <button id="fs-xl" onclick="setFontSize('xl')" title="아주 크게">가</button>
+      <div class="sb-menu" id="sb-foot-body" style="display:none">
+        <div class="fs-row">
+          <span class="fs-lab">글자 크기</span>
+          <div class="fs-pick">
+            <button id="fs-md" onclick="setFontSize('md')" title="보통">가</button>
+            <button id="fs-lg" onclick="setFontSize('lg')" title="크게">가</button>
+            <button id="fs-xl" onclick="setFontSize('xl')" title="아주 크게">가</button>
+          </div>
         </div>
+        <button class="theme-toggle" onclick="cycleTheme()" title="화면 모드: 자동 → 라이트 → 다크 순환">
+          화면 모드 <b id="theme-btn-label">${themeLabel()}</b>
+        </button>
+        <div id="sb-ver" class="sb-ver">${window.__APPVER ? '교사 선교사 v' + esc(window.__APPVER) : ''}</div>
       </div>
-      <button class="theme-toggle" onclick="cycleTheme()" title="화면 모드: 자동 → 라이트 → 다크 순환">
-        화면 모드 <b id="theme-btn-label">${themeLabel()}</b>
-      </button>
       <div class="sb-me">
         <div class="sb-av" style="overflow:hidden;display:flex;align-items:center;justify-content:center;padding:0">${window.staffAvatar ? staffAvatar(SB_USER, 30) : (SB_USER?.name||'?').slice(0,1)}</div>
         <div class="sb-mi">
           <div class="sb-mn">${SB_USER?.name || ''}</div>
           <div class="sb-mr">${sbOrgLabel()}</div>
         </div>
-      </div>
-      <div id="sb-ver" class="sb-ver">${window.__APPVER ? '교사 선교사 v' + esc(window.__APPVER) : ''}</div>
+        <button type="button" class="sb-more" id="sb-foot-arrow" onclick="toggleSbFoot(event)" title="글자 크기 · 화면 모드" aria-label="글자 크기 · 화면 모드">
+          <span class="material-symbols-rounded">more_horiz</span>
+        </button>
       </div>
     </div>`;
   // 버튼이 방금 그려졌으니 지금 고른 글자 크기를 표시해 준다
@@ -475,6 +561,11 @@ function renderTopbar(){
   if(!tb) return;
   const it = menuFind(SB_ACTIVE);
   const totalBadge = Object.values(SB_BADGES).reduce((s, v) => s + (v || 0), 0);
+  // 🏛 v157 상단 바로 옮겨 둔 것(기관 칩 · 바로 가기 칩)은 다시 그려도 그대로 붙여 둔다
+  const oldSlot = document.getElementById('tb-org');
+  const keepKids = oldSlot ? [...oldSlot.childNodes] : [];
+  keepKids.forEach(n => n.remove());
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || '');
   tb.innerHTML = `
     <button class="tb-menu" onclick="openDrawer()" aria-label="메뉴">
       <span class="material-symbols-rounded">menu</span>
@@ -486,14 +577,18 @@ function renderTopbar(){
       <span id="tb-tail"></span>
     </div>
     <div class="tb-right">
-      <button class="tb-help" type="button" onclick="window.openHelper && openHelper()" title="도우미 — 사용 방법 찾기 (⌘K · Ctrl+K)" aria-label="도우미 — 사용 방법 찾기">
-        <span class="tb-help-i">🧭</span><span class="tb-help-l">도우미</span>
+      <div class="tb-org" id="tb-org"></div>
+      <button class="tb-help tb-find" type="button" onclick="window.openHelper && openHelper()" title="도우미 — 화면 · 사용 방법 찾기 (⌘K · Ctrl+K)" aria-label="도우미 — 화면 · 사용 방법 찾기">
+        <span class="material-symbols-rounded tb-help-i">search</span><span class="tb-help-l">찾기 · 도우미</span><kbd class="tb-kbd">${mac ? '⌘K' : 'Ctrl K'}</kbd>
       </button>
       <a class="tb-ic" href="message.html" aria-label="쪽지">
         <span class="material-symbols-rounded">notifications</span>
         ${totalBadge > 0 ? `<span class="tb-dot">${totalBadge > 9 ? '9+' : totalBadge}</span>` : ''}
       </a>
     </div>`;
+  const slot = document.getElementById('tb-org');
+  if(slot && keepKids.length) keepKids.forEach(n => slot.appendChild(n));
+  else if(window.gxMoveOrgBar) window.gxMoveOrgBar();
 }
 
 /* ═══ 모바일 하단탭 ═══ */
@@ -520,30 +615,30 @@ function renderMobileTabs(){
     </button>`;
 }
 
-/* ═══ 설정 접기 (글자 크기·화면 모드·내 정보) ═══
-   · 열림/닫힘을 기억한다 · 낮은 화면(폰 가로)은 처음에 접힌 채로 시작 */
-function sbFootInit(){
-  let open;
-  try { open = localStorage.getItem('sb_foot'); } catch(e){}
-  if(open === null || open === undefined){
-    open = (window.innerHeight < 560) ? '0' : '1';
-  }
-  applySbFoot(open === '1');
-}
+/* ═══ 설정 (글자 크기·화면 모드) — 🏛 v157: 내 이름 옆 ⋯ 를 누르면 작은 창으로 ═══
+   · 늘 펼쳐 두던 «설정» 칸을 접어 메뉴 자리를 넓힌다 · 바깥을 누르면 닫힌다 */
+let SB_MENU_OPEN = false;                  // 알림 숫자로 사이드바를 다시 그려도 ⋯ 창이 닫히지 않게
+function sbFootInit(){ applySbFoot(SB_MENU_OPEN); }
 function applySbFoot(open){
+  SB_MENU_OPEN = !!open;
   const b = document.getElementById('sb-foot-body');
   const a = document.getElementById('sb-foot-arrow');
   if(b) b.style.display = open ? '' : 'none';
-  if(a) a.textContent = open ? '⌄' : '›';
+  if(a) a.classList.toggle('on', !!open);
   document.getElementById('sb')?.classList.toggle('foot-closed', !open);
 }
-function toggleSbFoot(){
+function toggleSbFoot(ev){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
   const b = document.getElementById('sb-foot-body');
-  const open = b && b.style.display === 'none';
-  applySbFoot(open);
-  try { localStorage.setItem('sb_foot', open ? '1' : '0'); } catch(e){}
+  applySbFoot(!!b && b.style.display === 'none');
 }
 window.toggleSbFoot = toggleSbFoot;
+document.addEventListener('click', e => {
+  const b = document.getElementById('sb-foot-body');
+  if(!b || b.style.display === 'none') return;
+  if(e.target && e.target.closest && e.target.closest('.sb-menu, .sb-more')) return;
+  applySbFoot(false);
+});
 
 /* ═══ 드로어(모바일) ═══ */
 function openDrawer(){
@@ -716,6 +811,49 @@ html[data-theme="dark"] .fs-pick button.on{color:#06130E;}
   font-size:11.5px;font-weight:800;letter-spacing:.04em;cursor:pointer;
   padding:4px 2px 8px;}
 .sb-foot-tg i{font-style:normal;font-size:13px;opacity:.8;}
+
+/* ── 🏛 v157 전시장 사이드바 — 자주 쓰는 · 묶음 접기 · 설정은 ⋯ 안으로 ── */
+.sb-g{margin-bottom:2px;}
+.sb-fav{margin-bottom:8px;}
+.sb-gt{gap:7px;}
+.sb-gh{margin-left:auto;font-size:calc(10px * var(--zoom));font-weight:600;color:rgba(255,255,255,.32);letter-spacing:0;}
+.sb-gtb{display:flex;align-items:center;width:100%;border:0;background:none;cursor:pointer;font-family:inherit;
+  text-align:left;border-radius:8px;padding:8px 9px;margin-top:2px;color:rgba(255,255,255,.62);
+  font-size:calc(11.5px * var(--zoom));font-weight:700;letter-spacing:.2px;transition:background .12s,color .12s;}
+.sb-gtb:hover{background:rgba(255,255,255,.07);color:#fff;}
+.sb-g.open > .sb-gtb{color:rgba(255,255,255,.82);}
+.sb-gd{width:7px;height:7px;border-radius:2px;flex:none;display:inline-block;}
+.sb-i.cur{background:rgba(255,255,255,.08);color:#fff;}
+.sb-gl{flex:none;}
+.sb-gn{margin-left:auto;font-weight:600;color:rgba(255,255,255,.42);font-size:calc(11px * var(--zoom));}
+.sb-gtb .sb-b{margin-left:auto;}
+.sb-gtb .sb-b + .sb-gn{margin-left:6px;}
+.sb-gc{font-size:16px !important;color:rgba(255,255,255,.45);margin-left:4px;}
+.sb-g.open > .sb-gtb .sb-gn{display:none;}
+.sb-g.open > .sb-gtb .sb-gc{margin-left:auto;}
+.sb-foot{position:relative;}
+.sb-me{gap:9px;}
+.sb-mi{flex:1;}
+.sb-more{flex:none;border:0;background:none;cursor:pointer;color:rgba(255,255,255,.6);width:30px;height:30px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;padding:0;}
+.sb-more:hover,.sb-more.on{background:rgba(255,255,255,.1);color:#fff;}
+.sb-menu{position:absolute;left:10px;right:10px;bottom:calc(100% - 4px);background:var(--sb-house-2,#16302A);
+  border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px;box-shadow:0 -8px 28px rgba(0,0,0,.28);z-index:5;}
+.sb-menu .theme-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;border:1px solid rgba(255,255,255,.15);
+  background:rgba(255,255,255,.06);color:rgba(255,255,255,.72);border-radius:8px;padding:8px 10px;font-family:inherit;font-weight:700;cursor:pointer;}
+.sb-menu .theme-toggle b{color:#fff;font-weight:800;}
+.sb-menu .sb-ver{margin-top:10px;}
+/* 상단 바 — 찾기 · 도우미를 검색칸 모양으로 */
+.tb-right{gap:8px;}
+.tb-find{border:1px solid var(--line,#E3E1DA) !important;background:var(--bg,#F8F7F3) !important;color:var(--ink-3,#6E7A74) !important;
+  border-radius:10px !important;padding:0 8px 0 10px !important;height:36px;min-width:210px;font-weight:600 !important;gap:7px !important;margin-right:0 !important;}
+.tb-find:hover{border-color:var(--sb-green,#00704A) !important;color:var(--ink,#1F2320) !important;}
+.tb-find .tb-help-i{font-size:18px;line-height:1;}
+.tb-find .tb-help-l{font-size:13px;font-weight:600;}
+.tb-kbd{margin-left:auto;font-size:11px;font-weight:600;line-height:18px;font-family:inherit;color:var(--ink-3,#6E7A74);border:1px solid var(--line,#E3E1DA);
+  border-radius:6px;padding:0 6px;background:var(--surface,#fff);}
+@media(max-width:1100px){ .tb-find{min-width:0;} .tb-find .tb-kbd{display:none;} }
+@media(max-width:900px){ .tb-find .tb-help-l{display:none;} .tb-find{padding:0 8px !important;} }
 
 /* ── 폰 가로(낮은 화면): 서랍 취급 + 세로 압축 ──
    가로로 눕히면 폭이 768px를 넘어 데스크톱으로 오해받던 문제를 바로잡는다.
