@@ -2042,7 +2042,7 @@ function renderHome(){
       </div>`}
       <div id="nt-nudge"></div>
 
-      <div class="hm-blocks">${_worder.map((k,i)=>{ const h = HW[k]?HW[k]():''; return h ? `<section class="hm-b" data-k="${k}" style="order:${i}">${h}</section>` : ''; }).join('\n\n      ')}</div>
+      <div class="hm-blocks">${_worder.map((k,i)=>{ const h = (HW[k] && homeWidgetOk(k)) ? HW[k]() : ''; return h ? `<section class="hm-b" data-k="${k}" style="order:${i}">${h}</section>` : ''; }).join('\n\n      ')}</div>
 
       <!-- 게시판 보드: 전체 + 내 기관 -->
       <div id="home-boards" style="margin-top:18px"></div>
@@ -2306,15 +2306,22 @@ function homeAccFromServer(h, seq0){
   if(pick(HOME_ACC) !== before) renderHome();
 }
 const widgetOn = k => WIDGET_ON[k] !== 0 && WIDGET_ON[k] !== false;
+/* 🏛 v159 그 화면을 열 수 없는 선생님(예: 협력교사 — 전자결재 · 경비)에게는 그 화면의 위젯을 그리지 않는다 */
+const WIDGET_PAGE = { appr:'approval', money:'payreq', mtg:'minutes', attend:'attend' };
+function homeWidgetOk(k){
+  const key = WIDGET_PAGE[k]; if(!key) return true;
+  try{ const it = findMenuItem(key); return !it || menuOk(it, menuGroupOf(key)); }catch(e){ return true; }
+}
 
 window.openWidgetSetup = function(){
-  const rows = HOME_WIDGETS.map(w=>`
+  const rows = HOME_WIDGETS.filter(w=>homeWidgetOk(w.key)).map(w=>`
     <label class="wg-row">
       <input type="checkbox" ${widgetOn(w.key)?'checked':''} onchange="setWidget('${w.key}', this.checked)">
       <span class="wg-b"><b>${w.label}</b><span>${w.hint}</span></span>
     </label>`).join('');
   const blockOn = k => widgetOn(k);
   const orows = WORDER().map((k,i)=>{ const b=WBLOCKS.find(x=>x.k===k); if(!b) return '';
+    if(!homeWidgetOk(k)) return `<div class="wgo-row dim" data-k="${k}" title="열 수 없는 화면이라 홈에 나오지 않아요"><span class="wgo-hnd" onpointerdown="wDrag(event)" title="길게 눌러 끌기">⠿</span><span class="wgo-pos">${i+1}</span><b>${b.l}</b><span class="wgo-off">못 여는 화면</span></div>`;
     return `<div class="wgo-row${blockOn(k)?'':' dim'}" data-k="${k}">
       <span class="wgo-hnd" onpointerdown="wDrag(event)" title="길게 눌러 끌기">⠿</span>
       <span class="wgo-pos">${i+1}</span><b>${b.l}</b>

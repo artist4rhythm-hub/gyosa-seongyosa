@@ -487,6 +487,23 @@ html[data-theme="dark"] .hp-btn.pr{color:#06130E}
     const toc = document.getElementById('adm-toc'); if(!toc) return sel;
     let m = /^#sa-(\w+)$/.exec(sel.trim()), k = m && m[1];
     if(!k){ m = /^#ag-(\w+)$/.exec(sel.trim()); k = m && AG_FIRST[m[1]]; }
+    /* 🏛 v159 관리자 처음 화면(진열대)이 떠 있으면 — 목차 대신 진열대의 방 · 찾기 칸을 짚는다 */
+    const lob = document.getElementById('c-adm')?.classList.contains('lob');
+    if(!lob && /^#adm-lobby\b/.test(sel.trim()) && window.showAdmLobby){ window.showAdmLobby(); return sel; }   // 진열대 안내인데 방 안이면 진열대로
+    if(lob){
+      if(!k){ m = /^#adm-toc a\[data-k="(\w+)"\]$/.exec(sel.trim()); k = m && m[1]; }
+      if(k) return `#adm-lobby .adl-room[data-k="${k}"]`;
+      if(sel.trim() === '#adm-toc') return '#adm-lobby .adl-cols';
+      if(sel.trim() === '#toc-q') return '#adl-q';
+      /* 방 안의 단추인데 진열대가 떠 있으면(같이 하기를 이어서 할 때) — 이 안내의 방을 먼저 연다 */
+      if(!/^#(sb|adm-lobby|adl-)/.test(sel.trim()) && T.a && window.admKeyOf && window.admGo){
+        let raw = null; try { raw = document.querySelector(sel); } catch(_){}
+        if(!raw || !raw.getClientRects().length){ const kk = window.admKeyOf(T.a.tab); if(kk) window.admGo(kk); }
+      }
+      return sel;
+    }
+    /* 접근 권한을 «🪪 사람 카드»로 보고 있으면 표 대신 카드 묶음을 짚는다 */
+    if(sel.trim() === '.acc-tw' && !document.querySelector('.acc-tw') && document.querySelector('.acd-cs')) return '.acd-g';
     if(!k) return sel;
     if(!toc.querySelector('.toc-l a') || getComputedStyle(toc.querySelector('.toc-l')).display === 'none') toc.classList.add('open');   // 휴대폰: 목차를 펼친다
     return `#adm-toc .toc-l a[data-k="${k}"]`;
