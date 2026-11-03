@@ -15,7 +15,7 @@ import { collection, getDocs, doc, getDoc, setDoc, writeBatch, Timestamp } from 
 const uniq = a => [...new Set(a.filter(Boolean))];
 const apvUids = d => uniq([d.drafterUid, ...(d.line || []).map(s => s && s.uid)]);
 const apvTurn = d => d.status === 'progress' ? (((d.line || [])[d.currentStep] || {}).uid || '') : '';
-const prUids = r => uniq([r.createdByUid, r.origByUid, ...(r.chain || []).map(c => c && c.uid), ...(r.sharedWith || []), ...(r.hipassViewers || []).map(v => v && v.uid)]);
+const prUids = r => uniq([r.createdByUid, r.origByUid, ...(r.chain || []).map(c => c && c.uid), ...(r.sharedWith || []), ...(r.hipassViewers || []).map(v => v && v.uid), ...(r.deptHeadUids || [])]);   // v161 우리 부서 부서장
 const prTurn = r => r.status === 'approving' ? (((r.chain || [])[r.chainIndex] || {}).uid || '') : '';
 const sameSet = (a, b) => Array.isArray(a) && a.length === b.length && b.every(x => a.includes(x));
 

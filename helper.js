@@ -525,6 +525,11 @@ html[data-theme="dark"] .hp-btn.pr{color:#06130E}
         Drawer.reveal(hid); hit = all.find(ok);
       }
     }
+    /* 🏛 v160 화면이 따로 감춘 곳(학생 시트의 다른 탭 · 필터 창 · ⋯ 메뉴)이면 그 화면에 펼쳐 달라고 한 뒤 다시 찾는다 */
+    if(!hit && all.length && typeof window.__helpReveal === 'function'){
+      const hid = all.find(el => !el.closest('#hp,#hp-bub,#hp-tip'));
+      try { if(hid && window.__helpReveal(hid)) hit = all.find(ok); } catch(_){}
+    }
     /* 🏛 v157 사이드바 묶음이 접혀 메뉴가 안 그려져 있으면 그 묶음을 펼치고 다시 찾는다 */
     if(!hit && !all.length && /#sb\b/.test(sel) && window.sbOpenFor && window.sbOpenFor(sel)){
       try { all = [...document.querySelectorAll(sel)]; } catch(_){}
