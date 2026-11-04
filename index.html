@@ -2024,7 +2024,7 @@ function renderHome(){
           </div>
         </div>
       </div>` : `
-      <!-- 🏛 v158 로비 머리 — 밝게 · 한 줄 인사 · 말씀 · 작은 시계 (밤하늘 카드는 «홈 고르기»에서 다시 켤 수 있음) -->
+      <!-- 🏛 v158 로비 머리 — 밝게 · 한 줄 인사 · 말씀 · 작은 시계 (🌙 v163 부터 기본은 밤하늘 카드 · «홈 고르기»에서 끄면 이 밝은 머리) -->
       <div class="hm-lobby">
         <div class="hm-lb-l">
           <div class="hm-lb-date">${dateStr}</div>
@@ -2230,14 +2230,18 @@ function WORDER(){
   return out;
 }
 function saveWorder(o){ try{ localStorage.setItem('gyosa_worder', JSON.stringify(o)); }catch(e){} saveHomeAcc({ order: o.slice() }); }
-const WIDGET_DEFAULT = { clock:1, night:0, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1, attend:1, mtg:1, club:1, appr:1, money:1, acdday:1 };
+const WIDGET_DEFAULT = { clock:1, night:1, wx:1, memo:1, world:1, today:1, tt:1, quick:1, todo:1, chk:1, dday:1, fav:1, attend:1, mtg:1, club:1, appr:1, money:1, acdday:1 };
 let WIDGET_ON = { ...WIDGET_DEFAULT };
+/* 🌙 v163 밤하늘 인사 카드 — 모든 선생님 기본으로 켬 (현우님 2026-11-04)
+   · v158~v162 동안 저장된 «night:0»은 고른 값이 아니라 그때 기본값이 함께 저장된 것 → 켬
+   · v163 부터 «홈 고르기»에서 직접 끄거나 켠 분만 nightV:1 표시와 함께 그 값을 따름 */
+const nightFix = o => { if(o.nightV !== 1) o.night = 1; return o; };
 function loadWidgetPrefs(){
   homeAccLocal();
-  if(HOME_ACC && HOME_ACC.on && typeof HOME_ACC.on === 'object'){ WIDGET_ON = { ...WIDGET_DEFAULT, ...HOME_ACC.on }; return; }   // 🧱 v136 — 내 계정
+  if(HOME_ACC && HOME_ACC.on && typeof HOME_ACC.on === 'object'){ WIDGET_ON = nightFix({ ...WIDGET_DEFAULT, ...HOME_ACC.on }); return; }   // 🧱 v136 — 내 계정
   try {
     const v = JSON.parse(localStorage.getItem('gyosa_widgets')||'null');
-    if(v && typeof v === 'object') WIDGET_ON = { ...WIDGET_DEFAULT, ...v };
+    if(v && typeof v === 'object') WIDGET_ON = nightFix({ ...WIDGET_DEFAULT, ...v });
   } catch(e){}
 }
 function saveWidgetPrefs(){
@@ -2380,7 +2384,7 @@ window.wDrag = function(ev){
   move(ev);
 };
 window.closeWidgetSetup = function(){ $I('wg-mod')?.remove(); };
-window.setWidget = function(k, on){ WIDGET_ON[k] = on ? 1 : 0; saveWidgetPrefs(); renderHome(); };
+window.setWidget = function(k, on){ WIDGET_ON[k] = on ? 1 : 0; if(k === 'night') WIDGET_ON.nightV = 1; saveWidgetPrefs(); renderHome(); };   // 🌙 v163 밤하늘 카드는 직접 고른 값만 기억
 /* «처음 상태로» = 🏛 로비 배치 — 차례 · 보이기에 더해 창 크기 · 자리(배치 바꾸기)도 처음으로 */
 window.resetWidgets = function(){
   if(!confirm('홈을 처음 상태(오늘의 로비)로 되돌릴까요?\n차례 · 보이기 · 창 크기와 자리가 모두 처음으로 돌아가요.')) return;
