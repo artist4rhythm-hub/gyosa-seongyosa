@@ -1086,7 +1086,7 @@ const CSS = `
   }
 
 /* ── 인쇄 창 (화면) ── */
-.acp-ov{position:fixed;inset:0;z-index:3000;background:rgba(10,20,15,.5);display:flex;align-items:center;justify-content:center;font-family:'Noto Sans KR',-apple-system,'Apple SD Gothic Neo',sans-serif}
+.acp-ov{position:fixed;inset:0;z-index:3000;background:rgba(10,20,15,.5);display:flex;align-items:center;justify-content:center;font-family:var(--font-ui,'Noto Sans KR',sans-serif)}
 .acp{width:min(1540px,96vw);height:min(940px,94vh);background:var(--bg,#F2F0EB);border-radius:20px;box-shadow:0 30px 80px rgba(0,0,0,.35);display:flex;flex-direction:column;overflow:hidden;color:var(--ink,#1F2320)}
 .acp-hd{display:flex;align-items:center;gap:12px;padding:15px 22px;background:var(--wh,#fff);border-bottom:1px solid var(--ivd,#E3E1DA);flex:none}
 .acp-hd .ic{width:38px;height:38px;border-radius:12px;background:var(--gp,#E8F3EF);display:flex;align-items:center;justify-content:center;font-size:19px}

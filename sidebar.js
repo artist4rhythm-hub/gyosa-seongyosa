@@ -924,7 +924,7 @@ function guardPage(user, key){
   }
   if(blocked){
     document.body.innerHTML = `
-      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F2F0EB;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;padding:20px">
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F2F0EB;font-family:var(--font-ui,sans-serif);padding:20px">
         <div style="background:#fff;border:1px solid #E3E1DA;border-radius:18px;padding:36px 40px;text-align:center;max-width:380px">
           <div style="font-size:40px;margin-bottom:12px">🔒</div>
           <div style="font-size:17px;font-weight:800;color:#1E3932;margin-bottom:8px">접근 권한이 없습니다</div>

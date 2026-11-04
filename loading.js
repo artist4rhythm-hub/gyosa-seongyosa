@@ -122,7 +122,7 @@
   .lo-cap{
     font-size:15px; font-weight:700; color:#F2F0EB; letter-spacing:-.2px;
     min-height:20px; text-align:center; text-shadow:0 1px 12px rgba(0,0,0,.35);
-    font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+    font-family:var(--font-ui,'Noto Sans KR',sans-serif);
   }
   .lo-sub{
     font-size:12px; color:rgba(212,233,226,.65); margin-top:-12px;
@@ -609,7 +609,7 @@
     } catch(e){}
     var old = document.getElementById('bootFix'); if(old) old.remove();
     var d = document.createElement('div'); d.id = 'staffGate';
-    d.innerHTML = '<div style="position:fixed;inset:0;background:#F2F0EB;display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;font-family:-apple-system,\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif">'
+    d.innerHTML = '<div style="position:fixed;inset:0;background:#F2F0EB;display:flex;align-items:center;justify-content:center;z-index:100000;padding:16px;font-family:var(--font-ui,sans-serif)">'
       + '<div style="background:#fff;border-radius:16px;padding:28px 24px;max-width:380px;width:100%;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.08)">'
       + '<div style="font-size:34px">🔐</div>'
       + '<div style="font-weight:900;font-size:16px;margin:10px 0 8px;color:#1E3932">교직원 계정이 아니에요</div>'

@@ -106,7 +106,7 @@ function modal(html){
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(16,22,26,.5);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
   ov.innerHTML = `<div style="background:#fff;border-radius:16px;padding:20px;max-width:340px;width:100%;
-    box-shadow:0 12px 40px rgba(16,22,26,.24);font-family:'Noto Sans KR',-apple-system,sans-serif">${html}</div>`;
+    box-shadow:0 12px 40px rgba(16,22,26,.24);font-family:var(--font-ui,'Noto Sans KR',sans-serif)">${html}</div>`;
   document.body.appendChild(ov);
   return ov;
 }
@@ -214,7 +214,7 @@ window.unionSave = async ()=>{
 const UB_CSS = `
 #union-band{position:fixed;left:0;right:0;bottom:var(--union-b,0px);z-index:45;
   background:#5E4A86;color:#fff;padding:7px 14px;
-  font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:700;
+  font-family:var(--font-ui,'Noto Sans KR',sans-serif);font-size:12px;font-weight:700;
   display:flex;align-items:center;gap:9px;box-shadow:0 -2px 12px rgba(46,30,80,.22)}
 #union-band svg{flex:none;opacity:.9}
 #union-band .ub-s{font-weight:500;opacity:.82}
@@ -394,7 +394,7 @@ function paintAuthSwitch(u){
   const b = document.createElement('div');
   b.id = 'auth-switch';
   b.style.cssText = `position:fixed;left:0;right:0;top:0;z-index:4000;background:#B91C1C;color:#fff;
-    font-family:'Noto Sans KR',sans-serif;padding:10px 16px;display:flex;align-items:center;gap:12px;
+    font-family:var(--font-ui,'Noto Sans KR',sans-serif);padding:10px 16px;display:flex;align-items:center;gap:12px;
     box-shadow:0 4px 16px rgba(185,28,28,.35);font-size:13px;font-weight:700`;
   const who = u ? (String(u.email||'').split('@')[0] || '다른 계정') : '';
   b.innerHTML = `<span style="font-size:18px">⚠️</span>
@@ -415,7 +415,7 @@ function paintTestBadge(me){
   b.id = 'clone-badge';
   b.style.cssText = `position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:2600;
     background:linear-gradient(90deg,#C2410C,#EA580C);color:#fff;border-radius:100px;padding:5px 14px;
-    font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:800;box-shadow:0 3px 14px rgba(194,65,12,.35);
+    font-family:var(--font-ui,'Noto Sans KR',sans-serif);font-size:12px;font-weight:800;box-shadow:0 3px 14px rgba(194,65,12,.35);
     white-space:nowrap;pointer-events:auto;cursor:default`;
   b.title = '권한 테스트용 계정입니다 — 저장·체크 같은 동작은 실제 자료에 반영되니 조심하세요';
   b.textContent = c.name ? `🧪 테스트 계정 · 지금 ${c.name}${c.position?` (${c.position})`:''} 권한으로 보는 중`
