@@ -40,6 +40,30 @@
 .mt-mine{display:flex;align-items:center;gap:10px;background:#FBF6E6;border:1px solid #EADBA8;border-radius:12px;padding:10px 14px;margin-bottom:12px;cursor:pointer;color:#5C4A00;font-size:13px;font-weight:700}
 html[data-theme="dark"] .mt-mine{background:var(--gold-bg);border-color:var(--gold-line);color:var(--gold)}
 .mt-mine b{font-weight:900}.mt-mine .go{margin-left:auto}
+/* 🏛 v164 방 머리 — 상태 한 줄 · 주 단추 하나 · 나머지는 ⋯ · 내 임무는 한 줄 상태 카드 */
+.mt-hl{min-width:0}
+.mt-stl{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:13px;color:var(--ink-2)}
+.mt-stl b{color:var(--ink);font-weight:800}
+.mt-head .dd-m{min-width:220px}
+.mt-head .mt-only-m,.mt-head .mt-dd-m{display:none}
+@media (max-width:700px){
+  .mt-head{align-items:flex-start;flex-wrap:nowrap}
+  .mt-head > .mt-btn[data-act="exportmany"]{display:none}
+  .mt-head .mt-only-m{display:flex}
+  .mt-head .mt-dd-m{display:inline-block}
+  .mt-head .mt-hl{flex:1 1 0}
+  .mt-head .mt-sp{display:none}
+  .mt-mine.card .go{white-space:nowrap}
+}
+.mt-mine.card{width:100%;font-family:inherit;text-align:left;background:var(--surface);border-color:var(--line);color:var(--ink);font-weight:600;padding:10px 14px 10px 10px;margin:0 0 14px}
+.mt-mine.card:hover{border-color:#E8C770}
+.mt-mine.card .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:#FBF0D6;color:#7A5500;flex:none}
+.mt-mine.card .ic svg{width:19px;height:19px}
+.mt-mine.card .mt-new{color:#8A3B12;font-weight:800}
+.mt-mine.card .go{color:var(--sb-green);font-weight:800}
+html[data-theme="dark"] .mt-mine.card{background:var(--surface);border-color:var(--line);color:var(--ink)}
+html[data-theme="dark"] .mt-mine.card .ic{background:#2A2416;color:#E3C878}
+html[data-theme="dark"] .mt-mine.card .mt-new{color:#F0B48A}
 .mt-mon{font-size:13px;font-weight:900;color:var(--ink-2);margin:14px 4px 6px}
 .mt-row{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 18px;display:grid;grid-template-columns:86px minmax(0,1fr) 180px;gap:16px;align-items:start;margin-bottom:9px;cursor:pointer;transition:border-color .12s}
 .mt-row:hover{border-color:#9CCBB6}
@@ -596,13 +620,16 @@ function edCtx(){
 }
 
 /* ═══ 목록 ═══ */
+/* 🏛 v164 방 머리 — 경로(학사 › 회의록)는 위 막대에 있으니 빼고 · 상태 한 줄 · 주 단추 «새 회의록» · 설정 · 예전 PDF 는 ⋯ 안으로 */
 function headHTML(){
   const anyW = WRITE.length > 0;
+  const mgr = isSuper() ? `<button data-act="settings">⚙ 설정</button><button data-act="import">📥 예전 PDF 가져오기</button>` : (isMinMgr() ? `<button data-act="settings">⚙ 설정</button>` : '');
+  const more = `<button data-act="exportmany" class="mt-only-m">🖨 여러 건 출력 (PDF · 워드)</button>${mgr}`;   // 폰에서는 «여러 건 출력»도 ⋯ 안으로
   return `<div class="mt-head">
-    <div><div class="cr">학사 › 회의록</div><h1>회의록</h1></div><div class="mt-sp"></div>
-    ${isSuper() ? `<button class="mt-btn" data-act="settings">⚙ 설정</button><button class="mt-btn" data-act="import">예전 PDF 가져오기</button>` : (isMinMgr() ? `<button class="mt-btn" data-act="settings">⚙ 설정</button>` : '')}
-    <button class="mt-btn" data-act="exportmany">여러 건 출력 (PDF · 워드)</button>
-    ${anyW ? `<button class="mt-btn p" data-act="new">＋ 새 회의록</button>` : ''}
+    <div class="mt-hl"><h1>회의록</h1><div class="mt-stl" id="mt-stl"></div></div><div class="mt-sp"></div>
+    <button class="mt-btn" data-act="exportmany" title="여러 건 출력 (PDF · 워드)">🖨 여러 건 출력</button>
+    ${anyW ? `<button class="mt-btn g" data-act="new">＋ 새 회의록</button>` : ''}
+    <div class="dd${mgr ? '' : ' mt-dd-m'}" id="dd-head"><button class="mt-btn" data-act="moremenu" aria-haspopup="true" aria-expanded="false" aria-label="더 보기${isSuper() ? ' — 설정 · 예전 PDF 가져오기' : mgr ? ' — 설정' : ''}" title="더 보기">⋯</button><div class="dd-m">${more}</div></div>
   </div>
   <div id="mt-minebar"></div>`;
 }
@@ -630,7 +657,7 @@ function paintMineBar(){
   const open = MYTASKS.filter(t => (t.status || 'todo') !== 'done');
   const over = open.filter(t => t.due && t.due < TODAY).length;
   const un = NOTIFS.filter(n => !n.read).length;
-  el.innerHTML = (open.length || un) ? `<div class="mt-mine" data-act="mine">📌 내가 맡은 임무 <b>${open.length}건</b>${over ? ` · <span class="mt-new">${over}건 기한 지남</span>` : ''}${un ? ` · 새 소식 <b>${un}</b>` : ''}<span class="go">모두 보기 ›</span></div>` : '';
+  el.innerHTML = (open.length || un) ? `<button type="button" class="mt-mine card" data-act="mine"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/></svg></span><span>내가 맡은 임무 <b>${open.length}건</b>${over ? ` · <span class="mt-new">${over}건 기한 지남</span>` : ''}${un ? ` · 새 소식 <b>${un}</b>` : ''}</span><span class="go">모두 보기 ›</span></button>` : '';
 }
 /* (v-94) 회의 종류 칩(전체 · 훈련센터 회의 · 학교 회의)은 없앴다 — 기관을 고르면 그 기관 회의록이 한 목록으로 */
 function filtered(){ return LIST.slice(); }
@@ -639,9 +666,9 @@ function paintRows(){
   const list = filtered();
   const sum = $I('mt-sum');
   const lvb = $I('mt-lview'); if(lvb) lvb.style.display = Q ? 'none' : '';
+  paintStl(list);
   if(Q){ paintSearch(list); return; }
-  const tcount = list.reduce((s, m) => s + (m.topics || []).length, 0);
-  if(sum) sum.innerHTML = `${esc(SEM ? C.semLabel(SEM) : '전체 학기')} · ${ORG === 'all' ? '모든 기관' : esc(MORG[ORG])} · 회의 <b>${list.length}번</b> · 주제 <b>${tcount}개</b> — ${LVIEW === 'toc' ? '최근 회의가 위에 · 주제를 누르면 그 자리로 · ☆로 모아 두기' : '최근 회의가 위에 · 노란 칸을 누르면 그 주제로 바로 가요'}`;
+  if(sum) sum.innerHTML = LVIEW === 'toc' ? '최근 회의가 위에 · 주제를 누르면 그 자리로 · ☆로 모아 두기' : '최근 회의가 위에 · 노란 칸을 누르면 그 주제로 바로 가요';
   if(!list.length){
     box.innerHTML = `<div class="mt-empty">${SEM ? esc(C.semLabel(SEM)) + '에 ' : ''}아직 회의록이 없어요.${WRITE.length ? '<br><button class="mt-btn p" data-act="new" style="margin-top:12px">＋ 새 회의록</button>' : ''}${ORG === 'da' ? '<br><span style="font-size:12px">DA전체는 모든 기관 선생님이 함께 보고 쓰는 회의록이에요.</span>' : ''}</div>`;
     return;
@@ -656,6 +683,17 @@ function paintRows(){
     html += rowHTML(m, unread.get(m.id) || 0);
   }
   box.innerHTML = html;
+}
+/* 🏛 v164 머리 상태 한 줄 — 학기 · 기관 · 회의 · 주제 · 결정 · 임무(끝남) */
+function paintStl(list){
+  const el = $I('mt-stl'); if(!el) return;
+  let tp = 0, dec = 0, tk = 0, dn = 0;
+  for(const m of list){
+    tp += (m.topics || []).length;
+    try{ dec += C.countOf(m).dec || 0; }catch(_){}
+    (m.topics || []).forEach(t => (t.tasks || []).forEach(k => { if(C.textOf(k.h).trim()){ tk++; if((TASKS[C.taskKey(m.id, k.id)] || {}).status === 'done') dn++; } }));
+  }
+  el.innerHTML = `<span><b>${esc(SEM ? C.semLabel(SEM) : '전체 학기')}</b></span><span>${ORG === 'all' ? '모든 기관' : esc(MORG[ORG])}</span><span>회의 <b>${list.length}</b>번</span><span>주제 <b>${tp}</b></span>${dec ? `<span>결정 <b>${dec}</b></span>` : ''}${tk ? `<span>임무 <b>${tk}</b> · 끝남 ${dn}</span>` : ''}`;
 }
 function rowHTML(m, un){
   const cnt = C.countOf(m);
@@ -1249,7 +1287,7 @@ function paintMine(){
       <div class="mk-st">${['todo', 'doing', 'done'].map(s => `<button class="${st === s ? 'on ' + s : ''}" data-act="mkst" data-kid="${esc(t.id)}" data-st="${s}">${C.STATUS[s].l}</button>`).join('')}</div></div>`;
   };
   const un = NOTIFS.slice(0, 30);
-  root.innerHTML = `<div class="mt-head"><div><div class="cr">학사 › 회의록</div><h1>내가 맡은 임무</h1></div><div class="mt-sp"></div><button class="mt-btn" data-act="back">‹ 회의록 목록</button></div>
+  root.innerHTML = `<div class="mt-head"><div><h1>내가 맡은 임무</h1></div><div class="mt-sp"></div><button class="mt-btn" data-act="back">‹ 회의록 목록</button></div>
     <div class="mt-sum">회의에서 내가 담당으로 정해진 일 — 진행 중 · 완료를 누르면 회의록에도 바로 보여요</div>
     ${open.length ? open.map(row).join('') : '<div class="mt-empty">지금 맡은 임무가 없어요 🎉</div>'}
     ${done.length ? `<details style="margin-top:14px"><summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--ink-2)">완료한 임무 ${done.length}건</summary><div style="margin-top:8px">${done.map(row).join('')}</div></details>` : ''}
@@ -1430,7 +1468,7 @@ document.addEventListener('click', async e => {
   if(orgB){ ORG = orgB.dataset.org; TYPE = ''; try{ localStorage.setItem('mtg_org', ORG); }catch(_){} subscribeList(); renderList(); go({ org: ORG }, true); return; }
   const a = e.target.closest('[data-act]'); if(!a) return;
   const act = a.dataset.act;
-  if(act !== 'outmenu' && act !== 'moremenu') document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open'));
+  if(act !== 'outmenu' && act !== 'moremenu'){ document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); ddAria(); }
   switch(act){
     case 'new': go({ edit: 'new', to: ORG !== 'all' ? ORG : '' }); break;
     case 'lview': LVIEW = a.dataset.v === 'card' ? 'card' : 'toc'; lsSet('mtg_lview', LVIEW);
@@ -1457,7 +1495,7 @@ document.addEventListener('click', async e => {
     case 'exportmany': openExport(null); break;
     case 'edit': go({ edit: CUR.id }); break;
     case 'hist': openHistory(CUR); break;
-    case 'outmenu': case 'moremenu': { const dd = a.closest('.dd'); const was = dd.classList.contains('open'); document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); if(!was) dd.classList.add('open'); break; }
+    case 'outmenu': case 'moremenu': { const dd = a.closest('.dd'); const was = dd.classList.contains('open'); document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); if(!was) dd.classList.add('open'); if(act === 'moremenu') a.setAttribute('aria-expanded', String(!was)); break; }
     case 'out': if(a.dataset.f === 'pick') openExport(CUR); else { try{ await doExport([CUR], a.dataset.f, { sum: false, att: true, img: true, cmt: false, head: true, title: C.titleOf(CUR) }, `${C.titleOf(CUR)}_${CUR.date}`); }catch(err){ toast('만들지 못했어요 — ' + err.message, 'err'); } } break;
     case 'copylink': { const u = new URL(location.href); u.search = '?m=' + CUR.id; try{ await navigator.clipboard.writeText(u.href); toast('주소를 복사했어요 — 쪽지로 보내 보세요'); }catch(_){ prompt('이 주소를 복사하세요', u.href); } break; }
     case 'dup': go({ edit: 'new', to: CUR.org, from: CUR.id }); break;
@@ -1499,7 +1537,20 @@ document.addEventListener('click', async e => {
       go({ m: n.meetingId, k, t }); break; }
   }
 });
-document.addEventListener('mousedown', e => { if(!e.target.closest('.dd')) document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); });
+document.addEventListener('mousedown', e => { if(!e.target.closest('.dd')){ document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); ddAria(); } });
+function ddAria(){ document.querySelectorAll('[data-act="moremenu"][aria-expanded="true"]').forEach(b => b.setAttribute('aria-expanded', 'false')); }   // v164 ⋯ 가 닫히면 aria-expanded 도
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape' || document.querySelector('.mov')) return;
+  const open = document.querySelectorAll('.dd.open'); if(!open.length) return;
+  open.forEach(d => { d.classList.remove('open'); const b = d.querySelector('[data-act="moremenu"],[data-act="outmenu"]'); if(b){ if(b.hasAttribute('aria-expanded')) b.setAttribute('aria-expanded', 'false'); try{ b.focus(); }catch(_){} } });
+});
+/* 🧭 v164 도우미 «같이 하기» — ⚙ 설정 · 예전 PDF · (휴대폰) 여러 건 출력이 머리 «⋯» 안에 있으면 먼저 펼친다 */
+window.__helpReveal = el => {
+  const dd = $I('dd-head'); if(!dd || !el || !el.getAttribute) return false;
+  const act = el.getAttribute('data-act');
+  if(el.closest('#dd-head') || (act && dd.querySelector(`.dd-m [data-act="${act}"]`))){ dd.classList.add('open'); return true; }
+  return false;
+};
 let qTimer = null;
 document.addEventListener('input', e => {
   if(e.target.id === 'mt-q'){ clearTimeout(qTimer); const v = e.target.value; qTimer = setTimeout(() => { Q = v.trim(); paintRows(); }, 220); }

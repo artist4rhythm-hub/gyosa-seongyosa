@@ -45,11 +45,28 @@
 .cs-head h1{margin:0;font-size:26px;font-weight:900;letter-spacing:-.5px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 .cs-head h1 small{font-size:13px;color:var(--ink-2);font-weight:700}
 .cs-head .rt{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.cs-tabs{display:flex;gap:6px;flex-wrap:wrap;padding-top:4px;border-bottom:1px solid var(--line);padding-bottom:10px}
-.cs-tab{font-family:inherit;height:38px;padding:0 15px;border-radius:10px;border:0;background:transparent;color:var(--ink-2);font-size:13px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
-.cs-tab:hover{background:var(--sb-mint-2);color:var(--ink)}
-.cs-tab.on{background:var(--sb-house);color:#fff}
-.cs-tab .n{display:inline-block;min-width:18px;padding:1px 6px;border-radius:9px;background:#C2410C;color:#fff;font-size:11px;text-align:center}
+.cs-tabs{display:flex;gap:2px;flex-wrap:wrap;padding-top:4px;border-bottom:0;padding-bottom:0;box-shadow:inset 0 -1px 0 var(--line)}
+.cs-tab{font-family:inherit;height:46px;padding:0 14px;border-radius:0;border:0;border-bottom:2px solid transparent;margin-bottom:0;background:transparent;color:var(--ink-2);font-size:14px;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;gap:7px;text-decoration:none;white-space:nowrap}
+.cs-tab:hover{background:transparent;color:var(--ink)}
+.cs-tab.on{background:transparent;color:var(--sb-green);border-bottom-color:var(--sb-green)}
+.cs-tab .n{display:inline-block;min-width:18px;padding:1px 7px;border-radius:999px;background:#FBF0D6;color:#6B4A00;font-size:11px;font-weight:900;text-align:center}
+.cs-tab .n.g{background:var(--sb-mint-2,#E3F1EA);color:var(--sb-green,#1F6B4A)}
+html[data-theme="dark"] .cs-tab .n{background:#2A2416;color:#E3C878}
+html[data-theme="dark"] .cs-tab .n.g{background:#1F3A2F;color:#9ED9BE}
+@media (max-width:700px){ .cs-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none} .cs-tabs::-webkit-scrollbar{display:none} .cs-tab{height:44px;padding:0 12px;font-size:13.5px} }
+/* 🏛 v164 방 머리 — 상태 한 줄 · 진행 띠를 탭 위로 · 새 변경 요청은 한 줄 상태 카드 */
+.cs-head .hl{min-width:0;flex:1 1 320px}
+.cs-head h1 .cs-i{display:inline-grid;place-items:center;width:22px;height:22px;color:var(--ink-3);cursor:help;align-self:center}
+.cs-head h1 .cs-i svg{width:19px;height:19px}
+.cs-stl{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:13px;color:var(--ink-2)}
+.cs-stl b{color:var(--ink);font-weight:800}
+.cs-head .cs-steps{margin:8px 0 2px}
+.cs-sc{display:flex;align-items:center;gap:12px;margin:0 0 12px;padding:10px 14px 10px 10px;text-decoration:none;color:var(--ink);font-size:13.5px}
+.cs-sc:hover{border-color:#E8C770}
+.cs-sc .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:#FBF0D6;color:#7A5500;flex:none}
+.cs-sc .ic svg{width:19px;height:19px}
+.cs-sc .go{margin-left:auto;color:var(--sb-green);font-weight:800;white-space:nowrap}
+html[data-theme="dark"] .cs-sc .ic{background:#2A2416;color:#E3C878}
 /* 단계 띠 */
 .cs-steps{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:12px 0}
 .cs-step{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:10px;font-size:13px;font-weight:800;color:var(--ink-2)}
@@ -344,8 +361,8 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol } from './listcache.js?v=137';
 import * as C from './consult-core.js?v=155';
-import * as BOARD from './consult-board.js?v=155';
-import * as SETUP from './consult-setup.js?v=155';
+import * as BOARD from './consult-board.js?v=164';
+import * as SETUP from './consult-setup.js?v=164';
 import * as REQ from './consult-reqs.js?v=155';
 import * as PAST from './consult-past.js?v=155';
 import { notifyStaff } from './push-client.js';
@@ -737,17 +754,28 @@ const TABS = [
 ];
 A.go = h => { if(location.hash === '#' + h) route(true); else location.hash = h; };
 function parseHash(){ const h = decodeURIComponent(location.hash.replace(/^#/, '')) || 'board'; const [v, ...rest] = h.split('/'); return { v, sub: rest.join('/') }; }
+/* 🏛 v164 방 머리 — 경로 빼고 · 상태 한 줄(상담 · 날짜 · 대상 · 반 · 지금 단계) · 진행 띠를 탭 위로(이번 상담 · 변경 요청) · 숫자 달린 탭 */
+const STEP_KO = ['', '준비', '초안 편성', '담임 확인', '학부모 확인', '최종 반영', '끝남'];
 function headHTML(){
   const r = A.R;
   const opts = (r ? '' : '<option value="" selected>— 상담 고르기 —</option>') + A.ROUNDS.filter(x => x.state !== 'closed' || A.isMgr).map(x => `<option value="${esc(x.id)}"${r && r.id === x.id ? ' selected' : ''}>${esc(x.title || x.id)}${x.state === 'closed' ? ' · 끝남' : ''}</option>`).join('');
   const nReq = A.REQS.filter(q => q.state === 'new').length;
+  const nKid = r ? A.KIDS ? Object.keys(A.KIDS).length : 0 : 0;
+  const days = r ? C.dayList(r) : [];
+  const md = d => { const p = String(d.date).split('-').map(Number); return `${p[1]}/${p[2]}(${'일월화수목금토'[new Date(d.date + 'T00:00:00').getDay()]})`; };
+  const stl = r ? `<div class="cs-stl"><span><b>${esc(r.title || '')}</b></span>${days.length ? `<span>${md(days[0])}${days.length > 1 ? ' ~ ' + md(days[days.length - 1]) : ''}</span>` : ''}${A.inSet && A.inSet.size ? `<span>대상 <b>${A.inSet.size}</b>명</span>` : ''}${(r.cols || []).length ? `<span>반 <b>${r.cols.length}</b>줄</span>` : ''}<span>지금 <b>${STEP_KO[C.stepNo(r)] || ''}</b></span></div>`
+    : `<div class="cs-stl"><span>다니엘 아마츠</span></div>`;
+  let steps = '';
+  if(r && !A.ruleMissing && (A.VIEW === 'board' || A.VIEW === 'reqs')){ try{ steps = BOARD.stepsFor(A); }catch(e){ steps = ''; } }
+  const card = A.isMgr && r && nReq && A.VIEW === 'board' && r.state !== 'closed'
+    ? `<a class="cs-card cs-sc" href="#reqs"><span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h6M9 14h4"/></svg></span><span>새 변경 요청 <b>${nReq}건</b> — 들어온 차례대로 한 번에 반영할 수 있어요</span><span class="go">변경 요청 보기 ›</span></a>` : '';
   return `<div class="cs-head">
-    <div class="bc">학사 › 학부모 상담</div>
-    <div class="tt"><h1>📅 학부모 상담 <small>${r ? esc(r.title || '') + ' · 다니엘 아마츠' : '다니엘 아마츠'}</small></h1>
+    <div class="tt"><div class="hl"><h1>학부모 상담<span class="cs-i" role="img" aria-label="도움말 — 반별 상담 시간 편성 · 형제 이어서 · 교직원 자녀 뒤로" title="반별 상담 시간 편성 · 형제 이어서 · 교직원 자녀 뒤로 · 다니엘 아마츠"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span></h1>${stl}</div>
       <div class="rt">${A.ROUNDS.length ? `<select class="cs-sel" id="cs-round" aria-label="상담 고르기" style="max-width:320px">${opts}</select>` : ''}
-        ${A.isMgr ? '<button class="cs-btn g" data-act="newround">+ 새 상담 일정</button>' : ''}</div></div>
-    <div class="cs-tabs" role="tablist">${TABS.filter(t => !t.mgr || A.isMgr).map(t => `<a class="cs-tab${A.VIEW === t.k ? ' on' : ''}" href="#${t.k}" role="tab" aria-selected="${A.VIEW === t.k}">${t.l}${t.k === 'reqs' && nReq ? ` <span class="n">${nReq}</span>` : ''}</a>`).join('')}</div>
-  </div>${notifHTML()}`;
+        ${A.isMgr ? `<button class="cs-btn${A.ROUNDS.length ? '' : ' g'}" data-act="newround">+ 새 상담 일정</button>` : ''}</div></div>
+    ${steps}
+    <div class="cs-tabs" role="tablist">${TABS.filter(t => !t.mgr || A.isMgr).map(t => `<a class="cs-tab${A.VIEW === t.k ? ' on' : ''}" href="#${t.k}" role="tab" aria-selected="${A.VIEW === t.k}">${t.l}${t.k === 'reqs' && nReq ? ` <span class="n">새 ${nReq}</span>` : ''}${t.k === 'kids' && nKid ? ` <span class="n g">${nKid}</span>` : ''}</a>`).join('')}</div>
+  </div>${card}${notifHTML()}`;
 }
 function notifHTML(){
   const NT = A.NOTIFS.filter(n => !staleNotif(n));     // v155 닫힌 요청의 알림은 빼고

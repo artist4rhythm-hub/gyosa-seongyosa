@@ -65,7 +65,8 @@ function chipHTML(sid, opt){
     ${cdT ? '<span class="cdm" aria-hidden="true">🧩</span>' : ''}${st.pin ? `<span class="pin" aria-hidden="true">${ICON_PIN}</span>` : ''}${!opt.big && !opt.etc && note ? '<span class="memo" aria-hidden="true">✎</span>' : ''}${oq.length ? '<span class="rqm" aria-hidden="true">💬</span>' : ''}</button>`;
 }
 
-/* ── 단계 띠 ── */
+/* ── 단계 띠 ── (🏛 v164 방 머리로 올림 — 이번 상담 · 변경 요청 탭에서 탭 위에 보임) */
+export function stepsFor(a){ A = a; C = a.C; esc = a.esc; return a.R ? stepsHTML() : ''; }
 function stepsHTML(){
   const r = A.R; const cur = C.stepNo(r);
   const pubs = C.pubsOf(r).filter(p => !C.isFinalPub(p)), lp = pubs[pubs.length - 1];
@@ -354,16 +355,16 @@ export function boardHTML(a, sub){
   A = a; C = a.C; esc = a.esc;
   const r = A.R;
   if(!A.teacherSees()){
-    return `${stepsHTML()}<div class="cs-card cs-empty">편성 담당 선생님이 상담 일정을 만들고 있어요.<br>«담임 확인»으로 보내면 여기에서 우리 반 시간을 보고 확인하거나 변경을 요청할 수 있어요.<br><span class="cs-mut">교직원 자녀가 있으시면 «🧑‍🏫 교직원 자녀»에서 미리 이어 주세요 — 선생님 상담이 끝난 뒤로 잡혀요.</span></div>`;
+    return `<div class="cs-card cs-empty">편성 담당 선생님이 상담 일정을 만들고 있어요.<br>«담임 확인»으로 보내면 여기에서 우리 반 시간을 보고 확인하거나 변경을 요청할 수 있어요.<br><span class="cs-mut">교직원 자녀가 있으시면 «🧑‍🏫 교직원 자녀»에서 미리 이어 주세요 — 선생님 상담이 끝난 뒤로 잡혀요.</span></div>`;
   }
   if(!C.dayList(r).length || !(r.cols || []).length){
-    return `${stepsHTML()}<div class="cs-card cs-empty">상담 날짜나 세로줄(반)이 아직 없어요.${A.isMgr ? '<br><a class="cs-btn g" href="#setup" style="margin-top:10px">⚙️ 준비 · 설정 열기</a>' : ''}</div>`;
+    return `<div class="cs-card cs-empty">상담 날짜나 세로줄(반)이 아직 없어요.${A.isMgr ? '<br><a class="cs-btn g" href="#setup" style="margin-top:10px">⚙️ 준비 · 설정 열기</a>' : ''}</div>`;
   }
   const view = sub && sub.startsWith('day') ? 'day' : (sub === 'fam' ? 'fam' : '');
   const daySub = view === 'day' ? (sub.split('/')[1] || '0') : '';
   const empty = A.isMgr && !Object.keys(r.seats || {}).length;
   const ended = r.state === 'final' && C.dayList(r).length && A.today() > C.dayList(r).slice(-1)[0].date;
-  return `${stepsHTML()}${toolsHTML(view)}${legendHTML()}
+  return `${toolsHTML(view)}${legendHTML()}
     ${ended && A.isMgr ? `<div class="cs-card" style="margin-bottom:12px;background:#FFF7E6;border-color:#F3D58A;font-size:13px">상담 날짜가 지났어요 — «상담 끝내기»를 누르면 지난 상담으로 옮겨지고, 다음 학기 순번 점검에 쓰여요.</div>` : ''}
     ${empty ? `<div class="cs-card" style="margin-bottom:12px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><b>아직 자리가 없어요.</b><span class="cs-mut">대상 ${A.inSet.size}명 · 반 ${(r.cols || []).length}줄 · ${C.dayList(r).length}일 × 하루 ${C.tplOf(r).n}칸</span><span style="flex:1"></span><a class="cs-btn" href="#setup">⚙️ 준비 확인</a><button class="cs-btn g" data-b="auto">↻ 초안 만들기 (자동 배치)</button></div>` : ''}
     <div class="cs-main${A.isMgr ? '' : ' tch'}"><div class="cs-boardw">${view === 'day' ? dayViewHTML(daySub) : view === 'fam' ? famViewHTML() : gridHTML(null, false)}${view === 'fam' ? '' : etcListHTML()}</div>

@@ -31,11 +31,37 @@
 .nh-in{font-family:inherit;font-size:13px;height:36px;border:1px solid var(--line);border-radius:9px;padding:0 10px;background:var(--surface);color:var(--ink);min-width:0}
 .nh-in:focus,.nh-ta:focus,.nh-sel:focus{outline:2px solid #9CCBB6;outline-offset:0;border-color:var(--sb-green)}
 .nh-ta{font-family:inherit;font-size:13px;line-height:1.6;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--ink);width:100%;resize:vertical;min-height:70px}
+/* 🏛 v164 숫자 달린 밑줄 탭 — 노란 숫자 = 할 일 · 초록 = 진행 */
 .nh-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;border-bottom:1px solid var(--line);padding-bottom:10px}
 .nh-tabs button{font-family:inherit;font-size:13px;font-weight:800;border:1px solid transparent;background:transparent;color:var(--ink-2);height:36px;padding:0 13px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
 .nh-tabs button:hover{background:var(--sb-mint-2)}
 .nh-tabs button.on{background:var(--sb-house);color:#fff}
 .nh-tabs .bd{background:#E8875B;color:#fff;border-radius:100px;font-size:10.5px;padding:1px 7px;font-weight:900}
+/* 🏛 v164 방 머리 탭(.top)만 숫자 달린 밑줄 탭 — «반 × 과목 / 선생님별» · «표로 / 한 명씩» 알약은 그대로 */
+.nh-tabs.top{gap:2px;margin:0 0 16px;border-bottom:0;padding-bottom:0;box-shadow:inset 0 -1px 0 var(--line)}
+.nh-tabs.top button{font-size:14px;border:0;border-bottom:2px solid transparent;height:46px;padding:0 14px;border-radius:0;gap:7px;white-space:nowrap}
+.nh-tabs.top button:hover{color:var(--ink);background:transparent}
+.nh-tabs.top button.on{background:transparent;color:var(--sb-green);border-bottom-color:var(--sb-green)}
+.nh-tabs.top .bd{background:#FBF0D6;color:#6B4A00;font-size:11px}
+.nh-tabs.top .bd.n{background:var(--sb-mint-2,#E3F1EA);color:var(--sb-green,#1F6B4A)}
+html[data-theme="dark"] .nh-tabs.top .bd{background:#2A2416;color:#E3C878}
+html[data-theme="dark"] .nh-tabs.top .bd.n{background:#1F3A2F;color:#9ED9BE}
+.nh-hl{min-width:0}
+.nh-head h1 .nh-i{display:inline-grid;place-items:center;width:22px;height:22px;margin-left:6px;color:var(--ink-3);vertical-align:2px;cursor:help}
+.nh-head h1 .nh-i svg{width:19px;height:19px}
+.nh-stl{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:13px;color:var(--ink-2)}
+.nh-stl b{color:var(--ink);font-weight:800}
+.nh-stl .w{color:#8A3B12;font-weight:800}
+.nh-stl .r{color:var(--danger);font-weight:800}
+html[data-theme="dark"] .nh-stl .w{color:#F0B48A}
+@media (max-width:700px){
+  .nh-tabs.top{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .nh-tabs.top::-webkit-scrollbar{display:none}
+  .nh-tabs.top button{height:44px;padding:0 12px;font-size:13.5px}
+  .nh-head .nh-hl{flex:1 1 100%}
+  .nh-head > .nh-sp{display:none}
+  .nh-head .nh-sel{flex:1 1 140px;min-width:0}
+}
 .nh-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px}
 .nh-card h3{margin:0 0 4px;font-size:15px;font-weight:900;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .nh-card h3 small{font-size:12px;color:var(--ink-2);font-weight:700}
@@ -846,7 +872,7 @@ async function route(soft){
   VIEW = r.v;
   const root = $I('nh');
   if(!A.CU) return;
-  if(r.v === 's'){ root.innerHTML = headHTML('home') + `<div id="nh-body"></div>`; bindHead(); await ENTRY.render(A, $I('nh-body'), r.a, r.b); return; }
+  if(r.v === 's'){ root.innerHTML = headHTML('home', 's') + `<div id="nh-body"></div>`; bindHead(); await ENTRY.render(A, $I('nh-body'), r.a, r.b); return; }
   if(r.v === 'setup'){ root.innerHTML = headHTML('setup') + `<div id="nh-body"></div>`; bindHead(); await SETUP.render(A, $I('nh-body'), r.a); return; }
   if(r.v === 'edit'){ root.innerHTML = headHTML(r.a.startsWith('past') ? 'past' : 'print') + `<div id="nh-body"></div>`; bindHead(); await EDIT.render(A, $I('nh-body'), r.a, r.b); return; }
   const y = soft ? window.scrollY : 0;
@@ -865,19 +891,40 @@ A.route = route;
 
 /* ═══ 머리 ═══ */
 function myTurnCount(){ return A.SUBS.filter(s => (s.state === 'review' || s.state === 'final') && (s.turn || []).includes(A.CU.uid)).length; }
-function headHTML(on){
+/* 🏛 v164 방 머리 — 경로 빼고 · 상태 한 줄(학기 · 전체 입력 % · 검토 기다림 · 입력 마감) · 주 단추 «내 칸 이어서 쓰기» · 숫자 달린 탭 */
+function headStats(){
+  const t = A.TERM; if(!t) return null;
+  const live = A.SUBS.filter(s => !s.removed);
+  let tot = 0, dn = 0;
+  live.forEach(s => { const n = Number(s.cnt && s.cnt.total) || 0; tot += n; dn += s.state === 'draft' ? Math.min(n, Number(s.cnt && s.cnt.done) || 0) : n; });
+  const wait = live.filter(s => s.state === 'review' || s.state === 'final').length;
+  const mine = live.filter(s => (s.teacherUids || []).includes(A.CU.uid) && s.state === 'draft');
+  const next = mine.map(s => ({ s, left: (Number(s.cnt && s.cnt.total) || 0) - (Number(s.cnt && s.cnt.done) || 0) })).filter(x => x.left > 0)
+    .sort((a, b) => b.left - a.left)[0];
+  return { pct: tot ? Math.round(dn / tot * 100) : 0, tot, wait, toWrite: mine.length, next: next ? next.s : null };
+}
+function headHTML(on, mode){
   const t = A.TERM;
   const opts = A.TERMS.map(x => `<option value="${esc(x.id)}"${t && x.id === t.id ? ' selected' : ''}>${esc(C.termLabel(x))}${x.src === 'import' ? ' · 지난 자료' : ''}${x.status === 'closed' ? ' · 마감' : ''}</option>`).join('');
   const turn = myTurnCount(), nn = A.NOTIFS.length;
-  const tab = (k, l, bd) => `<button data-go="${k}" class="${on === k ? 'on' : ''}">${l}${bd ? `<span class="bd">${bd}</span>` : ''}</button>`;
+  const st = headStats();
+  const tab = (k, l, bd, cls) => `<button data-go="${k}" class="${on === k ? 'on' : ''}">${l}${bd ? `<span class="bd${cls ? ' ' + cls : ''}">${bd}</span>` : ''}</button>`;
+  const due = t && t.due && t.due.entry && /^\d{4}-\d{2}-\d{2}$/.test(t.due.entry) ? (() => {
+    const days = Math.ceil((new Date(t.due.entry + 'T23:59:59') - new Date()) / 864e5), [, mm, d] = t.due.entry.split('-').map(Number);
+    const wd = '일월화수목금토'[new Date(t.due.entry + 'T00:00:00').getDay()];
+    return `<span class="${days < 0 ? 'r' : days <= 14 ? 'w' : ''}">입력 마감 ${mm}/${d}(${wd}) · ${days < 0 ? `${-days}일 지남` : days === 0 ? '오늘' : `${days}일 남음`}</span>`; })() : '';
+  const stl = t ? `<div class="nh-stl"><span><b>${esc(C.termLabel(t))}</b></span>${t.src === 'import' ? '<span>지난 자료</span>' : st && st.tot ? `<span>전체 입력 <b>${st.pct}%</b></span><span>검토 기다림 <b>${st.wait}</b>칸</span>${due}` : ''}</div>` : '';
+  // 칸을 쓰는 중에는 안 보임
+  const go = st && st.next && mode !== 's' ? `<button class="nh-btn g" data-open="${esc(st.next.id)}">✏️ 내 칸 이어서 쓰기</button>` : '';
   return `<div class="nh-head">
-      <div><div class="cr">학사 › 나학평</div><h1>📒 나학평<small>나의 학교생활 · ${esc(C.ORG_NAME)}</small></h1></div>
+      <div class="nh-hl"><h1>나학평<span class="nh-i" role="img" aria-label="도움말 — 나의 학교생활 평가서 · ${esc(C.ORG_NAME)}" title="나의 학교생활 평가서 · ${esc(C.ORG_NAME)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg></span></h1>${stl}</div>
       <span class="nh-sp"></span>
       ${A.TERMS.length ? `<select class="nh-sel" id="nh-term" aria-label="학기">${opts}</select>` : ''}
-      ${A.isMgr ? `<button class="nh-btn g" data-act="newterm">＋ 학기 열기</button>` : ''}
+      ${A.isMgr ? `<button class="nh-btn${t ? '' : ' g'}" data-act="newterm">＋ 학기 열기</button>` : ''}
+      ${go}
     </div>
-    <div class="nh-tabs">
-      ${tab('home', '🏠 내 할 일', (turn + nn) || '')}${tab('board', '📊 진행 현황')}${tab('print', '🖨 출력 · 원본')}${tab('past', '🗂 지난 나학평')}${A.isMgr ? tab('setup', '⚙️ 학기 설정') : ''}
+    <div class="nh-tabs top" role="group" aria-label="나학평">
+      ${tab('home', '🏠 내 할 일', (st ? st.toWrite : 0) + turn + nn || '')}${tab('board', '📊 진행 현황', st && st.tot && t.src !== 'import' ? st.pct + '%' : '', 'n')}${tab('print', '🖨 출력 · 원본')}${tab('past', '🗂 지난 나학평')}${A.isMgr ? tab('setup', '⚙️ 학기 설정') : ''}
     </div>
     ${A.ruleMissing ? `<div class="nh-warn">🔒 <b>보안 규칙 v38이 아직 게시되지 않은 것 같아요.</b> Firebase 콘솔 › Firestore › 규칙에 v38 전문을 붙여넣고 «게시»해 주세요. (게시 전에는 나학평 자료를 읽고 쓸 수 없어요 — 조 편성 · 양식 바꾸기 · 함께 쓰기는 v38 부터)</div>` : ''}`;
 }
