@@ -128,7 +128,7 @@ async function openDialog(){
     <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:8px">
       ${(_me && _me.role==='super')?`<button onclick="unionSettings()" style="margin-right:auto;font-size:11px;font-weight:800;color:#5A6560;background:#fff;border:1.5px solid #E3E1DA;border-radius:9px;padding:7px 11px;cursor:pointer">⚙ 설정</button>`:''}
       <button onclick="unionCloseModal()" style="font-size:11.5px;font-weight:800;color:#5A6560;background:#fff;border:1.5px solid #E3E1DA;border-radius:9px;padding:8px 14px;cursor:pointer">취소</button>
-      <button onclick="unionTry()" style="font-size:11.5px;font-weight:800;color:#fff;background:#6D28D9;border:0;border-radius:9px;padding:8px 16px;cursor:pointer">열기</button>
+      <button onclick="unionTry()" style="font-size:11.5px;font-weight:800;color:#fff;background:#8A6410;border:0;border-radius:9px;padding:8px 16px;cursor:pointer">열기</button>
     </div>`);
   const inp = document.getElementById('union-code');
   inp?.focus();
@@ -213,13 +213,14 @@ window.unionSave = async ()=>{
    · 높이는 재서 맞춘다 (글자 크기 · 폰 아래 탭 높이가 바뀌어도) */
 const UB_CSS = `
 #union-band{position:fixed;left:0;right:0;bottom:var(--union-b,0px);z-index:45;
-  background:#5E4A86;color:#fff;padding:7px 14px;
+  background:linear-gradient(90deg,#D9B455 0%,#F1D88C 48%,#DDBA5C 100%);color:#3B2A06;padding:7px 14px;
+  border-top:1px solid #F8E7B4;
   font-family:var(--font-ui,'Noto Sans KR',sans-serif);font-size:12px;font-weight:700;
-  display:flex;align-items:center;gap:9px;box-shadow:0 -2px 12px rgba(46,30,80,.22)}
+  display:flex;align-items:center;gap:9px;box-shadow:0 -2px 12px rgba(110,80,12,.22)}   /* 🌟 v167 보라 → 금색 띠 */
 #union-band svg{flex:none;opacity:.9}
-#union-band .ub-s{font-weight:500;opacity:.82}
+#union-band .ub-s{font-weight:500;opacity:.86}
 @media(max-width:640px){ #union-band .ub-s{display:none} }
-#union-band button{margin-left:auto;background:rgba(255,255,255,.22);color:#fff;border:0;border-radius:8px;
+#union-band button{margin-left:auto;background:#3B2A06;color:#F8E7B4;border:0;border-radius:8px;
   padding:4px 12px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
 html.union-on #sb{height:calc(100vh - var(--union-h,0px) - var(--union-b,0px))}
 html.union-on .sumbar{bottom:calc(12px + var(--union-h,0px))}
@@ -318,8 +319,8 @@ const KEY_ID = 'union-key';
 function keyTint(el, n){
   const lv = [
     { o:'.42', bg:'transparent',               sc:'1'    },
-    { o:'.75', bg:'rgba(109,40,217,.14)',      sc:'1.08' },
-    { o:'1',   bg:'rgba(109,40,217,.34)',      sc:'1.16' },
+    { o:'.75', bg:'rgba(201,152,40,.18)',      sc:'1.08' },
+    { o:'1',   bg:'rgba(201,152,40,.40)',      sc:'1.16' },
   ][Math.min(n, 2)];
   el.style.opacity = lv.o;
   el.style.background = lv.bg;
@@ -472,15 +473,15 @@ window.unionAdminMount = async (elId)=>{
       <p class="adesc">평소에는 모든 화면이 <b>주 소속 기관 하나만</b> 보여줍니다.
         아래에서 켠 분이 화면 오른쪽 위 <b>🗝 열쇠를 세 번</b> 누르고 코드를 넣으면,
         <b>그 탭에서만</b> 잠금이 풀립니다. 탭을 닫으면 자동으로 잠깁니다.</p>
-      <div style="display:flex;gap:9px;align-items:flex-start;background:#F7F3FE;border:1.5px solid #D6C2F7;
+      <div style="display:flex;gap:9px;align-items:flex-start;background:#FCF7E8;border:1.5px solid #E8D49A;
         border-radius:11px;padding:11px 13px;margin:10px 0 2px">
         <span style="font-size:17px;line-height:1.2">🔑</span>
-        <div style="font-size:11.8px;color:#4C1D95;line-height:1.8">
+        <div style="font-size:11.8px;color:#4A3608;line-height:1.8">
           <b>열쇠는 «권한»을 주지 않습니다.</b> 두 가지가 모두 있어야 다른 기관이 보입니다 —
           ① <b>접근 권한</b>(교직원 명부의 «접근 기관», 페이지별 접근 권한)으로 <b>볼 자격</b>을 먼저 주고,
           ② <b>열쇠</b>로 그 자격을 <b>지금 드러냅니다</b>.
           그래서 다른 기관 권한이 없는 화면은 열쇠를 열어도 그대로입니다.<br>
-          <span style="opacity:.85">· <b>🗝 보라</b> = 계정 소속이 두 기관 → 모든 화면에서 작동 &nbsp;·&nbsp;
+          <span style="opacity:.85">· <b>🗝 금색</b> = 계정 소속이 두 기관 → 모든 화면에서 작동 &nbsp;·&nbsp;
           <b>⚠️ 주황</b> = 계정 소속 한 곳 → <b>교직원 명부(다른 기관은 보기만)</b>와 두 기관 권한을 준 기능(예: 경비 지급 요청서 담당)에서 작동</span></div>
       </div>
 
@@ -504,13 +505,13 @@ window.unionAdminMount = async (elId)=>{
           <input id="ua-code" type="text" inputmode="numeric" autocomplete="off" placeholder="새 코드 (4자리 이상)"
             style="width:100%;height:40px;padding:0 11px;border:1.5px solid var(--ivd);border-radius:9px;background:var(--iv);font-family:inherit;font-size:13px">
           <button onclick="unionAdminSaveCode()" style="margin-top:7px;width:100%;padding:9px;border:0;border-radius:9px;
-            background:#6D28D9;color:#fff;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">코드 저장</button>
+            background:#8A6410;color:#fff;font-weight:800;font-size:12.5px;font-family:inherit;cursor:pointer">코드 저장</button>
           <div style="font-size:10.8px;color:var(--tl);margin-top:6px;line-height:1.7">
             코드는 변환해서 저장되며 원문은 남지 않습니다. 3회 틀리면 1분간 잠깁니다.</div>
         </div>
         <div>
           <div style="font-size:12.5px;font-weight:900;color:var(--gd);margin-bottom:6px">👤 열 수 있는 사람
-            <span id="ua-count" style="font-size:11px;font-weight:800;color:#6D28D9;background:#F1EBFD;border-radius:100px;padding:1px 9px;margin-left:5px"></span>
+            <span id="ua-count" style="font-size:11px;font-weight:800;color:#8A6410;background:#F8F0D8;border-radius:100px;padding:1px 9px;margin-left:5px"></span>
             <span id="ua-saved" style="font-size:10.8px;font-weight:700;color:#166534;margin-left:6px"></span></div>
           <div id="ua-chips" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px"></div>
           <input id="ua-q" placeholder="이름 검색 — 눌러서 켜고 끕니다" oninput="unionFilterStaff(this.value)"
@@ -552,13 +553,13 @@ window.unionAdminMount = async (elId)=>{
       : `${arr.length}명 켜짐`;
     const box = document.getElementById('ua-chips'); if(!box) return;
     box.innerHTML = arr.length ? arr.map(u=>`
-      <span style="display:inline-flex;align-items:center;gap:5px;background:${needsPerm(staffOf(u))?'#FFF4E5':'#F1EBFD'};
-        border:1.5px solid ${needsPerm(staffOf(u))?'#F0D9A8':'#D6C2F7'};
-        color:${needsPerm(staffOf(u))?'#7C4A03':'#5B21B6'};border-radius:100px;padding:3px 6px 3px 10px;font-size:11.5px;font-weight:800"
+      <span style="display:inline-flex;align-items:center;gap:5px;background:${needsPerm(staffOf(u))?'#FDECEA':'#F8F0D8'};
+        border:1.5px solid ${needsPerm(staffOf(u))?'#F3C2BC':'#E8D49A'};
+        color:${needsPerm(staffOf(u))?'#9B2C1F':'#6E500C'};border-radius:100px;padding:3px 6px 3px 10px;font-size:11.5px;font-weight:800"
         title="${needsPerm(staffOf(u))?'계정 소속이 한 곳 — 교직원 명부(다른 기관은 보기만)와 두 기관 권한을 준 기능(예: 경비 담당)에서 열쇠가 작동합니다':'접근 기관 두 곳 — 모든 화면에서 열쇠가 작동합니다'}">
         ${needsPerm(staffOf(u))?'⚠️':'🗝'} ${esc(nameOf(u))}
         <button onclick="unionToggleUid('${u}')" title="끄기"
-          style="border:0;background:#fff;color:#7C3AED;border-radius:100px;width:17px;height:17px;
+          style="border:0;background:#fff;color:#A07614;border-radius:100px;width:17px;height:17px;
           line-height:1;cursor:pointer;font-weight:900;font-size:11px">×</button></span>`).join('')
       : '<span style="font-size:11.5px;color:#93A09A;font-weight:700">아직 아무도 켜지 않았습니다 — 아래에서 고르세요</span>';
   };
@@ -596,17 +597,17 @@ window.unionAdminMount = async (elId)=>{
       const on = window.__uaPicked.has(s.uid);
       return `<button onclick="unionToggleUid('${s.uid}')"
         style="display:flex;width:100%;align-items:center;gap:8px;padding:7px 8px;margin-bottom:3px;cursor:pointer;
-        border:1.5px solid ${on?'#D6C2F7':'transparent'};background:${on?'#F7F3FE':'transparent'};
+        border:1.5px solid ${on?'#E8D49A':'transparent'};background:${on?'#FCF7E8':'transparent'};
         border-radius:9px;font-family:inherit;font-size:12.5px;font-weight:700;text-align:left">
         <span style="width:34px;height:19px;border-radius:100px;flex:none;position:relative;
-          background:${on?'#6D28D9':'#D7DBD7'};transition:background .18s">
+          background:${on?'#8A6410':'#D7DBD7'};transition:background .18s">
           <i style="position:absolute;top:2px;left:${on?'17px':'2px'};width:15px;height:15px;border-radius:50%;
             background:#fff;transition:left .18s;display:block"></i></span>
-        <b style="color:${on?'#4C1D95':'#2A2E2B'}">${esc(s.name||'')}</b>
+        <b style="color:${on?'#4A3608':'#2A2E2B'}">${esc(s.name||'')}</b>
         <span style="color:#93A09A;font-size:10.8px;font-weight:700">${esc(s.position||s.role||'')}</span>
         <span style="display:inline-flex;gap:3px;margin-left:4px">${orgBadges(s)}</span>
-        ${on && needsPerm(s) ? '<span style="margin-left:auto;font-size:10.2px;font-weight:900;color:#B45309;background:#FFF4E5;border-radius:6px;padding:1px 7px" title="계정 소속이 한 곳 — 교직원 명부(다른 기관은 보기만)와 두 기관 권한을 준 기능에서 열쇠가 작동합니다">명부 보기 · 기능별</span>'
-          : (on?'<span style="margin-left:auto;font-size:10.5px;font-weight:900;color:#6D28D9">켜짐</span>':'')}
+        ${on && needsPerm(s) ? '<span style="margin-left:auto;font-size:10.2px;font-weight:900;color:#9B2C1F;background:#FDECEA;border-radius:6px;padding:1px 7px" title="계정 소속이 한 곳 — 교직원 명부(다른 기관은 보기만)와 두 기관 권한을 준 기능에서 열쇠가 작동합니다">명부 보기 · 기능별</span>'
+          : (on?'<span style="margin-left:auto;font-size:10.5px;font-weight:900;color:#8A6410">켜짐</span>':'')}
       </button>`;
     }).join('') || '<div style="font-size:11.5px;color:#93A09A;padding:6px">검색 결과 없음</div>';
   };
