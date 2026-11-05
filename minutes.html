@@ -496,6 +496,7 @@ async function loadCfg(){
   const base = td ? {} : Object.fromEntries(Object.entries(d.types || {}).map(([o, l]) => [o, (l || []).filter(t => !C.OLD_TYPES.includes(t))]));
   const types = { ...C.DEF_TYPES, ...base };
   if(td) for(const o of MORDER) if(Array.isArray(td[o])) types[o] = td[o].slice();
+  for(const o of Object.keys(types)) types[o] = [...new Set((types[o] || []).map(C.typeFix))];   // 🌱 v166 예전 이름 → 그루터기
   CFG = { types, absence: Array.isArray(d.absence) && d.absence.length ? d.absence : C.DEF_ABS.slice(), viewers: d.viewers || {} };
   if(dS && dS.exists()){ const x = dS.data(); for(const o of ['daniel', 'jihyebit']) if(Array.isArray(x[o]) && x[o].length) DEPTS[o] = x[o].slice(); }
 }
@@ -537,7 +538,7 @@ function subscribeList(){
   for(const o of orgs){
     const cons = [where('org', '==', o)]; if(SEM) cons.push(where('sem', '==', SEM));
     unList.push(onSnapshot(query(collection(db, 'meetings'), ...cons), s => {
-      parts[o] = s.docs.map(d => ({ id: d.id, ...d.data() })); if(first > 0) first--; merge();
+      parts[o] = s.docs.map(d => { const m = { id: d.id, ...d.data() }; if(m.type) m.type = C.typeFix(m.type); return m; }); if(first > 0) first--; merge();   // 🌱 v166 예전 회의 종류도 같은 줄로
     }, e => { console.warn('meetings', e); parts[o] = []; if(first > 0) first--; merge(); listError(e); }));
     unList.push(onSnapshot(query(collection(db, 'meetingTasks'), ...cons), s => {
       tparts[o] = Object.fromEntries(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); if(first > 0) first--; merge();
@@ -599,7 +600,7 @@ async function route(){
     const id = p.get('edit');
     let m = null;
     if(id !== 'new'){
-      try{ const s = await getDoc(doc(db, 'meetings', id)); if(s.exists()) m = { id: s.id, ...s.data() }; }catch(e){}
+      try{ const s = await getDoc(doc(db, 'meetings', id)); if(s.exists()){ m = { id: s.id, ...s.data() }; if(m.type) m.type = C.typeFix(m.type); } }catch(e){}
       if(!m){ toast('회의록을 찾지 못했어요.', 'err'); go({}, true); return; }
     }
     EDITOR_MOD.openEditor(edCtx(), m, { org: p.get('to') || '', from: p.get('from') || '' });
@@ -1324,7 +1325,7 @@ async function openSettings(tab){
       h += `<div class="dv-hint" style="margin-bottom:10px">자기 기관 회의록과 <b>DA전체</b>는 누구나 봐요. 다른 기관 회의록도 보게 할 선생님만 켜 주세요 (읽기 · 댓글만 · 고치기는 안 됨).
         «기본»은 교직원 명부의 접근 기관이라 원래 볼 수 있어요.</div>
         <input type="search" id="vw-q" placeholder="이름으로 찾기" style="font-family:inherit;height:36px;border:1px solid var(--line);border-radius:10px;padding:0 10px;width:240px;margin-bottom:8px">
-        <table class="vt"><thead><tr><th>이름</th><th>소속</th><th>다니엘 아마츠</th><th>지혜빛 선교원</th></tr></thead><tbody>
+        <table class="vt"><thead><tr><th>이름</th><th>소속</th><th>다니엘 아마츠</th><th>그루터기 선교원</th></tr></thead><tbody>
         ${STAFF.filter(s => s.role !== 'super').map(s => { const b = baseOrgs(s); const g = draft.viewers[s.uid] || [];
           const cell = o => b.includes(o) ? '<span style="color:var(--ink-3);font-size:12px">기본</span>' : `<label class="ck" style="padding:0"><input type="checkbox" data-vw="${s.uid}|${o}"${g.includes(o) ? ' checked' : ''}>열람</label>`;
           return `<tr data-nm="${esc(s.name || '')}"><td><b>${esc(s.name || '')}</b> <span style="color:var(--ink-3);font-size:11.5px">${esc(s.position || '')}</span></td><td>${esc(b.map(o => C.MORG_SHORT[o]).join('·'))}</td><td>${cell('daniel')}</td><td>${cell('jihyebit')}</td></tr>`; }).join('')}</tbody></table>`;
@@ -1567,7 +1568,7 @@ function boot(){
     try{ st = await getDoc(doc(db, 'staff', user.uid)); }catch(e){ st = null; }
     if(!st || !st.exists()){ $I('l-msg').textContent = '교사 계정이 아니에요 — 교사 아이디로 로그인해 주세요.'; $I('ls').style.display = 'flex'; window.hideLoading && hideLoading(); return; }
     CU = { uid: user.uid, ...st.data() };
-    window.ORGS = { daniel: '다니엘 아마츠', jihyebit: '지혜빛 선교원' };
+    window.ORGS = { daniel: '다니엘 아마츠', jihyebit: '그루터기 선교원' };
     if(window.renderShell) renderShell('minutes', CU);
     if(window.guardPage && !guardPage(CU, 'minutes')) return;
     STORE = makeStore({ db, fs: FS, me: () => CU });

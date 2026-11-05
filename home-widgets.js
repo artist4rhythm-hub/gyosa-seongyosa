@@ -365,7 +365,7 @@ const ATT_OFF = {
   out:   { ic:'📘', cls:'out' },
   noterm:{ ic:'🗓️', cls:'out' },
 };
-// 학년 표시 — 지혜빛은 «4세» 그대로 (예전엔 «4세학년»으로 보였다)
+// 학년 표시 — 그루터기는 «4세» 그대로 (예전엔 «4세학년»으로 보였다)
 function attGradeTxt(g){ if(!g) return ''; const t = String(g); return /세$/.test(t) ? t : t.replace('학년','')+'학년'; }
 function attEvChips(list, max){
   return (list||[]).slice(0, max||3).map(e=>{ const tl = evTargetLabel(e);
@@ -398,7 +398,7 @@ function attOffHTML(orgList, D){
       ${marks?`<span class="ao-mk">출석부에 남은 기록 ${marks}건</span>`:''}</span>
     ${next}</a>`;
 }
-/* 🏛 반별 = «부서 칼럼» (v-108, 시안 A) — 초등부·중등부·고등부(·지혜빛)를 기둥으로, 반은 한 줄씩.
+/* 🏛 반별 = «부서 칼럼» (v-108, 시안 A) — 초등부·중등부·고등부(·그루터기)를 기둥으로, 반은 한 줄씩.
    특이사항(결석·지각·조퇴·체험·휴학)이 있는 반 밑에만 이름 칩. 두 기관을 함께 보면 한 판에 나란히 */
 function attColumns(o, M, multi){
   const go = `attend.html?stat=live&org=${o}`;
@@ -409,7 +409,7 @@ function attColumns(o, M, multi){
     M.classes.forEach(v=>put(v.dept || '미지정', v));
     groups.sort((a,b)=>order.indexOf(a.name)-order.indexOf(b.name));
   } else if(o === 'jihyebit' && !multi){
-    M.classes.forEach(v=>put(v.grade || '미지정', v));            // 지혜빛만 볼 땐 나이별 기둥
+    M.classes.forEach(v=>put(v.grade || '미지정', v));            // 그루터기만 볼 땐 나이별 기둥
   } else {
     M.classes.forEach(v=>put(M.orgNm, v));
   }

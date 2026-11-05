@@ -10,7 +10,7 @@ let A = null, C = null, esc = null, FS = null;
 const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
 
 /* ── 사람 고르기 ── */
-// 🔐 v143 다니엘 아마츠에 접근하지 않는 분(열어 준 지혜빛 선생님) — 이름 옆에 «지혜빛»
+// 🔐 v143 다니엘 아마츠에 접근하지 않는 분(열어 준 그루터기 선생님) — 이름 옆에 «그루터기»
 const otherOrg = s => s && s.role !== 'super' && !((Array.isArray(s.orgs) && s.orgs.length) ? s.orgs : [s.org]).includes(C.ORG);
 export function pickPeople(a, title, selected, opt){
   bind(a); opt = opt || {};
@@ -27,7 +27,7 @@ export function pickPeople(a, title, selected, opt){
     const draw = () => {
       const q = m.box.querySelector('[data-q]').value.trim();
       box.innerHTML = list.filter(s => !q || String(s.name || '').includes(q)).map(s => { const off = !A.nhpOk(s.uid);
-        return `<label class="ck"${off ? ' title="나학평이 닫힌 분이에요 — 이 칸을 볼 수 없어요"' : ''}><input type="checkbox" value="${esc(s.uid)}"${sel.has(s.uid) ? ' checked' : ''}>${off ? '⚠ ' : ''}${esc(s.name || '')}<small style="color:var(--ink-3)">${s.role === 'partner' ? '협력' : ''}${s.position ? ' ' + esc(s.position) : ''}${otherOrg(s) ? ' 지혜빛' : ''}${off ? ' 나학평 닫힘' : ''}</small></label>`; }).join('');
+        return `<label class="ck"${off ? ' title="나학평이 닫힌 분이에요 — 이 칸을 볼 수 없어요"' : ''}><input type="checkbox" value="${esc(s.uid)}"${sel.has(s.uid) ? ' checked' : ''}>${off ? '⚠ ' : ''}${esc(s.name || '')}<small style="color:var(--ink-3)">${s.role === 'partner' ? '협력' : ''}${s.position ? ' ' + esc(s.position) : ''}${otherOrg(s) ? ' 그루터기' : ''}${off ? ' 나학평 닫힘' : ''}</small></label>`; }).join('');
       m.box.querySelector('[data-n]').textContent = `${sel.size}명 고름`;
     };
     box.addEventListener('change', e => { const v = e.target.value; if(e.target.checked){ if(opt.single) sel.clear(); sel.add(v); } else sel.delete(v); if(opt.single) draw(); else m.box.querySelector('[data-n]').textContent = `${sel.size}명 고름`; });
@@ -43,7 +43,7 @@ const names = uids => (uids || []).map(u => A.staffName(u)).filter(Boolean);
 /* v148 서랍 머리 — 색 배지 아이콘 + 제목 */
 const dh = (icon, title, tone) => `<span class="dr-ic t-${tone || 'g'}">${icon}</span><span class="dr-tt">${esc(title)}</span>`;
 /* 담임 고르기 — 나학평이 열린 분만 · 지금 담임이 닫힌 분이면 ⚠ 로 남겨 보임 (학기 열기 · 학기 설정 같은 모양) */
-const hrOpts = cur => `<option value="">— 없음 —</option>` + A.staffPick().concat(cur && A.SMAP[cur] && !A.nhpOk(cur) ? [A.SMAP[cur]] : []).map(s => `<option value="${esc(s.uid)}"${s.uid === cur ? ' selected' : ''}>${A.nhpOk(s.uid) ? '' : '⚠ '}${esc(s.name)}${A.nhpOk(s.uid) ? '' : ' (나학평 닫힘)'}${otherOrg(s) ? ' · 지혜빛' : ''}</option>`).join('');
+const hrOpts = cur => `<option value="">— 없음 —</option>` + A.staffPick().concat(cur && A.SMAP[cur] && !A.nhpOk(cur) ? [A.SMAP[cur]] : []).map(s => `<option value="${esc(s.uid)}"${s.uid === cur ? ' selected' : ''}>${A.nhpOk(s.uid) ? '' : '⚠ '}${esc(s.name)}${A.nhpOk(s.uid) ? '' : ' (나학평 닫힘)'}${otherOrg(s) ? ' · 그루터기' : ''}</option>`).join('');
 const peopleChips = (uids, key) => `<span class="pk">${(uids || []).map(u => { const off = !A.nhpOk(u);
   return `<span class="p${off ? ' off' : ''}"${off ? ' title="나학평이 닫힌 분이에요 — 관리자 › 접근 권한에서 열어 주거나 다른 분으로 바꿔 주세요"' : ''}>${off ? '⚠ ' : ''}${esc(A.staffName(u) || '(퇴직?)')}${key ? `<button data-rmp="${esc(key)}" data-uid="${esc(u)}" title="빼기">✕</button>` : ''}</span>`; }).join('') || '<span class="nh-desc" style="margin:0">없음</span>'}</span>`;
 /* 🔐 v143 나학평이 닫힌 분이 맡은 자리 (칸 · 담임 · 검토관 · 목록 담당) — 학기 설정 맨 위에 알림 */

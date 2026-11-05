@@ -104,7 +104,7 @@ function draw(){
       <div><h3 class="actitle" style="margin:0">👥 조 편성 <small style="font-size:12px;color:var(--ts);font-weight:700">${y}학년도</small></h3>
         <div class="g-desc">학년 · 반과 상관없이 학기마다 조를 짜요 (지혜의 계단 · 예배 · 특별활동 활동조 …). 나학평은 이 편성을 가져다 «조마다 칸»을 만들어요.</div></div>
       <span class="g-sp"></span>
-      ${orgs.length > 1 ? `<select class="g-sel" data-g="org">${orgs.map(o => `<option value="${o}"${o === ORG ? ' selected' : ''}>${o === 'daniel' ? '다니엘 아마츠' : '지혜빛'}</option>`).join('')}</select>` : ''}
+      ${orgs.length > 1 ? `<select class="g-sel" data-g="org">${orgs.map(o => `<option value="${o}"${o === ORG ? ' selected' : ''}>${o === 'daniel' ? '다니엘 아마츠' : '그루터기'}</option>`).join('')}</select>` : ''}
       <select class="g-sel" data-g="term"><option value="1"${TERM === 1 ? ' selected' : ''}>1학기</option><option value="2"${TERM === 2 ? ' selected' : ''}>2학기</option></select>
       <select class="g-sel" data-g="set">${here.map(s => `<option value="${esc(s.id)}"${CUR && CUR.id === s.id ? ' selected' : ''}>${esc(s.name)} · ${(s.groups || []).length}조</option>`).join('') || '<option value="">편성 없음</option>'}</select>
       ${ed ? `<button class="bp g-b" data-g="new">＋ 새 편성</button>` : ''}
@@ -193,7 +193,7 @@ function modal(title, body, onOk, okLabel){
   return w;
 }
 function newSet(){
-  modal('＋ 새 편성', `<div class="msub">${X.year()}학년도 ${TERM}학기 · ${ORG === 'daniel' ? '다니엘 아마츠' : '지혜빛'}</div>
+  modal('＋ 새 편성', `<div class="msub">${X.year()}학년도 ${TERM}학기 · ${ORG === 'daniel' ? '다니엘 아마츠' : '그루터기'}</div>
     <div class="fgrp" style="margin-bottom:10px"><label>종류</label><select data-k="kind">${KINDS.map(k => `<option value="${k.k}">${k.ko}</option>`).join('')}</select></div>
     <div class="fgrp" style="margin-bottom:10px"><label>편성 이름</label><input data-k="name" value="지혜의 계단 조"></div>
     <div class="fgrp" style="margin-bottom:10px"><label>조 수</label><input data-k="n" type="number" min="1" max="30" value="6"></div>

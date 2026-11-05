@@ -43,7 +43,7 @@ const tint = c => mix(c, .64), edge = c => mix(c, .3, '#1F2320');
 /* ── 기관 모양 ── */
 const LOOK = {
   daniel:   { logo:'logo-daniel.png',   ac:'#1E3932', ac2:'#00704A', tn:'#E8F3EF', short:'다니엘', tag:'#00704A' },
-  jihyebit: { logo:'logo-jihyebit.png', ac:'#3F2A86', ac2:'#5B3FB5', tn:'#EFEAFB', short:'지혜빛', tag:'#5B3FB5' },
+  jihyebit: { logo:'logo-jihyebit.png', ac:'#2E4A1F', ac2:'#4F7A36', tn:'#EEF5E6', short:'그루터기', tag:'#2E4A1F' },
   both:     { logo:'',                  ac:'#1E3932', ac2:'#00704A', tn:'#E8F3EF', short:'두 기관' },
 };
 const orgName = o => (C().ORGS && C().ORGS[o]) || o;
@@ -772,7 +772,7 @@ function renderPanel(){
     <div class="acp-s"><h4><i>1</i>기관<em>여러 곳을 고를 수 있어요</em></h4>
       <div class="acp-chips">${can.map(o => chip(O.orgs.includes(o), `data-org="${o}"`, `<img src="${LOOK[o].logo}" alt="">${esc(orgName(o))}`, o === 'jihyebit' ? 'jh' : '')).join('')}</div>
       ${multi ? `<div class="acp-seg" style="margin-top:9px">${chip(!O.together, 'data-tog="0"', '기관마다 따로')}${chip(O.together, 'data-tog="1"', '한 장에 함께')}</div>
-        <div class="acp-hint">${O.together ? '두 기관 일정을 한 쪽에 모아요 · 기관 이름표(다니엘·지혜빛)가 붙어요 · 처음엔 A3' : '기관마다 로고·색이 다른 쪽이 따로 나와요'}</div>` : ''}
+        <div class="acp-hint">${O.together ? '두 기관 일정을 한 쪽에 모아요 · 기관 이름표(다니엘·그루터기)가 붙어요 · 처음엔 A3' : '기관마다 로고·색이 다른 쪽이 따로 나와요'}</div>` : ''}
       <label class="acp-ck" style="margin-top:10px"><input type="checkbox" data-withall ${O.withAll ? 'checked' : ''}><span>DA 전체 일정도 함께<small>연합 예배·창립 기념일처럼 두 기관이 같이 하는 일</small></span></label></div>
     <div class="acp-s"><h4><i>2</i>누구에게 줄까요</h4>
       <div class="acp-rad">
@@ -863,7 +863,7 @@ async function preparePrint(){
 function cleanupPrint(){ document.body.classList.remove('acp-printing'); const b = $('acp-print'); if(b) b.remove(); const s = $('acp-page'); if(s) s.remove(); }
 window.addEventListener('afterprint', () => setTimeout(cleanupPrint, 50));
 /* 저장될 파일 이름 (v-115) — 브라우저 «PDF로 저장»이 이 이름을 쓴다
-   예: 학사일정_2026년 10월_다니엘 아마츠_학부모용 · 학사일정_2026학년도_다니엘·지혜빛 함께_교사용_한눈에_A3 */
+   예: 학사일정_2026년 10월_다니엘 아마츠_학부모용 · 학사일정_2026학년도_다니엘·그루터기 함께_교사용_한눈에_A3 */
 function printParts(o){
   const c = C(), ms = monthsOf(o), ay = acYearOf(c.year, c.month);
   let per = '';
@@ -1103,7 +1103,7 @@ const CSS = `
 .acp-chip.on{border-color:var(--gm,#00704A);background:var(--gp,#E8F3EF);color:var(--gd,#1E3932)}
 .acp-chip.on::before{content:'✓';font-weight:900;color:var(--gm,#00704A)}
 .acp-chip img{height:18px}
-.acp-chip.jh.on{border-color:#5B3FB5;background:#EFEAFB;color:#3F2A86}.acp-chip.jh.on::before{color:#5B3FB5}
+.acp-chip.jh.on{border-color:#4F7A36;background:#EEF5E6;color:#2E4A1F}.acp-chip.jh.on::before{color:#4F7A36}
 .acp-seg{display:inline-flex;gap:0;border:1.5px solid var(--ivd,#E3E1DA);border-radius:11px;overflow:hidden;background:var(--wh,#fff)}
 .acp-seg .acp-chip{border:0;border-radius:0;padding:8px 14px}.acp-seg .acp-chip.on::before{content:none}
 .acp-seg .acp-chip.on{background:var(--gm,#00704A);color:#fff}

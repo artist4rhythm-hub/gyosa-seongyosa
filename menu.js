@@ -121,7 +121,7 @@ const MENU = [
         desc:'학부모에게 보이는 그 화면 — 교사 모드로 열람·참여' },
       { key:'pubsite', label:'공개 홈페이지', icon:'public',
         href:'https://artist4rhythm-hub.github.io/public-web/index.html', acc:false,
-        desc:'대외 안내용 홈페이지 — 다니엘 대문 (지혜빛은 안에서 이동)' },
+        desc:'대외 안내용 홈페이지 — 다니엘 대문 (그루터기는 안에서 이동)' },
     ]
   },
   {

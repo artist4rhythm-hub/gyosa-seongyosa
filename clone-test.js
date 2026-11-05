@@ -113,8 +113,8 @@ async function cloneFrom(F, test, target, me){
   const upd = { isTest:true, cloneOf:{ uid:target.uid, name:target.name||'', position:target.position||'', role:target.role||'', at:Timestamp.now() } };
   COPY_FIELDS.forEach(f=>{ upd[f] = (target[f]===undefined || target[f]===null) ? deleteField() : target[f]; });
   await updateDoc(doc(F.db,'staff',test.uid), upd);
-  const orgs = (target.orgs&&target.orgs.length?target.orgs:[target.org]).filter(Boolean).map(o=>o==='daniel'?'다니엘':o==='jihyebit'?'지혜빛':o).join(', ');
-  items.push({ ic:'👤', t:`역할 · ${ROLE_L[target.role]||target.role||'—'} / 소속 · ${orgs||'—'}${target.primaryOrg?` (주: ${target.primaryOrg==='daniel'?'다니엘':'지혜빛'})`:''}${target.position?` / 직위 · ${target.position}`:''}${target.dept?` / 부서 · ${target.dept}`:''}`, w:'계정' });
+  const orgs = (target.orgs&&target.orgs.length?target.orgs:[target.org]).filter(Boolean).map(o=>o==='daniel'?'다니엘':o==='jihyebit'?'그루터기':o).join(', ');
+  items.push({ ic:'👤', t:`역할 · ${ROLE_L[target.role]||target.role||'—'} / 소속 · ${orgs||'—'}${target.primaryOrg?` (주: ${target.primaryOrg==='daniel'?'다니엘':'그루터기'})`:''}${target.position?` / 직위 · ${target.position}`:''}${target.dept?` / 부서 · ${target.dept}`:''}`, w:'계정' });
   items.push({ ic:'🚫', t:`페이지 차단 · ${(target.pageDeny||[]).length?(target.pageDeny||[]).join(', '):'없음'}${(target.pageAllow||[]).length?` · 허용 ${(target.pageAllow||[]).join(', ')}`:''}`, w:'계정' });
   // ② 담당자 명단
   for(const [c,d,label] of PERM_DOCS){
@@ -159,7 +159,7 @@ async function findTraces(F, uid){
 
 /* ═══ 관리자 화면 ═══ */
 const idOf = x => (x && typeof x==='object') ? (x.id || String(x.email||'').split('@')[0]) : String(x||'').split('@')[0];
-const ORG_L = o => o==='daniel'?'다니엘':o==='jihyebit'?'지혜빛':(o||'');
+const ORG_L = o => o==='daniel'?'다니엘':o==='jihyebit'?'그루터기':(o||'');
 const orgsTxt = s => ((s.orgs&&s.orgs.length?s.orgs:[s.org]).filter(Boolean).map(ORG_L).join('·')) || '—';
 const looksTest = s => s.isTest || /테스트|test/i.test(String(s.name||'')+' '+String(s.email||''));
 async function homeCount(F, uid, field){

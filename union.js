@@ -535,7 +535,7 @@ window.unionAdminMount = async (elId)=>{
   window.__uaStaff = staff; window.__uaPicked = picked;
 
   const nameOf = uid => (window.__uaStaff||[]).find(s=>s.uid===uid)?.name || uid.slice(0,6)+'…';
-  const ORGL = { daniel:'다니엘', jihyebit:'지혜빛' };
+  const ORGL = { daniel:'다니엘', jihyebit:'그루터기' };
   /* 그 사람이 «볼 자격»을 가진 기관 — 명부의 접근 기관(orgs)이 진실 */
   const orgsOfStaff = st => (st && st.role==='super') ? ['jihyebit','daniel']
     : ((st && st.orgs && st.orgs.length) ? st.orgs.slice() : (st && st.org ? [st.org] : []));

@@ -42,7 +42,7 @@ export function decorate(list){
   out.forEach(c => { const dup = out.filter(x => x.name === c.name && (x.org || 'daniel') === (c.org || 'daniel')).length > 1;
     c.dup = dup;
     c.label = dup ? [subOf(c).replace(' · ', ' '), c.name].filter(Boolean).join(' ') : [c.grade, c.name].filter(Boolean).join(' '); });
-  // v132 — 기관(지혜빛 → 다니엘) · 학년 순서(4세 → 7세 · 1학년 → 12학년) · 같은 학년은 반 이름 순
+  // v132 — 기관(그루터기 → 다니엘) · 학년 순서(4세 → 7세 · 1학년 → 12학년) · 같은 학년은 반 이름 순
   //   (예전엔 반 이름 «가나다»순이라 학년이 뒤섞여 보였음)
   return out.sort((a, b) => (ORG_RANK[a.org || 'daniel'] ?? 9) - (ORG_RANK[b.org || 'daniel'] ?? 9)
     || gradeRank(a) - gradeRank(b) || nat(a.name, b.name) || nat(a.dept || '', b.dept || ''));

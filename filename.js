@@ -16,7 +16,7 @@
 (function(){
   if(window.FN) return;
   const SITE = '교사 선교사';
-  const ORG = { daniel:'다니엘 아마츠', jihyebit:'지혜빛 선교원', all:'DA 전체', __all__:'DA 전체', both:'다니엘 아마츠·지혜빛 선교원' };
+  const ORG = { daniel:'다니엘 아마츠', jihyebit:'그루터기 선교원', all:'DA 전체', __all__:'DA 전체', both:'다니엘 아마츠·그루터기 선교원' };
   const pad = n => String(n).padStart(2, '0');
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
   const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}\u{20E3}]/gu;

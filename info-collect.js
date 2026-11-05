@@ -14,7 +14,7 @@ import { families, classOfIn, gradeIn, writeXlsx, g as gv0 } from './parents-lis
 
 export const PARENT_URL = 'https://artist4rhythm-hub.github.io/daniel-parents';
 export const linkOf = org => `${PARENT_URL}/info.html?org=${org === 'jihyebit' ? 'jihyebit' : 'daniel'}`;
-const ORG_L = { daniel: '다니엘 아마츠', jihyebit: '지혜빛 선교원' };
+const ORG_L = { daniel: '다니엘 아마츠', jihyebit: '그루터기 선교원' };
 const REL = { m: '어머니', f: '아버지', o: '그 외 보호자', h: '가정' };
 const FL = { name: '성함', phone: '휴대폰', gmail: '구글 메일', work: '직장', rel: '관계', addr: '집 주소', addr2: '상세 주소', emerg: '비상 연락처', homeTel: '집 전화' };
 const PERSON = { m: ['name', 'phone', 'gmail', 'work'], f: ['name', 'phone', 'gmail', 'work'], o: ['rel', 'name', 'phone', 'gmail', 'work'] };
