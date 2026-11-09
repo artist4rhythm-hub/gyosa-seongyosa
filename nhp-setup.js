@@ -10,7 +10,7 @@ let A = null, C = null, esc = null, FS = null;
 const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
 
 /* ── 사람 고르기 ── */
-// 🔐 v143 다니엘 아마츠에 접근하지 않는 분(열어 준 그루터기 선생님) — 이름 옆에 «그루터기»
+// 🔐 v143 다니엘아마츠학교에 접근하지 않는 분(열어 준 그루터기 선생님) — 이름 옆에 «그루터기»
 const otherOrg = s => s && s.role !== 'super' && !((Array.isArray(s.orgs) && s.orgs.length) ? s.orgs : [s.org]).includes(C.ORG);
 export function pickPeople(a, title, selected, opt){
   bind(a); opt = opt || {};
@@ -144,7 +144,7 @@ export async function openWizard(a){
         st.secs = C.sectionsFromClasses(cls, A.STU, s => (window.StuStatus ? StuStatus.enrolled(s) : (s.status || 'active') !== 'quit'));
         st.secs.forEach(s => { st.useSec[s.id] = true; });
       }
-      W.innerHTML = head() + (cls.length ? '' : `<div class="nh-warn">${st.year}학년도 다니엘 아마츠 반편성이 없어요. 반편성에서 반을 먼저 만들어 주세요.</div>`) +
+      W.innerHTML = head() + (cls.length ? '' : `<div class="nh-warn">${st.year}학년도 다니엘아마츠학교 반편성이 없어요. 반편성에서 반을 먼저 만들어 주세요.</div>`) +
         `<div class="nh-desc">반편성 ${st.year}학년도 반을 그대로 가져와요. <b>한 반에 학년이 여럿이면(합반) 학년마다 따로</b> 나학평을 써요 (예전 나학평처럼). 담임은 반편성 담임이 기본 — 나학평에서만 다른 분으로 바꿀 수 있어요.</div>
         <div class="nh-tw"><table class="nh-t"><thead><tr><th class="c">쓰기</th><th>반</th><th>학생</th><th>나학평 담임</th><th>확인할 것</th></tr></thead><tbody>${st.secs.map(s => `<tr>
           <td class="c"><input type="checkbox" data-use="${esc(s.id)}"${st.useSec[s.id] ? ' checked' : ''}></td><td><b>${esc(C.secLabel(s))}</b></td><td>${s.students.length}명</td>

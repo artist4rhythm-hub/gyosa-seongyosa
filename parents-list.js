@@ -9,7 +9,7 @@
 import { collection, query, where, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const ORG_L = { daniel: '다니엘 아마츠', jihyebit: '그루터기 선교원' };
+const ORG_L = { daniel: '다니엘아마츠학교', jihyebit: '그루터기 선교원' };
 const STATUS_L = { active: '재학', leave: '휴학', quit: '자퇴', grad: '졸업', egrad: '조기졸업' };
 const REL = { m: '어머니', f: '아버지', o: '그 외' };
 const nat = (a, b) => String(a || '').localeCompare(String(b || ''), 'ko', { numeric: true });

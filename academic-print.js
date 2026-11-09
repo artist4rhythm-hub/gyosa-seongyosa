@@ -863,7 +863,7 @@ async function preparePrint(){
 function cleanupPrint(){ document.body.classList.remove('acp-printing'); const b = $('acp-print'); if(b) b.remove(); const s = $('acp-page'); if(s) s.remove(); }
 window.addEventListener('afterprint', () => setTimeout(cleanupPrint, 50));
 /* 저장될 파일 이름 (v-115) — 브라우저 «PDF로 저장»이 이 이름을 쓴다
-   예: 학사일정_2026년 10월_다니엘 아마츠_학부모용 · 학사일정_2026학년도_다니엘·그루터기 함께_교사용_한눈에_A3 */
+   예: 학사일정_2026년 10월_다니엘아마츠학교_학부모용 · 학사일정_2026학년도_다니엘·그루터기 함께_교사용_한눈에_A3 */
 function printParts(o){
   const c = C(), ms = monthsOf(o), ay = acYearOf(c.year, c.month);
   let per = '';

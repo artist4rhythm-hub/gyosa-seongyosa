@@ -32,7 +32,7 @@ export function bind(a, box){
       const txt = await file.text();
       const d = JSON.parse(txt);
       if(!d || d.kind !== 'nhp-import' || !Array.isArray(d.terms)) throw new Error('나학평 옮김 파일이 아니에요');
-      if(d.org && d.org !== C.ORG) throw new Error('다니엘 아마츠 파일이 아니에요');
+      if(d.org && d.org !== C.ORG) throw new Error('다니엘아마츠학교 파일이 아니에요');
       DATA = d; PICK = {}; MAP = {};
       d.terms.forEach(t => { PICK[t.id] = true; });
       try{ await A.loadClasses(); }catch(e){}       // 학생 옆에 «올해 반»을 보여 주려고

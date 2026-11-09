@@ -7,7 +7,7 @@
      3) 로그인 확인 후:
           OrgBar.init({
             orgs: myOrgs(),            // 이 사용자가 볼 수 있는 기관 배열
-            labels: ORGS,              // {jihyebit:'그루터기', daniel:'다니엘 아마츠'}
+            labels: ORGS,              // {jihyebit:'그루터기', daniel:'다니엘아마츠학교'}
             storeKey: 'students_org',  // localStorage 키 (페이지별로 다르게)
             onChange: (org) => { ... } // 기관이 바뀔 때 호출 (화면 다시 그리기)
           });
@@ -22,7 +22,7 @@
   'use strict';
 
   const NOTE = {
-    daniel:   '다니엘 아마츠 · 1~12학년',
+    daniel:   '다니엘아마츠학교 · 1~12학년',
     jihyebit: '그루터기 선교원 · 4~7세',
   };
 

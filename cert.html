@@ -61,6 +61,9 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .sl-chip.no{background:#fff;color:var(--warn,#B45309);border:1px solid #F3D9A4}
 .sl-d{font-size:12px;color:var(--ts);line-height:1.6;flex:1;min-width:260px}
 .sl-a{display:flex;gap:6px;flex-wrap:wrap}
+.sl-reg{display:block;margin-top:-6px}.sl-reg summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.sl-reg summary::-webkit-details-marker{display:none}
+.sl-regf{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end;margin:10px 0 6px}.sl-regf label{display:flex;flex-direction:column;gap:3px;font-size:11.5px;font-weight:800;color:var(--ts)}.sl-regf small{font-weight:600;color:var(--tl)}
+.sl-regf input{border:1.5px solid var(--ivd);border-radius:9px;padding:7px 10px;font-size:13px;font-family:inherit;background:var(--wh);color:inherit;min-width:150px}
 .sl-btn{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--ivd);background:var(--wh);color:var(--gm);border-radius:9px;padding:7px 11px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap}
 .sl-btn.p{background:var(--gm,#00704A);border-color:var(--gm,#00704A);color:#fff}
 .subtbtn{padding:9px 18px;border-radius:100px;font-size:14px;font-weight:600;cursor:pointer;border:1.5px solid var(--ivd);background:var(--wh);color:var(--ts);}
@@ -172,6 +175,10 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .cert-org{text-align:center;margin-top:8mm;}
 .cert-orgname{font-size:22pt;font-weight:800;letter-spacing:3px;color:var(--c-accent,#1a2440);}
 .cert-orgen{font-size:8.5pt;letter-spacing:4px;color:#888;margin-top:2px;font-family:serif;}
+.cert-orgreg{font-size:10.5pt;font-weight:600;letter-spacing:2px;color:#4a4f5c;margin-bottom:1.6mm;}
+.cert-orgreg .rno,.geo-orgreg .rno,.sc-reg .rno{font-weight:500;letter-spacing:.5px;color:#777}
+.geo-orgreg{font-size:9pt;font-weight:700;letter-spacing:1.5px;color:#4f5b54;margin-bottom:1.2mm;}
+.sc-reg{margin-bottom:5px;font-size:13px;font-weight:800;letter-spacing:.2em;text-indent:.2em;color:var(--sc-gold,#8a6c2c);line-height:1.4;white-space:nowrap}
 .cert-rep{position:relative;display:inline-block;margin-top:10mm;font-size:15pt;letter-spacing:2px;}
 /* 그루터기 재원증명서 전용 */
 .cert-sheet.jh .cert-statement{text-align:left;margin:6mm 10mm 12mm;line-height:2.2;font-size:13pt;}
@@ -437,7 +444,7 @@ const auth = getAuth(app);
 const db = (()=>{ try{ return initializeFirestore(app, { experimentalAutoDetectLongPolling: true }); }catch(e){ return getFirestore(app); } })()   /* 🔌 막히는 네트워크 자동 우회 */;
 
 const $I = id => document.getElementById(id);
-const ORGS = {jihyebit:'그루터기', daniel:'다니엘 아마츠'};
+const ORGS = {jihyebit:'그루터기', daniel:'다니엘아마츠학교'};
 const pad = n => String(n).padStart(2,'0');
 let CU = null;
 let STUDENTS = [];
@@ -451,9 +458,18 @@ const ORG_CONFIG = {
     code: 'DA',
     layout: 'grade',            // 학년 기반
     certTitle: '재학 증명서',
-    orgName: '다니엘 아마츠',
+    orgName: '다니엘아마츠학교',
     orgEn: 'DANIEL AMATZ',
+    // 🏫 v172 2026년 2차 대안교육기관 등록 (경기도교육청) — 공식 명칭 «경기도교육청 등록 대안교육기관 다니엘아마츠학교»
+    //   · 등록일부터 발급하는 문서: 기관 이름 위에 «경기도교육청 등록 대안교육기관» 줄 (등록번호를 넣으면 함께)
+    //   · 등록일 전에 발급한 문서는 다시 받아도 그때 이름(다니엘 아마츠) 그대로 — before
+    //   · 문구 · 등록번호 · 등록일은 수퍼관리자가 «🏫 등록 정보»에서 고침 (config/certOrg)
+    reg: { label: '경기도교육청 등록 대안교육기관', no: '', from: '2026-11-09' },
+    //   · 서명 줄: 등록 뒤 «학교장 박수경» · 일정 확인서 발신 «다니엘아마츠학교장» (등록 전 발급분은 예전처럼 «대표자» · «다니엘 아마츠 대표»)
+    before: { orgName: '다니엘 아마츠', repTitle: '', sender: '' },
     rep: '박수경',
+    repTitle: '학교장',
+    sender: '다니엘아마츠학교장',
     logo: 'logo-daniel.png',
     stamp: 'stamp-daniel.png',
     verb: '재학',
@@ -483,6 +499,25 @@ const ORG_CONFIG = {
     ]
   }
 };
+
+/* 🏫 v172 그 날짜에 맞는 기관 정보 — 등록 전 문서는 예전 이름, 등록 뒤 문서는 정식 이름 + 등록 줄 */
+const REG_OVR = {};        // config/certOrg 에서 (수퍼관리자가 고친 등록 문구 · 등록번호 · 등록일)
+function cfgAt(org, date){
+  const base = ORG_CONFIG[org]; if(!base) return null;
+  if(!base.reg) return base;
+  const r = { ...base.reg, ...(REG_OVR[org] || {}) };
+  const d = String(date || todayYMD()).slice(0, 10);
+  if(r.from && d < r.from) return { ...base, ...(base.before || {}), reg: null };
+  return { ...base, reg: r };
+}
+/* 문장 속 기관 이름 — 등록 전에 끝난 기간(전학 · 자퇴한 학생, 퇴직한 교직원)은 그때 이름으로 («위 기간 동안 '다니엘 아마츠'에서») · 발급하는 기관(아래 서명 줄)은 오늘 이름 */
+function nameDuring(cfg, org, endDate){
+  const base = ORG_CONFIG[org]; if(!base || !base.reg || !cfg.reg || !endDate) return cfg.orgName;
+  const from = (REG_OVR[org] || {}).from || base.reg.from;
+  return (from && String(endDate).slice(0, 10) < from) ? ((base.before || {}).orgName || cfg.orgName) : cfg.orgName;
+}
+const regHTML = (cfg, cls) => (cfg && cfg.reg && cfg.reg.label) ? `<div class="${cls}">${esc(cfg.reg.label)}${cfg.reg.no ? ` <span class="rno">(${esc(cfg.reg.no)})</span>` : ''}</div>` : '';
+const isRegOrg = org => !!(cfgAt(org, todayYMD()) || {}).reg;   // 등록된 기관 — «학교» 같은 말을 써도 됨
 
 // 발급일 기준 만 나이 계산
 function calcAge(birth, refDate){
@@ -629,6 +664,7 @@ async function loadData(){
 const SEAL_FILE = { daniel: 'stamp-daniel.png', jihyebit: 'stamp-jihyebit.png' };
 const SEAL_SRC = {};      // org → 'db' | 'file'
 async function loadSeals(){
+  try{ const r = await getDoc(doc(db, 'config', 'certOrg')); if(r.exists()){ const d = r.data() || {}; Object.keys(ORG_CONFIG).forEach(o => { if(d[o] && typeof d[o] === 'object') REG_OVR[o] = { ...d[o] }; }); } }catch(e){}   // 🏫 v172 등록 정보
   for(const org of Object.keys(ORG_CONFIG)){
     try{
       const s = await getDoc(doc(db, 'config', 'seal_' + org));
@@ -653,8 +689,36 @@ function renderSealBar(){
       ${left.length ? `<button class="sl-btn p" onclick="sealMigrate()">🔒 보관함으로 옮기기</button>` : ''}
       ${orgs.map(o => `<label class="sl-btn">🖼 ${esc(ORG_CONFIG[o].orgName)} 직인 새로 올리기<input type="file" accept="image/png,image/*" style="display:none" onchange="sealUpload('${o}', this)"></label>`).join('')}
     </div>
-  </div>`;
+  </div>${regBarHTML()}`;
 }
+/* 🏫 v172 등록 정보 (수퍼관리자) — 증명서 · 확인서의 기관 이름 위 줄 · 등록번호 · 등록일 → config/certOrg */
+function regBarHTML(){
+  return Object.keys(ORG_CONFIG).filter(o => ORG_CONFIG[o].reg).map(o => {
+    const r = { ...ORG_CONFIG[o].reg, ...(REG_OVR[o] || {}) }, nm = ORG_CONFIG[o].orgName;
+    return `<details class="sl-bar sl-reg" id="reg-${o}"><summary class="sl-t">🏫 등록 정보 · ${esc(nm)} <span class="sl-chip ok">${esc(r.label)}${r.no ? ' (' + esc(r.no) + ')' : ''}</span></summary>
+      <div class="sl-regf">
+        <label>등록 문구<input id="rg-label-${o}" value="${esc(r.label)}" maxlength="40"></label>
+        <label>등록번호 <small>(등록증에 있으면 · 없으면 비움)</small><input id="rg-no-${o}" value="${esc(r.no || '')}" placeholder="예: 제2026-○○호" maxlength="30"></label>
+        <label>등록일<input id="rg-from-${o}" type="date" value="${esc(r.from || '')}"></label>
+        <button class="sl-btn p" onclick="regSave('${o}')">저장</button>
+      </div>
+      <div class="sl-d">이 날부터 발급하는 재학 · 재직 · 경력 증명서와 일정 확인서에 «${esc(r.label)} ${esc(nm)}»로 나와요. 그 전에 발급한 문서는 다시 받아도 그때 이름(${esc((ORG_CONFIG[o].before || {}).orgName || nm)}) 그대로예요.</div>
+    </details>`;
+  }).join('');
+}
+window.regSave = async (o) => {
+  if(!CU || CU.role !== 'super') return;
+  const label = ($I('rg-label-' + o)?.value || '').trim(), no = ($I('rg-no-' + o)?.value || '').trim(), from = ($I('rg-from-' + o)?.value || '').trim();
+  if(!label){ toast('등록 문구를 넣어 주세요.', 'err'); return; }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(from)){ toast('등록일을 넣어 주세요 — 이 날 전에 발급한 문서는 예전 이름 그대로 나와요.', 'err'); return; }
+  try{
+    await setDoc(doc(db, 'config', 'certOrg'), { [o]: { label, no, from }, updatedAt: Timestamp.now(), updatedByUid: CU.uid, updatedByName: CU.name || '' }, { merge: true });
+    REG_OVR[o] = { label, no, from };
+    toast('🏫 등록 정보를 저장했어요', 'ok');
+    renderSealBar();
+    if(typeof renderIssue === 'function') try{ renderIssue(); }catch(e){}
+  }catch(e){ toast('저장하지 못했어요: ' + (e.message || ''), 'err'); }
+};
 function sealFileToUrl(blob){
   return new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result || '')); fr.onerror = () => rej(new Error('파일을 읽지 못했어요')); fr.readAsDataURL(blob); });
 }
@@ -723,6 +787,7 @@ function showTab(t){
   if(window.crumbFromTabs) setTimeout(window.crumbFromTabs, 40);   // 📅 v139 발급 뒤 «발급 목록»으로 옮길 때도 위 경로가 따라오게
 }
 window.showTab = showTab;
+window.__cert = { buildCert:(...a)=>buildCert(...a), buildEmployCert:(...a)=>buildEmployCert(...a), buildSchedCert:(...a)=>buildSchedCert(...a), buildFormerCert:(...a)=>buildFormerCert(...a), cfgAt:(...a)=>cfgAt(...a), isRegOrg:(...a)=>isRegOrg(...a) };   // 미리보기 · 시험용 (교직원 화면 안에서만)
 
 // ── 발급 화면: 학생 선택 ──
 let issueSearch = '';
@@ -871,7 +936,7 @@ window.toggleGrade = toggleGrade;
 // ── 증명서 HTML 생성 (통합) ──
 // rec: {org, docNo, issueDate, grade, name, birth, address, admitDate, course, ageText}
 function buildCert(rec){
-  const cfg = ORG_CONFIG[rec.org];
+  const cfg = cfgAt(rec.org, rec.issueDate);
   if(!cfg) return '<div class="cert-sheet">알 수 없는 기관</div>';
   const th = cfg.theme || {accent:'#1a2440', line:'#b8935a', line2:'#B08D3C', bg:'#ffffff'};
   const styleVars = `--c-accent:${th.accent};--c-line:${th.line};--c-line2:${th.line2};--c-bg:${th.bg};`;
@@ -936,10 +1001,11 @@ function buildCert(rec){
         <b>${esc(rec.course||'교육과정')}</b>에 참여하고 있음을 확인 합니다.
       </div>
       <div class="cert-org">
+        ${regHTML(cfg, 'cert-orgreg')}
         <div class="cert-orgname">${esc(cfg.orgName)}</div>
         <div class="cert-orgen">${esc(cfg.orgEn)}</div>
         <div class="cert-rep">
-          대표자 &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
+          ${esc(cfg.repTitle||'대표자')} &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
           ${stampHTML}
         </div>
       </div>
@@ -1005,7 +1071,7 @@ function canIssueStaffCert(s){
 
 // 재직증명서 시트 HTML
 function buildEmployCert(rec){
-  const cfg = ORG_CONFIG[rec.org] || ORG_CONFIG.daniel;
+  const cfg = cfgAt(rec.org, rec.issueDate) || cfgAt('daniel', rec.issueDate);
   // 지오메트릭 그린 (시안 I) — 기관별 블록 색
   const GEO = {
     daniel:   { g1:'#12271F', g2:'#245046', ink:'#12271F' },
@@ -1045,11 +1111,12 @@ function buildEmployCert(rec){
       <div class="cert-statement">
         ${isCareer
           ? (hasLeave
-              ? `위 사람은 위 기간 동안 '${esc(cfg.orgName)}'에<br>재직하였음을 증명합니다.`
+              ? `위 사람은 위 기간 동안 '${esc(nameDuring(cfg, rec.org, rec.leaveDate))}'에<br>재직하였음을 증명합니다.`
               : `위 사람은 위 기간 동안 '${esc(cfg.orgName)}'에<br>재직하고 있음을 증명합니다.`)
           : `위 사람은 <b>${esc(korDate(rec.issueDate))}</b> 현재,<br>'${esc(cfg.orgName)}'에 재직하고 있음을 증명합니다.`}
       </div>
       <div class="geo-org">
+        ${regHTML(cfg, 'geo-orgreg')}
         <div class="geo-orgname">${esc(cfg.orgName)}</div>
         <div class="geo-orgen">${esc((cfg.orgEn||'').toUpperCase())}</div>
         <div class="geo-rep">
@@ -1475,13 +1542,13 @@ function schedDaysText(a, b, wdays, skips){
   if(n <= 1) return '하루';
   return `${n}일간`;
 }
-/* 등록 전에는 문서에 «학교»처럼 학교를 뜻하는 말을 쓰지 않는다 (기획 문서 «학사일정-확인서-기획») */
+/* 학교로 등록되지 않은 기관(그루터기)은 문서에 «학교»처럼 학교를 뜻하는 말을 쓰지 않는다 (기획 문서 «학사일정-확인서-기획») · 🏫 v172 다니엘아마츠학교는 등록 대안교육기관이라 빠짐 (isRegOrg) */
 const SC_WORD_FIX = [[/임시\s*휴교/g, '임시 휴업'], [/휴교/g, '휴업'], [/개교\s*기념/g, '설립 기념'], [/단축\s*수업/g, '단축 운영'],
   [/수업/g, '교육 프로그램'], [/등교/g, '등원'], [/학교/g, '기관']];
 const SC_WORD_BAD = /학교|휴교|재학|재적|학적|입학|졸업|수업|등교|개교|학력/g;
 function scSafeWords(t){ let s = String(t || ''); SC_WORD_FIX.forEach(([re, to]) => { s = s.replace(re, to); }); return s; }
 function scBadWords(){
-  if(!SC) return [];
+  if(!SC || isRegOrg(SC.org)) return [];   // 🏫 v172 등록된 대안교육기관(«…학교») — 경고 · 바꾸기 없음
   const all = [SC.name, SC.title, SC.body, SC.reason, SC.note, SC.p1].join(' ');   // 수신(받는 곳)은 빼고 — 보호자 근무처가 학교일 수 있음 («○○초등학교장 귀하»)
   return [...new Set(all.match(SC_WORD_BAD) || [])];
 }
@@ -1534,10 +1601,11 @@ function schedBand(org){
    r: { org, docNo, issueDate, title, body, rowLabel, name, birth, cls, guardian, start, end, wdays, skips,
         reason, note, recv, charge, verifyCode, hideStamp, revoked, preview } */
 function buildSchedCert(r){
-  const cfg = ORG_CONFIG[r.org] || ORG_CONFIG.daniel;
+  const cfg = cfgAt(r.org, r.issueDate) || cfgAt('daniel', r.issueDate);
   const th = SCHED_THEME[r.org] || SCHED_THEME.daniel;
   const who = schedWho(r.org);
   const repTitle = cfg.repTitle || '대표';
+  const sender = cfg.sender || `${cfg.orgName} ${repTitle}`;   // 🏫 v173 다니엘아마츠학교 — 공문처럼 «다니엘아마츠학교장»
   const band = schedBand(r.org);
   const vars = `--sc-ink:${th.ink};--sc-gold:${th.goldText};--sc-lab:${th.lab};--sc-line:${th.line};`;
   const microOne = [r.docNo, th.en, cfg.orgName].filter(Boolean).join(' · ');
@@ -1549,7 +1617,7 @@ function buildSchedCert(r){
   rows.push([r.rowLabel || '기간', `<b>${esc(per || '(기간을 넣어 주세요)')}</b>${days ? `　${esc(days)}` : ''}`]);
   if(r.reason) rows.push(['사유', esc(r.reason)]);
   if(r.note) rows.push(['운영 내용', esc(r.note)]);
-  // 직인은 «대표» 글자 뒤에 깔린다 (글자가 위 · 직인이 아래) — 도장 없이 받을 때는 빈자리
+  // 직인은 «대표» · «학교장» 글자 뒤에 깔린다 (글자가 위 · 직인이 아래) — 도장 없이 받을 때는 빈자리
   const stamp = r.hideStamp ? '' : `<img class="sc-stamp" src="${cfg.stamp}" alt="" onerror="this.style.visibility='hidden'">`;
   return `
   <div class="cert-sheet sched" style="${vars}">
@@ -1558,7 +1626,7 @@ function buildSchedCert(r){
     <div class="sc-top"><span>문서번호 제 ${esc(r.docNo || '')} 호</span></div>
     <div class="sc-head">
       <img class="sc-emb" src="${th.emblem}" alt="" onerror="this.style.display='none'">
-      <div class="sc-headt"><div class="sc-org">${esc(cfg.orgName)}</div><div class="sc-en">${esc(th.en)}</div></div>
+      <div class="sc-headt">${regHTML(cfg, 'sc-reg')}<div class="sc-org">${esc(cfg.orgName)}</div><div class="sc-en">${esc(th.en)}</div></div>
     </div>
     ${band ? `<img class="sc-band" src="${band}" alt="">` : '<div class="sc-band sc-band-x"></div>'}
     <div class="sc-meta">
@@ -1573,7 +1641,7 @@ function buildSchedCert(r){
     </div>
     <div class="sc-tbl">${rows.map(([k, v], i) => `<span class="sc-k${i === rows.length - 1 ? ' last' : ''}">${esc(k)}</span><span class="sc-v${i === rows.length - 1 ? ' last' : ''}">${v}</span>`).join('')}</div>
     <div class="sc-end">끝.</div>
-    <div class="sc-sign"><div class="sc-from">${stamp}<span class="sc-from-t">${esc(cfg.orgName)} ${esc(repTitle)}</span></div></div>
+    <div class="sc-sign"><div class="sc-from">${stamp}<span class="sc-from-t">${esc(sender)}</span></div></div>
     <div class="sc-foot">
       <div class="sc-micro">${esc(micro)}</div>
       ${band ? `<img class="sc-band" src="${band}" alt="">` : '<div class="sc-band sc-band-x"></div>'}
@@ -1621,7 +1689,7 @@ function scClsLabel(sid){ const c = scClassOf(sid); return c ? (c.name || scGrad
 function scRecvDefault(org){ return (SCHED_CFG && SCHED_CFG.recv && SCHED_CFG.recv[org]) || SCHED_RECV_DEFAULT[org] || SCHED_RECV_DEFAULT.daniel; }
 function scVars(){
   const K = SCHED_KINDS[SC.kind] || SCHED_KINDS.custom;
-  return { 일정: (SC.name || K.name || '').trim() || '일정', 학생: schedWho(SC.org), 학년도: String(scAcYear(SC.start || todayYMD())), 기관: (ORG_CONFIG[SC.org] || {}).orgName || '' };
+  return { 일정: (SC.name || K.name || '').trim() || '일정', 학생: schedWho(SC.org), 학년도: String(scAcYear(SC.start || todayYMD())), 기관: (cfgAt(SC.org, todayYMD()) || {}).orgName || '' };
 }
 function scTexts(){
   const t = scTplOf(SC.org, SC.kind), v = scVars();
@@ -1876,7 +1944,7 @@ function scSyncInputs(){
 }
 function scWordWarnHTML(){
   const bad = scBadWords(); if(!bad.length) return '';
-  return `<div class="sc-wordwarn">⚠️ 문서에 <b>${bad.map(w => '«' + esc(w) + '»').join(' ')}</b>이(가) 들어 있어요. 등록 전에는 «학교 · 재학» 같은 말 대신 «기관 · 교육 프로그램»으로 쓰는 게 안전해요.
+  return `<div class="sc-wordwarn">⚠️ 문서에 <b>${bad.map(w => '«' + esc(w) + '»').join(' ')}</b>이(가) 들어 있어요. 학교로 등록된 기관이 아니면 «학교 · 재학» 같은 말 대신 «기관 · 교육 프로그램»으로 쓰는 게 안전해요.
     <button type="button" class="sc-mini" onclick="scFixWords()">✨ 알맞은 말로 바꾸기</button></div>`;
 }
 function scWordWarn(){ const el = $I('sc-wordwarn'); if(el) el.innerHTML = scWordWarnHTML(); }
@@ -1924,7 +1992,7 @@ window.scKind = k => {
 window.scPick = idx => {
   if(!SC || !SC.items) return;
   const it = [...SC.items.main, ...SC.items.other][Number(idx)]; if(!it) return;
-  SC.pick = it.id; SC.kind = it.kind; SC.name = scSafeWords(it.title || ''); SC.start = it.start; SC.end = it.end !== it.start ? it.end : '';
+  SC.pick = it.id; SC.kind = it.kind; SC.name = isRegOrg(SC.org) ? String(it.title || '') : scSafeWords(it.title || ''); SC.start = it.start; SC.end = it.end !== it.start ? it.end : '';
   SC.wdays = it.wdays || []; SC.skips = it.skips || []; SC.dirty = {}; scFill(); scDraw();
 };
 window.scToggleOther = () => { SC.other = !SC.other; scDraw(); };
@@ -1972,7 +2040,7 @@ window.scCloseTexts = () => { if(ST && ST.changed && !confirm('저장하지 않�
 function scTextsSample(kind){
   const K = SCHED_KINDS[kind] || SCHED_KINDS.custom;
   const ex = { break: '가을 방학', closed: '임시 휴업', discretion: '재량 휴업일', short: '겨울 단축 운영', event: '가족 초청 발표회', custom: '' }[kind];
-  return { 일정: ex || K.name || '일정', 학생: schedWho(ST.org), 학년도: String(scAcYear(todayYMD())), 기관: (ORG_CONFIG[ST.org] || {}).orgName || '' };
+  return { 일정: ex || K.name || '일정', 학생: schedWho(ST.org), 학년도: String(scAcYear(todayYMD())), 기관: (cfgAt(ST.org, todayYMD()) || {}).orgName || '' };
 }
 function scDrawTexts(){
   const box = $I('sct-box'); if(!box || !ST) return;
@@ -2008,14 +2076,14 @@ function scDrawTexts(){
 }
 function scTextsPvHTML(){
   const t = ST.all[ST.kind], v = scTextsSample(ST.kind);
-  const bad = [...new Set([t.title, t.body, t.reason, t.note, ST.p1].join(' ').match(SC_WORD_BAD) || [])];
+  const bad = isRegOrg(ST.org) ? [] : [...new Set([t.title, t.body, t.reason, t.note, ST.p1].join(' ').match(SC_WORD_BAD) || [])];
   return `<div class="sct-pv"><div class="sct-pvh">미리보기 (예: «${esc(v.일정 || '일정')}»)</div>
       <div><b>제목</b> ${esc(scFillTpl(t.title, v))}</div>
       <div>1. ${esc(scFillTpl(ST.p1, v))}</div>
       <div>2. ${esc(scFillTpl(t.body, v))}</div>
       ${t.reason ? `<div><b>사유</b> ${esc(scFillTpl(t.reason, v))}</div>` : ''}${t.note ? `<div><b>운영 내용</b> ${esc(scFillTpl(t.note, v))}</div>` : ''}
     </div>
-    ${bad.length ? `<div class="sc-wordwarn">⚠️ ${bad.map(w => '«' + esc(w) + '»').join(' ')} — 등록 전에는 «학교 · 재학» 같은 말 대신 «기관 · 교육 프로그램»이 안전해요.</div>` : ''}`;
+    ${bad.length ? `<div class="sc-wordwarn">⚠️ ${bad.map(w => '«' + esc(w) + '»').join(' ')} — 학교로 등록된 기관이 아니면 «학교 · 재학» 같은 말 대신 «기관 · 교육 프로그램»이 안전해요.</div>` : ''}`;
 }
 let _sctT = 0;
 function scTextsPv(){ clearTimeout(_sctT); _sctT = setTimeout(() => { const b = $I('sct-pvbox'); if(b && ST) b.innerHTML = scTextsPvHTML(); }, 150); }
@@ -2063,7 +2131,7 @@ async function scIssue(){
   if(!SC.confirm){ toast('내용을 확인한 뒤 «이상 없음»에 체크해 주세요.', 'err'); return; }
   if(tg.some(s => !canIssue(s))){ toast(`발급할 수 없는 ${who}이 섞여 있어요.`, 'err'); return; }
   const words = scBadWords();
-  if(words.length && !confirm(`문서에 ${words.map(w => '«' + w + '»').join(' ')}이(가) 들어 있어요.\n등록 전에는 «학교 · 재학» 같은 말을 쓰지 않는 게 안전해요.\n\n그대로 발급할까요? («취소»를 누르고 «✨ 알맞은 말로 바꾸기»를 쓸 수 있어요)`)) return;
+  if(words.length && !confirm(`문서에 ${words.map(w => '«' + w + '»').join(' ')}이(가) 들어 있어요.\n학교로 등록된 기관이 아니면 «학교 · 재학» 같은 말을 쓰지 않는 게 안전해요.\n\n그대로 발급할까요? («취소»를 누르고 «✨ 알맞은 말로 바꾸기»를 쓸 수 있어요)`)) return;
   if(tg.length > 1 && !confirm(`${tg.length}명에게 «${SC.title.trim()}»을(를) 한 장씩 발급할까요?\n(${who}마다 문서번호가 따로 붙어요)`)) return;
   SC.busy = true;
   const btn = $I('sc-issue'); if(btn){ btn.disabled = true; btn.style.opacity = '.5'; }
@@ -2244,7 +2312,7 @@ function periodText(a, b){
   return `${y?`${y}년 `:''}${mo?`${mo}개월`:(y?'':'1개월 미만')}`.trim();
 }
 function buildFormerCert(o){
-  const cfg = ORG_CONFIG[o.org]; if(!cfg) return '<div class="cert-sheet">알 수 없는 기관</div>';
+  const cfg = cfgAt(o.org, o.issueDate); if(!cfg) return '<div class="cert-sheet">알 수 없는 기관</div>';
   const th = cfg.theme || {};
   const styleVars = `--c-accent:${th.accent};--c-line:${th.line};--c-line2:${th.line2};--c-bg:${th.bg};`;
   const stampHTML = o.hideStamp ? '' : `<img class="stamp" src="${cfg.stamp}" alt="" onerror="this.style.display='none'">`;
@@ -2269,15 +2337,16 @@ function buildFormerCert(o){
       ${segs.length?`<table class="fc-tbl"><tr><th>교육과정</th><th>참여 기간</th><th>학년</th></tr>
         ${segs.map(s=>`<tr><td>${esc(s.course)}</td><td>${esc(s.period)}</td><td>${esc(s.grades)}</td></tr>`).join('')}</table>`:''}
       <div class="cert-statement">
-        위 사람은 위 기간 동안 '${esc(cfg.orgName)}'에서<br>
+        위 사람은 위 기간 동안 '${esc(nameDuring(cfg, o.org, o.endDate))}'에서<br>
         ${segs.length?'위와 같이 ':''}<b>교육과정에 참여하였음을 확인합니다.</b>
       </div>
       <div class="cert-issue">${esc(korDate(o.issueDate))}</div>
       <div class="cert-org">
+        ${regHTML(cfg, 'cert-orgreg')}
         <div class="cert-orgname">${esc(cfg.orgName)}</div>
         <div class="cert-orgen">${esc(cfg.orgEn)}</div>
         <div class="cert-rep">
-          대표자 &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
+          ${esc((cfg.reg && cfg.repTitle) || '대표자')} &nbsp; <span class="repname">${esc(cfg.rep)}</span> <span style="font-size:10pt">(인)</span>
           ${stampHTML}
         </div>
       </div>
@@ -2805,6 +2874,9 @@ function certPrintCSS(){
 .cert-sheet.former.tight .cert-rep{margin-top:8mm}
     .cert-orgname{font-size:22pt;font-weight:800;letter-spacing:3px;color:var(--c-accent,#1a2440);}
     .cert-orgen{font-size:8.5pt;letter-spacing:4px;color:#888;margin-top:2px;}
+    .cert-orgreg{font-size:10.5pt;font-weight:600;letter-spacing:2px;color:#4a4f5c;margin-bottom:1.6mm;}
+    .cert-orgreg .rno,.geo-orgreg .rno{font-weight:500;letter-spacing:.5px;color:#777}
+    .geo-orgreg{font-size:9pt;font-weight:700;letter-spacing:1.5px;color:#4f5b54;margin-bottom:1.2mm;}
     .cert-rep{position:relative;display:inline-block;margin-top:10mm;font-size:15pt;letter-spacing:2px;}
     .cert-rep .repname{font-weight:700;letter-spacing:4px;}
     .cert-rep .stamp{position:absolute;left:calc(100% - 4mm);top:50%;transform:translateY(-50%);width:23mm;height:23mm;object-fit:contain;opacity:0.88;}

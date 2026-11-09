@@ -4,9 +4,9 @@
    · 계정마다 따로(u:<uid>) · 기관마다 하나씩 · 최대 3개 · 로그아웃하면 모두 지움
    · 교직원 정보는 화면을 여는 데 필요한 칸만 (연락처 · 주소 · 서명 같은 것은 담지 않는다)
    · IndexedDB 를 못 쓰거나 대답이 없는 기기(사생활 보호 창 · 오래 둔 사파리 등)에서는 이 화면 동안 꺼 두고 예전처럼 서버에서 받는다 */
-const DB_NAME = 'gyosa-tt', STORE = 'kv', KEEP = 3, WAIT_MS = 700;
+const DB_NAME = 'gyosa-tt', STORE = 'kv', KEEP = 3, WAIT_MS = 1200;
 const CU_KEYS = ['uid','name','role','org','orgs','primaryOrg','pageDeny','pageAllow','position','dept','acStatus','avatar','photo'];
-let _open = null, OFF = false;
+let _open = null, OFF = false, SLOW = 0;   // 두 번 잇달아 대답이 늦으면 이 화면 동안 꺼 둔다
 
 function openDb(){
   if(OFF) return Promise.reject(new Error('tt-cache-off'));
@@ -29,12 +29,12 @@ function openDb(){
   _open.catch(() => { _open = null; OFF = true; });
   return _open;
 }
-// 대답이 없으면 기다리지 않고, 이 화면 동안은 꺼 둔다
+// 대답이 늦으면 기다리지 않고 서버로 · 두 번 잇달아 늦으면 이 화면 동안은 꺼 둔다 (한 번 늦은 것은 바쁜 순간일 수 있어서)
 function timed(p, ms, dflt){
   let done = false;
   return Promise.race([
-    p.then(v => { done = true; return v; }),
-    new Promise(r => setTimeout(() => { if(!done){ OFF = true; _open = null; } r(dflt); }, ms))
+    p.then(v => { done = true; SLOW = 0; return v; }),
+    new Promise(r => setTimeout(() => { if(!done && ++SLOW >= 2){ OFF = true; _open = null; } r(dflt); }, ms))
   ]).catch(e => { if(e && (e.name === 'InvalidStateError' || e.name === 'UnknownError')){ OFF = true; _open = null; } return dflt; });
 }
 const plain = v => JSON.parse(JSON.stringify(v == null ? null : v));   // Timestamp 같은 것은 {seconds, nanoseconds} 로

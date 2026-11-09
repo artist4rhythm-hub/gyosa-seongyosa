@@ -503,7 +503,7 @@ function renderSidebar(){
 }
 
 function sbOrgLabel(){
-  const ORGS = window.ORGS || { daniel: '다니엘 아마츠', jihyebit: '그루터기' };
+  const ORGS = window.ORGS || { daniel: '다니엘아마츠학교', jihyebit: '그루터기' };
   const o = SB_USER?.org;
   const role = SB_USER?.role === 'super' ? '슈퍼관리자'
     : SB_USER?.role === 'org_admin' ? '기관관리자'
@@ -915,7 +915,7 @@ function guardPage(user, key){
     const a = menuAccess(it, user);
     blocked = !a.ok;
     why = a.kind === 'deny' ? '관리자가 이 화면을 닫아 두었어요.'
-        : a.kind === 'off' && a.why === 'org' ? `${(it.orgs||[]).map(o => (window.ORGS && window.ORGS[o]) || ({daniel:'다니엘 아마츠', jihyebit:'그루터기'})[o] || o).join(' · ')} 선생님이 쓰는 화면이에요.`
+        : a.kind === 'off' && a.why === 'org' ? `${(it.orgs||[]).map(o => (window.ORGS && window.ORGS[o]) || ({daniel:'다니엘아마츠학교', jihyebit:'그루터기'})[o] || o).join(' · ')} 선생님이 쓰는 화면이에요.`
         : a.kind === 'off' ? '관리자용 화면이에요 — 관리자가 따로 열어 주면 쓸 수 있어요.'
         : (it.deny || []).includes(user.role) ? '협력교사는 쓰지 않는 화면이에요.'
         : '관리자용 화면이에요.';

@@ -5,18 +5,18 @@
        (예전에는 «학사일정 · 교사 선교사.pdf» 처럼 모두 홈페이지 이름으로 나왔다)
    · 이름 규칙: 조각을 «_» 로 잇는다 · 첫 조각은 붙여 쓴 종류(학사일정·출결현황…)
      · 파일 이름에 못 쓰는 글자(\ / : * ? " < > |)와 이모지는 뺀다 · 같은 말은 두 번 넣지 않는다
-   · 화면마다 window.fileNameContext = () => ['출결현황', '2026학년도 1학기', '다니엘 아마츠']
+   · 화면마다 window.fileNameContext = () => ['출결현황', '2026학년도 1학기', '다니엘아마츠학교']
      를 두면 Ctrl+P(⌘P)·브라우저 메뉴 인쇄에도 그 이름이 붙는다.
      없으면 «화면 이름 › 탭» 경로 + 오늘 날짜 (예: 출석부_월별 출석_2026-10-11)
    쓰는 법:
      FN.make(['공사경비', '본관 공사', '2026-10-11'], { ext:'.csv' })   → 공사경비_본관 공사_2026-10-11.csv
-     FN.printAs(['수업일', '2026년 10월', '다니엘 아마츠'])              → 그 이름으로 인쇄 창을 연다
+     FN.printAs(['수업일', '2026년 10월', '다니엘아마츠학교'])              → 그 이름으로 인쇄 창을 연다
      FN.printAs(name, () => iframe.contentWindow.print())               → 다른 창 인쇄도 이름을 붙여서
    ═══════════════════════════════════════════════════════════ */
 (function(){
   if(window.FN) return;
   const SITE = '교사 선교사';
-  const ORG = { daniel:'다니엘 아마츠', jihyebit:'그루터기 선교원', all:'DA 전체', __all__:'DA 전체', both:'다니엘 아마츠·그루터기 선교원' };
+  const ORG = { daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원', all:'DA 전체', __all__:'DA 전체', both:'다니엘아마츠학교·그루터기 선교원' };
   const pad = n => String(n).padStart(2, '0');
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
   const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}\u{20E3}]/gu;
@@ -32,6 +32,7 @@
       .replace(/^[\s.\-_·]+|[\s.\-_·]+$/g, '');
   }
   const flat = s => s.replace(/\s/g, '');
+  const SAME = { '다니엘아마츠학교': ['다니엘아마츠'] };   // v172 예전 이름으로 저장된 제목(«다니엘 아마츠 2학기 시간표»)에도 기관 이름을 또 붙이지 않게
 
   /* 조각들 → 파일 이름 */
   function make(parts, opt){
@@ -40,8 +41,8 @@
     const out = [];
     list.forEach(p => {
       const f = flat(p);
-      // 앞 조각에 이미 들어 있는 말은 빼기 (예: «다니엘 아마츠 2학기 시간표» 뒤의 «다니엘 아마츠»)
-      if(out.some(q => flat(q) === f || (f.length >= 3 && flat(q).includes(f)))) return;
+      // 앞 조각에 이미 들어 있는 말은 빼기 (예: «다니엘아마츠학교 2학기 시간표» 뒤의 «다니엘아마츠학교»)
+      if(out.some(q => { const fq = flat(q); return fq === f || (f.length >= 3 && fq.includes(f)) || (SAME[f] || []).some(a => fq.includes(a)); })) return;
       out.push(p);
     });
     // 뒤 조각이 첫 조각(종류)을 이미 품고 있으면 앞의 종류는 빼기 (예: «완성시간표_2학기 완성 시간표» → «2학기 완성 시간표»)

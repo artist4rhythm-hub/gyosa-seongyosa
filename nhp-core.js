@@ -10,7 +10,7 @@ import * as TH from './nhp-theme.js?v=146';
 export { TH };
 
 export const ORG = 'daniel';
-export const ORG_NAME = '다니엘 아마츠';
+export const ORG_NAME = '다니엘아마츠학교';
 export const ORG_EN = 'Daniel Amatz';
 
 /* ── 교과 평가 방식 (예전 나학평 TYPE 그대로 · 이름은 쉬운 말로) ── */
@@ -1214,5 +1214,5 @@ export function coverHTML(doc, opt){
 }
 /* 표지 아래 기관 이름띠 — 교표 + 이름 (예전 나학평 표지 띠를 글자로 다시 그림 · 크게 뽑아도 선명) */
 function banner(emblem, en){
-  return `<div class="logo"><div class="bn${en ? ' en' : ''}">${emblem ? `<img src="${esc(emblem)}" alt="">` : ''}<div>${en ? '<b>DANIEL AMATZ</b><span>[אמץ]</span>' : '<b>다니엘 아마츠</b><span>DANIEL AMATZ [אמץ]</span>'}</div></div></div>`;
+  return `<div class="logo"><div class="bn${en ? ' en' : ''}">${emblem ? `<img src="${esc(emblem)}" alt="">` : ''}<div>${en ? '<b>DANIEL AMATZ</b><span>[אמץ]</span>' : '<b>다니엘아마츠학교</b><span>DANIEL AMATZ [אמץ]</span>'}</div></div></div>`;
 }

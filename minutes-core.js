@@ -6,7 +6,7 @@
    ═══════════════════════════════════════════════════════════ */
 
 /* ── 기관 — 'da' = DA전체 (모든 기관 교직원이 함께 드나드는 회의록) ── */
-export const MORG = { daniel:'다니엘 아마츠', jihyebit:'그루터기 선교원', da:'DA전체' };
+export const MORG = { daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원', da:'DA전체' };
 export const MORG_SHORT = { daniel:'다니엘', jihyebit:'그루터기', da:'DA전체' };
 export const MORDER = ['daniel', 'jihyebit', 'da'];
 export const MCOLOR = { daniel:'#00704A', jihyebit:'#B7791F', da:'#2B5797' };
@@ -14,10 +14,11 @@ export const MCOLOR = { daniel:'#00704A', jihyebit:'#B7791F', da:'#2B5797' };
 /* 처음 설정값 — 회의록 쓰는 화면에서 바로 넣고 뺄 수 있다 (minutesConfig/types) */
 export const OLD_TYPES = ['훈련센터 회의'];
 /* 🌱 v166 지혜빛 → 그루터기 — 예전 이름으로 저장된 회의 종류도 같은 회의로 이어지게 (불러올 때만 바꿔 읽음 · 저장된 자료는 그대로) */
-export const TYPE_ALIAS = { '지혜빛 선교원 교사 회의': '그루터기 선교원 교사 회의' };
+export const TYPE_ALIAS = { '지혜빛 선교원 교사 회의': '그루터기 선교원 교사 회의',
+  '다니엘 아마츠 학교 회의': '다니엘아마츠학교 회의' };   // 🏫 v172 대안교육기관 등록 — 정식 이름 «다니엘아마츠학교»
 export const typeFix = t => TYPE_ALIAS[t] || t;
 export const DEF_TYPES = {
-  daniel:   ['다니엘 아마츠 학교 회의'],                  // (v-95) «훈련센터»는 더 쓰지 않음 — 예전 회의록 제목은 그대로
+  daniel:   ['다니엘아마츠학교 회의'],                  // (v-95) «훈련센터»는 더 쓰지 않음 — 예전 회의록 제목은 그대로
   jihyebit: ['그루터기 선교원 교사 회의'],
   da:       ['DA 전체 회의'],
 };

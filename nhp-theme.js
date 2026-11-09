@@ -242,7 +242,7 @@ export function numberAll(doc){
 
 /* ═══ 쪽 머리 · 바닥 · 첫 쪽 학생 정보 줄 · 확인 칸 ═══ */
 const TX = {
-  ko: { title: '나의 학교생활', report: '학교생활 평가서', term: '학년도 · 학기', cls: '반 · 학년', name: '이름', hr: '담임', org: '다니엘 아마츠', orgEn: 'DANIEL AMATZ', heb: 'DANIEL AMATZ [אמץ]', en1: 'My School Life', en2: 'Student Progress Report', inside: '이 평가서에 담긴 것', draft: '승인 전 미리보기', s1: '1학기', s2: '2학기', lead: '학교생활 평가서', big: ['나의', '학교', '생활'], seal: '인', signHr: '담임', signHead: '학교장' },
+  ko: { title: '나의 학교생활', report: '학교생활 평가서', term: '학년도 · 학기', cls: '반 · 학년', name: '이름', hr: '담임', org: '다니엘아마츠학교', orgEn: 'DANIEL AMATZ', heb: 'DANIEL AMATZ [אמץ]', en1: 'My School Life', en2: 'Student Progress Report', inside: '이 평가서에 담긴 것', draft: '승인 전 미리보기', s1: '1학기', s2: '2학기', lead: '학교생활 평가서', big: ['나의', '학교', '생활'], seal: '인', signHr: '담임', signHead: '학교장' },
   en: { title: 'My School Life', report: 'Student Progress Report', term: 'School Year', cls: 'Class · Grade', name: 'Name', hr: 'Homeroom', org: 'DANIEL AMATZ', orgEn: 'DANIEL AMATZ', heb: 'DANIEL AMATZ [אמץ]', en1: 'Daniel Amatz', en2: 'Student Progress Report', inside: 'In This Report', draft: 'Draft preview', s1: 'Sem. 1', s2: 'Sem. 2', lead: 'Student Progress Report', big: ['My', 'School', 'Life'], seal: 'Seal', signHr: 'Homeroom', signHead: 'Principal' },
 };
 const tx = lang => TX[lang === 'en' ? 'en' : 'ko'];

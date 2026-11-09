@@ -25,7 +25,7 @@ function getDb(){
 
 const CAT_LABEL = { event:'행사', program:'프로그램', break:'방학', exam:'시험',
                     worship:'예배·기도회', admin:'행정', closed:'휴교·휴일' };
-const CAL_NAME  = { all:'DA 전체', daniel:'다니엘 아마츠', jihyebit:'그루터기 선교원' };
+const CAL_NAME  = { all:'DA 전체', daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원' };
 
 function icsEsc(s){
   return String(s == null ? '' : s)

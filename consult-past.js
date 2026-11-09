@@ -76,7 +76,7 @@ export function a4Pages(a, r, seats, opt){
   const ymd = `${at.getFullYear()}. ${p2(at.getMonth() + 1)}. ${p2(at.getDate())}.`;
   const stamp = opt.label ? `${opt.label} · ${ymd}` : `${opt.ver ? '판 ' + opt.ver + ' · ' : ''}${ymd} ${p2(at.getHours())}:${p2(at.getMinutes())}`;
   const edTag = opt.label ? `<span class="ed${opt.label === C.FINAL_LABEL ? '' : ' w'}">${esc(opt.label)}</span>` : '';
-  const ttl = `<div class="ttl"><div>다니엘 아마츠 · ${esc(r.year)}학년도 ${esc(r.term)}학기</div><b>학부모 상담 일정표${edTag}</b></div>`;
+  const ttl = `<div class="ttl"><div>다니엘아마츠학교 · ${esc(r.year)}학년도 ${esc(r.term)}학기</div><b>학부모 상담 일정표${edTag}</b></div>`;
   const meta = i => `<div class="meta"><span>같은 색 · 같은 번호 = 한 가정 (이어진 시간) · 점선 = 교직원 자녀${chg && chg.size ? ` · ★ = ${esc(opt.prevLabel || '지난 안내')}에서 바뀐 시간` : ''}</span><span>${esc(stamp)}__PG${i}__</span></div>`;
   const foot = `<div class="ft">상담 시간 ${C.tplOf(r).len}분 · 시간 변경은 꼭 담임 선생님께 먼저 연락해 주세요 · 교사 선교사</div>`;
   // 쪽 나누기 — 실제 높이를 재서 (재지 못하면 어림) · 아래 여백을 넉넉히 남김

@@ -155,7 +155,7 @@ async function computeBadges(db, uid){
   //    (따로 불러와서 — 그 파일이 없거나 실패해도 다른 숫자는 그대로)
   try { const m = await import('./pb-badge.js?v=156'); b.myparents = await m.badgeFor(db, uid); } catch(e){}
 
-  /* 📒 v141 나학평 — 지금 내 차례인 검토 칸 + 안 읽은 나학평 알림 (다니엘 아마츠 선생님만 · 따로 불러와서) */
+  /* 📒 v141 나학평 — 지금 내 차례인 검토 칸 + 안 읽은 나학평 알림 (다니엘아마츠학교 선생님만 · 따로 불러와서) */
   try { const m = await import('./nhp-badge.js?v=143'); b.nhp = await m.badgeFor(db, uid, me); } catch(e){}
 
   /* 📅 v149 학부모 상담 — 안 읽은 상담 알림 (확인 부탁 · 변경 요청 · 답글 · 처리 · 확정) */
