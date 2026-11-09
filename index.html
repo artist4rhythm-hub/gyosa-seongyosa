@@ -230,9 +230,9 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 /* ⛑ 부트 안전망 — 화면이 뜨기 전에 JS가 죽거나 12초 넘게 멈추면, 백지 대신 자가복구 카드 */
 (function(){
   window.__BOOT_OK = false;
-  function card(msg){
+  function card(msg, slow){
     if(window.__BOOT_OK || document.getElementById('bootFix')) return;
-    var d=document.createElement('div'); d.id='bootFix';
+    var d=document.createElement('div'); d.id='bootFix'; if(slow) d.setAttribute('data-slow','1');   // 🩹 v171 «오래 걸림» 카드만 앱이 살아나면 저절로 걷힘
     d.innerHTML='<div style="position:fixed;inset:0;background:#F2F0EB;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:var(--font-ui,sans-serif)">'
       +'<div style="background:#fff;border-radius:16px;padding:28px 26px;max-width:340px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.08)">'
       +'<div style="font-size:34px">🛠</div>'
@@ -255,17 +255,21 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
     card('업데이트 직후 파일이 잠깐 어긋났거나<br>임시 저장이 꼬였을 수 있어요.');
   }, true);
   window.addEventListener('unhandledrejection', function(){ card('업데이트 직후 파일이 잠깐 어긋났거나<br>임시 저장이 꼬였을 수 있어요.'); });
-  setTimeout(function(){ card('연결이 오래 걸리고 있어요.<br>한 번 더 시도하거나 🧹를 눌러보세요.'); }, 12000);
+  setTimeout(function(){ card('연결이 오래 걸리고 있어요.<br>한 번 더 시도하거나 🧹를 눌러보세요.', true); }, 12000);
 })();
 </script>
 <script>
 /* ⛑ 인라인 복구 감시 — 바깥 JS(캐시)가 깨져 화면이 영영 안 뜰 때를 위한 최후의 안전망.
    이 코드는 index.html 안에 있어서 캐시가 어떻게 꼬여도 항상 실행된다. */
 (function(){
+  /* 🩹 v171 — 예전엔 15초가 지나면 화면(body)을 통째로 갈아 끼워서, 그 뒤에 늦게 로그인이 끝나면
+     로그인 칸(#ls)이 사라져 «null is not an object ($I('ls').style)» 오류가 났다 (아이폰 · 느린 연결).
+     이제는 화면 위에 덮개로만 띄우고, 늦게라도 앱이 살아나면 덮개를 걷는다. */
   var t = setTimeout(function(){
-    if (window.__appAlive) return;
-    document.body.innerHTML =
-      '<div style="font-family:var(--font-ui,sans-serif);min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F2F0EB;margin:0">' +
+    if (window.__appAlive || document.getElementById('__fixCard')) return;
+    var card = document.createElement('div'); card.id = '__fixCard';
+    card.innerHTML =
+      '<div style="font-family:var(--font-ui,sans-serif);position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;background:#F2F0EB;margin:0">' +
       '<div style="background:#fff;border-radius:16px;padding:28px 26px;max-width:340px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.08)">' +
       '<div style="font-size:34px">🧹</div>' +
       '<div style="font-weight:900;font-size:16px;margin:10px 0 6px;color:#0C2A44">화면이 뜨지 못했어요</div>' +
@@ -273,6 +277,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       '<button id="__fixBtn" style="margin-top:14px;width:100%;padding:12px;border:0;border-radius:10px;background:#0C2A44;color:#fff;font-weight:800;font-size:14px;font-family:inherit;cursor:pointer">🧹 임시 저장 비우고 새로 열기</button>' +
       '<button onclick="location.reload()" style="margin-top:8px;width:100%;padding:11px;border:1.5px solid #E3E1DA;border-radius:10px;background:#fff;color:#5A6560;font-weight:700;font-size:12.5px;font-family:inherit;cursor:pointer">🔄 그냥 다시 시도</button>' +
       '</div></div>';
+    document.body.appendChild(card);
     document.getElementById('__fixBtn').onclick = async function(){
       this.textContent = '비우는 중…'; this.disabled = true;
       try {
@@ -289,7 +294,11 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
       location.reload();
     };
   }, 15000);
-  window.__markAlive = function(){ window.__appAlive = true; clearTimeout(t); };
+  window.__bootClear = function(){
+    var a = document.getElementById('__fixCard'); if(a) a.remove();
+    var b = document.getElementById('bootFix'); if(b && b.getAttribute('data-slow') === '1') b.remove();   // 진짜 오류 카드는 그대로
+  };
+  window.__markAlive = function(){ window.__appAlive = true; clearTimeout(t); window.__bootClear(); };
 })();
 </script>
 <script src="modal-close.js"></script>
@@ -381,7 +390,7 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { installHomeWidgets } from './home-widgets.js?v=169';
+import { installHomeWidgets } from './home-widgets.js?v=171';
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, onSnapshot, arrayUnion, arrayRemove, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { attOf, attRange, colOnce, colDrop, qOnce } from './qread.js';   // 📉 v120 필요한 것만 읽기
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
@@ -474,6 +483,8 @@ function orgOptionsHTML(includeAll) {
 // 로그인 상태를 복원하는 동안 로그인 화면이 잠깐 보이지 않게 함
 window.showLoading && window.showLoading('로그인 확인 중…');
 let authResolved = false;
+// 🩹 v171 로그인 칸(#ls) · 본 화면(#ms)이 없을 때(복구 카드 · 권한 막힘으로 화면이 바뀐 뒤)도 멈추지 않게
+const setDisp = (id, v) => { const e = $I(id); if(e) e.style.display = v; };
 
 onAuthStateChanged(auth, async (user) => {
   window.__markAlive && window.__markAlive();   // ⛑ 코드가 여기까지 왔다 = 화면은 산다
@@ -487,7 +498,7 @@ onAuthStateChanged(auth, async (user) => {
       if (acStatus === 'leave' || acStatus === 'quit') {
         await signOut(auth);
         window.hideLoading && window.hideLoading();
-        window.__BOOT_OK=true; $I('ls').style.display = 'flex';
+        window.__BOOT_OK=true; setDisp('ls','flex');
         showLoginErr(acStatus==='quit' ? '퇴직 처리된 계정입니다. 관리자에게 문의하세요.' : '휴직 중인 계정입니다. 관리자에게 문의하세요.');
         return;
       }
@@ -508,8 +519,8 @@ onAuthStateChanged(auth, async (user) => {
         localStorage.setItem('gyosa_pagedeny', JSON.stringify(CU.pageDeny||[]));
       } catch(e){}
       authResolved = true;
-      $I('ls').style.display = 'none';
-      window.__BOOT_OK=true; $I('ms').style.display = 'flex';
+      setDisp('ls','none');
+      window.__BOOT_OK=true; setDisp('ms','flex'); window.__bootClear && window.__bootClear();
       await loadAttConfig();
       // 로그인 기록 저장 (비동기, 실패해도 진행)
       recordLogin(user.uid, data.name, data.org).catch(()=>{});
@@ -517,7 +528,7 @@ onAuthStateChanged(auth, async (user) => {
     } else {
       await signOut(auth);
       window.hideLoading && window.hideLoading();
-      window.__BOOT_OK=true; $I('ls').style.display = 'flex';
+      window.__BOOT_OK=true; setDisp('ls','flex');
       showLoginErr('계정 정보를 찾을 수 없습니다.');
     }
   } else {
@@ -530,8 +541,9 @@ onAuthStateChanged(auth, async (user) => {
     try { window.orgCore && orgCore.setUnion(false); sessionStorage.removeItem('gyosa_union_uid'); } catch(e){}   // 🔐 v136 — 로그아웃 상태에서는 연합을 닫는다 (다음에 로그인하는 분이 이어받지 않게)
     authResolved = true;
     window.hideLoading && window.hideLoading();
-    window.__BOOT_OK=true; $I('ls').style.display = 'flex';
-    $I('ms').style.display = 'none';
+    window.__BOOT_OK=true; setDisp('ls','flex'); window.__bootClear && window.__bootClear();
+    setDisp('ms','none');
+    import('./tt-cache.js?v=171').then(m=>m.ttClear()).catch(()=>{});   // ⚡ v171 로그아웃하면 이 기기에 기억한 시간표도 지움
   }
 });
 
@@ -624,7 +636,8 @@ window.doLogout = doLogout;
 document.getElementById('lbtn').addEventListener('click', doLogin);
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && $I('ls').style.display !== 'none') doLogin();
+  const ls = $I('ls');
+  if (e.key === 'Enter' && ls && ls.style.display !== 'none') doLogin();
 });
 
 // ── 비번 변경 (Firebase) ─────────────────────
@@ -1189,7 +1202,7 @@ window.dlOvExcel=dlOvExcel;
 
 // ── UI 로직 (showMain, 탭, 모달 등) ────────
 async function showMain(){
-  $I('ls').style.display='none'; $I('ms').style.display='flex';
+  setDisp('ls','none'); setDisp('ms','flex');
   const org=ORGS[CU.org]||'', dept=CU.dept!=='전체'?' · '+CU.dept:'';
   
   
@@ -3822,13 +3835,24 @@ async function loadMyTimetable(){
     meta = mine || meta;
     if(!meta){ if(card) card.innerHTML=''; if(sumBox) sumBox.style.display='none'; return; }
 
-    // ② 본문은 그 하나만
+    // ② 본문은 그 하나만 — ⚡ v171 이 기기에 같은 게시본을 기억하고 있으면 다시 받지 않는다
+    //    (받은 본문은 기억해 두어 «시간표» 화면을 처음 열 때 바로 그린다 · tt-cache.js)
+    const ttc = await import('./tt-cache.js?v=171').catch(()=>null);
     if(meta.snapshot) TT_SNAP = meta.snapshot;
     else {
-      const g = await getDoc(doc(db,'timetablePublishedData', meta.id));
-      TT_SNAP = g.exists() ? (g.data().snapshot||null) : null;
+      // 홈이 한 번에 두 번 그려질 때도 본문은 한 번만 받는다 (같은 게시본이면 받는 중인 것을 함께 기다림)
+      if(!window.__ttBodyP) window.__ttBodyP = {};
+      const BP = window.__ttBodyP;
+      if(!BP[meta.id]) BP[meta.id] = (async () => {
+        const hit = ttc ? await ttc.ttFind(CU.uid, meta.id) : null;
+        if(hit) return hit;
+        const g = await getDoc(doc(db,'timetablePublishedData', meta.id));
+        return g.exists() ? (g.data().snapshot||null) : null;
+      })().catch(e => { delete BP[meta.id]; throw e; });
+      TT_SNAP = await BP[meta.id];
     }
     if(!TT_SNAP){ if(card) card.innerHTML=''; if(sumBox) sumBox.style.display='none'; return; }
+    if(ttc) ttc.ttPutPub(CU.uid, CU, { ...meta, snapshot: TT_SNAP }, metaSnap.docs.map(d=>d.id));   // 같은 것을 이미 기억하면 쓰지 않음 · 내려진 게시본은 지움
 
     // ③ 오늘이 쉬는 날인가 (이미 만들어 둔 쉬는 날 원장을 그대로 쓴다)
     const now = new Date();
@@ -3993,7 +4017,7 @@ async function loadHomeBirthdays(){
   const myOrgList = (window.orgCore ? orgCore.myOrgs(CU,'std') : (CU.role==='super' ? ['jihyebit','daniel'] : (CU.orgs&&CU.orgs.length?CU.orgs:[CU.org])));
 
   // 📉 v120 — 오늘 이 탭에서 이미 그린 생일 칸은 다시 쓴다 (화면을 옮겨 다녀도 학생 명단을 또 받지 않게 · 날이 바뀌면 새로)
-  const BKEY = 'hb120:' + CU.uid + ':' + ymd(now) + ':' + myOrgList.join(',');
+  const BKEY = 'hb171:' + CU.uid + ':' + ymd(now) + ':' + myOrgList.join(',');   // 🎂 v171 자퇴 · 졸업 칸이 생겨 예전 기억은 버림
   try { const c = JSON.parse(sessionStorage.getItem(BKEY) || 'null'); if(c && c.html){ BDAY_ALL = c.all || []; box.innerHTML = c.html; return; } } catch(e){}
   try {
     const studSnap = await colOnce(db,'students', 300000);   // 📉 v120 홈을 다시 그릴 때 또 읽지 않게
@@ -4006,7 +4030,9 @@ async function loadHomeBirthdays(){
       if(sOrgs.some(o=>myOrgList.includes(o))) teachers.push(s);
     }});
 
-    // 사람 → {name, day, month, gender, isTeacher, org, orgsList}
+    // 사람 → {name, day, month, gender, isTeacher, org, orgsList, st}
+    //   🎂 v171 학생은 오늘 기준 재적 상태도 (student-status.js 한 규칙) — 자퇴 · 졸업 · 조기졸업은 오른쪽 회색 칸으로, 휴학은 «휴학» 꼬리표
+    const stOf = s => window.StuStatus ? StuStatus.status(s) : (s.status || 'active');
     const toPerson = (p, isTeacher) => {
       const b = p.birth||'';
       if(b.length<7) return null;
@@ -4014,8 +4040,11 @@ async function loadHomeBirthdays(){
       const orgsList = isTeacher
         ? (p.role==='super'?['jihyebit','daniel']:(p.orgs&&p.orgs.length?p.orgs:[p.org]))
         : [p.org];
-      return {name:p.name, month:mm, day:dd, gender:p.gender||'', isTeacher, orgsList};
+      return {name:p.name, month:mm, day:dd, gender:p.gender||'', isTeacher, orgsList, st: isTeacher ? 'active' : stOf(p)};
     };
+    const GONE = { quit:1, grad:1, egrad:1 };
+    const isGone = p => !p.isTeacher && !!GONE[p.st];
+    const ST_LBL = { leave:'휴학', quit:'자퇴', grad:'졸업', egrad:'조기졸업' };
     // 다가올 생일 계산용: 오늘부터 며칠 뒤인지 (같은 해 기준, 월/일만)
     const daysUntil = (mm, dd) => {
       const y = now.getFullYear();
@@ -4038,14 +4067,29 @@ async function loadHomeBirthdays(){
     ].filter(Boolean);
 
     const icon = p => p.isTeacher ? '👩‍🏫' : (p.gender==='남' ? '👦' : p.gender==='여' ? '👧' : '🧒');
+    const stTag = p => (!p.isTeacher && ST_LBL[p.st]) ? ` <span style="font-size:10px;font-weight:800;color:var(--ts);border:1px dashed var(--ivd);background:var(--wh,#fff);border-radius:6px;padding:0 5px">${ST_LBL[p.st]}</span>` : '';
     const chip = (p, bg, border, extra) => `<span style="display:inline-flex;align-items:center;gap:5px;background:${bg};border:1px solid ${border};border-radius:100px;padding:5px 12px;margin:0 6px 6px 0;font-size:13px">
-      ${icon(p)} <b>${esc(p.name)}</b>${p.isTeacher?` <span style="font-size:10px;font-weight:800;color:#8A6410;background:var(--gold-bg);border-radius:100px;padding:1px 7px">선생님</span>`:''} <span style="color:var(--tl);font-size:12px">${p.month}/${p.day}</span> ${extra||''}</span>`;
+      ${icon(p)} <b>${esc(p.name)}</b>${p.isTeacher?` <span style="font-size:10px;font-weight:800;color:#8A6410;background:var(--gold-bg);border-radius:100px;padding:1px 7px">선생님</span>`:''}${stTag(p)} <span style="color:var(--tl);font-size:12px">${p.month}/${p.day}</span> ${extra||''}</span>`;
+    // 오른쪽 회색 칸 — 자퇴 · 졸업한 학생의 이번 달 생일 (홈 목록에는 안 섞는다)
+    const goneBox = list => !list.length ? '' : `<aside class="bd-gone" title="재적이 아닌 학생 — 홈 생일 목록에는 넣지 않아요">
+      <div class="bd-gh">자퇴 · 졸업 <span>${list.length}명</span></div>
+      ${list.map(p=>`<div class="bd-gr"><span>${icon(p)} <b>${esc(p.name)}</b></span><i>${ST_LBL[p.st]||''}</i><em>${p.month}/${p.day}</em></div>`).join('')}
+    </aside>`;
+    const BD_CSS = `<style>.bd-wrap{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
+      .bd-main{flex:1 1 300px;min-width:0}
+      .bd-gone{flex:0 1 220px;min-width:180px;box-sizing:border-box;background:var(--iv);border:1px dashed var(--ivd);border-radius:12px;padding:10px 12px 6px;color:var(--ts)}
+      .bd-gh{font-size:12px;font-weight:800;color:var(--ts);margin-bottom:6px}.bd-gh span{font-weight:600;color:var(--tl);margin-left:4px}
+      .bd-gr{display:flex;align-items:baseline;gap:6px;padding:5px 0;border-top:1px solid var(--ivd);font-size:12.5px;opacity:.75}
+      .bd-gr b{font-weight:700;color:var(--ts)}.bd-gr i{font-style:normal;font-size:10.5px;font-weight:800;color:var(--tl);margin-left:auto}
+      .bd-gr em{font-style:normal;font-size:11.5px;color:var(--tl);font-variant-numeric:tabular-nums;min-width:34px;text-align:right}</style>`;
 
     // 🏫 기관별로 나눠서 — 각 기관 안에서 오늘/다가올/남은/지난 순서
     const ORG_DOT = { jihyebit:'#4F7A36', daniel:'#0C2A44' };
     let html = '';
     for(const org of myOrgList){
-      const people = allPeople.filter(p=>p.orgsList.includes(org));
+      const inOrg = allPeople.filter(p=>p.orgsList.includes(org));
+      const people = inOrg.filter(p=>!isGone(p));
+      const gone = inOrg.filter(p=>isGone(p) && p.month===thisMonth).sort((a,b)=>a.day-b.day || a.name.localeCompare(b.name,'ko'));
       const todayList = people.filter(p=>p.month===thisMonth && p.day===today).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
       const upcoming = people.filter(p=>{ const d=daysUntil(p.month,p.day); return d>=1 && d<=7; }).sort((a,b)=>daysUntil(a.month,a.day)-daysUntil(b.month,b.day));
       const restMonth = people.filter(p=>p.month===thisMonth && p.day>today && daysUntil(p.month,p.day)>7).sort((a,b)=>a.day-b.day);
@@ -4064,6 +4108,7 @@ async function loadHomeBirthdays(){
         inner += `<div style="margin-bottom:4px"><div style="font-size:12.5px;font-weight:700;color:var(--tl);margin-bottom:7px">✓ 이번 달 지난 생일</div><div style="opacity:0.6">${pastMonth.map(p=>chip(p,'var(--iv)','var(--ivd)')).join('')}</div></div>`;
       }
       if(!inner) inner = `<div style="font-size:12.5px;color:var(--tl);padding:2px 0 6px">이번 달 생일인 사람이 없습니다.</div>`;
+      inner = `<div class="bd-wrap${gone.length?' has':''}"><div class="bd-main">${inner}</div>${goneBox(gone)}</div>`;
       // 기관 섹션 (한 기관만 보는 선생님은 머리글 생략)
       html += myOrgList.length>1
         ? `<div style="margin-bottom:16px;padding:13px 14px;border:1px solid var(--ivd);border-radius:13px;background:var(--wh,#fff)">
@@ -4076,7 +4121,7 @@ async function loadHomeBirthdays(){
     box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:14px;display:flex;align-items:center;gap:7px"><span>🎂</span> 생일 <span style="font-size:12px;color:var(--tl);font-weight:400">(${thisMonth}월 기준)</span>
         <button onclick="openBdayAll()" style="margin-left:auto;border:1px solid var(--ivd);background:var(--iv);color:var(--ts);border-radius:100px;padding:4px 12px;font-size:11.5px;font-weight:800;cursor:pointer;font-family:inherit">📖 전체 보기</button>
       </div>`
-      + (html || '<div style="font-size:13px;color:var(--tl)">이번 달 생일인 사람이 없습니다.</div>');
+      + BD_CSS + (html || '<div style="font-size:13px;color:var(--tl)">이번 달 생일인 사람이 없습니다.</div>');
     try { sessionStorage.setItem(BKEY, JSON.stringify({ html: box.innerHTML, all: BDAY_ALL })); } catch(e){}
   } catch(e){
     box.innerHTML = `<div style="font-size:15px;font-weight:800;color:var(--gd);margin-bottom:8px">🎂 생일</div><div style="font-size:13px;color:var(--tl)">불러올 수 없습니다.</div>`;
@@ -4111,9 +4156,10 @@ function renderBdayAll(){
   // 월 묶기
   const months = V.month===0 ? [1,2,3,4,5,6,7,8,9,10,11,12] : [V.month];
   const nowM = new Date().getMonth()+1, nowD = new Date().getDate();
-  const chipRow = p => `<div style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--iv);font-size:13px">
+  const ST_LBL = { leave:'휴학', quit:'자퇴', grad:'졸업', egrad:'조기졸업' }, GONE = { quit:1, grad:1, egrad:1 };   // 🎂 v171
+  const chipRow = p => `<div style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--iv);font-size:13px${(!p.isTeacher&&GONE[p.st])?';opacity:.5':''}">
     <span style="width:34px;text-align:right;font-weight:800;color:var(--ts);flex:none">${p.day}일</span>
-    <span>${icon(p)}</span><b>${esc(p.name)}</b>
+    <span>${icon(p)}</span><b>${esc(p.name)}</b>${(!p.isTeacher&&ST_LBL[p.st])?`<span style="font-size:10px;font-weight:800;color:var(--ts);border:1px dashed var(--ivd);border-radius:6px;padding:0 5px">${ST_LBL[p.st]}</span>`:''}
     ${p.isTeacher
       ? `<span style="font-size:10px;font-weight:800;color:#8A6410;background:var(--gold-bg);border-radius:100px;padding:1px 7px">선생님</span>${p.dept?`<span style="font-size:11px;color:var(--tl)">${esc(p.dept)}</span>`:''}`
       : `${p.className?`<span style="font-size:11px;color:var(--tl)">${esc(p.className)}</span>`:''}`}

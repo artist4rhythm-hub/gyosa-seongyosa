@@ -635,6 +635,9 @@ import { getFirestore, initializeFirestore, doc, getDoc, setDoc, updateDoc, dele
   collection, getDocs, query, where, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
+/* ⚡ v171 이 기기에 기억한 게시본 (tt-cache.js) — 못 불러와도 화면은 예전처럼 돈다 */
+let TTC = null;
+const TTC_P = import('./tt-cache.js?v=171').then(m => (TTC = m)).catch(() => null);
 
 const __cfg = ({
   apiKey: "AIzaSyCtgr79jKqkec6HwqkxYNxSubWAhfEkM7g",
@@ -1635,7 +1638,8 @@ function renderTopTabs(){
 async function loadPublished(){
   try {
     const snap = await getDocs(collection(db,'timetablePublished'));
-    PUBS = snap.docs.map(d=>({ id:d.id, ...d.data() }))
+    const had = new Map(PUBS.map(p=>[p.id, p]));      // ⚡ v171 이미 받은 본문은 이어 붙인다 (다시 그릴 때 또 받지 않게)
+    PUBS = snap.docs.map(d=>{ const o = { id:d.id, ...d.data() }; const h = had.get(d.id); if(h && h.snapshot && !o.snapshot) o.snapshot = h.snapshot; return o; })
       .sort((a,b)=>(b.publishedAt?.seconds||0)-(a.publishedAt?.seconds||0));
   } catch(e){ PUBS = []; }
 }
@@ -1660,8 +1664,12 @@ async function ensurePubData(p){
   if(!p || p.snapshot) return;
   if(!p.hasData) return;   // 본문이 따로 없는 옛 형식인데 snapshot도 없으면 빈 게시본
   try {
+    // ⚡ v171 본문은 게시한 뒤로 바뀌지 않는다 — 이 기기에 같은 게시본이 있으면 그것을 쓴다
+    const hit = (TTC && CU) ? await TTC.ttFind(CU.uid, p.id) : null;
+    if(hit){ p.snapshot = hit; return; }
     const g = await getDoc(doc(db,'timetablePublishedData', p.id));
     p.snapshot = g.exists() ? (g.data().snapshot || null) : null;
+    if(p.snapshot && p.active && TTC && CU) TTC.ttPutPub(CU.uid, CU, p);   // 살아 있는 게시본만 기억
   } catch(e){ p.snapshot = null; }
 }
 
@@ -2535,58 +2543,119 @@ function hslHex(hh, s, l){
   return '#'+to(r)+to(g)+to(b);
 }
 
+/* ⚡ v171 — 처음 여는 시간 줄이기
+   예전: 교직원 문서 → 설정 3개 → 게시 목록 → 본문 → 보기 설정을 «하나씩» 7번 기다린 뒤에야 그렸다.
+   이제: ① 이 기기에 기억한 마지막 게시본(홈이 받아 둔 것 포함)이 있으면 서버를 기다리지 않고 바로 그린다
+         ② 서버에는 처음부터 나란히 묻는다 (교직원 ∥ 게시 목록 → 본문 ∥ 설정 ∥ 보기 설정)
+         ③ 새로 게시됐거나 보기 설정이 바뀌었으면 그때만 다시 그린다 */
+const sortForView = () => PUBS.sort((a,b)=>(orgOf(a)===VIEW_ORG?-1:0)-(orgOf(b)===VIEW_ORG?-1:0));
+const shellKey = c => JSON.stringify([c.role, c.org, c.orgs||[], c.pageDeny||[], c.pageAllow||[], c.name||'', c.position||'', c.avatar||'', (c.photo||'').length]);
+// 화면을 갈아 끼우지 않고 «열 수 있나»만 본다 (기억한 정보는 옛것일 수 있으니, 막히면 그리지 않고 새 정보로 다시 판단)
+const canOpenTt = c => { try { const it = (window.menuAllItems ? menuAllItems() : []).find(i => i.key === 'timetable'); return !it || !window.menuAccess || menuAccess(it, c).ok; } catch(e){ return false; } };
+function setKindButtons(){
+  try { const k = localStorage.getItem('tf_kind'); if(k) vwKind = k; } catch(e){}
+  ['mine','grade','teacher','room'].forEach(x=>{ const b = $I('vk-'+x); if(b) b.classList.toggle('on', x===vwKind); });
+}
+function showMs(){
+  if(window.setCrumb) setCrumb(['완성 시간표']);
+  $I('gate').style.display='none';
+  $I('ms').style.display='block';
+}
+// 기억한 것으로 먼저 그리기 — 'ok' | ''(못 그림 · 옛 정보로는 열 수 없어 보이면 그리지 않고 새 정보로 판단)
+function paintFromMemory(mem){
+  const pubs = (mem.pubs || []).map(p=>({ ...p }));
+  CU = mem.cu;
+  MG_ORG = VIEW_ORG = (CU.org==='jihyebit' ? 'jihyebit' : 'daniel');
+  PUBS = pubs; sortForView();
+  const cur = PUBS.find(p=>p.active) || null;
+  if(!cur || !cur.snapshot || !canOpenTt(CU)) return '';
+  window.ORGS = ORGS;
+  if(window.renderShell) renderShell('timetable', CU);
+  CAN_PUBLISH = canPublish();
+  CUR = cur;
+  setKindButtons();
+  if(TT_SETUP && !CAN_PUBLISH){ TT_SETUP = false; renderTopTabs(); TT_SETUP = true; }   // 편집 담당인지는 설정을 받아 본 뒤에 — 그때까진 보기 화면으로
+  else renderTopTabs();
+  showMs();
+  if(tvFit) applyFitZoom();
+  renderPubPanel(); renderPubSelect(); renderView();
+  window.hideLoading && window.hideLoading();
+  return 'ok';
+}
+
 onAuthStateChanged(auth, async user => {
   if(!user){
     window.hideLoading && window.hideLoading();
+    TTC_P.then(m=>m && m.ttClear()).catch(()=>{});   // 로그아웃 상태 — 이 기기에 기억한 시간표를 지운다
     $I('gate-msg').textContent='로그인이 필요합니다.'; $I('gate-btn').style.display='inline-block'; return;
   }
-  window.showLoading && window.showLoading('완성 시간표를 여는 중…');
+  // 서버에 묻는 일은 처음부터 나란히
+  const pStaff = getDoc(doc(db,'staff',user.uid));
+  const pAct = getDocs(query(collection(db,'timetablePublished'), where('active','==',true)));
+  pStaff.catch(()=>{}); pAct.catch(()=>{});
+  let painted = false;
   try {
-    const sdoc = await getDoc(doc(db,'staff',user.uid));
-    if(!sdoc.exists()){ $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return; }
+    const mem = await TTC_P.then(m => m ? m.ttGet(user.uid) : null).catch(()=>null);
+    if(mem && mem.cu && mem.cu.uid === user.uid){
+      painted = paintFromMemory(mem) === 'ok';
+    }
+  } catch(e){ painted = false; }
+  if(!painted) window.showLoading && window.showLoading('완성 시간표를 여는 중…');
+  try {
+    const sdoc = await pStaff;
+    if(!sdoc.exists()){
+      window.hideLoading && window.hideLoading();
+      if($I('ms')) $I('ms').style.display='none'; if($I('gate')) $I('gate').style.display='';
+      $I('gate-msg').textContent='교직원 정보를 찾을 수 없습니다.'; $I('gate-btn').style.display='inline-block'; return;
+    }
+    const was = CU;
     CU = { uid:user.uid, ...sdoc.data() };
     window.ORGS = ORGS;
-    if(window.renderShell) renderShell('timetable', CU);
+    if(window.renderShell && (!painted || shellKey(was) !== shellKey(CU))) renderShell('timetable', CU);
     if(window.guardPage && !guardPage(CU, 'timetable')){ window.hideLoading && window.hideLoading(); return; }   // 🔐 v143 관리자 › 접근 권한
-
-    // 위 탭 — 평소엔 «게시된 시간표»만, 설정을 켜면 틀·배정도 나온다
     CAN_PUBLISH = canPublish();
-    await loadTtCfg();
+    MG_ORG = (CU.org==='jihyebit' ? 'jihyebit' : 'daniel');
+    if(!painted) VIEW_ORG = MG_ORG;
+    const pCfg = loadTtCfg(), pVP = loadCloudVP();
+    !painted && window.setLoadStep && window.setLoadStep('게시 목록을 확인하는 중…', 40);
+    let act = null;
+    try { act = (await pAct).docs.map(d=>({ id:d.id, ...d.data() })); } catch(e){ act = null; if(!painted) PUBS = []; }   // 못 받았으면 기억은 그대로 둔다
+    if(act){
+      const had = new Map(PUBS.map(p=>[p.id, p]));
+      PUBS = act.map(p=>{ const h = had.get(p.id); if(h && h.snapshot && !p.snapshot) p.snapshot = h.snapshot; return p; });
+      sortForView();
+    }
+    const before = (painted && CUR) ? CUR.id : '';
+    const next = PUBS.find(p=>p.active) || null;
+    const vp0 = JSON.stringify([tvPct, fontPct, tvFit]);
+    !painted && window.setLoadStep && window.setLoadStep('시간표 본문을 받는 중…', 60);
+    await Promise.all([ ensurePubData(next), pCfg, pVP ]);
     if(!canSetup() && TT_SETUP) TT_SETUP = false;   // 권한 없는 기기에 남은 «설정 켬» 기억은 무시
-    MG_ORG = VIEW_ORG = (CU.org==='jihyebit' ? 'jihyebit' : 'daniel');
+    // 기다리는 사이 선생님이 기관 단추로 다른 시간표를 열었으면 그것을 그대로 둔다 (새 정보로 갈아 끼우기만)
+    const moved = painted && CUR && CUR.id !== before;
+    let redraw;
+    if(moved){
+      const fresh = PUBS.find(p=>p.id===CUR.id);
+      if(fresh){ if(!fresh.snapshot && CUR.snapshot) fresh.snapshot = CUR.snapshot; CUR = fresh; }
+      redraw = vp0 !== JSON.stringify([tvPct, fontPct, tvFit]);
+    } else {
+      redraw = !painted || (next ? next.id : '') !== before || vp0 !== JSON.stringify([tvPct, fontPct, tvFit]);
+      CUR = next;
+    }
     renderTopTabs();
-    if(window.setCrumb) setCrumb(['완성 시간표']);
-
-    $I('gate').style.display='none';
-    $I('ms').style.display='block';
-
-    window.setLoadStep && window.setLoadStep('게시 목록을 확인하는 중…', 40);
-    await loadActivePublished();
-    CUR = PUBS.find(p=>p.active) || null;
-
-    // 시간표 본문(무거움)은 지금 볼 그 하나만 받는다 — 단계가 실제 진행을 따라간다
-    window.setLoadStep && window.setLoadStep('시간표 본문을 받는 중…', 60);
-    await ensurePubData(CUR);
-
-    try { const k = localStorage.getItem('tf_kind'); if(k) vwKind = k; } catch(e){}
-    ['mine','grade','teacher','room'].forEach(x=>{
-      const b = $I('vk-'+x); if(b) b.classList.toggle('on', x===vwKind);
-    });
-
-    // 💾 계정에 담아둔 보기 설정(세로·글자 %)을 이 기기 종류에 맞게 이어받는다
-    await loadCloudVP();
-    if(tvFit) applyFitZoom();
-
-    window.setLoadStep && window.setLoadStep('시간표를 그리는 중…', 80);
+    if(!painted){ setKindButtons(); showMs(); window.setLoadStep && window.setLoadStep('시간표를 그리는 중…', 80); }
+    if(redraw && tvFit) applyFitZoom();
     renderPubPanel();        // 게시 자리를 미리 잡아 «불러오는 중»으로 보여준다
     renderPubSelect();
-    renderView();
-    window.setLoadStep && window.setLoadStep('완료', 100);
-    setTimeout(()=>{ window.hideLoading && window.hideLoading(); }, 180);
+    if(redraw) renderView();
+    if(!painted){ window.setLoadStep && window.setLoadStep('완료', 100); setTimeout(()=>{ window.hideLoading && window.hideLoading(); }, 180); }
+    if(TTC && act){ const live = PUBS.find(p=>p.active && p.snapshot && orgOf(p)===VIEW_ORG) || (CUR && CUR.active && CUR.snapshot ? CUR : null);
+      if(live) TTC.ttPutPub(CU.uid, CU, live, act.map(p=>p.id)); else TTC.ttKeep(CU.uid, act.map(p=>p.id)); }   // 교직원 정보 새것으로 · 내려진 게시본은 지움 (같으면 쓰지 않음)
 
     // 지난 게시본·게시 자리는 화면을 띄운 뒤에 채운다
     loadRest();
   } catch(e){
+    if(painted){ toast('최신 시간표를 확인하지 못했어요 — 이 기기에 기억한 시간표를 보여 드려요', 'err'); return; }
     window.hideLoading && window.hideLoading();
     $I('gate-msg').textContent='오류: '+(e.message||'');
     $I('gate-btn').style.display='inline-block';

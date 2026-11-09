@@ -612,6 +612,7 @@ const TODAY = new Date();
 const TY = TODAY.getFullYear();   // 올해
 const TM = TODAY.getMonth()+1;    // 이번 달
 
+window.toast = (...a) => toast(...a);   // 🩹 v171 화면 글 속 단추(onclick)에서도 부를 수 있게 — 예전엔 «toast is not defined» (비밀번호 «📋 복사»)
 function toast(msg, type='') {
   let t = document.getElementById('__toast');
   if (!t) {
@@ -631,6 +632,7 @@ let CU = null;       // 현재 로그인 유저 (Firestore 데이터)
 let curMon = new Date();
 let selP = null, selS = null;
 let STAFF_CACHE = {};  // 전체 교직원 캐시 (uid -> data)
+let STAFF_LIST = [];   // 🩹 v171 교직원 목록에 지금 그려진 사람들 (🔁 접근 기관 창이 찾는 곳 — 예전엔 없는 STAFF 를 찾아 «STAFF is not defined»)
 let STAFF_ALL = {};    // 🔐 v143 접근 권한 표만 — 🤝 연합과 상관없이 두 기관 교직원 모두 (수퍼관리자 화면 · 같은 물건을 함께 가리킴)
 let TEACHER_INPUT = true;  // 교사 본인 출근부 직접 입력 허용 여부 (관리자가 끌 수 있음)
 let IDX = 0;         // 사용 안함 (Firebase auto ID)
@@ -643,7 +645,9 @@ function korEmail(id) { return `${id}@gyosa-seongyosa.staff`; }
 function myOrgs(){ return orgCore.myOrgs(CU,'std'); }   // 🏛 org-core — 이제 모든 교직원의 «접근 기관»을 존중 (2단계)
 /* 🔁 접근 기관 부여 (수퍼) — 겸직 선생님에게 두 기관 열람을 연다 */
 window.editOrgsMini = async function(uid){
-  const s = STAFF.find(x=>x.uid===uid); if(!s) return;
+  let s = STAFF_LIST.find(x=>x.uid===uid);
+  if(!s){ try{ const d = await getDoc(doc(db,'staff',uid)); if(d.exists()) s = { ...d.data(), uid }; }catch(e){} }
+  if(!s){ toast('선생님 정보를 찾지 못했어요 — 새로고침해 주세요','err'); return; }
   const cur = new Set(s.orgs && s.orgs.length ? s.orgs : [s.org]);
   const bg = document.createElement('div');
   bg.style.cssText='position:fixed;inset:0;background:rgba(20,26,32,.45);z-index:1500;display:flex;align-items:center;justify-content:center;padding:20px';
@@ -666,7 +670,7 @@ window.editOrgsMini = async function(uid){
       await setDoc(doc(db,'staff', uid), { orgs:on }, { merge:true });
       s.orgs = on; bg.remove();
       toast(on.length>1 ? `🔁 ${s.name||''} — 두 기관 열람이 열렸어요` : '접근 기관을 소속만으로 되돌렸어요');
-      if(typeof renderStaff==='function') renderStaff();
+      loadStaff().catch(()=>{});
     }catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
   };
 };
@@ -1104,6 +1108,7 @@ async function loadStaff() {
     if (orgFilter && !sOrgs.includes(orgFilter)) return;
     list.push(s);
   });
+  STAFF_LIST = list;
   el.innerHTML = list.length ? list.map(s => {
     const ac = s.acStatus || 'active';
     const acBadge = ac==='leave' ? '<span class="rbadge" style="background:var(--warn-bg);color:var(--warn)">휴직</span>'

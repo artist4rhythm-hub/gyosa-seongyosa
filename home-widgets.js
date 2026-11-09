@@ -360,7 +360,7 @@ function attOffCss(){
   .acol-h{display:block;padding:10px 12px 8px;border-bottom:1px solid var(--ivd);background:var(--iv);text-decoration:none;color:inherit}
   .acol-h .t{display:flex;align-items:baseline;gap:6px}.acol-h b{font-size:13.5px;font-weight:900;color:var(--gd)}
   .acol-h i{font-style:normal;font-size:10px;color:var(--tl);font-weight:700}
-  .acol-h .n{margin-left:auto;font-size:12px;font-weight:900;color:var(--gm);font-variant-numeric:tabular-nums}
+  .acol-h .n{margin-left:auto;margin-right:18px;font-size:12px;font-weight:900;color:var(--gm);font-variant-numeric:tabular-nums;white-space:nowrap}
   .acol-bar{display:block;height:4px;border-radius:9px;background:var(--ivd);margin-top:7px;overflow:hidden}
   .acol-bar i{display:block;height:100%;background:#16a34a;border-radius:9px}
   .acol-r{display:block;padding:7px 12px;border-top:1px solid var(--ivd);text-decoration:none;color:inherit}
@@ -369,14 +369,26 @@ function attOffCss(){
   .acol-g{min-width:22px;height:20px;padding:0 4px;box-sizing:border-box;border-radius:6px;background:var(--gp);color:var(--gm);font-size:10.5px;font-weight:900;
     display:inline-flex;align-items:center;justify-content:center;flex:none}
   .acol-r .l b{font-weight:800;color:var(--gd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-  .acol-r .l .c{margin-left:auto;font-weight:900;font-variant-numeric:tabular-nums;color:var(--gm);font-size:12px}
-  .acol-r .l .ok{color:#16a34a;font-size:11px;font-weight:900;margin-left:2px}
+  .acol-r .l .c{flex:none;font-weight:900;font-variant-numeric:tabular-nums;color:var(--gm);font-size:12px;white-space:nowrap}
+  .acol-r .l .ok{flex:none;width:12px;text-align:center;color:#16a34a;font-size:11px;font-weight:900}
+  /* 🏛 v171 오와 열 — 휴학 칸 · 인원(지금 | /재적) · ✓ 칸을 늘 같은 너비로 둬서 반마다 숫자가 한 줄로 선다 */
+  .acol-r .l .c{margin-left:auto}
+  .acol-r .l .lvs{display:none}
+  .acol-c.lv .acol-r .l .lvs{display:flex;margin-left:auto;flex:none;width:52px;justify-content:flex-end}   /* 휴학이 있는 부에만 칸을 둔다 */
+  .acol-c.lv .acol-r .l .c{margin-left:0}
+  .acol-c{container-type:inline-size}
+  @container (max-width:230px){   /* 좁은 칸 (네 부 · 좁게 둔 위젯) — «휴학 1» → «휴 1» 로 줄여 반 이름 자리를 남긴다 */
+    .acol-c.lv .acol-r .l .lvs{width:34px} .acol-r .l .lvn i{display:none} .acol-r .l .lvn::before{content:'휴 '}
+  }
+  .acol-r .l .c .h,.acol-h .n .h{display:inline-block;min-width:2ch;text-align:right}
+  .acol-r .l .c small,.acol-h .n small{display:inline-block;min-width:3ch;text-align:left}
   .acol-r .cs{display:flex;flex-wrap:wrap;gap:3px;margin:5px 0 1px 28px}
   .acol-r.warn .l .c{color:#DC2626}.acol-r.away .l .c{color:#B45309}
   .acol-r .l .c small,.acol-h .n small{font-size:10.5px;font-weight:700;color:var(--tl)}
   .acol-org em{font-style:normal;font-weight:900;color:var(--gm);font-size:11.5px}
   .acol-note{font-size:10.5px;color:var(--tl);font-weight:600;margin:-2px 2px 8px}
   @media(max-width:760px){ .acol.n3,.acol.n4,.acol{grid-template-columns:repeat(2,minmax(0,1fr))} .acol.n1{grid-template-columns:minmax(0,1fr)} }
+  @media(max-width:560px){ .acol.n2,.acol.n3,.acol.n4,.acol{grid-template-columns:minmax(0,1fr)} }   /* 🏛 v171 폰은 한 줄에 한 부 — 반 이름 · 휴학 · 인원이 잘리지 않고 줄도 맞게 */
   .att-st.t b{color:#0E7490}.att-st.v b{color:#6B7280}
   .lv-btn{margin-left:6px;border:1px dashed var(--ivd);background:var(--iv);color:var(--ts);border-radius:999px;padding:1px 9px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}
   .lv-btn:hover,.lv-btn.on{border-style:solid;color:var(--gd)}
@@ -388,8 +400,8 @@ function attOffCss(){
   .lv-r .acol-g{align-self:center}.lv-r b{font-weight:800;color:var(--gd);white-space:nowrap}
   .lv-nm{display:flex;flex-wrap:wrap;gap:2px 12px;color:var(--ts);min-width:0}
   .lv-nm i{font-style:normal;color:var(--tl);font-size:11px;font-weight:600;margin-left:5px}
-  .acol-r .l .lvn{margin-left:auto;font-size:10.5px;font-weight:800;color:var(--ts);border:1px dashed var(--ivd);border-radius:6px;padding:0 5px;white-space:nowrap}
-  .acol-r .l .lvn + .c{margin-left:6px}
+  .acol-r .l .lvn{font-size:10.5px;font-weight:800;color:var(--ts);border:1px dashed var(--ivd);border-radius:6px;padding:0 5px;white-space:nowrap}
+  .acol-r .l .lvn i{font-style:normal}
   .lv-line{margin:-2px 0 8px}.acol-org .lv-btn span{font:inherit;color:inherit}
   .att-sum .lv-line{padding:0 12px}.att-sum .lv-pop{margin:0 10px 10px}
   .att-card.note{border-color:#BFDDE4}
@@ -462,11 +474,11 @@ function attColumns(o, M, multi){
   return groups.map(gr=>{
     const n = gr.cs.reduce((a,v)=>a+v.n,0), p = gr.cs.reduce((a,v)=>a+v.here,0);
     const rate = n ? Math.round(p/n*100) : 100;
-    return `<div class="acol-c"><a class="acol-h" href="${go}"><span class="t"><b>${esc(gr.name)}</b><i>${gr.cs.length}반</i><span class="n" title="지금 학교에 있는 인원 / 재적(휴학 제외)">${p}<small>/${n}</small></span></span>
+    return `<div class="acol-c${gr.cs.some(v=>v.lv.length)?' lv':''}"><a class="acol-h" href="${go}"><span class="t"><b>${esc(gr.name)}</b><i>${gr.cs.length}반</i><span class="n" title="지금 학교에 있는 인원 / 재적(휴학 제외)"><span class="h">${p}</span><small>/${n}</small></span></span>
       <span class="acol-bar"><i style="width:${rate}%;${rate<100?'background:#f59e0b':''}"></i></span></a>
       ${gr.cs.map(v=>{ const any = v.fl.length;      // 🏛 v169 휴학은 출결 칩에 섞지 않는다 — 반 줄 끝에 작은 «휴학 n»만
-        const lvn = v.lv.length ? `<span class="lvn" title="휴학 ${v.lv.length}명 — 출석부 인원에서 빠져요">휴학 ${v.lv.length}</span>` : '';
-        return `<a class="acol-r${v.abs?' warn':v.here<v.n?' away':''}" href="${go}"><span class="l"><span class="acol-g">${esc(gTag(v))}</span><b>${esc(v.name)}</b>${lvn}<span class="c" title="지금 반에 있는 인원 / 재적(휴학 제외)">${v.here}<small>/${v.n}</small></span>${any?'':'<span class="ok">✓</span>'}</span>
+        const lvn = v.lv.length ? `<span class="lvn" title="휴학 ${v.lv.length}명 — 출석부 인원에서 빠져요"><i>휴학 </i>${v.lv.length}</span>` : '';
+        return `<a class="acol-r${v.abs?' warn':v.here<v.n?' away':''}" href="${go}"><span class="l"><span class="acol-g">${esc(gTag(v))}</span><b>${esc(v.name)}</b><span class="lvs">${lvn}</span><span class="c" title="지금 반에 있는 인원 / 재적(휴학 제외)"><span class="h">${v.here}</span><small>/${v.n}</small></span><span class="ok"${any?' aria-hidden="true"':' title="특이사항 없음"'}>${any?'':'✓'}</span></span>
           ${any?`<span class="cs">${v.fl.map(chip).join('')}</span>`:''}</a>`; }).join('')}</div>`;
   });
 }
