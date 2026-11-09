@@ -142,7 +142,7 @@ export function renderClassCard(el){
   el.innerHTML = `<div class="cp-ch"><b>👨‍👩‍👧 학부모 연결</b><span class="cp-sp"></span><span class="cp-mut">보호자 한 분 이상</span></div>
     <div class="cp-big">${t.con} <small>/ ${t.n}가정</small></div><div class="cp-pg"><i style="width:${pct}%"></i></div>
     ${rows || '<div class="pc-empty">이 반에 학생이 없어요.</div>'}
-    <div class="cp-ft">${unused.length ? `<button class="pc-b2" onclick="pcPrintClass('${c.id}')">🖨 안 쓴 ${unused.length}가정 코드표 인쇄</button>` : '<span class="cp-ok">🎉 모든 가정이 연결됐어요</span>'}
+    <div class="cp-ft">${unused.length ? `<button class="pc-b2" onclick="pcPrintClass('${c.id}')">🖨 안 쓴 ${unused.length}가정 코드표 인쇄</button>` : '<span class="cp-ok">✓ 모든 가정이 연결됐어요</span>'}
       <button class="pc-b2" onclick="pcPrintClass('${c.id}', true)">🖨 반 전체 코드표</button>
       <button class="pc-b2" onclick="pcCopyGuide()">📋 안내 문구 복사</button>
       <button class="pc-b2" onclick="pcReload()">↻ 새로 불러오기</button></div>
@@ -440,9 +440,9 @@ const unusedOf = ids => ids.map(id => S.students.get(id)).filter(s => s && ['act
 window.pcPrint = ids => printSlips(ids.map(id => S.students.get(id)), '');
 window.pcPrintClass = (cid, all) => { const c = S.classes.find(x => x.id === cid); if(!c) return;
   const list = all ? (c.students || []).map(id => S.students.get(id)).filter(s => s && ['active', 'leave'].includes(stOf(s))) : unusedOf(c.students || []);
-  if(!list.length) return alert('이 반은 모두 연결되어 있어요 🎉');
+  if(!list.length) return alert('이 반은 모두 연결되어 있어요');
   printSlips(list, cLabel(c)); };
-window.pcPrintAll = () => { const list = unusedOf([...S.students.keys()]); if(!list.length) return alert('모두 연결되어 있어요 🎉'); printSlips(list, '안 쓴 코드'); };
+window.pcPrintAll = () => { const list = unusedOf([...S.students.keys()]); if(!list.length) return alert('모두 연결되어 있어요'); printSlips(list, '안 쓴 코드'); };
 
 /* ✉️ 담임에게 쪽지 */
 async function sendMsg(toUids, subject, body){
@@ -456,7 +456,7 @@ async function sendMsg(toUids, subject, body){
 }
 window.pcTellClass = cid => { const c = S.classes.find(x => x.id === cid); if(!c) return;
   const list = unusedOf(c.students || []);
-  if(!list.length) return alert('이 반은 모두 연결되어 있어요 🎉');
+  if(!list.length) return alert('이 반은 모두 연결되어 있어요');
   const lines = list.map(s => { const ci = codeInfo(s); return `· ${s.name}${ci ? ` — 코드 ${ci.code}${ci.expired ? ' (만료 · 새 코드 필요)' : ''}` : ' — 코드 없음'}`; }).join('\n');
   sendMsg([c.teacherUid, ...(c.deputies || [])], `[학부모 연결] ${c.name} — 아직 연결 안 된 가정 ${list.length}곳`,
     `${c.name}에서 아직 학부모 사이트에 연결하지 않은 가정입니다.\n\n${lines}\n\n가정통신문의 QR을 휴대폰 카메라로 찍고 «구글로 계속하기» → «연결하기»만 하면 됩니다.\n코드표가 다시 필요하면 학부모 관리 › 연결 현황에서 인쇄할 수 있어요.`); };

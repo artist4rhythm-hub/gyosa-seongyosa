@@ -193,8 +193,10 @@ const CSS = `
 .ic-fam{display:grid;grid-template-columns:minmax(150px,1.3fr) repeat(4,minmax(78px,.8fr)) minmax(250px,1.5fr);gap:8px;align-items:center;padding:8px 14px;border-top:1px solid var(--ivd);font-size:13px}
 .ic-fam.hd{font-size:11.5px;color:var(--tl);font-weight:800;background:var(--iv)}
 .ic-fam .acts{display:flex;gap:5px;justify-content:flex-end;flex-wrap:wrap}
+.ic-fam.f3{grid-template-columns:minmax(120px,1.2fr) repeat(3,minmax(70px,.8fr)) 140px}
 .ic-sub{font-size:11px;color:var(--tl);font-weight:600}
-@media (max-width:900px){.ic-fam{grid-template-columns:1fr 1fr 1fr}.ic-fam.hd{display:none}.ic-fam .acts{grid-column:1/-1;justify-content:flex-start}}
+@media (max-width:900px){.ic-fam{grid-template-columns:1fr 1fr 1fr}.ic-fam.hd{display:none}.ic-fam .acts{grid-column:1/-1;justify-content:flex-start}
+  .ic-fam.f3{grid-template-columns:repeat(3,max-content);justify-content:start;row-gap:6px}.ic-fam.f3>b{grid-column:1/-1}}   /* 🏛 v168 우리 반 학부모 — 폰에서 옆으로 넘치던 줄 */
 .ic-claim{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--warn-bg);background:#FFFBEB;border-radius:11px;margin-top:8px;font-size:13px}
 .ic-claim .tx{flex:1;min-width:220px;line-height:1.55}
 .ic-ov{position:fixed;inset:0;z-index:9000;background:rgba(20,30,26,.42);display:flex;align-items:center;justify-content:center;padding:14px}
@@ -383,7 +385,7 @@ function renderBoard(host){
   host.querySelector('[data-all-open]').onclick = () => { S.open = S.open.size ? new Set() : new Set(classes.map(x => x.cid)); renderBoard(host); };
   host.querySelectorAll('[data-fam-kakao]').forEach(b => b.onclick = () => { const fam = fams.find(x => x.key === b.dataset.famKakao); copy(kakaoText(f.org, f, famName(fam)), '💬 이 가정 문구를 복사했어요'); });
   host.querySelectorAll('[data-cls-kakao]').forEach(b => b.onclick = () => { const list = (byCls.get(b.dataset.clsKakao) || []).filter(x => x.state === 'none');
-    if(!list.length) return C.toast('이 반은 모든 가정이 보냈어요 🎉', 'ok');
+    if(!list.length) return C.toast('이 반은 모든 가정이 보냈어요', 'ok');
     copy(kakaoText(f.org, f, list.map(famName).join(', ')), `💬 아직인 ${list.length}가정 문구를 복사했어요`); });
   host.querySelector('[data-xls]').onclick = () => exportAns(f);
   host.querySelectorAll('[data-apply]').forEach(b => b.onclick = () => openApply(f, b.dataset.apply));
@@ -666,7 +668,7 @@ function openApply(f, key){
     };
   };
   const next = () => { fams = famsOf(f); const t = fams.find(x => x.state === 'todo' && x.key !== fam.key && !x.sids.some(id => fam.sids.includes(id)));
-    if(t){ fam = t; load(); paint(); } else { ov.remove(); if(!fams.some(x => x.state === 'todo')) C.toast('🎉 반영할 것이 더 없어요', 'ok'); render(); } };
+    if(t){ fam = t; load(); paint(); } else { ov.remove(); if(!fams.some(x => x.state === 'todo')) C.toast('반영할 것이 더 없어요', 'ok'); render(); } };
   ov.addEventListener('click', e => { if(e.target === ov){ ov.remove(); render(); } });
   paint(); document.body.appendChild(ov);
 }
@@ -708,7 +710,7 @@ export async function renderClassPanel(el, cls){
   const fHTML = forms.map(f => { const fams = famsOf(f, stus); const cnt = k => fams.filter(x => x.parts[k]).length; const none = fams.filter(x => x.state === 'none');
     return `<div class="ic-sec" style="margin:10px 0 0"><div class="ic-bar"><b style="font-size:14.5px">📮 ${esc(f.title)}</b>${pill(true, dday(f.until) || '받는 중')}<span style="flex:1"></span><span class="ic-sub">어머니 ${cnt('m')} · 아버지 ${cnt('f')} · 가정 ${cnt('h')} / ${fams.length}가정</span></div>
       <div class="ic-bar" style="margin:8px 0"><button type="button" class="ic-b g" data-cp-kakao="${esc(f.id)}" ${none.length ? '' : 'disabled'}>💬 아직인 가정 문구 복사 (${none.length}가정)</button><button type="button" class="ic-b" data-cp-flyer="${esc(f.id)}">🖨 QR 안내지</button><button type="button" class="ic-b" data-cp-link="1">🔗 링크</button></div>
-      ${fams.sort((a, b) => (a.state === 'none' ? 0 : 1) - (b.state === 'none' ? 0 : 1) || nat(famName(a), famName(b))).map(x => `<div class="ic-fam" style="grid-template-columns:minmax(120px,1.2fr) repeat(3,minmax(70px,.8fr)) 140px"><b>${esc(famName(x))}</b>${partPill(x, 'm')}${partPill(x, 'f')}${partPill(x, 'h')}<div class="acts">${x.pend ? pill(true, '⏳ 확인 전', 'b') : ''}<button type="button" class="ic-b" data-cp-fam="${esc(f.id)}|${esc(x.key)}">💬</button></div></div>`).join('')}
+      ${fams.sort((a, b) => (a.state === 'none' ? 0 : 1) - (b.state === 'none' ? 0 : 1) || nat(famName(a), famName(b))).map(x => `<div class="ic-fam f3"><b>${esc(famName(x))}</b>${partPill(x, 'm')}${partPill(x, 'f')}${partPill(x, 'h')}<div class="acts">${x.pend ? pill(true, '⏳ 확인 전', 'b') : ''}<button type="button" class="ic-b" data-cp-fam="${esc(f.id)}|${esc(x.key)}">💬</button></div></div>`).join('')}
       <div class="ic-note">담임은 보냈는지 보고 문구만 보내요 — 받은 내용 확인 · 학생관리 반영은 학생관리 담당 · 관리자가 해요 (학생관리 › 📮 정보 수집).</div></div>`; }).join('');
   el.innerHTML = `<div class="cp-ch"><b>📮 보호자 정보 · 🙋 연결 확인</b></div>
     ${claims.length ? `<div class="ic-warn" style="margin:6px 0 0">🙋 코드 없이 <b>이름 · 생년월일</b>로 우리 반 학생을 찾은 분이에요. 보호자가 맞으면 «맞아요»를 눌러 주세요.</div>

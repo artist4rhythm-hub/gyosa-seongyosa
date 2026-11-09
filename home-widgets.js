@@ -83,6 +83,14 @@ function evOnDay(e, ds){
   if(wd.length && !wd.includes(new Date(ds+'T00:00:00').getDay())) return false;
   return !(Array.isArray(e.skipDates) && e.skipDates.includes(ds));
 }
+/* 🏛 v168 홈 «오늘 일정» 칸 — 오늘 열리는 학사 행사 이름들 (내 기관 · 학사 D-Day 와 같은 자료) */
+window.hwTodayEvents = async () => {
+  const ds = hwToday(), orgs = attHomeOrgs();
+  const evs = await loadYearEvents();
+  return evs.filter(e=>evHitsOrg(e, orgs) && evOnDay(e, ds))
+    .sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||'') || String(a.title||'').localeCompare(String(b.title||''),'ko'))
+    .map(e=>String(e.title||'학사 행사'));
+};
 function evTargetLabel(e){
   if(!e.scope || e.scope==='all') return '';
   const t = (e.targets || []).map(String);
@@ -95,6 +103,28 @@ const josaIeyo = w => { const c = String(w||'').trim().slice(-1).charCodeAt(0);
   return (c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 === 0) ? '예요' : '이에요'; };
 let _attDayInfo = {}, _attEv = {}, _attMerge = null, _attDay = '', _attTick = null;
 window.togAttOpen = o => { ATT_OPEN[o] = !ATT_OPEN[o]; paintAttOrg(o); };
+/* 🏛 v169 휴학생 — 오늘 출결(지각 · 결석 …) 칩과 섞지 않는다. 출석부 인원에서 빠지는 학생이라
+   «휴학 n명 ›» 버튼 하나로 두고, 누르면 반별 명단(복학 예정일)이 펼쳐진다 */
+const ATT_LV = {};
+window.togAttLv = (o, ev) => { if(ev){ ev.preventDefault(); ev.stopPropagation(); } ATT_LV[o] = !ATT_LV[o]; paintAttOrg(o);
+  try{ const b = document.querySelector(`[data-lv="${o}"]`); if(b) b.focus({ preventScroll:true }); }catch(e){} };
+const attGTag = g => { const t = String(g||''); return /세$/.test(t) ? t : t.replace('학년',''); };
+function attLvBtn(o, M){
+  if(!M.cnt.lv) return '';
+  const on = !!ATT_LV[o];
+  return `<button type="button" class="lv-btn${on?' on':''}" data-lv="${o}" onclick="togAttLv('${o}',event)" aria-expanded="${on}" title="출석부 인원에서 빠지는 학생 — 눌러서 명단 보기">휴학 ${M.cnt.lv}명 <span aria-hidden="true">${on?'⌃':'›'}</span></button>`;
+}
+function attLvPanel(o, M){
+  if(!ATT_LV[o] || !M.leave.length) return '';
+  const by = {};
+  M.leave.forEach(l=>{ const k = l.clsId || ('nm:'+l.cls); (by[k] = by[k] || { cls:l.cls, grade:l.grade, list:[] }).list.push(l); });
+  const gnum = g => { const n = parseInt(String(g),10); return isNaN(n) ? 99 : n; };
+  const rows = Object.values(by)
+    .sort((a,b)=>gnum(a.grade)-gnum(b.grade) || String(a.cls).localeCompare(String(b.cls),'ko'))
+    .map(g=>`<div class="lv-r">${g.grade?`<span class="acol-g">${esc(attGTag(g.grade))}</span>`:''}<b>${esc(g.cls||'반 미정')}</b><span class="lv-nm">${
+      g.list.map(l=>`<span>${esc(l.name)}${l.note?`<i>${esc(l.note)}</i>`:''}</span>`).join('')}</span></div>`).join('');
+  return `<div class="lv-pop" role="region" aria-label="${esc(M.orgNm)} 휴학생"><div class="lv-ph"><b>${esc(M.orgNm)} · 휴학 ${M.leave.length}명</b><span>출석부 인원에서 빠지는 학생이에요</span><a href="students.html">학생관리 ›</a></div>${rows}</div>`;
+}
 function attHomeOrgs(){ return orgCore.myOrgs(getCU(),'unifiedDF'); }   // 🏛 org-core 원장 위임
 /* 출결 항목 → 묶음. (v-107) 지각·조퇴·체험학습처럼 «출석으로 인정»되는 항목도 홈에 보인다 —
    홈 숫자는 «지금 학교에 있는 인원» — 결석·체험학습·조퇴는 빼고 지각은 넣는다 (v-109). 휴학생은 재적에서 이미 빠진다 */
@@ -108,7 +138,7 @@ function attBucket(nm){
 }
 const ATT_BK = { abs:{l:'결석',c:'#DC2626',bg:'#FDE8E8'}, lat:{l:'지각',c:'#D97706',bg:'#FEF3D9'},
                  ear:{l:'조퇴',c:'#2563EB',bg:'#E5EDFC'}, trip:{l:'체험',c:'#0E7490',bg:'#DDF1F5'},
-                 etc:{l:'기타',c:'#6B7280',bg:'#EEF0F2'}, lv:{l:'휴학',c:'#B45309',bg:'#FDF0DA'} };
+                 etc:{l:'기타',c:'#6B7280',bg:'#EEF0F2'}, lv:{l:'휴학',c:'#5F6670',bg:'#EEF0F3'} };   // 🏛 v168 휴학 = 회색 (출결이 아니라 «쉬는 중»)
 const ATT_BK_ORDER = ['abs','ear','lat','trip','etc'];
 // 기본 «출석» 항목 — 이것만 고른 기록은 특이사항이 아니다
 function attDefaultType(){
@@ -347,7 +377,21 @@ function attOffCss(){
   .acol-org em{font-style:normal;font-weight:900;color:var(--gm);font-size:11.5px}
   .acol-note{font-size:10.5px;color:var(--tl);font-weight:600;margin:-2px 2px 8px}
   @media(max-width:760px){ .acol.n3,.acol.n4,.acol{grid-template-columns:repeat(2,minmax(0,1fr))} .acol.n1{grid-template-columns:minmax(0,1fr)} }
-  .att-st.t b{color:#0E7490}.att-st.v b{color:#B45309}
+  .att-st.t b{color:#0E7490}.att-st.v b{color:#6B7280}
+  .lv-btn{margin-left:6px;border:1px dashed var(--ivd);background:var(--iv);color:var(--ts);border-radius:999px;padding:1px 9px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}
+  .lv-btn:hover,.lv-btn.on{border-style:solid;color:var(--gd)}
+  .lv-pop{border:1px dashed var(--ivd);background:var(--iv);border-radius:12px;padding:8px 12px 6px;margin:0 0 10px}
+  .lv-ph{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding-bottom:4px}
+  .lv-ph b{font-size:12.5px;font-weight:800;color:var(--gd)}.lv-ph span{font-size:11px;color:var(--tl);font-weight:600}
+  .lv-ph a{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--gm);text-decoration:none}
+  .lv-r{display:flex;align-items:baseline;gap:6px;padding:5px 0;border-top:1px solid var(--ivd);font-size:12.5px}
+  .lv-r .acol-g{align-self:center}.lv-r b{font-weight:800;color:var(--gd);white-space:nowrap}
+  .lv-nm{display:flex;flex-wrap:wrap;gap:2px 12px;color:var(--ts);min-width:0}
+  .lv-nm i{font-style:normal;color:var(--tl);font-size:11px;font-weight:600;margin-left:5px}
+  .acol-r .l .lvn{margin-left:auto;font-size:10.5px;font-weight:800;color:var(--ts);border:1px dashed var(--ivd);border-radius:6px;padding:0 5px;white-space:nowrap}
+  .acol-r .l .lvn + .c{margin-left:6px}
+  .lv-line{margin:-2px 0 8px}.acol-org .lv-btn span{font:inherit;color:inherit}
+  .att-sum .lv-line{padding:0 12px}.att-sum .lv-pop{margin:0 10px 10px}
   .att-card.note{border-color:#BFDDE4}
   @media(max-width:560px){ .att-stats.six{grid-template-columns:repeat(3,1fr)} }
   @media(max-width:560px){
@@ -399,7 +443,7 @@ function attOffHTML(orgList, D){
     ${next}</a>`;
 }
 /* 🏛 반별 = «부서 칼럼» (v-108, 시안 A) — 초등부·중등부·고등부(·그루터기)를 기둥으로, 반은 한 줄씩.
-   특이사항(결석·지각·조퇴·체험·휴학)이 있는 반 밑에만 이름 칩. 두 기관을 함께 보면 한 판에 나란히 */
+   특이사항(결석·지각·조퇴·체험)이 있는 반 밑에만 이름 칩 — 휴학은 칩 대신 «휴학 n» 표시 (v169). 두 기관을 함께 보면 한 판에 나란히 */
 function attColumns(o, M, multi){
   const go = `attend.html?stat=live&org=${o}`;
   const groups = [];
@@ -414,16 +458,16 @@ function attColumns(o, M, multi){
     M.classes.forEach(v=>put(M.orgNm, v));
   }
   const chip = f => `<span class="att-pc" style="background:${ATT_BK[f.bk].bg};color:${ATT_BK[f.bk].c}" title="${esc(f.type)}${f.memo?' · '+esc(f.memo):''}">${esc(f.short)} ${esc(f.name)}</span>`;
-  const lvChip = l => `<span class="att-pc" style="background:${ATT_BK.lv.bg};color:${ATT_BK.lv.c}" title="휴학${l.note?' '+esc(l.note):''}">휴학 ${esc(l.name)}</span>`;
-  const gTag = v => { const t = String(v.grade||''); return /세$/.test(t) ? t : t.replace('학년',''); };
+  const gTag = v => attGTag(v.grade);
   return groups.map(gr=>{
     const n = gr.cs.reduce((a,v)=>a+v.n,0), p = gr.cs.reduce((a,v)=>a+v.here,0);
     const rate = n ? Math.round(p/n*100) : 100;
     return `<div class="acol-c"><a class="acol-h" href="${go}"><span class="t"><b>${esc(gr.name)}</b><i>${gr.cs.length}반</i><span class="n" title="지금 학교에 있는 인원 / 재적(휴학 제외)">${p}<small>/${n}</small></span></span>
       <span class="acol-bar"><i style="width:${rate}%;${rate<100?'background:#f59e0b':''}"></i></span></a>
-      ${gr.cs.map(v=>{ const any = v.fl.length || v.lv.length;
-        return `<a class="acol-r${v.abs?' warn':v.here<v.n?' away':''}" href="${go}"><span class="l"><span class="acol-g">${esc(gTag(v))}</span><b>${esc(v.name)}</b><span class="c" title="지금 반에 있는 인원 / 재적(휴학 제외)">${v.here}<small>/${v.n}</small></span>${any?'':'<span class="ok">✓</span>'}</span>
-          ${any?`<span class="cs">${v.fl.map(chip).join('')}${v.lv.map(lvChip).join('')}</span>`:''}</a>`; }).join('')}</div>`;
+      ${gr.cs.map(v=>{ const any = v.fl.length;      // 🏛 v169 휴학은 출결 칩에 섞지 않는다 — 반 줄 끝에 작은 «휴학 n»만
+        const lvn = v.lv.length ? `<span class="lvn" title="휴학 ${v.lv.length}명 — 출석부 인원에서 빠져요">휴학 ${v.lv.length}</span>` : '';
+        return `<a class="acol-r${v.abs?' warn':v.here<v.n?' away':''}" href="${go}"><span class="l"><span class="acol-g">${esc(gTag(v))}</span><b>${esc(v.name)}</b>${lvn}<span class="c" title="지금 반에 있는 인원 / 재적(휴학 제외)">${v.here}<small>/${v.n}</small></span>${any?'':'<span class="ok">✓</span>'}</span>
+          ${any?`<span class="cs">${v.fl.map(chip).join('')}</span>`:''}</a>`; }).join('')}</div>`;
   });
 }
 function paintAttCols(){
@@ -436,16 +480,17 @@ function paintAttCols(){
   else offOrgs.forEach(o=>{ off += attOffHTML([o], _attDayInfo[o]); });
   const on = orgs.filter(o=>!offOrgs.includes(o));
   const multi = orgs.length > 1;
-  const heads = [], cols = [], evs = [];
+  const heads = [], cols = [], evs = [], pans = [];
   on.forEach(o=>{
     const M = attModel(o); if(!M) return;
-    heads.push(`<span class="acol-org"><b>${esc(M.orgNm)}</b><span>지금 <em>${M.here}명</em> / 재적 ${M.roster}${M.cnt.lv?` · 휴학 ${M.cnt.lv}`:''}</span></span>`);
+    heads.push(`<span class="acol-org"><b>${esc(M.orgNm)}</b><span>지금 <em>${M.here}명</em> / 재적 ${M.roster}</span>${attLvBtn(o, M)}</span>`);
+    pans.push(attLvPanel(o, M));
     (_attEv[o]||[]).forEach(e=>{ if(!evs.some(x=>x.id===e.id)) evs.push(e); });
     cols.push(...attColumns(o, M, multi));
   });
   const evl = evs.length ? `<div class="att-evl"><span class="att-evh">📅 오늘 학사일정</span>${attEvChips(evs, 4)}</div>` : '';
   const note = `<div class="acol-note">숫자 = 지금 학교에 있는 인원 / 재적(휴학 제외) · 결석·체험학습·조퇴는 빼고, 지각은 넣어요 — 출석부 출결 처리와는 따로예요</div>`;
-  el.innerHTML = (cols.length ? `<div class="acol-top">${heads.join('')}</div>${evl}<div class="acol n${Math.min(cols.length,4)}">${cols.join('')}</div>${note}` : '') + off;
+  el.innerHTML = (cols.length ? `<div class="acol-top">${heads.join('')}</div>${pans.join('')}${evl}<div class="acol n${Math.min(cols.length,4)}">${cols.join('')}</div>${note}` : '') + off;
 }
 function paintAttOrg(o){
   if(ATT_STYLE==='cls'){ paintAttCols(); return; }      // 반별(부서 칼럼)은 기관을 한 판에 함께 그린다
@@ -462,8 +507,6 @@ function paintAttOrg(o){
   const orgNm = M.orgNm;
   const go = `attend.html?stat=live&org=${o}`;
   const chip = f => `<span class="att-pc" style="background:${ATT_BK[f.bk].bg};color:${ATT_BK[f.bk].c}" title="${esc(f.type)}${f.memo?' · '+esc(f.memo):''}">${esc(f.short)} ${esc(f.name)}</span>`;
-  const lvChip = l => `<span class="att-pc" style="background:${ATT_BK.lv.bg};color:${ATT_BK.lv.c}" title="휴학${l.note?' '+esc(l.note):''}">휴학 ${esc(l.name)}</span>`;
-  const lvTxt = cnt.lv ? ` · 휴학 ${cnt.lv}` : '';
   let h = '';
   if(ATT_STYLE==='board'){
     const row = bk => { const list=flags.filter(f=>(f.bks||[f.bk]).includes(bk)); if(!list.length) return '';
@@ -471,8 +514,6 @@ function paintAttOrg(o){
       return `<a class="att-brow" href="${go}"><span class="att-k" style="color:${ATT_BK[bk].c}">${ATT_BK[bk].l}</span>
         <span class="att-nms">${list.map(f=>`<span class="att-nm">${esc(f.name)}<i>${esc(String(f.cls).replace('반',''))}</i></span>`).join('')}</span>
         ${memos?`<span class="att-memo">${memos}</span>`:''}</a>`; };
-    const lvRow = M.leave.length ? `<a class="att-brow" href="students.html"><span class="att-k" style="color:${ATT_BK.lv.c}">휴학</span>
-        <span class="att-nms">${M.leave.map(l=>`<span class="att-nm">${esc(l.name)}<i>${esc(String(l.cls).replace('반',''))}</i></span>`).join('')}</span></a>` : '';
     h = `<div class="att-orghd"><b>${esc(orgNm)}</b></div>${evl}
       <div class="att-stats six">
         <a class="att-st g" href="${go}"><b>${M.here}<small style="font-size:11px;color:var(--tl)">/${roster}</small></b><span>지금 학교에</span></a>
@@ -480,25 +521,26 @@ function paintAttOrg(o){
         <a class="att-st a" href="${go}"><b>${cnt.lat}</b><span>지각</span></a>
         <a class="att-st b" href="${go}"><b>${cnt.ear}</b><span>조퇴</span></a>
         <a class="att-st t" href="${go}"><b>${cnt.trip}</b><span>체험학습</span></a>
-        <a class="att-st v" href="students.html"><b>${cnt.lv}</b><span>휴학</span></a></div>
-      ${ATT_BK_ORDER.map(row).join('')}${lvRow}
-      ${!flags.length && !M.leave.length?`<div class="att-clear">🎉 오늘 특이사항 없음 — 전원 출석이에요</div>`:''}`;
+        ${cnt.lv ? `<a class="att-st v" href="#" role="button" data-lv="${o}" onclick="togAttLv('${o}',event)" onkeydown="if(event.key===' '){togAttLv('${o}',event)}" aria-expanded="${!!ATT_LV[o]}" title="출석부 인원에서 빠지는 학생 — 눌러서 명단 보기"><b>${cnt.lv}</b><span>휴학 ${ATT_LV[o]?'⌃':'›'}</span></a>`
+                 : `<a class="att-st v" href="students.html"><b>0</b><span>휴학</span></a>`}</div>
+      ${attLvPanel(o, M)}${ATT_BK_ORDER.map(row).join('')}
+      ${!flags.length?`<div class="att-clear">✓ 오늘 특이사항 없음 — 전원 출석이에요</div>`:''}`;
   } else {
     const ic = { abs:'🔴', lat:'🟡', ear:'🔵', trip:'🟢', etc:'⚪️' };
-    const items = flags.map(f=>`${ic[f.bk]||'⚪️'} ${esc(f.name)}(${esc(String(f.cls).replace('반',''))}) ${esc(f.short)}${f.memo?' · '+esc(f.memo):''}`)
-      .concat(M.leave.map(l=>`🟠 ${esc(l.name)}(${esc(String(l.cls).replace('반',''))}) 휴학`));
+    const items = flags.map(f=>`${ic[f.bk]||'⚪️'} ${esc(f.name)}(${esc(String(f.cls).replace('반',''))}) ${esc(f.short)}${f.memo?' · '+esc(f.memo):''}`);
     const tick = items.length ? items.join('  ·  ') : '✓ 특이사항 없음 — 전원 출석';
     h = `${evl}<div class="att-sum">
       <div class="att-top" onclick="togAttOpen('${o}')">
         <div class="att-ring" style="background:conic-gradient(#16a34a 0 ${M.hereRate*3.6}deg,var(--iv) ${M.hereRate*3.6}deg 360deg)"><i>${M.here}</i></div>
         <div class="att-mid"><b>${esc(orgNm)} · 지금 ${M.here}명 / 재적 ${roster}</b>
-          <span>결석 ${cnt.abs} · 지각 ${cnt.lat} · 조퇴 ${cnt.ear} · 체험 ${cnt.trip}${cnt.lv?` · 휴학 ${cnt.lv}`:''} — 탭해서 반별 보기</span></div>
+          <span>결석 ${cnt.abs} · 지각 ${cnt.lat} · 조퇴 ${cnt.ear} · 체험 ${cnt.trip} — 탭해서 반별 보기</span></div>
         <span class="att-ar">${ATT_OPEN[o]?'⌃':'⌄'}</span></div>
       <div class="att-tick">${tick}</div>
+      ${cnt.lv?`<div class="lv-line">${attLvBtn(o, M)}</div>${attLvPanel(o, M)}`:''}
       ${ATT_OPEN[o]?`<div class="att-open">${M.classes.map(v=>{
         const gTxt = attGradeTxt(v.grade) ? attGradeTxt(v.grade)+' ' : '';
-        const who = v.fl.map(f=>`${esc(f.short)} ${esc(f.name)}`).concat(v.lv.map(l=>`휴학 ${esc(l.name)}`));
-        return `<a class="att-trow" href="${go}"><b>${esc(gTxt)}${esc(v.name)}</b><span class="n">${v.here}/${v.n}</span>
+        const who = v.fl.map(f=>`${esc(f.short)} ${esc(f.name)}`);
+        return `<a class="att-trow" href="${go}"><b>${esc(gTxt)}${esc(v.name)}</b><span class="n">${v.here}/${v.n}${v.lv.length?` <i style="font-style:normal;font-weight:700;color:var(--tl)">휴학 ${v.lv.length}</i>`:''}</span>
           <span class="who">${who.length? who.join(' · ') : '✓ 전원 출석'}</span></a>`; }).join('')}</div>`:''}
     </div>`;
   }
@@ -686,15 +728,25 @@ async function loadAcdday(){
 window.updateHomeCounters = function(){
   const nn = window.__notif || {};
   const a = $I('w-appr-t');
-  if(a) a.innerHTML = (nn.approvalCnt>0)
-    ? `내 차례 <em>${nn.approvalCnt}건</em> — 기다리는 결재가 있어요`
-    : `결재함이 비어 있어요 🎉`;
+  if(a){ const on = nn.approvalCnt>0;
+    a.innerHTML = on ? `내 차례 <em>${nn.approvalCnt}건</em> — 기다리는 결재가 있어요` : `결재함이 비어 있어요`;
+    hwOneLine(a, !on, 'approval.html'); }
   const m = $I('w-money-t');
-  if(m){ const pc=nn.payCnt||0, pw=nn.payWaitCnt||0;
-    m.innerHTML = (pc+pw>0)
+  if(m){ const pc=nn.payCnt||0, pw=nn.payWaitCnt||0, on = pc+pw>0;
+    m.innerHTML = on
       ? `${pc?`경비 결재 <em>${pc}건</em>`:''}${pc&&pw?' · ':''}${pw?`지급 대기 <em>${pw}건</em>`:''}`
-      : `처리할 경비 요청이 없어요 🎉`; }
+      : `처리할 경비 요청이 없어요`;
+    hwOneLine(m, !on, 'payreq.html'); }
 };
+/* 🏛 v168 빈 카드는 한 줄로 — 할 일이 없으면 칸을 접고 제목 줄 끝에 «할 일 없음 ›»만 */
+function hwOneLine(el, empty, href){
+  const row = el.closest('.hw-line'); const sec = row && row.previousElementSibling;
+  if(!row || !sec || !sec.classList.contains('hm-sec')) return;
+  row.hidden = !!empty;
+  let tag = sec.querySelector('.hm-none');
+  if(empty && !tag){ tag = document.createElement('a'); tag.className = 'hm-none'; tag.href = href; tag.textContent = '할 일 없음 ›'; sec.appendChild(tag); }
+  if(!empty && tag) tag.remove();
+}
 
 
 
@@ -763,7 +815,7 @@ function paintMtg(){
     .sort((a, b) => ((a.status === 'done') - (b.status === 'done')) || String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(b.date).localeCompare(String(a.date)));
   const open = _mtgT.filter(t => (t.status || 'todo') !== 'done').length;
   const un = _mtgN.filter(n => !n.read && n.kind !== 'task');
-  const cnt = $I('w-mtg-n'); if(cnt) cnt.textContent = open ? `${open}건` : '';
+  const cnt = $I('w-mtg-n'); if(cnt){ cnt.textContent = open ? `${open}건` : (rows.length ? '' : '할 일 없음'); cnt.classList.toggle('hm-none', !open && !rows.length); }
   const show = rows.slice(0, 6);
   let h = show.map(t => {
     const st = t.status || 'todo', d = mtgDue(t.due);
@@ -775,7 +827,7 @@ function paintMtg(){
         <span>${esc(md)} ${esc(t.mtitle || '')} · ${esc((t.topicNo ? t.topicNo + '. ' : '') + (t.topicTitle || ''))}${mates.length ? ' · 함께 ' + esc(mates.join(', ')) : ''}${t.cmt ? ' · 💬' + t.cmt : ''}</span></a>
       ${d && st !== 'done' ? `<span class="hwm-d${d.dd < 0 ? ' over' : d.dd <= 2 ? ' soon' : ''}">${esc(d.l)}</span>` : ''}</div>`;
   }).join('');
-  if(!show.length) h = `<div class="hw-dim">회의에서 맡은 임무가 없어요 🎉</div>`;
+  if(!show.length) h = '';   // 🏛 v168 빈 카드는 한 줄로 — 제목 줄의 «할 일 없음»
   if(rows.length > show.length) h += `<a class="hwm-n" href="minutes.html?mine=1">… ${rows.length - show.length}건 더 · <b>모두 보기 ›</b></a>`;
   if(un.length) h += `<a class="hwm-n" href="minutes.html?mine=1">🔔 회의록 새 소식 <b>${un.length}</b> — ${esc(un[0].fromName || '')}: ${esc(String(un[0].text || '').slice(0, 40))} ›</a>`;
   box.innerHTML = h;

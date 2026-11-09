@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>동아리 · 교사 선교사</title>
 <meta name="theme-color" content="#1E3932">
@@ -309,7 +310,7 @@ html[data-theme="dark"] .cbs-tile .tag,html[data-theme="dark"] .cbs-tile.now .do
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, getDocs, query, where, onSnapshot, Timestamp }
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, getDocs, query, where, onSnapshot, Timestamp, runTransaction }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 dropLists('clubSemesters','clubApplications','clubEnrollments'); try{ addEventListener('pagehide', () => dropLists('clubSemesters','clubApplications','clubEnrollments')); }catch(e){}   // 동아리를 고치는 화면 — 홈 동아리 칸이 새로 받게
@@ -420,7 +421,7 @@ function stripPoster(list){ return list.map(a=>{ const {poster, ...rest}=a; retu
 async function snapApps(label){
   if(!window.TM || !SEM) return;
   try{
-    let docs = APPS.map(a=>({...a}));
+    let docs = APPS.map(a=>{ const r = {...a}; if(PRIV[a.id]) PRIV_KEYS.forEach(k=>{ delete r[k]; }); return r; });   // 🔒 v168 연락처는 사본에서 빼고 (되돌려도 공개 신청서로 안 돌아가게)
     let big = JSON.stringify(docs).length > 900000;
     if(big) docs = docs.map(a=>({ ...a, poster:'' }));
     await TM.snapData('clubApplications', {semId:SEM.id}, label + (big?' (포스터 제외)':''), docs);
@@ -439,13 +440,20 @@ async function loadSems(){
   if(SEMS.length) pickSem(SEMS[0].id);
   else { SEM = null; paintStatus(); render(); }   // 🏛 v162 학기가 없으면 단계 띠도 숨김
 }
+let _liveRaw = null;
 function liveSubscribe(){
-  UNSUBS.forEach(u=>{ try{u();}catch(e){} }); UNSUBS = [];
+  UNSUBS.forEach(u=>{ try{u();}catch(e){} }); UNSUBS = []; _liveRaw = null;
   if(!VIEW_ONLY || !SEM) return;
   UNSUBS.push(onSnapshot(query(collection(db,'clubApplications'), where('semId','==',SEM.id)), snap=>{
-    APPS = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    _liveRaw = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+    APPS = mergePriv(_liveRaw.map(a=>({...a})));
     if(TAB==='apps'||TAB==='grid') render();
   }));
+  // 🔒 v168 따로 둔 연락처도 실시간 (관리자가 옮기면 열람 화면에서도 바로 이어서 보이게)
+  UNSUBS.push(onSnapshot(query(collection(db,'clubAppPrivate'), where('semId','==',SEM.id)), snap=>{
+    PRIV = {}; snap.docs.forEach(d=>{ PRIV[d.id] = d.data(); });
+    if(_liveRaw){ APPS = mergePriv(_liveRaw.map(a=>({...a}))); if(TAB==='apps'||TAB==='grid') render(); }
+  }, ()=>{}));
   UNSUBS.push(onSnapshot(query(collection(db,'clubEnrollments'), where('semId','==',SEM.id)), snap=>{
     setENR(snap.docs.map(d=>({id:d.id, ...d.data()})));
     if(TAB==='enroll') render();
@@ -1076,6 +1084,62 @@ window.toast = toast;
 async function loadApps(){
   const snap = await getDocs(query(collection(db,'clubApplications'), where('semId','==',SEM.id)));
   APPS = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
+  await loadPriv(); mergePriv(APPS);
+  movePriv(snap.docs.filter(d=>PRIV_KEYS.some(k=>k in d.data())).map(d=>d.id));   // 기다리지 않음
+  sweepPriv();
+}
+// 🔒 v168 강사 연락처 · 이메일 · 질문 답변 — clubAppPrivate(교직원 · 쓴 강사 본인만 · 문서 id = 신청서 id)에서 합쳐 보여 준다
+//    신청서는 «공고 노출»되면 로그인 없이 누구나 읽을 수 있어서, 공고에 필요 없는 개인 정보는 신청서에 남기지 않는다
+let PRIV = {}, _moveQ = Promise.resolve();
+const PRIV_KEYS = ['phone','email','answers'];
+const tsec = t => (t && (t.seconds ?? (t.toMillis ? t.toMillis()/1000 : 0))) || 0;
+// 신청서(공개)와 따로 둔 문서 중 «나중에 고친 쪽»이 이긴다 — 옛 화면에서 신청서에 새로 저장한 연락처도 잃지 않게
+const pubNewer = (a, p) => tsec(a.updatedAt) > Math.max(tsec(p.updatedAt), tsec(p.movedAt));
+async function loadPriv(){
+  PRIV = {};
+  try{ const s = await getDocs(query(collection(db,'clubAppPrivate'), where('semId','==',SEM.id))); s.forEach(d=>{ PRIV[d.id] = d.data(); }); }catch(e){}
+}
+function mergePriv(list){ list.forEach(a=>{ const p = PRIV[a.id]; if(!p) return; const pn = pubNewer(a, p);
+  PRIV_KEYS.forEach(k=>{ if(k in p && !((k in a) && pn)) a[k] = p[k]; }); }); return list; }
+// 예전 신청서에 남은 연락처 · 이메일 · 답변 → 따로 옮기고 신청서에서는 지운다 (편집하는 동아리 관리자가 열 때 · 조용히)
+//   두 문서를 한 번에(트랜잭션) 다시 읽고 쓴다 — 그 사이 강사가 저장하거나 주인이 바뀌어도 덮어쓰지 않게 · 차례로 줄 세움
+function movePriv(ids){
+  if(VIEW_ONLY || !ids.length) return _moveQ;
+  _moveQ = _moveQ.then(()=>moveRun(ids)).catch(()=>{});
+  return _moveQ;
+}
+async function moveRun(ids){
+  for(const id of ids){
+    try{
+      const res = await runTransaction(db, async tx=>{
+        const aRef = doc(db,'clubApplications', id), pRef = doc(db,'clubAppPrivate', id);
+        const aS = await tx.get(aRef), pS = await tx.get(pRef);
+        if(!aS.exists()) return null;
+        const d = aS.data(); if(!PRIV_KEYS.some(k=>k in d)) return null;
+        const p = pS.exists() ? pS.data() : {}, pn = pubNewer(d, p);
+        const put = { semId: p.semId || d.semId || '', org: p.org || d.org || '', movedAt: Timestamp.now() };
+        if(!p.uid) put.uid = d.uid || '';                                   // 주인은 이미 있으면 그대로
+        PRIV_KEYS.forEach(k=>{ if((k in d) && (!(k in p) || pn)) put[k] = d[k]; });
+        tx.set(pRef, put, { merge:true });
+        tx.update(aRef, { phone:deleteField(), email:deleteField(), answers:deleteField() });
+        return { ...p, ...put };
+      });
+      if(res && SEM && res.semId === SEM.id) PRIV[id] = res;
+    }catch(e){ console.warn('연락처 옮기기', id, e && e.code); if(e && e.code==='permission-denied') break; }   // 규칙 v44 전이면 다음에
+  }
+}
+// 지난 학기까지 — «공고 노출»된 신청서 전부를 이 브라우저에서 한 번 훑는다 (남은 것이 없으면 다시 안 함)
+async function sweepPriv(){
+  if(VIEW_ONLY) return;
+  try{ if(localStorage.getItem('club_priv_swept') === '168') return; }catch(e){}
+  try{
+    const s = await getDocs(query(collection(db,'clubApplications'), where('published','==',true)));
+    const ids = s.docs.filter(d=>PRIV_KEYS.some(k=>k in d.data())).map(d=>d.id);
+    await movePriv(ids);
+    const left = [];
+    for(const id of ids){ try{ const d = await getDoc(doc(db,'clubApplications', id)); if(d.exists() && PRIV_KEYS.some(k=>k in d.data())) left.push(id); }catch(e){ left.push(id); } }
+    if(!left.length) try{ localStorage.setItem('club_priv_swept','168'); }catch(e){}
+  }catch(e){}
 }
 const AST = { draft:'📝 작성중', submitted:'접수', approved:'승인', hold:'보류', rejected:'반려' };
 function inh(list, i, key, flag){ for(let j=i;j>=0;j--){ const x=list[j]; if(x.blocked||x.skip) return ''; if(!x[flag]) return x[key]||''; } return ''; }
@@ -2404,6 +2468,7 @@ window.hardDelete = async (id)=>{
   if(!confirm('한 번 더 확인 — 영구 삭제할까요?')) return;
   await snapApps('영구 삭제 전');
   try{ await deleteDoc(doc(db,'clubApplications',id));
+    try{ await deleteDoc(doc(db,'clubAppPrivate',id)); delete PRIV[id]; }catch(e){}   // 🔒 v168 따로 둔 연락처도 함께
     APPS = APPS.filter(x=>x.id!==id); toast('영구 삭제했습니다 (⏱ 타임머신에 사본 보관)'); renderApps();
   }catch(e){ toast('영구 삭제 실패: '+(e.message||'')); }
 };
@@ -2431,7 +2496,10 @@ window.assignOwner = async (appId)=>{
     const sel = bg.querySelector('#own-sel');
     const uid = sel.value, email = sel.selectedOptions[0].dataset.email||'';
     try{
-      await updateDoc(doc(db,'clubApplications',appId), { uid, email, ownerAssignedBy: CU.name||'', ownerAssignedAt: Timestamp.now() });
+      // 🔒 v168 이메일은 따로(clubAppPrivate) — 주인(uid)도 같이 바꿔야 새 강사가 자기 연락처를 고칠 수 있다 · 막히면(규칙 v44 전) 예전처럼
+      let privOk = true;
+      try{ await setDoc(doc(db,'clubAppPrivate',appId), { uid, email, semId: a.semId||SEM.id, org: a.org||'' }, { merge:true }); PRIV[appId] = { ...(PRIV[appId]||{}), uid, email }; }catch(e){ privOk = false; }
+      await updateDoc(doc(db,'clubApplications',appId), { uid, email: privOk ? deleteField() : email, ownerAssignedBy: CU.name||'', ownerAssignedAt: Timestamp.now() });
       a.uid = uid; a.email = email;
       const sp = $I('own-'+appId); if(sp) sp.textContent = email||uid;
       toast('강사 계정을 연결했습니다'); bg.remove();

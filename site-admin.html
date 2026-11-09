@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="robots" content="noindex, nofollow">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>홈페이지 관리 · 교사 선교사</title>
 <meta name="theme-color" content="#1E3932">
@@ -34,6 +35,14 @@
 .alert.ok{display:block;background:#DCFCE7;color:#16A34A}
 .alert.err{display:block;background:#FDECEA;color:#C0392B}
 .gatebox{background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:14px;padding:18px 19px;max-width:420px}
+.fm .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:560px){.fm .row2.st{grid-template-columns:1fr}}
+.fm input[type=date]{width:100%;border:1.5px solid var(--ivd);border-radius:10px;padding:9px 12px;font-size:14px;font-family:inherit;background:var(--wh,#fff);color:inherit}
+.fm .hint{font-size:11.5px;color:var(--tl);margin-top:4px;line-height:1.5}
+.sa-store{font-size:12px;color:var(--ts);margin:-6px 0 12px;line-height:1.6}
+.sa-store b{color:var(--gd)}
+.sa-conn textarea{min-height:110px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.sa-mig{border:1.5px dashed var(--ivd);background:var(--iv,#F2F0EB)}
 </style>
 </head>
 <body>
@@ -57,11 +66,24 @@
       공개 홈페이지에 올라갈 소식을 코드 없이 작성·게시·내립니다.
       여기서 저장하는 내용은 <b>공개 전용 프로젝트</b>에만 발행되어 내부 시스템과 완전히 분리되어 있어요.</p>
 
-    <!-- 공개 프로젝트 관리자 로그인 (한 번만) -->
+    <div class="sa-orgs" id="sa-orgs"></div>
+    <div class="sa-store" id="sa-store"></div>
+    <!-- 🔗 v170 연결 설정 (수퍼관리자) — 선교원 소식 보관함 · 두 사이트 주소 -->
+    <div class="sa-card fm sa-conn" id="sa-conn" style="display:none">
+      <div style="font-size:14px;font-weight:900;color:var(--gd)">🔗 연결 설정 <span style="font-size:11.5px;color:var(--tl);font-weight:700">수퍼관리자만</span></div>
+      <label>선교원 소식 보관함 — Firebase «웹 앱 설정» 붙여 넣기</label>
+      <textarea id="c-fb" placeholder="const firebaseConfig = {&#10;  apiKey: &quot;…&quot;,&#10;  authDomain: &quot;….firebaseapp.com&quot;,&#10;  projectId: &quot;…&quot;, …&#10;};"></textarea>
+      <div class="hint">Firebase 콘솔 › 선교원 보관함 프로젝트 › 프로젝트 설정 › 내 앱(웹)의 설정 글을 통째로 붙여 넣으면 돼요. 비우고 저장하면 연결을 끊어요(예전 보관함으로).</div>
+      <div class="row2 st"><div><label>학교 사이트 주소</label><input type="text" id="c-u-daniel" placeholder="https://…"></div>
+        <div><label>선교원 사이트 주소</label><input type="text" id="c-u-jihyebit" placeholder="https://…"></div></div>
+      <div class="btnrow"><button class="bs2" onclick="toggleConn(false)">닫기</button><button class="bp2" onclick="saveConn()">저장</button></div>
+      <div class="alert" id="c-msg"></div>
+    </div>
+    <!-- 공개 프로젝트 관리자 로그인 (보관함마다 한 번) -->
     <div class="gatebox" id="pub-gate" style="display:none;margin-bottom:16px">
-      <div style="font-size:14px;font-weight:900;color:var(--gd);margin-bottom:6px">🔑 홈페이지 관리자 열쇠</div>
+      <div style="font-size:14px;font-weight:900;color:var(--gd);margin-bottom:6px" id="p-title">🔑 홈페이지 관리자 열쇠</div>
       <div style="font-size:12px;color:var(--ts);margin-bottom:12px">
-        공개 홈페이지 전용 관리자 계정으로 한 번 로그인하면 이 기기에서 계속 유지됩니다.</div>
+        이 보관함의 발행 계정으로 한 번 로그인하면 이 기기에서 계속 유지됩니다.</div>
       <label style="font-size:12px;font-weight:700">관리자 이메일</label>
       <input type="text" id="p-id" placeholder="site-admin@…" style="width:100%;margin:4px 0 10px;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:9px;font-family:inherit">
       <label style="font-size:12px;font-weight:700">비밀번호</label>
@@ -71,16 +93,20 @@
     </div>
 
     <div id="editor" style="display:none">
-      <div class="sa-orgs" id="sa-orgs"></div>
-
+      <div class="sa-card sa-mig" id="sa-mig" style="display:none"></div>
       <div class="sa-card fm" id="write">
         <div style="font-size:14px;font-weight:900;color:var(--gd)" id="w-title">✏️ 새 소식 쓰기</div>
         <label>제목</label>
-        <input type="text" id="w-t" placeholder="예: 2027학년도 신입생 상담 안내">
+        <input type="text" id="w-t" maxlength="200" placeholder="예: 2027학년도 신입생 상담 안내">
         <label>분류</label>
-        <select id="w-c">
-          <option>소식</option><option>교육 활동</option><option>입학</option><option>행사</option><option>안내</option>
-        </select>
+        <select id="w-c" onchange="catHint()"></select>
+        <div class="hint" id="w-c-hint"></div>
+        <div class="row2"><div><label>시작일 (선택)</label><input type="date" id="w-s"></div><div><label>끝나는 날 (선택 · 하루면 비움)</label><input type="date" id="w-e"></div></div>
+        <div class="hint">날짜를 넣으면 홈에 «진행 중 · 다가옴»이 저절로 붙어요.</div>
+        <label>장소 (선택)</label>
+        <input type="text" id="w-place" placeholder="예: 본관 강당">
+        <div id="w-cap-box" style="display:none"><label>작품 설명 (반 · 재료 · 연도)</label>
+          <input type="text" id="w-cap" placeholder="예: 일곱 살 반 · 크레용과 수채 물감 · 2026"></div>
         <label>본문</label>
         <textarea id="w-b" placeholder="공개해도 좋은 내용만 적어주세요. 학생 실명·연락처는 넣지 않습니다."></textarea>
         <label>사진 (선택 · 1장)</label>
@@ -92,6 +118,9 @@
         </div>
         <img id="w-prev" style="display:none;max-width:220px;border-radius:9px;margin-top:9px">
         <label style="display:flex;align-items:center;gap:8px;margin-top:13px;cursor:pointer">
+          <input type="checkbox" id="w-home" style="width:16px;height:16px"> 홈 «지금 …에서» 칸에 걸기
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer">
           <input type="checkbox" id="w-pub" checked style="width:16px;height:16px"> 바로 게시하기
         </label>
         <div class="btnrow">
@@ -140,16 +169,49 @@ const PUB_FB = {
   messagingSenderId: "509569562681",
   appId: "1:509569562681:web:da79e96fb55870844b35e8"
 };
-const pubApp = initializeApp(PUB_FB, 'public');
-const pubAuth = getAuth(pubApp);
-const pubDb = getFirestore(pubApp);
+/* 🔗 v170 기관마다 소식 보관함 따로 — 바깥에서 두 기관이 한 묶음으로 보이지 않게
+   · 학교: daniel-public (org = daniel 글만)
+   · 선교원: 따로 만든 보관함 (config/publicSites.kids.fb · «연결 설정»에서 붙여 넣기). 연결 전에는 예전처럼 daniel-public 의 org = jihyebit
+   · 보관함마다 발행 계정(열쇠)이 따로 */
+let PUBCFG = { kids:null, urls:{} }, CFG_OK = false;
+const CTX = {};
+const sig = fb => fb ? [fb.apiKey, fb.projectId, fb.appId, fb.authDomain||''].join('|') : '';
+const hash = t => { let h = 0; for(const ch of t) h = (h*31 + ch.charCodeAt(0))|0; return (h>>>0).toString(36); };
+function setCfg(d){                                    // 설정이 바뀌면 선교원 보관함 연결을 새로 (같은 프로젝트여도 키가 바뀌면)
+  const next = { kids:null, urls:{}, ...(d||{}) };
+  if(CTX.kids && sig(CTX.kids.fb) !== sig(next.kids && next.kids.fb)){ try{ CTX.kids.off(); }catch(e){} delete CTX.kids; }
+  PUBCFG = next;
+}
+async function loadCfg(){                              // 못 읽으면 예전 보관함으로 몰래 넘어가지 않고 멈춘다
+  try{ const c = await getDoc(doc(db,'config','publicSites')); setCfg(c.exists() ? c.data() : null); CFG_OK = true; }
+  catch(e){ CFG_OK = false; }
+  return CFG_OK;
+}
+const storeOf = o => (o === 'jihyebit' && PUBCFG.kids && PUBCFG.kids.fb && PUBCFG.kids.fb.projectId) ? 'kids' : 'daniel';
+function pubCtx(o){
+  const k = storeOf(o);
+  if(CTX[k]) return CTX[k];
+  const fb = k === 'kids' ? PUBCFG.kids.fb : PUB_FB;
+  const nm = k === 'kids' ? 'public-kids-' + fb.projectId + '-' + hash(sig(fb)) : 'public';      // 학교 열쇠는 예전 이름 그대로 (다시 로그인 안 해도 됨)
+  let app; try{ app = getApp(nm); }catch(e){ app = initializeApp(fb, nm); }
+  const c = { key:k, fb, app, auth:getAuth(app), db:getFirestore(app), user:null, ready:false, off:()=>{} };
+  c.off = onAuthStateChanged(c.auth, u=>{ if(CTX[k] !== c) return; c.user = u; c.ready = true; if(storeOf(ORG) === k) paintGate(); else if(k === 'daniel') paintMig(); }) || (()=>{});
+  return (CTX[k] = c);
+}
+const orgFilter = o => storeOf(o) === 'kids' ? null : o;      // 선교원 전용 보관함엔 기관 표시를 남기지 않는다
+const pubDbOf = () => pubCtx(ORG).db;
 
 const $I = id => document.getElementById(id);
 const esc = t => String(t??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ORGS = { daniel:'다니엘 아마츠', jihyebit:'그루터기 선교원' };
-const SITE = 'https://artist4rhythm-hub.github.io/public-web';
+const SITE = 'https://artist4rhythm-hub.github.io/public-web';   // 예전 공개 홈페이지 (새 주소는 «연결 설정»)
+const CATS = { daniel:['소식','행사','교육 활동','입학','알림'], jihyebit:['소식','행사','작품','입학','알림'] };
+const CAT_HINT = { '알림':'«알림»은 홈 맨 위 «오늘 한 줄»에 기간 동안만 떠요 (예: 단축 수업 · 휴원). 소식 목록에는 안 나와요.',
+  '작품':'«작품»은 홈 «이달의 작품» 액자에 걸려요. 사진을 꼭 넣고, 보호자 동의를 받은 작품만 올려 주세요.' };
 
-let CU=null, ORG='daniel', ITEMS=[], EDIT=null, PHOTO='';
+let CU=null, ORG='daniel', ITEMS=[], EDIT=null, PHOTO='', LSEQ=0, ITEMS_KEY='', EDIT_KEY='';
+const curKey = () => storeOf(ORG) + '|' + ORG;
+const sid = id => String(id||'').replace(/[^A-Za-z0-9_-]/g,'');
 
 function korEmail(id){ return `${id}@gyosa-seongyosa.staff`; }
 window.doLogin = async function(){
@@ -169,37 +231,142 @@ onAuthStateChanged(auth, async user=>{
   window.hideLoading&&hideLoading();
   if(window.guardPage && !guardPage(CU,'siteadm')) return;   // 🔐 v143 보여 주기 전에 먼저 (관리자 · 열어 준 분만)
   $I('ls').style.display='none'; $I('ms').style.display='';
+  await loadCfg();
+  paintOrgs();
 });
 
 /* 공개 프로젝트 열쇠 상태 */
-onAuthStateChanged(pubAuth, u=>{
+function paintGate(){
   if(!$I('pub-gate')) return;      // 접근 권한으로 막혀 화면이 바뀐 뒤
+  const c = pubCtx(ORG);
+  if(!c.ready) return;
+  const u = c.user;
+  $I('p-title').textContent = `🔑 ${c.key === 'kids' ? '선교원' : (ORG === 'daniel' ? '학교' : '예전 공개 홈페이지')} 소식 보관함 열쇠`;
   $I('pub-gate').style.display = u ? 'none' : '';
   $I('editor').style.display = u ? '' : 'none';
-  if(u) paintOrgs();
-});
+  if(u){ loadList(); paintMig(); }
+}
 window.pubLogin = async function(){
   const m=$I('p-msg'); m.className='alert';
-  try{ await signInWithEmailAndPassword(pubAuth, $I('p-id').value.trim(), $I('p-pw').value); }
+  try{ await signInWithEmailAndPassword(pubCtx(ORG).auth, $I('p-id').value.trim(), $I('p-pw').value); $I('p-pw').value=''; }
   catch(e){ m.className='alert err'; m.textContent='열쇠가 맞지 않습니다 — 이메일·비밀번호를 확인해 주세요.'; }
 };
-
+const siteUrl = o => (PUBCFG.urls && PUBCFG.urls[o]) || (storeOf(o) === 'kids' ? '' : (o==='daniel' ? `${SITE}/news-daniel.html` : `${SITE}/news-jihyebit.html`));
+window.retryCfg = async () => { $I('sa-store').textContent = '다시 읽는 중…'; await loadCfg(); paintOrgs(); };
 function paintOrgs(){
   if(!$I('sa-orgs')) return;
+  const isSuper = CU && CU.role === 'super';
   $I('sa-orgs').innerHTML = Object.entries(ORGS).map(([k,v])=>
-    `<button class="${k===ORG?'on':''}" onclick="pickOrg('${k}')">${v}</button>`).join('');
-  $I('preview-link').href = ORG==='daniel' ? `${SITE}/news-daniel.html` : `${SITE}/news-jihyebit.html`;
-  loadList();
+    `<button class="${k===ORG?'on':''}" onclick="pickOrg('${k}')">${esc(v)}</button>`).join('')
+    + (isSuper && CFG_OK ? `<button style="margin-left:auto" onclick="toggleConn()">🔗 연결 설정</button>` : '');
+  if(!CFG_OK){
+    $I('sa-store').innerHTML = `⚠️ 홈페이지 연결 설정을 읽지 못했어요 — 인터넷 연결을 확인해 주세요. <button class="bs2" style="padding:4px 10px;font-size:12px" onclick="retryCfg()">다시 시도</button>`;
+    $I('editor').style.display = 'none'; $I('pub-gate').style.display = 'none'; $I('sa-conn').style.display = 'none';
+    return;
+  }
+  const k = storeOf(ORG);
+  $I('sa-store').innerHTML = k === 'kids'
+    ? `선교원 소식은 <b>선교원 전용 보관함</b>(${esc(PUBCFG.kids.fb.projectId)})에 저장돼요 · 학교 사이트와 섞이지 않아요`
+    : ORG === 'daniel' ? `학교 소식은 <b>학교 보관함</b>(daniel-public)에 저장돼요`
+    : `선교원 전용 보관함이 아직 연결되지 않아 <b>예전 보관함</b>에 저장돼요${isSuper?' — «🔗 연결 설정»에서 연결하면 옮길 수 있어요':''}`;
+  const cur = $I('w-c').value;
+  setCats(); if(CATS[ORG].includes(cur)) $I('w-c').value = cur;
+  catHint();
+  const u = siteUrl(ORG); $I('preview-link').href = u || '#'; $I('preview-link').style.display = u ? '' : 'none';
+  $I('editor').style.display = 'none'; $I('pub-gate').style.display = 'none';
+  paintGate();
 }
 window.pickOrg = k => { ORG=k; resetForm(); paintOrgs(); };
+function setCats(extra){                                // 예전 분류(안내 등)로 쓴 글을 고칠 때 분류가 몰래 바뀌지 않게
+  const opts = CATS[ORG].map(c=>`<option>${esc(c)}</option>`);
+  if(extra && !CATS[ORG].includes(extra)) opts.push(`<option value="${esc(extra)}">(예전) ${esc(extra)}</option>`);
+  $I('w-c').innerHTML = opts.join('');
+}
+window.catHint = () => { const c = $I('w-c').value; $I('w-c-hint').textContent = CAT_HINT[c] || ''; $I('w-cap-box').style.display = c === '작품' ? '' : 'none'; };
+/* 🔗 연결 설정 */
+window.toggleConn = (on) => { const b = $I('sa-conn'); const show = on === undefined ? b.style.display === 'none' : on; b.style.display = show ? '' : 'none';
+  if(show){ const f = PUBCFG.kids && PUBCFG.kids.fb; $I('c-fb').value = f ? 'const firebaseConfig = ' + JSON.stringify(f, null, 2) + ';' : '';
+    $I('c-u-daniel').value = (PUBCFG.urls||{}).daniel || ''; $I('c-u-jihyebit').value = (PUBCFG.urls||{}).jihyebit || ''; $I('c-msg').className = 'alert'; } };
+function parseFb(t){
+  t = String(t||'').trim(); if(!t) return null;
+  const o = {}; const re = /["']?\b(apiKey|authDomain|projectId|storageBucket|messagingSenderId|appId|measurementId)["']?\s*:\s*["']([^"']+)["']/g; let m;
+  while((m = re.exec(t))) o[m[1]] = m[2];
+  if(!o.apiKey || !o.projectId || !o.appId) throw new Error('apiKey · projectId · appId 를 찾지 못했어요 — 설정 글을 통째로 붙여 넣어 주세요.');
+  if(o.projectId === PUB_FB.projectId) throw new Error('학교 보관함(daniel-public)과 같은 프로젝트예요 — 선교원용으로 새로 만든 프로젝트의 설정을 넣어 주세요.');
+  if(o.projectId === __cfg.projectId) throw new Error('교사 선교사 내부 프로젝트예요 — 선교원 소식용으로 새로 만든 프로젝트의 설정을 넣어 주세요.');
+  return o;
+}
+window.saveConn = async () => {
+  const m = $I('c-msg'); m.className = 'alert';
+  try{
+    const fb = parseFb($I('c-fb').value);
+    const urls = { daniel: $I('c-u-daniel').value.trim(), jihyebit: $I('c-u-jihyebit').value.trim() };
+    Object.values(urls).forEach(u => { if(u && !/^https:\/\//.test(u)) throw new Error('사이트 주소는 https:// 로 시작해야 해요.'); });
+    if(PUBCFG.kids && !fb && !confirm('선교원 보관함 연결을 끊을까요?\n끊으면 새 보관함으로 옮긴 소식이 이 화면에 안 보이고, 새 글은 예전 보관함에 저장돼요.')) return;
+    await setDoc(doc(db,'config','publicSites'), { kids: fb ? { fb } : null, urls, updatedAt: Timestamp.now(), by: CU?.name||'' });
+    setCfg({ kids: fb ? { fb } : null, urls });
+    m.className = 'alert ok'; m.textContent = '저장했어요 ✓';
+    paintOrgs();
+  }catch(e){ m.className = 'alert err'; m.textContent = e.message || '저장 실패'; }
+};
+/* 📦 예전 보관함에 남은 선교원 소식 → 선교원 전용 보관함으로 한 번 옮기기 */
+async function paintMig(){
+  const box = $I('sa-mig'); if(!box) return;
+  box.style.display = 'none';
+  if(ORG !== 'jihyebit' || storeOf('jihyebit') !== 'kids' || !(CU && CU.role === 'super')) return;
+  const old = pubCtx('daniel');
+  if(!old.ready) return;
+  if(!old.user){ box.style.display = ''; box.innerHTML = `<b>📦 예전 보관함에 남은 선교원 소식 옮기기</b><div class="m" style="margin-top:4px">먼저 학교 보관함 열쇠를 넣어야 남은 글을 셀 수 있어요 — 위에서 «다니엘 아마츠»를 눌러 열쇠를 넣은 뒤 다시 와 주세요.</div>`; return; }
+  const still = () => ORG === 'jihyebit' && storeOf('jihyebit') === 'kids';
+  try{
+    const snap = await getDocs(query(collection(old.db,'publicSite'), where('org','==','jihyebit')));
+    if(!still() || MIG_RUN) return;                     // 세는 사이에 학교로 넘어갔으면 그리지 않음
+    if(!snap.size){ box.style.display = 'none'; return; }
+    box.style.display = '';
+    box.innerHTML = `<b>📦 예전 보관함에 선교원 소식 ${snap.size}개가 남아 있어요</b>
+      <div class="m" style="margin-top:4px">새 보관함으로 옮기고 예전 보관함에서는 지워요 (사진 · 날짜 · 게시 상태 그대로). 한 번만 누르면 돼요.</div>
+      <div class="m" style="margin-top:4px;color:var(--danger,#C0392B)">⚠️ 새 선교원 홈페이지(이 보관함 설정을 넣은 것)를 먼저 올린 뒤 옮기세요 — 옮기는 순간 예전 공개 홈페이지의 선교원 소식은 비어요.</div>
+      <div class="sa-act"><button id="mig-btn" onclick="runMig()">옮기기</button></div><div class="alert" id="mig-msg"></div>`;
+  }catch(e){
+    if(!still()) return;
+    box.style.display = ''; box.innerHTML = `<b>📦 예전 보관함을 확인하지 못했어요</b><div class="m" style="margin-top:4px">남은 선교원 소식이 있는지 세지 못했어요 (${esc(e.code||e.message||'')}). 잠시 뒤 다시 열어 주세요.</div>`;
+  }
+}
+let MIG_RUN = false;
+window.runMig = async () => {
+  const old = pubCtx('daniel'), neu = pubCtx('jihyebit'), m = $I('mig-msg');
+  if(neu.key !== 'kids' || !neu.user || !old.user || MIG_RUN) return;
+  if(!confirm('예전 보관함의 선교원 소식을 새 보관함으로 옮길까요?\n새 선교원 홈페이지를 먼저 올렸는지 확인해 주세요 — 옮기면 예전 공개 홈페이지의 선교원 소식은 비어요.')) return;
+  MIG_RUN = true; const btn = $I('mig-btn'); if(btn){ btn.disabled = true; btn.textContent = '옮기는 중…'; }
+  let n = 0, fail = 0;
+  try{
+    const snap = await getDocs(query(collection(old.db,'publicSite'), where('org','==','jihyebit')));
+    for(const d of snap.docs){
+      try{ const tgt = doc(neu.db,'publicSite',d.id);
+        const ex = await getDoc(tgt);                   // 지난번에 복사만 되고 못 지운 글 — 새 보관함에서 고친 것을 덮지 않고 예전 것만 지움
+        if(!ex.exists()){ const v = { ...d.data() }; delete v.org; await setDoc(tgt, { ...v, movedAt: Timestamp.now() }); }
+        await deleteDoc(doc(old.db,'publicSite',d.id)); n++; }
+      catch(e){ fail++; }
+    }
+    m.className = fail ? 'alert err' : 'alert ok'; m.textContent = `${n}개 옮겼어요${fail?` · ${fail}개는 실패 — 다시 눌러 주세요`:' ✓ 예전 보관함은 이제 비었어요'}`;
+    if(!fail){ const a = $I('sa-mig').querySelector('.sa-act'); if(a) a.remove(); }
+    else if(btn){ btn.disabled = false; btn.textContent = '다시 옮기기'; }
+    loadList();
+  }catch(e){ m.className = 'alert err'; m.textContent = '옮기지 못했어요: ' + (e.message||''); if(btn){ btn.disabled = false; btn.textContent = '다시 옮기기'; } }
+  MIG_RUN = false;
+};
 
 async function loadList(){
   if(!$I('list')) return;          // 접근 권한으로 막혀 화면이 바뀐 뒤
   $I('list').innerHTML = '<div style="color:var(--tl);font-size:13px;padding:14px 0">불러오는 중…</div>';
+  const seq = ++LSEQ, key = curKey(); ITEMS = []; ITEMS_KEY = '';
   try{
-    const snap = await getDocs(query(collection(pubDb,'publicSite'), where('org','==',ORG)));
+    const f = orgFilter(ORG);
+    const snap = await getDocs(f ? query(collection(pubDbOf(),'publicSite'), where('org','==',f)) : collection(pubDbOf(),'publicSite'));
+    if(seq !== LSEQ || key !== curKey()) return;        // 늦게 온 다른 기관 목록은 버림
     ITEMS = snap.docs.map(d=>({id:d.id, ...d.data()}))
       .sort((a,b)=>(b.at?.seconds||0)-(a.at?.seconds||0));
+    ITEMS_KEY = key;
     if(!$I('list')) return;
     $I('list').innerHTML = ITEMS.length ? ITEMS.map(p=>{
       const d = p.at?.seconds ? new Date(p.at.seconds*1000) : null;
@@ -207,18 +374,18 @@ async function loadList(){
       const ph = (typeof p.photo==='string'&&p.photo.startsWith('data:image/'))?p.photo:'';
       return `<div class="sa-card">
         <div class="t">${esc(p.title||'')}<span class="pill ${p.published?'on':'off'}">${p.published?'게시중':'내려짐'}</span></div>
-        <div class="m">${ds}${p.category?' · '+esc(p.category):''}</div>
-        ${ph?`<img src="${ph}" alt="">`:''}
+        <div class="m">${ds}${p.category?' · '+esc(p.category):''}${p.start?` · 📅 ${esc(p.start)}${p.end&&p.end!==p.start?' ~ '+esc(p.end):''}`:''}${p.place?' · '+esc(p.place):''}${p.home?' · 🏠 홈에 걸림':''}</div>
+        ${ph?`<img src="${esc(ph)}" alt="">`:''}
         ${p.body?`<div class="b">${esc((p.body||'').slice(0,200))}${(p.body||'').length>200?'…':''}</div>`:''}
         <div class="sa-act">
-          <button onclick="togglePub('${p.id}')">${p.published?'⬇ 내리기':'⬆ 게시하기'}</button>
-          <button onclick="editNews('${p.id}')">✏️ 수정</button>
-          <button style="color:var(--danger,#C0392B)" onclick="delNews('${p.id}')">🗑 삭제</button>
+          <button onclick="togglePub('${sid(p.id)}')">${p.published?'⬇ 내리기':'⬆ 게시하기'}</button>
+          <button onclick="editNews('${sid(p.id)}')">✏️ 수정</button>
+          <button style="color:var(--danger,#C0392B)" onclick="delNews('${sid(p.id)}')">🗑 삭제</button>
         </div>
       </div>`;
     }).join('') : '<div style="color:var(--tl);font-size:13px;padding:14px 0">아직 올린 소식이 없습니다 — 위에서 첫 소식을 써 보세요.</div>';
   }catch(e){
-    if(!$I('list')) return;
+    if(!$I('list') || seq !== LSEQ) return;
     $I('list').innerHTML = `<div class="alert err" style="display:block">불러오지 못했습니다: ${esc(e.message||'')}</div>`;
   }
 }
@@ -249,18 +416,23 @@ $I('w-f').addEventListener('change', async ()=>{
 window.clearPhoto = ()=>{ PHOTO=''; $I('w-prev').style.display='none'; $I('w-fname').textContent=''; $I('w-fdel').style.display='none'; };
 
 window.resetForm = ()=>{
-  EDIT=null; clearPhoto();
+  EDIT=null; EDIT_KEY=''; clearPhoto();
   $I('w-title').textContent='✏️ 새 소식 쓰기';
+  setCats();
   $I('w-t').value=''; $I('w-b').value=''; $I('w-c').value='소식'; $I('w-pub').checked=true;
+  $I('w-s').value=''; $I('w-e').value=''; $I('w-place').value=''; $I('w-cap').value=''; $I('w-home').checked=false; catHint();
   $I('w-cancel').style.display='none'; $I('w-msg').className='alert';
 };
 
 window.editNews = (id)=>{
+  if(ITEMS_KEY !== curKey()){ loadList(); return; }
   const p = ITEMS.find(x=>x.id===id); if(!p) return;
-  EDIT=id;
+  EDIT=id; EDIT_KEY=ITEMS_KEY;
   $I('w-title').textContent='✏️ 소식 수정';
+  setCats(p.category);
   $I('w-t').value=p.title||''; $I('w-b').value=p.body||''; $I('w-c').value=p.category||'소식';
   $I('w-pub').checked=!!p.published;
+  $I('w-s').value=p.start||''; $I('w-e').value=p.end||''; $I('w-place').value=p.place||''; $I('w-cap').value=p.caption||''; $I('w-home').checked=!!p.home; catHint();
   PHOTO = (typeof p.photo==='string'&&p.photo.startsWith('data:image/'))?p.photo:'';
   if(PHOTO){ $I('w-prev').src=PHOTO; $I('w-prev').style.display='block'; $I('w-fname').textContent='✓ 기존 사진'; $I('w-fdel').style.display=''; }
   else clearPhoto();
@@ -272,26 +444,42 @@ window.saveNews = async ()=>{
   const m=$I('w-msg'); m.className='alert';
   const title=$I('w-t').value.trim(), body=$I('w-b').value.trim();
   if(!title){ m.className='alert err'; m.textContent='제목을 입력해 주세요.'; return; }
-  const rec = { org:ORG, title, category:$I('w-c').value, body,
+  const st=$I('w-s').value, en=$I('w-e').value;
+  if(en && !st){ m.className='alert err'; m.textContent='끝나는 날을 넣으려면 시작일도 넣어 주세요.'; return; }
+  if(st && en && en < st){ m.className='alert err'; m.textContent='끝나는 날이 시작일보다 빨라요.'; return; }
+  const cat = $I('w-c').value;
+  if(cat === '작품' && !PHOTO){ m.className='alert err'; m.textContent='«작품»은 사진이 있어야 홈 액자에 걸려요.'; return; }
+  if(cat === '알림' && !st){ m.className='alert err'; m.textContent='«알림»은 시작일이 있어야 해요 — 그 기간에만 홈 맨 위에 떠요.'; return; }
+  if(EDIT && EDIT_KEY !== curKey()){ m.className='alert err'; m.textContent='다른 기관 화면으로 바뀌었어요 — 고칠 글을 다시 눌러 주세요.'; resetForm(); return; }
+  const k0 = curKey(), before = sig(PUBCFG.kids && PUBCFG.kids.fb);
+  if(!(await loadCfg())){ m.className='alert err'; m.textContent='연결 설정을 확인하지 못했어요 — 잠시 뒤 다시 저장해 주세요.'; return; }
+  if(curKey() !== k0 || (storeOf(ORG) === 'kids' && sig(PUBCFG.kids && PUBCFG.kids.fb) !== before)){   // 그사이 다른 분이 보관함 연결을 바꿈 → 화면을 다시 맞추고 저장은 멈춤
+    paintOrgs(); $I('sa-store').insertAdjacentHTML('beforeend', ' — <b>보관함 연결이 바뀌어 저장을 멈췄어요. 쓰던 내용은 그대로 있으니 확인하고 다시 저장해 주세요.</b>'); return; }
+  const rec = { title, category:cat, body,
+    start: st, end: (en && en !== st) ? en : '', place: $I('w-place').value.trim(), caption: cat==='작품' ? $I('w-cap').value.trim() : '',
+    home: $I('w-home').checked,
     photo: PHOTO||'', published: $I('w-pub').checked,
     updatedAt: Timestamp.now(), by: CU?.name||'' };
+  const f = orgFilter(ORG); if(f) rec.org = f;      // 선교원 전용 보관함엔 기관 표시를 남기지 않는다
   try{
-    if(EDIT) await updateDoc(doc(pubDb,'publicSite',EDIT), rec);
-    else await addDoc(collection(pubDb,'publicSite'), { ...rec, at: Timestamp.now() });
+    if(EDIT) await updateDoc(doc(pubDbOf(),'publicSite',EDIT), rec);
+    else await addDoc(collection(pubDbOf(),'publicSite'), { ...rec, at: Timestamp.now() });
     m.className='alert ok'; m.textContent = EDIT ? '수정했습니다 ✓' : '올렸습니다 ✓ — 공개 페이지에 바로 반영돼요';
     resetForm(); loadList();
   }catch(e){ m.className='alert err'; m.textContent='저장 실패: '+(e.message||''); }
 };
 
 window.togglePub = async (id)=>{
+  if(ITEMS_KEY !== curKey()){ loadList(); return; }
   const p = ITEMS.find(x=>x.id===id); if(!p) return;
-  try{ await updateDoc(doc(pubDb,'publicSite',id), { published: !p.published, updatedAt: Timestamp.now() }); loadList(); }
+  try{ await updateDoc(doc(pubDbOf(),'publicSite',id), { published: !p.published, updatedAt: Timestamp.now() }); loadList(); }
   catch(e){ alert('실패: '+(e.message||'')); }
 };
 window.delNews = async (id)=>{
+  if(ITEMS_KEY !== curKey()){ loadList(); return; }
   const p = ITEMS.find(x=>x.id===id); if(!p) return;
   if(!confirm(`「${p.title}」 소식을 완전히 삭제할까요?\n내리기만 하려면 «⬇ 내리기»를 쓰세요.`)) return;
-  try{ await deleteDoc(doc(pubDb,'publicSite',id)); loadList(); }
+  try{ await deleteDoc(doc(pubDbOf(),'publicSite',id)); loadList(); }
   catch(e){ alert('삭제 실패: '+(e.message||'')); }
 };
 </script>
