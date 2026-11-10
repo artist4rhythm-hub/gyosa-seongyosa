@@ -791,6 +791,7 @@ async function loadMoneySums(){
 
 /* ── 📝 회의에서 맡은 일 (v-93) — 회의록 «임무» 담당이 되면 바로 뜬다 · 진행 전 → 진행 중 → 완료 ── */
 let _mtgUn = [], _mtgT = [], _mtgN = [], _mtgUid = '';
+let _mtgL = [];   // 🔒 v175 주임 회의록 임무 (멤버 · 담당자만 — 사이드바에 «주임 회의록»이 보이는 선생님만 불러옴)
 const MST = { todo:{ i:'○', l:'진행 전' }, doing:{ i:'◐', l:'진행 중' }, done:{ i:'✓', l:'완료' } };
 function mtgCss(){
   if(document.getElementById('hwm-css')) return;
@@ -823,10 +824,12 @@ function paintMtg(){
   mtgCss();
   const recent = Date.now() - 2 * 86400000;
   const ms = v => v && v.seconds ? v.seconds * 1000 : 0;
-  const rows = _mtgT.filter(t => (t.status || 'todo') !== 'done' || ms(t.doneAt) > recent)
+  const all = _mtgT.concat(_mtgL);
+  const rows = all.filter(t => (t.status || 'todo') !== 'done' || ms(t.doneAt) > recent)
     .sort((a, b) => ((a.status === 'done') - (b.status === 'done')) || String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(b.date).localeCompare(String(a.date)));
-  const open = _mtgT.filter(t => (t.status || 'todo') !== 'done').length;
-  const un = _mtgN.filter(n => !n.read && n.kind !== 'task');
+  const open = all.filter(t => (t.status || 'todo') !== 'done').length;
+  const un = _mtgN.filter(n => !n.read && n.kind !== 'task' && n.book !== 'lead');
+  const unL = _mtgN.filter(n => !n.read && n.kind !== 'task' && n.book === 'lead');
   const cnt = $I('w-mtg-n'); if(cnt){ cnt.textContent = open ? `${open}건` : (rows.length ? '' : '할 일 없음'); cnt.classList.toggle('hm-none', !open && !rows.length); }
   const show = rows.slice(0, 6);
   let h = show.map(t => {
@@ -835,21 +838,23 @@ function paintMtg(){
     const mates = (t.uids || []).filter(u => u !== _mtgUid).map(u => (t.names || {})[u] || '').filter(Boolean);
     return `<div class="hwm${st === 'done' ? ' done' : ''}">
       <button class="hwm-ck ${st}" onclick="hwMtgSt('${esc(t.id)}')" title="${MST[st].l} — 누르면 ${MST[st === 'todo' ? 'doing' : st === 'doing' ? 'done' : 'todo'].l}">${MST[st].i}</button>
-      <a class="hwm-t" href="minutes.html?m=${encodeURIComponent(t.meetingId)}&k=${encodeURIComponent(t.id)}"><b>${esc(t.h || '')}</b>
-        <span>${esc(md)} ${esc(t.mtitle || '')} · ${esc((t.topicNo ? t.topicNo + '. ' : '') + (t.topicTitle || ''))}${mates.length ? ' · 함께 ' + esc(mates.join(', ')) : ''}${t.cmt ? ' · 💬' + t.cmt : ''}</span></a>
+      <a class="hwm-t" href="minutes.html?${t.__lead ? 'book=lead&' : ''}m=${encodeURIComponent(t.meetingId)}&k=${encodeURIComponent(t.id)}"><b>${esc(t.h || '')}</b>
+        <span>${t.__lead ? '🔒 ' : ''}${esc(md)} ${esc(t.mtitle || '')} · ${esc((t.topicNo ? t.topicNo + '. ' : '') + (t.topicTitle || ''))}${mates.length ? ' · 함께 ' + esc(mates.join(', ')) : ''}${t.cmt ? ' · 💬' + t.cmt : ''}</span></a>
       ${d && st !== 'done' ? `<span class="hwm-d${d.dd < 0 ? ' over' : d.dd <= 2 ? ' soon' : ''}">${esc(d.l)}</span>` : ''}</div>`;
   }).join('');
   if(!show.length) h = '';   // 🏛 v168 빈 카드는 한 줄로 — 제목 줄의 «할 일 없음»
   if(rows.length > show.length) h += `<a class="hwm-n" href="minutes.html?mine=1">… ${rows.length - show.length}건 더 · <b>모두 보기 ›</b></a>`;
   if(un.length) h += `<a class="hwm-n" href="minutes.html?mine=1">🔔 회의록 새 소식 <b>${un.length}</b> — ${esc(un[0].fromName || '')}: ${esc(String(un[0].text || '').slice(0, 40))} ›</a>`;
+  if(unL.length && window.leadMenuState && leadMenuState(getCU())){ const mem = leadMenuState(getCU()) === 'm';
+    h += `<a class="hwm-n" href="minutes.html?book=lead${mem ? '&mine=1' : ''}">🔒 ${mem ? '주임 회의록' : '공유받은 주제'} 새 소식 <b>${unL.length}</b> — ${esc(unL[0].fromName || '')}: ${esc(String(unL[0].text || '').slice(0, 40))} ›</a>`; }
   box.innerHTML = h;
 }
 window.hwMtgSt = async (key) => {
-  const t = _mtgT.find(x => x.id === key); if(!t) return;
+  const t = _mtgT.find(x => x.id === key) || _mtgL.find(x => x.id === key); if(!t) return;
   const nx = (t.status || 'todo') === 'todo' ? 'doing' : t.status === 'doing' ? 'done' : 'todo';
   const me = getCU() || {};
   try{
-    await ctx.fs.updateDoc(doc(db, 'meetingTasks', key), { status: nx, updatedAt: Timestamp.now(),
+    await ctx.fs.updateDoc(doc(db, t.__lead ? 'leadTasks' : 'meetingTasks', key), { status: nx, updatedAt: Timestamp.now(),
       doneAt: nx === 'done' ? Timestamp.now() : null, doneByUid: nx === 'done' ? me.uid : '', doneByName: nx === 'done' ? (me.name || '') : '' });
     t.status = nx; if(nx === 'done') t.doneAt = Timestamp.now();
     paintMtg();
@@ -867,6 +872,9 @@ function loadMtgWidget(){
       e => { _mtgT = []; const b = $I('w-mtg'); if(b) b.innerHTML = `<div class="hw-dim">회의록 임무를 아직 불러올 수 없어요 (보안 규칙 v23 게시 후 보여요).</div>`; }));
     _mtgUn.push(onSnapshot(query(collection(db, 'mtgNotifs'), where('toUid', '==', cu.uid)),
       s => { _mtgN = s.docs.map(d => ({ id: d.id, ...d.data() })); paintMtg(); }, e => {}));
+    _mtgL = [];
+    if(window.leadMenuState && leadMenuState(cu) === 'm') _mtgUn.push(onSnapshot(query(collection(db, 'leadTasks'), where('uids', 'array-contains', cu.uid)),
+      s => { _mtgL = s.docs.map(d => ({ id: d.id, ...d.data(), __lead: true })).filter(t => !t.deleted); paintMtg(); }, e => { _mtgL = []; }));
   }catch(e){ box.innerHTML = `<div class="hw-dim">회의록 임무를 불러오지 못했어요.</div>`; }
 }
 

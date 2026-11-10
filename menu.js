@@ -41,6 +41,10 @@ const MENU = [
       { key:'minutes', label:'회의록', icon:'edit_note', href:'minutes.html',
         desc:'주간 회의 · 참석 · 결정 · 임무 · 댓글 — 기관별 · DA전체 · PDF·워드 출력', badge:'minutes',
         tabs:['회의록 목록','주제 찾기','내가 맡은 임무','출력 (PDF · 워드)'] },
+      // 🔒 v175 주임 회의록 — 주임 멤버 · 수퍼관리자에게만 보임 (주제만 공유받은 선생님은 «공유받은 주제»로) · 접근 권한 표에는 안 나옴
+      { key:'leadmin', label:'주임 회의록', label2:'공유받은 주제', icon:'lock', href:'minutes.html?book=lead', badge:'leadmin', lead:true, acc:false,
+        desc:'주임 멤버끼리 쓰는 회의록 — 회의록 기능 그대로 · 주제 하나만 따로 공유 · 고친 기록',
+        tabs:['주임 회의록 목록','주제 공유','멤버 관리','고친 기록'] },
       { key:'nhp', label:'나학평', icon:'menu_book', href:'nhp.html', badge:'nhp', orgs:['daniel'],
         desc:'나의 학교생활 평가서 — 과목 담당 입력 · 담임 · 검토관 · 최종 승인 · PDF · 영문판 · 지난 나학평',
         tabs:['내 할 일','진행 현황','출력 · 원본','지난 나학평','학기 설정'] },
@@ -144,8 +148,21 @@ const MENU = [
 /* 전체 페이지 평탄화 (검색·홈용) */
 function menuAllItems(){
   const out = [];
-  MENU.forEach(g => g.items.forEach(it => out.push({ ...it, group: g.group, groupIcon: g.icon, groupAdmin: g.admin })));
+  MENU.forEach(g => g.items.forEach(it => out.push({ ...it, label: menuLabelOf(it), group: g.group, groupIcon: g.icon, groupAdmin: g.admin })));
   return out;
+}
+/* 🔒 v175 주임 회의록 — 사이드바에 보일지 (이 기기에 기억한 확인 결과: lead-badge.js · 주임 회의록 화면이 고친다)
+   'm' 멤버 (수퍼관리자는 늘) · 's' 주제만 공유받음 · '' 없음 */
+function leadMenuState(u){
+  u = u || (typeof SB_USER !== 'undefined' ? SB_USER : null);
+  if(!u) return '';
+  if(u.role === 'super') return 'm';
+  try{ const j = JSON.parse(localStorage.getItem('gyosa_lead') || 'null'); if(j && j.uid === u.uid && (j.s === 'm' || j.s === 's')) return j.s; }catch(e){}
+  return '';
+}
+function menuLabelOf(it, u){
+  if(!it || !it.lead) return (it && it.label) || '';
+  return leadMenuState(u) === 'm' ? it.label : (it.label2 || it.label);
 }
 
 /* 키로 찾기 */
@@ -162,6 +179,7 @@ const MENU_ADMIN_ROLES = ['super','org_admin','tab_admin'];
 function menuOrgsOf(u){ return (u && Array.isArray(u.orgs) && u.orgs.length) ? u.orgs : [u && u.org]; }
 function menuAccess(it, u){
   if(!it) return { ok:false, kind:'role' };
+  if(it.lead) return leadMenuState(u) ? { ok:true, kind:'base' } : { ok:false, kind:'role' };   // 🔒 v175 주임 회의록
   const adm = !!(it.admin || it.groupAdmin);
   if(!u) return { ok:!adm, kind:'base' };
   if(u.role === 'super') return { ok:true, kind:'super' };
@@ -212,4 +230,6 @@ window.menuSearch = menuSearch;
 window.menuAccess = menuAccess;
 window.menuCanSee = menuCanSee;
 window.menuOrgsOf = menuOrgsOf;
+window.leadMenuState = leadMenuState;
+window.menuLabelOf = menuLabelOf;
 window.MENU_ADMIN_ROLES = MENU_ADMIN_ROLES;

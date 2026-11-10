@@ -207,17 +207,18 @@ export async function xlsxTable(file){
 export function makeStore(ctx){
   const { db } = ctx;
   const { doc, getDoc, setDoc, collection, serverTimestamp } = ctx.fs;
+  const FC = ctx.col || 'meetingFiles';                 // 🔒 v175 주임 회의록은 leadFiles
   const cache = new Map();
   const base = (org, mid) => ({ org, meetingId: mid, uid: ctx.me().uid, at: serverTimestamp() });
   async function putImage(org, mid, src, kind, name){
     const r = await shrink(src, kind === 'pdfpage' ? PG_SIDE : IMG_SIDE, kind === 'pdfpage' ? PG_CAP : IMG_CAP);
-    const ref = doc(collection(db, 'meetingFiles'));
+    const ref = doc(collection(db, FC));
     await setDoc(ref, { ...base(org, mid), kind: kind || 'img', name: name || '', data: r.data, w: r.w, ht: r.h, size: r.size });
     cache.set(ref.id, r.data);
     return { fid: ref.id, w: r.w, ht: r.h, size: r.size, data: r.data };
   }
   async function putShrunk(org, mid, r, kind, name){   // 이미 줄인 그림 (PDF 쪽)
-    const ref = doc(collection(db, 'meetingFiles'));
+    const ref = doc(collection(db, FC));
     await setDoc(ref, { ...base(org, mid), kind: kind || 'pdfpage', name: name || '', data: r.data, w: r.w, ht: r.h, size: r.size });
     cache.set(ref.id, r.data);
     return ref.id;
@@ -227,27 +228,27 @@ export function makeStore(ctx){
     const url = await readAsDataURL(file);
     const b64 = String(url).slice(String(url).indexOf(',') + 1);
     const n = Math.max(1, Math.ceil(b64.length / CHUNK));
-    const ref = doc(collection(db, 'meetingFiles'));
+    const ref = doc(collection(db, FC));
     for(let i = 0; i < n; i++){
-      await setDoc(doc(db, 'meetingFiles', `${ref.id}__c${i}`), { ...base(org, mid), kind:'chunk', parent: ref.id, i, data: b64.slice(i * CHUNK, (i + 1) * CHUNK) });
+      await setDoc(doc(db, FC, `${ref.id}__c${i}`), { ...base(org, mid), kind:'chunk', parent: ref.id, i, data: b64.slice(i * CHUNK, (i + 1) * CHUNK) });
     }
     await setDoc(ref, { ...base(org, mid), kind:'file', name: file.name, mime: file.type || '', size: file.size, chunks: n });
     return { fid: ref.id, size: file.size };
   }
   async function getImage(fid){
     if(cache.has(fid)) return cache.get(fid);
-    const s = await getDoc(doc(db, 'meetingFiles', fid));
+    const s = await getDoc(doc(db, FC, fid));
     const v = s.exists() ? (s.data().data || '') : '';
     cache.set(fid, v);
     return v;
   }
   async function download(fid, name){
-    const s = await getDoc(doc(db, 'meetingFiles', fid));
+    const s = await getDoc(doc(db, FC, fid));
     if(!s.exists()) throw new Error('파일을 찾지 못했어요');
     const f = s.data();
     let b64 = '';
     for(let i = 0; i < (f.chunks || 0); i++){
-      const c = await getDoc(doc(db, 'meetingFiles', `${fid}__c${i}`));
+      const c = await getDoc(doc(db, FC, `${fid}__c${i}`));
       b64 += c.exists() ? (c.data().data || '') : '';
     }
     const bin = atob(b64); const u8 = new Uint8Array(bin.length);

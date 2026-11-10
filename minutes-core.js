@@ -6,10 +6,11 @@
    ═══════════════════════════════════════════════════════════ */
 
 /* ── 기관 — 'da' = DA전체 (모든 기관 교직원이 함께 드나드는 회의록) ── */
-export const MORG = { daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원', da:'DA전체' };
-export const MORG_SHORT = { daniel:'다니엘', jihyebit:'그루터기', da:'DA전체' };
+/*    🔒 v175 'lead' = 주임 회의록 (멤버만 · 따로 보관함 leadMeetings …) — 기관 고르기(MORDER)에는 넣지 않는다 */
+export const MORG = { daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원', da:'DA전체', lead:'주임 회의록' };
+export const MORG_SHORT = { daniel:'다니엘', jihyebit:'그루터기', da:'DA전체', lead:'주임' };
 export const MORDER = ['daniel', 'jihyebit', 'da'];
-export const MCOLOR = { daniel:'#00704A', jihyebit:'#B7791F', da:'#2B5797' };
+export const MCOLOR = { daniel:'#00704A', jihyebit:'#B7791F', da:'#2B5797', lead:'#8A6410' };
 
 /* 처음 설정값 — 회의록 쓰는 화면에서 바로 넣고 뺄 수 있다 (minutesConfig/types) */
 export const OLD_TYPES = ['훈련센터 회의'];
@@ -21,6 +22,7 @@ export const DEF_TYPES = {
   daniel:   ['다니엘아마츠학교 회의'],                  // (v-95) «훈련센터»는 더 쓰지 않음 — 예전 회의록 제목은 그대로
   jihyebit: ['그루터기 선교원 교사 회의'],
   da:       ['DA 전체 회의'],
+  lead:     ['주임 회의'],                              // 🔒 v175 주임 회의록 (leadConfig/main.types 가 있으면 그것)
 };
 export const DEF_ABS = ['출장', '수업', '병가', '개인 사정'];
 export const WD = ['일', '월', '화', '수', '목', '금', '토'];
@@ -323,7 +325,7 @@ export function renderTopic(m, t, i, ctx){
   const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : '';
   let h = `<section class="md-t" id="t-${esc(t.id)}" data-tid="${esc(t.id)}">
     <div class="md-th"><i>${i + 1}.</i><b>${hl(esc(t.title || '(제목 없음)'), q)}</b>${thr}
-      ${ctx.interactive ? `<button class="md-tc${tc ? ' on' : ''}" data-act="tcmt" data-tid="${esc(t.id)}">💬 ${tc || '댓글'}</button>` : ''}</div>
+      ${ctx.interactive ? `<button class="md-tc${tc ? ' on' : ''}" data-act="tcmt" data-tid="${esc(t.id)}">💬 ${tc || '댓글'}</button>` : ''}${ctx.topicTool ? ctx.topicTool(t) : ''}</div>
     ${renderBody(t.body, ctx)}`;
   const clean = ctx.clean || (x => x);
   for(const d of dec) h += `<div class="md-dec"><b>결정</b><span>${hl(clean(d.h || ''), q)}</span></div>`;
@@ -431,6 +433,7 @@ export function renderDocB(m, ctx){
     h += `<section class="md-t mb-t${folded ? ' fold' : ''}" id="t-${esc(t.id)}" data-tid="${esc(t.id)}">
       <div class="mb-th"><span class="mb-n">${i + 1}</span><b>${hl(esc(t.title || '(제목 없음)'), q)}</b>${thr}${ed}
         ${ctx.interactive && ctx.pinned ? (pin => `<button type="button" class="mb-pin${pin ? ' on' : ''}" data-act="pin" data-mid="${esc(m.id)}" data-tid="${esc(t.id)}" aria-pressed="${pin}" aria-label="${pin ? '모아 둔 것에서 빼기' : '모아 두기'}" title="${pin ? '모아 둔 주제에서 빼기' : '☆ 모아 두기 (나만 보기)'}">${pin ? '★' : '☆'}</button>`)(ctx.pinned.has(t.id)) : ''}
+        ${ctx.topicTool ? ctx.topicTool(t) : ''}
         ${ctx.interactive && (nl || dec.length) ? `<button type="button" class="mb-fd" data-act="fold" data-tid="${esc(t.id)}" aria-expanded="${!folded}">${folded ? `펼치기 ▾` : '접기 ▴'}</button>` : ''}</div>`;
     if(!folded && (nl || dec.length))
       h += `<div class="mb-tb">${renderBody(t.body, ctx)}${dec.map(d => `<div class="md-dec"><b>결정</b><span>${hl(clean(d.h || ''), q)}</span></div>`).join('')}</div>`;

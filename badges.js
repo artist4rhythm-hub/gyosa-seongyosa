@@ -85,7 +85,7 @@ async function fillUnreadOnce(db, uid){
 window.__fillUnreadOnce = fillUnreadOnce;
 
 async function computeBadges(db, uid){
-  const b = { message: 0, approval: 0, payreq: 0, minutes: 0, err: 0, myparents: 0, nhp: 0, consult: 0 };
+  const b = { message: 0, approval: 0, payreq: 0, minutes: 0, err: 0, myparents: 0, nhp: 0, consult: 0, leadmin: 0 };
 
   /* 내 계정 + 회계 담당자 여부를 먼저 확인 (지급 대기 집계에 필요) */
   let me = null, isPayMgr = false;
@@ -116,7 +116,8 @@ async function computeBadges(db, uid){
     getDocs(query(collection(db, 'mtgNotifs'), where('toUid', '==', uid), where('read', '==', false)))
   ]);
   if(mtR.status === 'fulfilled') mtR.value.forEach(d => { const t = d.data(); if(!t.deleted && (t.status || 'todo') !== 'done') b.minutes++; });
-  if(mnR.status === 'fulfilled') mnR.value.forEach(d => { const n = d.data(); if(!n.read && n.kind !== 'task') b.minutes++; });
+  const leadN = [];   // 🔒 v175 주임 회의록 알림은 «주임 회의록»(leadmin) 뱃지로 따로
+  if(mnR.status === 'fulfilled') mnR.value.forEach(d => { const n = d.data(); if(n.book === 'lead'){ if(!n.read) leadN.push(n); return; } if(!n.read && n.kind !== 'task') b.minutes++; });
 
   if(msgR.status === 'fulfilled'){
     msgR.value.forEach(d => {
@@ -160,6 +161,9 @@ async function computeBadges(db, uid){
 
   /* 📅 v149 학부모 상담 — 안 읽은 상담 알림 (확인 부탁 · 변경 요청 · 답글 · 처리 · 확정) */
   try { const m = await import('./consult-badge.js?v=149'); b.consult = await m.badgeFor(db, uid, me); } catch(e){}
+
+  /* 🔒 v175 주임 회의록 — 멤버인지 · 주제만 공유받았는지 (사이드바에 보일지) + 내 임무 · 새 소식 (따로 불러와서) */
+  try { const m = await import('./lead-badge.js?v=175'); b.leadmin = await m.badgeFor(db, uid, me, leadN); } catch(e){}
 
   /* 🩺 v121 수퍼관리자 — 오류 알림판에 새로 들어온 오류 (마지막으로 알림판을 본 뒤 · 최근 7일) */
   if(me && me.role === 'super'){

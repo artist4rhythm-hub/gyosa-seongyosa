@@ -414,9 +414,10 @@ function renderSidebar(){
     const on = it.key === SB_ACTIVE && !inFav;
     const cur = it.key === SB_ACTIVE && inFav;
     const b = SB_BADGES[it.badge] || 0;
-    return `<a class="sb-i${on ? ' on' : ''}${cur ? ' cur' : ''}" href="${it.href}" title="${it.label}">
+    const lab = typeof menuLabelOf === 'function' ? menuLabelOf(it, SB_USER) : it.label;   // 🔒 v175 주임 회의록 · 공유받은 주제
+    return `<a class="sb-i${on ? ' on' : ''}${cur ? ' cur' : ''}" href="${it.href}" title="${lab}">
       <span class="material-symbols-rounded">${it.icon}</span>
-      <span class="sb-l">${it.label}</span>
+      <span class="sb-l">${lab}</span>
       ${b > 0 ? `<span class="sb-b">${b > 99 ? '99+' : b}</span>` : ''}
       <button class="sb-pin${isPinned ? ' on' : ''}" onclick="event.preventDefault();event.stopPropagation();togglePin('${it.key}')" title="${isPinned ? '고정 해제' : '자주 쓰는 항목에 고정'}">
         <span class="material-symbols-rounded">keep</span>
