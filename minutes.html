@@ -199,6 +199,15 @@ html[data-theme="dark"] .hd .ln.m{background:#3A1B1B}html[data-theme="dark"] .hd
 .vt{width:100%;border-collapse:collapse;font-size:13px}
 .vt td,.vt th{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left}
 .vt th{font-size:12px;color:var(--ink-2)}
+/* 🏛 v176 예전 회의록 넣기 — 해마다 묶음 · 주제 미리 보기 · 같은 날 표시 */
+.imp-bar{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;margin-bottom:6px}
+.imp-list{max-height:min(56vh,520px);overflow:auto;border:1px solid var(--line);border-radius:12px;padding:0 6px}
+.imp-yh td{position:sticky;top:0;background:var(--surface);font-weight:800;font-size:12.5px;color:var(--ink-2);padding-top:10px;z-index:1}
+.imp-tp{margin:2px 0 0 26px;font-size:12.5px;color:var(--ink-2)}.imp-tp summary{cursor:pointer;color:var(--ink-3);font-size:12px}
+.imp-tp ol{margin:4px 0 2px;padding-left:18px;line-height:1.6}
+.imp-sd{display:inline-block;max-width:220px;color:#B7791F;font-weight:700;text-align:right}
+.imp-fn{max-width:240px;margin-left:auto;font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:640px){.imp-fn,.imp-sd{max-width:130px}}
 .toast{position:fixed;left:50%;bottom:30px;transform:translateX(-50%);background:#1E3932;color:#fff;font-family:var(--font-ui,'Noto Sans KR',sans-serif);font-size:13.5px;font-weight:700;padding:11px 18px;border-radius:12px;z-index:3000;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:90vw}
 .toast.err{background:#B42318}
 @media (max-width:1000px){
@@ -512,7 +521,7 @@ const SVG = {
 let CU = null, STAFF = [], SMAP = {}, CFG = { types:{}, absence:[], viewers:{} };
 let SEE = [], WRITE = [];
 let ORG = '', SEM = C.semOf(TODAY), TYPE = '', Q = '';
-const FIRST_SEM = '2023-1';   // 학기 고르기 맨 끝 — 예전 PDF에서 옮긴 가장 오래된 회의록(2023년 2월)
+const FIRST_SEM = LEAD ? '2020-1' : '2023-1';   // 학기 고르기 맨 끝 — 예전 PDF에서 옮긴 가장 오래된 회의록(2023년 2월) · 🏛 v176 주임 회의록은 한글 파일에서 옮긴 2020년부터
 let LIST = [], TASKS = {}, NOTIFS = [], MYTASKS = [];
 let VIEW = 'list', CUR = null, CMTS = [], CMT_TAB = 'm', CMT_TGT = '', REPLY = null, EDITING_CMT = '';
 let ORGCMTS = null;                         // 찾기용 — 그 기관 댓글 (처음 찾을 때 한 번)
@@ -760,7 +769,7 @@ function headHTML(){
 function leadHeadHTML(){
   const mem = LCFG.uids.map(u => ({ uid: u, name: nameOf(u) || (LCFG.names || {})[u] || '' })).filter(x => x.name);
   const n = LCFG.uids.length;
-  const more = `<button data-act="exportmany" class="mt-only-m">🖨 여러 건 출력 (PDF · 워드)</button>${isSuper() ? `<button data-act="lmembers">👥 멤버 관리</button>` : ''}<button data-act="lsettings">⚙ 설정 (회의 종류 · 휴지통)</button>`;
+  const more = `<button data-act="exportmany" class="mt-only-m">🖨 여러 건 출력 (PDF · 워드)</button>${isSuper() ? `<button data-act="lmembers">👥 멤버 관리</button>` : ''}<button data-act="lsettings">⚙ 설정 (회의 종류 · ${isSuper() ? '예전 회의록 넣기 · ' : ''}휴지통)</button>`;
   const av = mem.slice(0, 4).map((x, i) => `<span class="ld-av" style="background:${AV_COL[i % AV_COL.length]}" title="${esc(x.name)}">${esc(initials(x.name))}</span>`).join('')
     + (n > 4 ? `<span class="ld-av" style="background:#5A6560">+${n - 4}</span>` : '');
   return `<div class="mt-head">
@@ -849,7 +858,7 @@ function rowHTML(m, un){
   const doneN = keys.filter(k => (TASKS[k] || {}).status === 'done').length;
   const tps = (m.topics || []).map((t, i) => `<button data-act="topic" data-mid="${esc(m.id)}" data-tid="${esc(t.id)}"><i>${i + 1}</i>${esc(t.title || '(제목 없음)')}${shareChip(m.id, t.id, true)}</button>`).join('');
   const side = m.imported
-    ? `<span class="mt-old">PDF에서 옮김</span><div>참석 · 임무 기록 없음</div><div class="mt-cmt">댓글 <b>${Math.max(0, +m.cmtCount || 0)}</b>${un ? ` · <span class="mt-new">새 댓글 ${un}</span>` : ''}</div>`
+    ? `<span class="mt-old">${impLabelOf(m)}</span><div>참석 · 임무 기록 없음</div><div class="mt-cmt">댓글 <b>${Math.max(0, +m.cmtCount || 0)}</b>${un ? ` · <span class="mt-new">새 댓글 ${un}</span>` : ''}</div>`
     : `<div>${on.length || off.length ? `참석 <b>${on.length}</b> · 불참 <b>${off.length}</b>` : '참석 기록 없음'}</div>
        <div>결정 <b>${cnt.dec}</b> · 임무 <b>${keys.length}</b></div>
        ${keys.length ? `<div class="mt-bar"><i style="width:${Math.round(doneN / keys.length * 100)}%"></i></div><div>임무 완료 ${doneN}/${keys.length}</div>` : ''}
@@ -1562,73 +1571,111 @@ async function paintTrash(box){
 //      목록은 비우고, 아직 안 넣은 회의록이 있으면 배포 묶음 «보관» 폴더의 .json 을 아래 «다른 옮김 파일»로 골라 넣는다
 //      (고르면 이미 넣은 회의록은 «이미 넣음»으로 보이고 건너뛴다)
 const IMPORT_PACKS = [];
+/* 🏛 v176 주임 회의록(?book=lead)에도 «예전 회의록 넣기» — 한글(HWP)에서 옮긴 파일(book:'lead')만 받고, 일반 회의록 쪽에서는 받지 않는다
+   (주임 회의 내용이 교직원 회의록으로 잘못 들어가면 모두가 보게 되니 — 반대 방향도 막음) */
+function impLabelOf(m){ return C.impLabel ? C.impLabel(m) : 'PDF에서 옮김'; }   // 예전 minutes-core.js 가 남아 있어도 안전하게
+const isLeadPack = pk => !!pk && (pk.book === 'lead' || /한글|hwp|주임/i.test(String(pk.source || '')) || (pk.meetings || []).some(m => m && m.org === 'lead'));
+/* 주임 회의록 쪽: 다른 기관 값이 섞인 파일은 받지 않음 (교직원 회의록이 주임 회의록으로 잘못 들어가지 않게) */
+const leadPackMixed = pk => (pk.meetings || []).some(m => m && m.org && m.org !== 'lead');
 async function paintImport(box){
   const packs = [];
-  for(const p of IMPORT_PACKS){
+  if(!LEAD) for(const p of IMPORT_PACKS){
     try{ const r = await fetch(p.file + '?_=' + Date.now(), { cache: 'no-store' }); if(r.ok){ const j = await r.json(); if(j && Array.isArray(j.meetings)) packs.push({ label: p.label, pk: j }); } }catch(e){}
   }
   let cur = 0;
   const draw = async (pk) => {
     const ms = (pk && pk.meetings) || [];
-    const exists = new Set();
-    for(const m of ms){ try{ const s = await getDoc(doc(db, 'meetings', m.id)); if(s.exists()) exists.add(m.id); }catch(e){} }
+    const exists = new Set(), sameDay = new Map();
+    if(LEAD && ms.length){
+      /* 한 번에 — 이미 넣은 것(같은 id) · 같은 날 이미 있는 회의록(직접 쓴 것) */
+      try{ const s = await getDocs(query(collection(db, COL.m), where('org', '==', 'lead')));
+        s.forEach(d => { const x = d.data(); exists.add(d.id); if(!x.deleted && x.date){ const a = sameDay.get(x.date) || []; a.push(C.titleOf(x)); sameDay.set(x.date, a); } }); }catch(e){ console.warn('import check', e); }
+    } else if(!LEAD){
+      for(const m of ms){ try{ const s = await getDoc(doc(db, COL.m, m.id)); if(s.exists()) exists.add(m.id); }catch(e){} }
+    }
+    const dayOf = m => exists.has(m.id) ? [] : (sameDay.get(m.date) || []);
     const own = pk && !packs.some(p => p.pk === pk);
     const tabs = packs.length > 1 || own ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${packs.map((p, i) =>
       `<button class="mt-btn sm${!own && i === cur ? ' p' : ''}" data-pk="${i}">${esc(p.label)} · ${p.pk.meetings.length}건</button>`).join('')}${own ? `<button class="mt-btn sm p" disabled>고른 파일 · ${ms.length}건</button>` : ''}</div>` : '';
-    box.innerHTML = tabs + `<div class="dv-hint" style="margin-bottom:10px">${pk ? `<b>${esc(pk.source || '')}</b>에서 옮긴 회의록 ${ms.length}건이에요. ${esc(pk.note || '')}` : '함께 담긴 옮김 파일이 없어요.'}
-        참석 · 임무는 비워 두고, 번호 개요 · 노란 주제 · 표를 살려 넣어요. 이미 넣은 회의록은 건너뛰어요.</div>
-      ${ms.length ? `<label class="ck"><input type="checkbox" id="imp-all" checked>모두 고르기</label>
-      <table class="vt"><tbody>${ms.map(m => `<tr><td><label class="ck" style="padding:0"><input type="checkbox" class="imp-ck" value="${esc(m.id)}"${exists.has(m.id) ? ' disabled' : ' checked'}>
-        ${esc(C.fmtLong(m.date, m.time))} · <b>${esc(C.titleOf(m))}</b> · ${esc(MORG[m.org] || m.org)} · 주제 ${(m.topics || []).length}개</label></td>
-        <td style="text-align:right;color:var(--ink-3);font-size:12px">${exists.has(m.id) ? '이미 넣음' : ''}${m.warn ? ' ⚠ ' + esc(m.warn) : ''}</td></tr>`).join('')}</tbody></table>
+    const years = [...new Set(ms.map(m => String(m.date).slice(0, 4)))].sort().reverse();
+    const rowOf = m => { const sd = dayOf(m), done = exists.has(m.id);
+      return `<tr><td><label class="ck" style="padding:0"><input type="checkbox" class="imp-ck" data-y="${esc(String(m.date).slice(0, 4))}"${sd.length ? ' data-sd="1"' : ''} value="${esc(m.id)}"${done ? ' disabled' : sd.length ? '' : ' checked'}>
+        ${esc(C.fmtLong(m.date, m.time))} · <b>${esc(C.titleOf(m))}</b>${LEAD ? '' : ' · ' + esc(MORG[m.org] || m.org)} · 주제 ${(m.topics || []).length}개</label>
+        ${(m.topics || []).length ? `<details class="imp-tp"><summary>주제 보기</summary><ol>${(m.topics || []).map(t => `<li>${esc(t.title || '(제목 없음)')}</li>`).join('')}</ol></details>` : ''}</td>
+        <td style="text-align:right;color:var(--ink-3);font-size:12px;vertical-align:top">${done ? '이미 넣음' : ''}${sd.length ? `<span class="imp-sd">같은 날 «${esc(sd.join(', '))}»이 이미 있어요 — 겹치면 빼 두세요</span>` : ''}${m.warn ? '<div>⚠ ' + esc(m.warn) + '</div>' : ''}${m.file ? `<div class="imp-fn">${esc(m.file)}</div>` : ''}</td></tr>`; };
+    const nDone = ms.filter(m => exists.has(m.id)).length, nSd = ms.filter(m => dayOf(m).length).length;
+    box.innerHTML = tabs + `<div class="dv-hint" style="margin-bottom:10px">${pk ? `<b>${esc(pk.source || '')}</b>에서 옮긴 회의록 ${ms.length}건이에요. ${esc(pk.note || '')}` : (LEAD ? 'Claude가 한글 파일에서 옮겨 드린 «주임회의록-옮김-….json» 파일을 아래에서 골라 주세요. 배포 묶음 «7_보관 (깃허브에 올리지 마세요)» 폴더에 있어요.' : '함께 담긴 옮김 파일이 없어요.')}
+        ${pk ? `참석 · 임무는 비워 두고, 번호 개요 · 노란 주제 · 표를 살려 넣어요. 이미 넣은 회의록은 건너뛰어요.${nDone ? ` (이미 넣음 ${nDone}건)` : ''}${nSd ? ` · <b>같은 날 회의록이 이미 있는 ${nSd}건은 골라 두지 않았어요</b> — 겹치지 않으면 직접 골라 주세요.` : ''}` : ''}</div>
+      ${ms.length ? `<div class="imp-bar"><label class="ck"><input type="checkbox" id="imp-all" checked>모두 고르기${nSd ? ' <span class="dv-hint">(같은 날 회의록이 있는 줄은 빼고)</span>' : ''}</label>${years.length > 1 ? years.map(y => { const ys = ms.filter(m => String(m.date).startsWith(y)), open = ys.filter(m => !exists.has(m.id) && !dayOf(m).length);
+        return `<label class="ck"><input type="checkbox" class="imp-y" value="${esc(y)}"${open.length ? ' checked' : ''}>${esc(y)}년 ${ys.length}건</label>`; }).join('') : ''}</div>
+      <div class="imp-list"><table class="vt"><tbody>${years.map(y => (years.length > 1 ? `<tr class="imp-yh"><td colspan="2">${esc(y)}년</td></tr>` : '') + ms.filter(m => String(m.date).startsWith(y)).sort((a, b) => String(b.date).localeCompare(String(a.date))).map(rowOf).join('')).join('')}</tbody></table></div>
       <div style="display:flex;gap:8px;margin-top:12px;align-items:center"><button class="mt-btn p" id="imp-go">고른 회의록 넣기</button><span class="dv-hint" id="imp-st"></span></div>` : ''}
-      <div style="margin-top:16px" class="dv-hint">다른 옮김 파일(.json)이 있으면: <input type="file" id="imp-file" accept=".json,application/json,.pdf,application/pdf"></div>
-      <div class="dv-hint" id="imp-pdf" style="display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:#FFF8E1;color:#7A5B00">
-        📕 <b>PDF는 여기서 바로 넣을 수 없어요.</b> PDF마다 번호 · 표 · 글꼴이 달라서 그대로 읽으면 글자가 깨지거나 순서가 섞여요.<br>
-        Claude에게 PDF를 보내 주시면 «옮김 파일»로 만들어 이 목록에 함께 담아 드려요. 올린 뒤 여기서 «넣기»만 누르면 돼요.</div>`;
+      <div style="margin-top:16px" class="dv-hint">${LEAD ? '옮김 파일(.json)' : '다른 옮김 파일(.json)이 있으면'}: <input type="file" id="imp-file" accept=".json,application/json,.pdf,application/pdf,.hwp,.hwpx"></div>
+      <div class="dv-hint" id="imp-pdf" style="display:none;margin-top:8px;padding:10px 12px;border-radius:10px;background:#FFF8E1;color:#7A5B00"></div>`;
     box.querySelectorAll('[data-pk]').forEach(b => b.onclick = () => { cur = +b.dataset.pk; draw(packs[cur].pk); });
-    const all = box.querySelector('#imp-all'); if(all) all.onchange = () => box.querySelectorAll('.imp-ck:not(:disabled)').forEach(c => c.checked = all.checked);
+    /* 한꺼번에 고르기 · 해마다 고르기는 «같은 날 회의록이 이미 있는 줄»은 건드리지 않음 (겹쳐 들어가지 않게 — 그 줄은 하나씩 직접) */
+    const all = box.querySelector('#imp-all'); if(all) all.onchange = () => { box.querySelectorAll('.imp-ck:not(:disabled):not([data-sd])').forEach(c => c.checked = all.checked); box.querySelectorAll('.imp-y').forEach(y => y.checked = all.checked); };
+    box.querySelectorAll('.imp-y').forEach(y => y.onchange = () => box.querySelectorAll(`.imp-ck[data-y="${y.value}"]:not(:disabled):not([data-sd])`).forEach(c => c.checked = y.checked));
+    const note = (h) => { const n = box.querySelector('#imp-pdf'); n.innerHTML = h; n.style.display = ''; };
     box.querySelector('#imp-file').onchange = async e => {
       const f = e.target.files[0]; if(!f) return;
-      if(/\.pdf$/i.test(f.name) || f.type === 'application/pdf'){ box.querySelector('#imp-pdf').style.display = ''; e.target.value = ''; return; }
+      if(/\.pdf$/i.test(f.name) || f.type === 'application/pdf'){ note(`📕 <b>PDF는 여기서 바로 넣을 수 없어요.</b> PDF마다 번호 · 표 · 글꼴이 달라서 그대로 읽으면 글자가 깨지거나 순서가 섞여요.<br>
+        Claude에게 PDF를 보내 주시면 «옮김 파일»로 만들어 드려요. 그 파일을 여기서 고르고 «넣기»만 누르면 돼요.`); e.target.value = ''; return; }
+      if(/\.hwpx?$/i.test(f.name)){ note(`📄 <b>한글 파일은 여기서 바로 넣을 수 없어요.</b> Claude에게 한글 파일을 보내 주시면 «옮김 파일(.json)»로 만들어 드려요.`); e.target.value = ''; return; }
       let j = null; try{ j = JSON.parse(await f.text()); }catch(err){}
       if(!j || !Array.isArray(j.meetings)){ toast('회의록 옮김 파일(.json)이 아니에요.', 'err'); e.target.value = ''; return; }
+      if(LEAD && !isLeadPack(j)){ note(`이 파일은 <b>교직원 회의록</b> 옮김 파일이에요. 주임 회의록에는 넣지 않아요 — 회의록 탭 › ⚙ 설정 › «예전 회의록 넣기»에서 넣어 주세요.`); e.target.value = ''; return; }
+      if(LEAD && leadPackMixed(j)){ note(`이 파일에는 <b>주임 회의록이 아닌 회의록</b>(기관: ${esc([...new Set(j.meetings.map(m => m && m.org).filter(o => o && o !== 'lead'))].map(o => MORG[o] || o).join(', '))})이 섞여 있어요. 주임 회의록에는 넣지 않아요.`); e.target.value = ''; return; }
+      if(!LEAD && isLeadPack(j)){ note(`🔒 이 파일은 <b>주임 회의록</b> 옮김 파일이에요. 여기 넣으면 교직원 모두가 보게 되니 넣지 않아요 — 사이드바 «주임 회의록» › 설정 › «예전 회의록 넣기»에서 넣어 주세요.`); e.target.value = ''; return; }
       draw(j);
     };
     const go = box.querySelector('#imp-go');
     if(go) go.onclick = async () => {
       const ids = new Set([...box.querySelectorAll('.imp-ck:checked')].map(c => c.value));
       const pickd = ms.filter(m => ids.has(m.id)); if(!pickd.length) return;
-      go.disabled = true; let n = 0;
-      for(const m of pickd){
-        box.querySelector('#imp-st').textContent = `${n + 1}/${pickd.length} — ${C.fmtMDY(m.date)} 넣는 중…`;
-        try{ await importOne(m, pk.source || ''); n++; }catch(err){ console.error(err); toast(`${C.fmtMDY(m.date)} 회의록을 넣지 못했어요 — ${err.code || err.message}`, 'err'); }
+      go.disabled = true; let n = 0, k = 0, bad = 0;
+      const st = box.querySelector('#imp-st');
+      /* 네 건씩 함께 — 160건쯤도 1분 안쪽 */
+      for(let i = 0; i < pickd.length; i += 4){
+        await Promise.all(pickd.slice(i, i + 4).map(async m => {
+          try{ if(await importOne(m, pk.source || (LEAD ? '주임 회의록 한글 파일' : ''))) n++; }catch(err){ bad++; console.error(err); toast(`${C.fmtMDY(m.date)} 회의록을 넣지 못했어요 — ${err.code || err.message}`, 'err'); }
+          k++; if(st) st.textContent = `${k}/${pickd.length} 넣는 중…`;
+        }));
       }
-      toast(`${n}건을 넣었어요`); draw(pk);
+      toast(`${n}건을 넣었어요${bad ? ` · ${bad}건은 못 넣었어요` : ''}${LEAD ? ' — 목록에서 «전체 학기»를 고르면 모두 보여요' : ''}`);
+      draw(pk);
     };
   };
   draw(packs.length ? packs[0].pk : null);
 }
 async function importOne(m, source){
-  const ref = doc(db, 'meetings', m.id);
-  const ex = await getDoc(ref); if(ex.exists()) return;
+  const org = LEAD ? 'lead' : m.org;
+  if(!LEAD && !MORDER.includes(m.org)) throw new Error(m.org === 'lead' ? '주임 회의록은 여기 넣지 않아요' : `기관 값이 없거나 알 수 없어요 (${m.org || '비어 있음'})`);
+  if(LEAD && m.org && m.org !== 'lead') throw new Error('주임 회의록이 아닌 회의록이에요');
+  const ref = doc(db, COL.m, m.id);
+  const ex = await getDoc(ref); if(ex.exists()) return false;
   const topics = [];
+  (m.topics || []).forEach((t, ti) => { if(t && !t.id) t.id = 't' + (ti + 1); });   // id 가 빠진 옮김 파일도 한 회의가 통째로 실패하지 않게
   for(const t of m.topics || []){
     const body = [];
     for(const b of t.body || []){
-      if(b.k === 'img' && b.data){ const r = await STORE.putImage(m.org, m.id, b.data, 'img', b.cap || ''); body.push({ k: 'img', fid: r.fid, w: r.w, ht: r.ht, cap: b.cap || '' }); }
-      else body.push(b);
+      if(!b || typeof b !== 'object') continue;
+      if(b.k === 'img' && b.data){ const r = await STORE.putImage(org, m.id, b.data, 'img', b.cap || ''); body.push({ k: 'img', fid: r.fid, w: r.w, ht: r.ht, cap: b.cap || '' }); }
+      else if(b.k === 'l') body.push({ k: 'l', lv: C.clampLv(b.lv), h: String(b.h || '') });
+      else if(b.k === 'tbl') body.push({ k: 'tbl', h: String(b.h || ''), ...(b.cap ? { cap: String(b.cap) } : {}) });
+      else body.push(JSON.parse(JSON.stringify(b)));   // 그 밖의 칸은 예전처럼 그대로 (undefined 값은 빼고)
     }
-    topics.push({ id: t.id, title: t.title || '', body, dec: t.dec || [], tasks: [] });
+    topics.push({ id: String(t.id), title: t.title || '', body, dec: (t.dec || []).map((d, di) => ({ id: String((d && d.id) || `d${topics.length + 1}_${di + 1}`), h: String((d && d.h) || '') })), tasks: [] });
   }
-  const data = { org: m.org, sem: C.semOf(m.date), type: m.type || '', title: m.title || '', date: m.date, time: m.time || '', place: m.place || '',
+  const data = { org, sem: C.semOf(m.date), type: m.type || '', title: m.title || '', date: m.date, time: m.time || '', place: m.place || '',
     writerUid: '', writerName: m.writerName || '', att: {}, attNames: {}, guests: m.guests || '', topics, imported: true, source,
     rev: 1, createdBy: CU.uid, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedByUid: CU.uid, updatedByName: CU.name || '',
     cmtCount: 0, deleted: false };
   await setDoc(ref, data);
   const { createdAt, updatedAt, ...snap } = data;
-  try{ await setDoc(doc(db, 'meetingVersions', `${m.id}_1`), { meetingId: m.id, org: m.org, rev: 1, at: serverTimestamp(), atMs: Date.now(), uid: CU.uid, name: CU.name || '',
-    sum: '예전 PDF에서 옮김', data: snap }); }catch(e){ /* 예전에 넣었다 지운 회의록 — 이력은 그대로 남아 있음 */ }
+  try{ await setDoc(doc(db, COL.v, `${m.id}_1`), { meetingId: m.id, org, rev: 1, at: serverTimestamp(), atMs: Date.now(), uid: CU.uid, name: CU.name || '',
+    sum: `예전 ${impLabelOf({ source })}`, data: snap }); }catch(e){ /* 예전에 넣었다 지운 회의록 — 이력은 그대로 남아 있음 */ }
+  return true;
 }
 
 /* ═══ 🔒 v175 주임 회의록 — 주제 공유 · 멤버 · 공유받은 선생님 화면 ═══ */
@@ -1781,7 +1828,7 @@ function openMemberList(){
 }
 function openLeadSettings(tab){
   if(!LEAD_OK) return;
-  const tabs = isSuper() ? [['members', '멤버'], ['types', '회의 종류'], ['trash', '휴지통']] : [['types', '회의 종류'], ['trash', '휴지통']];
+  const tabs = isSuper() ? [['members', '멤버'], ['types', '회의 종류'], ['import', '예전 회의록 넣기'], ['trash', '휴지통']] : [['types', '회의 종류'], ['trash', '휴지통']];   // 🏛 v176 넣기는 수퍼관리자만
   if(!tabs.some(([k]) => k === tab)) tab = tabs[0][0];
   let dU = LCFG.uids.slice(), dT = (CFG.types.lead || []).slice(), org = 'daniel', q = '';
   const md = modal(`${SVG.lock}<span>주임 회의록 설정</span>`, '', `<button class="mt-btn" data-x2>닫기</button><button class="mt-btn p" id="ls-save">저장</button>`, 'wide');
@@ -1813,13 +1860,16 @@ function openLeadSettings(tab){
       h += `<div class="dv-hint" style="margin-bottom:10px">주임 회의록을 쓸 때 고르는 회의 종류예요. 쓰는 화면에서도 멤버가 바로 넣고 뺄 수 있어요. 목록에서 빼도 이미 쓴 회의록은 그대로예요.</div>
         <div>${dT.map((t, i) => `<span class="tg">${esc(t)}<button data-lt-del="${i}" aria-label="${esc(t)} 빼기">✕</button></span>`).join('')}</div>
         <div style="display:flex;gap:6px;margin-top:8px"><input type="text" id="lt-in" placeholder="새 회의 종류 (예: 부장 회의)" style="flex:1;font-family:inherit;height:36px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:var(--surface);color:var(--ink)"><button class="mt-btn sm" data-lt-add>＋ 넣기</button></div>`;
+    } else if(tab === 'import'){
+      h += `<div id="imp-box"><div class="dv-hint">불러오는 중…</div></div>`;
     } else if(tab === 'trash'){
       h += `<div id="tr-box"><div class="dv-hint">불러오는 중…</div></div>`;
     }
     body.innerHTML = h;
-    md.box.querySelector('#ls-save').style.display = tab === 'trash' ? 'none' : '';
+    md.box.querySelector('#ls-save').style.display = tab === 'trash' || tab === 'import' ? 'none' : '';
     md.box.querySelector('#ls-save').textContent = tab === 'members' ? '멤버 저장' : '회의 종류 저장';
     if(tab === 'trash') paintTrash(body.querySelector('#tr-box'));
+    if(tab === 'import') paintImport(body.querySelector('#imp-box'));
     const lq = body.querySelector('#lm-q');
     if(lq) lq.oninput = () => { q = lq.value.trim(); body.querySelector('#lm-pool').innerHTML = poolHTML(); };
   };

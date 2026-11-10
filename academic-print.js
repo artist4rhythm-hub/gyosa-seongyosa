@@ -494,7 +494,7 @@ function listBody(o, D, rows, first, last){
     const red = w === 0 || (D.H[r.d] && D.H[r.d].who !== 'staff');
     html += `<tr class="${isTeacherOnly(e) ? 'tonly' : ''}"><td class="dt${red ? ' red' : w === 6 ? ' blue' : ''}">${dd}</td>
       <td class="ttl"><i class="dot" style="background:${o.show.mono ? '#fff' : tint(c)};border-color:${edge(c)}"></i>${orgTag(e, D)}<b>${esc(e.title)}</b>${isTeacherOnly(e) ? ' <i class="tt">교사</i>' : ''}</td>
-      <td>${esc(targetLabel(e, org))}${tp ? `<div class="sm">${esc(tp)}</div>` : ''}</td><td class="sm">${esc(memo)}</td></tr>`;
+      <td>${esc(targetLabel(e, org))}${tp ? `<div class="sm">${esc(tp)}</div>` : ''}</td><td class="sm" style="white-space:pre-line">${esc(memo)}</td></tr>`;   // 📝 v176 여러 줄 메모는 줄 그대로
   });
   return html;
 }

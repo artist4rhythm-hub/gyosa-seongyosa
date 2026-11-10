@@ -101,6 +101,8 @@ export function dueInfo(due, today){
 }
 
 /* 회의록 제목 — «훈련센터 회의» → «훈련센터 회의록» */
+/* 🏛 v176 예전 회의록 옮김 표시 — 한글(HWP)에서 옮긴 것과 PDF에서 옮긴 것을 나눠 적음 */
+export const impLabel = m => /한글|hwp/i.test(String((m && m.source) || '')) ? '한글 파일에서 옮김' : 'PDF에서 옮김';
 export function titleOf(m){
   if(m && m.title) return m.title;
   const t = (m && m.type) || '';
@@ -369,7 +371,7 @@ export function renderDoc(m, ctx){
   const org = MORG[m.org] || '';
   const tps = (m.topics || []).map((t, i) => renderTopic(m, t, i, ctx)).join('');
   return `<article class="md-doc" data-mid="${esc(m.id || '')}">
-    <div class="md-date">${esc(fmtLong(m.date, m.time))}${m.imported && !ctx.print ? ' <span class="md-imp">PDF에서 옮김</span>' : ''}</div>
+    <div class="md-date">${esc(fmtLong(m.date, m.time))}${m.imported && !ctx.print ? ` <span class="md-imp">${impLabel(m)}</span>` : ''}</div>
     <h1 class="md-title">${esc(titleOf(m))}</h1>
     ${ctx.print ? '' : `<div class="md-org">${esc(org)}${m.type && titleOf(m) !== m.type + '록' ? ' · ' + esc(m.type) : ''}</div>`}
     ${renderAttRows(m, ctx)}
@@ -401,7 +403,7 @@ export function renderDocB(m, ctx){
   if(m.writerName) pills.push(`<span class="mb-pill">쓴 사람 ${esc(m.writerName)}</span>`);
   const rv = Math.max(0, (+m.rev || 1) - 1);
   if(rv) pills.push(`<button type="button" class="mb-pill" data-act="hist">수정 ${rv}번</button>`);
-  if(m.imported) pills.push(`<span class="mb-pill y">PDF에서 옮김</span>`);
+  if(m.imported) pills.push(`<span class="mb-pill y">${impLabel(m)}</span>`);
   const sub = [MORG[m.org] || '', m.type && titleOf(m) !== m.type + '록' ? m.type : ''].filter(Boolean).join(' · ');
   let h = `<article class="md-doc mb-doc" data-mid="${esc(m.id || '')}">
     <header class="mb-hd">

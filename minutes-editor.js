@@ -889,7 +889,7 @@ async function openPicker(preMid){
     const show = q ? rows.slice(0, 40) : rows.slice(0, lim);
     if(preMid && !q){ const i = show.findIndex(r => r.m.id === preMid); if(i > 0){ const [x] = show.splice(i, 1); show.unshift(x); } }
     list.innerHTML = (!ms.length ? `<div class="dv-hint">${esc(C.MORG[src().org] || src().label || '')}에 가져올 지난 회의록이 아직 없어요.</div>` : '') + pinBlock() + show.map(({ m, ts }) => `<div class="pk-m${preMid === m.id ? ' pre' : ''}">
-        <div class="pk-mh"><b>${esc(C.fmtMDY(m.date))}</b> ${esc(C.titleOf(m))}${m.imported ? ' <span class="md-imp">PDF에서 옮김</span>' : ''}<span class="mt-sp"></span>
+        <div class="pk-mh"><b>${esc(C.fmtMDY(m.date))}</b> ${esc(C.titleOf(m))}${m.imported ? ` <span class="md-imp">${C.impLabel ? C.impLabel(m) : 'PDF에서 옮김'}</span>` : ''}<span class="mt-sp"></span>
           <button type="button" class="mt-btn sm ghost" data-pkall="${esc(m.id)}">${ts.every(x => sel.has(m.id + '|' + x.t.id)) ? '모두 빼기' : '모두 고르기'}</button></div>
         ${ts.map(({ t, i }) => { const k = m.id + '|' + t.id, ot = openTasks(m, t);
           const nl = (t.body || []).filter(b => b.k === 'l').length, nd = (t.dec || []).length;

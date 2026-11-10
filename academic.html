@@ -266,10 +266,14 @@
     color:var(--gm,#00704A); line-height:1.5; }
   .evs-memo{ flex:1; min-width:0; height:34px; border:none; padding:0; font-family:inherit; font-size:13.5px; font-weight:500;
     color:var(--ink,#1F2320); background:transparent; outline:none; }
+  /* 📝 v176 메모는 여러 줄 — 구글 캘린더 설명처럼 Enter로 줄을 바꾸고, 쓰는 만큼 칸이 늘어나요 */
+  textarea.evs-memo{ display:block; box-sizing:border-box; min-height:34px; padding:7px 0; line-height:1.5; resize:none; overflow:hidden; white-space:pre-wrap; }
+  .evs-memo-v, .evi-memo{ white-space:pre-line; }
+  textarea.evs-memo ~ .evs-tag{ align-self:flex-start; margin-top:7px; }
   .evs-memo::placeholder{ color:var(--tl,#93A09A); }
   /* 다크 — 테마가 모든 입력칸에 어두운 상자를 씌우므로(!important) 제목·부제·메모만 바탕 없이 되돌립니다 */
   html[data-theme="dark"] .mbox.evs input.evs-title, html[data-theme="dark"] .mbox.evs input.evs-subt,
-  html[data-theme="dark"] .mbox.evs input.evs-memo{ background-color:transparent !important; border-color:transparent !important; box-shadow:none; }
+  html[data-theme="dark"] .mbox.evs input.evs-memo, html[data-theme="dark"] .mbox.evs textarea.evs-memo{ background-color:transparent !important; border-color:transparent !important; box-shadow:none; }
   html[data-theme="dark"] .mbox.evs input.evs-title{ color:var(--gd) !important; }
   html[data-theme="dark"] .mbox.evs input.evs-subt{ color:var(--ts) !important; }
   .evs-tag{ font-size:11.5px; font-weight:800; color:var(--ts,#5A6560); background:var(--iv,#F2F0EB); border-radius:100px; padding:3px 9px; }
@@ -2303,51 +2307,36 @@ function weekBars(days){
     (hourOf(a) < hourOf(b) ? -1 : hourOf(a) > hourOf(b) ? 1 : 0) ||
     (a.start-b.start) || (b.span-a.span));
 
-  /* 겹치지 않게 층(줄)을 나눈다.
-     같은 학년 묶음(예: 1~4학년)의 행사는 날짜가 달라도 «같은 가로줄»에 모은다.
-     → 한 줄만 눈으로 따라가면 그 학년의 한 주가 읽힌다. */
-  const keyOf = b => {
-    const gs = gradesOfEv(b.ev);
-    return gs.length ? gs.slice().sort((x,y)=>gOrder.indexOf(x)-gOrder.indexOf(y)).join('|') : '__all';
-  };
-  /* 학년 묶음마다 줄을 «예약»한다.
-     예약 순서는 낮은 학년 → 높은 학년 (전체 대상은 맨 위).
-     같은 묶음이면 날짜가 달라도 같은 줄에 놓이고, 겹칠 때만 다음 줄로 넘어간다. */
-  const groups = [];
-  const gIndex = {};
-  bars.forEach(b=>{
-    const k = keyOf(b);
-    if(gIndex[k] === undefined){ gIndex[k] = groups.length; groups.push({ key:k, low:b._low, w:b._w, items:[] }); }
-    groups[gIndex[k]].items.push(b);
-  });
-  /* 줄 순서
-     ① 여러 학년대로 «나뉜» 묶음(예: 1~4·6~8학년)을 위로 —
-        아래 줄들과 학년이 겹쳐 어긋나 보이는 걸 막는다
-     ② 그다음은 낮은 학년부터, 길게 이어지는 묶음일수록 아래로 */
-  const gOrderAll = [...(GRADE_ORDER.daniel||[]), ...(GRADE_ORDER.jihyebit||[])];
-  groups.forEach(gp=>{
-    const gs = (gp.key === '__all') ? [] : gp.key.split('|');
-    gp.runs = gs.length ? gradeRuns(gs).length : 0;      // 몇 덩이로 나뉘나
-    gp.maxSpan = Math.max(...gp.items.map(b=>b.span));   // 가장 길게 가는 띠
-  });
-  groups.sort((a,b)=>
-    (b.runs - a.runs) ||          // 나뉜 묶음이 위
-    (a.low - b.low) ||            // 낮은 학년이 위
-    (a.maxSpan - b.maxSpan) ||    // 짧은 것이 위 · 길게 가는 것이 아래
-    (b.w - a.w));
-
+  /* 📅 v176 줄 나누기 — «같은 시간대는 같은 줄»
+     ① 종일 · 여러 날 띠를 맨 위에 (여러 날 띠가 먼저 — 구글 캘린더처럼)
+     ② 그 아래는 시각이 있는 일정을 시간대(정시 단위: 9시대 · 13시대 …)마다 «그 주 내내 같은 줄»에
+        — 월요일 9:00 과 목요일 9:30 이 같은 높이 · 같은 날 같은 시간대가 여럿이면 이른 것부터 그 아랫줄로
+     ③ 시간대끼리는 줄을 섞지 않고 위에서 아래로 이른 시간대부터 — 한 줄만 가로로 읽으면 그 시간대의 한 주
+     종일 띠 · 같은 시간대 안에서는 위 차례(전체 대상 → 낮은 학년 → 정해 둔 순서)를 그대로 따른다 */
+  const ALLDAY = -1;
+  const minOf = b => (b.ev.startTime && b.ev.endTime) ? wkParse(b.ev.startTime) : null;   // 띠에 시각이 적히는 일정만
+  const slotOf = b => { const t = b.span > 1 ? null : minOf(b); return t == null ? ALLDAY : Math.floor(t / 60); };   // 여러 날 띠는 시각이 있어도 맨 위
+  const slots = new Map();
+  bars.forEach(b=>{ const k = slotOf(b); b.slot = k; if(!slots.has(k)) slots.set(k, []); slots.get(k).push(b); });
+  const keys = [...slots.keys()].sort((x,y)=> x - y);          // 종일(-1)이 맨 앞, 그다음 이른 시간대
   const lanes = [];
-  groups.forEach(gp=>{
-    // 이 묶음이 쓸 첫 줄을 정한다 — 아직 아무도 안 쓰는 줄부터
-    let base = 0;   // 🩹 첫 빈 줄부터 — 안 겹치면 같은 줄을 나눠 쓴다 (세로 부풀기 해결)
-    gp.items.forEach(b=>{
+  const fits = (lane, b) => lane.every(x => b.start >= x.start+x.span || x.start >= b.start+b.span);
+  keys.forEach(k=>{
+    let items = slots.get(k).slice();
+    // 끌어서 정해 둔 순서(order)는 같은 시간대 안에서 먼저 따른다 — 정해 두지 않으면 모두 가운데(500)라 위 차례 그대로
+    if(k === ALLDAY) items.sort((x,y)=> ((y.span>1) - (x.span>1)) || (ordOf(x.ev) - ordOf(y.ev))
+      || (x.span>1 && y.span>1 ? (x.start - y.start) || (y.span - x.span) : 0));                 // 여러 날 띠 먼저 · 일찍 시작 · 긴 것 위
+    else items.sort((x,y)=> (minOf(x) - minOf(y)) || (ordOf(x.ev) - ordOf(y.ev)));                   // 같은 시간대 안에서는 이른 시각부터
+    const base = lanes.length;                                        // 이 시간대는 새 줄부터 — 그 주 내내 같은 줄
+    items.forEach(b=>{
       let li = base;
-      while(lanes[li] && !lanes[li].every(x => b.start >= x.start+x.span || x.start >= b.start+b.span)) li++;
+      while(lanes[li] && !fits(lanes[li], b)) li++;
       while(lanes.length <= li) lanes.push([]);
       b.lane = li;
       lanes[li].push(b);
     });
   });
+  lanes.forEach(l=> l.sort((x,y)=> x.start - y.start));
   return lanes;
 }
 
@@ -2440,7 +2429,7 @@ function barHTML(b, days){
   const side = endCol >= 4 ? ' flow-left' : (endCol === 3 ? ' flow-center' : ' flow-right');
   const cls = 'ev-bar' + (b.span>1?' wide':'') + (canDrag?' draggable':'') + dim + side;
   const dmv = (curView === 'teacher' && b.span === 1 && fromDs && e.dayMemos) ? String(e.dayMemos[fromDs] || '') : '';   // 📝 (v-89) 그날 메모
-  return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}" data-lane="${b.lane==null?0:b.lane}" data-endcol="${endCol}"
+  return `<div class="${cls}" data-ev="${e.id}" data-from="${fromDs}" data-lane="${b.lane==null?0:b.lane}" data-slot="${b.slot==null?'':b.slot}" data-endcol="${endCol}"
     ${canDrag?`draggable="true" ondragstart="onBarDrag(event,'${e.id}','${fromDs}')"`:''}
     style="grid-column:${b.start+1} / span ${b.span};background:${evColor(e)}"
     title="${esc(e.title)}${e.subtitle?' · '+esc(e.subtitle):''}${dmv?'\n📝 '+esc(dmv):''}${canDrag?'\n끌어서 날짜를 옮길 수 있어요':''}"
@@ -3682,7 +3671,7 @@ window.openEventDlg = function(id, ds, slot, pre){
           <div class="evs-row last">
             <span class="evs-ri" title="메모">${evsIco('note')}</span>
             <div class="evs-rc">
-              <input id="ev-memo" class="evs-memo" value="${esc(e?(e.memo||''):'')}" placeholder="메모 — 준비물·인솔·장소 안내…" aria-label="메모" autocomplete="off">
+              <textarea id="ev-memo" class="evs-memo" rows="1" placeholder="메모 — 준비물·인솔·장소 안내… (Enter로 줄바꿈)" aria-label="메모 (여러 줄)" autocomplete="off" oninput="evsMemoFit(this)">${esc(e?(e.memo||''):'')}</textarea>
               <span class="evs-tag">교사만 봐요</span>
               <div id="ev-dm-row" class="evs-dm-row" style="display:none">
                 <button type="button" class="evs-link" id="ev-dm-btn" onclick="evsDayMemoToggle()"></button>
@@ -3714,6 +3703,8 @@ window.openEventDlg = function(id, ds, slot, pre){
       </div>
     </div>`;
   document.body.appendChild(ov);
+  evsMemoFit($I('ev-memo'));
+  requestAnimationFrame(()=> requestAnimationFrame(()=> evsMemoFit($I('ev-memo'))));   // 창이 다 채워진 뒤 한 번 더 (스크롤 막대가 생겨 폭이 줄면)
   const wp = $I('ev-wp'); if(wp) wp.checked = !!(e && (e.wpIds||[]).length);
   // 🆕 성격 · 학년별 수업 여부 채우기 (예전 자료는 지금 보이던 그대로 읽어 옵니다)
   dlgKind = kind0;
@@ -3733,6 +3724,18 @@ window.openEventDlg = function(id, ds, slot, pre){
   try { loadGcalCfg().then(()=> evsPreview()).catch(()=>{}); } catch(_){}
   if(!e) setTimeout(()=>{ const t = $I('ev-title'); if(t) t.focus(); }, 40);
 };
+/* 📝 v176 메모 칸 높이 — 쓴 줄 수만큼 (너무 길면 칸 안에서 굴림) */
+window.evsMemoFit = evsMemoFit;
+window.addEventListener('resize', ()=> evsMemoFit(document.getElementById('ev-memo')));
+function evsMemoFit(t){
+  if(!t || t.tagName !== 'TEXTAREA') return;
+  t.style.height = 'auto';
+  const h = t.scrollHeight, cap = Math.max(160, Math.round(window.innerHeight * 0.4));
+  t.style.height = Math.max(34, Math.min(h, cap)) + 'px';
+  t.style.overflowY = h > cap ? 'auto' : 'hidden';
+}
+/* 메모 글 다듬기 — 줄바꿈은 그대로, 줄 끝 빈칸 · 세 줄 넘는 빈 줄만 정리 */
+const memoClean = v => String(v || '').replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 /* 분류 단추 — 지금 고른 분류와 색 */
 function evsCatBtn(){
   const b = $I('ev-cat-btn'); if(!b) return;
@@ -4470,7 +4473,7 @@ window.saveEvent = async function(){
       : { scope:'day', grades:{ ...dlgImpact } },         // 🆕 학년별 수업 여부
     staffAll: dlgKind === 'all',                          // 🆕 교사 전원 참석
     audience: aud,
-    memo: $I('ev-memo').value.trim(),
+    memo: memoClean($I('ev-memo').value),
     order: editingEventId ? ordOf(EVENTS.find(x=>x.id===editingEventId)) : 500,
     updatedByUid: CU?.uid||'', updatedByName: CU?.name||'', updatedAt: Timestamp.now(),
   };
@@ -4682,7 +4685,7 @@ function showEventInfo(e){
         <div>📅 ${esc(e.startDate)} ~ ${esc(e.endDate)}</div>
         <div>🕐 ${esc(evTimeLabel(e))}</div>
         ${targetLabel(e)?`<div>🎯 ${esc(targetLabel(e))}</div>`:''}
-        ${e.memo?`<div>📝 ${esc(e.memo)}</div>`:''}
+        ${e.memo?`<div class="evs-memo-v" style="line-height:1.6">📝 ${esc(e.memo)}</div>`:''}
       </div>
       <div class="mact"><button class="btn btn-p" onclick="document.getElementById('ev-info').remove()">확인</button></div>
     </div>`;
@@ -4842,7 +4845,7 @@ window.openEvInfo = function(id){
              <span class="evi-v">${skips.map(d=>{ const dd = new Date(d+'T00:00:00');
                return `${dd.getMonth()+1}/${dd.getDate()}(${['일','월','화','수','목','금','토'][dd.getDay()]})`; }).join(' · ')}</span></div>` : ''}
         <div class="evi-line"><span class="evi-k">🎯 대상</span>${tgtHTML}</div>
-        ${e.memo?`<div class="evi-line"><span class="evi-k">📝 메모</span><span class="evi-v">${esc(e.memo)}</span></div>`:''}
+        ${e.memo?`<div class="evi-line"><span class="evi-k">📝 메모</span><span class="evi-v evi-memo">${esc(e.memo)}</span></div>`:''}
         ${dmOn ? `<div class="evi-line evi-dmline"><span class="evi-k">📝 ${occLab} 메모</span>${canEd
           ? `<span class="evi-v evi-dm"><input id="evi-dm-in" value="${esc(dm[occ]||'')}" maxlength="300" autocomplete="off"
                placeholder="${occLab} 이날만의 메모 — 예: 김보미 인도"
@@ -5044,13 +5047,16 @@ async function reorderAt(ev, e){
   const sec  = lane ? lane.closest('.cw-sec') : null;
   if(!sec) return;
 
-  const lanesEls = [...sec.querySelectorAll('.cw-lane')];
+  // 📅 v176 줄은 «시간대»마다 따로 — 같은 시간대(종일은 종일끼리) 안에서만 순서를 바꾼다
+  const own = sec.querySelector(`.ev-bar[data-ev="${CSS.escape(e.id)}"]`);
+  const slot = own ? own.dataset.slot : '';
+  const lanesEls = [...sec.querySelectorAll('.cw-lane')].filter(L => L.querySelector(`.ev-bar[data-slot="${CSS.escape(slot)}"]`));
   const targetIdx = lanesEls.indexOf(lane);
-  if(targetIdx < 0) return;
+  if(targetIdx < 0){ toast('시간대가 다른 줄로는 옮길 수 없어요 — 같은 시간대(종일은 종일끼리) 안에서 위아래로 끌어 주세요', 'info'); return; }
 
-  // 이 구역에 보이는 행사들을 위에서부터 차례로 모은다
+  // 이 시간대에 보이는 행사들을 위에서부터 차례로 모은다
   const ids = [];
-  lanesEls.forEach(L => L.querySelectorAll('.ev-bar').forEach(b=>{
+  lanesEls.forEach(L => L.querySelectorAll(`.ev-bar[data-slot="${CSS.escape(slot)}"]`).forEach(b=>{
     if(!ids.includes(b.dataset.ev)) ids.push(b.dataset.ev);
   }));
   const from = ids.indexOf(e.id);
@@ -6070,7 +6076,7 @@ function openIcsImportDlg(fname){
         <b style="font-size:13px">${esc(e.title)}</b>
         ${e.dup?'<span style="font-size:10px;font-weight:800;color:var(--ts);background:var(--iv);border-radius:100px;padding:1px 8px;margin-left:6px">이미 있음 — 건너뜀</span>':''}
         ${(!e.dup&&e.rrule)?'<span style="font-size:10px;font-weight:800;color:#B45309;background:#FFF4E5;border-radius:100px;padding:1px 8px;margin-left:6px">반복 일정 — 지원 안 함</span>':''}
-        <span style="display:block;font-size:11.5px;color:var(--ts);margin-top:1px">${esc(e.start)}${e.end!==e.start?` ~ ${esc(e.end)}`:''}${e.memo?` · ${esc(e.memo.slice(0,40))}${e.memo.length>40?'…':''}`:''}</span>
+        <span style="display:block;font-size:11.5px;color:var(--ts);margin-top:1px">${esc(e.start)}${e.end!==e.start?` ~ ${esc(e.end)}`:''}${e.memo?(m1 => ` · ${esc(m1.slice(0,40))}${m1.length>40?'…':''}`)(e.memo.replace(/\s*\n\s*/g,' / ')):''}</span>
       </span></label>`;
   }).join('');
   const CATL={teacher:'교사',event:'행사',program:'프로그램',worship:'예배·기도회',admin:'행정',break:'방학',exam:'시험',closed:'휴교·휴일'};
