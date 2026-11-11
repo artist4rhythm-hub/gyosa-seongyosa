@@ -163,7 +163,7 @@ async function computeBadges(db, uid){
   try { const m = await import('./consult-badge.js?v=149'); b.consult = await m.badgeFor(db, uid, me); } catch(e){}
 
   /* 🔒 v175 주임 회의록 — 멤버인지 · 주제만 공유받았는지 (사이드바에 보일지) + 내 임무 · 새 소식 (따로 불러와서) */
-  try { const m = await import('./lead-badge.js?v=175'); b.leadmin = await m.badgeFor(db, uid, me, leadN); } catch(e){}
+  try { const m = await import('./lead-badge.js?v=177'); b.leadmin = await m.badgeFor(db, uid, me, leadN); } catch(e){}
 
   /* 🩺 v121 수퍼관리자 — 오류 알림판에 새로 들어온 오류 (마지막으로 알림판을 본 뒤 · 최근 7일) */
   if(me && me.role === 'super'){

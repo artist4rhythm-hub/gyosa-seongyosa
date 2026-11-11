@@ -344,7 +344,7 @@ export function renderTopic(m, t, i, ctx){
       ${m.imported ? '' : statusChip(st, can, key)}
       ${ctx.interactive ? `<button class="md-kc${kc ? ' on' : ''}" data-act="kcmt" data-kid="${esc(key)}">💬 ${kc}</button>` : ''}</div>`;
   }
-  if(t.ed && t.ed.name && !ctx.print){
+  if(t.ed && t.ed.name && !ctx.print && ctx.showEd){   // 📜 v177 «✎ 고쳤어요»는 회의록에 남기지 않음 — 고친 기록은 수퍼관리자만 (활동 로그 · 수정 이력)
     h += `<div class="md-ed"${ctx.interactive ? ` data-act="ed" data-tid="${esc(t.id)}" data-rev="${esc(t.ed.rev || '')}"` : ''}>✎ ${esc(t.ed.name)} 님이 ${esc(fmtStamp(t.ed.at))}에 고쳤어요${ctx.interactive ? ' · <u>고치기 전 보기</u>' : ''}</div>`;
   }
   return h + '</section>';
@@ -402,7 +402,7 @@ export function renderDocB(m, ctx){
   if(on.length || off.length) pills.push(`<button type="button" class="mb-pill" data-act="attall">참석 ${on.length} · 불참 ${off.length}</button>`);
   if(m.writerName) pills.push(`<span class="mb-pill">쓴 사람 ${esc(m.writerName)}</span>`);
   const rv = Math.max(0, (+m.rev || 1) - 1);
-  if(rv) pills.push(`<button type="button" class="mb-pill" data-act="hist">수정 ${rv}번</button>`);
+  if(rv && ctx.showHist) pills.push(`<button type="button" class="mb-pill" data-act="hist">수정 ${rv}번</button>`);   // 📜 v177 수정 횟수 · 이력은 수퍼관리자만
   if(m.imported) pills.push(`<span class="mb-pill y">${impLabel(m)}</span>`);
   const sub = [MORG[m.org] || '', m.type && titleOf(m) !== m.type + '록' ? m.type : ''].filter(Boolean).join(' · ');
   let h = `<article class="md-doc mb-doc" data-mid="${esc(m.id || '')}">
@@ -429,7 +429,7 @@ export function renderDocB(m, ctx){
     const tc = num(cm['t:' + t.id]);
     const folded = !!fold[t.id];
     const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : '';
-    const ed = t.ed && t.ed.name && !ctx.print
+    const ed = t.ed && t.ed.name && !ctx.print && ctx.showEd   // 📜 v177 회의록에는 고친 표시를 남기지 않음
       ? `<button type="button" class="md-ed mb-ed" data-act="ed" data-tid="${esc(t.id)}" data-rev="${esc(t.ed.rev || '')}">✎ ${esc(t.ed.name)} ${esc(fmtStamp(t.ed.at))} 고침</button>` : '';
     const nl = (t.body || []).length;
     h += `<section class="md-t mb-t${folded ? ' fold' : ''}" id="t-${esc(t.id)}" data-tid="${esc(t.id)}">

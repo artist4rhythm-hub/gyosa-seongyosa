@@ -94,7 +94,9 @@
   }
   /* 🔒 v175 «menu» 가 붙은 도움말(주임 회의록)은 그 메뉴가 보이는 선생님에게만 */
   const menuOk = k => { try{ const it = typeof menuFind === 'function' ? menuFind(k) : null; return !it || typeof menuCanSee !== 'function' || menuCanSee(it, typeof SB_USER !== 'undefined' ? SB_USER : null); }catch(_){ return false; } };
-  function visible(){ return (HELP || []).filter(a => (!a.only || (a.only === 'super' && isSuper())) && (!a.menu || menuOk(a.menu))); }
+  /* 🔑 v177 «only: leadadm» = 주임 회의록 관리자 (이 기기에 기억한 역할 — lead-badge.js · 주임 회의록 화면이 고친다) */
+  const leadAdm = () => { if(isSuper()) return true; try{ const u = me(), j = JSON.parse(localStorage.getItem('gyosa_lead') || 'null'); return !!(u && j && j.uid === u.uid && j.s === 'm' && j.r === 'adm'); }catch(_){ return false; } };
+  function visible(){ return (HELP || []).filter(a => (!a.only || (a.only === 'super' && isSuper()) || (a.only === 'leadadm' && leadAdm())) && (!a.menu || menuOk(a.menu))); }
   function search(q){
     const gs = groups(q); if(!gs.length) return [];
     const whole = norm(q);

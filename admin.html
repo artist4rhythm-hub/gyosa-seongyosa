@@ -544,7 +544,7 @@ html[data-theme="dark"] .adm-toc a .tcb.w{ color:#E3C878; background:#2A2416; } 
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, arrayUnion, arrayRemove } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, arrayUnion, arrayRemove, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 dropLists('staff'); try{ addEventListener('pagehide', () => dropLists('staff')); }catch(e){}   // 교직원을 고치는 화면 — 들어올 때 · 나갈 때 기억한 교직원 명단을 버림 (다음 화면은 새로 받음)
 import { attOf, attRange, colOnce, colDrop } from './qread.js';   // 📉 v120 필요한 것만 읽기
@@ -2157,6 +2157,17 @@ async function renderActivityLog(){
   const snap = await getDocs(query(collection(db,'activityLogs'), where('at','>=', Timestamp.fromMillis(Date.now()-90*86400000))));   // 📉 v120 최근 90일만
   ACT_LOGS = [];
   snap.forEach(d=>{ const l=d.data(); if(l.at?.seconds) ACT_LOGS.push({...l, ts:l.at.seconds*1000}); });
+  /* 📜 v177 회의록 · 주임 회의록 고친 기록 (mtgLog — 수퍼관리자만 읽음) — 분류 «회의록» · «🔒 주임 회의록» */
+  try{
+    const ms = await getDocs(query(collection(db,'mtgLog'), where('atMs','>=', Date.now()-90*86400000)));
+    const AMAP = { '새로 씀':'입력', '예전 회의록 넣기':'입력', '고침':'수정', '되돌림':'수정', '되살림':'수정', '주제 공유':'수정', '공유 거둠':'수정', '멤버 · 역할':'수정', '작성자':'수정', '휴지통':'삭제', '완전 삭제':'삭제' };
+    ms.forEach(d => { const l = d.data() || {}; const lead = l.book === 'lead';
+      const ts = l.at?.seconds ? l.at.seconds * 1000 : (l.atMs || 0); if(!ts) return;
+      const what = [l.action, l.date ? `${l.date} ${l.mtitle||''}`.trim() : '', l.rev ? `${l.rev}번째 판` : '', l.detail||''].filter(Boolean).join(' · ');
+      const who = (typeof STAFF_ALL !== 'undefined' && STAFF_ALL[l.uid]) || STAFF_CACHE[l.uid];   // 이름은 교직원 명단에서 (기록에 적힌 이름보다)
+      ACT_LOGS.push({ ts, name:(who && who.name) || l.name || '', uid:l.uid||'', action:AMAP[l.action] || '수정', category: lead ? '🔒 주임 회의록' : '회의록', target:what,
+        href: l.meetingId && l.rev ? `minutes.html?${lead ? 'book=lead&' : ''}m=${encodeURIComponent(l.meetingId)}&hist=${encodeURIComponent(l.rev)}` : '' }); });
+  }catch(e){ console.warn('mtgLog', e); }
   ACT_LOGS.sort((a,b)=>b.ts-a.ts);
 
   // 카테고리 목록 (동적)
@@ -2180,7 +2191,9 @@ async function renderActivityLog(){
         </select>
         <input type="text" id="al-search" placeholder="이름·내용 검색" oninput="filterActLog()" style="height:36px;border:1.5px solid var(--ivd);border-radius:8px;padding:0 10px;font-size:13px;flex:1;min-width:120px">
       </div>
-      <div style="font-size:12px;color:var(--tl);margin-bottom:8px">총 ${ACT_LOGS.length}건</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--tl);margin-bottom:8px">총 ${ACT_LOGS.length}건
+        <button type="button" class="bm" style="margin-left:auto;padding:5px 10px;font-size:12px" onclick="actLogCsv()" title="지금 고른 분류 · 작업 · 검색에 맞는 기록을 엑셀에서 열 수 있는 파일로">⬇ 로그 파일 받기 (.csv)</button></div>
+      <div style="font-size:11.5px;color:var(--tl);margin:-2px 0 8px">📜 «회의록» · «🔒 주임 회의록»은 누가 · 언제 · 무엇을 고쳤는지예요 (회의록 화면에는 남기지 않아요). 줄 끝 «그때 판 보기»로 그 판을 열고 되돌릴 수 있어요.</div>
       <div id="al-list"></div>
     </div>
   </div>`;
@@ -2320,6 +2333,27 @@ render();
 }
 window.buildBackupHTML = buildBackupHTML;
 
+function actLogList(){
+  const cat = $I('al-cat')?.value||'', act = $I('al-action')?.value||'', q = ($I('al-search')?.value||'').trim();
+  return ACT_LOGS.filter(l=>{
+    if(cat && l.category!==cat) return false;
+    if(act && l.action!==act) return false;
+    if(q && !((l.name||'').includes(q) || (l.target||'').includes(q))) return false;
+    return true;
+  });
+}
+/* 📜 v177 로그 파일 (.csv · 엑셀에서 한글이 안 깨지게 BOM) */
+window.actLogCsv = function(){
+  const rows = actLogList();
+  if(!rows.length){ toast('받을 기록이 없어요.','err'); return; }
+  const q = v => { let t = String(v == null ? '' : v); if(/^[=+\-@\t\r]/.test(t)) t = "'" + t;   // 엑셀이 수식으로 읽지 않게
+    return `"${t.replace(/"/g, '""')}"`; };
+  const fmt = ts => { const d = new Date(ts); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const csv = '\ufeff' + [['때', '이름', '분류', '작업', '내용'].map(q).join(','), ...rows.map(l => [fmt(l.ts), l.name, l.category, l.action, l.target].map(q).join(','))].join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
+  const d = new Date(); a.download = `활동로그_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.csv`;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+};
 function filterActLog(){
   const cat = $I('al-cat')?.value||'', act = $I('al-action')?.value||'', q = ($I('al-search')?.value||'').trim();
   let list = ACT_LOGS.filter(l=>{
@@ -2337,11 +2371,12 @@ function filterActLog(){
     const d = new Date(l.ts);
     const ds = `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     return `<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--ivd)">
-      <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;background:${actBg(l.action)};color:${actColor(l.action)};flex-shrink:0">${l.action}</span>
+      <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;background:${actBg(l.action)};color:${actColor(l.action)};flex-shrink:0">${esc(l.action||'')}</span>
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;color:var(--gd)"><b>${l.name}</b> · ${l.category} · ${l.target||''}</div>
+        <div style="font-size:13px;color:var(--gd)"><b>${esc(l.name||'')}</b> · ${esc(l.category||'')} · ${esc(l.target||'')}</div>
         <div style="font-size:11px;color:var(--tl);margin-top:2px">${ds}</div>
       </div>
+      ${l.href ? `<a href="${esc(l.href)}" target="_blank" rel="noopener" style="font-size:12px;font-weight:700;color:var(--gm);white-space:nowrap;align-self:center">그때 판 보기 ›</a>` : ''}
     </div>`;
   }).join('') + (ACT_LOGS.length>300?'<p style="font-size:11px;color:var(--tl);text-align:center;margin-top:10px">최근 300건만 표시됩니다.</p>':'');
 }
@@ -2938,7 +2973,7 @@ function admStats(){
   const st = s => s.acStatus || 'active';
   const dormant = staff.filter(s => !s.noAuth && st(s) === 'active' && (() => { const t = s.lastLogin?.seconds ? s.lastLogin.seconds * 1000 : 0; return !t || now - t > 14 * DAY; })());
   const dutyOk = Object.keys(DUTY || {}).length > 0;
-  const dutyEmpty = dutyOk ? DUTY_DEFS.filter(d => !((DUTY[d.key] || []).length)) : null;
+  const dutyEmpty = dutyOk ? DUTY_DEFS.filter(d => !d.noGap && !((DUTY[d.key] || []).length)) : null;
   let ny = ADM_LS.ny;
   if(Object.keys(NY_STATE || {}).length){ const y = NY_YEAR || nyDefaultYear(); const o = NY_STATE['y' + y] || {}; ny = { y, done:NY_STEPS.filter(x => o[x.k]).length, all:NY_STEPS.length }; }
   const names = xs => xs.slice(0, 3).map(x => x.name || x.label || '').join(' · ') + (xs.length > 3 ? ' 외' : '');
@@ -3387,11 +3422,115 @@ function accBtn(s, it){
   return `<button class="acc-t ${cls}" data-accu="${esc(s.uid)}" data-acck="${esc(it.key)}" title="${esc(accTip(a, it))}">${txt}</button>`;
 }
 
+/* ═══ 🔑 v177 화면 안에서 정하던 권한도 이 표에 — 같은 문서를 읽고 쓰므로 어느 쪽에서 바꿔도 양쪽에 바로
+   · 🔒 주임 회의록 멤버 · 역할 = leadConfig/main (uids · admins · writers) — 주임 회의록 ⚙ 설정과 같은 명단
+   · 회의록 «다른 기관 회의록 열람» = minutesConfig/main.viewers { uid: [기관] } — 회의록 ⚙ 설정 › 열람과 같음
+   · 출석부 «학년별 담당» = attendConfig/gradeAssign.v (보기만 — 고치기는 출석부 설정)
+   · 주임 회의록 «공유받은 주제» = leadShares (보기만 — 주제마다 주임 회의록에서)
+   · 주임 회의록 기록은 활동 로그(기관관리자도 읽음)가 아니라 mtgLog(수퍼관리자만)에 남긴다 */
+let LEADACC = { uids:[], admins:[], writers:[], names:{} }, LEADSH = {}, MINVIEW = {}, GRADEAS = {};
+const accArr = v => Array.isArray(v) ? v.slice() : [];
+async function loadAccExtra(){
+  const [lc, ls, mc, ga] = await Promise.all([
+    getDoc(doc(db,'leadConfig','main')).catch(()=>null),
+    getDocs(collection(db,'leadShares')).catch(()=>null),
+    getDoc(doc(db,'minutesConfig','main')).catch(()=>null),
+    getDoc(doc(db,'attendConfig','gradeAssign')).catch(()=>null)]);
+  const x = lc && lc.exists() ? lc.data() : {};
+  const U = accArr(x.uids);
+  LEADACC = { uids:U, admins:accArr(x.admins).filter(u=>U.includes(u)), writers:accArr(x.writers).filter(u=>U.includes(u)), names:x.names||{}, types:accArr(x.types) };
+  LEADSH = {};
+  if(ls) ls.forEach(d => { const v = d.data() || {}; if(v.gone || v.mdel) return;
+    (v.uids||[]).forEach(u => { (LEADSH[u] = LEADSH[u] || []).push({ t:(v.topic||{}).title || '', d:(v.meeting||{}).date || '', m:(v.meeting||{}).mtitle || '' }); }); });
+  MINVIEW = (mc && mc.exists() && mc.data().viewers) || {};
+  GRADEAS = (ga && ga.exists() && ga.data().v) || {};
+}
+const leadRoleAcc = u => !LEADACC.uids.includes(u) ? '' : LEADACC.admins.includes(u) ? 'adm' : LEADACC.writers.includes(u) ? 'wr' : 'mem';
+const LEAD_RL = { '':'없음', mem:'보기', wr:'작성', adm:'관리' };
+const LEAD_RT = { '':'멤버 아님', mem:'보기 · 댓글', wr:'쓰기 · 고치기', adm:'쓰기 · 작성자 정하기 · 주제 공유 · 휴지통' };
+const LEAD_COL = { key:'__lead', label:'🔒 주임 회의록', short:'🔒 주임\n회의록', lead:true, desc:'주임 회의록 멤버와 역할 (보기 · 작성 · 관리)' };
+function leadCellHTML(s){
+  if(s.role === 'super') return `<span class="acc-lock" title="슈퍼관리자 (늘 전체)">—</span>`;
+  const r = leadRoleAcc(s.uid);
+  return `<button class="acc-t ld ${r || 'none'}" data-leadu="${esc(s.uid)}" title="🔒 주임 회의록 — ${esc(LEAD_RL[r])}${r ? ' · ' + esc(LEAD_RT[r]) : ''} · 누르면 바꿔요">${r ? esc(LEAD_RL[r]) : '+'}</button>`;
+}
+/* 칸을 누르면 작은 메뉴 — 없음 · 보기 · 작성 · 관리 */
+function leadPick(anchor, uid){
+  document.querySelectorAll('.ld-pop').forEach(x => x.remove());
+  const s = STAFF_ALL[uid] || STAFF_CACHE[uid]; if(!s) return;
+  const cur = leadRoleAcc(uid);
+  const pop = document.createElement('div'); pop.className = 'ld-pop'; pop.setAttribute('role', 'menu');
+  pop.innerHTML = `<div class="ld-pop-h">🔒 주임 회의록 · ${esc(s.name || '')}</div>` + ['', 'mem', 'wr', 'adm'].map(r =>
+    `<button type="button" role="menuitemradio" aria-checked="${cur === r}" class="${cur === r ? 'on' : ''}" data-lr="${r}"><b>${cur === r ? '✓ ' : ''}${esc(LEAD_RL[r])}</b><span>${esc(r ? LEAD_RT[r] : '멤버에서 빼기 — 바로 못 열어요')}</span></button>`).join('')
+    + `<div class="ld-pop-f">주임 회의록 ⚙ 설정의 «멤버 · 역할»과 같은 명단이에요</div>`;
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect(), W = 250;
+  pop.style.left = Math.max(8, Math.min(window.innerWidth - W - 8, r.left + r.width / 2 - W / 2)) + 'px';
+  const top = r.bottom + 6; pop.style.top = (top + 260 > window.innerHeight ? Math.max(8, r.top - 266) : top) + 'px';
+  pop.addEventListener('click', e => { const b = e.target.closest('[data-lr]'); if(!b) return; pop.remove(); leadSetRole(uid, b.dataset.lr); });
+  setTimeout(() => { const off = e => { if(!pop.contains(e.target)){ pop.remove(); document.removeEventListener('mousedown', off); } }; document.addEventListener('mousedown', off); }, 0);
+  pop.querySelector('button.on, button')?.focus();
+}
+window.leadPick = leadPick;
+function mtgLogAdd(action, detail){   // 📜 수퍼관리자만 읽는 회의록 기록 (mtgLog)
+  try{ addDoc(collection(db,'mtgLog'), { uid:CU.uid, name:CU.name||'', at:Timestamp.now(), atMs:Date.now(), book:'lead', org:'lead', action, meetingId:'', date:'', mtitle:'', detail:detail||'' }).catch(()=>{}); }catch(e){}
+}
+function leadSetRole(uid, r){ return accQueue(() => leadSetRole1(uid, r)); }
+async function leadSetRole1(uid, r){
+  const s = STAFF_ALL[uid] || STAFF_CACHE[uid]; if(!s || s.role === 'super') return;
+  let x = {};
+  try{ const g = await getDoc(doc(db,'leadConfig','main')); x = g.exists() ? g.data() : {}; }catch(e){ toast('주임 회의록 명단을 읽지 못했어요: ' + (e.message||''), 'err'); return; }
+  const U0 = accArr(x.uids), before = !U0.includes(uid) ? '' : accArr(x.admins).includes(uid) ? 'adm' : accArr(x.writers).includes(uid) ? 'wr' : 'mem';
+  if(before === r) return;
+  if(!r && !confirm(`${s.name}님을 주임 회의록 멤버에서 뺄까요?\n바로 못 열어요. 쓴 글 · 댓글은 그대로 남아요.`)) return;
+  const U = U0.filter(u => u !== uid), A = accArr(x.admins).filter(u => u !== uid && U0.includes(u)), W = accArr(x.writers).filter(u => u !== uid && U0.includes(u));
+  const names = { ...(x.names || {}) };
+  if(r){ U.push(uid); names[uid] = s.name || names[uid] || ''; if(r === 'adm') A.push(uid); if(r === 'wr') W.push(uid); }
+  try{
+    await setDoc(doc(db,'leadConfig','main'), { uids:U, admins:A, writers:W, names, types: accArr(x.types).length ? x.types : ['주임 회의'],
+      updatedAt:Timestamp.now(), updatedByName:CU.name||'' }, { merge:true });
+    LEADACC = { ...LEADACC, uids:U, admins:A, writers:W, names };
+    if(DUTY) DUTY.lead_adm = A.slice();
+    if(r) addDoc(collection(db,'mtgNotifs'), { toUid:uid, kind: before ? 'role' : 'member', book:'lead', meetingId:'', org:'lead', mtitle:'주임 회의록', date:(d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`)(new Date()), tgt:'', where:'',
+      text: r === 'adm' ? '주임 회의록 관리자가 되었어요 — 쓰기 · 작성자 정하기 · 주제 공유를 할 수 있어요' : r === 'wr' ? '주임 회의록 작성 권한을 받았어요 — «＋ 새 주임 회의록»과 «고치기»를 쓸 수 있어요'
+        : before ? '주임 회의록 역할이 «보기 · 댓글»로 바뀌었어요' : '주임 회의록 멤버가 되었어요 — 사이드바 «주임 회의록»에서 열 수 있어요',
+      fromUid:CU.uid, fromName:CU.name||'', at:Timestamp.now(), read:false }).catch(()=>{});
+    mtgLogAdd('멤버 · 역할', `${s.name||''} ${before ? LEAD_RL[before] + '→' : '＋'}${LEAD_RL[r]} (관리자 › 접근 권한)`);
+    toast(`${s.name}님 — 주임 회의록 ${r ? LEAD_RL[r] : '멤버에서 뺐어요'}`, 'ok');
+    renderAccessCtl();
+  }catch(e){ toast('저장 실패: ' + (e.code === 'permission-denied' ? '보안 규칙 v47을 게시했는지 확인해 주세요' : (e.message||'')), 'err'); }
+}
+window.leadSetRole = leadSetRole;
+/* 회의록 «다른 기관 회의록 열람» — 회의록 ⚙ 설정 › 열람과 같은 칸 (minutesConfig/main.viewers) */
+const accBaseOrgs = s => [...new Set([...(s.orgs||[]), s.org].filter(o => o === 'daniel' || o === 'jihyebit'))];
+function minViewSet(uid, o, on){ return accQueue(async () => {
+  const s = STAFF_ALL[uid] || STAFF_CACHE[uid]; if(!s) return;
+  const g = new Set(MINVIEW[uid] || []); on ? g.add(o) : g.delete(o);
+  try{
+    await setDoc(doc(db,'minutesConfig','main'), { viewers: { [uid]: g.size ? [...g] : deleteField() }, updatedAt:Timestamp.now(), updatedBy:CU.name||'' }, { merge:true });
+    if(g.size) MINVIEW[uid] = [...g]; else delete MINVIEW[uid];
+    logActivity('권한', '회의록 열람', `${s.name||''} — ${ORGS[o]||o} 회의록 열람 ${on?'허락':'거둠'}`);
+    renderAccessCtl();
+  }catch(e){ toast('저장 실패: '+(e.message||''),'err'); }
+}); }
+window.minViewSet = minViewSet;
+const gradeOf = uid => Object.entries(GRADEAS||{}).filter(([k, v]) => Array.isArray(v) && v.includes(uid)).map(([k]) => { const [o, g] = k.split('|'); return (o === 'jihyebit' ? '그루터기 ' : '') + g; });
+/* 카드 · 옆 시트에 붙는 칩 — 이 표 바깥(각 화면)에서 정한 것 */
+function accExtraChips(s, sheet){
+  if(s.role === 'super') return [];
+  const out = [], r = leadRoleAcc(s.uid);
+  if(r) out.push(`<button type="button" class="acx ld ${r}" data-leadu="${esc(s.uid)}" title="누르면 역할을 바꿔요">🔒 주임 회의록 · ${esc(LEAD_RL[r])}</button>`);
+  const sh = LEADSH[s.uid] || []; if(sh.length) out.push(`<span class="acx lk" title="${esc(sh.map(x => `${x.d} ${x.t}`).join('\n'))}">🔒 공유받은 주제 ${sh.length}</span>`);
+  const mv = (MINVIEW[s.uid] || []).filter(o => !accBaseOrgs(s).includes(o)); if(mv.length) out.push(`<span class="acx op" title="회의록 ⚙ 설정 › 열람 · 옆 시트에서 바꿀 수 있어요">회의록 · ${esc(mv.map(o => ORGS[o] || o).join(' · '))}도 열람</span>`);
+  const gr = gradeOf(s.uid); if(gr.length) out.push(`<span class="acx du" title="출석부 › 설정 › 학년별 담당 선생님 — 그 학년이 있는 반 출결을 기록해요">출석부 · ${esc(gr.join(' · '))} 담당</span>`);
+  return out;
+}
 async function renderAccessCtl(){
   const box = $I('ca-acc');
   if(CU.role !== 'super'){ box.innerHTML='<div class="asc"><p class="empty">권한이 없습니다.</p></div>'; return; }
   await reloadStaffCache();
   await loadDuties();          // 공사 경비 총괄 담당(«늘») 표시에 필요 — 아래 기능별 담당자 표도 이것을 씀
+  await loadAccExtra();        // 🔑 v177 주임 회의록 · 회의록 열람 · 출석부 학년 담당 · 공유받은 주제
   const pages = accPages();
   const list = accList();
   const all = Object.values(Object.keys(STAFF_ALL).length ? STAFF_ALL : STAFF_CACHE).filter(s => !s.noAuth && (s.acStatus||'active')!=='quit');
@@ -3428,6 +3567,7 @@ async function renderAccessCtl(){
       <span><button class="acc-t add" tabindex="-1">✓</button> 열어 줌</span>
       <span><span class="acc-lock">🔒</span> 역할로 늘 닫힘 (협력교사 · 관리자용)</span>
       <span><span class="acc-lock">—</span> 슈퍼관리자 (늘 전체)</span>
+      <span><button class="acc-t ld adm" tabindex="-1">관리</button><button class="acc-t ld wr" tabindex="-1">작성</button><button class="acc-t ld mem" tabindex="-1">보기</button> 🔒 주임 회의록 멤버 · 역할 (누르면 고름)</span>
     </div>`;
 
   const body = ACC_VIEW === 'page' ? accPageViewHTML(pages, list) : ACC_VIEW === 'card' ? accCardViewHTML(pages, list) : accPersonViewHTML(pages, list);
@@ -3445,7 +3585,9 @@ async function renderAccessCtl(){
       <p style="font-size:11.5px;color:var(--tl);margin-top:10px;line-height:1.7">
         · 변경은 즉시 저장되며, 해당 선생님이 <b>다음에 페이지를 열 때</b>부터 적용됩니다. (이미 열어둔 화면은 새로고침 후)<br>
         · 학부모 사이트 · 공개 홈페이지는 바깥 주소라 이 표에 없어요. 관리자 화면은 역할(관리자)로만 열려요.<br>
-        · 화면 안의 «고치기»는 아래 <b>🏛 기능별 담당자</b>가 정해요 — 이 표는 «화면을 열 수 있는지»만.
+        · 화면 안의 «고치기»는 아래 <b>🏛 기능별 담당자</b>가 정해요 — 이 표는 «화면을 열 수 있는지»만.<br>
+        · <b>🔒 주임 회의록</b> 칸은 멤버 명단 자체예요 (보기 · 작성 · 관리) — 주임 회의록 ⚙ 설정 «멤버 · 역할»과 같은 명단이라 어느 쪽에서 바꿔도 같아요. 기록은 활동 로그 «🔒 주임 회의록»에 수퍼관리자만 보여요.<br>
+        · 회의록 «다른 기관 열람» · 출석부 «학년별 담당» · «공유받은 주제»는 🪪 사람 카드와 옆 시트에 함께 보여요.
       </p>
     </div>` + dutyBoxHTML();
   box.querySelectorAll('[data-accu]').forEach(b => b.addEventListener('click', () => accToggle(b.dataset.accu, b.dataset.acck)));
@@ -3453,6 +3595,7 @@ async function renderAccessCtl(){
   box.querySelectorAll('[data-accbulk]').forEach(b => b.addEventListener('click', () => accBulk(b.dataset.accbulk, b.dataset.accg, b.dataset.on === '1')));
   box.querySelectorAll('[data-accclr]').forEach(b => b.addEventListener('click', () => clearPageDeny(b.dataset.accclr)));
   box.querySelectorAll('[data-acccard]').forEach(b => b.addEventListener('click', () => accSheetOpen(b.dataset.acccard)));
+  box.querySelectorAll('[data-leadu]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); leadPick(b, b.dataset.leadu); }));
   renderDutyPanel();
   renderAccCards();
   if(ACC_SHEET) accSheetRender();   // 🏛 v159 옆 시트가 열려 있으면 바뀐 것으로 다시
@@ -3460,17 +3603,20 @@ async function renderAccessCtl(){
 window.setAccView = v => { ACC_VIEW = v; try{ localStorage.setItem('acc_view', v); }catch(e){} renderAccessCtl(); };
 
 /* 👤 사람별 표 — 머리 2단: 구역(사이드바 순서) · 화면 */
-function accPersonViewHTML(pages, list){
+function accPersonViewHTML(pages0, list){
+  const pages = [];   // 🔑 v177 «회의록» 바로 뒤에 «🔒 주임 회의록» 칸
+  pages0.forEach(p => { pages.push(p); if(p.key === 'minutes') pages.push({ ...LEAD_COL, sec:p.sec }); });
+  if(!pages.some(p => p.lead)){ const i = pages.findIndex(p => p.sec === (pages0[0] || {}).sec); pages.splice(Math.max(0, i) + 1, 0, { ...LEAD_COL, sec:(pages0[0] || {}).sec || '학사' }); }
   const th0 = [];
   for(let i=0;i<pages.length;){ let j=i; while(j<pages.length && pages[j].sec===pages[i].sec) j++; th0.push(`<th colspan="${j-i}" class="acc-sh">${esc(pages[i].sec)}</th>`); i=j; }
   const secEnd = k => k===pages.length-1 || pages[k+1].sec!==pages[k].sec;
-  const th1 = pages.map((p,k) => `<th class="${secEnd(k)?'acc-se':''}" title="${esc(p.label)} — ${esc(p.desc||'')}"><span class="acc-th">${esc(accLab(p)).replace(/\n/g,'<br>')}</span></th>`).join('');
+  const th1 = pages.map((p,k) => `<th class="${secEnd(k)?'acc-se':''}${p.lead?' acc-ldh':''}" title="${esc(p.label)} — ${esc(p.desc||'')}"><span class="acc-th">${esc(p.lead ? p.short : accLab(p)).replace(/\n/g,'<br>')}</span></th>`).join('');
   const colN = pages.length + 2;
   const rows = accGrouped(list).map(g => {
     const head = `<tr class="acc-gr"><td colspan="${colN}"><span>${esc(g.label)} <i>${g.list.length}명</i></span></td></tr>`;
     return head + g.list.map(s => {
       const isSelf = s.uid === CU.uid;
-      const cells = pages.map((p,k) => `<td class="${secEnd(k)?'acc-se':''}">${accBtn(s, p)}</td>`).join('');
+      const cells = pages.map((p,k) => `<td class="${secEnd(k)?'acc-se':''}${p.lead?' acc-ldc':''}">${p.lead ? leadCellHTML(s) : accBtn(s, p)}</td>`).join('');
       const denyCnt = (s.pageDeny||[]).filter(k => pages.some(p => p.key===k)).length;
       const multi = Array.isArray(s.orgs) && s.orgs.length > 1;
       return `<tr>
@@ -3496,7 +3642,7 @@ const ACC_CARD_LEGEND = `<div class="acc-leg">
       <span><span class="acx df">기본 닫힘</span> 다른 기관 화면</span>
       <span style="color:var(--tl)">칩을 누르면 그 칸이 바로 바뀌어요 · 모두 보려면 «고치기»</span>
     </div>`;
-function accDutiesOf(s){ return DUTY_DEFS.filter(d => (DUTY[d.key] || []).includes(s.uid)).map(d => d.short || d.label); }
+function accDutiesOf(s){ return DUTY_DEFS.filter(d => !d.lead && (DUTY[d.key] || []).includes(s.uid)).map(d => d.short || d.label); }   // 주임 회의록 관리자는 «🔒 주임 회의록» 칩으로
 /* 기본과 다른가 — 열어 줌, 또는 기본으로 열린 화면을 닫음 (기본 닫힘 화면을 «닫음»으로 남겨 둔 것[공사 경비]은 기본과 같음) */
 const accDiff = a => a.kind === 'allow' || (a.kind === 'deny' && !a.why);
 const accDefOff = a => a.kind === 'off' || (a.kind === 'deny' && !!a.why);
@@ -3512,7 +3658,8 @@ function accCardViewHTML(pages, list){
       /* 누구나 같은 기본(관리자용 화면 닫힘)은 카드에서 빼고 — 협력교사 자물쇠 · 다른 기관 화면만 (모두 보려면 «고치기») */
       const role = s.role === 'partner' ? as.filter(x => x.a.kind === 'role') : [];
       const off = as.filter(x => accDefOff(x.a) && x.a.why === 'org');
-      if(exOnly && !ex.length) return '';
+      const xc = accExtraChips(s);   // 🔑 v177 각 화면에서 정한 것 (주임 회의록 · 회의록 열람 · 출석부 학년 · 공유받은 주제)
+      if(exOnly && !ex.length && !xc.length) return '';
       const chips = ex.map(({ p, a }) => a.kind === 'duty'
           ? `<span class="acx du" title="공사 경비 총괄 담당이라 늘 열려 있어요">${esc(p.label)} · 총괄 담당이라 늘</span>`
           : `<button type="button" class="acx ${a.kind === 'deny' ? 'cl' : 'op'}" data-accu="${esc(s.uid)}" data-acck="${esc(p.key)}" title="${esc(accTip(a, p))}">${a.kind === 'deny' ? '✕' : '+'} ${esc(p.label)} ${a.kind === 'deny' ? '닫음' : '열어 줌'}</button>`)
@@ -3529,6 +3676,7 @@ function accCardViewHTML(pages, list){
         </div>
         <div class="acd-l"><span class="material-symbols-rounded">lock_open</span>${isSup ? '모든 화면' : `${open}곳 열림`}<small>${isSup ? '슈퍼관리자라 늘 전체' : ex.length ? `기본과 다른 것 ${ex.length}` : '기본대로'}</small></div>
         ${chips.length ? `<div class="acd-x">${chips.join('')}</div>` : ''}
+        ${xc.length ? `<div class="acd-x acd-xx">${xc.join('')}</div>` : ''}
         <div class="acd-d"><span class="lb">맡은 일</span>${isSup ? '<span class="acd-none">모든 기능 (슈퍼관리자)</span>' : du.length ? du.map(t => `<span class="acd-du">${esc(t)}</span>`).join('') : '<span class="acd-none">없음</span>'}</div>
       </article>`;
     }).join('');
@@ -3584,6 +3732,18 @@ function accSheetRender(){
     }).join('');
     i = j;
   }
+  /* 🔑 v177 이 표 바깥(각 화면)에서 정한 것 — 주임 회의록 역할 · 회의록 다른 기관 열람은 여기서 바로 · 출석부 학년 담당 · 공유받은 주제는 보기만 */
+  if(s.role !== 'super'){
+    const r = leadRoleAcc(s.uid), base = accBaseOrgs(s), mv = MINVIEW[s.uid] || [], gr = gradeOf(s.uid), sh = LEADSH[s.uid] || [];
+    body += `<div class="acs-gt">화면 안에서 정하는 것<span>같은 명단 · 바로 저장</span></div>
+      <div class="acs-r${r ? ' dif' : ''}"><span class="acs-ic material-symbols-rounded">lock</span><span class="acs-n"><b>🔒 주임 회의록</b><span>${esc(r ? LEAD_RT[r] : '멤버 아님')} — 주임 회의록 ⚙ 설정과 같은 명단</span></span>
+        <div class="acs-seg" role="group" aria-label="주임 회의록 역할">${['', 'mem', 'wr', 'adm'].map(x => `<button type="button" class="${r === x ? 'on' : ''}" aria-pressed="${r === x}" data-leadset="${esc(s.uid)}|${x}">${esc(LEAD_RL[x])}</button>`).join('')}</div></div>
+      ${['daniel', 'jihyebit'].filter(o => !base.includes(o)).map(o => { const on = mv.includes(o);
+        return `<div class="acs-r${on ? ' dif' : ''}"><span class="acs-ic material-symbols-rounded">edit_note</span><span class="acs-n"><b>회의록 · ${esc(ORGS[o] || o)} 열람</b><span>${on ? '읽기 · 댓글 허락함 (고치기는 안 됨)' : '다른 기관 회의록 — 켜면 읽기 · 댓글'}</span></span>
+          <button type="button" class="acs-sw${on ? ' on' : ''}" role="switch" aria-checked="${on}" aria-label="${esc(ORGS[o] || o)} 회의록 열람" data-minview="${esc(s.uid)}|${o}|${on ? 0 : 1}"></button></div>`; }).join('')}
+      <div class="acs-r"><span class="acs-ic material-symbols-rounded">fact_check</span><span class="acs-n"><b>출석부 · 학년별 담당</b><span>${gr.length ? esc(gr.join(' · ')) + ' — 그 학년이 있는 반 출결 기록' : '맡은 학년 없음'}</span></span><a class="acs-back" href="attend.html" title="출석부 › 설정 › 학년별 담당 선생님에서 바꿔요">출석부에서 ›</a></div>
+      ${sh.length ? `<div class="acs-r"><span class="acs-ic material-symbols-rounded">share</span><span class="acs-n"><b>🔒 공유받은 주제 ${sh.length}</b><span>${esc(sh.slice(0, 3).map(x => `${x.d.slice(5).replace('-', '/')} ${x.t}`).join(' · '))}${sh.length > 3 ? ' …' : ''} — 주임 회의록 관리자가 주제마다 정해요</span></span></div>` : ''}`;
+  }
   const du = accDutiesOf(s);
   box.innerHTML = `<div class="acs-h"><span class="acd-av">${esc((s.name || '?').slice(0, 1))}</span>
       <div class="acd-n"><b id="acs-name">${esc(s.name || '')}</b><span>${esc(ROLES[s.role] || s.role || '')} · ${esc(ORGS[s.org] || s.org || '')}${s.dept && s.dept !== '전체' ? ' · ' + esc(s.dept) : ''}</span></div>
@@ -3594,18 +3754,35 @@ function accSheetRender(){
       ${denyN ? `<button type="button" class="bm" data-accclr="${esc(s.uid)}">닫은 것 ${denyN}곳 모두 풀기</button>` : ''}</div>`;
   box.querySelectorAll('[data-accu]').forEach(b => b.addEventListener('click', () => accToggle(b.dataset.accu, b.dataset.acck)));
   box.querySelectorAll('[data-accclr]').forEach(b => b.addEventListener('click', () => clearPageDeny(b.dataset.accclr)));
+  box.querySelectorAll('[data-leadset]').forEach(b => b.addEventListener('click', () => { const [u, r] = b.dataset.leadset.split('|'); leadSetRole(u, r); }));
+  box.querySelectorAll('[data-minview]').forEach(b => b.addEventListener('click', () => { const [u, o, on] = b.dataset.minview.split('|'); minViewSet(u, o, on === '1'); }));
   const sb = box.querySelector('.acs-b'); if(sb) sb.scrollTop = keep;
   if(fkey){ const f = box.querySelector(`${fcls || '.acs-sw'}[data-acck="${fkey}"]`) || box.querySelector(`.acs-sw[data-acck="${fkey}"]`); if(f) try{ f.focus({ preventScroll:true }); }catch(_){} }
 }
 
 /* 🗂 화면별 — 한 화면을 골라 기관 · 풀타임/협력교사 묶음마다 켜고 끄기 */
-function accPageViewHTML(pages, list){
+function accPageViewHTML(pages0, list){
+  const pages = [];   // 🔑 v177 «회의록» 바로 뒤에 «🔒 주임 회의록»
+  pages0.forEach(p => { pages.push(p); if(p.key === 'minutes') pages.push({ ...LEAD_COL, sec:p.sec }); });
   const it = pages.find(p => p.key===ACC_PAGE) || pages[0];
   if(!it) return '';
   const chipsBySec = [];
   for(let i=0;i<pages.length;){ let j=i; while(j<pages.length && pages[j].sec===pages[i].sec) j++;
     chipsBySec.push(`<div class="acc-ps"><span>${esc(pages[i].sec)}</span>${pages.slice(i,j).map(p => `<button class="acc-pc${p.key===it.key?' on':''}" data-accpg="${esc(p.key)}">${esc(p.label)}</button>`).join('')}</div>`); i=j; }
   const groups = accGrouped(list);
+  if(it.lead){
+    const cnt = r => list.filter(s => s.role !== 'super' && leadRoleAcc(s.uid) === r).length;
+    const gl = groups.map(g => `<div class="acc-g"><div class="acc-gh"><b>${esc(g.label)}</b><span class="acc-gn">멤버 ${g.list.filter(s => leadRoleAcc(s.uid)).length} / ${g.list.filter(s => s.role !== 'super').length}명</span></div><div class="acc-chs">${g.list.map(s => {
+      if(s.role === 'super') return `<span class="acc-ch lock" title="${ACC_TIP.super}">${esc(s.name||'')} <i>늘</i></span>`;
+      const r = leadRoleAcc(s.uid);
+      return `<button class="acc-ch ${r ? 'on ld ' + r : 'dim'}" data-leadu="${esc(s.uid)}" title="🔒 주임 회의록 — ${esc(LEAD_RL[r])} · 누르면 바꿔요">${esc(s.name||'')}<small>${esc(accRoleLab(s))}</small>${r ? ` <i>${esc(LEAD_RL[r])}</i>` : ''}</button>`; }).join('')}</div></div>`).join('');
+    return `<div class="acc-pgs">${chipsBySec.join('')}</div>
+      <div class="acc-pcard">
+        <div class="acc-ph"><b>🔒 주임 회의록</b><span class="acc-pd">멤버만 보이는 회의록 — 관리(쓰기 · 작성자 정하기 · 공유) · 작성(쓰기 · 고치기) · 보기(읽기 · 댓글)</span><span class="acc-pn">관리 ${cnt('adm')} · 작성 ${cnt('wr')} · 보기 ${cnt('mem')}</span></div>
+        <div class="acc-note">💡 이름을 누르면 «없음 · 보기 · 작성 · 관리»를 골라요. 주임 회의록 ⚙ 설정 «멤버 · 역할»과 같은 명단이고, 작성자는 주임 회의록 관리자도 정할 수 있어요.</div>
+        ${gl || '<div style="color:var(--tl);font-size:12.5px;padding:10px 0">조건에 맞는 선생님이 없어요.</div>'}
+      </div>`;
+  }
   let nOpen = 0, nAll = 0;
   const gh = groups.map((g, gi) => {
     let o = 0, t = 0, can = 0;
@@ -3671,6 +3848,7 @@ function accApply(s, k, ch){
 // 저장은 하나씩 차례로 (앞 저장이 끝나기 전에 누른 칸은 그 뒤 상태에서 다시 판단)
 let ACC_Q = Promise.resolve();
 const accQueue = fn => (ACC_Q = ACC_Q.then(fn, fn));
+const accQ = () => ACC_Q;   // 줄 선 저장이 다 끝날 때까지
 function accToggle(uid, key){ return accQueue(() => accToggle1(uid, key)); }
 async function accToggle1(uid, key){
   const s = STAFF_ALL[uid] || STAFF_CACHE[uid]; const it = accPages().find(p => p.key===key);
@@ -3799,6 +3977,24 @@ const ACC_STYLE_HTML = `
         .acc-t.on{background:var(--ok-bg);border-color:var(--ok-bg);color:var(--ok)}
         .acc-t.on:hover{background:var(--ok-bg);border-color:var(--ok)}
         .acc-t.off{background:var(--danger-bg);border-color:var(--danger-bg);color:var(--danger)}
+        .acc-t.ld{width:auto;min-width:38px;padding:0 6px;font-size:11px}
+        .acc-t.ld.none{background:transparent;border-color:var(--ivd);border-style:dashed;color:var(--tl);font-size:13px}
+        .acc-t.ld.mem{background:var(--ivd);border-color:var(--ivd);color:var(--gd)}
+        .acc-t.ld.wr{background:var(--ok-bg);border-color:var(--ok-bg);color:var(--ok)}
+        .acc-t.ld.adm{background:#F7EFD8;border-color:#E5D29E;color:#8A6410}
+        .acc-ldh .acc-th{color:#8A6410}
+        .acx.ld{cursor:pointer;font-family:inherit}.acx.ld.adm{background:#F7EFD8;border-color:#E5D29E;color:#8A6410}
+        .acc-ch.ld.adm i{color:#8A6410}.acc-ch.ld.wr i{color:var(--ok)}
+        .ld-pop{position:fixed;z-index:9999;width:250px;background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:6px;font-family:inherit}
+        .ld-pop-h{font-size:12px;font-weight:900;color:var(--gd);padding:6px 8px 4px}
+        .ld-pop button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;border:0;background:transparent;border-radius:8px;padding:7px 8px;cursor:pointer;font-family:inherit;min-height:40px}
+        .ld-pop button:hover,.ld-pop button:focus-visible{background:var(--ivl,#F4F2EC)}.ld-pop button.on{background:var(--ok-bg)}
+        .ld-pop button b{font-size:13px;color:var(--gd)}.ld-pop button span{font-size:11.5px;color:var(--tl)}
+        .ld-pop-f{font-size:11px;color:var(--tl);padding:6px 8px 4px;border-top:1px solid var(--ivd);margin-top:4px}
+        .acs-seg{display:inline-flex;border:1px solid var(--ivd);border-radius:9px;overflow:hidden;flex:none}
+        .acs-seg button{border:0;background:transparent;font-family:inherit;font-size:11.5px;font-weight:800;padding:0 8px;min-height:32px;cursor:pointer;color:var(--tl)}
+        .acs-seg button.on{background:var(--gd);color:#fff}
+        .acd-xx{margin-top:-2px}
         .acc-t.off:hover{background:var(--danger-bg);border-color:var(--danger)}
         .acc-lock{font-size:13px;color:var(--tl)}
         .acc-tbl th{position:sticky;top:0;background:var(--gm);z-index:2}
@@ -3908,6 +4104,11 @@ const DUTY_DEFS = [
     desc:'회의 종류 · 불참 사유 설정 · 다른 분 회의록 정리 (열람 허락은 수퍼관리자)',
     doc:['minutesConfig','managers'], field:'uids',
     always:s=>s.role==='super' },
+  /* 🔑 v177 주임 회의록 관리자 — 주임 회의록 멤버 명단(leadConfig/main.admins)과 같은 칸 · 켜면 멤버로도 들어가고 끄면 «보기»로 */
+  { key:'lead_adm', sec:'학사', icon:'🔒', label:'주임 회의록 관리자', short:'주임 회의록', lead:true,
+    desc:'주임 회의록 쓰기 · 작성자 정하기 · 주제 공유 · 휴지통 (멤버 · 작성자는 위 표 «🔒 주임 회의록» 칸)',
+    doc:['leadConfig','main'], field:'admins',
+    always:s=>s.role==='super' },
   /* 🎨 동아리 — 학기 운영·취합·배정 · 현황 게시. 열람(풀타임 교사 전체)은 «동아리 열람 허용»으로 따로 */
   { key:'club', sec:'학사', icon:'🎨', label:'동아리 관리자', short:'동아리',
     desc:'동아리·조이클래스 학기 운영 · 취합 · 배정 · 현황 게시',
@@ -3944,6 +4145,11 @@ const DUTY_DEFS = [
   { key:'timetable', sec:'근무 · 행정', icon:'🗓', label:'시간표',
     desc:'시간표 틀 · 수업 정의 · 배치',
     doc:['timetableConfig','editors'], field:'uids',
+    always:s=>s.role==='super' },
+  /* 🔑 v177 시간표 «학년별 편성» 탭 — 시간표 화면 «편성 담당자 지정»과 같은 칸 (timetables/planAccess) · 비어 있어도 공백 아님 (수퍼관리자만 쓰는 게 기본) */
+  { key:'tt_plan', sec:'근무 · 행정', icon:'🗓', label:'시간표 · 학년별 편성', short:'학년별 편성', noGap:true,
+    desc:'시간표의 «학년별 편성» 탭 — 보기 · 입력',
+    doc:['timetables','planAccess'], field:'uids',
     always:s=>s.role==='super' },
 
   /* ── 경비 ── */
@@ -4002,6 +4208,7 @@ async function loadDuties(){
     if(!list.length && d.doc[0]==='academicConfig' && Array.isArray(data.uids)) list = data.uids.slice();
     // 수행성 경비의 예전 공통 칸(list) = 두 기관 모두 — 표에는 기관 칸마다 켜진 것으로 보인다
     if(d.legacy && Array.isArray(data[d.legacy])) data[d.legacy].forEach(u=>{ if(!list.includes(u)) list.push(u); });
+    if(d.lead) list = list.filter(u => (data.uids || []).includes(u));   // 멤버에서 빠진 관리자는 관리자가 아님
     DUTY[d.key] = list;
   }
 }
@@ -4025,6 +4232,8 @@ window.toggleDuty = async function(key, uid){
     alert(`${def.label} 담당은 ${ORGS[def.orgOnly]||def.orgOnly} 선생님만 맡을 수 있어요.\n(다른 기관 선생님은 접근 권한에서 나학평을 «열어 주면» 맡은 칸 입력 · 검토는 할 수 있어요)`); return;
   }
 
+  /* 🔑 v177 주임 회의록 관리자는 멤버 명단과 함께 — 켜면 «관리», 끄면 «보기» (기록은 수퍼관리자만 보는 mtgLog) */
+  if(def.lead){ await leadSetRole(uid, (DUTY[key]||[]).includes(uid) ? 'mem' : 'adm'); await accQ(); DUTY[key] = LEADACC.admins.slice(); renderDutyPanel(); return; }
   const cur = DUTY[key] || [];
   const before = { ...DUTY };
   DUTY[key] = cur.includes(uid) ? cur.filter(u=>u!==uid) : [...cur, uid];
@@ -4139,7 +4348,7 @@ function renderDutyPanel(){
   /* 따로 지정한 담당자가 없는 기능을 알려준다.
      수퍼관리자는 어차피 다 열려 있으니 «있음»으로 치지 않는다 —
      그러면 경고가 영영 안 떠서 빠뜨린 걸 못 찾기 때문이다. */
-  const empty = DUTY_DEFS.filter(d=> !((DUTY[d.key]||[]).length));
+  const empty = DUTY_DEFS.filter(d=> !d.noGap && !((DUTY[d.key]||[]).length));   // v177 학년별 편성은 비어 있어도 됨 (시간표 담당이 함께 맡음)
   const dutyShort = d => d.grp ? `${d.grp.replace(/^\S+\s/, '')}(${d.sub})` : (d.short||d.label);
   const warn = empty.length
     ? `<div class="duty-warn">⚠️ 따로 지정한 담당자가 없는 기능 <b>${empty.length}곳</b> —
@@ -4243,7 +4452,7 @@ function renderDutyPanel(){
 async function renderAccCards(){
   const el = $I('acc-cards'); if(!el) return;
   const staff = Object.values(STAFF_CACHE||{});
-  const emptyDuty = DUTY_DEFS.filter(d=>!((DUTY[d.key]||[]).length));
+  const emptyDuty = DUTY_DEFS.filter(d=>!d.noGap && !((DUTY[d.key]||[]).length));
   const active = staff.filter(s=>!s.noAuth && (s.acStatus||'active')==='active').length;
   const leave  = staff.filter(s=>(s.acStatus||'')==='leave').length;
   const noAuth = staff.filter(s=>s.noAuth).length;
@@ -5475,7 +5684,7 @@ window.delDept = delDept;
 const RETIRE_DUTY_DOCS = (()=>{
   const m = {};
   const add = (col, id, f) => { const k = col+'/'+id; (m[k] = m[k] || {col, id, fields:[]}); if(f && !m[k].fields.includes(f)) m[k].fields.push(f); };
-  DUTY_DEFS.forEach(d=>{ add(d.doc[0], d.doc[1], d.field); if(d.legacy) add(d.doc[0], d.doc[1], d.legacy); });
+  DUTY_DEFS.forEach(d=>{ if(d.lead) return; add(d.doc[0], d.doc[1], d.field); if(d.legacy) add(d.doc[0], d.doc[1], d.legacy); });   // 🔒 v177 주임 회의록 명단은 따로 (아래 ②-2 · 보관본을 남기지 않음 — 보관본은 교직원 모두가 읽음)
   add('academicConfig','editors','uids');   // 학사일정 예전 칸
   return Object.values(m);
 })();
@@ -5538,6 +5747,18 @@ async function retireStaff(uid){
         if(hit && DUTY_DEFS.some(d=>d.names && d.doc[0]===cfg.col && d.doc[1]===cfg.id) && Array.isArray(upd.uids)) upd.names = upd.uids.map(u=>STAFF_CACHE[u]?.name||'');
         if(hit){ await setDoc(doc(db,cfg.col,cfg.id), {...upd, updatedAt:Timestamp.now(), updatedByUid:CU.uid, updatedByName:CU.name||''}, {merge:true}); dn += k; }
       } catch(e){ dfail += (k || 1); }   // 읽기부터 실패하면 몇 건인지 몰라 1건으로
+    }
+    // ②-2 🔒 v177 주임 회의록 멤버 · 역할에서 빼기 — 수퍼관리자만 (명단은 멤버와 수퍼관리자만 읽음 · 기록은 mtgLog)
+    if(CU.role === 'super'){
+      try {
+        const g = await getDoc(doc(db,'leadConfig','main'));
+        const x = g.exists() ? g.data() : null;
+        if(x && ['uids','admins','writers'].some(f => Array.isArray(x[f]) && x[f].includes(uid))){
+          const upd = {}; ['uids','admins','writers'].forEach(f => { if(Array.isArray(x[f])) upd[f] = x[f].filter(u => u !== uid); });
+          await setDoc(doc(db,'leadConfig','main'), {...upd, updatedAt:Timestamp.now(), updatedByName:CU.name||''}, {merge:true});
+          dn++; mtgLogAdd('멤버 · 역할', `${s.name||''} 뺌 (퇴사 정리)`);
+        }
+      } catch(e){ dfail++; }
     }
     // ③ 학년별 출석 담당 해제
     { let k = 0;

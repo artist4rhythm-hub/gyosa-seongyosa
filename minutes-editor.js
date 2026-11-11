@@ -987,7 +987,6 @@ function collect(){
     }).filter(k => C.textOf(k.h).trim());
     const t = { id: el.dataset.tid, title: el.querySelector('.et-title').value.trim(), body, dec, tasks };
     if(el._thr){ t.thr = el._thr; t.thrFrom = el._thrFrom || ''; }
-    if(el._ed) t.ed = el._ed;
     return t;
   }).filter(t => t.title || t.body.length || t.dec.length || t.tasks.length);
   const attNames = {};
@@ -1075,7 +1074,7 @@ async function save(force){
     btns.forEach(b => b.disabled = false); note();
     if(e.message === 'conflict'){
       const c = e.cur || {};
-      if(confirm(`${c.updatedByName || '다른 선생님'} 님이 먼저 고쳐 저장했어요 (${X.C.fmtStamp(X.C.tsMs(c.updatedAt))}).\n\n내 것으로 저장할까요? 그분이 고친 모습도 수정 이력에 그대로 남아요.\n(취소: 저장하지 않고 이 화면에 머물기)`)){
+      if(confirm(`${c.updatedByName || '다른 선생님'} 님이 먼저 고쳐 저장했어요 (${X.C.fmtStamp(X.C.tsMs(c.updatedAt))}).\n\n내 것으로 저장할까요? 그분이 고친 모습도 기록에 그대로 남아요.\n(취소: 저장하지 않고 이 화면에 머물기)`)){
         ED.baseRev = c.rev || 0; return save(true);
       }
       return;
@@ -1088,7 +1087,7 @@ async function persist(ctx, id, data, o){
   const { db, FS, C, CU } = ctx;
   const K = COL(ctx);
   const ref = FS.doc(db, K.m, id);
-  let prevData = null, saved = null;
+  let prevData = null, saved = null, sumTxt = '';
   await FS.runTransaction(db, async tx => {
     const cur = await tx.get(ref);
     prevData = cur.exists() ? cur.data() : null;
@@ -1096,7 +1095,7 @@ async function persist(ctx, id, data, o){
     const rev = (prevData ? prevData.rev || 0 : 0) + 1;
     const ch = C.changeSummary(prevData, data);
     const now = Date.now();
-    const topics = data.topics.map(t => (prevData && ch.changed.includes(t.id)) ? { ...t, ed: { uid: CU.uid, name: CU.name || '', at: now, rev } } : t);
+    const topics = data.topics.map(t => { const { ed, ...r } = t; return r; });   // 📜 v177 «누가 고쳤는지»는 회의록에 남기지 않음 (예전 표시도 저장할 때 지움) — 기록은 mtgLog · 수정 이력(수퍼관리자)
     saved = { ...data, topics, org: prevData ? prevData.org : data.org, sem: C.semOf(data.date), rev,
       createdBy: prevData ? (prevData.createdBy || CU.uid) : CU.uid, createdAt: prevData && prevData.createdAt ? prevData.createdAt : FS.serverTimestamp(),
       updatedAt: FS.serverTimestamp(), updatedByUid: CU.uid, updatedByName: CU.name || '',
@@ -1105,9 +1104,12 @@ async function persist(ctx, id, data, o){
     tx.set(ref, saved);
     const snap = { type: saved.type, title: saved.title, date: saved.date, time: saved.time, place: saved.place, writerUid: saved.writerUid, writerName: saved.writerName,
       att: saved.att, attNames: saved.attNames, guests: saved.guests, topics: saved.topics, imported: saved.imported };
+    sumTxt = o.sum || ch.sum;
     tx.set(FS.doc(db, K.v, `${id}_${rev}`), { meetingId: id, org: saved.org, rev, at: FS.serverTimestamp(), atMs: now, uid: CU.uid, name: CU.name || '',
-      sum: o.sum || ch.sum, data: snap });
+      sum: sumTxt, data: snap });
   });
+  /* 📜 v177 한 줄 기록 (수퍼관리자만 · 관리자 › 활동 로그) */
+  if(typeof ctx.log === 'function'){ try{ ctx.log(o.sum && /되돌림/.test(o.sum) ? '되돌림' : prevData ? '고침' : '새로 씀', { ...saved, id }, { rev: saved.rev, detail: sumTxt || '' }); }catch(e){} }
   await syncTasks(ctx, id, saved, prevData);
   if(typeof ctx.onPersist === 'function'){ try{ await ctx.onPersist(id, saved, prevData); }catch(e){ console.warn('onPersist', e); } }   // 🔒 v175 공유본 맞추기
   return saved;

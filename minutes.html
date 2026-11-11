@@ -419,6 +419,12 @@ button.mb-sr:hover span,.mb-sl:hover span{color:#00704A}
 .ld-sh{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}.ld-sh b{font-size:14px}.ld-sh span{font-size:12px;color:var(--ink-2)}
 .ld-pr{display:flex;align-items:center;gap:8px;min-height:46px;border-bottom:1px solid var(--line-soft);font-size:13px}.ld-pr .nm{flex:1;min-width:0}.ld-pr .nm span{color:var(--ink-2);font-size:12px}
 .ld-pr.new{background:var(--sb-mint-2)}.ld-pr.gone{opacity:.65}.ld-pr.gone b{text-decoration:line-through}
+.ld-role{flex:none;font-style:normal;font-size:11px;font-weight:900;border-radius:100px;padding:1px 8px;background:var(--line-soft);color:var(--ink-2)}
+.ld-role.adm{background:#F7EFD8;color:#8A6410;border:1px solid #E5D29E}.ld-role.wr{background:var(--sb-mint);color:var(--sb-green)}
+.ld-me{display:inline-block;margin-top:4px;font-style:normal;font-size:11.5px;font-weight:800;border-radius:100px;padding:1px 9px;background:rgba(255,255,255,.6);color:#6B5212;border:1px solid #E5D29E}
+.ld-me.wr{color:var(--sb-green)}.ld-me.mem{color:var(--ink-2)}
+.ld-rseg{flex:none}.ld-rseg button{padding:0 9px;min-height:30px}.ld-pr.chg{background:#FFF8E1}
+.ld-sw{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;cursor:pointer;min-height:36px}.ld-sw input{width:18px;height:18px;accent-color:var(--sb-green)}
 .ld-tag{font-size:11.5px;font-weight:800;color:var(--ink-3)}.ld-tag.n{color:var(--sb-green);background:var(--sb-mint);border-radius:100px;padding:1px 8px}
 .ld-pend{margin-top:8px;font-size:12.5px;color:var(--ink-2);background:var(--bg);border-radius:10px;padding:8px 10px}
 .ld-note{margin-top:14px;background:#F7EFD8;border:1px solid #E5D29E;border-radius:12px;padding:10px 14px;font-size:12.5px;color:#4A3A12}.ld-note ul{margin:4px 0 0;padding-left:18px;line-height:1.7}
@@ -437,6 +443,7 @@ button.mb-sr:hover span,.mb-sl:hover span{color:#00704A}
 .g-lb{display:block;font-size:12px;font-weight:800;color:var(--ink-2);margin:8px 0 4px}
 .g-me{font-style:normal;font-size:11px;font-weight:800;color:#1E4FA8;margin-left:4px}
 @media (max-width:860px){ .ld-set,.g-bd{grid-template-columns:1fr} }
+html[data-theme="dark"] .ld-role.adm,html[data-theme="dark"] .ld-me,html[data-theme="dark"] .ld-pr.chg{background:#2A2416;border-color:#4A3E22;color:#E3C878}
 html[data-theme="dark"] .ld-chip,html[data-theme="dark"] .ld-band,html[data-theme="dark"] .ld-sh-mem,html[data-theme="dark"] .ld-note{background:#2A2416;border-color:#4A3E22;color:#E3C878}
 html[data-theme="dark"] .ld-band .ic{background:#3A311C;color:#E3C878}html[data-theme="dark"] .ld-band .tx span,html[data-theme="dark"] .ld-sh-mem span{color:#C9BC94}
 html[data-theme="dark"] .ld-av{border-color:#2A2416}
@@ -488,13 +495,18 @@ const TODAY = C.todayStr();
 
 /* ═══ 🔒 v175 주임 회의록 — 같은 화면을 «?book=lead»로 열면 따로 보관함을 쓴다 ═══
    · 멤버 = leadConfig/main.uids (수퍼관리자만 정함) · 수퍼관리자는 관리 때문에 늘 열림 (화면에는 따로 표시하지 않음)
-   · 멤버는 회의록 기능을 그대로 (쓰기 · 고치기 · 고친 기록 · 되돌리기 · 출력 · 임무 · 댓글)
+   · 🔑 v177 멤버는 보기 · 댓글 · 내 임무 완료 — 쓰기 · 고치기는 관리자 · 작성자 (고친 기록은 수퍼관리자만 · 관리자 › 활동 로그)
    · 주제 하나만 공유 = 공유본 leadShares/{회의_주제} (uids) — 공유받은 선생님은 그 주제만 보고 댓글 (leadTopicCmts/{회의_주제}/c)
    · 주임 회의록의 주제 댓글은 공유 여부와 상관없이 처음부터 주제별 묶음(leadTopicCmts)에 — 나중에 공유해도 그 주제 댓글이 함께 보이게 */
 const LEAD = new URLSearchParams(location.search).get('book') === 'lead';
 const COL = LEAD ? { m: 'leadMeetings', t: 'leadTasks', c: 'leadComments', v: 'leadVersions', f: 'leadFiles' }
                  : { m: 'meetings', t: 'meetingTasks', c: 'meetingComments', v: 'meetingVersions', f: 'meetingFiles' };
-let LCFG = { uids: [], names: {}, types: [], log: [] }, LEAD_OK = false;
+let LCFG = { uids: [], names: {}, types: [], admins: [], writers: [] }, LEAD_OK = false;
+/* 🔑 v177 주임 회의록 역할 — 관리자(admins · 수퍼관리자가 정함) · 작성자(writers · 관리자가 멤버 중에서 줌) · 멤버(보기 · 댓글)
+   쓰기 · 고치기 = 관리자 · 작성자 / 주제 공유 · 휴지통 · 작성자 정하기 = 관리자 / 멤버 · 관리자 정하기 · 예전 회의록 넣기 · 완전 삭제 = 수퍼관리자 */
+let LEAD_ADM = false, LEAD_WR = false;
+const ROLE_L = { adm: '관리', wr: '작성', mem: '보기' };
+const leadRoleOf = u => !(LCFG.uids || []).includes(u) ? '' : (LCFG.admins || []).includes(u) ? 'adm' : (LCFG.writers || []).includes(u) ? 'wr' : 'mem';
 let SHARES = {}, unShares = null;           // 공유본 { 회의_주제: { uids, names, … } }
 let NSEE = [];                              // 기관 회의록에서 볼 수 있는 기관 (주제 가져오기용)
 const shareKey = (mid, tid) => `${mid}_${tid}`;
@@ -504,7 +516,8 @@ function leadState(s){
   if(!CU) return;
   let prev = null; try{ prev = JSON.parse(localStorage.getItem('gyosa_lead') || 'null'); }catch(e){}
   const v = CU.role === 'super' ? 'm' : s;
-  try{ localStorage.setItem('gyosa_lead', JSON.stringify({ uid: CU.uid, s: v, at: Date.now() })); }catch(e){}
+  const r = v === 'm' ? (CU.role === 'super' ? 'adm' : leadRoleOf(CU.uid) || 'mem') : '';   // 🔑 v177 역할도 (도우미 «작성자 정하기»)
+  try{ localStorage.setItem('gyosa_lead', JSON.stringify({ uid: CU.uid, s: v, r, at: Date.now() })); }catch(e){}
   if(!prev || prev.uid !== CU.uid || prev.s !== v){ try{ window.setBadges && setBadges({}); window.renderTopbar && renderTopbar(); }catch(e){} }
 }
 const initials = nm => { nm = String(nm || '?'); return nm.length >= 3 ? nm.slice(-2) : nm; };
@@ -618,9 +631,12 @@ async function loadCfg(){
 async function loadLeadCfg(){
   let x = null;
   try{ const s = await getDoc(doc(db, 'leadConfig', 'main')); x = s.exists() ? s.data() : {}; }catch(e){ x = null; }
-  LCFG = { uids: [], names: {}, types: [], log: [], ...(x || {}) };
-  LCFG.uids = Array.isArray(LCFG.uids) ? LCFG.uids : [];
+  LCFG = { uids: [], names: {}, types: [], admins: [], writers: [], ...(x || {}) };
+  for(const k of ['uids', 'admins', 'writers']) LCFG[k] = Array.isArray(LCFG[k]) ? LCFG[k] : [];
+  LCFG.admins = LCFG.admins.filter(u => LCFG.uids.includes(u)); LCFG.writers = LCFG.writers.filter(u => LCFG.uids.includes(u) && !LCFG.admins.includes(u));
   LEAD_OK = isSuper() || (!!x && LCFG.uids.includes(CU.uid));
+  LEAD_ADM = isSuper() || (LEAD_OK && LCFG.admins.includes(CU.uid));
+  LEAD_WR = LEAD_ADM || (LEAD_OK && LCFG.writers.includes(CU.uid));
   CFG.types = { ...CFG.types, lead: Array.isArray(LCFG.types) && LCFG.types.length ? LCFG.types.slice() : C.DEF_TYPES.lead.slice() };
 }
 async function loadStaff(){
@@ -640,7 +656,7 @@ function computeOrgs(){
   const extra = (CFG.viewers || {})[CU.uid] || [];
   SEE = MORDER.filter(o => WRITE.includes(o) || extra.includes(o));
   NSEE = SEE.slice();
-  if(LEAD){ WRITE = LEAD_OK ? ['lead'] : []; SEE = WRITE.slice(); }   // 🔒 v175 주임 회의록은 한 곳 (기관 구분 없음)
+  if(LEAD){ WRITE = LEAD_WR ? ['lead'] : []; SEE = LEAD_OK ? ['lead'] : []; }   // 🔒 v175 주임 회의록은 한 곳 (기관 구분 없음) · 🔑 v177 쓰기는 관리자 · 작성자만
 }
 window.mtState = () => ({ ORG, SEM, TYPE, Q, VIEW, SEE, WRITE, n: LIST.length, cur: CUR && CUR.id });
 
@@ -722,6 +738,7 @@ async function route(){
     window.__mtDirty = false;
   }
   if(p.get('org') && (SEE.includes(p.get('org')) || p.get('org') === 'all') && p.get('org') !== ORG){ ORG = p.get('org'); subscribeList(); }
+  if(p.get('edit') && LEAD && !LEAD_WR){ toast('주임 회의록은 관리자 · 작성자만 쓸 수 있어요 — 보기 · 댓글은 그대로 돼요', 'err'); go({}, true); return; }   // 🔑 v177
   if(p.get('edit')){
     if(window.__mtDirty && !(await confirmLeave())) return;
     VIEW = 'edit'; closeDoc(); EDIT_URL = location.href;
@@ -735,7 +752,7 @@ async function route(){
     EDITOR_MOD.openEditor(edCtx(), m, { org: p.get('to') || '', from: p.get('from') || '' });
     return;
   }
-  if(p.get('m')){ VIEW = 'doc'; openDoc(p.get('m'), { t: p.get('t'), k: p.get('k') }); return; }
+  if(p.get('m')){ VIEW = 'doc'; openDoc(p.get('m'), { t: p.get('t'), k: p.get('k'), hist: p.get('hist') }); return; }
   closeDoc();
   if(p.get('mine')){ VIEW = 'mine'; paintMine(); return; }
   VIEW = 'list'; renderList();
@@ -743,7 +760,7 @@ async function route(){
 function confirmLeave(){ return Promise.resolve(confirm('저장하지 않은 내용이 있어요. 나가면 «임시 저장»으로만 남아요. 나갈까요?')); }
 function edCtx(){
   return { db, FS, C, STORE, CU, STAFF, SMAP, CFG, WRITE, SEE, LIST, TASKS, toast, modal, popMenu,
-    COL, LEAD_UIDS: LCFG.uids.slice(), pickSources, onPersist: LEAD ? syncShares : null,
+    COL, LEAD_UIDS: LCFG.uids.slice(), pickSources, onPersist: LEAD ? syncShares : null, log: mtgLog,
     defaultOrg: (ORG && ORG !== 'all' && WRITE.includes(ORG)) ? ORG : (WRITE.find(o => o !== 'da') || 'da'),
     typesOf, saveTypes, DEPTS, nameOf, pins: () => PINS, dailyEv: LEAD ? null : dailyEv,   // 🔒 v175 주임 회의록은 휴대폰 알림 서버가 아직 몰라서 화면 알림만
     onSaved: id => go({ m: id }, true),
@@ -769,19 +786,21 @@ function headHTML(){
 function leadHeadHTML(){
   const mem = LCFG.uids.map(u => ({ uid: u, name: nameOf(u) || (LCFG.names || {})[u] || '' })).filter(x => x.name);
   const n = LCFG.uids.length;
-  const more = `<button data-act="exportmany" class="mt-only-m">🖨 여러 건 출력 (PDF · 워드)</button>${isSuper() ? `<button data-act="lmembers">👥 멤버 관리</button>` : ''}<button data-act="lsettings">⚙ 설정 (회의 종류 · ${isSuper() ? '예전 회의록 넣기 · ' : ''}휴지통)</button>`;
+  const more = `<button data-act="exportmany" class="mt-only-m">🖨 여러 건 출력 (PDF · 워드)</button>${isSuper() ? `<button data-act="lmembers">👥 멤버 · 역할</button>` : ''}${LEAD_ADM ? `<button data-act="lsettings">⚙ 설정 (${isSuper() ? '' : '작성자 · '}회의 종류 · ${isSuper() ? '예전 회의록 넣기 · ' : ''}휴지통)</button>` : ''}`;
+  const nA = LCFG.admins.length, nW = LCFG.writers.length, me = leadRoleOf(CU.uid);
   const av = mem.slice(0, 4).map((x, i) => `<span class="ld-av" style="background:${AV_COL[i % AV_COL.length]}" title="${esc(x.name)}">${esc(initials(x.name))}</span>`).join('')
     + (n > 4 ? `<span class="ld-av" style="background:#5A6560">+${n - 4}</span>` : '');
   return `<div class="mt-head">
     <div class="mt-hl"><h1>주임 회의록 <span class="ld-chip">${SVG.lock}멤버 전용</span></h1><div class="mt-stl" id="mt-stl"></div></div><div class="mt-sp"></div>
     <button class="mt-btn" data-act="exportmany" title="여러 건 출력 (PDF · 워드)">🖨 여러 건 출력</button>
-    <button class="mt-btn g" data-act="new">＋ 새 주임 회의록</button>
-    <div class="dd" id="dd-head"><button class="mt-btn" data-act="moremenu" aria-haspopup="true" aria-expanded="false" aria-label="더 보기 — ${isSuper() ? '멤버 관리 · ' : ''}설정" title="더 보기">⋯</button><div class="dd-m">${more}</div></div>
+    ${LEAD_WR ? `<button class="mt-btn g" data-act="new">＋ 새 주임 회의록</button>` : ''}
+    <div class="dd${LEAD_ADM ? '' : ' mt-dd-m'}" id="dd-head"><button class="mt-btn" data-act="moremenu" aria-haspopup="true" aria-expanded="false" aria-label="더 보기${isSuper() ? ' — 멤버 · 역할 · 설정' : LEAD_ADM ? ' — 설정' : ''}" title="더 보기">⋯</button><div class="dd-m">${more}</div></div>
   </div>
   <div class="ld-band">
     <span class="ic">${SVG.lock}</span>
-    <div class="tx">${n ? `<b>주임 멤버로 정한 ${n}명이 함께 쓰는 방이에요</b>` : `<b>아직 주임 멤버가 없어요</b>`}
-      <span>${n ? '다른 교직원에게는 이 탭이 보이지 않아요. 주제 하나만 공유하면, 그 사람은 그 주제만 보고 댓글을 달 수 있어요.' : (isSuper() ? '⋯ › «👥 멤버 관리»에서 멤버를 정해 주세요. 멤버는 모두 쓰고 고칠 수 있고, 고칠 때마다 기록이 남아요.' : '')}</span></div>
+    <div class="tx">${n ? `<b>주임 멤버 ${n}명이 함께 보는 방이에요</b>` : `<b>아직 주임 멤버가 없어요</b>`}
+      <span>${n ? `다른 교직원에게는 이 탭이 보이지 않아요. 쓰고 고치기는 ${nA || nW ? `관리자 ${nA}명${nW ? ` · 작성자 ${nW}명` : ''}` : '아직 정한 사람이 없어요'} — 다른 멤버는 보고 댓글을 달아요.` : (isSuper() ? '⋯ › «👥 멤버 · 역할»에서 멤버와 관리자를 정해 주세요. 관리 › 관리자 › 접근 권한 표에서도 정할 수 있어요.' : '')}</span>
+      ${me && !isSuper() ? `<em class="ld-me ${me}">나: ${me === 'adm' ? '관리자 — 쓰기 · 작성자 정하기 · 공유' : me === 'wr' ? '작성자 — 쓰기 · 고치기' : '보기 · 댓글'}</em>` : ''}</div>
     ${av ? `<div class="ld-avs" aria-hidden="true">${av}</div>` : ''}
     <button type="button" class="mt-btn ld-mb" data-act="lmemlist">${SVG.users}멤버 ${n}명</button>
   </div>
@@ -987,6 +1006,13 @@ function openDoc(id, focus){
   root.innerHTML = `<div class="mt-empty">불러오는 중…</div>`;
   let firstPaint = true;
   unDoc = onSnapshot(doc(db, COL.m, id), s => {
+    if(s.exists() && s.data().deleted && isSuper() && focus && focus.hist){   // 📜 v177 활동 로그 «그때 판 보기» — 휴지통에 있는 회의록도 수정 이력은 열림 (수퍼관리자)
+      const m = { id: s.id, ...s.data() };
+      root.innerHTML = `<div class="mt-empty">휴지통에 있는 회의록이에요 — 수정 이력만 열어요. 되살리려면 «⋯ › ⚙ 설정 › 휴지통».<br><button class="mt-btn" data-act="hist-del" style="margin-top:12px">🕘 수정 이력 다시 열기</button> <button class="mt-btn" data-act="back" style="margin-top:12px">‹ 목록</button></div>`;
+      const hb = root.querySelector('[data-act="hist-del"]'); if(hb) hb.onclick = e => { e.stopPropagation(); openHistory(m, { rev: focus.hist }); };
+      if(firstPaint){ firstPaint = false; setTimeout(() => openHistory(m, { rev: focus.hist }), 60); }
+      return;
+    }
     if(!s.exists() || s.data().deleted){ root.innerHTML = `<div class="mt-empty">이 회의록을 찾지 못했어요 (지워졌거나 볼 권한이 없어요).<br><button class="mt-btn" data-act="back" style="margin-top:12px">‹ 목록</button></div>`; return; }
     const m = { id: s.id, ...s.data() };
     const orgChanged = !CUR || CUR.org !== m.org;
@@ -1021,6 +1047,15 @@ async function loadDocTasks(m){
   }catch(e){}
 }
 const taskOf = key => TASKS[key] || DOC_TASKS[key] || MYTASKS.find(t => t.id === key) || null;
+/* 📜 v177 고친 기록 · 한 줄 기록 — mtgLog (보안 규칙 v47: 수퍼관리자만 읽음 · 누구도 고치거나 지울 수 없음)
+   관리자 › 보안 · 기록 › 활동 로그에서 «회의록» · «🔒 주임 회의록»으로 함께 보여요. 회의 내용은 담지 않고 누가 · 언제 · 무엇을 · 어느 회의만 */
+function mtgLog(action, m, extra){
+  if(!CU) return;
+  try{ addDoc(collection(db, 'mtgLog'), { uid: CU.uid, name: CU.name || '', at: serverTimestamp(), atMs: Date.now(), book: LEAD ? 'lead' : '',
+    org: (m && m.org) || (LEAD ? 'lead' : ''), action: String(action || ''), meetingId: (m && m.id) || '', date: (m && m.date) || '',
+    mtitle: m && (m.title || m.type || m.date) ? String(C.titleOf(m)).slice(0, 200) : '', ...(extra || {}),
+    detail: String((extra && extra.detail) || '').slice(0, 1000) }).catch(() => {}); }catch(e){}
+}
 function markRead(mid){
   NOTIFS.filter(n => n.meetingId === mid && !n.read).forEach(n =>
     updateDoc(doc(db, 'mtgNotifs', n.id), { read: true, readAt: serverTimestamp() }).catch(()=>{}));
@@ -1031,9 +1066,9 @@ function docCtx(m){
   (m.topics || []).forEach(t => (t.tasks || []).forEach(k => { const key = C.taskKey(m.id, k.id); const d = taskOf(key); if(d) tasks[key] = d; }));
   const cmt = {};
   CMTS.filter(c => !c.del).forEach(c => { cmt[c.tgt] = (cmt[c.tgt] || 0) + 1; });
-  return { ...SAFE, interactive: true, tasks, cmt, files: Object.fromEntries(STORE.cache), open: OPEN,
+  return { ...SAFE, interactive: true, showHist: isSuper(), showEd: isSuper(), tasks, cmt, files: Object.fromEntries(STORE.cache), open: OPEN,
     canStatus: (k) => (k.uids || []).includes(CU.uid) || canWrite(m.org),
-    topicTool: LEAD && canWrite(m.org) ? (t => { const sh = SHARES[shareKey(m.id, t.id)], n = sh && !sh.gone ? (sh.uids || []).length : 0;
+    topicTool: LEAD && LEAD_ADM ? (t => { const sh = SHARES[shareKey(m.id, t.id)], n = sh && !sh.gone ? (sh.uids || []).length : 0;
       return `<button type="button" class="ld-shb${n ? ' on' : ''}" data-act="share" data-tid="${esc(t.id)}" title="이 주제만 다른 선생님께 공유 — 보기 · 댓글만">${SVG.share}${n ? `공유 ${n}` : '공유'}</button>`; }) : null };
 }
 function paintDoc(focus){
@@ -1047,7 +1082,7 @@ function paintDoc(focus){
       <div class="mt-seg sm" role="group" aria-label="문서 모양"><button type="button" data-act="dview" data-v="b" class="${DVIEW === 'b' ? 'on' : ''}">결정 먼저</button><button type="button" data-act="dview" data-v="a" class="${DVIEW === 'a' ? 'on' : ''}">종이 모양</button></div>
       ${ed ? `<span class="dv-lock">✎ ${esc(ed.name)} 님이 고치는 중이에요</span>` : ''}
       <div class="mt-sp"></div>
-      <button class="mt-btn" data-act="hist">수정 이력 ${Math.max(0, (m.rev || 1) - 1)}</button>
+      ${isSuper() ? `<button class="mt-btn" data-act="hist" title="고친 기록은 수퍼관리자만 봐요 — 관리자 › 활동 로그에도 있어요">🕘 수정 이력 ${Math.max(0, (m.rev || 1) - 1)}</button>` : ''}
       <div class="dd" id="dd-out"><button class="mt-btn" data-act="outmenu">출력 ▾</button>
         <div class="dd-m"><button data-act="out" data-f="pdf">📄 PDF로 저장</button><button data-act="out" data-f="docx">📝 워드(.docx)로 받기</button>
           <button data-act="out" data-f="print">🖨 바로 인쇄</button><hr><button data-act="out" data-f="pick">담을 것 고르기…</button></div></div>
@@ -1055,12 +1090,13 @@ function paintDoc(focus){
       <div class="dd" id="dd-more"><button class="mt-btn" data-act="moremenu" aria-label="더 보기">⋯</button>
         <div class="dd-m"><button data-act="copylink">🔗 이 회의록 주소 복사</button>
           ${canWrite(m.org) ? `<button data-act="dup">📋 이 회의록으로 새 회의록 쓰기</button>` : ''}
-          ${(mine || isMinMgr()) && canWrite(m.org) ? `<hr><button data-act="trash" style="color:#C0392B">🗑 휴지통으로</button>` : ''}</div></div>
+          ${(LEAD ? LEAD_ADM : (mine || isMinMgr()) && canWrite(m.org)) ? `<hr><button data-act="trash" style="color:#C0392B">🗑 휴지통으로</button>` : ''}</div></div>
     </div>
     <div class="dv-grid">${DVIEW === 'b'
       ? `<div class="dv-paper mb" id="dv-paper"></div><div class="dv-rail"><nav class="mb-toc" id="mb-toc" aria-label="이 회의 주제"></nav><div class="mb-att" id="mb-att"></div><aside class="dv-side" id="dv-side"></aside></div>`
       : `<div class="dv-paper" id="dv-paper"></div><aside class="dv-side" id="dv-side"></aside>`}</div>`;
   paintPaper(); paintSide();
+  if(focus && focus.hist && isSuper()) setTimeout(() => openHistory(m, { rev: focus.hist }), 60);   // 📜 v177 활동 로그 «그때 판 보기»
   if(focus && (focus.t || focus.k)){
     setTimeout(()=>{
       const el = focus.k ? document.getElementById('k-' + focus.k) : document.getElementById('t-' + focus.t);
@@ -1286,7 +1322,7 @@ async function openHistory(m, focus){
       <div><div style="font-size:13px;font-weight:900;margin-bottom:8px">${prev ? `${prev.rev}번째 → ${sel.rev}번째에서 바뀐 곳` : `${sel.rev}번째 — 처음 모습`}${tid ? ' · 이 주제만' : ''}</div>${diff}
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="mt-btn" data-h="view">${sel.rev}번째 모습 전체 보기</button>
         ${tid ? '<button class="mt-btn" data-h="all">모든 주제 보기</button>' : ''}
-        ${canWrite(m.org) && sel !== vs[0] ? `<button class="mt-btn p" data-h="revert">이 모습으로 되돌리기</button><span class="dv-hint" style="align-self:center">되돌리기도 한 번의 수정으로 남아요</span>` : ''}</div></div></div>`;
+        ${canWrite(m.org) && !m.deleted && sel !== vs[0] ? `<button class="mt-btn p" data-h="revert">이 모습으로 되돌리기</button><span class="dv-hint" style="align-self:center">되돌리기도 한 번의 수정으로 남아요</span>` : ''}</div></div></div>`;
   };
   md.box.addEventListener('click', async e => {
     const hv = e.target.closest('.hv'); if(hv){ sel = vs.find(v => v.rev === +hv.dataset.rev); paint(); return; }
@@ -1466,7 +1502,7 @@ function paintMine(){
     ${done.length ? `<details style="margin-top:14px"><summary style="cursor:pointer;font-size:13px;font-weight:800;color:var(--ink-2)">완료한 임무 ${done.length}건</summary><div style="margin-top:8px">${done.map(row).join('')}</div></details>` : ''}
     <div class="mt-mon" style="margin-top:22px;display:flex;align-items:center">🔔 새 소식 ${NOTIFS.filter(n => !n.read).length ? `<button class="mt-btn sm" data-act="readall" style="margin-left:auto">모두 읽음</button>` : ''}</div>
     <div style="background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px">${un.length ? un.map(n => `<div class="nt${n.read ? '' : ' unread'}" data-act="nopen" data-nid="${esc(n.id)}">
-      <span>${n.kind === 'task' ? '📌' : n.kind === 'reply' ? '↩️' : n.kind === 'share' ? '👥' : n.kind === 'member' ? '🔒' : '💬'}</span><div><b>${esc(n.fromName || '')}</b> ${n.kind === 'task' ? '님이 임무를 맡겼어요' : n.kind === 'reply' ? '님이 답글을 달았어요' : n.kind === 'share' ? '님이 주제를 공유했어요' : n.kind === 'member' ? '님이 주임 회의록 멤버로 정했어요' : '님이 댓글을 남겼어요'} — ${esc(n.text || '')}
+      <span>${n.kind === 'task' ? '📌' : n.kind === 'reply' ? '↩️' : n.kind === 'share' ? '👥' : n.kind === 'member' ? '🔒' : n.kind === 'role' ? '🔑' : '💬'}</span><div><b>${esc(n.fromName || '')}</b> ${n.kind === 'task' ? '님이 임무를 맡겼어요' : n.kind === 'reply' ? '님이 답글을 달았어요' : n.kind === 'share' ? '님이 주제를 공유했어요' : n.kind === 'member' ? '님이 주임 회의록 멤버로 정했어요' : n.kind === 'role' ? '님이 주임 회의록 역할을 정했어요' : '님이 댓글을 남겼어요'} — ${esc(n.text || '')}
       <small>${esc(C.fmtMDY(n.date))} ${esc(n.mtitle || '')}${n.where ? ' · ' + esc(n.where) : ''} · ${esc(C.fmtStamp(C.tsMs(n.at)))}</small></div></div>`).join('') : '<div class="dv-hint" style="padding:10px">새 소식이 없어요.</div>'}</div>`;
 }
 
@@ -1555,12 +1591,13 @@ async function paintTrash(box){
   for(const o of SEE){ try{ const s = await getDocs(query(collection(db, COL.m), where('org', '==', o), where('deleted', '==', true))); s.forEach(d => out.push({ id: d.id, ...d.data() })); }catch(e){} }
   if(!out.length){ box.innerHTML = `<div class="dv-hint">휴지통이 비었어요.</div>`; return; }
   box.innerHTML = `<table class="vt"><tbody>${out.map(m => `<tr><td>${esc(C.fmtMDY(m.date))} ${esc(C.titleOf(m))} <span style="color:var(--ink-3)">${esc(C.MORG_SHORT[m.org])} · ${esc(m.deletedByName || '')}</span></td>
-    <td style="text-align:right">${canWrite(m.org) ? `<button class="mt-btn sm" data-restore="${esc(m.id)}">되살리기</button>` : `<span style="color:var(--ink-3);font-size:12px" title="이 기관은 열람만 허락되어 있어요">열람만</span>`}${isSuper() ? ` <button class="mt-btn sm" data-purge="${esc(m.id)}" style="color:#C0392B">완전히 지우기</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
+    <td style="text-align:right">${(LEAD ? LEAD_ADM : canWrite(m.org)) ? `<button class="mt-btn sm" data-restore="${esc(m.id)}">되살리기</button>` : `<span style="color:var(--ink-3);font-size:12px" title="이 기관은 열람만 허락되어 있어요">열람만</span>`}${isSuper() ? ` <button class="mt-btn sm" data-purge="${esc(m.id)}" style="color:#C0392B">완전히 지우기</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
   box.onclick = async e => {
     const r = e.target.closest('[data-restore]'), p = e.target.closest('[data-purge]');
     if(r){ try{ await updateDoc(doc(db, COL.m, r.dataset.restore), { deleted: false }); }catch(err){ toast('되살리지 못했어요 — ' + (err.code || err.message), 'err'); return; }
-      await markTasks(r.dataset.restore, false); toast('되살렸어요'); paintTrash(box); }
+      await markTasks(r.dataset.restore, false); mtgLog('되살림', out.find(x => x.id === r.dataset.restore) || { id: r.dataset.restore }); toast('되살렸어요'); paintTrash(box); }
     if(p && confirm('완전히 지우면 되돌릴 수 없어요 (수정 이력은 남아요). 지울까요?')){ await deleteDoc(doc(db, COL.m, p.dataset.purge));
+      mtgLog('완전 삭제', out.find(x => x.id === p.dataset.purge) || { id: p.dataset.purge });
       if(LEAD) for(const x of Object.values(SHARES).filter(y => y.meetingId === p.dataset.purge)) deleteDoc(doc(db, 'leadShares', x.id)).catch(() => {});   // 🔒 v175 공유본도 함께
       toast('지웠어요'); paintTrash(box); }
   };
@@ -1642,6 +1679,7 @@ async function paintImport(box){
           k++; if(st) st.textContent = `${k}/${pickd.length} 넣는 중…`;
         }));
       }
+      if(n) mtgLog('예전 회의록 넣기', null, { detail: `${pk.source || '옮김 파일'} ${n}건` });
       toast(`${n}건을 넣었어요${bad ? ` · ${bad}건은 못 넣었어요` : ''}${LEAD ? ' — 목록에서 «전체 학기»를 고르면 모두 보여요' : ''}`);
       draw(pk);
     };
@@ -1704,7 +1742,11 @@ function watchShares(){
   }, e => {});
 }
 /* 주제 가져오기 창의 «어느 회의록에서» — 맨 앞이 지금 쓰는 곳 */
-const leadMenuOk = () => { try{ return typeof leadMenuState === 'function' && leadMenuState(CU) === 'm'; }catch(e){ return false; } };
+const leadMenuOk = () => { try{   // 🔑 v177 주임 회의록에서 주제를 가져오는 것은 관리자 · 작성자만 (보기 멤버가 다른 회의록으로 옮겨 펼치지 않게)
+  if(typeof leadMenuState !== 'function' || leadMenuState(CU) !== 'm') return false;
+  if(isSuper()) return true;
+  const j = JSON.parse(localStorage.getItem('gyosa_lead') || 'null'); return !!(j && j.uid === CU.uid && (j.r === 'adm' || j.r === 'wr'));
+}catch(e){ return false; } };
 function pickSources(edOrg){
   const mk = org => org === 'lead' ? { org, label: '주임 회의록', col: { m: 'leadMeetings', t: 'leadTasks' } }
     : { org, label: '회의록 · ' + (MORG[org] || org), col: { m: 'meetings', t: 'meetingTasks' } };
@@ -1750,7 +1792,7 @@ function openShare(m, tid){
   let org = 'all', q = '', notify = true, showLog = false;
   const nmOf = u => nameOf(u) || ((cur && cur.names) || {})[u] || '?';
   const subOf = s => [baseOrgs(s).map(o => MORG[o]).join(' · '), s.position || ''].filter(Boolean).join(' · ');
-  const md = modal(`${SVG.share}<span>이 주제만 공유하기</span>`, '', `<button type="button" class="mt-btn ghost sm" data-shlog style="margin-right:auto">${SVG.hist}공유 기록 ${((cur && cur.log) || []).length}건</button><button class="mt-btn" data-x2>취소</button><button class="mt-btn p" id="sh-go">저장</button>`, 'ld-shm');
+  const md = modal(`${SVG.share}<span>이 주제만 공유하기</span>`, '', `${isSuper() ? `<button type="button" class="mt-btn ghost sm" data-shlog style="margin-right:auto">${SVG.hist}공유 기록 ${((cur && cur.log) || []).length}건</button>` : '<span style="margin-right:auto"></span>'}<button class="mt-btn" data-x2>취소</button><button class="mt-btn p" id="sh-go">저장</button>`, 'ld-shm');
   md.box.querySelector('[data-x2]').onclick = md.close;
   const body = md.box.querySelector('.mm-b');
   const memNames = LCFG.uids.map(u => nameOf(u) || (LCFG.names || {})[u] || '').filter(Boolean);
@@ -1765,7 +1807,7 @@ function openShare(m, tid){
     const kept = [...keep];
     const sinceTxt = u => { const ms = ((cur && cur.since) || {})[u]; return ms ? C.fmtMD(C.todayStr(new Date(ms)), false) + '부터' : ''; };
     body.innerHTML = `<div class="ld-sh-t">${esc(C.fmtMDY(m.date))} ${esc(C.titleOf(m))} › <b>${ti + 1}. ${esc(t.title || '(제목 없음)')}</b></div>
-      <div class="ld-sh-mem">${SVG.lock}<div><b>주임 멤버 ${LCFG.uids.length}명</b><span>원래 다 볼 수 있어요 — 쓰기 · 고치기 · 댓글${memNames.length ? ' · ' + esc(memNames.slice(0, 6).join(', ')) + (memNames.length > 6 ? ' …' : '') : ''}</span></div></div>
+      <div class="ld-sh-mem">${SVG.lock}<div><b>주임 멤버 ${LCFG.uids.length}명</b><span>원래 다 볼 수 있어요 — 보기 · 댓글 (쓰기는 관리자 · 작성자)${memNames.length ? ' · ' + esc(memNames.slice(0, 6).join(', ')) + (memNames.length > 6 ? ' …' : '') : ''}</span></div></div>
       <h3 class="ld-h3">이 주제만 공유받은 선생님 <span>${kept.length + add.size}</span></h3>
       <div class="ld-sh-list">${kept.length || add.size ? [...kept.map(u => `<div class="ld-sh-r"><span class="ld-av b">${esc(initials(nmOf(u)))}</span><div class="nm"><b>${esc(nmOf(u))}</b><span>${esc(SMAP[u] ? subOf(SMAP[u]) : '')}${sinceTxt(u) ? ' · ' + sinceTxt(u) : ''}</span></div><button type="button" class="mt-btn sm" data-shrm="${esc(u)}">빼기</button></div>`),
         ...[...add].map(u => `<div class="ld-sh-r new"><span class="ld-av b">${esc(initials(nmOf(u)))}</span><div class="nm"><b>${esc(nmOf(u))}</b><span>새로 공유 — 저장하면 열려요</span></div><button type="button" class="mt-btn sm" data-shpick="${esc(u)}">취소</button></div>`)].join('')
@@ -1791,7 +1833,7 @@ function openShare(m, tid){
     const kp = e.target.closest('[data-shkeep]'); if(kp){ keep.add(kp.dataset.shkeep); add.delete(kp.dataset.shkeep); paint(); return; }
     const og = e.target.closest('[data-shorg]'); if(og){ org = og.dataset.shorg; paint(); return; }
   });
-  md.box.querySelector('[data-shlog]').onclick = () => { showLog = !showLog; paint(); };
+  const shl = md.box.querySelector('[data-shlog]'); if(shl) shl.onclick = () => { showLog = !showLog; paint(); };
   md.box.querySelector('#sh-go').onclick = async () => {
     const rmv = [...had].filter(u => !keep.has(u));
     if(!add.size && !rmv.length){ md.close(); return; }
@@ -1810,6 +1852,7 @@ function openShare(m, tid){
       if(notify) [...add].slice(0, 40).forEach(u => addDoc(collection(db, 'mtgNotifs'), { toUid: u, kind: 'share', book: 'lead', meetingId: m.id, shareKey: key, org: 'lead',
         mtitle: C.titleOf(m), date: m.date, tgt: 't:' + tid, where: `${ti + 1}. ${t.title || ''}`, text: `«${t.title || '주제'}» — 보고 댓글을 달 수 있어요`,
         fromUid: CU.uid, fromName: CU.name || '', at: serverTimestamp(), read: false }).catch(() => {}));
+      mtgLog(add.size ? '주제 공유' : '공유 거둠', m, { detail: `${ti + 1}. ${t.title || ''}${add.size ? ' → ' + [...add].map(nmOf).join(', ') : ''}${rmv.length ? ' · 거둠 ' + rmv.map(nmOf).join(', ') : ''}` });
       toast(add.size ? `${add.size}명에게 공유했어요${rmv.length ? ` · ${rmv.length}명은 거뒀어요` : ''}` : `${rmv.length}명의 공유를 거뒀어요`);
       md.close();
     }catch(err){ btn.disabled = false; toast('공유하지 못했어요 — ' + (err.code === 'permission-denied' ? '보안 규칙 v45를 게시했는지 확인해 주세요' : (err.code || err.message)), 'err'); }
@@ -1820,44 +1863,75 @@ function openShare(m, tid){
 /* ── 멤버 보기 (멤버 누구나) · 멤버 관리 · 회의 종류 · 휴지통 (설정) ── */
 function openMemberList(){
   const rows = LCFG.uids.map(u => SMAP[u] || { uid: u, name: (LCFG.names || {})[u] || '?' });
+  const ord = { adm: 0, wr: 1, mem: 2 };
+  rows.sort((x, y) => (ord[leadRoleOf(x.uid)] - ord[leadRoleOf(y.uid)]) || String(x.name || '').localeCompare(String(y.name || ''), 'ko'));
   const md = modal(`${SVG.users}<span>주임 멤버 ${rows.length}명</span>`,
-    `<div class="ld-ml">${rows.map((s, i) => `<div class="ld-mr"><span class="ld-av" style="background:${AV_COL[i % AV_COL.length]}">${esc(initials(s.name))}</span><b>${esc(s.name || '')}</b><span>${esc([baseOrgs(s).map(o => MORG[o]).join(' · '), s.position || ''].filter(Boolean).join(' · '))}</span></div>`).join('') || '<div class="dv-hint">아직 멤버가 없어요.</div>'}</div>
-     <div class="dv-hint" style="margin-top:12px">멤버는 모든 주임 회의록을 보고 · 쓰고 · 고치고 · 주제를 공유할 수 있어요. 고칠 때마다 누가 · 언제 · 무엇을 바꿨는지 기록이 남아요.</div>`,
-    isSuper() ? `<button class="mt-btn p" data-lm>멤버 관리</button>` : '');
+    `<div class="ld-ml">${rows.map((s, i) => { const r = leadRoleOf(s.uid);
+      return `<div class="ld-mr"><span class="ld-av" style="background:${AV_COL[i % AV_COL.length]}">${esc(initials(s.name))}</span><b>${esc(s.name || '')}</b>${r ? `<em class="ld-role ${r}">${ROLE_L[r]}</em>` : ''}<span>${esc([baseOrgs(s).map(o => MORG[o]).join(' · '), s.position || ''].filter(Boolean).join(' · '))}</span></div>`; }).join('') || '<div class="dv-hint">아직 멤버가 없어요.</div>'}</div>
+     <div class="dv-hint" style="margin-top:12px"><b>관리</b> — 쓰고 고치기 · 작성자 정하기 · 주제 공유 · 휴지통 &nbsp;·&nbsp; <b>작성</b> — 쓰고 고치기 &nbsp;·&nbsp; <b>보기</b> — 읽고 댓글 · 나에게 맡긴 임무 완료<br>쓰기가 필요하면 관리자에게 «작성» 권한을 부탁해 주세요.</div>`,
+    isSuper() ? `<button class="mt-btn p" data-lm>멤버 · 역할 관리</button>` : LEAD_ADM ? `<button class="mt-btn p" data-lw>작성자 정하기</button>` : '');
   const b = md.box.querySelector('[data-lm]'); if(b) b.onclick = () => { md.close(); openLeadSettings('members'); };
+  const w = md.box.querySelector('[data-lw]'); if(w) w.onclick = () => { md.close(); openLeadSettings('writers'); };
+}
+/* 🔑 v177 역할이 바뀐 사람에게 알림 (주임 회의록 화면 알림 — 홈 «새 소식»에도) */
+function notifyRoles(before, after, who){
+  for(const [u, r] of Object.entries(after)){
+    if(u === CU.uid || before[u] === r || !r) continue;
+    const text = r === 'adm' ? '주임 회의록 관리자가 되었어요 — 쓰기 · 작성자 정하기 · 주제 공유를 할 수 있어요'
+      : r === 'wr' ? '주임 회의록 작성 권한을 받았어요 — «＋ 새 주임 회의록»과 «고치기»를 쓸 수 있어요'
+      : before[u] ? '주임 회의록 역할이 «보기 · 댓글»로 바뀌었어요' : '주임 회의록 멤버가 되었어요 — 사이드바 «주임 회의록»에서 열 수 있어요';
+    addDoc(collection(db, 'mtgNotifs'), { toUid: u, kind: before[u] ? 'role' : 'member', book: 'lead', meetingId: '', org: 'lead', mtitle: '주임 회의록', date: TODAY,
+      tgt: '', where: '', text, fromUid: CU.uid, fromName: CU.name || '', at: serverTimestamp(), read: false }).catch(() => {});
+  }
 }
 function openLeadSettings(tab){
-  if(!LEAD_OK) return;
-  const tabs = isSuper() ? [['members', '멤버'], ['types', '회의 종류'], ['import', '예전 회의록 넣기'], ['trash', '휴지통']] : [['types', '회의 종류'], ['trash', '휴지통']];   // 🏛 v176 넣기는 수퍼관리자만
+  if(!LEAD_ADM) return;   // 🔑 v177 설정은 관리자 · 수퍼관리자
+  const tabs = isSuper() ? [['members', '멤버 · 역할'], ['types', '회의 종류'], ['import', '예전 회의록 넣기'], ['trash', '휴지통']]   // 🏛 v176 넣기는 수퍼관리자만
+    : [['writers', '작성자'], ['types', '회의 종류'], ['trash', '휴지통']];
   if(!tabs.some(([k]) => k === tab)) tab = tabs[0][0];
   let dU = LCFG.uids.slice(), dT = (CFG.types.lead || []).slice(), org = 'daniel', q = '';
+  const before = Object.fromEntries(LCFG.uids.map(u => [u, leadRoleOf(u)]));
+  const dR = { ...before };                                            // 고르는 중인 역할 { uid: adm | wr | mem }
   const md = modal(`${SVG.lock}<span>주임 회의록 설정</span>`, '', `<button class="mt-btn" data-x2>닫기</button><button class="mt-btn p" id="ls-save">저장</button>`, 'wide');
   md.box.querySelector('[data-x2]').onclick = md.close;
   const body = md.box.querySelector('.mm-b');
   const subOf = s => [baseOrgs(s).map(o => MORG[o]).join(' · '), s.position || ''].filter(Boolean).join(' · ');
   const nm = u => nameOf(u) || (LCFG.names || {})[u] || '?';
+  const roleSeg = u => `<div class="mt-seg sm ld-rseg" role="group" aria-label="${esc(nm(u))} 역할">${['mem', 'wr', 'adm'].map(r => `<button type="button" class="${dR[u] === r ? 'on' : ''}" data-lrole="${esc(u)}|${r}" aria-pressed="${dR[u] === r}">${ROLE_L[r]}</button>`).join('')}</div>`;
   const poolHTML = () => {
     const rows = STAFF.filter(s => s.role !== 'super' && (org === 'etc' ? !baseOrgs(s).length : baseOrgs(s).includes(org)) && (!q || (s.name || '').includes(q) || (s.position || '').includes(q)));
     return rows.map(s => { const isM = dU.includes(s.uid), was = LCFG.uids.includes(s.uid);
       return `<div class="ld-pr"><span class="nm"><b>${esc(s.name || '')}</b> <span>${esc(s.position || '')}</span></span>${isM ? `<span class="ld-tag">${was ? '멤버' : '고름'}</span>` : `<button type="button" class="mt-btn sm" data-lmadd="${esc(s.uid)}">＋ 더하기</button>`}</div>`; }).join('') || '<div class="dv-hint" style="padding:10px">찾는 선생님이 없어요.</div>';
   };
+  const changed = () => dU.filter(u => !LCFG.uids.includes(u)).length + LCFG.uids.filter(u => !dU.includes(u)).length + dU.filter(u => LCFG.uids.includes(u) && dR[u] !== before[u]).length;
   const paint = () => {
     let h = `<div class="set-tabs">${tabs.map(([k, l]) => `<button class="mt-chip${tab === k ? ' on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>`;
     if(tab === 'members'){
       const added = dU.filter(u => !LCFG.uids.includes(u)), removed = LCFG.uids.filter(u => !dU.includes(u));
+      const ord = { adm: 0, wr: 1, mem: 2 };
+      const cur = [...LCFG.uids.filter(u => dU.includes(u)), ...added].sort((x, y) => (ord[before[x] || 'mem'] - ord[before[y] || 'mem']));
+      const cnt = r => dU.filter(u => (dR[u] || 'mem') === r).length;
       h += `<div class="ld-set">
-        <section class="ld-cur"><div class="ld-sh"><b>지금 멤버 ${dU.length}</b><span>멤버 = 모든 주임 회의록 보기 · 쓰기 · 고치기 · 공유</span></div>
-          ${[...LCFG.uids.filter(u => dU.includes(u)), ...added].map(u => `<div class="ld-pr${added.includes(u) ? ' new' : ''}"><span class="nm"><b>${esc(nm(u))}</b> <span>${esc(SMAP[u] ? subOf(SMAP[u]) : '')}</span></span>${added.includes(u) ? '<span class="ld-tag n">더할 사람</span>' : ''}<button type="button" class="mt-btn sm" data-lmrm="${esc(u)}">${added.includes(u) ? '취소' : '빼기'}</button></div>`).join('') || '<div class="dv-hint" style="padding:10px">아직 멤버가 없어요 — 오른쪽에서 더해 주세요.</div>'}
+        <section class="ld-cur"><div class="ld-sh"><b>지금 멤버 ${dU.length}</b><span>관리 ${cnt('adm')} · 작성 ${cnt('wr')} · 보기 ${cnt('mem')}</span></div>
+          ${cur.map(u => `<div class="ld-pr${added.includes(u) ? ' new' : ''}${!added.includes(u) && dR[u] !== before[u] ? ' chg' : ''}"><span class="nm"><b>${esc(nm(u))}</b> <span>${esc(SMAP[u] ? subOf(SMAP[u]) : '')}</span></span>${roleSeg(u)}<button type="button" class="mt-btn sm" data-lmrm="${esc(u)}">${added.includes(u) ? '취소' : '빼기'}</button></div>`).join('') || '<div class="dv-hint" style="padding:10px">아직 멤버가 없어요 — 오른쪽에서 더해 주세요.</div>'}
           ${removed.map(u => `<div class="ld-pr gone"><span class="nm"><b>${esc(nm(u))}</b> <span>저장하면 바로 못 열어요</span></span><button type="button" class="mt-btn sm" data-lmadd="${esc(u)}">되돌리기</button></div>`).join('')}
-          ${added.length || removed.length ? `<div class="ld-pend">더할 사람 <b>${added.length}</b> · 뺄 사람 <b>${removed.length}</b> — «저장»을 누르면 바로 열리고 · 바로 닫혀요</div>` : ''}</section>
-        <section class="ld-add"><div class="ld-sh"><b>교직원에서 더하기</b></div>
+          ${changed() ? `<div class="ld-pend">바뀐 곳 <b>${changed()}</b> — «저장»을 누르면 바로 적용돼요 (역할을 받은 분께 알림이 가요)</div>` : ''}</section>
+        <section class="ld-add"><div class="ld-sh"><b>교직원에서 더하기</b><span>처음엔 «보기»로 들어가요</span></div>
           <div class="mt-seg sm" role="group" aria-label="기관">${['daniel', 'jihyebit', ...(STAFF.some(s => s.role !== 'super' && !baseOrgs(s).length) ? ['etc'] : [])].map(o => `<button type="button" class="${org === o ? 'on' : ''}" data-lmorg="${o}">${esc(o === 'etc' ? '그 밖' : MORG[o])}</button>`).join('')}</div>
           <label class="ld-q" style="margin-top:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" id="lm-q" placeholder="이름 · 맡은 일" aria-label="교직원 찾기" value="${esc(q)}"></label>
           <div class="ld-pool" id="lm-pool">${poolHTML()}</div></section></div>
-        <div class="ld-note"><b>알아 두세요</b><ul><li>멤버는 수퍼관리자만 바꿀 수 있어요.</li><li>멤버에서 빼면 바로 못 열어요. 그 사람이 쓴 글 · 댓글 · 고친 기록은 그대로 남아요.</li><li>주제만 따로 공유받은 선생님은 멤버 명단과 상관없이 그대로예요.</li><li>멤버 · 공유받은 선생님 화면에는 «주임 멤버»만 보여요. 수퍼관리자는 관리 때문에 열 수 있지만 따로 표시되지 않아요.</li></ul></div>
-        <div class="ld-log"><b>멤버 기록</b>${(LCFG.log || []).slice().reverse().slice(0, 30).map(l => `<div><span>${esc(C.fmtStamp(l.at))}</span> ${esc(l.name || '')} — ${[(l.add || []).length ? esc(l.add.join(' · ')) + ' 더함' : '', (l.rm || []).length ? esc(l.rm.join(' · ')) + ' 뺌' : ''].filter(Boolean).join(' · ')}</div>`).join('') || '<div class="dv-hint">아직 기록이 없어요.</div>'}</div>`;
+        <div class="ld-note"><b>역할</b><ul><li><b>보기</b> — 모든 주임 회의록을 읽고 댓글 · 나에게 맡긴 임무 완료 표시.</li><li><b>작성</b> — 보기 + 회의록 쓰기 · 고치기. 관리자도 멤버 중에서 줄 수 있어요.</li><li><b>관리</b> — 작성 + 작성자 정하기 · 주제 공유 · 휴지통 · 회의 종류.</li><li>멤버와 관리자는 수퍼관리자만 정해요. 관리 › 관리자 › 접근 권한 표의 «🔒 주임 회의록» 칸과 같은 명단이에요.</li><li>멤버에서 빼면 바로 못 열어요. 그 사람이 쓴 글 · 댓글은 그대로 남아요. 고친 기록은 관리 › 관리자 › 활동 로그에서 수퍼관리자만 봐요.</li></ul></div>`;
+    } else if(tab === 'writers'){
+      const adms = LCFG.uids.filter(u => before[u] === 'adm'), rest = LCFG.uids.filter(u => before[u] !== 'adm');
+      const nOn = rest.filter(u => dR[u] === 'wr').length;
+      h += `<div class="dv-hint" style="margin-bottom:10px">주임 멤버 중에서 회의록을 <b>쓰고 고칠</b> 사람을 정해요. 켜지 않은 멤버는 읽고 댓글만 달아요. 멤버를 더하거나 빼는 것은 수퍼관리자가 해요.</div>
+        <div class="ld-wr">${adms.map(u => `<div class="ld-pr"><span class="nm"><b>${esc(nm(u))}</b> <span>${esc(SMAP[u] ? subOf(SMAP[u]) : '')}</span></span><em class="ld-role adm">관리</em></div>`).join('')}
+        ${rest.map(u => { const on = dR[u] === 'wr', chg = on !== (before[u] === 'wr');
+          return `<div class="ld-pr${chg ? ' chg' : ''}"><span class="nm"><b>${esc(nm(u))}</b> <span>${esc(SMAP[u] ? subOf(SMAP[u]) : '')}</span></span>
+            <label class="ld-sw"><input type="checkbox" data-lwr="${esc(u)}"${on ? ' checked' : ''}><span>${on ? '작성' : '보기'}</span></label></div>`; }).join('') || '<div class="dv-hint" style="padding:10px">관리자 말고 다른 멤버가 아직 없어요.</div>'}</div>
+        <div class="dv-hint" style="margin-top:8px">작성 ${nOn}명 · 보기 ${rest.length - nOn}명 — 작성 권한을 받은 분께 알림이 가요.</div>`;
     } else if(tab === 'types'){
-      h += `<div class="dv-hint" style="margin-bottom:10px">주임 회의록을 쓸 때 고르는 회의 종류예요. 쓰는 화면에서도 멤버가 바로 넣고 뺄 수 있어요. 목록에서 빼도 이미 쓴 회의록은 그대로예요.</div>
+      h += `<div class="dv-hint" style="margin-bottom:10px">주임 회의록을 쓸 때 고르는 회의 종류예요. 쓰는 화면에서도 관리자 · 작성자가 바로 넣을 수 있어요. 목록에서 빼도 이미 쓴 회의록은 그대로예요.</div>
         <div>${dT.map((t, i) => `<span class="tg">${esc(t)}<button data-lt-del="${i}" aria-label="${esc(t)} 빼기">✕</button></span>`).join('')}</div>
         <div style="display:flex;gap:6px;margin-top:8px"><input type="text" id="lt-in" placeholder="새 회의 종류 (예: 부장 회의)" style="flex:1;font-family:inherit;height:36px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:var(--surface);color:var(--ink)"><button class="mt-btn sm" data-lt-add>＋ 넣기</button></div>`;
     } else if(tab === 'import'){
@@ -1867,7 +1941,7 @@ function openLeadSettings(tab){
     }
     body.innerHTML = h;
     md.box.querySelector('#ls-save').style.display = tab === 'trash' || tab === 'import' ? 'none' : '';
-    md.box.querySelector('#ls-save').textContent = tab === 'members' ? '멤버 저장' : '회의 종류 저장';
+    md.box.querySelector('#ls-save').textContent = tab === 'members' ? '멤버 · 역할 저장' : tab === 'writers' ? '작성자 저장' : '회의 종류 저장';
     if(tab === 'trash') paintTrash(body.querySelector('#tr-box'));
     if(tab === 'import') paintImport(body.querySelector('#imp-box'));
     const lq = body.querySelector('#lm-q');
@@ -1875,35 +1949,54 @@ function openLeadSettings(tab){
   };
   body.addEventListener('click', e => {
     const t = e.target.closest('[data-tab]'); if(t){ tab = t.dataset.tab; paint(); return; }
-    const a = e.target.closest('[data-lmadd]'); if(a){ if(!dU.includes(a.dataset.lmadd)) dU.push(a.dataset.lmadd); paint(); return; }
+    const a = e.target.closest('[data-lmadd]'); if(a){ const u = a.dataset.lmadd; if(!dU.includes(u)){ dU.push(u); if(!dR[u]) dR[u] = 'mem'; } paint(); return; }
     const r = e.target.closest('[data-lmrm]'); if(r){ dU = dU.filter(u => u !== r.dataset.lmrm); paint(); return; }
+    const rl = e.target.closest('[data-lrole]'); if(rl){ const [u, v] = rl.dataset.lrole.split('|'); dR[u] = v; paint(); return; }
     const o = e.target.closest('[data-lmorg]'); if(o){ org = o.dataset.lmorg; paint(); return; }
     const d = e.target.closest('[data-lt-del]'); if(d){ dT.splice(+d.dataset.ltDel, 1); paint(); return; }
     if(e.target.closest('[data-lt-add]')){ const v = (body.querySelector('#lt-in').value || '').trim(); if(v && !dT.includes(v)){ dT.push(v); paint(); } return; }
   });
+  body.addEventListener('change', e => { const w = e.target.closest('[data-lwr]'); if(w){ dR[w.dataset.lwr] = w.checked ? 'wr' : 'mem'; paint(); } });
   md.box.querySelector('#ls-save').onclick = async () => {
     const btn = md.box.querySelector('#ls-save'); btn.disabled = true;
     try{
       if(tab === 'members'){
         if(!isSuper()) return;
         const added = dU.filter(u => !LCFG.uids.includes(u)), removed = LCFG.uids.filter(u => !dU.includes(u));
-        if(!added.length && !removed.length){ md.close(); return; }
+        if(!changed()){ md.close(); return; }
         const names = {}; dU.forEach(u => names[u] = nm(u));
-        const log = (LCFG.log || []).slice(-59);
-        log.push({ at: Date.now(), name: CU.name || '', add: added.map(nm), rm: removed.map(nm) });
+        const admins = dU.filter(u => dR[u] === 'adm'), writers = dU.filter(u => dR[u] === 'wr');
         const types = LCFG.types && LCFG.types.length ? LCFG.types : C.DEF_TYPES.lead.slice();
-        await setDoc(doc(db, 'leadConfig', 'main'), { uids: dU, names, log, types, updatedAt: serverTimestamp(), updatedByName: CU.name || '' }, { merge: true });
-        LCFG = { ...LCFG, uids: dU.slice(), names, log, types };
-        added.forEach(u => { if(u !== CU.uid) addDoc(collection(db, 'mtgNotifs'), { toUid: u, kind: 'member', book: 'lead', meetingId: '', org: 'lead', mtitle: '주임 회의록', date: TODAY,
-          tgt: '', where: '', text: '주임 회의록 멤버가 되었어요 — 사이드바 «주임 회의록»에서 열 수 있어요', fromUid: CU.uid, fromName: CU.name || '', at: serverTimestamp(), read: false }).catch(() => {}); });
-        toast(`멤버를 저장했어요 — 지금 ${dU.length}명`);
+        await setDoc(doc(db, 'leadConfig', 'main'), { uids: dU, names, admins, writers, types, log: deleteField(), updatedAt: serverTimestamp(), updatedByName: CU.name || '' }, { merge: true });
+        LCFG = { ...LCFG, uids: dU.slice(), names, admins, writers, types }; delete LCFG.log;
+        const after = Object.fromEntries(dU.map(u => [u, dR[u] || 'mem']));
+        notifyRoles(before, after);
+        const roleTxt = dU.filter(u => after[u] !== before[u]).map(u => `${nm(u)} ${before[u] ? ROLE_L[before[u]] + '→' : '＋'}${ROLE_L[after[u]]}`);
+        mtgLog('멤버 · 역할', null, { detail: [...roleTxt, ...removed.map(u => `${nm(u)} 뺌`)].join(' · ') });
+        toast(`저장했어요 — 멤버 ${dU.length}명 · 관리 ${admins.length} · 작성 ${writers.length}`);
+      } else if(tab === 'writers'){
+        // 바꾼 것만 지금 명단에 얹는다 (창을 연 사이 수퍼관리자가 바꾼 역할을 덮지 않게)
+        const on = LCFG.uids.filter(u => dR[u] === 'wr' && before[u] === 'mem'), off = LCFG.uids.filter(u => before[u] === 'wr' && dR[u] !== 'wr');
+        if(!on.length && !off.length){ md.close(); return; }
+        let cur = null; try{ const g = await getDoc(doc(db, 'leadConfig', 'main')); cur = g.exists() ? g.data() : null; }catch(e){}
+        const cU = Array.isArray(cur && cur.uids) ? cur.uids : LCFG.uids, cA = Array.isArray(cur && cur.admins) ? cur.admins : LCFG.admins;
+        const cW = Array.isArray(cur && cur.writers) ? cur.writers : LCFG.writers;
+        const writers = [...new Set([...cW, ...on])].filter(u => !off.includes(u) && cU.includes(u) && !cA.includes(u));
+        await setDoc(doc(db, 'leadConfig', 'main'), { writers, updatedAt: serverTimestamp(), updatedByName: CU.name || '' }, { merge: true });
+        LCFG = { ...LCFG, uids: cU.slice(), admins: cA.filter(u => cU.includes(u)), writers };
+        const after = Object.fromEntries(LCFG.uids.map(u => [u, leadRoleOf(u)]));
+        notifyRoles(before, after);
+        mtgLog('작성자', null, { detail: LCFG.uids.filter(u => after[u] !== before[u]).map(u => `${nm(u)} ${ROLE_L[before[u]] || ''}→${ROLE_L[after[u]]}`).join(' · ') });
+        toast(`작성자를 저장했어요 — ${writers.length}명`);
       } else {
         await saveTypes('lead', dT);
         toast('회의 종류를 저장했어요');
       }
+      LEAD_ADM = isSuper() || LCFG.admins.includes(CU.uid); LEAD_WR = LEAD_ADM || LCFG.writers.includes(CU.uid);
+      computeOrgs();
       md.close();
-      if(VIEW === 'list') renderList();
-    }catch(err){ btn.disabled = false; toast('저장하지 못했어요 — ' + (err.code === 'permission-denied' ? '보안 규칙 v45를 게시했는지 확인해 주세요' : (err.code || err.message)), 'err'); }
+      if(VIEW === 'list') renderList(); else if(VIEW === 'doc') paintDoc();
+    }catch(err){ btn.disabled = false; toast('저장하지 못했어요 — ' + (err.code === 'permission-denied' ? '보안 규칙 v47을 게시했는지 확인해 주세요' : (err.code || err.message)), 'err'); }
   };
   paint();
 }
@@ -2064,15 +2157,15 @@ document.addEventListener('click', async e => {
     case 'import': openSettings('import'); break;
     case 'exportmany': openExport(null); break;
     case 'edit': go({ edit: CUR.id }); break;
-    case 'hist': openHistory(CUR); break;
+    case 'hist': if(isSuper()) openHistory(CUR); break;   // 📜 v177 수퍼관리자만
     case 'outmenu': case 'moremenu': { const dd = a.closest('.dd'); const was = dd.classList.contains('open'); document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); if(!was) dd.classList.add('open'); if(act === 'moremenu') a.setAttribute('aria-expanded', String(!was)); break; }
     case 'out': if(a.dataset.f === 'pick') openExport(CUR); else { try{ await doExport([CUR], a.dataset.f, { sum: false, att: true, img: true, cmt: false, head: true, title: C.titleOf(CUR) }, `${C.titleOf(CUR)}_${CUR.date}`); }catch(err){ toast('만들지 못했어요 — ' + err.message, 'err'); } } break;
     case 'copylink': { const u = new URL(location.href); u.search = (LEAD ? '?book=lead&m=' : '?m=') + CUR.id; try{ await navigator.clipboard.writeText(u.href); toast('주소를 복사했어요 — 쪽지로 보내 보세요'); }catch(_){ prompt('이 주소를 복사하세요', u.href); } break; }
     case 'dup': go({ edit: 'new', to: CUR.org, from: CUR.id }); break;
     case 'trash':
-      if(!confirm(LEAD ? '이 주임 회의록을 휴지통으로 옮길까요? (⋯ › 설정 › 휴지통에서 멤버가 되살릴 수 있어요 · 공유받은 선생님 화면에서도 빠져요)' : '이 회의록을 휴지통으로 옮길까요? (수퍼 관리자가 되살릴 수 있어요)')) break;
+      if(!confirm(LEAD ? '이 주임 회의록을 휴지통으로 옮길까요? (⋯ › 설정 › 휴지통에서 관리자가 되살릴 수 있어요 · 공유받은 선생님 화면에서도 빠져요)' : '이 회의록을 휴지통으로 옮길까요? (수퍼 관리자가 되살릴 수 있어요)')) break;
       try{ await updateDoc(doc(db, COL.m, CUR.id), { deleted: true, deletedAt: serverTimestamp(), deletedBy: CU.uid, deletedByName: CU.name || '' });
-        await markTasks(CUR.id, true); toast('휴지통으로 옮겼어요'); go({ org: ORG }, true); }
+        await markTasks(CUR.id, true); mtgLog('휴지통', CUR); toast('휴지통으로 옮겼어요'); go({ org: ORG }, true); }
       catch(err){ toast('옮기지 못했어요 — ' + (err.code || err.message), 'err'); }
       break;
     case 'attall': { const { on, off } = C.attSplit(CUR); modal('참석 · 불참', `<div style="font-size:13.5px;line-height:1.9"><b>참석 ${on.length}명</b><br>${on.map(x => esc(x.name)).join(' · ') || '없음'}<br><br><b>불참 ${off.length}명</b><br>${off.map(x => esc(x.name) + (x.r ? ` (${esc(x.r)})` : '')).join(' · ') || '없음'}${CUR.guests ? `<br><br><b>그 외</b><br>${esc(CUR.guests)}` : ''}</div>`); break; }
@@ -2102,7 +2195,7 @@ document.addEventListener('click', async e => {
     case 'share': if(CUR) openShare(CUR, a.dataset.tid); break;
     case 'lmemlist': openMemberList(); break;
     case 'lmembers': openLeadSettings('members'); break;
-    case 'lsettings': openLeadSettings('types'); break;
+    case 'lsettings': openLeadSettings(isSuper() ? 'types' : 'writers'); break;
     case 'gopen': GOPEN = GOPEN === a.dataset.k ? '' : a.dataset.k; GREPLY = null; GSCROLL = true; paintGuest(); break;
     case 'greply': GREPLY = { root: a.dataset.cid, uid: a.dataset.to, name: a.dataset.name }; paintGuest(); setTimeout(() => { const t = $I('g-in'); t && t.focus(); }, 30); break;
     case 'grcancel': GREPLY = null; paintGuest(); break;
@@ -2113,7 +2206,7 @@ document.addEventListener('click', async e => {
       if(!n.read) updateDoc(doc(db, 'mtgNotifs', n.id), { read: true, readAt: serverTimestamp() }).catch(()=>{});
       const k = n.tgt && n.tgt.startsWith('k:') ? n.tgt.slice(2) : '';
       const t = n.tgt && n.tgt.startsWith('t:') ? n.tgt.slice(2) : '';
-      if(n.kind === 'member' || !n.meetingId){ go({}); break; }
+      if(n.kind === 'member' || n.kind === 'role' || !n.meetingId){ go({}); break; }
       go({ m: n.meetingId, k, t }); break; }
   }
 });
