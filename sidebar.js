@@ -20,6 +20,8 @@
   };
   window.reportAppIssue = function(k, m, s){ put({ k:k, m:m, s:s }); };
   try { var sc = document.createElement('script'); sc.type = 'module'; sc.src = 'errlog.js'; (document.head || document.documentElement).appendChild(sc); } catch(_){}
+  // 🔽 v178 고르는 목록을 화면 안에 (맥 크롬 기본 목록이 다른 창 위에 홀로 남던 것) — select-pop.js
+  try { var sp = document.createElement('script'); sp.src = 'select-pop.js?v=178'; (document.head || document.documentElement).appendChild(sp); } catch(_){}
 })();
 
 /* ── 🙂 교직원 아바타: 사진 > 이모지 > 이니셜 (이름 기반 배색) ── */

@@ -743,6 +743,8 @@
   .ac-legend{ display:flex; flex-wrap:wrap; gap:12px; margin-top:16px; padding:12px 16px; background:var(--wh); border-radius:12px; border:1px solid var(--ivd); font-size:12px; }
   .ac-legend span{ display:inline-flex; align-items:center; gap:6px; color:var(--ts); font-weight:600; }
   .ac-legend i{ width:14px; height:14px; border-radius:4px; display:inline-block; }
+  .ac-legend .lg-orgs{ display:inline-flex; flex-wrap:wrap; gap:10px; margin-left:auto; }
+  .ac-legend .lg-orgs .eb-org{ font-size:10px; padding:1px 5px; margin-right:2px; }
 
   .ac-empty{ padding:60px 20px; text-align:center; color:var(--tl); font-size:14px; }
 
@@ -1435,18 +1437,18 @@ const GRADE_ORDER = {
   jihyebit: ['4세','5세','6세','7세'],
 };
 /* 📚 학사일정은 캘린더 세 개로 나눠 운영한다.
-     all      — DA 전체 일정 (두 기관 모두에 해당하는 일정)
+     all      — DA전체 일정 (두 기관 모두에 해당하는 일정)
      daniel   — 다니엘아마츠학교 학사일정
      jihyebit — 그루터기 선교원 학사일정
    캘린더마다 고칠 수 있는 담당자를 따로 정한다. */
 const CALS = {
-  all:      { label:'DA 전체 일정',        short:'전체',   color:'#00704A' },
-  daniel:   { label:'다니엘아마츠학교 학사일정', short:'다니엘', color:'#2FB344' },
+  all:      { label:'DA전체 일정',        short:'DA전체', color:'#00704A' },   // 🏷 v178 짧은 이름: DA전체 · 아마츠 · 그루터기 (예전 «전체» · «DA»가 헷갈려서)
+  daniel:   { label:'다니엘아마츠학교 학사일정', short:'아마츠', color:'#2FB344' },
   jihyebit: { label:'그루터기 선교원 학사일정', short:'그루터기', color:'#2E4A1F' },
 };
 const CAL_KEYS = ['all','daniel','jihyebit'];
-/* 🤝 연합 관문 — 잠긴 상태에서는 «내 기관 + DA 전체»만 보인다.
-   (‘DA 전체’는 두 기관 공통 일정이라 항상 남긴다) */
+/* 🤝 연합 관문 — 잠긴 상태에서는 «내 기관 + DA전체»만 보인다.
+   (‘DA전체’는 두 기관 공통 일정이라 항상 남긴다) */
 function visibleCals(){
   try{
     if(inShare() && SHARE_ALLCAL) return CAL_KEYS.slice();   // 🔗 (v-89) 선생님용 링크는 담긴 일정이 곧 볼 범위 — 그루터기가 안 나오던 것
@@ -1456,9 +1458,9 @@ function visibleCals(){
     return ['all', ...CAL_KEYS.filter(k=>k!=='all' && mine.includes(k))];
   }catch(e){ return CAL_KEYS.slice(); }
 }
-const ORGS = { all:'DA 전체', daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원' };
+const ORGS = { all:'DA전체', daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원' };
 const ORG_ALL = '__all__';   // 세 캘린더를 겹쳐서 함께 보는 상태
-/* 예전에 'both' 로 넣어둔 일정은 «DA 전체»로 읽는다 */
+/* 예전에 'both' 로 넣어둔 일정은 «DA전체»로 읽는다 */
 function calOf(e){ const o = (e && e.org) || 'daniel'; return o === 'both' ? 'all' : o; }
 /* 이 행사가 속한 캘린더 목록 — 복수 선택 지원 (옛 문서는 org 하나짜리) */
 /* 화면에 띄울 일정인가 — 연합이 잠겨 있으면 내 캘린더 것만 */
@@ -1501,7 +1503,7 @@ let curView = 'teacher';
 let GRADE_FILTER = '';      // '' = 전체 학년 · '3학년' 처럼 고르면 그 학년만
 try { GRADE_FILTER = localStorage.getItem('ac_gfilter') || ''; } catch(e){}
 let curTab = 'view';        // 'view' 보기 · 'edit' 편집
-let SHOW_ALL_CAL = true;    // 기관 캘린더를 볼 때 «DA 전체»도 함께 보여줄지
+let SHOW_ALL_CAL = true;    // 기관 캘린더를 볼 때 «DA전체»도 함께 보여줄지
 try { SHOW_ALL_CAL = localStorage.getItem('ac_showall') !== 'off'; } catch(e){}
 let DRAG_ON = false;        // 끌어서 옮기기 (실수 방지를 위해 켤 때만 동작)
 let CAL_ZOOM = 100;         // 칸 높이 (%)
@@ -1942,7 +1944,7 @@ function watchEvents(year){
 function applyEventScope(){
   if(ORG === ORG_ALL){ EVENTS = ALL_EVENTS.filter(calVisible); return; }   // 겹쳐보기 — 단, 연합이 잠겼으면 내 캘린더만
   if(ORG === 'all'){ EVENTS = ALL_EVENTS.filter(e => orgsOf(e).includes('all')); return; }
-  // 기관 캘린더를 볼 때 «DA 전체»(정기휴가·창립일 등)도 함께 보여줄지는 고를 수 있다
+  // 기관 캘린더를 볼 때 «DA전체»(정기휴가·창립일 등)도 함께 보여줄지는 고를 수 있다
   EVENTS = ALL_EVENTS.filter(e => {
     const os = orgsOf(e);
     if(os.includes(ORG)) return true;
@@ -2390,11 +2392,14 @@ function targetDots(e){
   return gradeGauge(gs, calOf(e));
 }
 
-/* 두 기관을 겹쳐 볼 때 어느 기관 것인지 표시 */
+/* 두 기관을 겹쳐 볼 때 어느 기관 것인지 표시
+   🏷 v178 이름표: DA전체(두 기관 공통) · 아마츠(다니엘아마츠학교) · 그루터기 — 예전 «전체» · «DA»가 헷갈려서
+   폰 달력 칸은 좁아 그림 하나로: 🏛 DA전체 · 🏫 아마츠 · 🌱 그루터기 (구글 캘린더 연결 줄과 같은 그림 · 아래 설명 줄에 뜻) */
+const ORG_MARK = { all:{t:'DA전체',s:'🏛',c:'#00704A',d:'두 기관 공통'}, daniel:{t:'아마츠',s:'🏫',c:'#2FB344',d:'다니엘아마츠학교'}, jihyebit:{t:'그루터기',s:'🌱',c:'#2E4A1F',d:'그루터기 선교원'} };
 function orgMark(e){
   // 「모두 보기」에서만 — 어느 기관 일정인지 작은 태그로 구분한다
   if(ORG !== ORG_ALL) return '';
-  const T = { all:{t:'전체',c:'#00704A'}, daniel:{t:'DA',c:'#2FB344'}, jihyebit:{t:'그루터기',s:'🌱',c:'#2E4A1F'} };   // 🌱 v166 폰 달력 칸은 좁아 그루터기는 🌱 하나로
+  const T = ORG_MARK;
   return orgsOf(e).map(o=>{ const m=T[o]; return m ? `<span class="eb-org" style="background:${m.c}" title="${m.t}">${PHONE && m.s ? m.s : m.t}</span>` : ''; }).join('');
 }
 
@@ -2541,7 +2546,7 @@ function render(){
   function weekLabelFor(weekDays){
     // 「모두 보기」— 두 기관 개학일이 달라도 각자 기준으로 두 줄 표시
     if(YEAR_MULTI){
-      const T = { daniel:{t:'DA',c:'#2FB344'}, jihyebit:{t:'그루터기',s:'🌱',c:'#2E4A1F'} };
+      const T = ORG_MARK;   // 🏷 v178 «DA» → «아마츠» (폰은 🏫)
       const multi = YEAR_MULTI.map(m=>{
         const r = labelFromSpans(m.terms, m.breaks, weekDays);
         return r.name ? { ...r, tag:(PHONE && T[m.org]?.s) || T[m.org]?.t || m.org, color:(T[m.org]?.c||'#888') } : null;
@@ -3174,6 +3179,12 @@ function renderLegend(){
     html += `<span><i style="background:${catColor(cat)}"></i>${c.label}</span>`;
   });
   html += `<span><i style="background:#E5484D"></i>공휴일 · 휴교</span>`;
+  // 🏷 v178 «모두 보기»일 때 일정 앞 이름표의 뜻
+  if(ORG === ORG_ALL){
+    const vis = visibleCals();
+    html += `<span class="lg-orgs">${['all','daniel','jihyebit'].filter(k=>vis.includes(k)).map(k=>{ const m=ORG_MARK[k];
+      return `<span><b class="eb-org" style="background:${m.c}">${PHONE ? m.s : m.t}</b>${PHONE ? m.t + ' · ' : ''}${m.d}</span>`; }).join('')}</span>`;
+  }
   if(!hasHolidayData(y)) html += `<span style="color:var(--goldd,#8A6410)">⚠ ${y}년 공휴일 자료 없음 — 직접 넣어주세요</span>`;
   $I('legend').innerHTML = html;
 }
@@ -3483,7 +3494,7 @@ function evsIco(k, size){
   const s = size || 18;
   return `<svg class="evs-ico" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${EVS_ICON[k]||''}</svg>`;
 }
-const EVS_CAL_NAME = { all:'DA 전체', daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원' };
+const EVS_CAL_NAME = { all:'DA전체', daniel:'다니엘아마츠학교', jihyebit:'그루터기 선교원' };
 const EVS_AUD_NAME = { both:'교사·학부모', teacher:'교사만', parent:'학부모만' };
 /* 성격마다 원래 정해지는 공개 대상 */
 function evsAudFor(kind){ return kind === 'staff' ? 'teacher' : 'both'; }
@@ -4921,14 +4932,14 @@ window.saveDayMemo = async function(id, ds){
    ═══════════════════════════════════════════════ */
 let dragInfo = null;
 
-/* 기관 캘린더를 볼 때 «DA 전체»를 겹쳐 볼지 */
+/* 기관 캘린더를 볼 때 «DA전체»를 겹쳐 볼지 */
 window.toggleShowAll = function(){
   SHOW_ALL_CAL = !SHOW_ALL_CAL;
   try { localStorage.setItem('ac_showall', SHOW_ALL_CAL ? 'on' : 'off'); } catch(e){}
   applyEventScope();
   renderCalBar(); renderViewBar(); render();
-  toast(SHOW_ALL_CAL ? 'DA 전체 일정을 함께 보여줍니다'
-                     : 'DA 전체 일정을 감췄습니다 — 이 캘린더 것만 보여요','ok');
+  toast(SHOW_ALL_CAL ? 'DA전체 일정을 함께 보여줍니다'
+                     : 'DA전체 일정을 감췄습니다 — 이 캘린더 것만 보여요','ok');
 };
 
 window.toggleDrag = function(){
@@ -5648,13 +5659,13 @@ async function renderIcsPanel(){
     </div>
     ${url ? `
       <div style="margin-bottom:6px;font-size:12px;color:var(--tl)">아래 주소를 복사해 구글 캘린더 <b>설정 → 캘린더 추가 → URL로 추가</b>에 붙여넣으세요.</div>
-      ${row('🏛 DA 전체 (교사)','all','teacher')}
+      ${row('🏛 DA전체 (교사)','all','teacher')}
       ${row('🏫 다니엘아마츠학교 · 교사','daniel','teacher')}
       ${row('👨‍👩‍👧 다니엘아마츠학교 · 학부모','daniel','parent')}
       ${row('🌱 그루터기 선교원 · 교사','jihyebit','teacher')}
       ${row('👨‍👩‍👧 그루터기 선교원 · 학부모','jihyebit','parent')}
       <div style="margin-top:6px;font-size:11.5px;color:var(--tl);line-height:1.6">각 주소는 <b>그 캘린더에 등록한 일정만</b> 나옵니다 (섞지 않아요).
-      두 기관 공통 일정까지 보려면 DA 전체 주소를 <b>함께</b> 구독하면 됩니다 · 학부모용은 «교사만» 일정과 교사 메모가 자동으로 빠집니다.</div>
+      두 기관 공통 일정까지 보려면 DA전체 주소를 <b>함께</b> 구독하면 됩니다 · 학부모용은 «교사만» 일정과 교사 메모가 자동으로 빠집니다.</div>
     ` : `
       <div style="padding:10px 12px;background:var(--iv);border-radius:8px;font-size:12.5px;color:var(--ts);line-height:1.6">
         아직 연동 주소가 없어요. 구글 클라우드에서 함수를 만든 뒤 (안내를 따라 5분) 그 주소를 위에 저장하면
@@ -5693,7 +5704,7 @@ const GCAL_TARGETS = [
   { id:'daniel_parent',    cal:'daniel',   aud:'parent',  label:'👨‍👩‍👧 다니엘아마츠학교 · 학부모' },
   { id:'jihyebit_teacher', cal:'jihyebit', aud:'teacher', label:'🌱 그루터기 선교원 · 교사' },
   { id:'jihyebit_parent',  cal:'jihyebit', aud:'parent',  label:'👨‍👩‍👧 그루터기 선교원 · 학부모' },
-  { id:'all_teacher',      cal:'all',      aud:'teacher', label:'🏛 DA 전체 · 교사' },
+  { id:'all_teacher',      cal:'all',      aud:'teacher', label:'🏛 DA전체 · 교사' },
 ];
 async function loadGcalCfg(force){
   if(GCAL_CFG !== null && !force) return;
@@ -6482,7 +6493,7 @@ function renderSharePanel(){
     <span style="font-size:11px;color:var(--tl)">이 범위 일정만 보입니다 · 비우면 전체 · 학기마다 바꾸고 «지금 내용으로 올리기»</span>
   </div>`; };
   const pdBlock = block('parent_daniel','🏫 다니엘아마츠학교 학부모용',
-    '다니엘아마츠학교의 «학부모 공개» 일정만 담깁니다. 만들면 다니엘 학부모 홈 «일정» 단추가 자동 연결돼요.','#2FA84F');
+    '다니엘아마츠학교의 «학부모 공개» 일정만 담깁니다. 만들면 다니엘아마츠학교 학부모 홈 «일정» 단추가 자동 연결돼요.','#2FA84F');
   const pjBlock = block('parent_jihyebit','🌱 그루터기 선교원 학부모용',
     '그루터기 선교원의 «학부모 공개» 일정만 담깁니다. 만들면 그루터기 학부모 홈 «일정» 단추가 자동 연결돼요.','#4F7A36');
   const ins = (html, kind) => html.includes('sh-row')
@@ -6605,7 +6616,7 @@ function renderCalBar(){
     }).join('')}
     ${(ORG==='daniel'||ORG==='jihyebit')?`<button class="cb-with ${SHOW_ALL_CAL?'on':''}"
       onclick="toggleShowAll()" title="정기휴가·창립일처럼 두 기관 공통 일정을 함께 볼지 정합니다"
-      >${SHOW_ALL_CAL?'☑':'☐'} DA 전체 함께</button>`:''}
+      >${SHOW_ALL_CAL?'☑':'☐'} DA전체 함께</button>`:''}
     <span class="cb-note">${ORG===ORG_ALL ? (canEditAny() && !inShare() ? '세 캘린더를 겹쳐 보는 중 — ✏️ 캘린더의 일정은 여기서도 고칠 수 있어요 (학기·방학은 하나를 골라서)' : '세 캘린더를 겹쳐 보는 중')
       : (CAN_EDIT ? '이 캘린더를 고칠 수 있습니다' : '보기만 할 수 있습니다')}</span>
   </div>`;

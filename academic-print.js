@@ -2,7 +2,7 @@
    🖨 학사일정 인쇄 (v-114) — academic-print.js
    ───────────────────────────────────────────────────────────────
    학사일정 위쪽 «🖨 인쇄» → 인쇄 창
-     ① 기관 (여러 곳 · 기관마다 따로 / 한 장에 함께) + DA 전체 일정
+     ① 기관 (여러 곳 · 기관마다 따로 / 한 장에 함께) + DA전체 일정
      ② 학부모용 / 교사용
      ③ 기간 (이번 달 · 다음 달 · 학기 · 학년도 · 직접 고르기)
      ④ 모양 — 달력형 · 목록형 · 한눈에
@@ -42,7 +42,7 @@ const tint = c => mix(c, .64), edge = c => mix(c, .3, '#1F2320');
 
 /* ── 기관 모양 ── */
 const LOOK = {
-  daniel:   { logo:'logo-daniel.png',   ac:'#1E3932', ac2:'#00704A', tn:'#E8F3EF', short:'다니엘', tag:'#00704A' },
+  daniel:   { logo:'logo-daniel.png',   ac:'#1E3932', ac2:'#00704A', tn:'#E8F3EF', short:'아마츠', tag:'#2FB344' },   // 🏷 v178 화면과 같은 짧은 이름 · 같은 색
   jihyebit: { logo:'logo-jihyebit.png', ac:'#2E4A1F', ac2:'#4F7A36', tn:'#EEF5E6', short:'그루터기', tag:'#2E4A1F' },
   both:     { logo:'',                  ac:'#1E3932', ac2:'#00704A', tn:'#E8F3EF', short:'두 기관' },
 };
@@ -300,9 +300,8 @@ const chW = s => [...String(s)].reduce((n, ch) => n + (/[0-9a-zA-Z ]/.test(ch) ?
 function orgTag(e, D){
   if(D.g.key !== 'both') return '';
   const os = e._orgs || [];
-  if(os.includes('all') || D.g.orgs.every(x => os.includes(x))) return '<i class="ot all">함께</i>';
-  const o = D.g.orgs.find(x => os.includes(x)); if(!o) return '';
-  return `<i class="ot" style="background:${LOOK[o].tag}">${esc(LOOK[o].short)}</i>`;
+  if(os.includes('all')) return '<i class="ot all">DA전체</i>';   // 🏷 v178 화면(학사일정 «모두 보기»)과 같게 — 두 기관에 따로 넣은 일정은 이름표 둘
+  return D.g.orgs.filter(x => os.includes(x)).map(o => `<i class="ot" style="background:${LOOK[o].tag}">${esc(LOOK[o].short)}</i>`).join('');
 }
 const isTeacherOnly = e => e.audience === 'teacher';
 function head(o, D, titleHTML, sub){
@@ -316,7 +315,7 @@ function head(o, D, titleHTML, sub){
     <div class="ph-r"><span class="ph-aud ${o.audience === 'teacher' ? 't' : ''}">${aud}</span><span>${esc(sub)}</span>${issued}</div></header>`;
 }
 function legend(cats, D){
-  return `<div class="lg">${cats.map(k => `<span><i style="background:${tint(catColorOf(k))};border-color:${edge(catColorOf(k))}"></i>${esc(catLabel(k))}</span>`).join('')}<span><i class="hol"></i>공휴일·쉬는 날</span>${D.g.key === 'both' ? D.g.orgs.map(x => `<span><i class="ot" style="background:${LOOK[x].tag}">${esc(LOOK[x].short)}</i></span>`).join('') : ''}</div>`;
+  return `<div class="lg">${cats.map(k => `<span><i style="background:${tint(catColorOf(k))};border-color:${edge(catColorOf(k))}"></i>${esc(catLabel(k))}</span>`).join('')}<span><i class="hol"></i>공휴일·쉬는 날</span>${D.g.key === 'both' ? (O && O.withAll ? '<span><i class="ot all">DA전체</i></span>' : '') + D.g.orgs.map(x => `<span><i class="ot" style="background:${LOOK[x].tag}">${esc(LOOK[x].short)}</i></span>`).join('') : ''}</div>`;
 }
 function weeklyBox(o, D, list){
   if(!o.show.weekly || !list.length) return '';
@@ -772,8 +771,8 @@ function renderPanel(){
     <div class="acp-s"><h4><i>1</i>기관<em>여러 곳을 고를 수 있어요</em></h4>
       <div class="acp-chips">${can.map(o => chip(O.orgs.includes(o), `data-org="${o}"`, `<img src="${LOOK[o].logo}" alt="">${esc(orgName(o))}`, o === 'jihyebit' ? 'jh' : '')).join('')}</div>
       ${multi ? `<div class="acp-seg" style="margin-top:9px">${chip(!O.together, 'data-tog="0"', '기관마다 따로')}${chip(O.together, 'data-tog="1"', '한 장에 함께')}</div>
-        <div class="acp-hint">${O.together ? '두 기관 일정을 한 쪽에 모아요 · 기관 이름표(다니엘·그루터기)가 붙어요 · 처음엔 A3' : '기관마다 로고·색이 다른 쪽이 따로 나와요'}</div>` : ''}
-      <label class="acp-ck" style="margin-top:10px"><input type="checkbox" data-withall ${O.withAll ? 'checked' : ''}><span>DA 전체 일정도 함께<small>연합 예배·창립 기념일처럼 두 기관이 같이 하는 일</small></span></label></div>
+        <div class="acp-hint">${O.together ? '두 기관 일정을 한 쪽에 모아요 · 기관 이름표(DA전체 · 아마츠 · 그루터기)가 붙어요 · 처음엔 A3' : '기관마다 로고·색이 다른 쪽이 따로 나와요'}</div>` : ''}
+      <label class="acp-ck" style="margin-top:10px"><input type="checkbox" data-withall ${O.withAll ? 'checked' : ''}><span>DA전체 일정도 함께<small>연합 예배·창립 기념일처럼 두 기관이 같이 하는 일</small></span></label></div>
     <div class="acp-s"><h4><i>2</i>누구에게 줄까요</h4>
       <div class="acp-rad">
         <button type="button" data-aud="parent" class="${O.audience === 'parent' ? 'on' : ''}">👪 학부모용<small>교사 일정·교사만 쉬는 날·담당 메모는 빠져요</small></button>
@@ -863,7 +862,7 @@ async function preparePrint(){
 function cleanupPrint(){ document.body.classList.remove('acp-printing'); const b = $('acp-print'); if(b) b.remove(); const s = $('acp-page'); if(s) s.remove(); }
 window.addEventListener('afterprint', () => setTimeout(cleanupPrint, 50));
 /* 저장될 파일 이름 (v-115) — 브라우저 «PDF로 저장»이 이 이름을 쓴다
-   예: 학사일정_2026년 10월_다니엘아마츠학교_학부모용 · 학사일정_2026학년도_다니엘·그루터기 함께_교사용_한눈에_A3 */
+   예: 학사일정_2026년 10월_다니엘아마츠학교_학부모용 · 학사일정_2026학년도_아마츠·그루터기 함께_교사용_한눈에_A3 */
 function printParts(o){
   const c = C(), ms = monthsOf(o), ay = acYearOf(c.year, c.month);
   let per = '';
@@ -947,7 +946,7 @@ const PAGE_CSS = `
 .acp-pg .ph-aud.t{background:#8A6410}
 .acp-pg .red{color:#C0392B}.acp-pg .blue{color:#2B6CB0}
 .acp-pg .ot{display:inline-block;font-style:normal;font-size:calc(var(--U)*.7);font-weight:900;color:#fff;border-radius:.8mm;padding:0 .9mm;margin-right:.9mm;line-height:1.5;vertical-align:.08em}
-.acp-pg .ot.all{background:#8A8F96}
+.acp-pg .ot.all{background:#00704A}
 .acp-pg .tt{display:inline-block;font-style:normal;font-size:calc(var(--U)*.68);font-weight:900;color:#fff;background:#8A6410;border-radius:.8mm;padding:0 .8mm;margin-right:.8mm;line-height:1.5;vertical-align:.08em}
 /* 바닥 */
 .acp-pg .pf{display:grid;gap:calc(2.4mm * var(--K));margin-top:calc(2.4mm * var(--K));flex:none;max-height:28%}
