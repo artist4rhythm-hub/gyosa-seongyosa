@@ -4,6 +4,8 @@
    · Tab 들여쓰기 / Shift+Tab 내어쓰기 → 번호 (1) → 1) → I. → (I) 저절로
    · Pages · 한글 · 워드에서 복사해 붙이면 번호를 읽어 단계로, 엑셀 · Numbers 칸은 표로
    · 저장할 때마다 수정 이력 한 벌 · 임무는 담당 선생님 홈으로
+   · 📝 v179 «내 임시 저장» — 쓰는 동안 저절로(자동 저장) · «임시 저장»으로 나만 보게 두었다가 «게시»
+     보관함 mtgDrafts/{내 uid}_{회의록 id} — 쓴 사람만 읽고 씀 (보안 규칙 v48) · 이 기기(localStorage)에도 한 벌
    ═══════════════════════════════════════════════════════════ */
 import { sanitizeInline, sanitizeTableHTML, cleanEditedTable, pdfPages, xlsxTable, FILE_MAX, readAsDataURL, cleanInlineCached, cleanTableCached } from './minutes-files.js';
 
@@ -135,6 +137,9 @@ html[data-theme="dark"] .dl{background:#123326}html[data-theme="dark"] .kr{backg
 .addb{font-family:inherit;font-size:12.5px;font-weight:800;border:1px dashed var(--line);background:transparent;color:var(--sb-green);border-radius:10px;padding:6px 12px;cursor:pointer;margin-top:8px}
 .ed-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 16px;font-size:12.5px;color:var(--ink-2)}
 .ed-foot b{color:var(--ink)}
+.ed-top .tt span.ok{color:var(--sb-green)}.ed-top .tt span.warn{color:#B45309}
+.ed-lv{display:flex;flex-direction:column;gap:8px}.ed-lv button{display:block;width:100%;text-align:left;height:auto;padding:10px 14px;font-size:13.5px;line-height:1.45}
+.ed-lv button small{display:block;font-size:11.5px;font-weight:600;color:var(--ink-3);margin-top:2px}
 .ed-rs{display:flex;align-items:center;gap:10px;background:#FFFBEA;border:1px solid #EADBA8;border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#5C4A00;flex-wrap:wrap}
 html[data-theme="dark"] .ed-rs{background:var(--gold-bg);border-color:var(--gold-line);color:var(--gold)}
 .wp{position:fixed;z-index:500;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-md);width:280px;max-height:380px;display:flex;flex-direction:column}
@@ -163,7 +168,7 @@ export async function openEditor(ctx, m, opts){
   const org = m ? m.org : (from ? from.org : (opts.org && X.WRITE.includes(opts.org) ? opts.org : X.defaultOrg));
   const prev = !m ? (from || lastOf(org, '')) : null;
   ED = {
-    id: m ? m.id : X.FS.doc(X.FS.collection(X.db, COL().m)).id,
+    id: m ? m.id : (opts.id || X.FS.doc(X.FS.collection(X.db, COL().m)).id),   // 📝 v179 새 회의록 임시 저장을 이어 쓰면 그 id 그대로
     isNew, baseRev: m ? (m.rev || 0) : 0, base: m ? JSON.parse(JSON.stringify(m)) : null,
     org,
     type: m ? (m.type || '') : (prev && X.typesOf(org).includes(prev.type) ? prev.type : (X.typesOf(org)[0] || '')),
@@ -179,12 +184,13 @@ export async function openEditor(ctx, m, opts){
     imported: m ? !!m.imported : false,
     topics: m ? JSON.parse(JSON.stringify(m.topics || [])) : [],
     dirty: false, saving: false, from,
+    kept: false, resume: !!opts.draft, srvAt: 0, _try: Date.now(), _ready: false,   // 📝 v179 kept = «임시 저장»을 눌렀음 · resume = 목록 «이어서 쓰기»로 들어옴
   };
   if(from) ED.topics = carryTopics(from, from.topics || [], true);
   if(!ED.topics.length) ED.topics = [blankTopic()];
   window.__mtDirty = false;
   paint();
-  checkDraft();
+  await checkDraft(opts.draftDoc);
   if(!isNew) X.FS.updateDoc(X.FS.doc(X.db, COL().m, ED.id), { editing: { uid: X.CU.uid, name: X.CU.name || '', at: Date.now() } }).catch(()=>{});
 }
 function lastOf(org, type){
@@ -231,11 +237,12 @@ function paint(){
     ? `<div class="mt-seg">${X.WRITE.map(o => `<button type="button" class="${o === 'da' ? 'da ' : ''}${ED.org === o ? 'on' : ''}" data-e="org" data-v="${o}">${esc(C.MORG[o])}</button>`).join('')}</div>`
     : `<div style="font-size:14px;font-weight:800;padding:9px 0">${esc(C.MORG[ED.org])} <span style="font-size:11.5px;color:var(--ink-3);font-weight:600">(만든 뒤엔 바꿀 수 없어요)</span></div>`;
   R.innerHTML = `<div class="ed">
-    <div class="ed-top"><button class="mt-btn" data-e="cancel">‹ 취소</button>
-      <div class="tt"><b>${ED.isNew ? '새 회의록' : '회의록 고치기'}</b><span id="ed-saved">${ED.isNew ? '쓰는 동안 이 기기에 임시 저장돼요' : `${esc(C.fmtMDY(ED.date))} ${esc(C.titleOf(ED))} · ${ED.baseRev}번째 모습에서 고치는 중`}</span></div>
+    <div class="ed-top"><button class="mt-btn" data-e="cancel">‹ 나가기</button>
+      <div class="tt"><b>${ED.isNew ? '새 회의록' : '회의록 고치기'}</b><span id="ed-saved">${ED.isNew ? '쓰는 동안 «내 임시 저장»에 저절로 남아요 · 게시하기 전엔 나만 보여요' : `${esc(C.fmtMDY(ED.date))} ${esc(C.titleOf(ED))} · 고친 것은 게시하기 전엔 나만 보여요`}</span></div>
       <div class="mt-sp"></div>
       <button class="mt-btn" data-e="preview">문서로 미리보기</button>
-      <button class="mt-btn p" data-e="save">저장</button></div>
+      <button class="mt-btn" data-e="keep" title="게시하지 않고 나만 보이게 두기 — 목록 위 «내 임시 저장»에서 이어서 써요">📝 임시 저장</button>
+      <button class="mt-btn p" data-e="save">${pubLabel()}</button></div>
     <div id="ed-rs"></div>
     <section class="ed-sec"><div class="ed-sh"><i>1</i>회의</div>
       <div class="ed-grid">
@@ -255,7 +262,7 @@ function paint(){
     <section class="ed-sec"><div class="ed-sh"><i>3</i>주제 <span>Tab 들여쓰기 · Shift+Tab 내어쓰기 — 번호는 (1) → 1) → I. → (I) 로 저절로 · Pages · 한글에서 복사해 붙여도 번호를 알아봐요</span></div>
       <div id="ed-topics">${ED.topics.map(topicHTML).join('')}</div>
       <button type="button" class="addb" data-e="addtopic">＋ 주제 추가</button> <button type="button" class="addb" data-e="pick">↩ 이전 회의 주제 가져오기</button></section>
-    <div class="ed-foot"><span id="ed-note" style="flex:1"></span><button class="mt-btn p" data-e="save">저장</button></div>
+    <div class="ed-foot"><span id="ed-note" style="flex:1"></span><button class="mt-btn" data-e="keep">📝 임시 저장</button><button class="mt-btn p" data-e="save">${pubLabel()}</button></div>
   </div>`;
   ED.topics.forEach(t => { const el = R.querySelector(`.et[data-tid="${t.id}"]`); if(el) hydrate(el, t); });
   paintAtt(); paintCont(); renumAll(); note();
@@ -449,8 +456,8 @@ function note(){
   ((ED.base && ED.base.topics) || []).forEach(t => (t.tasks || []).forEach(k => base.set(k.id, new Set(k.uids || []))));
   R.querySelectorAll('.kr').forEach(k => { const old = base.get(k.dataset.kid) || new Set(); (k._uids || []).forEach(u => { if(!old.has(u) && u !== X.CU.uid) who.add(u); }); });
   const vis = ED.org === 'lead' ? '주임 멤버가' : ED.org === 'da' ? '모든 기관 교직원이' : `${X.C.MORG[ED.org]} 교직원과 열람 허락을 받은 선생님이`;
-  n.innerHTML = `${who.size ? `저장하면 임무 알림이 <b>${who.size}명</b>에게 가요 · ` : ''}이 회의록은 ${esc(vis)} 볼 수 있어요`;
-  R.querySelectorAll('[data-e="save"]').forEach(b => b.textContent = who.size ? '저장하고 알리기' : '저장');
+  n.innerHTML = `${who.size ? `게시하면 임무 알림이 <b>${who.size}명</b>에게 가요 · ` : ''}게시하면 ${esc(vis)} 볼 수 있어요 · 그 전엔 «📝 임시 저장»으로 나만 보이게 둘 수 있어요`;
+  R.querySelectorAll('[data-e="save"]').forEach(b => b.textContent = pubLabel() + (who.size ? '하고 알리기' : ''));   // 📝 v179 «게시» · «고친 것 게시» (+ 임무 알림)
 }
 
 /* ═══ 커서 도우미 ═══ */
@@ -484,7 +491,11 @@ function lineRect(){
 function dirty(){
   ED.dirty = true; window.__mtDirty = true;
   clearTimeout(ED._dt); ED._dt = setTimeout(saveDraft, 1200);
+  /* 📝 v179 자동 저장 — 손을 멈추고 3초 뒤 (계속 쓰는 중이면 20초마다) «내 임시 저장»에 */
+  clearTimeout(ED._st);
+  ED._st = setTimeout(() => srvSave(), Date.now() - (ED._try || 0) > 20000 ? 0 : 3000);
 }
+const pubLabel = () => ED.isNew ? '게시' : '고친 것 게시';
 
 /* ═══ 묶기 ═══ */
 function bind(){
@@ -518,7 +529,7 @@ function bind(){
     const row = e.target.closest('.ol, .ob');
     addFiles(et, [...e.dataTransfer.files], row && row.parentElement && row.parentElement.classList.contains('et-body') ? row : null);
   });
-  window.onbeforeunload = e => { if(ED && ED.dirty){ saveDraft(); e.preventDefault(); e.returnValue = ''; } };
+  window.onbeforeunload = e => { if(ED && ED.dirty){ saveDraft(); srvSave(); e.preventDefault(); e.returnValue = ''; } };
 }
 function topicOfEvent(e){ return e.target.closest('.et'); }
 function curLine(et){ const l = ED.line && ED.line.isConnected && et.contains(ED.line) ? ED.line : null; return l || [...et.querySelectorAll('.et-body > .ol')].pop() || null; }
@@ -527,6 +538,7 @@ async function onClick(e){
   const act = b.dataset.e, et = topicOfEvent(e), C = X.C;
   switch(act){
     case 'cancel': return cancel();
+    case 'keep': return keep();
     case 'save': return save();
     case 'preview': return preview();
     case 'org': if(!ED.isNew) return; ED.org = b.dataset.v; if(!X.typesOf(ED.org).includes(ED.type)) ED.type = X.typesOf(ED.org)[0] || '';
@@ -1005,82 +1017,248 @@ function preview(){
   const md = X.modal('문서로 미리보기', `<div class="dv-paper" style="min-height:0">${X.C.renderDoc({ ...d, id: ED.id }, { files: Object.fromEntries(X.STORE.cache) })}</div>`, '', 'wide');
   md.box.querySelectorAll('.md-ph[data-fid]').forEach(async ph => { const s = await X.STORE.getImage(ph.dataset.fid); if(s && ph.isConnected){ const im = document.createElement('img'); im.src = s; ph.replaceWith(im); } });
 }
-const DKEY = () => ED.org === 'lead' ? `mtg_draft_lead_${X.CU.uid}_${ED.isNew ? 'new' : ED.id}`   // 🔒 v175 주임 회의록 임시 저장은 따로 · 사람마다 (같은 컴퓨터를 함께 써도)
-  : ED.isNew ? 'mtg_draft_new' : 'mtg_draft_' + ED.id;
+/* 📝 이 기기 한 벌의 이름 — v179 사람마다 · 회의록마다 (같은 컴퓨터를 여럿이 써도 · 새 회의록이 여럿이어도)
+   예전 이름(OLDKEY: mtg_draft_new · mtg_draft_<id> · 주임 mtg_draft_lead_<uid>_new)도 한 번은 찾아 준다 */
+const LKEY = E => { E = E || ED; return (E.org === 'lead' ? 'mtg_draft_lead_' : 'mtg_draft_u_') + X.CU.uid + '_' + E.id; };
+const OLDKEY = E => { E = E || ED; return E.org === 'lead' ? `mtg_draft_lead_${X.CU.uid}_${E.isNew ? 'new' : E.id}` : E.isNew ? 'mtg_draft_new' : 'mtg_draft_' + E.id; };
+const SREF = E => X.FS.doc(X.db, 'mtgDrafts', `${X.CU.uid}_${E.id}`);   // 📝 v179 «내 임시 저장» 문서 (쓴 사람만 읽고 씀 · 보안 규칙 v48)
+const hm = () => new Date().toTimeString().slice(0, 5);
+const bytes = o => { try{ return new TextEncoder().encode(JSON.stringify(o)).length; }catch(e){ return JSON.stringify(o).length * 3; } };
+const MAXB = 950000;   // Firestore 문서 한 개 1MiB (글자가 아니라 바이트 · 한글은 한 글자 3바이트)
+function status(t, cls){ const s = R && R.querySelector('#ed-saved'); if(s){ s.textContent = t; s.className = cls || ''; } }
+/* 이 기기에 한 벌 — 인터넷이 끊겨도 · 서버에 남기기 전이라도 */
 function saveDraft(){
   if(!ED || !ED.dirty || !R || !R.querySelector('.ed')) return;     // 편집 화면이 없으면 (빈 내용으로 덮지 않게)
-  try{ localStorage.setItem(DKEY(), JSON.stringify({ at: Date.now(), id: ED.id, baseRev: ED.baseRev, data: collect() })); }catch(e){}
-  const s = R.querySelector('#ed-saved'); if(s) s.textContent = '임시 저장됨 · ' + new Date().toTimeString().slice(0, 5);
+  try{ localStorage.setItem(LKEY(), JSON.stringify({ at: Date.now(), id: ED.id, isNew: !!ED.isNew, baseRev: ED.baseRev, kept: !!ED.kept, org: ED.org, data: collect() })); ED._locAt = Date.now(); }catch(e){}
 }
-function checkDraft(){
-  let d = null; try{ d = JSON.parse(localStorage.getItem(DKEY()) || 'null'); }catch(e){}
-  if(!d || !d.data || Date.now() - (d.at || 0) > 14 * 86400000) return;
-  const box = R.querySelector('#ed-rs');
+function dropLocal(E){   // 이 기기 것 지우기 (예전 이름은 같은 회의록 것일 때만)
+  try{ localStorage.removeItem(LKEY(E)); }catch(e){}
+  try{ const k = OLDKEY(E), d = JSON.parse(localStorage.getItem(k) || 'null'); if(d && (!d.id || d.id === E.id)) localStorage.removeItem(k); }catch(e){}
+}
+/* 📝 v179 «내 임시 저장»(서버)에 남기기 — 자동 저장 · «임시 저장» 단추 · 나갈 때
+   · 불러오기(checkDraft)가 끝나기 전 · 불러오지 못했을 때 · 다른 창에서 게시 · 버렸을 때는 서버에 쓰지 않는다 (있던 것을 덮지 않게) */
+async function srvSave(kind){
+  const E = ED;
+  if(!E || E._dead || E.saving || !R || !R.querySelector('.ed')) return false;
+  if(!E._ready){ clearTimeout(E._st); E._st = setTimeout(() => srvSave(kind), 1500); return false; }
+  if(E._noSrv && kind !== 'keep') return false;
+  if(!E.dirty && kind !== 'keep') return true;
+  clearTimeout(E._st); E._try = Date.now();
+  const data = collect(), at = Date.now();
+  if(kind === 'keep') E.kept = true;
+  const body = draftBody(E, data, at);
+  if(bytes(body) > MAXB){ status('회의록이 너무 커서 이 기기에만 저장돼요 — 표를 나누거나 문서로 첨부해 주세요', 'warn'); return false; }
+  const seq = (E._seq = (E._seq || 0) + 1);
+  if(ED === E && !E.srvAt) status('자동 저장 중…');
+  try{
+    E._sP = X.FS.setDoc(SREF(E), body);
+    await Promise.race([E._sP, new Promise((_, rj) => setTimeout(() => rj(new Error('timeout')), 9000))]);
+    E.srvAt = Date.now(); E._noSrv = false; E._gone = false;
+    if(!E._locAt || E._locAt <= at) dropLocal(E);          // 서버에 남았으면 이 기기 것은 정리 (오래된 것이 다시 뜨지 않게)
+    if(ED === E && seq === E._seq) status(`✓ ${E.kept ? '임시 저장됨' : '자동 저장됨'} · ${hm()} · 게시하기 전엔 나만 보여요`, 'ok');
+    return true;
+  }catch(e){
+    if(ED === E){
+      status(e.code === 'permission-denied' ? `이 기기에만 저장됨 · ${hm()} — «내 임시 저장»은 보안 규칙 v48 게시 뒤에 돼요`
+        : e.code === 'invalid-argument' ? '회의록이 너무 커서 이 기기에만 저장돼요 — 표를 나누거나 문서로 첨부해 주세요'
+        : `이 기기에만 저장됨 · ${hm()} — 인터넷이 돌아오면 다시 남겨요`, 'warn');
+      if(E.dirty && !E._dead && e.code !== 'invalid-argument' && e.code !== 'permission-denied'){ clearTimeout(E._st); E._st = setTimeout(() => srvSave(), 30000); }
+    }
+    return false;
+  }
+}
+function draftBody(E, data, at){
+  return { uid: X.CU.uid, name: X.CU.name || '', book: E.org === 'lead' ? 'lead' : '', org: data.org || E.org, meetingId: E.id, isNew: !!E.isNew,
+    baseRev: E.baseRev || 0, kind: E.kept ? 'keep' : 'auto', title: X.C.titleOf(data), date: data.date || '',
+    topic1: String(((data.topics || []).find(t => t.title) || {}).title || '').slice(0, 80), nTopics: (data.topics || []).length,   // 목록에서 알아보기 쉽게 — 첫 주제
+    data, atMs: at, updatedAt: X.FS.serverTimestamp() };
+}
+function stopWatch(E){ try{ E && E._unW && E._unW(); }catch(e){} if(E) E._unW = null; }
+/* 다른 창 · 다른 기기에서 이 임시 저장을 게시하거나 버리면 — 이 창은 더 서버에 쓰지 않음 (되살아나지 않게) */
+function watchSrv(E){
+  stopWatch(E);
+  try{ E._unW = X.FS.onSnapshot(SREF(E), sn => {
+    if(ED !== E || E._dead) return;
+    if(!sn.exists() && E.srvAt && !E._gone){
+      E._gone = true; E._noSrv = true;
+      status('다른 창에서 게시했거나 버렸어요 — 이 창에서 더 쓴 것은 이 기기에만 남아요 (필요하면 «📝 임시 저장»)', 'warn');
+    }
+  }, () => {}); }catch(e){}
+}
+/* 버리기 — 서버 · 이 기기 둘 다 */
+function discardDraft(E){
+  E = E || ED; if(!E) return Promise.resolve();
+  E._dead = true; clearTimeout(E._st); clearTimeout(E._dt); stopWatch(E);
+  dropLocal(E);
+  return X.FS.deleteDoc(SREF(E)).catch(() => {});
+}
+function applyDraft(d){
+  const v = d.data || {};
+  if(ED.isNew && d.id) ED.id = d.id;
+  Object.assign(ED, { org: (v.org && X.WRITE.includes(v.org) && (v.org === 'lead') === (ED.org === 'lead')) ? v.org : ED.org, type: v.type, title: v.title, date: v.date, time: v.time, place: v.place, att: v.att || {}, attNames: v.attNames || {}, guests: v.guests || '', topics: v.topics && v.topics.length ? v.topics : [blankTopic()] });
+  if(!ED.isNew && d.baseRev != null) ED.baseRev = d.baseRev;   // 그 사이 다른 분이 게시했으면 게시할 때 한 번 더 묻게 (그 판에서 고친 것이니까)
+  if(d.kind === 'keep') ED.kept = true;
+  paint(); ED.dirty = true; window.__mtDirty = true;
+}
+/* 열 때 — 서버 · 이 기기(새 이름 · 예전 이름)에서 가장 새것을 찾아 «이어서 쓰기» (목록에서 들어오면 바로) */
+async function checkDraft(pre){
+  const E = ED;
+  const rd = k => { try{ const v = JSON.parse(localStorage.getItem(k) || 'null'); return v && v.data && Date.now() - (v.at || 0) < 30 * 86400000 ? v : null; }catch(e){ return null; } };
+  const locs = [rd(LKEY(E)), rd(OLDKEY(E))].filter(Boolean).filter(v => !E.resume || !v.id || v.id === E.id);
+  let srv = null, failed = false;
+  try{ const sn = await X.FS.getDoc(SREF(E)); if(sn.exists()) srv = sn.data(); }
+  catch(e){ failed = true; if(pre && pre.meetingId === E.id) srv = pre; }   // 목록이 이미 받아 둔 것이 있으면 그것으로
+  if(ED !== E || !R.querySelector('.ed')) return;
+  E._ready = true;
+  if(failed && !srv){
+    E._noSrv = true;   // 서버에 있을지 모르는 임시 저장을 덮지 않게
+    status('«내 임시 저장»을 확인하지 못했어요 — 인터넷을 확인하고 다시 열어 주세요 (이 화면에서 쓴 것은 이 기기에 남아요)', 'warn');
+  }
+  const cand = [];
+  if(srv && srv.data) cand.push({ at: srv.atMs || X.C.tsMs(srv.updatedAt) || 0, id: srv.meetingId, baseRev: srv.baseRev || 0, kind: srv.kind, data: srv.data, srv: true });
+  locs.forEach(v => cand.push({ at: v.at || 0, id: v.id, baseRev: v.baseRev || 0, kind: v.kept ? 'keep' : 'auto', data: v.data }));
+  if(!cand.length){ if(!failed) watchSrv(E); return; }
+  let d = cand.sort((a, b) => b.at - a.at)[0];
+  /* 이 기기의 새 회의록(예전 이름)이 다른 id 면 — 그 id 의 서버 것이 더 새것인지도 본다 */
+  if(!d.srv && E.isNew && d.id && d.id !== E.id){
+    try{ const sn = await X.FS.getDoc(X.FS.doc(X.db, 'mtgDrafts', `${X.CU.uid}_${d.id}`)); const o = sn.exists() ? sn.data() : null;
+      if(o && o.data && (o.atMs || 0) > d.at) d = { at: o.atMs, id: o.meetingId, baseRev: o.baseRev || 0, kind: o.kind, data: o.data, srv: true }; }catch(e){}
+    if(ED !== E) return;
+  }
   const stale = !ED.isNew && d.baseRev !== ED.baseRev;
-  box.innerHTML = `<div class="ed-rs">📝 <span>저장하지 않은 ${ED.isNew ? '새 회의록' : '고친 내용'}이 있어요 (${esc(X.C.fmtStamp(d.at))})${stale ? ' — 그 사이 다른 분이 고쳐 저장했어요. 이어서 쓰면 그분 고친 것은 이력에만 남아요.' : ''}</span>
+  const staleTxt = stale ? ' — 그 사이 다른 분이 고쳐 게시했어요. 이어서 쓰고 게시할 때 한 번 더 물어요.' : '';
+  const finish = () => { if(!failed) watchSrv(ED); };
+  if(ED.resume){
+    applyDraft(d); finish();
+    status(`📝 ${d.kind === 'keep' ? '임시 저장한' : '자동 저장된'} 내용을 이어서 써요 (${X.C.fmtStamp(d.at)}) · 게시하기 전엔 나만 보여요`, 'ok');
+    if(stale) R.querySelector('#ed-rs').innerHTML = `<div class="ed-rs">⚠ <span>${esc(staleTxt.slice(3))}</span></div>`;
+    if(!d.srv && !failed) srvSave();   // 이 기기에만 있던 것이면 서버에도
+    return;
+  }
+  /* 고르기 전에는 서버의 임시 저장을 덮지 않음 (이 기기에만 저장) — «이어서 쓰기» · «버리기»를 고르면 다시 */
+  if(d.srv){ E._pend = true; E._noSrv = true; }
+  const box = R.querySelector('#ed-rs');
+  box.innerHTML = `<div class="ed-rs">📝 <span>${d.kind === 'keep' ? '임시 저장한' : '게시하지 않은'} ${ED.isNew ? '새 회의록' : '고친 내용'}이 있어요 (${esc(X.C.fmtStamp(d.at))} · ${d.srv ? '나만 보여요' : '이 기기에만 있어요'})${staleTxt}</span>
     <div class="mt-sp"></div><button type="button" class="mt-btn sm p" data-dr="use">이어서 쓰기</button><button type="button" class="mt-btn sm" data-dr="drop">버리기</button></div>`;
-  box.onclick = e => {
+  box.onclick = async e => {
     const b = e.target.closest('[data-dr]'); if(!b) return;
-    if(b.dataset.dr === 'drop'){ try{ localStorage.removeItem(DKEY()); }catch(_){} box.innerHTML = ''; return; }
-    const v = d.data;
-    if(ED.isNew && d.id) ED.id = d.id;
-    Object.assign(ED, { org: (v.org && X.WRITE.includes(v.org) && (v.org === 'lead') === (ED.org === 'lead')) ? v.org : ED.org, type: v.type, title: v.title, date: v.date, time: v.time, place: v.place, att: v.att || {}, attNames: v.attNames || {}, guests: v.guests || '', topics: v.topics && v.topics.length ? v.topics : [blankTopic()] });
-    paint(); ED.dirty = true; window.__mtDirty = true; X.toast('임시 저장한 내용을 불러왔어요');
+    if(b.dataset.dr === 'drop'){
+      if(!confirm('임시 저장한 내용을 버릴까요? 되살릴 수 없어요.')) return;
+      const tmp = { id: d.id || ED.id, isNew: ED.isNew, org: ED.org };
+      dropLocal(tmp);
+      X.FS.deleteDoc(X.FS.doc(X.db, 'mtgDrafts', `${X.CU.uid}_${tmp.id}`)).catch(() => {});
+      if(ED.isNew && tmp.id === ED.id) ED.id = X.FS.doc(X.FS.collection(X.db, COL().m)).id;   // 버린 것과 같은 id 로 다시 만들지 않게
+      E._pend = false; if(!failed) E._noSrv = false;
+      box.innerHTML = ''; finish(); if(ED.dirty) srvSave(); return;
+    }
+    E._pend = false; if(!failed) E._noSrv = false;
+    applyDraft(d); finish(); X.toast('임시 저장한 내용을 불러왔어요');
+    status(`📝 ${X.C.fmtStamp(d.at)}에 남긴 내용을 이어서 써요 · 게시하기 전엔 나만 보여요`, 'ok');
+    if(!d.srv && !failed) srvSave();
   };
+  if(!failed) watchSrv(E);
 }
-/* 뒤로 가기 등으로 편집 화면을 떠날 때 — 임시 저장을 지키고 정리 */
+/* 뒤로 가기 등으로 편집 화면을 떠날 때 — 쓰던 것은 «내 임시 저장»에 남기고 정리 */
 export function closeEditor(){
   if(!ED) return;
-  clearTimeout(ED._dt);
-  saveDraft();
-  if(!ED.isNew) X.FS.updateDoc(X.FS.doc(X.db, COL().m, ED.id), { editing: null }).catch(()=>{});
-  ED.dirty = false; window.onbeforeunload = null;
+  const E = ED;
+  clearTimeout(E._dt); clearTimeout(E._st); stopWatch(E);
+  if(!E.saving){   // 게시하는 중이면 그쪽이 마무리 (임시 저장을 다시 만들지 않게)
+    saveDraft();
+    if(E.dirty && !E._dead && !E._pend) srvSave('quiet').then(ok => { if(!ok && E.dirty && !E._dead) X.toast('«내 임시 저장»에 남기지 못했어요 — 이 기기에는 남아 있어요 (목록 위 «이 기기에만»)', 'err'); });
+  }
+  if(!E.isNew && !E.saving) X.FS.updateDoc(X.FS.doc(X.db, COL().m, E.id), { editing: null }).catch(()=>{});
+  window.onbeforeunload = null;
   document.querySelectorAll('.wp').forEach(p => p.remove());
   ED = null;
 }
+/* «‹ 나가기» — 쓰던 것이 있으면 임시 저장 · 버리기 · 계속 쓰기 가운데 고르기 */
 function cancel(){
   if(uploading() && !confirm('사진 · 문서를 올리는 중이에요. 그래도 나갈까요? (올리던 것은 빠질 수 있어요)')) return;
-  if(ED.dirty && !confirm('저장하지 않고 나갈까요? 쓰던 내용은 이 기기의 임시 저장에 남아요.')) return;
-  clearTimeout(ED._dt); saveDraft();
+  if(!ED.dirty) return leave();
+  const md = X.modal('쓰던 내용을 어떻게 할까요?', `<div class="ed-lv">
+      <button type="button" class="mt-btn p" data-lv="keep">📝 임시 저장하고 나가기<small>게시하지 않고 나만 보이게 — 목록 위 «내 임시 저장»에서 이어서 써요</small></button>
+      <button type="button" class="mt-btn" data-lv="drop">버리고 나가기<small>${ED.isNew ? '이 새 회의록을 남기지 않아요' : '고친 것을 버리고 게시된 모습 그대로 둬요'}</small></button>
+      <button type="button" class="mt-btn" data-lv="stay">계속 쓰기</button></div>`, '');
+  md.box.addEventListener('click', e => {
+    const b = e.target.closest('[data-lv]'); if(!b) return;
+    md.close();
+    if(b.dataset.lv === 'keep') return keep();
+    if(b.dataset.lv === 'drop'){ discardDraft(); return leave(); }
+  });
+}
+function leave(){
+  if(!ED) return;
+  clearTimeout(ED._dt); clearTimeout(ED._st); stopWatch(ED);
   const id = ED.isNew ? '' : ED.id;
   if(!ED.isNew) X.FS.updateDoc(X.FS.doc(X.db, COL().m, id), { editing: null }).catch(()=>{});
   ED.dirty = false; window.__mtDirty = false; window.onbeforeunload = null;
   ED = null;
   X.onCancel(id);
 }
+/* «📝 임시 저장» — 게시하지 않고 나만 보이게 두고 나간다 */
+async function keep(){
+  if(!ED || ED.saving) return;
+  const E = ED;
+  if(uploading()){ X.toast('사진 · 문서를 올리는 중이에요 — 다 올라간 뒤 다시 눌러 주세요', 'err'); return; }
+  const d = collect();
+  if(E.isNew && !d.title && !d.topics.length && !E.kept){ X.toast('적은 내용이 없어 남기지 않았어요'); discardDraft(); return leave(); }
+  if(!E._ready){ X.toast('임시 저장을 확인하는 중이에요 — 잠깐 뒤 다시 눌러 주세요'); return; }
+  if(E._noSrv && !E._gone){   // 처음에 «내 임시 저장»을 확인하지 못했거나 · 위 «이어서 쓰기 / 버리기»를 고르지 않았으면 — 있으면 묻기
+    try{ const sn = await X.FS.getDoc(SREF(E)); const o = sn.exists() ? sn.data() : null;
+      if(o && !confirm(`«내 임시 저장»에 ${X.C.fmtStamp(o.atMs || X.C.tsMs(o.updatedAt))}에 남긴 것이 있어요.\n지금 이 화면 내용으로 바꿀까요? (취소: 그대로 두고 이 화면에 머물기)`)) return;
+    }catch(e){}
+    if(ED !== E) return;
+  }
+  E.dirty = true; saveDraft();
+  const btns = R.querySelectorAll('[data-e="keep"]'); btns.forEach(b => { b.disabled = true; b.textContent = '임시 저장 중…'; });
+  const ok = await srvSave('keep');
+  if(ED !== E) return;
+  if(!ok){
+    btns.forEach(b => { b.disabled = false; b.textContent = '📝 임시 저장'; });
+    X.toast('«내 임시 저장»에 남기지 못했어요 — 이 기기에는 남아 있어요. 인터넷을 확인하고 다시 눌러 주세요', 'err');
+    return;
+  }
+  X.toast('임시 저장했어요 — 목록 위 «내 임시 저장»에서 이어서 써요 (나만 보여요)');
+  leave();
+}
 
 /* ═══ 저장 — 수정 이력 한 벌 · 임무 맞추기 · 알림 ═══ */
 const uploading = () => !!(R && R.querySelector('.ob[data-k="wait"]'));
 async function save(force){
   if(!ED || ED.saving) return;
-  if(uploading()){ X.toast('사진 · 문서를 올리는 중이에요 — 다 올라간 뒤에 저장해 주세요', 'err'); return; }
+  const E = ED;
+  if(uploading()){ X.toast('사진 · 문서를 올리는 중이에요 — 다 올라간 뒤에 게시해 주세요', 'err'); return; }
   const d = collect();
   if(!d.date){ X.toast('날짜를 골라 주세요', 'err'); return; }
   if(!d.type){ X.toast('회의 종류를 골라 주세요', 'err'); return; }
   if(!d.topics.length){ X.toast('주제를 하나 이상 적어 주세요', 'err'); return; }
-  if(JSON.stringify(d).length > 900000){ X.toast('회의록이 너무 커요 — 표를 나누거나 문서로 첨부해 주세요', 'err'); return; }
-  ED.saving = true;
-  const btns = R.querySelectorAll('[data-e="save"]'); btns.forEach(b => { b.disabled = true; b.textContent = '저장 중…'; });
+  if(bytes(d) > MAXB){ X.toast('회의록이 너무 커요 — 표를 나누거나 문서로 첨부해 주세요', 'err'); return; }
+  E.saving = true; clearTimeout(E._st);
+  const btns = R.querySelectorAll('[data-e="save"]'); btns.forEach(b => { b.disabled = true; b.textContent = '게시 중…'; });
   try{
-    await persist(X, ED.id, d, { baseRev: ED.baseRev, force: !!force, isNew: ED.isNew });
-    try{ localStorage.removeItem(DKEY()); }catch(e){}
-    ED.dirty = false; window.__mtDirty = false; window.onbeforeunload = null;
-    clearTimeout(ED._dt);
-    const id = ED.id; ED = null;
-    X.toast('저장했어요 ✓');
-    X.onSaved(id);
+    await persist(X, E.id, d, { baseRev: E.baseRev, force: !!force, isNew: E.isNew });
+    discardDraft(E);                                                 // 📝 v179 게시했으면 «내 임시 저장»은 지움
+    E.dirty = false; window.__mtDirty = false; window.onbeforeunload = null;
+    X.toast(E.isNew ? '게시했어요 ✓' : '고친 것을 게시했어요 ✓');
+    if(ED === E){ ED = null; X.onSaved(E.id); }                       // 게시하는 사이 다른 화면으로 갔으면 그대로
   }catch(e){
-    ED.saving = false;
-    btns.forEach(b => b.disabled = false); note();
+    E.saving = false;
+    if(ED !== E){   // 게시하는 사이 다른 화면으로 갔는데 게시가 안 됐으면 — 쓰던 것을 이 기기 · «내 임시 저장»에
+      try{ localStorage.setItem(LKEY(E), JSON.stringify({ at: Date.now(), id: E.id, isNew: !!E.isNew, baseRev: E.baseRev, kept: !!E.kept, org: E.org, data: d })); }catch(_){}
+      if(E._ready && !E._noSrv && bytes(d) < MAXB) X.FS.setDoc(SREF(E), draftBody(E, d, Date.now())).catch(() => {});
+      X.toast('게시하지 못했어요 — 쓰던 것은 «내 임시 저장»에 남겼어요', 'err'); return;
+    }
+    btns.forEach(b => { b.disabled = false; }); note();
     if(e.message === 'conflict'){
       const c = e.cur || {};
-      if(confirm(`${c.updatedByName || '다른 선생님'} 님이 먼저 고쳐 저장했어요 (${X.C.fmtStamp(X.C.tsMs(c.updatedAt))}).\n\n내 것으로 저장할까요? 그분이 고친 모습도 기록에 그대로 남아요.\n(취소: 저장하지 않고 이 화면에 머물기)`)){
-        ED.baseRev = c.rev || 0; return save(true);
+      if(confirm(`${c.updatedByName || '다른 선생님'} 님이 먼저 고쳐 게시했어요 (${X.C.fmtStamp(X.C.tsMs(c.updatedAt))}).\n\n내 것으로 게시할까요? 그분이 고친 모습도 기록에 그대로 남아요.\n(취소: 게시하지 않고 이 화면에 머물기)`)){
+        E.baseRev = c.rev || 0; return save(true);
       }
       return;
     }
     console.error(e);
-    X.toast('저장하지 못했어요 — ' + (e.code === 'permission-denied' ? '이 기관 회의록을 쓸 권한이 없어요 (보안 규칙 v23 게시 확인)' : (e.code || e.message)), 'err');
+    X.toast('게시하지 못했어요 — ' + (e.code === 'permission-denied' ? '이 기관 회의록을 쓸 권한이 없어요 (보안 규칙 확인)' : (e.code || e.message)), 'err');
   }
 }
 async function persist(ctx, id, data, o){

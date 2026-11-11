@@ -58,6 +58,25 @@ html[data-theme="dark"] .mt-mine{background:var(--gold-bg);border-color:var(--go
 }
 .mt-mine.card{width:100%;font-family:inherit;text-align:left;background:var(--surface);border-color:var(--line);color:var(--ink);font-weight:600;padding:10px 14px 10px 10px;margin:0 0 14px}
 .mt-mine.card:hover{border-color:#E8C770}
+/* 📝 v179 내 임시 저장 */
+.mt-drafts{background:#F4F8FF;border:1px solid #C9DCF5;border-radius:12px;padding:8px 12px;margin:0 0 14px;font-size:13px;color:var(--ink)}
+.mt-drafts.one{margin:10px 0 14px}
+html[data-theme="dark"] .mt-drafts{background:#15202E;border-color:#2B4A72}
+.mt-drafts .dr-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0 6px;color:#1E3A5F}
+html[data-theme="dark"] .mt-drafts .dr-h{color:#9CC3F0}
+.mt-drafts .dr-h b{font-weight:900}.mt-drafts .dr-h span:last-child{font-size:11.5px;font-weight:600;color:var(--ink-3)}
+.mt-drafts .dr-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px dashed #D3E2F5}
+.mt-drafts.one .dr-row{border-top:0}
+html[data-theme="dark"] .mt-drafts .dr-row{border-top-color:#2B4A72}
+.mt-drafts .dr-k{font-size:11px;font-weight:900;border-radius:100px;padding:2px 8px;background:#E3EEFC;color:#1E4E8C;white-space:nowrap}
+.mt-drafts .dr-k.ed{background:#FFF1D6;color:#8A5A00}
+html[data-theme="dark"] .mt-drafts .dr-k{background:#1F3550;color:#9CC3F0}html[data-theme="dark"] .mt-drafts .dr-k.ed{background:#3A2A16;color:#F2C99A}
+.mt-drafts .dr-o{font-size:10.5px;font-weight:800;color:#fff;border-radius:100px;padding:2px 7px;white-space:nowrap}
+.mt-drafts .dr-t{font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px}
+.mt-drafts .dr-d,.mt-drafts .dr-at{font-size:12px;color:var(--ink-3)}
+.mt-drafts .dr-tp{font-size:12px;font-weight:700;color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px}
+.mt-drafts .dr-b{margin-left:auto;display:flex;gap:6px}
+.mt-drafts .dr-loc{color:#B45309;font-weight:900}
 .mt-mine.card .ic{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:#FBF0D6;color:#7A5500;flex:none}
 .mt-mine.card .ic svg{width:19px;height:19px}
 .mt-mine.card .mt-new{color:#8A3B12;font-weight:800}
@@ -536,6 +555,7 @@ let SEE = [], WRITE = [];
 let ORG = '', SEM = C.semOf(TODAY), TYPE = '', Q = '';
 const FIRST_SEM = LEAD ? '2020-1' : '2023-1';   // 학기 고르기 맨 끝 — 예전 PDF에서 옮긴 가장 오래된 회의록(2023년 2월) · 🏛 v176 주임 회의록은 한글 파일에서 옮긴 2020년부터
 let LIST = [], TASKS = {}, NOTIFS = [], MYTASKS = [];
+let MYDRAFTS = new Map(), unDraft = null;   // 📝 v179 «내 임시 저장» (쓴 사람만 · 회의록 id → 임시 저장)
 let VIEW = 'list', CUR = null, CMTS = [], CMT_TAB = 'm', CMT_TGT = '', REPLY = null, EDITING_CMT = '';
 let ORGCMTS = null;                         // 찾기용 — 그 기관 댓글 (처음 찾을 때 한 번)
 const OPEN = {};                            // 펼친 PDF
@@ -714,6 +734,74 @@ function watchNotifs(){
   }, e => {});
 }
 
+/* 📝 v179 «내 임시 저장» — 내 것만 (쓴 사람만 읽는 보관함 mtgDrafts · 보안 규칙 v48) */
+function watchDrafts(){
+  if(unDraft) unDraft();
+  unDraft = null; MYDRAFTS = new Map();
+  if(VIEW === 'guest' || !(LEAD ? LEAD_WR : WRITE.length)){ paintDraftBar(); return; }
+  unDraft = onSnapshot(query(collection(db, 'mtgDrafts'), where('uid', '==', CU.uid), where('book', '==', LEAD ? 'lead' : '')), s => {
+    MYDRAFTS = new Map(s.docs.map(d => [d.data().meetingId, { id: d.id, ...d.data() }]));
+    paintDraftBar();
+    if(VIEW === 'doc') paintDocDraft();
+  }, e => {});
+}
+/* 이 기기에만 있는 임시 저장 (서버에 남기기 전 · 인터넷이 끊겼을 때) — 내 이름 칸만 (예전 공용 칸은 편집기에서만) */
+const LPRE = () => (LEAD ? 'mtg_draft_lead_' : 'mtg_draft_u_') + CU.uid + '_';
+function localDrafts(){
+  const out = [];
+  try{
+    for(let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i); if(!k || !k.startsWith(LPRE())) continue;
+      const mid = k.slice(LPRE().length); if(!mid || mid === 'new') continue;
+      const v = JSON.parse(localStorage.getItem(k) || 'null'); if(!v || !v.data || Date.now() - (v.at || 0) > 30 * 86400000) continue;
+      const sv = MYDRAFTS.get(mid);
+      if(sv && (sv.atMs || 0) + 2000 >= (v.at || 0)) continue;           // 서버 것이 같거나 더 새것
+      const d = v.data;
+      out.push({ meetingId: mid, isNew: v.isNew != null ? !!v.isNew : !LIST.some(x => x.id === mid), org: d.org || v.org || '', kind: v.kept ? 'keep' : 'auto', local: true,
+        title: C.titleOf(d), date: d.date || '', topic1: String(((d.topics || []).find(t => t.title) || {}).title || '').slice(0, 80), nTopics: (d.topics || []).length, atMs: v.at || 0 });
+    }
+  }catch(e){}
+  return out;
+}
+function paintDraftBar(){
+  const el = $I('mt-drafts'); if(!el) return;
+  if(VIEW === 'guest' || !(LEAD ? LEAD_WR : WRITE.length)){ el.innerHTML = ''; return; }
+  const loc = localDrafts();
+  const L = [...[...MYDRAFTS.values()].filter(d => !loc.some(x => x.meetingId === d.meetingId)), ...loc].sort((a, b) => (b.atMs || 0) - (a.atMs || 0));
+  if(!L.length){ el.innerHTML = ''; return; }
+  const row = d => {
+    const m = LIST.find(x => x.id === d.meetingId);
+    const t = d.title || (m ? C.titleOf(m) : '') || '제목 없음';
+    return `<div class="dr-row">
+      <span class="dr-k ${d.isNew ? 'new' : 'ed'}">${d.isNew ? '새 회의록' : '고치던 내용'}</span>
+      ${!LEAD && d.org && MORG[d.org] ? `<span class="dr-o" style="background:${MCOLOR[d.org] || '#5A6560'}">${esc(MORG[d.org])}</span>` : ''}
+      <b class="dr-t">${esc(t)}</b><span class="dr-d">${d.date ? esc(C.fmtMDY(d.date)) : '날짜 없음'}</span>
+      ${d.topic1 ? `<span class="dr-tp">주제 «${esc(d.topic1)}»${(d.nTopics || 0) > 1 ? ` 외 ${d.nTopics - 1}` : ''}</span>` : ''}
+      <span class="dr-at">${d.local ? '<b class="dr-loc">이 기기에만</b> · ' : ''}${d.kind === 'keep' ? '임시 저장' : '자동 저장 · 게시 안 하고 나감'} · ${esc(C.fmtStamp(d.atMs || C.tsMs(d.updatedAt)))}</span>
+      <span class="dr-b"><button type="button" class="mt-btn sm p" data-act="dcont" data-mid="${esc(d.meetingId)}">이어서 쓰기</button><button type="button" class="mt-btn sm" data-act="ddrop" data-mid="${esc(d.meetingId)}">버리기</button></span></div>`;
+  };
+  el.innerHTML = `<div class="mt-drafts"><div class="dr-h"><span class="ic" aria-hidden="true">📝</span><b>내 임시 저장 ${L.length}</b><span>게시하기 전엔 나만 보여요 · 이어서 쓰고 «게시»를 누르면 모두에게 보여요</span></div>${L.map(row).join('')}</div>`;
+}
+function paintDocDraft(){
+  const el = $I('dv-draft'); if(!el || !CUR) return;
+  const d = MYDRAFTS.get(CUR.id);
+  el.innerHTML = d && canWrite(CUR.org) ? `<div class="mt-drafts one"><div class="dr-row"><span class="dr-k ed">📝 고치던 내용</span>
+    <span class="dr-at" style="flex:1">이 회의록을 고치던 내용이 «내 임시 저장»에 있어요 (${esc(C.fmtStamp(d.atMs || C.tsMs(d.updatedAt)))} · 나만 보여요)</span>
+    <span class="dr-b"><button type="button" class="mt-btn sm p" data-act="dcont" data-mid="${esc(CUR.id)}">이어서 고치기</button><button type="button" class="mt-btn sm" data-act="ddrop" data-mid="${esc(CUR.id)}">버리기</button></span></div></div>` : '';
+}
+async function dropDraft(mid){
+  const d = MYDRAFTS.get(mid) || localDrafts().find(x => x.meetingId === mid);
+  if(!confirm(`«${(d && d.title) || '이 회의록'}» 임시 저장을 버릴까요? 되살릴 수 없어요.`)) return;
+  try{   // 이 기기에 남은 것도 (예전 공용 칸은 같은 회의록 것일 때만)
+    localStorage.removeItem(LPRE() + mid);
+    const ks = LEAD ? [`mtg_draft_lead_${CU.uid}_new`] : ['mtg_draft_' + mid, 'mtg_draft_new'];
+    ks.forEach(k => { const v = JSON.parse(localStorage.getItem(k) || 'null'); if(v && (v.id === mid || k === 'mtg_draft_' + mid)) localStorage.removeItem(k); });
+  }catch(e){}
+  try{ await deleteDoc(doc(db, 'mtgDrafts', `${CU.uid}_${mid}`)); toast('임시 저장을 버렸어요'); }
+  catch(e){ toast('버리지 못했어요 — ' + (e.code || e.message), 'err'); }
+  paintDraftBar();
+}
+
 /* ── 길 찾기 (주소창과 함께) ── */
 function params(){ return new URLSearchParams(location.search); }
 function go(p, replace){
@@ -742,14 +830,24 @@ async function route(){
   if(p.get('edit')){
     if(window.__mtDirty && !(await confirmLeave())) return;
     VIEW = 'edit'; closeDoc(); EDIT_URL = location.href;
-    if(!EDITOR_MOD) EDITOR_MOD = await import('./minutes-editor.js');
+    if(!EDITOR_MOD) EDITOR_MOD = await import('./minutes-editor.js?v=179');
     const id = p.get('edit');
     let m = null;
     if(id !== 'new'){
       try{ const s = await getDoc(doc(db, COL.m, id)); if(s.exists()){ m = { id: s.id, ...s.data() }; if(m.type) m.type = C.typeFix(m.type); } }catch(e){}
+      if(!m && p.get('draft')){   // 📝 v179 아직 게시하지 않은 새 회의록 — «내 임시 저장»(또는 이 기기)에서 이어 쓰기
+        let dr = MYDRAFTS.get(id) || null;
+        if(!dr){ try{ const s = await getDoc(doc(db, 'mtgDrafts', `${CU.uid}_${id}`)); if(s.exists()) dr = s.data(); }catch(e){} }
+        if(!dr){ const lo = localDrafts().find(x => x.meetingId === id); if(lo && lo.isNew) dr = lo; }
+        if(dr && dr.isNew){ EDITOR_MOD.openEditor(edCtx(), null, { id, draft: true, org: WRITE.includes(dr.org) ? dr.org : '', draftDoc: dr.local ? null : dr }); return; }
+      }
       if(!m){ toast('회의록을 찾지 못했어요.', 'err'); go({}, true); return; }
+      if(m.deleted){   // 휴지통 회의록은 고치지 않음 (게시하면 휴지통에서 저절로 나오지 않게)
+        toast(MYDRAFTS.has(id) ? '휴지통에 있는 회의록이라 이어서 고칠 수 없어요 — 목록 위 «내 임시 저장»에서 버릴 수 있어요' : '휴지통에 있는 회의록은 고칠 수 없어요', 'err');
+        go({}, true); return;
+      }
     }
-    EDITOR_MOD.openEditor(edCtx(), m, { org: p.get('to') || '', from: p.get('from') || '' });
+    EDITOR_MOD.openEditor(edCtx(), m, { org: p.get('to') || '', from: p.get('from') || '', draft: !!p.get('draft'), draftDoc: (m && MYDRAFTS.get(m.id)) || null });
     return;
   }
   if(p.get('m')){ VIEW = 'doc'; openDoc(p.get('m'), { t: p.get('t'), k: p.get('k'), hist: p.get('hist') }); return; }
@@ -757,7 +855,7 @@ async function route(){
   if(p.get('mine')){ VIEW = 'mine'; paintMine(); return; }
   VIEW = 'list'; renderList();
 }
-function confirmLeave(){ return Promise.resolve(confirm('저장하지 않은 내용이 있어요. 나가면 «임시 저장»으로만 남아요. 나갈까요?')); }
+function confirmLeave(){ return Promise.resolve(confirm('게시하지 않은 내용이 있어요. 나가면 «내 임시 저장»에 남아요 (나만 보여요). 나갈까요?')); }
 function edCtx(){
   return { db, FS, C, STORE, CU, STAFF, SMAP, CFG, WRITE, SEE, LIST, TASKS, toast, modal, popMenu,
     COL, LEAD_UIDS: LCFG.uids.slice(), pickSources, onPersist: LEAD ? syncShares : null, log: mtgLog,
@@ -780,7 +878,7 @@ function headHTML(){
     ${anyW ? `<button class="mt-btn g" data-act="new">＋ 새 회의록</button>` : ''}
     <div class="dd${mgr ? '' : ' mt-dd-m'}" id="dd-head"><button class="mt-btn" data-act="moremenu" aria-haspopup="true" aria-expanded="false" aria-label="더 보기${isSuper() ? ' — 설정 · 예전 PDF 가져오기' : mgr ? ' — 설정' : ''}" title="더 보기">⋯</button><div class="dd-m">${more}</div></div>
   </div>
-  <div id="mt-minebar"></div>`;
+  <div id="mt-minebar"></div><div id="mt-drafts"></div>`;
 }
 /* 🔒 v175 주임 회의록 머리 — 금빛 띠 «주임 멤버로 정한 N명이 함께 쓰는 방» (수퍼관리자는 따로 표시하지 않음) */
 function leadHeadHTML(){
@@ -804,7 +902,7 @@ function leadHeadHTML(){
     ${av ? `<div class="ld-avs" aria-hidden="true">${av}</div>` : ''}
     <button type="button" class="mt-btn ld-mb" data-act="lmemlist">${SVG.users}멤버 ${n}명</button>
   </div>
-  <div id="mt-minebar"></div>`;
+  <div id="mt-minebar"></div><div id="mt-drafts"></div>`;
 }
 function renderList(){
   const root = $I('mt');
@@ -822,7 +920,7 @@ function renderList(){
     <div class="mt-sumrow"><div class="mt-sum" id="mt-sum"></div>
       <div class="mt-seg sm" id="mt-lview" role="group" aria-label="목록 모양"><button type="button" data-act="lview" data-v="toc" class="${LVIEW === 'toc' ? 'on' : ''}">목차</button><button type="button" data-act="lview" data-v="card" class="${LVIEW === 'card' ? 'on' : ''}">카드</button></div></div>
     <div id="mt-rows"><div class="mt-empty">불러오는 중…</div></div>`;
-  paintMineBar();
+  paintMineBar(); paintDraftBar();
   paintRows();
 }
 function paintMineBar(){
@@ -1092,10 +1190,11 @@ function paintDoc(focus){
           ${canWrite(m.org) ? `<button data-act="dup">📋 이 회의록으로 새 회의록 쓰기</button>` : ''}
           ${(LEAD ? LEAD_ADM : (mine || isMinMgr()) && canWrite(m.org)) ? `<hr><button data-act="trash" style="color:#C0392B">🗑 휴지통으로</button>` : ''}</div></div>
     </div>
+    <div id="dv-draft"></div>
     <div class="dv-grid">${DVIEW === 'b'
       ? `<div class="dv-paper mb" id="dv-paper"></div><div class="dv-rail"><nav class="mb-toc" id="mb-toc" aria-label="이 회의 주제"></nav><div class="mb-att" id="mb-att"></div><aside class="dv-side" id="dv-side"></aside></div>`
       : `<div class="dv-paper" id="dv-paper"></div><aside class="dv-side" id="dv-side"></aside>`}</div>`;
-  paintPaper(); paintSide();
+  paintPaper(); paintSide(); paintDocDraft();
   if(focus && focus.hist && isSuper()) setTimeout(() => openHistory(m, { rev: focus.hist }), 60);   // 📜 v177 활동 로그 «그때 판 보기»
   if(focus && (focus.t || focus.k)){
     setTimeout(()=>{
@@ -1334,7 +1433,7 @@ async function openHistory(m, focus){
     }
     if(b.dataset.h === 'revert'){
       if(!confirm(`${sel.rev}번째 모습으로 되돌릴까요? 지금 모습도 이력에 그대로 남아요.`)) return;
-      if(!EDITOR_MOD) EDITOR_MOD = await import('./minutes-editor.js');
+      if(!EDITOR_MOD) EDITOR_MOD = await import('./minutes-editor.js?v=179');
       try{ await EDITOR_MOD.saveRevert(edCtx(), m, sel); md.close(); toast(`${sel.rev}번째 모습으로 되돌렸어요`); }
       catch(err){ toast(err.message === 'conflict' ? '그 사이 다른 분이 고쳤어요 — 다시 열어 주세요.' : '되돌리지 못했어요 — ' + (err.code || err.message), 'err'); }
     }
@@ -2156,7 +2255,9 @@ document.addEventListener('click', async e => {
     case 'settings': openSettings(); break;
     case 'import': openSettings('import'); break;
     case 'exportmany': openExport(null); break;
-    case 'edit': go({ edit: CUR.id }); break;
+    case 'edit': go({ edit: CUR.id, ...(MYDRAFTS.has(CUR.id) ? { draft: 1 } : {}) }); break;
+    case 'dcont': go({ edit: a.dataset.mid, draft: 1 }); break;          // 📝 v179 «내 임시 저장» 이어서 쓰기
+    case 'ddrop': dropDraft(a.dataset.mid); break;
     case 'hist': if(isSuper()) openHistory(CUR); break;   // 📜 v177 수퍼관리자만
     case 'outmenu': case 'moremenu': { const dd = a.closest('.dd'); const was = dd.classList.contains('open'); document.querySelectorAll('.dd.open').forEach(d => d.classList.remove('open')); if(!was) dd.classList.add('open'); if(act === 'moremenu') a.setAttribute('aria-expanded', String(!was)); break; }
     case 'out': if(a.dataset.f === 'pick') openExport(CUR); else { try{ await doExport([CUR], a.dataset.f, { sum: false, att: true, img: true, cmt: false, head: true, title: C.titleOf(CUR) }, `${C.titleOf(CUR)}_${CUR.date}`); }catch(err){ toast('만들지 못했어요 — ' + err.message, 'err'); } } break;
@@ -2256,6 +2357,7 @@ function boot(){
       : (SEE.includes(CU.org) ? CU.org : SEE[0]);
     subscribeList();
     watchNotifs();
+    watchDrafts();
     $I('ls').style.display = 'none'; $I('ms').style.display = 'block';
     await route();
     window.hideLoading && hideLoading();
