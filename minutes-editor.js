@@ -39,8 +39,8 @@ html[data-theme="dark"] .mt-btn.ag-tg{background:var(--gold-bg);border-color:var
 .ed:not(.wide).ag-drawer .ed-agbg{display:block;position:fixed;inset:0;background:rgba(15,25,21,.35);z-index:899}
 .ag-hd{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);background:#FFFBEA}
 html[data-theme="dark"] .ag-hd{background:var(--gold-bg)}
-.ag-hd b{font-size:14.5px;font-weight:900}
-.ag-hd .n{font-size:12px;font-weight:800;color:#6A4A00}
+.ag-hd b{font-size:14.5px;font-weight:900;white-space:nowrap}
+.ag-hd .n{font-size:11.5px;font-weight:800;color:#6A4A00;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 html[data-theme="dark"] .ag-hd .n{color:var(--gold)}
 .ag-hd .ib{font-family:inherit;border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:14px;width:30px;height:30px;border-radius:8px}
 .ag-hd .ib:hover{background:rgba(0,0,0,.06);color:var(--ink)}
@@ -48,13 +48,25 @@ html[data-theme="dark"] .ag-hd .n{color:var(--gold)}
 .ag-ls{flex:1;overflow:auto;padding:8px 10px 10px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .ag-g{font-size:11.5px;font-weight:900;color:var(--ink-2);margin:8px 4px 6px;display:flex;align-items:center;gap:6px}
 .ag-g small{font-weight:700;color:var(--ink-3)}
-.agc{border:1px solid var(--line);border-radius:12px;padding:10px 11px;margin-bottom:8px;background:var(--surface)}
+.agc{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px;background:var(--surface)}
+.agc.doing{border-left:3px solid #2B6CB0}
 .agc.in{background:var(--sb-mint-2);border-color:#9CCBB6}
 .agc.hold{border-style:dashed}
 .agc-t{font-size:13.5px;font-weight:900;line-height:1.45;word-break:break-word}
 .agc-d{font-size:12.5px;line-height:1.6;color:var(--ink-2);white-space:pre-wrap;word-break:break-word;margin-top:3px;cursor:pointer}
-.agc-d.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
-.agc-m{font-size:11px;color:var(--ink-3);margin-top:6px;display:flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.agc-d.clamp{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.agc-m{font-size:11px;color:var(--ink-3);margin-top:5px;display:flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.agc-m .sp{flex:1}
+.agc-m .st{font-weight:900;color:#1E4E8C;background:#E6F0FB;border-radius:100px;padding:0 7px}
+.agc-m button{font-family:inherit;font-size:12px;font-weight:800;border-radius:8px;height:28px;padding:0 10px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);white-space:nowrap}
+.agc-m button.p{background:var(--sb-green);border-color:var(--sb-green);color:#fff}
+.agc-m button.go{border-color:#9CCBB6;color:var(--sb-green)}
+.agc-s{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11.5px;font-weight:800;color:var(--ink-2)}
+.agc-s .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.agc-s .seg button{font-family:inherit;font-size:11.5px;font-weight:800;border:0;background:transparent;color:var(--ink-2);height:26px;padding:0 10px;cursor:pointer}
+.agc-s .seg button+button{border-left:1px solid var(--line)}
+.agc-s .seg button.on{background:var(--sb-house);color:#fff}
+.agc-s .seg button.on.doing{background:#2B6CB0}
 .agc-m b{color:var(--ink-2);font-weight:800}
 .agc-m .ty{font-weight:800;color:#2B6CB0;background:#E6F0FB;border-radius:100px;padding:0 7px}
 html[data-theme="dark"] .agc-m .ty{background:#1F3550;color:#9CC3F0}
@@ -65,7 +77,8 @@ html[data-theme="dark"] .agc-m .ty{background:#1F3550;color:#9CC3F0}
 .ag-ft{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .ag-ft a{font-size:12px;font-weight:800;color:var(--sb-green);text-decoration:none;margin-left:auto}
 .ag-em{font-size:12.5px;color:var(--ink-2);line-height:1.7;padding:14px 6px;text-align:center}
-.et-ag{font-size:11px;font-weight:800;color:#6A4A00;background:#FBF0D6;border-radius:100px;padding:2px 8px;white-space:nowrap}
+.et-ag{font-family:inherit;font-size:11px;font-weight:800;color:#6A4A00;background:#FBF0D6;border:0;border-radius:100px;padding:2px 8px;white-space:nowrap;cursor:pointer}
+.et-ag i{font-style:normal;color:var(--sb-green)}.et-ag i.doing{color:#2B6CB0}
 html[data-theme="dark"] .et-ag{background:#2A2416;color:#E3C878}
 .et.flash{animation:etflash 1.6s ease}
 @keyframes etflash{0%,40%{box-shadow:0 0 0 4px rgba(227,200,120,.55)}100%{box-shadow:0 0 0 0 rgba(227,200,120,0)}}
@@ -345,12 +358,18 @@ function fit(){
 /* ═══ 📮 v180 오른쪽 «안건» 창 — 올라온 안건을 보며 쓰기 · «＋ 주제로» · 게시하면 «다룸» ═══
    넓은 화면: 옆에 (닫으면 이 기기에 기억) · 좁은 화면(패드 세로 · 폰): «📮 안건» 단추로 여닫는 서랍 */
 const agOn = () => !!(X && typeof X.agendas === 'function');
+const agChip = (by, st) => `📮 ${esc(by || '')} 안건 · <i class="${st === 'doing' ? 'doing' : ''}">${st === 'doing' ? '▶ 진행 중' : '✓ 완료'}</i>`;   // 📮 v181 게시하면 이 상태로
+function agSetSt(el, v){
+  el._agSt = v === 'doing' ? 'doing' : 'done';
+  const c = el.querySelector('.et-ag'); if(c) c.innerHTML = agChip(el._agBy, el._agSt);
+  paintAg(); dirty();
+}
 const ymdOf = ms => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const AGP = 'mtg_agpanel';
 const agPref = () => { try{ return localStorage.getItem(AGP) || ''; }catch(e){ return ''; } };
 function agList(){
   if(!agOn()) return [];
-  return (X.agendas() || []).filter(a => (ED.org === 'lead' || a.org === ED.org) && (a.status || 'open') !== 'used');
+  return (X.agendas() || []).filter(a => (ED.org === 'lead' || a.org === ED.org) && !['used', 'done'].includes(a.status || 'open'));
 }
 function agInMap(){   // 이 편집기에 이미 넣은 안건 → 주제 번호
   const m = new Map();
@@ -373,16 +392,18 @@ function paintAg(){
   const C = X.C;
   const L = agList();
   const inMap = agInMap();
-  const open = L.filter(a => (a.status || 'open') === 'open'), hold = L.filter(a => a.status === 'hold');
-  const tg = R.querySelector('#ed-agtg b'); if(tg) tg.textContent = String(open.filter(a => !inMap.has(a.id)).length || '');
+  const open = L.filter(a => (a.status || 'open') === 'open'), doing = L.filter(a => a.status === 'doing'), hold = L.filter(a => a.status === 'hold');
+  const tg = R.querySelector('#ed-agtg b'); if(tg) tg.textContent = String([...open, ...doing].filter(a => !inMap.has(a.id)).length || '');
   const mineType = a => !a.type || a.type === ED.type;
+  const who = a => a.byUid ? (a.byName || '') : (a.name || '');
   const card = a => {
-    const hit = inMap.get(a.id);
-    return `<div class="agc${hit ? ' in' : ''}${a.status === 'hold' ? ' hold' : ''}" data-agid="${esc(a.id)}">
+    const hit = inMap.get(a.id), st = hit ? (hit.el._agSt || 'done') : '';
+    return `<div class="agc${hit ? ' in' : ''}${a.status === 'hold' ? ' hold' : ''}${a.status === 'doing' ? ' doing' : ''}" data-agid="${esc(a.id)}">
       <div class="agc-t">${esc(a.title || '')}</div>
       ${a.desc ? `<div class="agc-d clamp" data-e="agmore" title="눌러서 모두 보기">${esc(a.desc)}</div>` : ''}
-      <div class="agc-m"><b>${esc(a.name || '')}</b><span>${esc(C.fmtMD(ymdOf(C.tsMs(a.at) || a.atMs || Date.now())))}</span>${a.type ? `<span class="ty">${esc(a.type)}</span>` : ''}${a.status === 'hold' ? '<span>보류</span>' : ''}</div>
-      <div class="agc-b">${hit ? `<button type="button" class="go" data-e="aggo" data-id="${esc(a.id)}">✓ ${hit.no}번 주제에 넣었어요 ›</button>` : `<button type="button" class="p" data-e="agadd" data-id="${esc(a.id)}">＋ 주제로</button>`}</div></div>`;
+      <div class="agc-m">${a.status === 'doing' ? '<span class="st">진행 중</span>' : ''}<b>${esc(who(a))}</b><span>${esc(C.fmtMD(ymdOf(C.tsMs(a.at) || a.atMs || Date.now())))}</span>${a.type && !mineType(a) ? `<span class="ty">${esc(a.type)}</span>` : ''}<span class="sp"></span>
+        ${hit ? `<button type="button" class="go" data-e="aggo" data-id="${esc(a.id)}">✓ ${hit.no}번 주제 ›</button>` : `<button type="button" class="p" data-e="agadd" data-id="${esc(a.id)}">＋ 주제로</button>`}</div>
+      ${hit ? `<div class="agc-s">게시하면<span class="seg"><button type="button" data-e="agset" data-id="${esc(a.id)}" data-v="done" class="${st === 'done' ? 'on' : ''}">✓ 완료</button><button type="button" data-e="agset" data-id="${esc(a.id)}" data-v="doing" class="${st === 'doing' ? 'on doing' : ''}">▶ 진행 중</button></span></div>` : ''}</div>`;
   };
   const here = open.filter(mineType), other = open.filter(a => !mineType(a));
   const err = X.agErr && X.agErr();
@@ -391,13 +412,14 @@ function paintAg(){
   const ls0 = box.querySelector('.ag-ls'), sc0 = ls0 ? ls0.scrollTop : 0;
   const det = (k, def) => keepOpen.has(k) || (!keepClosed.has(k) && def) ? ' open' : '';
   const SA = navigator.standalone === true || !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches);
-  const left = here.filter(a => !inMap.has(a.id)).length;
-  box.innerHTML = `<div class="ag-hd"><b>📮 올라온 안건</b><span class="n">기다리는 ${open.length}</span><span class="mt-sp" style="flex:1"></span>
+  const left = [...here, ...doing].filter(a => !inMap.has(a.id)).length;
+  box.innerHTML = `<div class="ag-hd"><b>📮 안건</b><span class="n">기다리는 ${open.length}${doing.length ? ` · 진행 중 ${doing.length}` : ''}</span><span class="mt-sp" style="flex:1"></span>
       ${typeof X.agNew === 'function' ? `<button type="button" class="mt-btn sm" data-e="agnew" title="안건 올리기">＋ 올리기</button>` : ''}
       <button type="button" class="ib" data-e="agclose" aria-label="안건 창 닫기" title="안건 창 닫기">✕</button></div>
-    ${L.length ? `<div class="ag-tip">«＋ 주제로»를 누르면 주제로 들어가요 — 게시하면 «다룬 안건»으로 옮겨져요</div>` : ''}
-    <div class="ag-ls">${err && /permission/.test(err) ? '<div class="ag-em">안건을 아직 불러올 수 없어요 — 보안 규칙 v49를 게시했는지 확인해 주세요.</div>' : ''}
+    ${L.length ? `<div class="ag-tip">«＋ 주제로» → 게시하면 «완료» · 끝나지 않았으면 «진행 중»으로 (다음 회의에도 떠요)</div>` : ''}
+    <div class="ag-ls">${err && /permission/.test(err) ? '<div class="ag-em">안건을 아직 불러올 수 없어요 — 보안 규칙 v50을 게시했는지 확인해 주세요.</div>' : ''}
       ${!L.length && !err ? `<div class="ag-em">${ED.org === 'lead' ? '주임 회의록' : esc(C.MORG[ED.org] || '')}에 올라온 안건이 없어요.<br>«＋ 올리기»로 미리 올려 둘 수 있어요.</div>` : ''}
+      ${doing.length ? `<div class="ag-g">진행 중 — 지난 회의에서 이어서 <small>${doing.length}</small></div>${doing.map(card).join('')}` : ''}
       ${here.length ? `<div class="ag-g">${other.length ? `${esc(ED.type || '이 회의')} · 어느 회의든` : '기다리는 안건'} <small>${here.length}</small></div>${here.map(card).join('')}` : ''}
       ${other.length ? `<details data-k="other"${det('other', !here.length)}><summary class="ag-g" style="cursor:pointer">다른 회의 안건 <small>${other.length}</small></summary>${other.map(card).join('')}</details>` : ''}
       ${hold.length ? `<details data-k="hold"${det('hold', false)}><summary class="ag-g" style="cursor:pointer">보류한 안건 <small>${hold.length}</small></summary>${hold.map(card).join('')}</details>` : ''}</div>
@@ -411,7 +433,7 @@ function agTopic(a){
   const lines = String(a.desc || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean).slice(0, 60);
   const body = lines.map(x => ({ k: 'l', lv: 1, h: esc(x) }));
   body.push({ k: 'l', lv: 1, h: '' });
-  return { id: uid6('t'), title: String(a.title || '').slice(0, 150), body, dec: [], tasks: [], agendaId: a.id, agBy: a.name || '' };
+  return { id: uid6('t'), title: String(a.title || '').slice(0, 150), body, dec: [], tasks: [], agendaId: a.id, agBy: (a.byUid ? a.byName : a.name) || '', agSt: 'done' };
 }
 function isBlankTopic(el){
   return !el.querySelector('.et-title').value.trim() && ![...el.querySelectorAll('.ol-t')].some(x => x.textContent.trim())
@@ -453,7 +475,7 @@ function paintTypes(){
 function topicHTML(t){
   return `<div class="et" data-tid="${esc(t.id)}">
     <div class="et-h"><span class="et-no"></span><input class="et-title" value="${esc(t.title || '')}" placeholder="주제 제목">
-      ${t.thrFrom ? `<span class="et-thr">↩ ${esc(X.C.fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : ''}${t.agendaId ? `<span class="et-ag" title="안건 창구에서 넣은 주제">📮 ${esc(t.agBy || '')} 안건</span>` : ''}<span class="et-sum"></span>
+      ${t.thrFrom ? `<span class="et-thr">↩ ${esc(X.C.fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : ''}${t.agendaId ? `<button type="button" class="et-ag" data-e="agst" title="안건 창구에서 넣은 주제 — 누르면 게시할 때 «완료 ↔ 진행 중»">${agChip(t.agBy, t.agSt)}</button>` : ''}<span class="et-sum"></span>
       <button type="button" class="ib" data-e="tup" title="위로">↑</button><button type="button" class="ib" data-e="tdown" title="아래로">↓</button>
       <button type="button" class="ib" data-e="tfold" title="접기">접기</button><button type="button" class="ib" data-e="tdel" title="주제 빼기">✕</button></div>
     <div class="et-in">
@@ -468,7 +490,7 @@ function topicHTML(t){
 }
 function hydrate(el, t){
   el._thr = t.thr || ''; el._thrFrom = t.thrFrom || ''; el._ed = t.ed || null;
-  el._ag = t.agendaId || ''; el._agBy = t.agBy || '';   // 📮 v180 안건에서 넣은 주제
+  el._ag = t.agendaId || ''; el._agBy = t.agBy || ''; el._agSt = t.agSt === 'doing' ? 'doing' : 'done';   // 📮 v180 안건에서 넣은 주제 · v181 게시하면 완료 / 진행 중
   const body = el.querySelector('.et-body');
   (t.body && t.body.length ? t.body : [{ k: 'l', lv: 1, h: '' }]).forEach(b => body.appendChild(b.k === 'l' ? lineEl(b.lv, b.h, b.from) : blockEl(b)));
   const decs = el.querySelector('.et-decs');
@@ -718,7 +740,9 @@ async function onClick(e){
       if(ed.classList.contains('wide')){ try{ localStorage.setItem(AGP, 'closed'); }catch(_){} } else ed.classList.remove('ag-drawer');
       agClass(); return; }
     case 'agadd': return agAdd([b.dataset.id]);
-    case 'agall': { const inMap = agInMap(); return agAdd(agList().filter(a => (a.status || 'open') === 'open' && (!a.type || a.type === ED.type) && !inMap.has(a.id)).map(a => a.id)); }
+    case 'agst': { const el = b.closest('.et'); if(el && el._ag) agSetSt(el, el._agSt === 'doing' ? 'done' : 'doing'); return; }
+    case 'agset': { const h = agInMap().get(b.dataset.id); if(h) agSetSt(h.el, b.dataset.v); return; }
+    case 'agall': { const inMap = agInMap(); return agAdd(agList().filter(a => (a.status === 'doing' || ((a.status || 'open') === 'open' && (!a.type || a.type === ED.type))) && !inMap.has(a.id)).map(a => a.id)); }
     case 'aggo': { const h = agInMap().get(b.dataset.id); if(h){ const ed = R.querySelector('.ed'); if(ed.classList.contains('ag-drawer')){ ed.classList.remove('ag-drawer'); agClass(); }
       h.el.scrollIntoView({ block: 'center', behavior: 'smooth' }); h.el.classList.remove('flash'); void h.el.offsetWidth; h.el.classList.add('flash'); } return; }
     case 'agmore': b.classList.toggle('clamp'); return;
@@ -1186,7 +1210,7 @@ function collect(){
     }).filter(k => C.textOf(k.h).trim());
     const t = { id: el.dataset.tid, title: el.querySelector('.et-title').value.trim(), body, dec, tasks };
     if(el._thr){ t.thr = el._thr; t.thrFrom = el._thrFrom || ''; }
-    if(el._ag){ t.agendaId = el._ag; t.agBy = el._agBy || ''; }
+    if(el._ag){ t.agendaId = el._ag; t.agBy = el._agBy || ''; t.agSt = el._agSt === 'doing' ? 'doing' : 'done'; }
     return t;
   }).filter(t => t.title || t.body.length || t.dec.length || t.tasks.length);
   const attNames = {};
@@ -1478,7 +1502,7 @@ async function persist(ctx, id, data, o){
   /* 📜 v177 한 줄 기록 (수퍼관리자만 · 관리자 › 활동 로그) */
   if(typeof ctx.log === 'function'){ try{ ctx.log(o.sum && /되돌림/.test(o.sum) ? '되돌림' : prevData ? '고침' : '새로 씀', { ...saved, id }, { rev: saved.rev, detail: sumTxt || '' }); }catch(e){} }
   await syncTasks(ctx, id, saved, prevData);
-  await markAgendas(ctx, id, saved, prevData);
+  if(!(o.sum && /되돌림/.test(o.sum))) await markAgendas(ctx, id, saved, prevData);   // 수정 이력 «되돌리기»에서는 안건 상태를 바꾸지 않음
   if(typeof ctx.onPersist === 'function'){ try{ await ctx.onPersist(id, saved, prevData); }catch(e){ console.warn('onPersist', e); } }   // 🔒 v175 공유본 맞추기
   return saved;
 }
@@ -1486,22 +1510,28 @@ async function persist(ctx, id, data, o){
 async function markAgendas(ctx, id, m, prev){
   const { db, FS, C, CU } = ctx;
   const K = COL(ctx); if(!K.a || typeof ctx.agendas !== 'function') return;
-  const before = new Set(((prev && prev.topics) || []).map(t => t.agendaId).filter(Boolean));
+  const before = new Map(((prev && prev.topics) || []).filter(t => t.agendaId).map(t => [t.agendaId, t.agSt === 'doing' ? 'doing' : 'done']));
   const list = ctx.agendas() || [];
   const mtitle = C.titleOf(m);
   const jobs = [];
   (m.topics || []).forEach((t, ti) => {
-    if(!t.agendaId || before.has(t.agendaId)) return;
-    const a = list.find(x => x.id === t.agendaId);
-    if(!a || a.status === 'used' || (m.org !== 'lead' && a.org !== m.org)) return;   // 이 회의록 기관의 안건만
-    jobs.push(FS.updateDoc(FS.doc(db, K.a, a.id), { status: 'used', meetingId: id, meetingDate: m.date || '', meetingTitle: String(mtitle || '').slice(0, 150),
-      usedAt: FS.serverTimestamp(), usedByUid: CU.uid, usedByName: CU.name || '', updatedAt: FS.serverTimestamp() })
-      .then(() => {
-        if(!a.uid || a.uid === CU.uid) return;
-        return FS.addDoc(FS.collection(db, 'mtgNotifs'), { toUid: a.uid, kind: 'agenda', meetingId: id, org: m.org, ...(m.org === 'lead' ? { book: 'lead' } : {}), mtitle, date: m.date,
-          tgt: 't:' + t.id, where: `${ti + 1}. ${t.title || ''}`, text: String(a.title || '').slice(0, 140), fromUid: CU.uid, fromName: CU.name || '', at: FS.serverTimestamp(), read: false });
-      })
-      .catch(e => console.warn('agenda', e)));
+    if(!t.agendaId) return;
+    const want = t.agSt === 'doing' ? 'doing' : 'done';
+    const had = before.get(t.agendaId);
+    if(had && had === want) return;                                     // 이 회의록에서 이미 그 상태로 정함
+    jobs.push((async () => {
+      let a = list.find(x => x.id === t.agendaId);
+      if(!a && had){ try{ const sn = await FS.getDoc(FS.doc(db, K.a, t.agendaId)); if(sn.exists()) a = { id: sn.id, ...sn.data() }; }catch(e){} }   // 고칠 때 — 이미 완료된 안건도
+      if(!a || (m.org !== 'lead' && a.org !== m.org)) return;           // 이 회의록 기관의 안건만
+      if(had && a.meetingId && a.meetingId !== id) return;              // 그 뒤 다른 회의록이 이어받은 안건은 그대로
+      if(!had && ['done', 'used'].includes(a.status)) return;           // 다른 회의에서 이미 끝낸 안건은 그대로
+      await FS.updateDoc(FS.doc(db, K.a, a.id), { status: want, meetingId: id, meetingDate: m.date || '', meetingTitle: String(mtitle || '').slice(0, 150),
+        usedAt: FS.serverTimestamp(), usedByUid: CU.uid, usedByName: CU.name || '', updatedAt: FS.serverTimestamp() });
+      const to = a.byUid || a.uid;
+      if(had || !to || to === CU.uid) return;                           // 처음 넣었을 때만 · 나에게는 안 보냄
+      await FS.addDoc(FS.collection(db, 'mtgNotifs'), { toUid: to, kind: 'agenda', meetingId: id, org: m.org, ...(m.org === 'lead' ? { book: 'lead' } : {}), mtitle, date: m.date,
+        tgt: 't:' + t.id, where: `${ti + 1}. ${t.title || ''}`, text: `${String(a.title || '').slice(0, 120)} · ${want === 'doing' ? '진행 중' : '완료'}`, fromUid: CU.uid, fromName: CU.name || '', at: FS.serverTimestamp(), read: false });
+    })().catch(e => console.warn('agenda', e)));
   });
   if(jobs.length) await Promise.all(jobs);
 }
