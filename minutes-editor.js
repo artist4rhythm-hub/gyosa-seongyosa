@@ -19,8 +19,64 @@ const uid6 = p => p + Math.random().toString(36).slice(2, 8) + Date.now().toStri
 const esc = s => X.C.esc(s);
 
 const CSS = `
-.ed{max-width:980px;margin:0 auto}
-.ed-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:0;z-index:20;background:var(--bg);padding:8px 0 10px}
+.ed{margin:0 auto;--agw:340px}
+/* 📐 v180 넓은 화면 — 편집기가 화면 폭을 다 쓰고, 오른쪽에 «📮 안건» 창 (폭은 편집기 폭으로 판단: .wide ≥ 1060 · .xwide ≥ 1400 · .nar < 640) */
+.ed-main{min-width:0;max-width:1240px;margin:0 auto}
+.ed.wide.ag-side .ed-cols{display:grid;grid-template-columns:minmax(0,1fr) var(--agw);gap:16px;align-items:start}
+.ed.wide.ag-side .ed-main{max-width:none;margin:0}
+.ed.xwide{--agw:380px}
+.ed-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;top:calc(var(--hd-h, 56px) / var(--zoom, 1));z-index:20;background:var(--bg);padding:8px 0 10px}
+.ed-top .lb{display:inline}
+.mt-btn.ag-tg{border-color:#E3C878;background:#FFFBEA;color:#6A4A00}
+.mt-btn.ag-tg.on{background:#F6E7B0;border-color:#D8B54E}
+.mt-btn.ag-tg b{font-weight:900}
+html[data-theme="dark"] .mt-btn.ag-tg{background:var(--gold-bg);border-color:var(--gold-line);color:var(--gold)}
+.ed-ag{display:none;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;min-height:0}
+.ed.wide.ag-side .ed-ag{display:flex;position:sticky;top:calc(var(--hd-h, 56px) / var(--zoom, 1) + var(--edtop, 60px));max-height:calc((100vh - var(--hd-h, 56px)) / var(--zoom, 1) - var(--edtop, 60px) - 14px);max-height:calc((100dvh - var(--hd-h, 56px)) / var(--zoom, 1) - var(--edtop, 60px) - 14px)}
+.ed-f > .mt-seg{align-self:flex-start;max-width:100%;overflow-x:auto}
+.ed:not(.wide).ag-drawer .ed-ag{display:flex;position:fixed;top:0;right:0;bottom:0;width:min(420px, 100%);border-radius:0;border-width:0 0 0 1px;z-index:900;box-shadow:-12px 0 40px rgba(0,0,0,.18);padding-bottom:env(safe-area-inset-bottom)}
+.ed-agbg{display:none}
+.ed:not(.wide).ag-drawer .ed-agbg{display:block;position:fixed;inset:0;background:rgba(15,25,21,.35);z-index:899}
+.ag-hd{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);background:#FFFBEA}
+html[data-theme="dark"] .ag-hd{background:var(--gold-bg)}
+.ag-hd b{font-size:14.5px;font-weight:900}
+.ag-hd .n{font-size:12px;font-weight:800;color:#6A4A00}
+html[data-theme="dark"] .ag-hd .n{color:var(--gold)}
+.ag-hd .ib{font-family:inherit;border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:14px;width:30px;height:30px;border-radius:8px}
+.ag-hd .ib:hover{background:rgba(0,0,0,.06);color:var(--ink)}
+.ag-tip{font-size:11.5px;color:var(--ink-3);line-height:1.55;padding:8px 14px 0}
+.ag-ls{flex:1;overflow:auto;padding:8px 10px 10px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.ag-g{font-size:11.5px;font-weight:900;color:var(--ink-2);margin:8px 4px 6px;display:flex;align-items:center;gap:6px}
+.ag-g small{font-weight:700;color:var(--ink-3)}
+.agc{border:1px solid var(--line);border-radius:12px;padding:10px 11px;margin-bottom:8px;background:var(--surface)}
+.agc.in{background:var(--sb-mint-2);border-color:#9CCBB6}
+.agc.hold{border-style:dashed}
+.agc-t{font-size:13.5px;font-weight:900;line-height:1.45;word-break:break-word}
+.agc-d{font-size:12.5px;line-height:1.6;color:var(--ink-2);white-space:pre-wrap;word-break:break-word;margin-top:3px;cursor:pointer}
+.agc-d.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.agc-m{font-size:11px;color:var(--ink-3);margin-top:6px;display:flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.agc-m b{color:var(--ink-2);font-weight:800}
+.agc-m .ty{font-weight:800;color:#2B6CB0;background:#E6F0FB;border-radius:100px;padding:0 7px}
+html[data-theme="dark"] .agc-m .ty{background:#1F3550;color:#9CC3F0}
+.agc-b{display:flex;gap:6px;margin-top:8px}
+.agc-b button{font-family:inherit;font-size:12px;font-weight:800;border-radius:8px;height:30px;padding:0 10px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink-2)}
+.agc-b button.p{background:var(--sb-green);border-color:var(--sb-green);color:#fff}
+.agc-b button.go{border-color:#9CCBB6;color:var(--sb-green);background:var(--surface)}
+.ag-ft{border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ag-ft a{font-size:12px;font-weight:800;color:var(--sb-green);text-decoration:none;margin-left:auto}
+.ag-em{font-size:12.5px;color:var(--ink-2);line-height:1.7;padding:14px 6px;text-align:center}
+.et-ag{font-size:11px;font-weight:800;color:#6A4A00;background:#FBF0D6;border-radius:100px;padding:2px 8px;white-space:nowrap}
+html[data-theme="dark"] .et-ag{background:#2A2416;color:#E3C878}
+.et.flash{animation:etflash 1.6s ease}
+@keyframes etflash{0%,40%{box-shadow:0 0 0 4px rgba(227,200,120,.55)}100%{box-shadow:0 0 0 0 rgba(227,200,120,0)}}
+/* 📱 좁은 편집기 (폰 · 좁은 창) — 머리를 한 줄로: 글 없는 단추 · 저장 상태는 아래 한 줄 */
+.ed.nar .ed-top{gap:6px;padding:6px 0 8px}
+.ed.nar .ed-top .tt{flex:1 1 0;min-width:0}
+.ed.nar .ed-top .tt b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ed.nar .ed-top .tt span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px}
+.ed.nar .ed-top .mt-sp{display:none}
+.ed.nar .ed-top .mt-btn{height:34px;padding:0 10px;font-size:12.5px;gap:4px}
+.ed.nar .ed-top .lb{display:none}
 .ed-top .tt{display:flex;flex-direction:column}
 .ed-top .tt b{font-size:20px;font-weight:900}
 .ed-top .tt span{font-size:11.5px;color:var(--ink-3);font-weight:700}
@@ -150,7 +206,7 @@ html[data-theme="dark"] .ed-rs{background:var(--gold-bg);border-color:var(--gold
 .wp label small{color:var(--ink-3);font-size:11px;margin-left:auto}
 .wp .gh{font-size:11px;font-weight:800;color:var(--ink-3);padding:6px 8px 2px}
 .wp .ft{border-top:1px solid var(--line);padding:6px;display:flex;justify-content:flex-end}
-@media (max-width:760px){ .ed-grid{grid-template-columns:1fr 1fr} .ed-f.w2{grid-column:1/-1} .ed-sec{padding:14px} .et-bar .tip{display:none}
+@media (max-width:760px){ .ed-grid{grid-template-columns:1fr 1fr} .ed-f.w2{grid-column:1/-1} .ed-sec{padding:14px} .et-bar .tip{display:none} .ed-sh > span{display:none}
   .et-h{flex-wrap:wrap} .et-title{flex-basis:calc(100% - 34px)} .et-thr{order:5} .ol[data-lv="1"]{padding-left:8px} .ol[data-lv="2"]{padding-left:26px} .ol[data-lv="3"]{padding-left:44px} .ol[data-lv="4"]{padding-left:62px} .ob{margin-left:6px} }
 `;
 
@@ -237,12 +293,14 @@ function paint(){
     ? `<div class="mt-seg">${X.WRITE.map(o => `<button type="button" class="${o === 'da' ? 'da ' : ''}${ED.org === o ? 'on' : ''}" data-e="org" data-v="${o}">${esc(C.MORG[o])}</button>`).join('')}</div>`
     : `<div style="font-size:14px;font-weight:800;padding:9px 0">${esc(C.MORG[ED.org])} <span style="font-size:11.5px;color:var(--ink-3);font-weight:600">(만든 뒤엔 바꿀 수 없어요)</span></div>`;
   R.innerHTML = `<div class="ed">
-    <div class="ed-top"><button class="mt-btn" data-e="cancel">‹ 나가기</button>
+    <div class="ed-top"><button class="mt-btn" data-e="cancel" title="나가기">‹<span class="lb"> 나가기</span></button>
       <div class="tt"><b>${ED.isNew ? '새 회의록' : '회의록 고치기'}</b><span id="ed-saved">${ED.isNew ? '쓰는 동안 «내 임시 저장»에 저절로 남아요 · 게시하기 전엔 나만 보여요' : `${esc(C.fmtMDY(ED.date))} ${esc(C.titleOf(ED))} · 고친 것은 게시하기 전엔 나만 보여요`}</span></div>
       <div class="mt-sp"></div>
-      <button class="mt-btn" data-e="preview">문서로 미리보기</button>
-      <button class="mt-btn" data-e="keep" title="게시하지 않고 나만 보이게 두기 — 목록 위 «내 임시 저장»에서 이어서 써요">📝 임시 저장</button>
+      ${agOn() ? `<button class="mt-btn ag-tg" data-e="agtog" id="ed-agtg" aria-controls="ed-ag" title="올라온 안건 — 보면서 쓰기">📮<span class="lb"> 안건</span> <b></b></button>` : ''}
+      <button class="mt-btn" data-e="preview" title="문서로 미리보기">👁<span class="lb"> 문서로 미리보기</span></button>
+      <button class="mt-btn" data-e="keep" title="게시하지 않고 나만 보이게 두기 — 목록 위 «내 임시 저장»에서 이어서 써요">📝<span class="lb"> 임시 저장</span></button>
       <button class="mt-btn p" data-e="save">${pubLabel()}</button></div>
+    <div class="ed-cols"><div class="ed-main">
     <div id="ed-rs"></div>
     <section class="ed-sec"><div class="ed-sh"><i>1</i>회의</div>
       <div class="ed-grid">
@@ -262,11 +320,123 @@ function paint(){
     <section class="ed-sec"><div class="ed-sh"><i>3</i>주제 <span>Tab 들여쓰기 · Shift+Tab 내어쓰기 — 번호는 (1) → 1) → I. → (I) 로 저절로 · Pages · 한글에서 복사해 붙여도 번호를 알아봐요</span></div>
       <div id="ed-topics">${ED.topics.map(topicHTML).join('')}</div>
       <button type="button" class="addb" data-e="addtopic">＋ 주제 추가</button> <button type="button" class="addb" data-e="pick">↩ 이전 회의 주제 가져오기</button></section>
-    <div class="ed-foot"><span id="ed-note" style="flex:1"></span><button class="mt-btn" data-e="keep">📝 임시 저장</button><button class="mt-btn p" data-e="save">${pubLabel()}</button></div>
+    <div class="ed-foot"><span id="ed-note" style="flex:1"></span><button class="mt-btn" data-e="keep">📝<span class="lb"> 임시 저장</span></button><button class="mt-btn p" data-e="save">${pubLabel()}</button></div>
+    </div>${agOn() ? `<aside class="ed-ag" id="ed-ag" aria-label="올라온 안건"></aside><div class="ed-agbg" data-e="agclose"></div>` : ''}</div>
   </div>`;
   ED.topics.forEach(t => { const el = R.querySelector(`.et[data-tid="${t.id}"]`); if(el) hydrate(el, t); });
   paintAtt(); paintCont(); renumAll(); note();
-  bind();
+  bind(); fit(); paintAg();
+}
+/* ═══ 📐 v180 편집기 폭에 맞추기 — 넓으면 안건 창을 옆에 · 좁으면 머리를 한 줄로 ═══ */
+let RO = null, FIT_RS = null;
+function fit(){
+  const ed = R && R.querySelector('.ed'); if(!ed) return;
+  const apply = () => {
+    if(!ED || !ed.isConnected) return;
+    const w = ed.getBoundingClientRect().width / (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--zoom')) || 1);
+    ed.classList.toggle('wide', w >= 1060); ed.classList.toggle('xwide', w >= 1400); ed.classList.toggle('nar', w < 640);
+    const top = ed.querySelector('.ed-top'); if(top) ed.style.setProperty('--edtop', Math.ceil(top.getBoundingClientRect().height / (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--zoom')) || 1)) + 'px');
+    agClass();
+  };
+  try{ if(RO) RO.disconnect(); RO = new ResizeObserver(() => requestAnimationFrame(apply)); RO.observe(ed); const top = ed.querySelector('.ed-top'); if(top) RO.observe(top); }
+  catch(e){ window.removeEventListener('resize', FIT_RS); FIT_RS = () => { try{ fit(); }catch(_){} }; window.addEventListener('resize', FIT_RS); }
+  apply();
+}
+/* ═══ 📮 v180 오른쪽 «안건» 창 — 올라온 안건을 보며 쓰기 · «＋ 주제로» · 게시하면 «다룸» ═══
+   넓은 화면: 옆에 (닫으면 이 기기에 기억) · 좁은 화면(패드 세로 · 폰): «📮 안건» 단추로 여닫는 서랍 */
+const agOn = () => !!(X && typeof X.agendas === 'function');
+const ymdOf = ms => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const AGP = 'mtg_agpanel';
+const agPref = () => { try{ return localStorage.getItem(AGP) || ''; }catch(e){ return ''; } };
+function agList(){
+  if(!agOn()) return [];
+  return (X.agendas() || []).filter(a => (ED.org === 'lead' || a.org === ED.org) && (a.status || 'open') !== 'used');
+}
+function agInMap(){   // 이 편집기에 이미 넣은 안건 → 주제 번호
+  const m = new Map();
+  R.querySelectorAll('.et').forEach((el, i) => { if(el._ag) m.set(el._ag, { no: i + 1, el }); });
+  return m;
+}
+function agClass(){
+  const ed = R && R.querySelector('.ed'); if(!ed || !agOn()) return;
+  const wide = ed.classList.contains('wide');
+  const pref = agPref();
+  if(ED.agInit == null && (agList().length || (X.agReady && X.agReady()))) ED.agInit = agList().length > 0;   // 처음 한 번만 정함
+  const side = wide && (pref === 'open' || (pref !== 'closed' && !!ED.agInit));
+  ed.classList.toggle('ag-side', side);
+  if(wide) ed.classList.remove('ag-drawer');
+  const tg = R.querySelector('#ed-agtg'); if(tg){ const on = side || ed.classList.contains('ag-drawer'); tg.classList.toggle('on', on); tg.setAttribute('aria-expanded', String(on)); }
+}
+function paintAg(){
+  if(!agOn() || !ED || !R) return;
+  const box = R.querySelector('#ed-ag'); if(!box) return;
+  const C = X.C;
+  const L = agList();
+  const inMap = agInMap();
+  const open = L.filter(a => (a.status || 'open') === 'open'), hold = L.filter(a => a.status === 'hold');
+  const tg = R.querySelector('#ed-agtg b'); if(tg) tg.textContent = String(open.filter(a => !inMap.has(a.id)).length || '');
+  const mineType = a => !a.type || a.type === ED.type;
+  const card = a => {
+    const hit = inMap.get(a.id);
+    return `<div class="agc${hit ? ' in' : ''}${a.status === 'hold' ? ' hold' : ''}" data-agid="${esc(a.id)}">
+      <div class="agc-t">${esc(a.title || '')}</div>
+      ${a.desc ? `<div class="agc-d clamp" data-e="agmore" title="눌러서 모두 보기">${esc(a.desc)}</div>` : ''}
+      <div class="agc-m"><b>${esc(a.name || '')}</b><span>${esc(C.fmtMD(ymdOf(C.tsMs(a.at) || a.atMs || Date.now())))}</span>${a.type ? `<span class="ty">${esc(a.type)}</span>` : ''}${a.status === 'hold' ? '<span>보류</span>' : ''}</div>
+      <div class="agc-b">${hit ? `<button type="button" class="go" data-e="aggo" data-id="${esc(a.id)}">✓ ${hit.no}번 주제에 넣었어요 ›</button>` : `<button type="button" class="p" data-e="agadd" data-id="${esc(a.id)}">＋ 주제로</button>`}</div></div>`;
+  };
+  const here = open.filter(mineType), other = open.filter(a => !mineType(a));
+  const err = X.agErr && X.agErr();
+  const keepOpen = new Set([...box.querySelectorAll('details[open][data-k]')].map(d => d.dataset.k));
+  const keepClosed = new Set([...box.querySelectorAll('details[data-k]:not([open])')].map(d => d.dataset.k));
+  const ls0 = box.querySelector('.ag-ls'), sc0 = ls0 ? ls0.scrollTop : 0;
+  const det = (k, def) => keepOpen.has(k) || (!keepClosed.has(k) && def) ? ' open' : '';
+  const SA = navigator.standalone === true || !!(window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  const left = here.filter(a => !inMap.has(a.id)).length;
+  box.innerHTML = `<div class="ag-hd"><b>📮 올라온 안건</b><span class="n">기다리는 ${open.length}</span><span class="mt-sp" style="flex:1"></span>
+      ${typeof X.agNew === 'function' ? `<button type="button" class="mt-btn sm" data-e="agnew" title="안건 올리기">＋ 올리기</button>` : ''}
+      <button type="button" class="ib" data-e="agclose" aria-label="안건 창 닫기" title="안건 창 닫기">✕</button></div>
+    ${L.length ? `<div class="ag-tip">«＋ 주제로»를 누르면 주제로 들어가요 — 게시하면 «다룬 안건»으로 옮겨져요</div>` : ''}
+    <div class="ag-ls">${err && /permission/.test(err) ? '<div class="ag-em">안건을 아직 불러올 수 없어요 — 보안 규칙 v49를 게시했는지 확인해 주세요.</div>' : ''}
+      ${!L.length && !err ? `<div class="ag-em">${ED.org === 'lead' ? '주임 회의록' : esc(C.MORG[ED.org] || '')}에 올라온 안건이 없어요.<br>«＋ 올리기»로 미리 올려 둘 수 있어요.</div>` : ''}
+      ${here.length ? `<div class="ag-g">${other.length ? `${esc(ED.type || '이 회의')} · 어느 회의든` : '기다리는 안건'} <small>${here.length}</small></div>${here.map(card).join('')}` : ''}
+      ${other.length ? `<details data-k="other"${det('other', !here.length)}><summary class="ag-g" style="cursor:pointer">다른 회의 안건 <small>${other.length}</small></summary>${other.map(card).join('')}</details>` : ''}
+      ${hold.length ? `<details data-k="hold"${det('hold', false)}><summary class="ag-g" style="cursor:pointer">보류한 안건 <small>${hold.length}</small></summary>${hold.map(card).join('')}</details>` : ''}</div>
+    <div class="ag-ft">${left > 1 ? `<button type="button" class="mt-btn sm" data-e="agall">＋ ${left}건 모두 주제로</button>` : ''}${SA ? '' : `<a href="${esc(X.agUrl || 'minutes.html?agenda=1')}" target="_blank" rel="noopener">안건 창구 ↗</a>`}</div>`;
+  const ls1 = box.querySelector('.ag-ls'); if(ls1 && sc0) ls1.scrollTop = sc0;
+  agClass();
+}
+export function agendasChanged(){ try{ if(ED && R) paintAg(); }catch(e){ console.warn('agendas', e); } }
+/* 안건 → 주제 (제목 = 안건 제목 · 내용 = 설명 한 줄씩 · 그 아래 빈 줄부터 회의 내용) */
+function agTopic(a){
+  const lines = String(a.desc || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean).slice(0, 60);
+  const body = lines.map(x => ({ k: 'l', lv: 1, h: esc(x) }));
+  body.push({ k: 'l', lv: 1, h: '' });
+  return { id: uid6('t'), title: String(a.title || '').slice(0, 150), body, dec: [], tasks: [], agendaId: a.id, agBy: a.name || '' };
+}
+function isBlankTopic(el){
+  return !el.querySelector('.et-title').value.trim() && ![...el.querySelectorAll('.ol-t')].some(x => x.textContent.trim())
+    && !el.querySelector('.ob, .dl, .kr') && !el._thr && !el._ag;
+}
+function agAdd(ids){
+  const L = agList(), inMap = agInMap();
+  const box = R.querySelector('#ed-topics');
+  let last = null;
+  for(const id of ids){
+    const a = L.find(x => x.id === id); if(!a || inMap.has(id)) continue;
+    const t = agTopic(a);
+    const ets = [...box.querySelectorAll('.et')];
+    const blank = ets.length === 1 && isBlankTopic(ets[0]) ? ets[0] : null;   // 처음 빈 주제 하나뿐이면 그 자리에
+    box.insertAdjacentHTML('beforeend', topicHTML(t));
+    const el = box.querySelector(`.et[data-tid="${t.id}"]`); hydrate(el, t);
+    if(blank) blank.remove();
+    inMap.set(id, { el }); last = el;
+  }
+  if(!last) return;
+  renumAll(); dirty(); paintAg();
+  const ed = R.querySelector('.ed');
+  if(ed && ed.classList.contains('ag-drawer')){ ed.classList.remove('ag-drawer'); agClass(); }
+  last.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  last.classList.remove('flash'); void last.offsetWidth; last.classList.add('flash');
 }
 function typeChipsHTML(){
   const list = X.typesOf(ED.org);
@@ -283,7 +453,7 @@ function paintTypes(){
 function topicHTML(t){
   return `<div class="et" data-tid="${esc(t.id)}">
     <div class="et-h"><span class="et-no"></span><input class="et-title" value="${esc(t.title || '')}" placeholder="주제 제목">
-      ${t.thrFrom ? `<span class="et-thr">↩ ${esc(X.C.fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : ''}<span class="et-sum"></span>
+      ${t.thrFrom ? `<span class="et-thr">↩ ${esc(X.C.fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : ''}${t.agendaId ? `<span class="et-ag" title="안건 창구에서 넣은 주제">📮 ${esc(t.agBy || '')} 안건</span>` : ''}<span class="et-sum"></span>
       <button type="button" class="ib" data-e="tup" title="위로">↑</button><button type="button" class="ib" data-e="tdown" title="아래로">↓</button>
       <button type="button" class="ib" data-e="tfold" title="접기">접기</button><button type="button" class="ib" data-e="tdel" title="주제 빼기">✕</button></div>
     <div class="et-in">
@@ -298,6 +468,7 @@ function topicHTML(t){
 }
 function hydrate(el, t){
   el._thr = t.thr || ''; el._thrFrom = t.thrFrom || ''; el._ed = t.ed || null;
+  el._ag = t.agendaId || ''; el._agBy = t.agBy || '';   // 📮 v180 안건에서 넣은 주제
   const body = el.querySelector('.et-body');
   (t.body && t.body.length ? t.body : [{ k: 'l', lv: 1, h: '' }]).forEach(b => body.appendChild(b.k === 'l' ? lineEl(b.lv, b.h, b.from) : blockEl(b)));
   const decs = el.querySelector('.et-decs');
@@ -448,6 +619,7 @@ function renum(el){
 }
 function renumAll(){
   R.querySelectorAll('.et').forEach((el, i) => { el.querySelector('.et-no').textContent = (i + 1) + '.'; renum(el); });
+  if(R.querySelector('#ed-ag')) paintAg();   // 📮 v180 주제를 빼거나 옮기면 «n번 주제에 넣었어요»도
 }
 function note(){
   const n = R.querySelector('#ed-note'); if(!n) return;
@@ -538,13 +710,28 @@ async function onClick(e){
   const act = b.dataset.e, et = topicOfEvent(e), C = X.C;
   switch(act){
     case 'cancel': return cancel();
+    case 'agtog': { const ed = R.querySelector('.ed');   // 📮 v180
+      if(ed.classList.contains('wide')){ const on = ed.classList.contains('ag-side'); try{ localStorage.setItem(AGP, on ? 'closed' : 'open'); }catch(_){} }
+      else ed.classList.toggle('ag-drawer');
+      agClass(); return; }
+    case 'agclose': { const ed = R.querySelector('.ed');
+      if(ed.classList.contains('wide')){ try{ localStorage.setItem(AGP, 'closed'); }catch(_){} } else ed.classList.remove('ag-drawer');
+      agClass(); return; }
+    case 'agadd': return agAdd([b.dataset.id]);
+    case 'agall': { const inMap = agInMap(); return agAdd(agList().filter(a => (a.status || 'open') === 'open' && (!a.type || a.type === ED.type) && !inMap.has(a.id)).map(a => a.id)); }
+    case 'aggo': { const h = agInMap().get(b.dataset.id); if(h){ const ed = R.querySelector('.ed'); if(ed.classList.contains('ag-drawer')){ ed.classList.remove('ag-drawer'); agClass(); }
+      h.el.scrollIntoView({ block: 'center', behavior: 'smooth' }); h.el.classList.remove('flash'); void h.el.offsetWidth; h.el.classList.add('flash'); } return; }
+    case 'agmore': b.classList.toggle('clamp'); return;
+    case 'agnew': if(typeof X.agNew === 'function') X.agNew(ED.org === 'lead' ? 'lead' : ED.org); return;
     case 'keep': return keep();
     case 'save': return save();
     case 'preview': return preview();
     case 'org': if(!ED.isNew) return; ED.org = b.dataset.v; if(!X.typesOf(ED.org).includes(ED.type)) ED.type = X.typesOf(ED.org)[0] || '';
-      { const keep = collect(); ED.topics = keep.topics.length ? keep.topics : [blankTopic()]; ED.title = keep.title; ED.place = keep.place; ED.time = keep.time; ED.guests = keep.guests; ED.date = keep.date; }
+      { const keep = collect();
+        if(agOn()) keep.topics.forEach(t => { const a = t.agendaId && (X.agendas() || []).find(x => x.id === t.agendaId); if(t.agendaId && (!a || a.org !== ED.org)){ delete t.agendaId; delete t.agBy; } });   // 📮 v180 다른 기관 안건은 연결을 풂
+        ED.topics = keep.topics.length ? keep.topics : [blankTopic()]; ED.title = keep.title; ED.place = keep.place; ED.time = keep.time; ED.guests = keep.guests; ED.date = keep.date; }
       ED.att = {}; paint(); dirty(); return;
-    case 'type': ED.type = b.dataset.v; paintTypes();
+    case 'type': ED.type = b.dataset.v; paintTypes(); paintAg();
       if(ED.isNew){ const pm = lastOf(ED.org, ED.type); if(pm){ const p = R.querySelector('#ed-place'), tm = R.querySelector('#ed-time'); if(!p.value) p.value = pm.place || ''; if(!tm.value) tm.value = pm.time || ''; if(!Object.keys(ED.att).length){ ED.att = rosterFrom(pm); ED.attNames = { ...(pm.attNames || {}) }; paintAtt(); } } }
       paintCont(); dirty(); return;
     case 'newtype': { const v0 = prompt(`${C.MORG[ED.org]} 회의 종류에 새로 넣을 이름 (예: 교사 연수 회의)\n넣으면 다음부터 모든 선생님 목록에 보여요.`); const v = (v0 || '').trim(); if(!v) return;
@@ -999,6 +1186,7 @@ function collect(){
     }).filter(k => C.textOf(k.h).trim());
     const t = { id: el.dataset.tid, title: el.querySelector('.et-title').value.trim(), body, dec, tasks };
     if(el._thr){ t.thr = el._thr; t.thrFrom = el._thrFrom || ''; }
+    if(el._ag){ t.agendaId = el._ag; t.agBy = el._agBy || ''; }
     return t;
   }).filter(t => t.title || t.body.length || t.dec.length || t.tasks.length);
   const attNames = {};
@@ -1160,6 +1348,7 @@ async function checkDraft(pre){
 }
 /* 뒤로 가기 등으로 편집 화면을 떠날 때 — 쓰던 것은 «내 임시 저장»에 남기고 정리 */
 export function closeEditor(){
+  try{ RO && RO.disconnect(); }catch(e){} RO = null;
   if(!ED) return;
   const E = ED;
   clearTimeout(E._dt); clearTimeout(E._st); stopWatch(E);
@@ -1215,7 +1404,7 @@ async function keep(){
   const ok = await srvSave('keep');
   if(ED !== E) return;
   if(!ok){
-    btns.forEach(b => { b.disabled = false; b.textContent = '📝 임시 저장'; });
+    btns.forEach(b => { b.disabled = false; b.innerHTML = '📝<span class="lb"> 임시 저장</span>'; });
     X.toast('«내 임시 저장»에 남기지 못했어요 — 이 기기에는 남아 있어요. 인터넷을 확인하고 다시 눌러 주세요', 'err');
     return;
   }
@@ -1289,8 +1478,32 @@ async function persist(ctx, id, data, o){
   /* 📜 v177 한 줄 기록 (수퍼관리자만 · 관리자 › 활동 로그) */
   if(typeof ctx.log === 'function'){ try{ ctx.log(o.sum && /되돌림/.test(o.sum) ? '되돌림' : prevData ? '고침' : '새로 씀', { ...saved, id }, { rev: saved.rev, detail: sumTxt || '' }); }catch(e){} }
   await syncTasks(ctx, id, saved, prevData);
+  await markAgendas(ctx, id, saved, prevData);
   if(typeof ctx.onPersist === 'function'){ try{ await ctx.onPersist(id, saved, prevData); }catch(e){ console.warn('onPersist', e); } }   // 🔒 v175 공유본 맞추기
   return saved;
+}
+/* 📮 v180 회의록에 넣은 안건 → «다룸» (이 회의록으로 바로 가기) · 올린 분께 알림 — 이번에 새로 넣은 것만 */
+async function markAgendas(ctx, id, m, prev){
+  const { db, FS, C, CU } = ctx;
+  const K = COL(ctx); if(!K.a || typeof ctx.agendas !== 'function') return;
+  const before = new Set(((prev && prev.topics) || []).map(t => t.agendaId).filter(Boolean));
+  const list = ctx.agendas() || [];
+  const mtitle = C.titleOf(m);
+  const jobs = [];
+  (m.topics || []).forEach((t, ti) => {
+    if(!t.agendaId || before.has(t.agendaId)) return;
+    const a = list.find(x => x.id === t.agendaId);
+    if(!a || a.status === 'used' || (m.org !== 'lead' && a.org !== m.org)) return;   // 이 회의록 기관의 안건만
+    jobs.push(FS.updateDoc(FS.doc(db, K.a, a.id), { status: 'used', meetingId: id, meetingDate: m.date || '', meetingTitle: String(mtitle || '').slice(0, 150),
+      usedAt: FS.serverTimestamp(), usedByUid: CU.uid, usedByName: CU.name || '', updatedAt: FS.serverTimestamp() })
+      .then(() => {
+        if(!a.uid || a.uid === CU.uid) return;
+        return FS.addDoc(FS.collection(db, 'mtgNotifs'), { toUid: a.uid, kind: 'agenda', meetingId: id, org: m.org, ...(m.org === 'lead' ? { book: 'lead' } : {}), mtitle, date: m.date,
+          tgt: 't:' + t.id, where: `${ti + 1}. ${t.title || ''}`, text: String(a.title || '').slice(0, 140), fromUid: CU.uid, fromName: CU.name || '', at: FS.serverTimestamp(), read: false });
+      })
+      .catch(e => console.warn('agenda', e)));
+  });
+  if(jobs.length) await Promise.all(jobs);
 }
 async function syncTasks(ctx, id, m, prev){
   const { db, FS, C, CU } = ctx;

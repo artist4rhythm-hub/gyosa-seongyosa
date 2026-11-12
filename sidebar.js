@@ -194,7 +194,7 @@ document.addEventListener('click', e=>{
   function applyLay(){
     var W = document.documentElement.clientWidth || window.innerWidth || 0;   // 스크롤 막대를 뺀 폭
     var H = window.innerHeight || 0, Z = zoomOf();
-    var sbw = W > 1100 ? 220 * Z : (W > 768 && H > 520 ? 190 * Z : 0);   // 사이드바 (theme.css · 위 CSS 와 같은 규칙)
+    var sbw = W > 1100 ? 220 * Z : (W > 900 && H > 520 ? 190 * Z : 0);   // 사이드바 (theme.css · 위 CSS 와 같은 규칙 · 📱 v180 900px 이하는 서랍)
     var sb = document.getElementById('sb');
     if(sb){ try { var cs = getComputedStyle(sb); sbw = (cs.position === 'fixed' || cs.display === 'none') ? 0 : sb.getBoundingClientRect().width; } catch(e){} }
     var pad = W >= 1800 ? 40 : W > 1100 ? 32 : W > 768 ? 20 : 14;            // 본문 좌우 여백 (--page-pad-x)
@@ -662,7 +662,7 @@ window.closeDrawer = closeDrawer;
 function injectSidebarCSS(){
   const link = document.createElement('link');
   link.rel = 'stylesheet';
-  link.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0&display=swap';
+  link.href = 'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0&display=swap';   // 📱 v180 크기 축을 하나로 — 아이콘 글꼴 903KB → 375KB (패드 · 폰 첫 화면이 빨라짐)
   document.head.appendChild(link);
 
   // 아이콘 폰트가 준비되면 표시 (로딩 중 이름이 글자로 보이는 것 방지)
@@ -684,13 +684,13 @@ function injectSidebarCSS(){
 #app{display:flex;min-height:100vh;background:var(--sb-cream);}
 
 /* ── 사이드바 ── */
-#sb{width:var(--sb-w);flex:none;background:var(--sb-house);color:#fff;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:60;}
+#sb{width:var(--sb-w);flex:none;background:var(--sb-house);color:#fff;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;height:100dvh;z-index:60;}
 .sb-top{display:flex;align-items:center;padding:14px 12px 10px;}
 .sb-brand{display:flex;align-items:center;gap:9px;text-decoration:none;flex:1;min-width:0;}
 .sb-logo{width:30px;height:30px;border-radius:8px;background:var(--sb-green);display:flex;align-items:center;justify-content:center;flex:none;}
 .sb-logo .material-symbols-rounded{font-size:18px;color:#fff;}
 .sb-bt{color:#fff;font-size:14.5px;font-weight:700;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;}
-.sb-close{display:none;border:none;background:none;color:rgba(255,255,255,.6);cursor:pointer;padding:4px;}
+#sb .sb-close{display:none;border:none;background:none;color:rgba(255,255,255,.6);cursor:pointer;padding:4px;}
 
 .sb-search{margin:0 12px 10px;background:rgba(255,255,255,.09);border-radius:9px;display:flex;align-items:center;gap:7px;padding:0 10px;height:36px;}
 .sb-search .material-symbols-rounded{font-size:18px;color:rgba(255,255,255,.5);flex:none;}
@@ -872,7 +872,7 @@ html[data-theme="dark"] .fs-pick button.on{color:#06130E;}
     width:calc(250px * var(--zoom));max-width:60vw;overflow-y:auto;z-index:60;}
   #app.drawer #sb{transform:translateX(0);}
   #app.drawer #sb-scrim{display:block;position:fixed;inset:0;background:rgba(30,57,50,.45);z-index:55;}
-  .sb-close{display:block;}
+  #sb .sb-close{display:inline-flex;}
   .tb-menu{display:block;}
   /* 세로 압축 — 위쪽 상표·검색, 아래 설정이 절반을 차지하지 않게 */
   .sb-top{padding:7px 12px 5px;}
@@ -881,12 +881,26 @@ html[data-theme="dark"] .fs-pick button.on{color:#06130E;}
   .fs-row{margin-bottom:6px;}
 }
 
+/* ── 📱 v180 패드 세로 (769~900px · iPad 10세대 · Air · Pro 11 세로) — 사이드바는 서랍(☰)으로, 본문이 화면 폭을 다 쓴다 ── */
+@media (min-width:769px) and (max-width:900px){
+  #sb{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);
+    transition:transform .22s ease;box-shadow:var(--shadow-md);
+    width:calc(264px * var(--zoom));max-width:70vw;overflow-y:auto;z-index:60;}
+  #app.drawer #sb{transform:translateX(0);}
+  #app.drawer #sb-scrim{display:block;position:fixed;inset:0;background:rgba(30,57,50,.45);z-index:55;}
+  #sb .sb-close{display:inline-flex;}
+  .tb-menu{display:block;}
+}
+
+/* 📱 v180 닫힌 서랍의 그림자가 화면 왼쪽 끝에 회색 띠로 비치던 것 — 열렸을 때만 그림자 */
+#app:not(.drawer) #sb{box-shadow:none;}
+
 /* ── 모바일/세로: 드로어 + 하단탭 ── */
 @media(max-width:768px){
   #sb{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--shadow-md);width:calc(264px * var(--zoom));max-width:86vw;}
   #app.drawer #sb{transform:translateX(0);}
   #app.drawer #sb-scrim{display:block;position:fixed;inset:0;background:rgba(30,57,50,.45);z-index:55;}
-  .sb-close{display:block;}
+  #sb .sb-close{display:inline-flex;}
   .tb-menu{display:block;}
   .sb-pin{display:block;}
   #mn{padding:var(--page-pad-y) var(--page-pad-x) calc(var(--tab-h) + 14px);}
@@ -1126,4 +1140,79 @@ window.guardPage = guardPage;
   document.addEventListener('visibilitychange', ()=>{
     if(!document.hidden) check();             // 다른 앱 갔다 돌아오면 바로
   });
+})();
+
+/* ═══ 📱 v180 아이폰 · 아이패드 ═══
+   ① 글자가 16px보다 작은 입력칸을 누르면 사파리가 화면을 저절로 확대해, 나와도 칸 · 간격이 어긋나 보였다
+      → iOS 에서만 viewport 에 maximum-scale=1 (손가락으로 벌려 확대하기는 iOS 가 그대로 허용)
+   ② 홈 화면에 추가한 앱(standalone)에는 사파리의 «끌어내려 새로 고침»이 없다
+      → 맨 위에서 아래로 끌어내리면 «놓으면 새로 고침» — 입력 중 · 창이 열린 동안 · 안쪽 목록을 굴리는 중에는 하지 않음 */
+(function(){
+  var ua = navigator.userAgent || '';
+  var iOS = /iP(hone|ad|od)/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(!iOS) return;
+  try{
+    var m = document.querySelector('meta[name="viewport"]');
+    if(m && !/maximum-scale/.test(m.content || '')) m.setAttribute('content', (m.content || 'width=device-width, initial-scale=1') + ', maximum-scale=1');
+  }catch(e){}
+  var standalone = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  if(!standalone) return;
+  var TH = 64, y0 = 0, x0 = 0, pull = 0, on = false, ind = null, busy = false;
+  function css(){
+    if(document.getElementById('ptr-css')) return;
+    var st = document.createElement('style'); st.id = 'ptr-css';
+    st.textContent = '#ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 6px);z-index:3500;transform:translate(-50%,-60px);display:flex;align-items:center;gap:8px;'
+      + 'background:var(--surface,#fff);color:var(--ink,#1F2320);border:1px solid var(--line,#E3E1DA);border-radius:100px;padding:7px 14px 7px 9px;box-shadow:0 6px 20px rgba(0,0,0,.14);'
+      + 'font:800 12.5px/1 var(--font-ui,"Noto Sans KR",sans-serif);pointer-events:none;opacity:0;transition:opacity .15s}'
+      + '#ptr i{font-style:normal;width:24px;height:24px;border-radius:50%;background:var(--sb-mint-2,#E8F3EF);color:var(--sb-green,#00704A);display:grid;place-items:center;font-size:14px;transition:transform .15s}'
+      + '#ptr.go i{transform:rotate(180deg);background:var(--sb-green,#00704A);color:#fff}'
+      + '#ptr.spin i{animation:ptrspin .8s linear infinite;background:var(--sb-green,#00704A);color:#fff}'
+      + '@keyframes ptrspin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(st);
+  }
+  function show(p){
+    css();
+    if(!ind){ ind = document.createElement('div'); ind.id = 'ptr'; ind.innerHTML = '<i>↓</i><span>끌어내려 새로 고침</span>'; document.body.appendChild(ind); }
+    var ready = p >= TH;
+    ind.classList.toggle('go', ready);
+    ind.lastChild.textContent = ready ? '놓으면 새로 고침' : '끌어내려 새로 고침';
+    ind.style.opacity = String(Math.min(1, p / 30));
+    ind.style.transform = 'translate(-50%,' + Math.round(Math.min(p, TH + 20) - 50) + 'px)';
+  }
+  function hide(){ if(ind){ ind.style.opacity = '0'; ind.style.transform = 'translate(-50%,-60px)'; ind.classList.remove('go'); } pull = 0; }
+  var atTop = function(){ return (window.scrollY || document.documentElement.scrollTop || 0) <= 0; };
+  function skip(t){
+    if(!t || !t.closest) return true;
+    if(t.closest('input,textarea,select,[contenteditable="true"],[contenteditable=""],.mm-ov,.mov,#rp-wrap.open,#hp,.wp,.pop,.ed-ag')) return true;
+    var root = document.documentElement;
+    if(document.querySelector('#app.drawer,#loadOverlay.on,.mm-ov,.mov,#rp-wrap.open') || root.classList.contains('hm-editing') || root.classList.contains('hp-open')) return true;
+    for(var el = t; el && el !== document.body && el !== root; el = el.parentElement){
+      var cs = getComputedStyle(el);
+      if(cs.position === 'fixed' || cs.touchAction === 'none') return true;   // 떠 있는 창 · 서랍 · 끌어 옮기는 곳(크기 바꾸기 · 그림 자르기 등)
+      if(/(auto|scroll)/.test(cs.overflowY) && el.scrollHeight > el.clientHeight + 1 && el.scrollTop > 0) return true;   // 안쪽 목록을 굴려 내려가 있으면 그 목록 먼저
+    }
+    return false;
+  }
+  function dirty(){ try{ return !!(window.__mtDirty || window.__dirty || typeof window.onbeforeunload === 'function'); }catch(e){ return false; } }
+  window.addEventListener('touchstart', function(e){
+    on = false; if(busy || e.touches.length !== 1 || !atTop() || skip(e.target)) return;
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; pull = 0; on = true;
+  }, { passive: true });
+  window.addEventListener('touchmove', function(e){
+    if(!on) return;
+    var dy = e.touches[0].clientY - y0, dx = Math.abs(e.touches[0].clientX - x0);
+    if(dy <= 0 || dx > dy || !atTop()){ if(pull) hide(); if(dy < -6 || dx > 24) on = false; return; }
+    pull = Math.min(150, dy * 0.55); show(pull);
+  }, { passive: true });
+  function end(){
+    if(!on) return; on = false;
+    if(pull < TH){ hide(); return; }
+    if(dirty() && !confirm('아직 저장하지 않은 내용이 있을 수 있어요. 새로 고칠까요?')){ hide(); return; }
+    busy = true; ind.classList.remove('go'); ind.classList.add('spin'); ind.firstChild.textContent = '↻'; ind.lastChild.textContent = '새로 고치는 중…';
+    try{ if(typeof window.onbeforeunload === 'function') window.onbeforeunload({ preventDefault: function(){}, returnValue: '' }); }catch(e){}   // 회의록 쓰는 중이면 임시 저장부터
+    try{ window.onbeforeunload = null; }catch(e){}
+    setTimeout(function(){ location.reload(); }, 450);
+  }
+  window.addEventListener('touchend', end, { passive: true });
+  window.addEventListener('touchcancel', function(){ on = false; hide(); }, { passive: true });
 })();

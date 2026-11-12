@@ -71,11 +71,13 @@ const RightPanel = {
       .tm-empty{font-size:12px;color:var(--tl,#999);padding:4px 2px}
       .tm-note{font-size:11px;color:var(--tl,#999);line-height:1.6;margin-top:2px}
       @media (max-width:600px){ #rp-handle{padding:11px 6px;font-size:11.5px} }
+      /* 📱 v180 패드 · 폰 · 좁은 창 — 글자 없이 ⏱ 만 (오른쪽 끝 칸 · 달력 토요일 칸을 가리지 않게) */
+      @media (max-width:1100px), (pointer:coarse){ #rp-handle{padding:9px 4px;font-size:13px;letter-spacing:0;opacity:.78;top:auto;bottom:calc(140px + env(safe-area-inset-bottom));transform:none} #rp-handle .lb{display:none} }
     `;
     document.head.appendChild(css);
     const btn = document.createElement('button');
     btn.id = 'rp-handle'; btn.type='button';
-    btn.textContent = '⏱ 타임머신';
+    btn.innerHTML = '⏱<span class="lb"> 타임머신</span>'; btn.title = '타임머신 — 저장 직전 모습으로 되돌리기'; btn.setAttribute('aria-label', '타임머신');
     btn.onclick = ()=>this.open();
     document.body.appendChild(btn);
     const wrap = document.createElement('div');

@@ -324,7 +324,8 @@ export function renderTopic(m, t, i, ctx){
   const dec = (t.dec || []).filter(d => textOf(d.h).trim());
   const tasks = (t.tasks || []).filter(k => textOf(k.h).trim());
   const tc = num(cm['t:' + t.id]);
-  const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : '';
+  const thr = (t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : '')
+    + (t.agendaId && t.agBy && !ctx.print ? `<span class="md-ag">📮 ${esc(t.agBy)} 안건</span>` : '');   // 📮 v180 안건 창구에서 넣은 주제
   let h = `<section class="md-t" id="t-${esc(t.id)}" data-tid="${esc(t.id)}">
     <div class="md-th"><i>${i + 1}.</i><b>${hl(esc(t.title || '(제목 없음)'), q)}</b>${thr}
       ${ctx.interactive ? `<button class="md-tc${tc ? ' on' : ''}" data-act="tcmt" data-tid="${esc(t.id)}">💬 ${tc || '댓글'}</button>` : ''}${ctx.topicTool ? ctx.topicTool(t) : ''}</div>
@@ -428,7 +429,8 @@ export function renderDocB(m, ctx){
     const tks = (t.tasks || []).filter(k => textOf(k.h).trim());
     const tc = num(cm['t:' + t.id]);
     const folded = !!fold[t.id];
-    const thr = t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : '';
+    const thr = (t.thrFrom ? `<span class="md-thr">↩ ${esc(fmtMDY(t.thrFrom))} 회의에서 이어짐</span>` : '')
+      + (t.agendaId && t.agBy && !ctx.print ? `<span class="md-ag">📮 ${esc(t.agBy)} 안건</span>` : '');
     const ed = t.ed && t.ed.name && !ctx.print && ctx.showEd   // 📜 v177 회의록에는 고친 표시를 남기지 않음
       ? `<button type="button" class="md-ed mb-ed" data-act="ed" data-tid="${esc(t.id)}" data-rev="${esc(t.ed.rev || '')}">✎ ${esc(t.ed.name)} ${esc(fmtStamp(t.ed.at))} 고침</button>` : '';
     const nl = (t.body || []).length;
@@ -473,6 +475,7 @@ export const DOC_CSS = `
 .md-th>i{font-style:normal;font-weight:900;font-size:15px;min-width:22px}
 .md-th>b{font-weight:800;font-size:15px;background:#FFF59D;padding:1px 5px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
 .md-thr{font-size:11px;font-weight:800;color:#2B6CB0;background:#E6F0FB;border-radius:100px;padding:1px 8px}
+.md-ag{font-size:11px;font-weight:800;color:#6A4A00;background:#FBF0D6;border-radius:100px;padding:1px 8px;margin-left:4px}
 .md-l{display:flex;gap:6px;font-size:14px;line-height:1.8}
 .md-l>i{font-style:normal;flex:none;min-width:24px;color:#3F4A45}
 .md-l>span{flex:1;min-width:0;white-space:pre-wrap}

@@ -585,7 +585,7 @@ html[data-theme="dark"] .hp-btn.pr{color:#06130E}
       const spent = (ticks++) * STEP;
       if(!waiting && spent > 700){ waiting = true; T.mode = 'wait'; bubble(); placeFree(); }   // 늦으면 말풍선부터 띄워 둔다
       // 폰 서랍(사이드바) 안의 단추면 서랍을 열어 준다
-      if(phone() || matchMedia('(max-height:520px) and (max-width:1100px)').matches){
+      if(sbDrawer()){
         let raw = null; try { raw = document.querySelector(T.sel); } catch(_){}
         if(raw && raw.closest('#sb') && window.openDrawer && !document.getElementById('app')?.classList.contains('drawer')){ openDrawer(); }
       }
@@ -594,11 +594,17 @@ html[data-theme="dark"] .hp-btn.pr{color:#06130E}
     };
     if(!tryFind()) T.poll = setInterval(tryFind, STEP);
   }
+  /* 📱 v180 사이드바가 서랍인지 — 폰 · 폰 가로 · 패드 세로(769~900) 모두 (화면 폭이 아니라 실제 모양으로) */
+  function sbDrawer(){
+    const sb = document.getElementById('sb');
+    try { if(sb) return getComputedStyle(sb).position === 'fixed'; } catch(_){}
+    return phone() || matchMedia('(max-height:520px) and (max-width:1100px)').matches;
+  }
   function target(el){
     T.el = el;
     const tag = el.tagName, field = /^(INPUT|SELECT|TEXTAREA)$/.test(tag) || (el.isContentEditable && tag !== 'BUTTON');
     T.mode = field ? 'field' : 'click';
-    if(el.closest('#sb') && window.openDrawer && (phone() || matchMedia('(max-height:520px) and (max-width:1100px)').matches)) openDrawer();
+    if(el.closest('#sb') && window.openDrawer && sbDrawer()) openDrawer();
     try { el.scrollIntoView({ block:'center', inline:'nearest', behavior:'smooth' }); } catch(_){ el.scrollIntoView(); }
     const hole = document.createElement('div'); hole.id = 'hp-hole'; document.body.appendChild(hole);
     const arr = document.createElement('div'); arr.id = 'hp-arr'; document.body.appendChild(arr);
