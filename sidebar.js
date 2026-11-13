@@ -335,6 +335,9 @@ function renderShell(activeKey, user){
   window.__PAGEKEY = activeKey;
   SB_ACTIVE = activeKey;
   SB_USER = user || null;
+  try{ document.documentElement.setAttribute('data-gx-pk', activeKey || ''); }catch(e){}   // 🏛 v182 화면마다 다른 규격 손질(showroom.css)이 이 이름을 씀
+  // 📊 v182 사용 현황 — 화면 · 기기 · 시간대를 이 기기에 세어 두었다가 10분에 한 번 모아서 (usage.js · 수퍼관리자만 봄)
+  try{ if(user && user.uid && !window.__useLoad){ window.__useLoad = 1; import('./usage.js?v=182').catch(()=>{}); } }catch(e){}
   // 🔔 v131 이 기기에서 «알림 켜기»를 했으면 — 앱을 열어 둔 동안 온 알림을 화면 위 띠로 (live-push.js)
   try{ if(user && !window.__lpLoad && localStorage.getItem('staff_push_on') === '1'){ window.__lpLoad = 1; import('./live-push.js?v=131').catch(()=>{}); } }catch(e){}
 
@@ -372,16 +375,19 @@ function renderShell(activeKey, user){
 }
 window.renderShell = renderShell;
 
+/* ── 🏛 v182 화면 머리 — 화면이 한 줄 설명(sub) · 오른쪽 단추(act: HTML)를 정할 때. 그리는 것은 showroom.js ── */
+window.gxPh = function(o){ window.__gxPh = Object.assign(window.__gxPh || {}, o || {}); if(window.gxPhPaint) window.gxPhPaint(); };
+
 /* ── 🏛 v157 전시장 부품 (showroom.css · showroom.js) — 화면마다 넣지 않고 여기서 한 번 ── */
 function loadShowroom(){
   if(!document.getElementById('gx-css')){
     const l = document.createElement('link');
-    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=157';
+    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=182';
     document.head.appendChild(l);
   }
   if(!window.__gxOn && !document.getElementById('gx-js')){
     const s = document.createElement('script');
-    s.id = 'gx-js'; s.src = 'showroom.js?v=157'; s.defer = true;
+    s.id = 'gx-js'; s.src = 'showroom.js?v=182'; s.defer = true;
     document.head.appendChild(s);
   }
 }

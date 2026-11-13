@@ -7,6 +7,7 @@
       · 글쓰기 칸 · 편집 중인 문서 · 인쇄 화면 안은 건드리지 않는다
    ② 화면 설명(.adesc) → 제목 옆 ⓘ (눌러야 펼쳐짐)
    ③ 기관 띠(#org-bar) → 상단 바 칩
+   ④ 화면 머리 (v182) — 메뉴 이름 · 아이콘 · 한 줄 설명 · 오른쪽 단추 (제목이 없던 화면에)
    ═══════════════════════════════════════════════════════════ */
 (function(){
   if(window.__gxOn) return;
@@ -151,6 +152,7 @@
     if(root.matches && root.matches('.actitle')) infoize(root);
     if(root.querySelectorAll) root.querySelectorAll('.actitle').forEach(infoize);
     if((root.closest && root.closest('#org-bar')) || (root.querySelector && root.querySelector('#org-bar .ob-wrap, #org-bar .obr-p'))) moveOrgBar();
+    phIcons(root);
   }
   function scan(root){                                  // 한꺼번에 (시험 · 처음 한 번)
     const work = []; collect(root, work);
@@ -168,6 +170,7 @@
     let i = 0;
     while(i < work.length && performance.now() - t0 < 10){ try{ convert(work[i], true); }catch(e){} i++; }
     work = work.slice(i);
+    if((window.__PAGEKEY in PH_AUTO) && !document.querySelector('#mn .gx-ph')) phPaint();   // 🏛 v182 본문을 통째로 다시 그렸으면 머리도 다시
     if(obs) obs.takeRecords();                          // 방금 내가 바꾼 것으로 생긴 알림은 버린다 (한 번 더 훑지 않게)
     if(work.length && !raf) raf = requestAnimationFrame(flush);
   }
@@ -191,6 +194,105 @@
       obs.observe(document.body, { childList:true, subtree:true, characterData:true });
     }catch(e){}
   }
+
+
+  /* ── ④ 화면 머리 (v182) — 메뉴 이름 = 화면 제목 · 아이콘 · 한 줄 설명 · 오른쪽 단추 ──
+     · 제목이 없던 화면(PH_AUTO)은 본문 맨 위에 머리를 넣는다 (화면 파일은 그대로 · 이름 · 설명은 menu.js)
+     · 한 줄 설명 · 오른쪽 단추는 화면이 gxPh({ sub, act }) 로 바꿀 수 있다 (sidebar.js)
+     · 이미 머리가 있는 화면(학생관리 · 회의록 · 나학평 …)은 제목 앞에 같은 아이콘만 */
+  const PH_AUTO = { attend:'', class:'', myparents:'.cp-wrap', calendar:'.ac-wrap', history:'#ms > div', clubstat:'', gcal:'', cert:'',
+    att:'', work:'', approval:'', timetable:'', expense:'', actexp:'', buildexp:'', message:'', board:'', family:'',
+    sharecenter:'', parentadm:'#ms > .wrap', siteadm:'#ms > div' };
+  const PH_H1 = '.sh-l > h1, .mt-hl > h1, .nh-hl > h1, .cs-head .hl > h1, h1.dr-h1, h1.pr-h1, .adl-hl > h2, h1.cbs-h1';
+  const PH_COL = { '학사':1, '근무 · 행정':2, '경비':3, '소통':4, '관리':5 };
+  let phMemo = { k:null, it:null };
+  function phItem(){                                   // 화면마다 한 번만 찾음 (메뉴 전체를 매번 펼치지 않게)
+    const k = window.__PAGEKEY;
+    if(phMemo.k === k && phMemo.it) return phMemo.it;
+    let it = null;
+    try{ it = (k && typeof window.menuFind === 'function') ? window.menuFind(k) : null; }catch(e){}
+    phMemo = { k, it };
+    return it;
+  }
+  function phIcon(it){
+    const sp = document.createElement('span');
+    sp.className = 'gx-phi';
+    sp.setAttribute('aria-hidden', 'true');
+    sp.setAttribute('data-i', it.icon || 'description');
+    sp.setAttribute('data-c', String(PH_COL[it.group] || 5));
+    return sp;
+  }
+  const phEsc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  /* 본문 칸의 실제 글자 시작점에 맞춘다 (화면마다 안쪽 여백이 4 ~ 16px 다름) */
+  function phAlign(ph){
+    if(!ph || ph.getAttribute('data-at')) return;
+    const host = ph.parentElement; if(!host) return;
+    let el = ph.nextElementSibling;
+    while(el && (!el.getClientRects().length || el.matches('script,style,link,.gx-ph'))) el = el.nextElementSibling;
+    let off = 0;
+    for(let d = 0; el && d < 4; d++){
+      const cs = getComputedStyle(el), r = el.getBoundingClientRect();
+      off = r.left - host.getBoundingClientRect().left;
+      const bg = cs.backgroundColor || '';
+      const boxy = (bg && bg !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(bg)) || (parseFloat(cs.borderLeftWidth) || 0) > 0 ||
+                   /flex|grid|inline/.test(cs.display) || /^(H\d|P|TABLE|BUTTON|SELECT|INPUT|SECTION)$/.test(el.tagName);
+      if(boxy) break;                                   // 상자 · 탭 줄 · 줄글은 바깥 모서리에 맞춤
+      let c = el.firstElementChild;
+      while(c && (!c.getClientRects().length || c.matches('script,style,link'))) c = c.nextElementSibling;
+      if(!c){ off += parseFloat(cs.paddingLeft) || 0; break; }
+      el = c;                                           // 투명한 감싸개는 안으로
+    }
+    off = Math.round(off);
+    ph.style.marginLeft = ph.style.marginRight = (off > 0 && off <= 40) ? off + 'px' : '';
+  }
+  function phPaint(){
+    const it = phItem(); if(!it) return;
+    const k = window.__PAGEKEY;
+    const o = window.__gxPh || {};
+    if(k in PH_AUTO){
+      let ph = document.querySelector('#mn .gx-ph');
+      if(!ph){
+        const at = PH_AUTO[k];
+        const host = (at && document.querySelector(at)) || document.getElementById('ms');
+        if(!host) return;
+        ph = document.createElement('header');
+        ph.className = 'gx-ph';
+        ph.setAttribute('data-gx-ph', k);
+        if(at && host !== document.getElementById('ms')) ph.setAttribute('data-at', '1');
+        ph.innerHTML = '<div class="gx-ph-l"><h1 class="gx-ph-t"><span class="gx-ph-n"></span></h1><p class="gx-ph-s"></p></div><div class="gx-ph-a"></div>';
+        ph.querySelector('.gx-ph-t').insertBefore(phIcon(it), ph.querySelector('.gx-ph-n'));
+        host.insertBefore(ph, host.firstChild);
+      }
+      const label = (typeof window.menuLabelOf === 'function') ? window.menuLabelOf(it) : it.label;
+      const n = ph.querySelector('.gx-ph-n'); if(n.textContent !== label) n.textContent = label;
+      const sub = o.sub != null ? o.sub : (it.sub || it.desc || '');
+      const sEl = ph.querySelector('.gx-ph-s');
+      if(sEl.getAttribute('data-v') !== sub){ sEl.setAttribute('data-v', sub); sEl.innerHTML = o.subHtml ? sub : phEsc(sub); }
+      sEl.hidden = !sub;
+      const a = ph.querySelector('.gx-ph-a'); const act = o.act || '';
+      if(a.getAttribute('data-v') !== act){ a.setAttribute('data-v', act); a.innerHTML = act; }
+      phAlign(ph);
+    }
+    phIcons(document);
+  }
+  /* 이미 있는 머리 — 제목 앞에 아이콘 (화면이 제목을 다시 그려도 다시 붙음 · 그림 문자로 시작하는 제목은 그대로) */
+  function phIcons(root){
+    if(!root || !root.querySelectorAll) return;
+    const list = [];
+    if(root.matches && root.matches(PH_H1)) list.push(root);
+    root.querySelectorAll(PH_H1).forEach(h => list.push(h));
+    if(!list.length) return;                             // 제목이 없는 덩어리는 바로 끝 (표를 칸마다 그려도 가볍게)
+    const it = phItem(); if(!it) return;
+    for(const h of list){
+      if(!h.closest('#mn') || h.closest('.mbox,.mov,#mwrap,.modal,.overlay,[role=dialog]')) continue;
+      if(h.querySelector(':scope > .gx-phi')) continue;
+      const f = h.firstChild;
+      if(f && f.nodeType === 1 && f.classList && f.classList.contains('gxe')) continue;          // 📮 처럼 그림 문자로 시작한 제목
+      if(f && f.nodeType === 3 && LEAD.test(f.nodeValue) && MAP[keyOf((LEAD.exec(f.nodeValue) || [])[2] || '')]) continue;
+      h.insertBefore(phIcon(it), h.firstChild);
+    }
+  }
+  window.gxPhPaint = phPaint;
 
   /* ── ③ 기관 띠 · 바로 가기 칩 → 상단 바 ──
      · 원래 자리에 표시(주석)를 남기고 옮긴다 → 화면이 좁아지면(창 줄이기 · 폰 돌리기) 제자리로 돌려놓는다 */
@@ -225,12 +327,13 @@
   }
   window.gxMoveOrgBar = function(){ moveOrgBar(); moveLinks(); };
   let rz = 0;
-  window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(window.gxMoveOrgBar, 150); });
+  window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { window.gxMoveOrgBar(); const ph = document.querySelector('#mn .gx-ph'); if(ph) phAlign(ph); }, 150); });
 
   function boot(){
+    phPaint();                                           // 🏛 v182 화면 머리 (본문 맨 위)
     watch();
     window.gxMoveOrgBar();
-    [300, 1200, 3000].forEach(t => setTimeout(window.gxMoveOrgBar, t));
+    [300, 1200, 3000].forEach(t => setTimeout(() => { window.gxMoveOrgBar(); const ph = document.querySelector('#mn .gx-ph'); if(ph) phAlign(ph); else phPaint(); }, t));
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

@@ -343,7 +343,7 @@ html[data-theme="dark"] .acs-r.dif{ background:#152536; }
 .adl-res .none{ padding:10px; font-size:12.5px; color:var(--ink-2,var(--ts)); }
 .adl-sec{ display:flex; align-items:center; gap:8px; font-size:16px; font-weight:800; color:var(--ink,var(--gd)); margin:22px 2px 12px; }
 .adl-sec small{ font-size:12.5px; font-weight:600; color:var(--ink-2,var(--ts)); }
-.adl-al{ display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; }
+.adl-al{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr)); gap:12px; }   /* 🏛 v182 폰 + «아주 크게» 글자에서도 한 칸에 들어가게 */
 .adl-a{ display:flex; align-items:center; gap:14px; padding:14px 14px 14px 16px; border-radius:14px; border:1px solid #EED9A8; background:#FBF4E4; }
 .adl-a.ok{ border-color:#CFE6DB; background:#EEF6F2; }
 .adl-a-ic{ width:40px; height:40px; border-radius:10px; display:grid; place-items:center; background:#F3E3BC; color:#7A5500; flex:none; }
@@ -512,6 +512,7 @@ html[data-theme="dark"] .adm-toc a .tcb.w{ color:#E3C878; background:#2A2416; } 
       <button class="subtbtn" id="sa-log" onclick="showAdmTab('log')" style="display:none">🔐 로그인 기록</button>
       <button class="subtbtn" id="sa-act" onclick="showAdmTab('act')" style="display:none">📜 활동 로그</button>
       <button class="subtbtn" id="sa-views" onclick="showAdmTab('views')" style="display:none">📊 조회 기록</button>
+      <button class="subtbtn" id="sa-use" onclick="showAdmTab('use')" style="display:none">📈 사용 현황</button>
       <button class="subtbtn" id="sa-tm" onclick="showAdmTab('tm')" style="display:none">⏱ 타임머신</button>
       <button class="subtbtn" id="sa-err" onclick="showAdmTab('err')" style="display:none">🩺 오류 알림판</button>
     </div>
@@ -532,6 +533,7 @@ html[data-theme="dark"] .adm-toc a .tcb.w{ color:#E3C878; background:#2A2416; } 
     <div id="ca-log" class="tc" style="display:none"></div>
     <div id="ca-act" class="tc" style="display:none"></div>
     <div id="ca-views" class="tc" style="display:none"></div>
+    <div id="ca-use" class="tc" style="display:none"></div>
     <div id="ca-org" class="tc" style="display:none"></div>
     <div id="ca-tm" class="tc" style="display:none"></div>
     <div id="ca-err" class="tc" style="display:none"></div>
@@ -2697,6 +2699,7 @@ const ADM_TABS = {
   log:{grp:'sec',  roles:['super']},
   act:{grp:'sec',  roles:['super']},
   views:{grp:'sec', roles:['super']},   // 📊 게시 링크 조회 기록
+  use:{grp:'sec',  roles:['super']},    // 📈 v182 사용 현황 (화면 · 기기 · 시간대 · 선생님별 — usage-admin.js)
   tm: {grp:'sec',  roles:['super']},   // ⏱ 타임머신 (전체 스냅샷)
   err:{grp:'sec',  roles:['super']},   // 🩺 v121 오류 알림판 · 운영 상태
 };
@@ -2721,7 +2724,7 @@ const ADM_TOC = [
   ['acct','계정 · 권한', [['sys','통합관리','manage_accounts'],['acc','접근 권한','lock_person'],['union','연합','handshake'],['clone','권한 테스트','science']]],
   ['org','인사 · 조직',  [['hr','인사정보','badge'],['org','부서 · 새 학년도','account_tree']]],
   ['work','출근부',      [['att','출근부 설정','schedule']]],
-  ['sec','보안 · 기록',  [['sec','접속 · 보안','shield'],['log','로그인 기록','login'],['act','활동 로그','history'],['views','조회 기록','visibility'],['tm','타임머신','restore'],['err','오류 알림판','monitor_heart']]],
+  ['sec','보안 · 기록',  [['sec','접속 · 보안','shield'],['log','로그인 기록','login'],['act','활동 로그','history'],['views','조회 기록','visibility'],['use','사용 현황','monitoring'],['tm','타임머신','restore'],['err','오류 알림판','monitor_heart']]],
 ];
 /* 목차 위 제목 한 줄 (head:false 는 화면 안에 이미 제목이 있는 것) */
 const ADM_INFO = {
@@ -2729,7 +2732,7 @@ const ADM_INFO = {
   union:{ head:false }, clone:{ head:false }, hr:{ head:false },
   org:{ s:'부서 목록과 새 학년도 준비' }, att:{ s:'자주 쓰는 것은 위, 한 해 한두 번 쓰는 것은 아래에 두었어요.' },
   sec:{ s:'지금 접속한 사람 · 자동 로그아웃 · 접속 국가' }, log:{ s:'로그인 기록을 한눈에 · 서랍을 열면 자세히' },
-  act:{ head:false }, views:{ head:false }, tm:{ head:false },
+  act:{ head:false }, views:{ head:false }, use:{ head:false }, tm:{ head:false },
   err:{ s:'선생님 화면에서 난 오류 · 자동 백업 · 자료 정리 — 운영 상태를 한곳에서' },
 };
 /* 설정 찾기 — 서랍 이름과 그 안에서 하는 일 (낱말로 찾음) */
@@ -2743,7 +2746,7 @@ const ADM_FIND = {
        ['att-bulk','교직원 기간 일괄 입력','정기휴가 연수 병가 한꺼번에'],['att-ov','전체 출근 현황','엑셀 다운로드 월별 기간별']],
   sec:[['sec-live','접속 현황','지금 접속 오프라인 IP'],['sec-idle','자동 로그아웃','무활동 시간'],['sec-country','접속 국가 제한','허용 국가 차단 해외']],
   log:[['log-hour','시간대별 로그인',''],['log-week','요일별 로그인',''],['log-idle','휴면 의심 계정','미접속 14일'],['log-staff','교직원별 로그인 현황','횟수 최근 로그인']],
-  act:[['','활동 로그','입력 수정 삭제 기록']], views:[['','조회 기록','게시 링크 학부모']], tm:[['','타임머신','되돌리기 스냅샷 보관본']],
+  act:[['','활동 로그','입력 수정 삭제 기록']], views:[['','조회 기록','게시 링크 학부모']], use:[['','사용 현황','사용 빈도 통계 그래프 많이 쓰는 화면 기기 폰 패드 컴퓨터 시간대 요일 선생님별']], tm:[['','타임머신','되돌리기 스냅샷 보관본']],
   err:[['','오류 알림판','오류 에러 버그 고장 안 됨 실패 권한 막힘 자동 백업 운영 상태']],
 };
 let ADM_CUR = 'sys', ADM_Q = '';
@@ -2908,6 +2911,17 @@ function showAdmGroup(g){
 }
 window.showAdmGroup = showAdmGroup;
 
+/* 📈 v182 사용 현황 — 그래프는 usage-admin.js (열 때만 불러옴) */
+async function renderUsage(){
+  const el = $I('ca-use'); if(!el) return;
+  if(CU.role!=='super'){ el.innerHTML='<div class="acard"><p class="empty">수퍼관리자만 볼 수 있습니다.</p></div>'; return; }
+  if(!el.firstChild) el.innerHTML = '<div class="acard"><p class="empty">불러오는 중...</p></div>';
+  try{
+    if(!Object.keys(STAFF_ALL||{}).length) await reloadStaffCache();
+    const m = await import('./usage-admin.js?v=182');
+    m.mount(el, { staff: Object.keys(STAFF_ALL||{}).length ? STAFF_ALL : STAFF_CACHE, orgs: ORGS });   // 수퍼관리자 — 두 기관 선생님 모두 (기관 고르기로 좁힘)
+  }catch(e){ console.warn(e); el.innerHTML = '<div class="acard"><p class="empty">사용 현황을 불러오지 못했어요 — 새로 고침해 주세요.</p></div>'; }
+}
 function showAdmTab(sub){
   if(!admTabAllowed(sub)) return;
   if(typeof accSheetClose === 'function' && ACC_SHEET && sub !== 'acc') accSheetClose();
@@ -2920,7 +2934,7 @@ function showAdmTab(sub){
   renderAdmHead(sub);
   document.querySelectorAll('#adm-subbar .subtbtn').forEach(b=>b.classList.remove('active'));
   $I('sa-'+sub)?.classList.add('active');
-  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act','ca-org','ca-tm','ca-views','ca-union','ca-clone','ca-err'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
+  ['ca-sys','ca-att','ca-hr','ca-acc','ca-sec','ca-log','ca-act','ca-org','ca-tm','ca-views','ca-use','ca-union','ca-clone','ca-err'].forEach(id=>{ const el=$I(id); if(el) el.style.display='none'; });
   $I('ca-'+sub).style.display='block';
   if(sub==='sys') renderAdmSys();
   if(sub==='att') renderAdmAtt();
@@ -2932,6 +2946,7 @@ function showAdmTab(sub){
   if(sub==='log') renderLoginLog();
   if(sub==='act') renderActivityLog();
   if(sub==='views') renderShareViews();
+  if(sub==='use') renderUsage();
   if(sub==='org') renderAdmOrg();
   if(sub==='tm') renderAdmTm();
   if(sub==='err') renderErrBoard();
@@ -3003,6 +3018,7 @@ function admRoomStatus(k, S){
     case 'log':   return S.dormant ? [`휴면 의심 ${S.dormant}명`, 'w'] : ['휴면 의심 없음'];
     case 'act':   return ['입력 · 수정 · 삭제 기록'];
     case 'views': return ['게시 링크 조회 기록'];
+    case 'use':   return ['화면 · 기기 · 시간대별 사용 빈도'];
     case 'tm':    return ['전체 스냅샷으로 되돌리기'];
     case 'err':   return S.err ? [`새 오류 ${S.err}가지`, 'w'] : ['새 오류 없음'];
   }

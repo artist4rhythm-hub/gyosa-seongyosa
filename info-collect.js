@@ -196,7 +196,7 @@ const CSS = `
 .ic-fam.f3{grid-template-columns:minmax(120px,1.2fr) repeat(3,minmax(70px,.8fr)) 140px}
 .ic-sub{font-size:11px;color:var(--tl);font-weight:600}
 @media (max-width:900px){.ic-fam{grid-template-columns:1fr 1fr 1fr}.ic-fam.hd{display:none}.ic-fam .acts{grid-column:1/-1;justify-content:flex-start}
-  .ic-fam.f3{grid-template-columns:repeat(3,max-content);justify-content:start;row-gap:6px}.ic-fam.f3>b{grid-column:1/-1}}   /* 🏛 v168 우리 반 학부모 — 폰에서 옆으로 넘치던 줄 */
+  .ic-fam.f3{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}.ic-fam.f3>b{flex-basis:100%}.ic-fam.f3 .acts{flex-basis:100%;min-width:0}}   /* 🏛 v168 우리 반 학부모 — 폰에서 옆으로 넘치던 줄 · v182 «아주 크게» 글자에서도 줄을 바꿔 들어가게 */
 .ic-claim{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--warn-bg);background:#FFFBEB;border-radius:11px;margin-top:8px;font-size:13px}
 .ic-claim .tx{flex:1;min-width:220px;line-height:1.55}
 .ic-ov{position:fixed;inset:0;z-index:9000;background:rgba(20,30,26,.42);display:flex;align-items:center;justify-content:center;padding:14px}
