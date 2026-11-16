@@ -1071,7 +1071,10 @@ export const REPORT_CSS = `
 .nr .nsub .nh{font-size:13.2px}
 .nr table{width:100%;border-collapse:collapse;table-layout:fixed;margin:0 0 7px}
 .nr table.auto{table-layout:auto}
-.nr td{border:1px solid #3557A8;padding:6px 8px;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere;white-space:normal}
+.nr td{border:1px solid #3557A8;padding:6px 8px;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere;white-space:normal;text-wrap:pretty}
+/* v184 줄바꿈 다듬기 — 가운데 맞춘 짧은 칸 · 머리 줄 · 제목은 두 줄이 되면 길이를 고르게(한 낱말만 아래로 떨어지지 않게) · 긴 글은 마지막 줄이 한두 글자만 남지 않게 */
+.nr td.c,.nr td.lb,.nr td.gp,.nr td.sd,.nr tr.hd td{text-wrap:balance}
+.nr .nh .t{word-break:keep-all;overflow-wrap:break-word;text-wrap:balance}
 .nr td.b{font-weight:700}
 .nr td.c{text-align:center}
 .nr td.r{text-align:right}
@@ -1081,7 +1084,7 @@ export const REPORT_CSS = `
 .nr table.att td{text-align:center;padding:5px 3px}
 .nr table.eval tr.hd td{font-size:11.4px;line-height:1.3;padding:5px 3px}
 .nr table.score td{text-align:center}
-.nr .nn{font-size:11.6px;line-height:1.72;margin:3px 0 8px;white-space:normal}
+.nr .nn{font-size:11.6px;line-height:1.72;margin:3px 0 8px;white-space:normal;word-break:keep-all;overflow-wrap:break-word;text-wrap:pretty}
 .nr .nn b{font-weight:800}
 .nr.en td{word-break:normal;overflow-wrap:break-word}
 .nr.en table.eval tr.hd td{font-size:10.4px}

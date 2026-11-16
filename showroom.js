@@ -8,6 +8,7 @@
    ② 화면 설명(.adesc) → 제목 옆 ⓘ (눌러야 펼쳐짐)
    ③ 기관 띠(#org-bar) → 상단 바 칩
    ④ 화면 머리 (v182) — 메뉴 이름 · 아이콘 · 한 줄 설명 · 오른쪽 단추 (제목이 없던 화면에)
+   ⑤ 탭 줄이 옆으로 넘칠 때 (v183) — 고른 탭 보이게 · 끝 흐리게
    ═══════════════════════════════════════════════════════════ */
 (function(){
   if(window.__gxOn) return;
@@ -171,6 +172,7 @@
     while(i < work.length && performance.now() - t0 < 10){ try{ convert(work[i], true); }catch(e){} i++; }
     work = work.slice(i);
     if((window.__PAGEKEY in PH_AUTO) && !document.querySelector('#mn .gx-ph')) phPaint();   // 🏛 v182 본문을 통째로 다시 그렸으면 머리도 다시
+    try{ ovAll(); }catch(e){}                            // 🏛 v183 탭 줄 넘침 표시
     if(obs) obs.takeRecords();                          // 방금 내가 바꾼 것으로 생긴 알림은 버린다 (한 번 더 훑지 않게)
     if(work.length && !raf) raf = requestAnimationFrame(flush);
   }
@@ -294,6 +296,32 @@
   }
   window.gxPhPaint = phPaint;
 
+  /* ── ⑤ 탭 줄이 옆으로 넘칠 때 (v183) — 고른 탭이 가려져 있으면 보이게 밀어 두고, 더 있는 쪽 끝을 흐리게 (showroom.css gx-ovl · gx-ovr) ── */
+  const TBAR = '.subtb, .subtabs, .tabs-main, .g-tabs, .wrap > .tabs, .nh-tabs.top, .cs-tabs, .tabs-sub, .gx-seg, .mt-seg, .orgpick';
+  function ovMark(el){
+    const max = el.scrollWidth - el.clientWidth;
+    const l = max > 2 && el.scrollLeft > 2, r = max > 2 && el.scrollLeft < max - 2;
+    if(el.classList.contains('gx-ovl') !== l) el.classList.toggle('gx-ovl', l);
+    if(el.classList.contains('gx-ovr') !== r) el.classList.toggle('gx-ovr', r);
+  }
+  function ovBar(el){
+    if(!el.__gxOv){ el.__gxOv = 1; el.addEventListener('scroll', () => ovMark(el), { passive:true }); }
+    const on = el.querySelector(':scope > .on, :scope > .active');
+    if(on && on !== el.__gxOn){                        // 고른 탭이 바뀌었을 때만 (손으로 밀어 둔 것을 되돌리지 않게)
+      el.__gxOn = on;
+      if(el.scrollWidth > el.clientWidth + 2){
+        const er = el.getBoundingClientRect(), or = on.getBoundingClientRect();
+        if(or.left < er.left || or.right > er.right) el.scrollLeft += (or.left - er.left) - (er.width - or.width) / 2;
+      }
+    }
+    ovMark(el);
+  }
+  function ovAll(){
+    const mn = document.getElementById('mn'); if(!mn) return;
+    mn.querySelectorAll(TBAR).forEach(el => { if(el.getClientRects().length) ovBar(el); });
+  }
+  window.gxTabsFit = ovAll;
+
   /* ── ③ 기관 띠 · 바로 가기 칩 → 상단 바 ──
      · 원래 자리에 표시(주석)를 남기고 옮긴다 → 화면이 좁아지면(창 줄이기 · 폰 돌리기) 제자리로 돌려놓는다 */
   function park(el, minW){
@@ -327,13 +355,15 @@
   }
   window.gxMoveOrgBar = function(){ moveOrgBar(); moveLinks(); };
   let rz = 0;
-  window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { window.gxMoveOrgBar(); const ph = document.querySelector('#mn .gx-ph'); if(ph) phAlign(ph); }, 150); });
+  window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { window.gxMoveOrgBar(); const ph = document.querySelector('#mn .gx-ph'); if(ph) phAlign(ph); ovAll(); }, 150); });
 
   function boot(){
     phPaint();                                           // 🏛 v182 화면 머리 (본문 맨 위)
     watch();
+    ovAll();
+    document.addEventListener('click', e => { if(e.target && e.target.closest && e.target.closest(TBAR)) setTimeout(ovAll, 60); }, true);   // 🏛 v183 탭을 누르면 (클래스만 바뀌는 화면도)
     window.gxMoveOrgBar();
-    [300, 1200, 3000].forEach(t => setTimeout(() => { window.gxMoveOrgBar(); const ph = document.querySelector('#mn .gx-ph'); if(ph) phAlign(ph); else phPaint(); }, t));
+    [300, 1200, 3000].forEach(t => setTimeout(() => { window.gxMoveOrgBar(); const ph = document.querySelector('#mn .gx-ph'); if(ph) phAlign(ph); else phPaint(); ovAll(); }, t));
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();

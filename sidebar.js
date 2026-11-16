@@ -382,12 +382,12 @@ window.gxPh = function(o){ window.__gxPh = Object.assign(window.__gxPh || {}, o 
 function loadShowroom(){
   if(!document.getElementById('gx-css')){
     const l = document.createElement('link');
-    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=182';
+    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=184';
     document.head.appendChild(l);
   }
   if(!window.__gxOn && !document.getElementById('gx-js')){
     const s = document.createElement('script');
-    s.id = 'gx-js'; s.src = 'showroom.js?v=182'; s.defer = true;
+    s.id = 'gx-js'; s.src = 'showroom.js?v=184'; s.defer = true;
     document.head.appendChild(s);
   }
 }
