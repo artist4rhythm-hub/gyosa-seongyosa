@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   🏠 home-styles.js — 홈 모양 두 가지 (v185 · 현우님 «추천안으로» 2026-11-17)
+   🏠 home-styles.js — 새 홈 모양 두 가지 (v185 · 현우님 «추천안으로» 2026-11-17) — v187부터 기본은 «예전 모양», 이 둘은 «홈 고르기»에서
    · A «오늘 한 장»  — 인사 그림 · 지금 할 일(하나로 합침) · 오늘 일정 · 숫자 카드 3개(출석 링 · 교직원 출근 · 학기 진행)
    · B «대시보드»    — 숫자 카드 4개 · 최근 10일 결석+지각 막대 · 다음 일정 · 할 일 · 오늘 출근 · 학기 반원 · 생일
    · 둘 다: 자주 여는 방 + «더 보기»(공지 · 생일 · 학사일정 · 출결 자세히 · 동아리 · 회의 · 시간표 · 할 일 · 메모 · 날씨 · 세계 시계 …)
@@ -23,20 +23,14 @@ export function installHomeStyles(ctx){
   const MS = n => `<span class="material-symbols-rounded" aria-hidden="true">${n}</span>`;
 
   /* ── 홈 모양 ── */
-  const STYLES = ['a', 'b', 'classic'];
-  const LEAD_POS = /원장|교장|교감|행정실장/;
-  function defaultStyle(CU){
-    if(!CU) return 'a';
-    if(['super', 'org_admin', 'tab_admin'].includes(CU.role)) return 'b';
-    if(LEAD_POS.test(String(CU.position || ''))) return 'b';
-    try{ if(window.leadMenuState && leadMenuState(CU) === 'm') return 'b'; }catch(e){}
-    return 'a';
-  }
+  /* 🏠 v187 기본은 모두 «예전 모양» (현우님 결정 2026-11-17) — 오늘 한 장 · 대시보드는 «홈 고르기»에서 */
+  const STYLES = ['classic', 'a', 'b'];
+  function defaultStyle(){ return 'classic'; }
   const styleOf = (CU, acc) => { const s = acc && acc.style; return STYLES.includes(s) ? s : defaultStyle(CU); };
   const STYLE_INFO = {
-    a: { l: '오늘 한 장', d: '할 일 · 오늘 일정 · 숫자 카드 셋 — 차분하게 (선생님 기본)' },
-    b: { l: '대시보드', d: '숫자 카드 · 막대 · 반원 그래프로 한눈에 (관리자 · 원장 · 주임 기본)' },
-    classic: { l: '예전 모양', d: '위젯을 모두 펼쳐 두는 지금까지의 홈 (차례 · 배치 바꾸기)' },
+    classic: { l: '예전 모양', d: '익숙한 그대로' },
+    a: { l: '오늘 한 장', d: '오늘 할 일만 차분하게' },
+    b: { l: '대시보드', d: '숫자와 그래프로 한눈에' },
   };
 
   let STY = 'a', P = null, CLOCK = null, WIRED = false;
@@ -71,7 +65,7 @@ export function installHomeStyles(ctx){
   --hn-warm:#F7EFD8;--hn-warm-ink:#6B5212;--hn-red:#FBE7DF;--hn-red-ink:#9A3A16;--hn-bar:#8FC3AE;
   margin:0 auto;width:100%;color:var(--hn-ink)}
 html[data-theme="dark"] .hn{--hn-house:#DCEFE6;--hn-pri:#123326;--hn-pri-sub:#A9D5C2;--hn-warm:#2A2416;--hn-warm-ink:#E3C878;--hn-red:#3A1B1B;--hn-red-ink:#F8A08A;--hn-bar:#2E6B55}
-.hn.hn-a{max-width:1240px}.hn.hn-b{max-width:1440px}
+.hn.hn-a{max-width:1560px}.hn.hn-b{max-width:1640px}
 .hn *{box-sizing:border-box}
 .hn h1,.hn h2,.hn p{margin:0}
 .hn a{color:inherit}
@@ -125,6 +119,16 @@ html[data-theme="dark"] .hn .hn-empty img{opacity:.9}
 /* ─ 줄 ─ */
 .hn .hn-g2{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);gap:16px;margin-bottom:16px}
 .hn .hn-g3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(270px,100%),1fr));gap:16px;margin-bottom:16px}
+/* 🏠 v187 오늘 한 장 — 할 일 · 일정은 내용만큼(빈 칸이 늘어나지 않게) · 넓은 화면은 숫자 카드를 오른쪽 세로 줄로 (첫 화면에 다 보이게) */
+.hn .hn-ag{align-items:start}
+.hn .hn-ag > .hn-g3{grid-column:1 / -1;margin-bottom:0}
+.hn .hn-ag > .hn-todo .hn-tl{min-height:0}
+.hn .hn-ag > .hn-rooms,.hn .hn-ag > .hn-more{grid-column:1 / -1;margin-top:0;margin-bottom:0}
+@media(min-width:1480px){
+  .hn .hn-ag{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(300px,.85fr);grid-template-rows:auto auto 1fr}
+  .hn .hn-ag > .hn-g3{grid-column:3;grid-row:1 / span 3;grid-template-columns:minmax(0,1fr);gap:14px}
+  .hn .hn-ag > .hn-rooms,.hn .hn-ag > .hn-more{grid-column:1 / 3}
+}
 /* ─ 지금 할 일 ─ */
 .hn .hn-tl{display:flex;flex-direction:column}
 .hn .hn-tr{display:flex;align-items:center;gap:12px;padding:10px 2px;border-top:1px solid var(--hn-soft);text-decoration:none;color:inherit;min-height:56px;cursor:pointer;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit;text-align:left;width:100%}
@@ -169,7 +173,7 @@ html[data-theme="dark"] .hn .hn-empty img{opacity:.9}
 .hn .hn-ring svg{display:block;width:100%;height:100%}
 .hn .hn-ring .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .hn .hn-ring .c b{font-size:23px;font-weight:800;color:var(--hn-house);line-height:1.1}
-.hn .hn-ring .c span{font-size:11px;color:var(--hn-ink2)}
+.hn .hn-ring .c span{font-size:12px;color:var(--hn-ink2)}
 .hn .hn-lg{list-style:none;margin:0;padding:0;flex:1 1 auto;display:flex;flex-direction:column;gap:7px;font-size:13px}
 .hn .hn-lg li{display:flex;align-items:center;gap:8px}
 .hn .hn-lg li i{width:10px;height:10px;border-radius:3px;flex:none}
@@ -322,7 +326,7 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
   .hn .hn-kpi:not(.pri) .kh{font-size:12px;color:var(--hn-ink2)}
   .hn .hn-kpi:not(.pri) .kv{font-size:24px}
   .hn .hn-kpi:not(.pri) .kv small{font-size:12px}
-  .hn .hn-kpi:not(.pri) .ks{font-size:11px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .hn .hn-kpi:not(.pri) .ks{font-size:12px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .hn .hn-kpi .kart{width:240px}
   .hn .hn-bh-l h1{font-size:24px}
   .hn .hn-bh-r{width:100%}
@@ -391,17 +395,17 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
         <figure class="hn-art" data-tod="${t}">${artHTML(t)}</figure>
       </section>
       <div id="nt-nudge"></div>
-      <div class="hn-g2">
+      <div class="hn-g2 hn-ag">
         <section class="hn-card hn-todo" aria-label="지금 할 일">${todoHead()}<div class="hn-tl" id="hn-todo">${todoRows(false)}</div></section>
         <section class="hn-card hn-sched" aria-label="오늘 일정"><div class="hn-h"><h2>오늘 일정</h2></div><div id="hn-sched" style="display:flex;flex-direction:column;gap:10px;flex:1 1 auto"><div class="hn-dim">불러오는 중…</div></div></section>
+        <div class="hn-g3">
+          ${p.attendOk ? `<section class="hn-card" id="hn-att" aria-label="오늘 출석"><div class="hn-h"><h2>오늘 출석</h2></div><div class="hn-dim">불러오는 중…</div></section>` : ''}
+          <section class="hn-card" id="hn-staff" aria-label="교직원 출근"><div class="hn-h"><h2>교직원 출근</h2></div><div class="hn-dim">불러오는 중…</div></section>
+          <section class="hn-card" id="hn-term" aria-label="학기 진행"><div class="hn-h"><h2>학기 진행</h2></div><div class="hn-dim">불러오는 중…</div></section>
+        </div>
+        ${rooms}
+        ${more}
       </div>
-      <div class="hn-g3">
-        ${p.attendOk ? `<section class="hn-card" id="hn-att" aria-label="오늘 출석"><div class="hn-h"><h2>오늘 출석</h2></div><div class="hn-dim">불러오는 중…</div></section>` : ''}
-        <section class="hn-card" id="hn-staff" aria-label="교직원 출근"><div class="hn-h"><h2>교직원 출근</h2></div><div class="hn-dim">불러오는 중…</div></section>
-        <section class="hn-card" id="hn-term" aria-label="학기 진행"><div class="hn-h"><h2>학기 진행</h2></div><div class="hn-dim">불러오는 중…</div></section>
-      </div>
-      ${rooms}
-      ${more}
     </div>`;
   }
   /* 🖼 v186 인사 그림 — GPT로 그린 그림 (img/home-{계절-}{시간대}.webp · 폰은 그루터기를 가까이 자른 -sm)
@@ -659,7 +663,7 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
       A.innerHTML = `<div class="hn-h"><h2>교직원 출근</h2></div>
         <div class="hn-big"><b>${n.in}</b><span>/ ${work.length}명</span></div>${segHTML}
         ${mine ? `<div class="hn-mine">${mine}</div>` : ''}
-        <div class="hn-foot" style="align-items:center"><span class="hn-av">${av.map(x => `<span style="background:var(--gx-c${avc(x.s)}b);color:var(--gx-c${avc(x.s)})" title="${esc(x.s.name)}">${ini(x.s)}</span>`).join('')}${n.in > 5 ? `<span style="background:var(--gx-c5b);color:var(--gx-c5);font-size:11px">+${n.in - 5}</span>` : ''}</span><span class="hn-sp"></span><a href="checkin.html">출근부 ›</a></div>`;
+        <div class="hn-foot" style="align-items:center"><span class="hn-av">${av.map(x => `<span style="background:var(--gx-c${avc(x.s)}b);color:var(--gx-c${avc(x.s)})" title="${esc(x.s.name)}">${ini(x.s)}</span>`).join('')}${n.in > 5 ? `<span style="background:var(--gx-c5b);color:var(--gx-c5);font-size:12px">+${n.in - 5}</span>` : ''}</span><span class="hn-sp"></span><a href="checkin.html">출근부 ›</a></div>`;
     }
     if(L){
       const tagN = `<span class="hn-tag c1">${n.in} / ${work.length}</span>`;
@@ -903,10 +907,7 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
     clearInterval(CLOCK); CLOCK = setInterval(tick, 15000); tick();
     paintMoon(); paintWx(); paintTodo(); paintAtt(); paintStaff(); paintTerm(); paintSched();
     if(sty === 'b' && P.attendOk) loadHist();
-    if(!LEADCHK){ LEADCHK = true;
-      setTimeout(() => { try{ const cu = G().CU; if(cu && STY !== 'classic' && defaultStyle(cu) !== STY && !((window.__homeAccStyle && window.__homeAccStyle()))) window.renderHome && window.renderHome(); }catch(e){} }, 5000); }
   }
-  let LEADCHK = false;
 
   const api = { css, html, after, defaultStyle, styleOf, STYLES, STYLE_INFO, paintTodo, paintSched, paintWx, paintAtt, paintStaff, toggleMore, openMore, compose, bdMsg,
     artFail, artSVG, season, artKey, ART_SEASONS, style: () => STY };

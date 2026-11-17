@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800;900&family=Noto+Serif+KR:wght@500;700;900&family=Noto+Sans:wght@400;600;700;900&display=swap">
 <link rel="stylesheet" href="theme.css">
 <script src="loading.js"></script>
+<script src="minichart.js?v=187"></script>
 <style>
 /* ═══ 📒 나학평 (v141 · v144 출력 모양 · 평가 틀 편집기 · 조별 칸 · 화면 줄 맞춤) — 나의 학교생활 평가서 · 다니엘아마츠학교 ═══ */
 #nh{width:100%;max-width:var(--page-wide,1440px);margin:0 auto;font-family:var(--font-ui,'Noto Sans KR',sans-serif);color:var(--ink);padding-bottom:90px;word-break:keep-all;overflow-wrap:anywhere}
@@ -226,6 +227,17 @@ html[data-theme="dark"] .hsec-h h2{color:var(--ink)}
 .hc-t{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
 .hc-t b{font-size:13.5px;font-weight:900;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hc-t b span{font-weight:600;color:var(--ink-2)}
 .hc-m{font-size:12px;color:var(--ink-2);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+/* 📊 v187 한눈에 보기 (단계 · 선생님별 입력) */
+.nh-pc{border:1px solid var(--line,#E3E6E1);border-radius:14px;background:var(--wh,#fff);margin:0 0 14px}
+.nh-pc > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:12px 16px;font-size:14px;font-weight:800;color:var(--gd,#1E3932)}
+.nh-pc > summary::-webkit-details-marker{display:none}
+.nh-pc-ar{font-size:20px;margin-left:auto;color:var(--tl);transition:transform .15s}
+.nh-pc[open] .nh-pc-ar{transform:rotate(180deg)}
+.nh-pc-note{font-size:12.5px;color:#9A3412;background:#FCEBDD;border-radius:10px;padding:7px 12px;margin-top:-8px}
+html[data-theme="dark"] .nh-pc-note{color:#F5A57E;background:#3A2418}
+.nh-pc > summary small{font-size:12px;font-weight:500;color:var(--ts,#5A6560)}
+.nh-pc-b{padding:0 16px 16px;display:flex;flex-direction:column;gap:16px}
+.nh-pc-bars{max-height:420px;overflow:auto;padding-right:4px}
 /* v144 진행 현황 — 반 × 과목 표 */
 .bx-w{max-height:72vh}
 /* v148 진행 현황 — 반 이름 한 줄 · 칸은 가볍게 */
@@ -1062,6 +1074,7 @@ function boardHTML(){
   let h = `<div class="frow" style="align-items:center;margin-bottom:10px"><div class="nh-tabs" style="border:0;padding:0;margin:0"><button data-bdv="grid" class="${BD_V === 'grid' ? 'on' : ''}">▦ 반 × 과목</button><button data-bdv="people" class="${BD_V === 'people' ? 'on' : ''}">👤 선생님별</button></div>
     <span class="nh-sp"></span><div class="bd-sum" style="margin:0">${fb('all', '전체', live.length)}${fb('mine', '나와 관련')}${fb('draft', '작성 중', cnt('draft'))}${fb('redo', '수정 요청', cnt('redo'))}${fb('review', '검토 중', cnt('review'))}${fb('final', '최종 대기', cnt('final'))}${fb('done', '승인', cnt('done'))}</div></div>
     <div class="nh-desc bx-legend"><span class="bx-c t-draft demo"><span>3<small>/12</small></span><i class="bx-p"><b style="width:25%"></b></i></span> 작성 중 = 채운 학생 / 전체 · <span class="bx-key t-info">검토</span> <span class="bx-key t-purple">최종</span> <span class="bx-key t-warn">수정</span> <span class="bx-key t-ok">승인</span> · <b style="color:#C2410C">주황 테두리</b> = 지금 내 차례 · 칸을 누르면 그 칸으로 가요</div>`;
+  h += progChartHTML(live);   // 📊 v187 단계 · 선생님별 입력 진행
   if(BD_V === 'people') return h + peopleBoardHTML(live, secs, uid, filt);
   // 반 × 과목 — 줄 = 반(학년 순) · 칸 = 담임 칸 · 교과
   const sp = SPECIAL_COLS.filter(k => live.some(s => s.kind === k && !s.grp));
@@ -1091,6 +1104,31 @@ function boardHTML(){
       <div class="nh-tw bx-w"><table class="nh-t bx-t bx2 one"><thead><tr><th class="fc">과목</th>${gnames.map(g => `<th class="c sv2">${esc(g)}</th>`).join('')}<th class="c">승인<br><small>/ 칸</small></th></tr></thead><tbody>${Object.values(by).map(r => `<tr><td class="fc"><span class="bx-sh"><b>${esc(r.name)}</b></span><small class="bx-hr">${esc(r.list[0].grp.setName || '')}</small></td>${gnames.map(g => bdCell(r.list.find(s => s.grp.name === g), uid, filt)).join('')}<td class="c bx-n"><b>${r.list.filter(s => s.state === 'done').length}</b>/${r.list.length}</td></tr>`).join('')}</tbody></table></div>`;
   }
   return h;
+}
+/* 📊 v187 그래프 — 단계 줄(작성 중 › 검토 › 최종 › 승인) + 선생님별 입력 진행 막대 (덜 한 분 먼저 · 이미 받은 칸만 셈)
+   입력 진행 = 작성 중 칸은 «채운 학생 / 전체», 검토로 넘긴 칸은 다 채운 것으로 */
+function progChartHTML(live){
+  if(!window.MiniChart || !live.length) return '';
+  const n = { draft: 0, redo: 0, review: 0, final: 0, done: 0 };
+  const stOf = s => s.state === 'done' ? 'done' : C.stateOf(s).k === 'redo' ? 'redo' : (s.state === 'review' || s.state === 'final') ? s.state : 'draft';
+  live.forEach(s => { n[stOf(s)]++; });
+  const steps = MiniChart.steps([
+    { n: n.draft + n.redo, l: '작성 중', title: n.redo ? `수정 요청 ${n.redo}칸 포함` : '' },
+    { n: n.review, l: '검토' }, { n: n.final, l: '최종' }, { n: n.done, l: '승인', tone: n.done === live.length ? 'ok' : '' },
+  ]) + (n.redo ? `<div class="nh-pc-note">✋ 수정 요청 ${n.redo}칸 — «작성 중»에 들어 있어요</div>` : '');
+  const by = {};
+  live.forEach(s => (s.teacherUids || []).forEach(u => {
+    const tot = Number(s.cnt && s.cnt.total) || A.subStudents(s).length;
+    const st = stOf(s); const fill = st === 'draft' || st === 'redo' ? Math.min(tot, Number(s.cnt && s.cnt.done) || 0) : tot;
+    const b = by[u] = by[u] || { tot: 0, fill: 0, cells: 0, open: 0 }; b.tot += tot; b.fill += fill; b.cells++; if(st === 'draft' || st === 'redo') b.open++;
+  }));
+  const rows = Object.entries(by).map(([u, b]) => ({ u, name: A.staffName(u) || '—', pct: b.tot ? Math.round(b.fill / b.tot * 100) : 100, b }))
+    .sort((x, y) => x.pct - y.pct || String(x.name).localeCompare(String(y.name), 'ko'));
+  const bars = rows.length ? MiniChart.hbars(rows.map(r => ({ label: r.name, sub: `칸 ${r.b.cells}개${r.b.open ? ` · 작성 중 ${r.b.open}` : ''}`, pct: r.pct, tone: r.pct >= 100 ? 'ok' : 'info',
+      right: `${r.pct}%`, title: `${r.name} — 학생 ${r.b.fill} / ${r.b.tot} 채움` })), { title: '선생님별 입력 진행', note: '덜 채운 분부터 · 학생 칸 기준', lw: 130 }) : '';
+  const open = lsGet('nhp_pc', '1') === '1';
+  return `<details class="nh-pc"${open ? ' open' : ''} ontoggle="try{localStorage.setItem('nhp_pc', this.open ? '1' : '0')}catch(e){}"><summary>📊 한눈에 보기 <small>단계 · 선생님별 입력</small><span class="material-symbols-rounded nh-pc-ar" aria-hidden="true">expand_more</span></summary>
+    <div class="nh-pc-b">${steps}${bars ? `<div class="nh-pc-bars">${bars}</div>` : ''}</div></details>`;
 }
 /* v148 👤 선생님별 — 줄 = 선생님 × 맡은 칸(종목) · 칸 = 반(학년 순) + 조별 → 어느 선생님이든 같은 반은 같은 세로줄 */
 function peopleBoardHTML(live, secs, uid, filt){

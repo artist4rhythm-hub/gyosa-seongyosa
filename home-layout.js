@@ -82,7 +82,7 @@ html.hm-editing #home-body section.hm-b.hle-on{outline-color:#00704A;outline-sty
 .hle-tag{pointer-events:auto;position:absolute;top:6px;left:6px;display:inline-flex;align-items:center;gap:6px;background:#1E3932;color:#fff;border:0;border-radius:10px;padding:5px 10px;font-size:12px;font-family:inherit;cursor:grab;box-shadow:0 4px 12px rgba(0,0,0,.2);max-width:calc(100% - 52px);touch-action:none;line-height:1.3}
 .hle-tag:active{cursor:grabbing}
 .hle-tag b{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.hle-tag em{font-style:normal;font-size:11px;opacity:.78;white-space:nowrap}
+.hle-tag em{font-style:normal;font-size:12px;opacity:.78;white-space:nowrap}
 .hle-hnd{letter-spacing:-2px;opacity:.85}
 .hle-grip{pointer-events:auto;position:absolute;right:0;bottom:0;width:34px;height:34px;display:flex;align-items:flex-end;justify-content:flex-end;padding:0 3px 1px 0;box-sizing:border-box;font-size:20px;line-height:1;color:#00704A;cursor:nwse-resize;touch-action:none;border-radius:0 0 12px 0;background:radial-gradient(circle at 100% 100%, rgba(255,255,255,.96) 0 62%, transparent 63%)}
 .hle-div{position:absolute;top:0;bottom:0;width:18px;cursor:col-resize;z-index:25;display:flex;justify-content:center;touch-action:none}
@@ -93,14 +93,14 @@ section.hm-b.hle-drag{opacity:.9;box-shadow:0 18px 40px rgba(0,0,0,.25);transfor
 #hle-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + var(--union-h,0px));z-index:3100;display:flex;align-items:center;gap:14px;background:#10241D;color:#fff;border-radius:14px;padding:10px 12px 10px 16px;box-shadow:0 12px 32px rgba(0,0,0,.3);width:max-content;max-width:calc(100vw - 32px);font-family:inherit}
 .hle-bt{display:flex;flex-direction:column;gap:2px;min-width:0}
 .hle-bt b{font-size:13.5px}
-.hle-bt span{font-size:11px;opacity:.78;line-height:1.45}
+.hle-bt span{font-size:12px;opacity:.78;line-height:1.45}
 .hle-bb{display:flex;gap:6px;flex:none}
 .hle-b0{border:1px solid rgba(255,255,255,.32);background:transparent;color:#fff;border-radius:10px;padding:8px 12px;font-family:inherit;font-weight:700;font-size:12px;cursor:pointer}
 .hle-b1{border:0;background:#00A86B;color:#fff;border-radius:10px;padding:8px 16px;font-family:inherit;font-weight:900;font-size:12.5px;cursor:pointer}
 .hle-menu{position:absolute;top:40px;left:6px;z-index:30;background:var(--wh,#fff);border:1px solid var(--ivd,#E3E1DA);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.2);padding:9px;display:flex;flex-direction:column;gap:6px;pointer-events:auto;max-width:calc(100% - 12px)}
 .hle-menu .hm-r{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
-.hle-menu .hm-r > span{font-size:11px;font-weight:800;color:var(--tl,#7C837E);width:30px;flex:none}
-.hle-menu button{border:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);border-radius:8px;padding:4px 8px;font-size:11.5px;font-family:inherit;cursor:pointer;color:var(--ts,#4F5A55)}
+.hle-menu .hm-r > span{font-size:12px;font-weight:800;color:var(--tl,#7C837E);width:30px;flex:none}
+.hle-menu button{border:1px solid var(--ivd,#E3E1DA);background:var(--wh,#fff);border-radius:8px;padding:4px 8px;font-size:12px;font-family:inherit;cursor:pointer;color:var(--ts,#4F5A55)}
 .hle-menu button.on{background:#1E3932;border-color:#1E3932;color:#fff}
 `;
   function ensureCss(){ if(document.getElementById('hl-css')) return; const st = document.createElement('style'); st.id = 'hl-css'; st.textContent = CSS; document.head.appendChild(st); }

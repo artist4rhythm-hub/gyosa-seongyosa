@@ -232,8 +232,8 @@ function attBucket(nm){
   if(n.includes('조퇴')) return 'ear';
   return 'etc';
 }
-const ATT_BK = { abs:{l:'결석',c:'#DC2626',bg:'#FDE8E8'}, lat:{l:'지각',c:'#D97706',bg:'#FEF3D9'},
-                 ear:{l:'조퇴',c:'#2563EB',bg:'#E5EDFC'}, trip:{l:'체험',c:'#0E7490',bg:'#DDF1F5'},
+const ATT_BK = { abs:{l:'결석',c:'#B91C1C',bg:'#FDE8E8'}, lat:{l:'지각',c:'#A14A08',bg:'#FEF3D9'},   // 🔎 v187 글자 대비 4.5 이상 (예전 #DC2626 · #D97706 · #2563EB)
+                 ear:{l:'조퇴',c:'#1D4ED8',bg:'#E5EDFC'}, trip:{l:'체험',c:'#0E7490',bg:'#DDF1F5'},
                  etc:{l:'기타',c:'#6B7280',bg:'#EEF0F2'}, lv:{l:'휴학',c:'#5F6670',bg:'#EEF0F3'} };   // 🏛 v168 휴학 = 회색 (출결이 아니라 «쉬는 중»)
 const ATT_BK_ORDER = ['abs','ear','lat','trip','etc'];
 // 기본 «출석» 항목 — 이것만 고른 기록은 특이사항이 아니다
@@ -429,10 +429,10 @@ function attOffCss(){
   .att-off .ao-mid>span{font-size:11.8px;color:var(--ts);font-weight:600}
   .att-off .ao-next{flex:none;text-align:center;background:var(--wh);border:1px solid var(--ivd);border-radius:12px;
     padding:8px 14px;display:flex;flex-direction:column;gap:1px;min-width:92px}
-  .att-off .ao-next i{font-style:normal;font-size:10px;font-weight:800;color:var(--tl)}
+  .att-off .ao-next i{font-style:normal;font-size:11.5px;font-weight:800;color:var(--tl)}
   .att-off .ao-next b{font-size:14px;font-weight:900;color:var(--gd);font-variant-numeric:tabular-nums;white-space:nowrap}
-  .att-off .ao-next em{font-style:normal;font-size:10.5px;font-weight:900;color:var(--gm)}
-  .att-off .ao-mk{font-size:10.5px;font-weight:800;color:#B45309}
+  .att-off .ao-next em{font-style:normal;font-size:12px;font-weight:900;color:var(--gm)}
+  .att-off .ao-mk{font-size:12px;font-weight:800;color:#B45309}
   .att-off.hol{background:rgba(220,38,38,.055);border-color:rgba(220,38,38,.22)}
   .att-off.hol .ao-mid b{color:#C53030}
   .att-off.vac{background:rgba(14,116,144,.06);border-color:rgba(14,116,144,.22)}
@@ -441,32 +441,36 @@ function attOffCss(){
   .att-off.wknd .ao-mid b{color:var(--gm)}
   .att-off.out .ao-mid b{color:var(--ts)}
   .att-evl{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:-2px 2px 7px}
-  .att-evh{font-size:10.5px;font-weight:900;color:var(--gm);margin-right:2px}
+  .att-evh{font-size:12px;font-weight:900;color:var(--gm);margin-right:2px}
   .att-evs{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
-  .att-evc{font-size:10.5px;font-weight:800;color:var(--gd);background:var(--wh);border:1px solid var(--ivd);border-radius:7px;padding:2px 8px}
+  .att-evc{font-size:12px;font-weight:800;color:var(--gd);background:var(--wh);border:1px solid var(--ivd);border-radius:7px;padding:2px 8px}
   .att-evc i{font-style:normal;color:var(--tl);font-weight:700;margin-left:4px}
   .att-evc.more{color:var(--tl)}
   .att-stats.six{grid-template-columns:repeat(6,1fr)}
   .acol-top{display:flex;flex-wrap:wrap;gap:4px 18px;margin:2px 2px 7px}
   .acol-org{display:inline-flex;align-items:baseline;gap:7px}
-  .acol-org b{font-size:12.5px;font-weight:900;color:var(--gd)}.acol-org span{font-size:10.5px;color:var(--tl);font-weight:700}
+  .acol-org b{font-size:12.5px;font-weight:900;color:var(--gd)}.acol-org span{font-size:12px;color:var(--tl);font-weight:700}
   .acol{display:grid;gap:10px;margin-bottom:8px;align-items:start;grid-template-columns:repeat(4,minmax(0,1fr))}
   .acol.n1{grid-template-columns:minmax(0,1fr)}.acol.n2{grid-template-columns:repeat(2,minmax(0,1fr))}.acol.n3{grid-template-columns:repeat(3,minmax(0,1fr))}
   .acol-c{background:var(--wh);border:1px solid var(--ivd);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
   .acol-h{display:block;padding:10px 12px 8px;border-bottom:1px solid var(--ivd);background:var(--iv);text-decoration:none;color:inherit}
   .acol-h .t{display:flex;align-items:baseline;gap:6px}.acol-h b{font-size:13.5px;font-weight:900;color:var(--gd)}
-  .acol-h i{font-style:normal;font-size:10px;color:var(--tl);font-weight:700}
+  .acol-h i{font-style:normal;font-size:11.5px;color:var(--tl);font-weight:700}
   .acol-h .n{margin-left:auto;margin-right:18px;font-size:12px;font-weight:900;color:var(--gm);font-variant-numeric:tabular-nums;white-space:nowrap}
   .acol-bar{display:block;height:4px;border-radius:9px;background:var(--ivd);margin-top:7px;overflow:hidden}
   .acol-bar i{display:block;height:100%;background:#16a34a;border-radius:9px}
   .acol-r{display:block;padding:7px 12px;border-top:1px solid var(--ivd);text-decoration:none;color:inherit}
   .acol-h + .acol-r{border-top:0}.acol-r:hover{background:var(--gp)}
   .acol-r .l{display:flex;align-items:center;gap:6px;font-size:12.5px}
-  .acol-g{min-width:22px;height:20px;padding:0 4px;box-sizing:border-box;border-radius:6px;background:var(--gp);color:var(--gm);font-size:10.5px;font-weight:900;
+  .acol-g{min-width:22px;height:20px;padding:0 4px;box-sizing:border-box;border-radius:6px;background:var(--gp);color:var(--gm);font-size:12px;font-weight:900;
     display:inline-flex;align-items:center;justify-content:center;flex:none}
   .acol-r .l b{font-weight:800;color:var(--gd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
   .acol-r .l .c{flex:none;font-weight:900;font-variant-numeric:tabular-nums;color:var(--gm);font-size:12px;white-space:nowrap}
-  .acol-r .l .ok{flex:none;width:12px;text-align:center;color:#16a34a;font-size:11px;font-weight:900}
+  .acol-r .l .ok{flex:none;width:12px;text-align:center;color:#15803D;font-size:12px;font-weight:900}
+  html[data-theme="dark"] .acol-r .l .ok{color:#57C79A}
+  html[data-theme="dark"] .acol-r.warn .l .c{color:#F87171}
+  .att-k.k-abs{color:#B91C1C}.att-k.k-lat{color:#A14A08}.att-k.k-ear{color:#1D4ED8}.att-k.k-trip{color:#0E7490}.att-k.k-etc{color:#5F6670}.att-k.k-lv{color:#5F6670}
+  html[data-theme="dark"] .att-k.k-abs{color:#F87171}html[data-theme="dark"] .att-k.k-lat{color:#E9B65A}html[data-theme="dark"] .att-k.k-ear{color:#7EB3FF}html[data-theme="dark"] .att-k.k-trip{color:#5FC6D8}html[data-theme="dark"] .att-k.k-etc,html[data-theme="dark"] .att-k.k-lv{color:#A9BDB4}
   /* 🏛 v171 오와 열 — 휴학 칸 · 인원(지금 | /재적) · ✓ 칸을 늘 같은 너비로 둬서 반마다 숫자가 한 줄로 선다 */
   .acol-r .l .c{margin-left:auto}
   .acol-r .l .lvs{display:none}
@@ -479,24 +483,24 @@ function attOffCss(){
   .acol-r .l .c .h,.acol-h .n .h{display:inline-block;min-width:2ch;text-align:right}
   .acol-r .l .c small,.acol-h .n small{display:inline-block;min-width:3ch;text-align:left}
   .acol-r .cs{display:flex;flex-wrap:wrap;gap:3px;margin:5px 0 1px 28px}
-  .acol-r.warn .l .c{color:#DC2626}.acol-r.away .l .c{color:#B45309}
-  .acol-r .l .c small,.acol-h .n small{font-size:10.5px;font-weight:700;color:var(--tl)}
-  .acol-org em{font-style:normal;font-weight:900;color:var(--gm);font-size:11.5px}
-  .acol-note{font-size:10.5px;color:var(--tl);font-weight:600;margin:-2px 2px 8px}
+  .acol-r.warn .l .c{color:#B91C1C}.acol-r.away .l .c{color:#B45309}
+  .acol-r .l .c small,.acol-h .n small{font-size:12px;font-weight:700;color:var(--tl)}
+  .acol-org em{font-style:normal;font-weight:900;color:var(--gm);font-size:12px}
+  .acol-note{font-size:12px;color:var(--tl);font-weight:600;margin:-2px 2px 8px}
   @media(max-width:760px){ .acol.n3,.acol.n4,.acol{grid-template-columns:repeat(2,minmax(0,1fr))} .acol.n1{grid-template-columns:minmax(0,1fr)} }
   @media(max-width:560px){ .acol.n2,.acol.n3,.acol.n4,.acol{grid-template-columns:minmax(0,1fr)} }   /* 🏛 v171 폰은 한 줄에 한 부 — 반 이름 · 휴학 · 인원이 잘리지 않고 줄도 맞게 */
   .att-st.t b{color:#0E7490}.att-st.v b{color:#6B7280}
-  .lv-btn{margin-left:6px;border:1px dashed var(--ivd);background:var(--iv);color:var(--ts);border-radius:999px;padding:1px 9px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}
+  .lv-btn{margin-left:6px;border:1px dashed var(--ivd);background:var(--iv);color:var(--ts);border-radius:999px;padding:1px 9px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}
   .lv-btn:hover,.lv-btn.on{border-style:solid;color:var(--gd)}
   .lv-pop{border:1px dashed var(--ivd);background:var(--iv);border-radius:12px;padding:8px 12px 6px;margin:0 0 10px}
   .lv-ph{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding-bottom:4px}
-  .lv-ph b{font-size:12.5px;font-weight:800;color:var(--gd)}.lv-ph span{font-size:11px;color:var(--tl);font-weight:600}
-  .lv-ph a{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--gm);text-decoration:none}
+  .lv-ph b{font-size:12.5px;font-weight:800;color:var(--gd)}.lv-ph span{font-size:12px;color:var(--tl);font-weight:600}
+  .lv-ph a{margin-left:auto;font-size:12px;font-weight:800;color:var(--gm);text-decoration:none}
   .lv-r{display:flex;align-items:baseline;gap:6px;padding:5px 0;border-top:1px solid var(--ivd);font-size:12.5px}
   .lv-r .acol-g{align-self:center}.lv-r b{font-weight:800;color:var(--gd);white-space:nowrap}
   .lv-nm{display:flex;flex-wrap:wrap;gap:2px 12px;color:var(--ts);min-width:0}
-  .lv-nm i{font-style:normal;color:var(--tl);font-size:11px;font-weight:600;margin-left:5px}
-  .acol-r .l .lvn{font-size:10.5px;font-weight:800;color:var(--ts);border:1px dashed var(--ivd);border-radius:6px;padding:0 5px;white-space:nowrap}
+  .lv-nm i{font-style:normal;color:var(--tl);font-size:12px;font-weight:600;margin-left:5px}
+  .acol-r .l .lvn{font-size:12px;font-weight:800;color:var(--ts);border:1px dashed var(--ivd);border-radius:6px;padding:0 5px;white-space:nowrap}
   .acol-r .l .lvn i{font-style:normal}
   .lv-line{margin:-2px 0 8px}.acol-org .lv-btn span{font:inherit;color:inherit}
   .att-sum .lv-line{padding:0 12px}.att-sum .lv-pop{margin:0 10px 10px}
@@ -625,12 +629,12 @@ function paintAttOrg0(o){
   if(ATT_STYLE==='board'){
     const row = bk => { const list=flags.filter(f=>(f.bks||[f.bk]).includes(bk)); if(!list.length) return '';
       const memos = list.filter(f=>f.memo).map(f=>`${esc(f.name)}: ${esc(f.memo)}`).join(' · ');
-      return `<a class="att-brow" href="${go}"><span class="att-k" style="color:${ATT_BK[bk].c}">${ATT_BK[bk].l}</span>
+      return `<a class="att-brow" href="${go}"><span class="att-k k-${bk}">${ATT_BK[bk].l}</span>
         <span class="att-nms">${list.map(f=>`<span class="att-nm">${esc(f.name)}<i>${esc(String(f.cls).replace('반',''))}</i></span>`).join('')}</span>
         ${memos?`<span class="att-memo">${memos}</span>`:''}</a>`; };
     h = `<div class="att-orghd"><b>${esc(orgNm)}</b></div>${evl}
       <div class="att-stats six">
-        <a class="att-st g" href="${go}"><b>${M.here}<small style="font-size:11px;color:var(--tl)">/${roster}</small></b><span>지금 학교에</span></a>
+        <a class="att-st g" href="${go}"><b>${M.here}<small style="font-size:12px;color:var(--tl)">/${roster}</small></b><span>지금 학교에</span></a>
         <a class="att-st r" href="${go}"><b>${cnt.abs}</b><span>결석</span></a>
         <a class="att-st a" href="${go}"><b>${cnt.lat}</b><span>지각</span></a>
         <a class="att-st b" href="${go}"><b>${cnt.ear}</b><span>조퇴</span></a>
@@ -674,8 +678,8 @@ function clubCss(){
   .hwc{background:var(--wh);border:1px solid var(--ivd);border-radius:14px;overflow:hidden;margin-bottom:8px}
   .hwc-h{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--iv);border-bottom:1px solid var(--ivd);font-size:12.5px}
   .hwc-h b{font-weight:900;color:var(--gd)}
-  .hwc-h span{font-size:11.5px;font-weight:700;color:var(--ts)}
-  .hwc-h a{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--gm);text-decoration:none;white-space:nowrap}
+  .hwc-h span{font-size:12px;font-weight:700;color:var(--ts)}
+  .hwc-h a{margin-left:auto;font-size:12px;font-weight:800;color:var(--gm);text-decoration:none;white-space:nowrap}
   .hwc-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr))}
   .hwc-it{display:flex;align-items:center;gap:10px;padding:10px 14px;border:0;border-bottom:1px solid var(--ivd);background:transparent;
     text-align:left;font-family:inherit;color:inherit;cursor:pointer;min-width:0}
@@ -684,11 +688,11 @@ function clubCss(){
   .hwc-it .mid{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
   .hwc-it .l1{display:flex;align-items:center;gap:6px;min-width:0}
   .hwc-it .l1 b{font-size:13px;font-weight:900;color:var(--gd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hwc-it .no{font-size:10px;font-weight:900;color:#fff;border-radius:6px;padding:1px 6px;flex:none}
-  .hwc-it .nowb{font-size:10px;font-weight:900;color:#fff;background:var(--gm);border-radius:6px;padding:1px 6px;flex:none}
-  .hwc-it .l2{font-size:11.2px;font-weight:600;color:var(--ts);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hwc-it .no{font-size:11.5px;font-weight:900;color:#fff;border-radius:6px;padding:1px 6px;flex:none}
+  .hwc-it .nowb{font-size:11.5px;font-weight:900;color:#fff;background:var(--gm);border-radius:6px;padding:1px 6px;flex:none}
+  .hwc-it .l2{font-size:12px;font-weight:600;color:var(--ts);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .hwc-it .l2 em{font-style:normal;font-weight:800;color:var(--gm)}
-  .hwc-it .t{font-size:11.5px;font-weight:800;color:var(--ts);font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+  .hwc-it .t{font-size:12px;font-weight:800;color:var(--ts);font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
   .hwc-it.done{opacity:.55}
   .hwc-it.now{background:linear-gradient(90deg,rgba(0,112,74,.07),transparent)}
   @media (max-width:640px){ .hwc-list{grid-template-columns:1fr} }`;
@@ -892,9 +896,9 @@ function mtgCss(){
   .hwm-ck.done{border-color:var(--gm);color:#fff;background:var(--gm)}
   .hwm-t{flex:1;min-width:0;text-decoration:none;color:inherit}
   .hwm-t b{display:block;font-size:12.8px;font-weight:800;color:var(--gd);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .hwm-t span{display:block;font-size:10.8px;color:var(--tl);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .hwm-d{flex:none;font-size:10.8px;font-weight:900;color:var(--gm);background:var(--gp);border-radius:8px;padding:2px 8px;white-space:nowrap}
-  .hwm-d.over{color:#DC2626;background:#FDE8E8}.hwm-d.soon{color:#B45309;background:#FEF3C7}
+  .hwm-t span{display:block;font-size:12px;color:var(--tl);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hwm-d{flex:none;font-size:12px;font-weight:900;color:var(--gm);background:var(--gp);border-radius:8px;padding:2px 8px;white-space:nowrap}
+  .hwm-d.over{color:#B91C1C;background:#FDE8E8}.hwm-d.soon{color:#B45309;background:#FEF3C7}
   .hwm.done{opacity:.55}.hwm.done .hwm-t b{text-decoration:line-through}
   .hwm-n{display:flex;gap:8px;align-items:center;font-size:11.8px;color:var(--ts);text-decoration:none;padding:3px 4px}
   .hwm-n b{color:var(--gd)}`;

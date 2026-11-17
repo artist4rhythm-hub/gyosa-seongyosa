@@ -17,7 +17,7 @@
   --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
   --gold:#B08D3C; --goldd:#8A6410; --goldp:#F7EFD8;
   --iv:#F2F0EB; --ivd:#E3E1DA;
-  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#ffffff;
+  --tx:#1F2320; --ts:#5A6560; --tl:#64716B; --wh:#ffffff;
   --sh:0 2px 12px rgba(30,57,50,0.08); --r:12px; --rs:8px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -208,9 +208,19 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .trip-days div{border-radius:10px;padding:6px 4px;text-align:center;font-size:11px;font-weight:700;border:1.5px solid #0369a1;background:rgba(3,105,161,.08);color:#075985}
 .trip-days div b{display:block;font-size:14px}
 .trip-days div.skip{border-style:dashed;border-color:var(--ivd);background:var(--iv);color:var(--ts)}
+/* 📊 v187 오늘 실시간 · 통계 그래프 · 출석률 글자색 (밝게 · 다크) */
+:root{--rt-ok:#15803D;--rt-mid:#A14A08;--rt-bad:#B91C1C}
+html[data-theme="dark"]{--rt-ok:#57C79A;--rt-mid:#E9B65A;--rt-bad:#F87171}
+.lv-chart{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:start;background:var(--wh,#fff);border:1px solid var(--ivd);border-radius:14px;padding:16px 18px;margin-bottom:12px}
+.lv-ring{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;font-size:12.5px;color:var(--ts)}
+.lv-ring b{font-size:14px;color:var(--gd)}
+.lv-bars{min-width:0;max-height:360px;overflow:auto;padding-right:4px}
+.st-chart{background:var(--iv);border-radius:12px;padding:14px 16px;margin-top:10px}
+@media(max-width:600px){ .lv-chart{grid-template-columns:minmax(0,1fr);padding:14px} .lv-ring{flex-direction:row;justify-content:flex-start;text-align:left} }
 </style>
 <link rel="stylesheet" href="ui.css">
 <script src="loading.js"></script>
+<script src="minichart.js?v=187"></script>
 <script src="modal-close.js"></script>
 <script src="org-core.js"></script>
 <script src="student-status.js"></script>
@@ -2186,6 +2196,7 @@ function renderLive(){
     const g=$I('lv-grid'); if(g) g.innerHTML = `<div style="grid-column:1/-1;color:var(--danger,#C0392B);font-size:13px">불러오지 못했습니다: ${esc(err.message||'')}</div>`;
   });
 }
+function MiniChartTone(rate){ return rate>=95?'ok':rate>=85?'mid':'bad'; }   // 📊 v187 반 카드 막대와 같은 기준
 function todayYMD2(){ const n=new Date(); return `${n.getFullYear()}-${pad(n.getMonth()+1)}-${pad(n.getDate())}`; }
 function paintLive(org, marks, isToday){
   const cls = sortClasses(CLASSES.filter(c=>c.org===org));
@@ -2193,6 +2204,7 @@ function paintLive(org, marks, isToday){
   marks.forEach(m=>{ (byClass[m.classId] = byClass[m.classId] || []).push(m); });
   const typeOf = id => TYPES.find(t=>t.id===id) || null;
   let totRoster=0, totFlag=0, totAbsent=0;
+  const CH = [];   // 📊 v187 반별 막대
   const cards = cls.map(c=>{
     // 출결 대상 = 학적이 살아 있고 그날 휴학이 아닌 학생 (출석 체크 명단과 같다)
     const roll = rollOf(c);
@@ -2211,6 +2223,7 @@ function paintLive(org, marks, isToday){
     Object.values(flagged).forEach(f=>{ cnt[f.t.name] = cnt[f.t.name]||{n:0,color:f.t.color,names:[]}; cnt[f.t.name].n++; cnt[f.t.name].names.push(f.name); });
     const rate = roster ? Math.round((roster-flagN)/roster*1000)/10 : 0;
     totRoster+=roster; totFlag+=flagN; totAbsent+=flagN;
+    if(roster) CH.push({ label:(c.grade?'['+c.grade+'] ':'')+c.name, pct:rate, right:`${rate}%`, sub:`${roster-flagN}/${roster}명`, tone: MiniChartTone(rate) });
     const t = (typeof STAFFM!=='undefined') ? null : null;
     const chips = Object.entries(cnt).map(([nm,v])=>
       `<span title="${esc(v.names.join(', '))}" style="display:inline-flex;align-items:center;gap:4px;border:1px solid ${v.color}44;background:${v.color}14;color:${v.color};border-radius:100px;padding:3px 10px;font-size:11.5px;font-weight:800">${esc(nm)} ${v.n}</span>`).join(' ');
@@ -2220,23 +2233,27 @@ function paintLive(org, marks, isToday){
         <span style="font-size:11px;color:var(--tl)">재적 ${roster}${nLeave?` <span style="color:var(--warn)">· 휴학 ${nLeave}</span>`:''}</span>
       </div>
       <div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;min-height:24px">
-        ${flagN ? chips : `<span style="font-size:11.5px;color:#16a34a;font-weight:800">✓ 특이사항 없음${isToday?' (전원 출석)':''}</span>`}
+        ${flagN ? chips : `<span style="font-size:12px;color:var(--rt-ok);font-weight:800">✓ 특이사항 없음${isToday?' (전원 출석)':''}</span>`}
       </div>
       <div style="margin-top:9px;background:var(--iv);border-radius:100px;height:7px;overflow:hidden">
-        <div style="width:${rate}%;height:100%;background:${rate>=95?'#16a34a':rate>=85?'#f59e0b':'#dc2626'}"></div>
+        <div style="width:${rate}%;height:100%;background:${rate>=95?'#1F8A5B':rate>=85?'#C27C0E':'#C2410C'}"></div>
       </div>
       <div style="margin-top:4px;font-size:11px;color:var(--ts);text-align:right">출석 ${rate}%</div>
     </div>`;
   }).join('');
   const orate = totRoster ? Math.round((totRoster-totAbsent)/totRoster*1000)/10 : 0;
-  $I('lv-sum').innerHTML = `
+  // 📊 v187 기관 출석 링 + 반별 막대 (같은 자료 · 새로 읽지 않음)
+  const chart = window.MiniChart && CH.length ? `<div class="lv-chart">
+      <div class="lv-ring">${MiniChart.ring(orate, { size: 104, label: '기관 출석률', text: orate })}<span>기관 출석률<br><b>${totRoster-totAbsent} / ${totRoster}명</b></span></div>
+      <div class="lv-bars">${MiniChart.hbars(CH, { title: '반별 출석률', note: '반 순서 · 낮으면 주황 · 빨강', lw: 120 })}</div></div>` : '';
+  $I('lv-sum').innerHTML = chart + `
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <div style="flex:1;min-width:130px;background:var(--gp);border:1px solid var(--gm);border-radius:12px;padding:11px 14px">
         <div style="font-size:11px;color:var(--gd)">재적</div><div style="font-size:20px;font-weight:900;color:var(--gd)">${totRoster}명</div></div>
       <div style="flex:1;min-width:130px;background:#FDF3E7;border:1px solid #F2D9B8;border-radius:12px;padding:11px 14px">
         <div style="font-size:11px;color:#B4690E">특이사항</div><div style="font-size:20px;font-weight:900;color:#B4690E">${totFlag}건</div></div>
       <div style="flex:1;min-width:130px;background:#EAF6EF;border:1px solid #CBE7D5;border-radius:12px;padding:11px 14px">
-        <div style="font-size:11px;color:#16a34a">기관 출석률</div><div style="font-size:20px;font-weight:900;color:#16a34a">${orate}%</div></div>
+        <div style="font-size:12px;color:#15803D">기관 출석률</div><div style="font-size:20px;font-weight:900;color:#15803D">${orate}%</div></div>
     </div>`;
   $I('lv-grid').innerHTML = cards || `<div style="grid-column:1/-1;color:var(--tl);font-size:13px">이 기관에 올해 반 편성이 없습니다.</div>`;
 }
@@ -2439,7 +2456,7 @@ function renderStatStudent(byStud, totalDays, minDate, maxDate){
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd)">${b.grade||'-'}</td>
       ${cols.map(c=>`<td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${b.counts[c]||0}</td>`).join('')}
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${denom}</td>
-      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'}">${rate}%</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'var(--rt-ok)':rate>=70?'var(--rt-mid)':'var(--rt-bad)'}">${rate}%</td>
     </tr>`;
   }).join('');
   $I('st-body').innerHTML = `
@@ -2485,12 +2502,16 @@ function renderStatGroup(byStud, totalDays, key, label){
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);font-weight:600">${g}</td>
       <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${d.count}명</td>
       ${cols.map(c=>`<td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center">${d.counts[c]||0}</td>`).join('')}
-      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'#16a34a':rate>=70?'#b45309':'#dc2626'}">${rate}%</td>
+      <td style="padding:7px 8px;border-bottom:1px solid var(--ivd);text-align:center;font-weight:700;color:${rate>=90?'var(--rt-ok)':rate>=70?'var(--rt-mid)':'var(--rt-bad)'}">${rate}%</td>
     </tr>`;
   }).join('');
+  // 📊 v187 평균 출석률 막대 (표와 같은 순서 · 같은 수)
+  const gch = window.MiniChart ? Object.entries(groups).sort(sortFn).map(([g,d])=>{ const rate = d.possible? Math.round(d.present/d.possible*100):0;
+    return { label:g, pct:rate, right:`${rate}%`, sub:`${d.count}명`, tone: rate>=90?'ok':rate>=70?'mid':'bad' }; }) : [];
   $I('st-body').innerHTML = `
     <div class="acard">
       <h3 class="actitle">${label}별 출석 · 수업일 ${totalDays}일</h3>
+      ${gch.length > 1 ? `<div class="st-chart">${MiniChart.hbars(gch, { title: '평균 출석률', note: '90% 이상 초록 · 70% 미만 빨강', lw: 130 })}</div>` : ''}
       <div style="overflow-x:auto;margin-top:10px">
         <table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap">
           <thead><tr style="background:var(--iv)">

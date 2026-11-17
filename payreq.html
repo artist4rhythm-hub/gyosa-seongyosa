@@ -13,7 +13,7 @@
   --gd:#1E3932; --gm:#00704A; --gl:#D4E9E2; --gp:#E8F3EF;
   --gold:#B08D3C; --goldd:#8A6410; --goldp:#F7EFD8;
   --iv:#F2F0EB; --ivd:#E3E1DA;
-  --tx:#1F2320; --ts:#5A6560; --tl:#93A09A; --wh:#ffffff;
+  --tx:#1F2320; --ts:#5A6560; --tl:#64716B; --wh:#ffffff;
   --sh:0 2px 12px rgba(30,57,50,0.08); --r:12px; --rs:8px;
 }
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -723,8 +723,15 @@ html[data-theme="dark"] .pr-turn button{color:#06130E}
   .pr-turn{flex-wrap:wrap}
   .pr-turn button{flex:1 1 100%}
 }
+/* 📊 v187 달마다 금액 막대 */
+.pq-mc{background:var(--iv);border-radius:12px;padding:14px 16px;margin:0 0 14px}
+.pq-mcd{margin-bottom:14px}
+.pq-mcd > summary{cursor:pointer;list-style:none;font-size:14px;font-weight:800;color:var(--gd);padding:12px 16px}
+.pq-mcd > summary::-webkit-details-marker{display:none}
+.pq-mcd .pq-mc{margin:0 16px 16px}
 </style>
 <script src="loading.js"></script>
+<script src="minichart.js?v=187"></script>
 <script src="modal-close.js"></script>
 <script src="menu.js"></script>
 <script src="org-core.js"></script>
@@ -2016,8 +2023,11 @@ async function renderApprove(){
     <button type="button" class="ah-tile${hpMonth.length?'':' zero'}" onclick="apvSet({k:'hp',per:'m0'})"><span class="ic y">${APV_MS('bolt')}</span><span><b>${MM}월 하이패스 (전결)</b><strong>${hpMonth.length}건</strong><small>${hpMonth.length?`₩${won(sum(hpMonth))}`:'없어요'}</small></span></button>
   </div>`;
 
+  const mBars = pqMonthBars(all.map(x => x.r).filter(r => r.status !== 'rejected'), r => { const y = apvYmd(r); return y ? new Date(y + 'T00:00:00') : null; }, r => effectiveTotal(r),
+    mgr ? '달마다 올라온 경비' : '달마다 내가 볼 수 있는 경비', '지난 6달 · 신청한 날 기준 · 반려 빼고 · 정정은 차액');
   box.innerHTML = `
     ${sumHTML}
+    ${mBars ? `<details class="ah-card pq-mcd"${pqMcOpen() ? ' open' : ''} ontoggle="try{localStorage.setItem('pq_mc', this.open ? '1' : '0')}catch(e){}"><summary>📊 달마다 금액</summary>${mBars}</details>` : ''}
     <div id="apv-turn">
     ${mine.length ? `<div class="acard">
       <h3 class="actitle">✅ 내 차례 — 결재할 요청서 <span style="font-size:12px;color:var(--tl);font-weight:400">(${mine.length}건)</span></h3>
@@ -3635,6 +3645,18 @@ function pqBody(list, ctx, trash){
     ${done.length ? `${fold(done.length, '✅ 끝난 것')}${pqDoneFold ? '' : tbl(done)}` : ''}`;
 }
 
+/* 📊 v187 달마다 금액 막대 — 지난 6달 · 이번 달 진하게 (이 화면이 이미 받은 것만 셈 · 새로 묻지 않음) */
+function pqMonthBars(list, dateOf, amtOf, title, note){
+  if(!window.MiniChart) return '';
+  const now = new Date(), ms = [];
+  for(let i = 5; i >= 0; i--){ const d = new Date(now.getFullYear(), now.getMonth() - i, 1); ms.push({ y: d.getFullYear(), m: d.getMonth() + 1, v: 0, n: 0 }); }
+  list.forEach(r => { const d = dateOf(r); if(!d || isNaN(d)) return; const k = ms.find(x => x.y === d.getFullYear() && x.m === d.getMonth() + 1); if(k){ k.v += Number(amtOf(r)) || 0; k.n++; } });
+  if(!ms.some(x => x.n)) return '';
+  const short = v => !v ? '0' : v >= 10000 ? (Math.round(v / 1000) / 10).toLocaleString('ko-KR') + '만' : won(v);
+  return `<div class="pq-mc">${MiniChart.vbars(ms.map((x, i) => ({ label: x.m + '월', value: x.v, valueText: short(x.v), now: i === 5 })), { title, note, h: 130 })}</div>`;
+}
+function pqMcOpen(){ try{ return localStorage.getItem('pq_mc') !== '0'; }catch(e){ return true; } }
+function pqTsDate(t){ return t ? new Date(typeof t.toMillis === 'function' ? t.toMillis() : (t.seconds || 0) * 1000) : null; }
 async function renderList(){
   const box=$I('tab-list');
   await loadPayRequests();
@@ -3657,7 +3679,8 @@ async function renderList(){
         .ex-chip2{padding:6px 14px;border:1.5px solid var(--ivd);border-radius:100px;background:var(--wh);font-size:12.5px;font-weight:600;color:var(--ts);cursor:pointer;font-family:inherit;}
         .ex-chip2.on{background:var(--gm);border-color:var(--gm);color:#fff;}
       </style>
-      ${listTrash ? '<p class="adesc">삭제한 요청서입니다. 30일 보관 후에도 남아 있으니 언제든 되돌릴 수 있습니다.</p>' : ''}
+      ${listTrash ? '<p class="adesc">삭제한 요청서입니다. 30일 보관 후에도 남아 있으니 언제든 되돌릴 수 있습니다.</p>'
+        : pqMonthBars(mine.filter(r => !r.deleted && r.mode !== 'income' && r.status !== 'rejected'), r => { const y = apvYmd(r); return y ? new Date(y + 'T00:00:00') : null; }, r => effectiveTotal(r), '달마다 청구한 금액', '지난 6달 · 신청한 날 기준 · 반려 빼고 · 정정은 차액')}
       <div class="xl-wrap" id="pq-lbody">${pqBody(mine, 'list', listTrash)}</div>
     </div>`;
 }
