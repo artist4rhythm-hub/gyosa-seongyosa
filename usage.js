@@ -17,7 +17,7 @@ import { getFirestore, doc, setDoc, increment, serverTimestamp } from 'https://w
 
 const EVERY = 10 * 60 * 1000;          // 모아 보내는 간격
 const LOCK_MS = 20 * 1000;             // 탭 여러 개가 동시에 보내지 않게
-const TAB_SEL = '.tabs-sub > .tab-sub, .subtb > .subtbtn, .subtabs > .subtbtn, .tabs-main > .tab-main, .g-tabs > button, .wrap > .tabs > .tab, [role=tablist] > [role=tab], .nh-tabs > button, .cs-tabs > button';
+const TAB_SEL = '.tabs-sub > .tab-sub, .subtb > .subtbtn, .subtabs > .subtbtn, .tabs-main > .tab-main, .g-tabs > button, .wrap > .tabs > .tab, [role=tablist] > [role=tab], .nh-tabs > button, .cs-tabs > button, .hn-mbar > .hn-mc';   // v185 홈 «더 보기» 칩도 (어떤 칸을 펼쳐 보는지)
 
 let UID = '', DB = null, busy = false;
 const bufKey = () => 'gyosa_use:' + UID;

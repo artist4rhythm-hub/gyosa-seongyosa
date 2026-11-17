@@ -203,6 +203,19 @@ onAuthStateChanged(auth, async (user) => {
       sessionStorage.removeItem('gyosa_help_compose');
       if(hc && Date.now() - (hc.t||0) < 10*60*1000) helpCompose(hc);
     } catch(_){}
+    // 🏠 v185 홈 «쪽지 쓰기» · «축하 쪽지 보내기» — 받는 사람 · 제목을 채운 새 쪽지 (보내기는 직접)
+    try {
+      const cp = JSON.parse(sessionStorage.getItem('gyosa_compose') || 'null');
+      sessionStorage.removeItem('gyosa_compose');
+      if(cp && Date.now() - (cp.t||0) < 10*60*1000){
+        openCompose();
+        (Array.isArray(cp.to) ? cp.to : []).forEach(u => { if(STAFF.some(s => s.uid === u) && u !== CU.uid) composeSel.add(u); });
+        renderRecipBox();
+        if(cp.subject && $I('cp-subject')) $I('cp-subject').value = String(cp.subject).slice(0, 120);
+        if(cp.body && $I('cp-body')) $I('cp-body').value = String(cp.body).slice(0, 2000);
+        const ta = $I(cp.to && cp.to.length ? 'cp-body' : 'cp-subject'); if(ta) ta.focus();
+      }
+    } catch(_){}
   } catch(e){
     window.hideLoading && window.hideLoading();
     $I('gate-msg').textContent='오류: '+e.message; $I('gate-btn').style.display='inline-block';
@@ -446,7 +459,7 @@ function renderInboxRows(){
   }).join('');
   const anyFilter = mSearch||mFrom||mMonth||mOrg||mUnreadOnly;
   box.innerHTML = rows ||
-    `<div class="empty">${anyFilter?'조건에 맞는 쪽지가 없습니다.':(inboxFilter==='all'?'받은 쪽지가 없습니다.':'해당 분류의 쪽지가 없습니다.')}</div>`;
+    `<div class="empty gx-ea" data-ea="${anyFilter?'search':'letter'}">${anyFilter?'조건에 맞는 쪽지가 없습니다.':(inboxFilter==='all'?'받은 쪽지가 없습니다.':'해당 분류의 쪽지가 없습니다.')}</div>`;
 }
 
 // ✓ 모두 읽음 — 안 읽은 받은 쪽지 전부 한 번에 읽음 처리 (400건씩 배치)
@@ -491,7 +504,7 @@ function renderSent(){
     <div class="acard">
       <h3 class="actitle">📤 보낸 쪽지</h3>
       <p class="adesc">내가 보낸 쪽지입니다. 받는 사람이 읽었는지 확인할 수 있습니다.</p>
-      ${rows || '<div class="empty">보낸 쪽지가 없습니다.</div>'}
+      ${rows || '<div class="empty gx-ea" data-ea="letter">보낸 쪽지가 없습니다.</div>'}
     </div>`;
 }
 window.renderSent = renderSent;

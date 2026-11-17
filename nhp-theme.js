@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
    🎨 nhp-theme.js — 나학평 출력 디자인 (v144)
-   · 표지 8가지 — 모던(최초 C안 계열: 띠 · 가는 선 · 띠에 이름 · 처음 C안) · 3차 시안(증서 · 그리드 · 책등) · 예전 모양 — 한글 · 영문
+   · 표지 9가지 — 모던(최초 C안 계열: 띠 · 가는 선 · 띠에 이름 · 새싹 줄기 · 처음 C안) · 3차 시안(증서 · 그리드 · 책등) · 예전 모양 — 한글 · 영문
    · 속지 3가지 (모던 · 클래식 · 예전 모양) + v145 표 음영 (보통 · 진하게 · 없음)
      A · C 는 «같은 12칸 격자»: 본문 폭 680px = 왼쪽 이름 칸 92px + 49px × 12칸
      → 출결 · 5단계 · 시험 · 목록 표의 세로줄이 쪽 전체에서 위아래로 맞는다 (5단계 다섯 칸은 늘 맨 오른쪽 같은 자리)
@@ -20,6 +20,7 @@ export const COVERS = [
   { k: 'cc1', g: 'm', ko: '띠', tag: '기본', fam: 'c', d: '왼쪽 짙은 띠 (가장자리 12mm 안) · 아주 큰 «나의 / 학교 / 생활» · 아래 정보표 + 교표' },
   { k: 'cc2', g: 'm', ko: '가는 선', fam: 'c', d: '띠 대신 가는 두 선 — 잉크가 가장 적게 듦' },
   { k: 'cc3', g: 'm', ko: '띠에 이름', fam: 'c', d: '띠에 반 · 이름을 세로로 (책등처럼 — 모아 꽂아도 찾기 쉬움)' },
+  { k: 'cc4', g: 'm', ko: '새싹 줄기', fam: 'c', d: '가는 두 선 + 제목 아래 초록 · 금빛 잎줄기 그림 (컬러로 인쇄할 때 어울림)' },
   { k: 'c0', g: 'm', ko: '처음 C안', fam: 'c', d: '1차 C안 그대로 — 띠가 종이 끝까지 (프린터에 따라 가장자리가 조금 덜 찍힐 수 있음)' },
   { k: 'af', g: 'p', ko: '증서', fam: 'a', d: '금선 테 · 교표 원 · 명조 제목 · 세 줄 이름표' },
   { k: 'cf', g: 'p', ko: '그리드', fam: 'c', d: '윤곽선 «2026» · 이번 학기 표시 · 표지에 목차' },
@@ -365,9 +366,9 @@ const big = T => `<h1 class="big">${bigSpans(T)}</h1>`;
 const leadLine = T => `<div style="display:flex;align-items:center;gap:12px"><div style="width:36px;height:3px;background:#00704A"></div><div style="font-size:13px;font-weight:700;letter-spacing:.34em;color:#00704A">${esc(T.lead)}</div></div>`;
 const subLine = T => `<div style="margin-top:26px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"><span style="font-size:17px;font-weight:500;letter-spacing:.08em;color:#5A6560">${esc(T.en1)}</span><span style="width:5px;height:5px;background:#B08D3C"></span><span style="font-size:17px;font-weight:500;letter-spacing:.08em;color:#5A6560">${esc(T.en2)}</span></div>`;
 /* 최초 C 계열 본문 (띠 오른쪽) */
-function cBody(p, emb, left, withHr){
+function cBody(p, emb, left, withHr, mid){
   return `<div class="ab" style="left:${left}px;top:0;right:0;bottom:0;padding:104px 72px 76px 70px;display:flex;flex-direction:column">
-    ${leadLine(p.T)}${big(p.T)}${subLine(p.T)}
+    ${leadLine(p.T)}${big(p.T)}${subLine(p.T)}${mid || ''}
     <div style="margin-top:auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:34px">${infoRows(p, withHr)}${lockup(emb, p.T)}</div></div>`;
 }
 export function coverHTML(doc, key, opt){
@@ -390,6 +391,12 @@ export function coverHTML(doc, key, opt){
     return `<div class="${cls}"><div class="ab" style="left:45px;top:45px;bottom:45px;width:14px;background:#1E3932"></div><div class="ab" style="left:66px;top:45px;bottom:45px;width:1px;background:#B08D3C"></div>
       <div class="ab" style="left:82px;top:96px;writing-mode:vertical-rl;font-size:14px;font-weight:700;letter-spacing:.5em;color:#1E3932">${esc(p.vert)}</div>
       <div class="ab" style="left:86px;bottom:96px;width:18px;height:18px;background:#B08D3C"></div>${cBody(p, emb, 141, true)}</div>`;
+  }
+  if(key === 'cc4'){   // 🖼 v186 새싹 줄기 — cc2 의 가는 두 선 + 제목 아래 잎줄기 (img/nhp-leaf.png · GPT 그림에서 오려 냄)
+    return `<div class="${cls}"><div class="ab" style="left:45px;top:45px;bottom:45px;width:14px;background:#1E3932"></div><div class="ab" style="left:66px;top:45px;bottom:45px;width:1px;background:#B08D3C"></div>
+      <div class="ab" style="left:82px;top:96px;writing-mode:vertical-rl;font-size:14px;font-weight:700;letter-spacing:.5em;color:#1E3932">${esc(p.vert)}</div>
+      <div class="ab" style="left:86px;bottom:96px;width:18px;height:18px;background:#B08D3C"></div>
+      ${cBody(p, emb, 141, true, `<img class="leaf" src="img/nhp-leaf.png" alt="" style="display:block;width:100%;height:auto;flex:0 1 auto;min-height:0;object-fit:contain;object-position:left center;margin:40px 0 0 -8px">`)}</div>`;
   }
   if(key === 'cc3'){
     return `<div class="${cls}"><div class="ab" style="left:45px;top:45px;bottom:45px;width:96px;background:#1E3932;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:46px 0 40px">

@@ -337,7 +337,7 @@ function renderShell(activeKey, user){
   SB_USER = user || null;
   try{ document.documentElement.setAttribute('data-gx-pk', activeKey || ''); }catch(e){}   // 🏛 v182 화면마다 다른 규격 손질(showroom.css)이 이 이름을 씀
   // 📊 v182 사용 현황 — 화면 · 기기 · 시간대를 이 기기에 세어 두었다가 10분에 한 번 모아서 (usage.js · 수퍼관리자만 봄)
-  try{ if(user && user.uid && !window.__useLoad){ window.__useLoad = 1; import('./usage.js?v=182').catch(()=>{}); } }catch(e){}
+  try{ if(user && user.uid && !window.__useLoad){ window.__useLoad = 1; import('./usage.js?v=185').catch(()=>{}); } }catch(e){}
   // 🔔 v131 이 기기에서 «알림 켜기»를 했으면 — 앱을 열어 둔 동안 온 알림을 화면 위 띠로 (live-push.js)
   try{ if(user && !window.__lpLoad && localStorage.getItem('staff_push_on') === '1'){ window.__lpLoad = 1; import('./live-push.js?v=131').catch(()=>{}); } }catch(e){}
 
@@ -382,7 +382,7 @@ window.gxPh = function(o){ window.__gxPh = Object.assign(window.__gxPh || {}, o 
 function loadShowroom(){
   if(!document.getElementById('gx-css')){
     const l = document.createElement('link');
-    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=184';
+    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=186';
     document.head.appendChild(l);
   }
   if(!window.__gxOn && !document.getElementById('gx-js')){

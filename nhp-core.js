@@ -6,7 +6,7 @@
    · 학생별 나학평 문서 모양(ReportDoc) 만들기 · 출력본(가리기 · 고치기 · 용어 바꾸기) · 영문판
    · v144 평가 틀 «세부» 칸 · 칸 너비(표 모양) · 조별 칸(학년 · 반이 섞인 칸) · 출력 디자인(표지 · 속지 모양)은 nhp-theme.js
    ═══════════════════════════════════════════════════════════ */
-import * as TH from './nhp-theme.js?v=146';
+import * as TH from './nhp-theme.js?v=186';
 export { TH };
 
 export const ORG = 'daniel';

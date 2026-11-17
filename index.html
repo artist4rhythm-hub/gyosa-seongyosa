@@ -47,6 +47,16 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 #ls .sh::after{content:'';position:absolute;right:2px;top:50%;width:var(--tail,150px);height:1.6px;transform:translateY(-50%);
   background:linear-gradient(270deg,rgba(255,255,255,1),rgba(232,217,168,.5) 35%,rgba(255,255,255,0));border-radius:100px;}
 @keyframes lsShoot{0%{opacity:0;transform:translate(-40px,-16px) rotate(22deg) scale(.6);}8%{opacity:1;}70%{opacity:1;}100%{opacity:0;transform:translate(var(--dx,520px),var(--dy,215px)) rotate(22deg) scale(1);}}
+/* 🖼 v186 로그인 그림 — 밤하늘 아래 그루터기 새싹 위 금빛 별 (GPT 그림 · 다니엘 12:3 «별과 같이»)
+   넓은 화면은 가로판 · 세로로 긴 화면은 세로판 · 반짝이는 별 · 별똥별은 그 위에 그대로 · 그림을 못 받으면 예전 밤하늘 */
+#ls::before{content:'';position:absolute;inset:0;pointer-events:none;background:url(img/login-wide.webp) center 40% / cover no-repeat;}
+@media (max-aspect-ratio:4/5){ #ls::before{background-image:url(img/login-tall.webp);background-position:center 32%;} }
+#ls .way{animation-name:lsDrift2;}
+@keyframes lsDrift2{from{opacity:.25;transform:rotate(-25deg) scaleY(.28) translateX(-1.5%);}to{opacity:.5;transform:rotate(-22deg) scaleY(.34) translateX(1.5%);}}
+/* 넓은 화면: 로그인 상자를 오른쪽으로 — 가운데 새싹 · 별이 가리지 않게 */
+@media (min-width:1024px) and (min-aspect-ratio:5/4){ #ls{align-items:flex-end;padding-right:max(24px,4.5vw);} }
+/* 세로로 긴 패드: 상자를 아래쪽으로 — 위에 새싹 · 별이 보이게 */
+@media (max-aspect-ratio:4/5) and (min-height:960px){ #ls{justify-content:flex-end;padding-bottom:7vh;} }
 
 .lbox{position:relative;z-index:2;background:rgba(255,255,255,0.07);border:1px solid rgba(212,233,226,0.22);
   -webkit-backdrop-filter:blur(16px) saturate(1.1);backdrop-filter:blur(16px) saturate(1.1);
@@ -390,7 +400,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { installHomeWidgets } from './home-widgets.js?v=171';
+import { installHomeWidgets } from './home-widgets.js?v=185';
+import { installHomeStyles } from './home-styles.js?v=186';   // 🏠 v185 홈 모양 A «오늘 한 장» · B «대시보드» · 🖼 v186 GPT 그림
 import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, onSnapshot, arrayUnion, arrayRemove, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { attOf, attRange, colOnce, colDrop, qOnce } from './qread.js';   // 📉 v120 필요한 것만 읽기
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
@@ -1283,6 +1294,25 @@ const HOME_VERSES = [
 
 /* 🏗 7단계 다이어트 — 홈 위젯 엔진은 home-widgets.js로 분가했습니다 */
 let __hwOn = false;
+/* 🏠 v185 홈 모양 (home-styles.js) — A «오늘 한 장» · B «대시보드» · 예전 모양 */
+let HS = null;
+function ensureHS(){
+  if(HS) return HS;
+  HS = installHomeStyles({ db, $I, esc,
+    fs: { collection, query, where, getDocs },
+    get: () => ({ CU, STAFF_CACHE, TODOS, TT_TODAY, TT_OFF, WX_DATA, WX_PLACE, WX_LIST }),
+    WX_CODE, solarToLunar, moonPhase, moonName });
+  return HS;
+}
+/* 지금 홈 모양 — 내 계정에 고른 값(home.style), 없으면 역할로 (선생님 A · 관리자 · 원장 · 주임 B) */
+function homeStyleNow(){ homeAccLocal(); return ensureHS().styleOf(CU, HOME_ACC); }
+window.__homeAccStyle = () => (HOME_ACC && HOME_ACC.style) || '';   // 내가 고른 모양 (없으면 역할 기본 — 주임 여부를 늦게 알면 새 홈이 한 번 다시 그림)
+window.setHomeStyle = function(st){
+  if(!ensureHS().STYLES.includes(st)) return;
+  saveHomeAcc({ style: st });
+  try{ if(window.HomeLayout && HomeLayout.editing()) HomeLayout.end(false); }catch(e){}
+  closeWidgetSetup(); renderHome(); openWidgetSetup();
+};
 function ensureHW(){
   if(__hwOn) return; __hwOn = true;
   installHomeWidgets({ db, getCU: ()=>CU,
@@ -1390,6 +1420,9 @@ function renderHome(){
       <div id="w-acdday" class="hw-stack"><div class="hw-dim">확인 중…</div></div>` : '',
   };
   const _worder = WORDER();
+  const HSTY = homeStyleNow();
+  const hsParts = () => ({ todos, block: k => (HW[k] && homeWidgetOk(k)) ? HW[k]() : '', dateStr, greet, V, orgLine: `${org}${dept}${pos}`.replace(/^ · /, ''),
+    attendOk: homeWidgetOk('attend') && widgetOn('attend'), approvalOk: !!findMenuItem('approval') && menuOk(findMenuItem('approval'), menuGroupOf('approval')) });
 
   body.innerHTML = `
     <style>
@@ -1460,6 +1493,23 @@ function renderHome(){
       .wgo-drag{box-shadow:0 10px 22px rgba(20,35,28,.22);transform:rotate(-1deg);border-color:var(--gm)}
       .wg-row{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--ivd);
         border-radius:10px;cursor:pointer}
+      /* 🏠 v185 홈 모양 고르기 */
+      .wgs-list{display:flex;flex-direction:column;gap:6px;margin-bottom:6px;padding:0 16px}
+      .wg-box > .wg-st{margin:12px 16px 6px}
+      .wg-box > .wgo-list{padding:0 16px}
+      .wg-box > .wg-foot{padding:0 16px 16px}
+      .wgs-opt{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;border:1.5px solid var(--ivd);border-radius:12px;background:var(--wh);font-family:inherit;text-align:left;cursor:pointer;color:inherit;min-height:60px}
+      .wgs-opt:hover{border-color:var(--gm)}
+      .wgs-opt.on{border-color:var(--gm);background:var(--gp);box-shadow:inset 0 0 0 1px var(--gm)}
+      .wgs-tx{display:flex;flex-direction:column;min-width:0;gap:2px}
+      .wgs-tx b{font-size:13.5px;font-weight:800;color:var(--gd)}
+      .wgs-tx b em{font-style:normal;font-size:10.5px;font-weight:800;color:var(--gm);border:1px solid var(--gm);border-radius:999px;padding:0 7px;margin-left:4px;vertical-align:1px}
+      .wgs-tx span{font-size:11.5px;color:var(--tl);line-height:1.45}
+      .wgs-pic{width:56px;height:42px;flex:none;border-radius:8px;background:var(--iv);border:1px solid var(--ivd);display:grid;gap:3px;padding:4px;box-sizing:border-box}
+      .wgs-pic i{display:block;border-radius:2px;background:var(--gl,#D4E9E2);min-height:3px}
+      .wgs-pa{grid-template-columns:2fr 1fr;grid-template-rows:1.3fr 1fr .8fr}.wgs-pa i:nth-child(1){grid-column:1/-1;background:var(--gm)}.wgs-pa i:nth-child(4){grid-column:1/-1}
+      .wgs-pb{grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1.4fr}.wgs-pb i:nth-child(1){background:var(--gm)}.wgs-pb i:nth-child(4){grid-column:1/-1}
+      .wgs-pclassic{grid-template-columns:1fr;grid-template-rows:repeat(4,1fr)}.wgs-pclassic i:nth-child(1){background:var(--gd)}
       .wg-row:hover{border-color:var(--gm)}
       .wg-row input{width:17px;height:17px;flex:none}
       .wg-b{display:flex;flex-direction:column;min-width:0}
@@ -2028,7 +2078,7 @@ function renderHome(){
       }
     </style>
 
-    <div class="hm-wrap${widgetOn('night')?'':' hm-lob'}">
+    ${HSTY !== 'classic' ? HS.html(HSTY, hsParts()) : `<div class="hm-wrap${widgetOn('night')?'':' hm-lob'}">
       ${widgetOn('night') ? `
       <div class="hm-hero">
         <div class="hm-hsky" id="hm-sky"></div>
@@ -2104,7 +2154,7 @@ function renderHome(){
       </div>
 
       ${widgetOn('quick') ? '' : `<div style="margin-top:6px">${allRoomsHTML()}</div>`}
-    </div>`;
+    </div>`}`;
 
   // 히어로 별
   const sky = $I('hm-sky');
@@ -2146,7 +2196,7 @@ function renderHome(){
   loadPrefs().then(()=>{
     renderWorld(); tickWorld();
     return loadWeather();
-  }).then(()=>{ renderWeather(); loadWeatherMinis(); });
+  }).then(()=>{ renderWeather(); loadWeatherMinis(); try{ window.HN && HN.paintWx(); }catch(e){} });
   loadMemo().then(()=>{ renderMemo(); renderTools(); });
   loadTodayStrip();
   if(widgetOn('tt') || widgetOn('today')) loadMyTimetable();
@@ -2156,6 +2206,7 @@ function renderHome(){
   loadHomeSchedule();
   loadHomeNotices();
   restoreHomeFolds();
+  if(HSTY !== 'classic'){ try{ HS.after(HSTY); }catch(e){ console.warn('home style', e); } }   // 🏠 v185
   try{ paintNtNudge(); }catch(e){}     // 🔔 v134 아직 알림을 안 켠 휴대폰에 작은 안내
 }
 window.renderHome = renderHome;
@@ -2293,7 +2344,7 @@ function saveHomeAcc(patch){
   HOME_ACC = Object.assign({ order: WORDER(), on: { ...WIDGET_ON } }, HOME_ACC || {}, patch || {});
   try{ localStorage.setItem('gyosa_home:' + CU.uid, JSON.stringify(HOME_ACC)); }catch(e){}
   _homeAccSeq++;
-  (fresh ? ['order', 'on', 'lay'] : Object.keys(patch || {})).forEach(k => _homeAccDirty.add(k));
+  new Set([...(fresh ? ['order', 'on', 'lay'] : []), ...Object.keys(patch || {})]).forEach(k => _homeAccDirty.add(k));   // 🏠 v185 처음 저장일 때도 고친 칸(홈 모양 등)은 함께
   clearTimeout(_homeAccT);
   const uid = CU.uid;
   _homeAccT = setTimeout(async ()=>{
@@ -2322,9 +2373,10 @@ function homeAccFromServer(h, seq0){
   if(seq0 !== undefined && seq0 !== _homeAccSeq) return;
   if(_homeAccT || _homeAccBusy || _homeAccDirty.size) return;
   homeAccLocal();
-  const pick = x => homeStab({ order: x && x.order || null, on: x && x.on || null });
+  const pick = x => homeStab({ order: x && x.order || null, on: x && x.on || null, style: x && x.style || null });
   const before = pick(HOME_ACC), beforeLay = homeStab((HOME_ACC && HOME_ACC.lay) || null);
-  const keep = { order: Array.isArray(h.order) ? h.order : undefined, on: (h.on && typeof h.on==='object') ? h.on : undefined, lay: (h.lay && typeof h.lay==='object') ? h.lay : undefined };
+  const keep = { order: Array.isArray(h.order) ? h.order : undefined, on: (h.on && typeof h.on==='object') ? h.on : undefined, lay: (h.lay && typeof h.lay==='object') ? h.lay : undefined,
+    style: ['a','b','classic'].includes(h.style) ? h.style : undefined };   // 🏠 v185 홈 모양
   Object.keys(keep).forEach(k=>{ if(keep[k] === undefined) delete keep[k]; });
   HOME_ACC = keep;
   try{ localStorage.setItem('gyosa_home:' + CU.uid, JSON.stringify(HOME_ACC)); }catch(e){}
@@ -2341,10 +2393,17 @@ function homeWidgetOk(k){
 }
 
 window.openWidgetSetup = function(){
-  const rows = HOME_WIDGETS.filter(w=>homeWidgetOk(w.key)).map(w=>`
+  const STY = homeStyleNow(), H5 = ensureHS();
+  const NEW_SKIP = ['clock','night','today','todo','appr','money','acdday'];   // 새 홈에서는 위 카드로 합쳐진 것
+  const NEW_HINT = { attend:'출석 링 · 반별 보기', quick:'자주 여는 방 줄', mtg:'더 보기 · 할 일의 회의 줄', club:'더 보기', tt:'더 보기 · 오늘 일정에 내 수업', wx:'더 보기 · 인사 줄 날씨', memo:'더 보기', world:'더 보기', chk:'더 보기 · 할 일의 «내 할 일»', dday:'더 보기', fav:'더 보기' };
+  const styleRows = H5.STYLES.map(k => { const inf = H5.STYLE_INFO[k], on = STY === k, dflt = H5.defaultStyle(CU) === k;
+    return `<button type="button" class="wgs-opt${on?' on':''}" onclick="setHomeStyle('${k}')" aria-pressed="${on}">
+      <span class="wgs-pic wgs-p${k}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="wgs-tx"><b>${inf.l}${dflt?' <em>내 기본</em>':''}</b><span>${inf.d}</span></span></button>`; }).join('');
+  const rows = HOME_WIDGETS.filter(w=>homeWidgetOk(w.key) && (STY === 'classic' || !NEW_SKIP.includes(w.key))).map(w=>`
     <label class="wg-row">
       <input type="checkbox" ${widgetOn(w.key)?'checked':''} onchange="setWidget('${w.key}', this.checked)">
-      <span class="wg-b"><b>${w.label}</b><span>${w.hint}</span></span>
+      <span class="wg-b"><b>${w.label}</b><span>${STY !== 'classic' && NEW_HINT[w.key] ? NEW_HINT[w.key] : w.hint}</span></span>
     </label>`).join('');
   const blockOn = k => widgetOn(k);
   const orows = WORDER().map((k,i)=>{ const b=WBLOCKS.find(x=>x.k===k); if(!b) return '';
@@ -2358,13 +2417,15 @@ window.openWidgetSetup = function(){
   ov.innerHTML = `<div class="wg-box">
       <div class="wg-h">🧩 홈 화면 고르기
         <button class="wg-x" onclick="closeWidgetSetup()" aria-label="닫기">✕</button></div>
-      <div class="wg-d">⠿를 끌어 순서를 바꾸고, 아래에서 켜고 끄세요. 내 계정에 저장돼 어느 기기에서나 같아요. 창 크기는 «✏️ 배치 바꾸기».</div>
+      <div class="wg-st">🏠 홈 모양 <span>내 계정에 저장돼 어느 기기에서나 같아요</span></div>
+      <div class="wgs-list">${styleRows}</div>
+      ${STY === 'classic' ? `<div class="wg-d">⠿를 끌어 순서를 바꾸고, 아래에서 켜고 끄세요. 창 크기는 «✏️ 배치 바꾸기».</div>
       <div class="wg-st">🧲 순서 <span>맨 위 인사는 고정 · «밤하늘 인사 카드»는 아래에서</span></div>
-      <div class="wgo-list" id="wgo-list">${orows}</div>
+      <div class="wgo-list" id="wgo-list">${orows}</div>` : `<div class="wg-d">끈 것은 홈 «더 보기»에도 나오지 않아요.</div>`}
       <div class="wg-st">👀 보이기 · 숨기기</div>
       <div class="wg-list">${rows}</div>
       <div class="wg-foot">
-        <button class="wg-reset" onclick="resetWidgets()" title="차례 · 보이기 · 창 크기와 자리를 처음(오늘의 로비)으로">처음 상태로 (로비)</button>
+        <button class="wg-reset" onclick="resetWidgets()" title="홈 모양 · 차례 · 보이기 · 창 크기와 자리를 처음으로">처음 상태로</button>
         <button class="wg-ok" onclick="closeWidgetSetup()">완료</button>
       </div>
     </div>`;
@@ -2410,13 +2471,13 @@ window.closeWidgetSetup = function(){ $I('wg-mod')?.remove(); };
 window.setWidget = function(k, on){ WIDGET_ON[k] = on ? 1 : 0; if(k === 'night') WIDGET_ON.nightV = 1; saveWidgetPrefs(); renderHome(); };   // 🌙 v163 밤하늘 카드는 직접 고른 값만 기억
 /* «처음 상태로» = 🏛 로비 배치 — 차례 · 보이기에 더해 창 크기 · 자리(배치 바꾸기)도 처음으로 */
 window.resetWidgets = function(){
-  if(!confirm('홈을 처음 상태(오늘의 로비)로 되돌릴까요?\n차례 · 보이기 · 창 크기와 자리가 모두 처음으로 돌아가요.')) return;
+  if(!confirm('홈을 처음 상태로 되돌릴까요?\n홈 모양 · 차례 · 보이기 · 창 크기와 자리가 모두 처음으로 돌아가요.')) return;
   try{ if(window.HomeLayout && HomeLayout.editing()) HomeLayout.end(false); }catch(e){}   // 🏛 v158 배치 바꾸는 중이면 먼저 나오고 (취소해도 예전 배치가 되살아나지 않게)
   WORDER_TMP = null;
   WIDGET_ON = { ...WIDGET_DEFAULT }; try{ localStorage.removeItem('gyosa_worder'); }catch(e){}
   const lay = { w:{ it:{} }, n:{ it:{} } };
   try{ window.HomeLayout && HomeLayout.set(lay); }catch(e){}
-  saveHomeAcc({ order: WBLOCKS.map(x=>x.k), on: { ...WIDGET_DEFAULT }, lay });
+  saveHomeAcc({ order: WBLOCKS.map(x=>x.k), on: { ...WIDGET_DEFAULT }, lay, style: null });   // 🏠 v185 모양도 내 기본으로
   saveWidgetPrefs(); closeWidgetSetup(); renderHome();
 };
 
@@ -3573,6 +3634,7 @@ async function loadRecs(){
   return CFG_RECS;
 }
 function renderTools(){
+  try{ window.HN && HN.style() !== 'classic' && $I('hn-todo') && HN.paintTodo(); }catch(e){}   // 🏠 v185 새 홈 «지금 할 일»의 내 할 일 수
   /* ✅ 할 일 */
   const c1=$I('hm-chk');
   if(c1){
@@ -3907,6 +3969,7 @@ async function loadMyTimetable(){
 }
 
 function renderMyTimetable(){
+  try{ window.HN && $I('hn-sched') && HN.paintSched(); }catch(e){}   // 🏠 v185 새 홈 «오늘 일정»에 내 수업
   const sumBox = $I('td-tt-box'), sum = $I('td-tt');
   const card = $I('hm-tt');
   const nowMin = (()=>{ const d=new Date(); return d.getHours()*60+d.getMinutes(); })();
@@ -3969,14 +4032,15 @@ async function loadTodayStrip(){
   const d = new Date();
   const ymd = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-  // 내 출근 (오늘 기록만 조회)
+  // 내 출근 (오늘 기록만 조회) — 칸이 없으면(새 홈) 읽지 않음
   try {
     const el = $I('td-att');
+    if(!el) throw 0;
     const snap = await getDocs(query(collection(db,'attendance'), where('uid','==',CU.uid), where('date','==',ymd)));
     let label = '미입력';
     snap.forEach(doc0=>{ const a=doc0.data(); label = a.sub || a.type || '기록됨'; });
     if(el) el.textContent = label;
-  } catch(e){ const el=$I('td-att'); if(el) el.textContent='—'; }
+  } catch(e){ const el=$I('td-att'); if(el && e !== 0) el.textContent='—'; }
 
   // 오늘 생일 (교직원)
   try {

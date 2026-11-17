@@ -91,6 +91,102 @@ window.hwTodayEvents = async () => {
     .sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||'') || String(a.title||'').localeCompare(String(b.title||''),'ko'))
     .map(e=>String(e.title||'학사 행사'));
 };
+/* 🏠 v185 새 홈 «오늘 일정» — 시간 · 대상까지 (오늘 열리는 학사 행사 · 내 기관) */
+window.hwTodayEventList = async () => {
+  const ds = hwToday(), orgs = attHomeOrgs();
+  const evs = await loadYearEvents();
+  return evs.filter(e=>evHitsOrg(e, orgs) && evOnDay(e, ds))
+    .sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||'') || String(a.title||'').localeCompare(String(b.title||''),'ko'))
+    .map(e=>({ title: String(e.title||'학사 행사'), start: String(e.startTime||''), end: String(e.endTime||''), who: evTargetLabel(e), place: String(e.place||e.location||'') }));
+};
+/* 🏠 v185 다가오는 학사 일정 n개 — {t, d, dn} (학사 D-Day 위젯과 같은 셈) */
+async function upcomingEvents(n){
+  const orgs = attHomeOrgs();
+  const ts = hwToday();
+  const far = new Date(ts+'T00:00:00'); far.setDate(far.getDate()+120);
+  const farS = ymdOf(far);
+  const evs = await loadYearEvents();
+  const nextOcc = e => {
+    const d = new Date(((e.startDate > ts) ? e.startDate : ts)+'T00:00:00');
+    const last = (e.endDate || e.startDate) < farS ? (e.endDate || e.startDate) : farS;
+    for(let i=0; i<400; i++){ const x = ymdOf(d); if(x > last) return ''; if(evOnDay(e, x)) return x; d.setDate(d.getDate()+1); }
+    return '';
+  };
+  return evs.filter(e=>evHitsOrg(e, orgs))
+    .map(e=>({ t:e.title||'학사 행사', d:nextOcc(e) })).filter(e=>e.d)
+    .sort((a,b)=>a.d.localeCompare(b.d) || a.t.localeCompare(b.t,'ko')).slice(0, n || 3)
+    .map(e=>({ ...e, dn: Math.round((new Date(e.d+'T00:00:00')-new Date(ts+'T00:00:00'))/86400000) }));
+}
+window.hwUpcoming = upcomingEvents;
+/* 🏠 v185 학기 진행 — 내 기관(첫째) 학기: 지금 몇 주차 / 전체 몇 주 · 방학이면 다음 학기까지 */
+window.hwSchoolData = () => loadSchoolDayData();   // 🏠 v185 새 홈 교직원 출근 — 근무 · 방학 기간 · 휴일 (출근부와 같은 자동 판정)
+window.hwTermInfo = async () => {
+  const SD = await loadSchoolDayData();
+  const ds = hwToday(), orgs = attHomeOrgs();
+  const nm = t => t.name || (t.term ? `${t.term}학기` : '학기');
+  const wk = (a, b) => Math.floor((new Date(b+'T00:00:00') - new Date(a+'T00:00:00')) / 86400000 / 7) + 1;
+  const termsOf = o => (SD.terms || []).filter(t => t.org === o && t.start && t.end).sort((a,b)=>String(a.start).localeCompare(String(b.start)));
+  // 먼저 지금 학기 중인 기관 — 없을 때만 다음 학기 (두 기관을 함께 볼 때 한쪽이 방학이어도)
+  for(const o of orgs){
+    const ts = termsOf(o);
+    const cur = ts.find(t => ds >= t.start && ds <= t.end);
+    if(cur){
+      const weeks = Math.max(1, wk(cur.start, cur.end)), week = Math.min(weeks, wk(cur.start, ds));
+      const tot = (new Date(cur.end+'T00:00:00') - new Date(cur.start+'T00:00:00')) || 1;
+      const pct = Math.max(0, Math.min(100, Math.round((new Date(ds+'T00:00:00') - new Date(cur.start+'T00:00:00')) / tot * 100)));
+      const left = Math.round((new Date(cur.end+'T00:00:00') - new Date(ds+'T00:00:00')) / 86400000);
+      return { state:'in', org:o, name: nm(cur), start: cur.start, end: cur.end, week, weeks, pct, left };
+    }
+  }
+  for(const o of orgs){
+    const nx = termsOf(o).find(t => t.start > ds);
+    if(nx) return { state:'off', org:o, name: nm(nx), start: nx.start, end: nx.end, dn: Math.round((new Date(nx.start+'T00:00:00') - new Date(ds+'T00:00:00')) / 86400000) };
+  }
+  return { state:'none' };
+};
+/* 🏠 v185 최근 수업일 n일 — 날마다 결석 · 지각 학생 수 (기관 모두 더함)
+   · 지난 날은 이 기기에 기억 (그날 기록이 거의 바뀌지 않음 · 다시 열 때 읽지 않게) · 오늘은 실시간 받은 것으로 */
+window.hwAttHistory = async (n) => {
+  n = n || 10;
+  const orgs = attHomeOrgs(); if(!orgs.length) return [];
+  const SD = await loadSchoolDayData();
+  if(!_attTypes){ try{ const s0 = await getDocs(collection(db,'attendTypes')); _attTypes = s0.docs.map(d=>({id:d.id, ...d.data()})); }catch(e){ return []; } }
+  const def = attDefaultType();
+  const tmap = {}; _attTypes.forEach(t => tmap[t.id] = t);
+  const countOf = list => { let abs = 0, lat = 0;
+    list.forEach(m => { const ids = (m.typeIds && m.typeIds.length) ? m.typeIds : (m.typeId ? [m.typeId] : []);
+      const bks = ids.map(id => tmap[id]).filter(t => t && (!def || t.id !== def.id)).map(t => attBucket(t.name));
+      if(bks.includes('abs')) abs++; if(bks.includes('lat')) lat++; });
+    return { abs, lat }; };
+  const today = hwToday();
+  const days = [];
+  const d = new Date(today+'T00:00:00');
+  for(let i=0; i<40 && days.length < n; i++){
+    const ds = ymdOf(d);
+    if(orgs.some(o => attDayInfo(ds, o, SD).school)) days.unshift(ds);
+    d.setDate(d.getDate()-1);
+  }
+  const keepFrom = ymdOf(new Date(Date.now() - 7*86400000));     // 일주일 넘은 날만 이 기기에 기억 (그 안은 늦게 고칠 수 있어 다시 읽음)
+  const one = async (o, ds) => {
+    if(!attDayInfo(ds, o, SD).school) return { abs:0, lat:0 };
+    if(ds === today && _attMarks[o]) return countOf(_attMarks[o]);
+    const K = 'gyosa_atth:' + o + ':' + ds;
+    if(ds < keepFrom){ try{ const c0 = JSON.parse(localStorage.getItem(K) || 'null'); if(c0 && typeof c0.abs === 'number') return c0; }catch(e){} }
+    try{
+      const s1 = await getDocs(query(collection(db,'studentAttendance'), where('org','==',o), where('date','==',ds)));
+      const c = countOf(s1.docs.map(x=>x.data()));
+      if(ds < keepFrom && !(s1.metadata && s1.metadata.fromCache)){ try{ localStorage.setItem(K, JSON.stringify(c)); }catch(e){} }
+      return c;
+    }catch(e){ return { abs:0, lat:0, err:1 }; }
+  };
+  const out = await Promise.all(days.map(async ds => {
+    const cs = await Promise.all(orgs.map(o => one(o, ds)));
+    return { date: ds, abs: cs.reduce((n, c) => n + c.abs, 0), lat: cs.reduce((n, c) => n + c.lat, 0), today: ds === today };
+  }));
+  // 오래된 기억 정리 (60일 넘은 것)
+  try{ const old = ymdOf(new Date(Date.now() - 60*86400000)); Object.keys(localStorage).filter(k => k.startsWith('gyosa_atth:') && k.slice(-10) < old).forEach(k => localStorage.removeItem(k)); }catch(e){}
+  return out;
+};
 function evTargetLabel(e){
   if(!e.scope || e.scope==='all') return '';
   const t = (e.targets || []).map(String);
@@ -504,7 +600,13 @@ function paintAttCols(){
   const note = `<div class="acol-note">숫자 = 지금 학교에 있는 인원 / 재적(휴학 제외) · 결석·체험학습·조퇴는 빼고, 지각은 넣어요 — 출석부 출결 처리와는 따로예요</div>`;
   el.innerHTML = (cols.length ? `<div class="acol-top">${heads.join('')}</div>${pans.join('')}${evl}<div class="acol n${Math.min(cols.length,4)}">${cols.join('')}</div>${note}` : '') + off;
 }
-function paintAttOrg(o){
+/* 🏠 v185 새 홈(오늘 한 장 · 대시보드)의 출석 링 · 숫자 카드가 따라오게 — 칠할 때마다 한 번 알림 (잠깐 모아서) */
+let _attEvT = null;
+function attNotify(){ clearTimeout(_attEvT); _attEvT = setTimeout(()=>{ try{ document.dispatchEvent(new CustomEvent('hw:att')); }catch(e){} }, 60); }
+window.__attDay = o => _attDayInfo[o] || null;
+window.__attOrgs = () => attHomeOrgs();
+function paintAttOrg(o){ try{ paintAttOrg0(o); } finally { attNotify(); } }
+function paintAttOrg0(o){
   if(ATT_STYLE==='cls'){ paintAttCols(); return; }      // 반별(부서 칼럼)은 기관을 한 판에 함께 그린다
   const el = $I('att-row-'+o); if(!el) return;
   const D = _attDayInfo[o];
@@ -710,26 +812,12 @@ let CR = null;   // club-roster.js (처음 쓸 때 불러옵니다)
 /* ── 📅 학사 D-Day 위젯 ── */
 async function loadAcdday(){
   const box = $I('w-acdday'); if(!box) return;
-  const orgs = attHomeOrgs();
-  const ts = hwToday();
   try{
-    /* (v-105) 학사일정은 startDate/endDate 로 저장된다 — 예전 «start» 칸으로 찾던 탓에 비어 보이던 것을 바로잡음.
-       기간 안에서 요일을 고른 행사는 «다음에 열리는 날»로 센다 */
-    const far = new Date(ts+'T00:00:00'); far.setDate(far.getDate()+120);
-    const farS = ymdOf(far);
-    const evs = await loadYearEvents();
-    const nextOcc = e => {
-      const d = new Date(((e.startDate > ts) ? e.startDate : ts)+'T00:00:00');
-      const last = (e.endDate || e.startDate) < farS ? (e.endDate || e.startDate) : farS;
-      for(let i=0; i<400; i++){ const x = ymdOf(d); if(x > last) return ''; if(evOnDay(e, x)) return x; d.setDate(d.getDate()+1); }
-      return '';
-    };
-    const up = evs.filter(e=>evHitsOrg(e, orgs))
-      .map(e=>({ t:e.title||'학사 행사', d:nextOcc(e) })).filter(e=>e.d)
-      .sort((a,b)=>a.d.localeCompare(b.d) || a.t.localeCompare(b.t,'ko')).slice(0,3);
+    /* (v-105) 학사일정은 startDate/endDate 로 저장된다 — 기간 안에서 요일을 고른 행사는 «다음에 열리는 날»로 센다 (v185 upcomingEvents 로 함께 씀) */
+    const up = await upcomingEvents(3);
     if(!up.length){ box.innerHTML = `<div class="hw-dim">다가오는 학사 일정이 없어요.</div>`; return; }
     box.innerHTML = up.map(e=>{
-      const dn = Math.round((new Date(e.d+'T00:00:00')-new Date(ts+'T00:00:00'))/86400000);
+      const dn = e.dn;
       return `<a class="hw-line" href="academic.html"><span class="hw-ic">📅</span>
         <b>${esc(e.t)} <i>${Number(e.d.slice(5,7))}/${Number(e.d.slice(8,10))}</i></b>
         <span class="hw-dd${dn<=3?' hot':''}">${dn===0?'오늘!':'D-'+dn}</span></a>`; }).join('');
@@ -819,7 +907,16 @@ function mtgDue(due){
   const dd = Math.round((new Date(due+'T00:00:00') - new Date(t+'T00:00:00')) / 86400000);
   return { dd, l: `${Number(due.slice(5,7))}/${Number(due.slice(8,10))}까지${dd < 0 ? ` · ${-dd}일 지남` : dd === 0 ? ' · 오늘' : ` · D-${dd}`}` };
 }
+function mtgTopNotify(){
+  const open = _mtgT.concat(_mtgL).filter(t => (t.status || 'todo') !== 'done')
+    .sort((a, b) => String(a.due || '9999').localeCompare(String(b.due || '9999')) || String(b.date || '').localeCompare(String(a.date || '')));
+  const t = open[0];
+  window.__mtgTop = { n: open.length, h: t ? String(t.h || '') : '', mt: t ? String(t.mtitle || '') : '', due: t ? (mtgDue(t.due) || null) : null,
+    href: t ? `minutes.html?${t.__lead ? 'book=lead&' : ''}m=${encodeURIComponent(t.meetingId || '')}&k=${encodeURIComponent(t.id)}` : 'minutes.html?mine=1' };
+  try{ document.dispatchEvent(new CustomEvent('hw:mtg')); }catch(e){}
+}
 function paintMtg(){
+  try{ mtgTopNotify(); }catch(e){}
   const box = $I('w-mtg'); if(!box) return;
   mtgCss();
   const recent = Date.now() - 2 * 86400000;
