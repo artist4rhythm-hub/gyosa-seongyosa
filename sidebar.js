@@ -382,7 +382,7 @@ window.gxPh = function(o){ window.__gxPh = Object.assign(window.__gxPh || {}, o 
 function loadShowroom(){
   if(!document.getElementById('gx-css')){
     const l = document.createElement('link');
-    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=186';
+    l.id = 'gx-css'; l.rel = 'stylesheet'; l.href = 'showroom.css?v=188';
     document.head.appendChild(l);
   }
   if(!window.__gxOn && !document.getElementById('gx-js')){

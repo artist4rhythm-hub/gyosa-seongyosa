@@ -411,7 +411,7 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
   /* 🖼 v186 인사 그림 — GPT로 그린 그림 (img/home-{계절-}{시간대}.webp · 폰은 그루터기를 가까이 자른 -sm)
      계절: 9~11월 가을 · 12~2월 겨울 · 나머지는 기본(봄 · 여름). 그 계절 그림 파일이 아직 없으면 기본 그림.
      그림을 못 받으면(아주 옛 브라우저 · 끊김) 예전에 그린 SVG 로 */
-  const ART_SEASONS = [];   // 파일이 들어 있는 계절 ('fall' · 'winter')
+  const ART_SEASONS = ['fall', 'winter'];   // 파일이 들어 있는 계절 — 🖼 v188 가을 · 겨울 GPT 그림
   function season(d){ const m = (d || new Date()).getMonth() + 1; return m >= 9 && m <= 11 ? 'fall' : (m === 12 || m <= 2) ? 'winter' : ''; }
   function artKey(t){ const s = season(); return s && ART_SEASONS.includes(s) ? `${s}-${t}` : t; }
   function artHTML(t){
@@ -429,7 +429,7 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
     f.innerHTML = artSVG(t);
   }
   /* 빈 칸 그림 (img/empty-*.webp) — 할 일 없음 · 일정 없음 · 생일 없음 · 학생 없음 */
-  const EA = { done: 'empty-done', cal: 'empty-calendar', letter: 'empty-letter', search: 'empty-search', basket: 'empty-basket', pot: 'empty-pot' };
+  const EA = { done: 'empty-done', cal: 'empty-calendar', letter: 'empty-letter', search: 'empty-search', basket: 'empty-basket', pot: 'empty-pot', cake: 'empty-cake', tray: 'empty-tray', board: 'empty-board', plane: 'empty-plane' };   // v188 케이크 · 서류 트레이 · 게시판 · 종이비행기
   function emptyArt(k, text, cls){ return `<div class="hn-empty${cls ? ' ' + cls : ''}"><img src="img/${EA[k] || EA.basket}.webp" alt="" width="64" height="64" decoding="async" onerror="this.remove()"><span>${text}</span></div>`; }
 
   /* ── 지금 할 일 ── */
@@ -783,7 +783,7 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
   }
   function bdHTML(){
     const L = bdList();
-    if(!L.length) return emptyArt('basket', '이번 달 생일인 선생님이 없어요.');
+    if(!L.length) return emptyArt('cake', '이번 달 생일인 선생님이 없어요.');
     const m = new Date().getMonth() + 1;
     const up = L.filter(x => x.dn >= 0), past = L.filter(x => x.dn < 0);
     const show = up.concat(past).slice(0, 4);
