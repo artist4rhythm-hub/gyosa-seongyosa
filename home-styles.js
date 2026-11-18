@@ -409,10 +409,10 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
     </div>`;
   }
   /* 🖼 v186 인사 그림 — GPT로 그린 그림 (img/home-{계절-}{시간대}.webp · 폰은 그루터기를 가까이 자른 -sm)
-     계절: 9~11월 가을 · 12~2월 겨울 · 나머지는 기본(봄 · 여름). 그 계절 그림 파일이 아직 없으면 기본 그림.
+     계절: 3~5월 봄 · 6~8월 여름 · 9~11월 가을 · 12~2월 겨울 (v189 사계절). 계절 그림을 못 받으면 기본 그림(home-{시간대}) 한 번 더.
      그림을 못 받으면(아주 옛 브라우저 · 끊김) 예전에 그린 SVG 로 */
-  const ART_SEASONS = ['fall', 'winter'];   // 파일이 들어 있는 계절 — 🖼 v188 가을 · 겨울 GPT 그림
-  function season(d){ const m = (d || new Date()).getMonth() + 1; return m >= 9 && m <= 11 ? 'fall' : (m === 12 || m <= 2) ? 'winter' : ''; }
+  const ART_SEASONS = ['spring', 'summer', 'fall', 'winter'];   // 파일이 들어 있는 계절 — 🖼 v188 가을 · 겨울 · v189 봄 · 여름 GPT 그림
+  function season(d){ const m = (d || new Date()).getMonth() + 1; return m >= 3 && m <= 5 ? 'spring' : m >= 6 && m <= 8 ? 'summer' : m >= 9 && m <= 11 ? 'fall' : 'winter'; }   // 3~5 봄 · 6~8 여름 · 9~11 가을 · 12~2 겨울
   function artKey(t){ const s = season(); return s && ART_SEASONS.includes(s) ? `${s}-${t}` : t; }
   function artHTML(t){
     const src = (window.HN_ART && window.HN_ART[t]) || '';
@@ -423,7 +423,7 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
   function artFail(img, t){
     const f = img && img.closest('figure'); if(!f) return;
     const pic = img.closest('picture');
-    if(pic && !pic.dataset.base && artKey(t) !== t){   // 계절판이 없으면 기본(봄 · 여름) 그림으로 한 번 더
+    if(pic && !pic.dataset.base && artKey(t) !== t){   // 계절 그림을 못 받으면 기본 그림(home-{시간대})으로 한 번 더
       pic.dataset.base = '1'; const s = pic.querySelector('source'); if(s) s.srcset = `img/home-${t}-sm.webp`; img.src = `img/home-${t}.webp`; return;
     }
     f.innerHTML = artSVG(t);
