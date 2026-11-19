@@ -10,7 +10,8 @@
       · 거울(기본): 원래 칸은 숨기고 똑같이 그려, 누르면 원래 것을 대신 누름 — 화면이 다시 그리면 거울도 다시
       · 옮김(move): 입력 칸이 든 것(직인 올리기 · 등록 정보)은 통째로 서랍 안으로 옮김
    ⑤ 카드 제목이 탭 이름과 같으면 숨김 (결재할 문서 › 결재할 문서 …)
-   ⑥ 화면마다 정한 «위 막대로 올릴 것»(달 이동 · 시간표 보기 대상)도 거울로 위 막대에
+   ⑥ 화면마다 정한 «위 막대로 올릴 것»(달 이동 · 시간표 보기 대상)은 진짜 칸을 통째로 위 막대로 옮김 (v191)
+      · 거울(사본)은 고르기 칸(select)을 대신 눌러 주는 데 약해서 — 옮기면 원래 칸 그대로 동작, 좁아지면 제자리로
    · 폰 · 좁은 화면: 탭은 본문에 그대로 · ⚙ 서랍은 아래에서 올라오는 판
    ═══════════════════════════════════════════════════════════ */
 (function(){
@@ -30,13 +31,13 @@
     academic: {
       gear: '보기 · 설정', wideOnly: 1,
       bar: [{ sel: '.ac-head .ac-toolbar', hide: '.ac-head', skip: '#vs-toggle' }],
-      dr: [{ sel: '.ac-viewbox', t: '보는 중 — 캘린더 · 보기 · 학년' }, { sel: '#vs-drawer', t: '학년도 · 학년 표시', show: 1 }],
+      dr: [{ sel: '.ac-viewbox', t: '보는 중 — 캘린더 · 보기 · 학년' }, { sel: '#vs-drawer', t: '학년도 · 학년 표시', show: 1, move: 1 }],
       hide: ['#vs-toggle', '.dw[data-dwk="ac-view"]', '#vs-drawer']
     },
     'timetable-final': {
       gear: '보기 · 설정', wideOnly: 1,
       bar: [{ sel: '#vw-bar' }],
-      dr: [{ sel: '#vw-content .tv-set', t: '보기 · 크기', show: 1 }, { sel: '#pub-info', t: '게시본 · 세부 내용', show: 1 }],
+      dr: [{ sel: '#vw-content .tv-set', t: '보기 · 크기', show: 1 }, { sel: '#pub-info', t: '게시본 · 세부 내용', show: 1, move: 1 }],
       hide: ['.panel > .ptitle', '#vw-content .tv-setbtn', '#vw-content .tv-set', '#pub-info'],
       css: `#ms > .panel{background:none !important;border:0 !important;box-shadow:none !important;padding:0 !important;margin:0 !important}
 #vw-content .tv-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 8px !important;padding:0 !important}
@@ -63,6 +64,11 @@
   const SET_RE = /설정|백업|직책\s*관리/;
   const PH_H1 = '.sh-l > h1, .mt-hl > h1, .nh-hl > h1, .cs-head .hl > h1, h1.dr-h1, h1.pr-h1, .adl-hl > h2, h1.cbs-h1, h1.ac-title';
   const esc = t => String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  /* 🧭 v191 바뀔 때만 쓴다 — 같은 값을 다시 쓰면 «바뀜» 알림이 가서, 화면이 자기 지켜보기로 단추를 다시 칠하면 끝없이 서로 다시 그림
+     (예: 선생님 계정 시간표 배정 화면의 «보기만» 잠금 단추) */
+  const setHidden = (el, v) => { if(el && el.hidden !== !!v) el.hidden = !!v; };
+  const setText = (el, t) => { if(el && el.textContent !== t) el.textContent = t; };
+  const setDisp = (el, v) => { if(el && el.style.display !== v) el.style.display = v; };
   const root = document.documentElement;
   root.classList.add('pb-on');
   const roomyNow = () => (window.innerWidth || 0) > 900;
@@ -73,6 +79,8 @@
   const PRE = C.wideOnly ? 'html.pb-on.pb-roomy' : 'html.pb-on';
   const HIDE = (C.hide || []).map(s => `${PRE} ${s}:not(.pb-dr *)`);
   const BARHIDE = (C.bar || []).map(b => `html.pb-bar-on ${b.hide || b.sel}:not(.pb-dr *):not(#tb *)`);
+  const BARSKIP = (C.bar || []).filter(b => b.skip).map(b => `#tb .pb-bar ${b.skip}`);
+  const MVSHOW = (C.dr || []).filter(d => d.move && d.show).map(d => `.pb-dr .pb-mv > ${d.sel.split(' ').pop()}`);
   const CSS = `
 html.pb-on #mn{padding-top:14px}
 html.pb-on #mn .gx-ph-t{display:none}
@@ -84,12 +92,20 @@ html.pb-on .pb-hid:not(.pb-dr *){display:none !important}
 html.pb-on .pb-dup{display:none !important}
 ${HIDE.length ? HIDE.join(',\n') + '{display:none !important}' : ''}
 ${BARHIDE.length ? BARHIDE.join(',\n') + '{display:none !important}' : ''}
+${BARSKIP.length ? BARSKIP.join(',\n') + '{display:none !important}' : ''}
+${MVSHOW.length ? MVSHOW.join(',\n') + '{display:block !important;border:0 !important;background:none !important;padding:0 !important;margin:0 !important;box-shadow:none !important}' : ''}
+.pb-dr .pb-mv .vsd-t{display:none !important}
 ${C.css ? C.css.split('}').filter(x => x.trim()).map(r => PRE + ' ' + r.trim() + '}').join('\n') : ''}
 /* 위 막대 — 화면 이름 · 탭 · 올린 것 */
 html.pb-on #tb{gap:8px}
 html.pb-on #tb .tb-crumb{flex:none;gap:0}
 html.pb-on #tb .tb-g, html.pb-on #tb .tb-g + .tb-sep{display:none}
 html.pb-tabs-on #tb #tb-tail{display:none}
+@media(max-width:900px){
+  html.pb-on #tb #tb-tail{display:none}                                   /* 폰 · 좁은 화면 — «› 칸 이름»까지 넣으면 위 막대가 넘침 */
+  html.pb-on #tb .tb-crumb{flex:0 1 auto;min-width:0;overflow:hidden}
+  html.pb-on #tb .tb-p{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+}
 html.pb-on #tb .tb-p{font-size:calc(17px * var(--zoom,1));font-weight:800;letter-spacing:-.01em;display:inline-flex;align-items:center;gap:8px}
 #tb .pb-ic{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:9px;background:var(--sb-mint-2,#E4F1EA);color:var(--sb-green,#00704A);flex:none}
 #tb .pb-ic .material-symbols-rounded{font-size:19px}
@@ -99,6 +115,7 @@ html.pb-on #tb .tb-p{font-size:calc(17px * var(--zoom,1));font-weight:800;letter
 #tb .pb-t:hover{color:var(--ink,#1F2320);background:var(--sb-mint-2,#EEF6F1)}
 #tb .pb-t.on{color:var(--sb-green,#00704A);border-bottom-color:currentColor;font-weight:800}
 #tb .pb-t .pb-n{background:var(--danger,#C2410C);color:#fff;border-radius:99px;padding:0 6px;font-size:11px;font-weight:800;line-height:17px}
+#tb .pb-t .pb-n.pct{background:var(--sb-mint-2,#E4F1EA);color:var(--sb-green,#00704A)}   /* 진행률(%)은 알림이 아니라 상태 — 연한 초록 */
 #tb .pb-t.set .material-symbols-rounded{font-size:16px}
 #tb .pb-bar{display:flex;align-items:center;gap:6px;flex:none}
 #tb .pb-bar > *{margin:0 !important}
@@ -174,7 +191,7 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
   }
 
   /* ── 탭 이름 (아이콘 글자 · 알림 숫자 빼고) ── */
-  const BADGE = '.badge,.tb-b,.nb,.cnt,.num,.dot,[class*="badge"],.pr-tc,.cs-n,.n';
+  const BADGE = '.badge,.tb-b,.nb,.cnt,.num,.dot,[class*="badge"],.pr-tc,.cs-n,.n,.bd';   // .bd = 나학평 «내 할 일 22 · 진행 현황 0%» (v191)
   function labelOf(btn){
     const c = btn.cloneNode(true);
     c.querySelectorAll(BADGE + ',.gxe,.gxe-o,.material-symbols-rounded,.tab-ic,svg').forEach(x => x.remove());
@@ -288,6 +305,39 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
     return m;
   }
   const firstOf = sel => { for(const el of document.querySelectorAll(sel)){ if(!el.closest('.pb-dr') && !el.closest('#tb')) return el; } return null; };
+  /* 옮기기 — 진짜 칸을 host 로 옮기고 원래 자리에 표식(주석)을 남긴다 · give() 로 제자리에 돌려놓음 */
+  // 옮기면서 손(키보드) 위치 · 열린 고르기를 지키기 — moveBefore(최신 브라우저)는 상태를 그대로 둠, 아니면 옮긴 뒤 다시 손을 놓음
+  function moveTo(parent, node, ref){
+    const a = document.activeElement, had = a && node.contains(a) ? a : null;
+    if(typeof parent.moveBefore === 'function'){ try{ parent.moveBefore(node, ref || null); return; }catch(e){} }
+    parent.insertBefore(node, ref || null);
+    if(had && had.isConnected && document.activeElement !== had){ try{ had.focus({ preventScroll: true }); }catch(e){} }
+  }
+  function Portal(host, sel){
+    const p = { host, sel, ph: null, el: null };
+    p.take = function(){
+      const fresh = firstOf(sel);                                         // 원래 자리에 새로 그려진 것이 있으면 그것으로 바꿈 (옛것은 같은 id 가 남지 않게 치움)
+      if(fresh && fresh !== p.el){
+        if(p.el && p.host.contains(p.el)) p.el.remove();
+        if(p.ph && p.ph.isConnected) p.ph.remove();
+        p.ph = document.createComment('pb ' + sel);
+        fresh.parentNode.insertBefore(p.ph, fresh);
+        moveTo(p.host, fresh, null);
+        p.el = fresh;
+      }
+      return p.el && p.host.contains(p.el) ? p.el : null;
+    };
+    p.give = function(){
+      const el = p.el;
+      if(el && p.host.contains(el)){
+        if(p.ph && p.ph.isConnected) moveTo(p.ph.parentNode, el, p.ph);
+        else el.remove();                                                 // 원래 자리가 통째로 다시 그려졌으면 옛것은 치움 (같은 id 둘 X)
+      }
+      if(p.ph && p.ph.isConnected) p.ph.remove();
+      p.ph = null; p.el = null;
+    };
+    return p;
+  }
 
   /* ── ③ ⚙ 서랍 ── */
   let dr = null, scrim = null, gear = null, setSec = null, lastFocus = null;
@@ -310,6 +360,7 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
       host.classList.add(cf.move ? 'pb-mv' : 'no-gx');                     // 옮긴 칸은 진짜 칸 — 화면 규칙(아이콘 · 다시 그리기)이 그대로
       const s = { cfg: cf, sec, host };
       if(!cf.move) s.mirror = Mirror(host, () => firstOf(cf.sel), cf);
+      else s.portal = Portal(host, cf.sel);
       secs.push(s);
     });
     setSec = document.createElement('section'); setSec.className = 'pb-sec'; setSec.hidden = true;
@@ -337,15 +388,14 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
     if(!dr) return;
     const roomy = root.classList.contains('pb-roomy');
     for(const s of secs){
-      if(C.wideOnly && !roomy){ s.sec.hidden = true; continue; }        // 폰 — 원래 자리에 그대로 있음
+      if(C.wideOnly && !roomy){ if(s.portal) s.portal.give(); setHidden(s.sec, true); continue; }   // 폰 — 원래 자리로 (옮긴 것은 돌려놓음)
       if(s.cfg.move){
-        const el = firstOf(s.cfg.sel) || s.host.firstElementChild;
-        if(el && !s.host.contains(el)) s.host.replaceChildren(el);     // 서랍 안으로 통째로 (입력 칸 · 파일 올리기가 그대로 동작)
-        s.sec.hidden = !(s.host.firstElementChild && (s.host.firstElementChild.textContent || '').trim());
+        const el = s.portal.take();                                      // 서랍 안으로 통째로 (입력 칸 · 고르기 · 파일 올리기가 그대로 동작)
+        setHidden(s.sec, !(el && (el.textContent || '').trim()));
       } else {
         // 닫혀 있을 때는 «있는지»만 (거울은 열 때 그림)
-        if(dr.classList.contains('on')) s.sec.hidden = !s.mirror.sync();
-        else s.sec.hidden = !firstOf(s.cfg.sel);
+        if(dr.classList.contains('on')) setHidden(s.sec, !s.mirror.sync());
+        else setHidden(s.sec, !firstOf(s.cfg.sel));
       }
     }
     const rows = setSec.querySelector('.pb-rows');
@@ -355,8 +405,8 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
       keepFocus(rows, () => { rows.innerHTML = setTabs.map((t, i) => `<button type="button" class="pb-row${isOn(t) ? ' on' : ''}" data-i="${i}"><span class="material-symbols-rounded" aria-hidden="true">${/백업|정리/.test(labelOf(t)) ? 'backup' : /직책/.test(labelOf(t)) ? 'badge' : 'settings'}</span><span>${esc(labelOf(t))}<small>${isOn(t) ? '지금 열려 있어요' : '누르면 이 화면으로'}</small></span><span class="pb-go" aria-hidden="true">›</span></button>`).join(''); },
         a => { const b = a.closest('.pb-row'); return b ? b.dataset.i : null; }, i => rows.querySelector(`.pb-row[data-i="${i}"]`));
     }
-    setSec.hidden = !setTabs.length;
-    dr.querySelector('.pb-dr-tt').textContent = gearLabel();
+    setHidden(setSec, !setTabs.length);
+    setText(dr.querySelector('.pb-dr-tt'), gearLabel());
   }
   function gearLabel(){
     if(C.gear && !(C.wideOnly && !root.classList.contains('pb-roomy'))) return C.gear;
@@ -379,7 +429,7 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
 
   /* ── ② 탭 줄 · 거울 탭 ── */
   let bar = null, setTabs = [], tabsEl = null, barEl = null, sp = null, vr = null;
-  const barMirrors = [];
+  const barPortals = [];
   function findBar(){
     if(bar && bar.isConnected) return bar;
     bar = null;
@@ -412,8 +462,10 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
         setTimeout(kick, 40);
       });
     }
-    if(!barEl){ barEl = document.createElement('div'); barEl.className = 'pb-bar no-gx';
-      (C.bar || []).forEach(cf => { const h = document.createElement('div'); h.style.display = 'contents'; barEl.appendChild(h); barMirrors.push(Mirror(h, () => { const s = firstOf(cf.sel); return s && s.style.display !== 'none' && !s.hidden ? s : null; }, cf)); });
+    if(!barEl){ barEl = document.createElement('div'); barEl.className = 'pb-bar';   // 진짜 칸이라 그림 문자 → 아이콘도 그대로 (no-gx 아님)
+      (C.bar || []).forEach(cf => { const h = document.createElement('div'); h.style.display = 'contents'; barEl.appendChild(h); barPortals.push(Portal(h, cf.sel)); });
+      // 옮긴 칸이 스스로 숨거나 나타나면(시간표가 없을 때 등) 다시 맞춤 — 위 막대 안은 #mn 지켜보기 밖이라 따로
+      try{ new MutationObserver(() => kick()).observe(barEl, { subtree: true, childList: true, attributes: true, attributeFilter: ['style', 'hidden', 'class'] }); }catch(e){}
     }
     if(!sp){ sp = document.createElement('span'); sp.className = 'pb-sp'; }
     if(vr.parentNode !== tb || crumb.nextSibling !== vr){ crumb.after(vr); vr.after(tabsEl); tabsEl.after(barEl); barEl.after(sp); }
@@ -458,24 +510,25 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
     if(b) b.classList.toggle('pb-hid', single || proxy);
     root.classList.toggle('pb-tabs-on', proxy);
     if(!tabsEl) return;
-    if(!proxy){ if(tabsEl.childElementCount) tabsEl.replaceChildren(); tabsEl.removeAttribute('data-sig'); vr.style.display = 'none'; return; }
-    vr.style.display = '';
+    if(!proxy){ if(tabsEl.childElementCount) tabsEl.replaceChildren(); if(tabsEl.hasAttribute('data-sig')) tabsEl.removeAttribute('data-sig'); setDisp(vr, 'none'); return; }
+    setDisp(vr, '');
     const sig = curTabs.map(t => labelOf(t) + (isOn(t) ? '*' : '') + badgeOf(t)).join('|');
     if(tabsEl.getAttribute('data-sig') === sig) return;
     tabsEl.setAttribute('data-sig', sig);
     keepFocus(tabsEl, () => { tabsEl.innerHTML = curTabs.map((t, i) => {
       const on = isOn(t), s = t.classList.contains('pb-set'), bd = badgeOf(t);
-      return `<button type="button" class="pb-t${on ? ' on' : ''}${s ? ' set' : ''}" role="tab" aria-selected="${on}" data-i="${i}">${s ? '<span class="material-symbols-rounded" aria-hidden="true">settings</span>' : ''}${esc(labelOf(t))}${bd ? `<span class="pb-n">${esc(bd)}</span>` : ''}</button>`;
+      return `<button type="button" class="pb-t${on ? ' on' : ''}${s ? ' set' : ''}" role="tab" aria-selected="${on}" data-i="${i}">${s ? '<span class="material-symbols-rounded" aria-hidden="true">settings</span>' : ''}${esc(labelOf(t))}${bd ? `<span class="pb-n${/%$/.test(bd) ? ' pct' : ''}">${esc(bd)}</span>` : ''}</button>`;
     }).join(''); }, a => { const b = a.closest('.pb-t'); return b ? b.dataset.i : null; }, i => tabsEl.querySelector(`.pb-t[data-i="${i}"]`));
   }
 
   function syncBar(){
-    const on = wide && fitOK.bar && barMirrors.length > 0;
+    const on = wide && fitOK.bar && barPortals.length > 0;
     let any = false;
-    if(on){ for(const m of barMirrors){ if(m.sync()) any = true; } }
-    else for(const m of barMirrors){ if(m.clone){ m.host.replaceChildren(); m.clone = null; m.sig = ''; } }
+    if(on){ for(const pt of barPortals){ const el = pt.take(); if(el && el.style.display !== 'none' && !el.hidden) any = true; } }
+    else for(const pt of barPortals) pt.give();
     root.classList.toggle('pb-bar-on', on && any);
-    if(barEl) barEl.style.display = on && any ? '' : 'none';
+    const want = on && any ? '' : 'none';
+    if(barEl && barEl.style.display !== want) barEl.style.display = want;
   }
 
   function syncGear(){
@@ -483,7 +536,7 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
     buildDrawer();
     if(dr) syncDrawer();
     const has = drawerHas();
-    gear.style.display = has ? '' : 'none';
+    setDisp(gear, has ? '' : 'none');
     const w = C.warn && document.querySelector(C.warn);
     const lab = gearLabel();
     const html = `<span class="material-symbols-rounded" aria-hidden="true">tune</span><span class="pb-gl">${esc(lab)}</span>${w ? '<span class="pb-dot" aria-hidden="true"></span>' : ''}`;
@@ -500,9 +553,6 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
       if(tab && setTabs.includes(tab)){
         if(dr && dr.classList.contains('on') && setSec){ const r = setSec.querySelector(`.pb-row[data-i="${setTabs.indexOf(tab)}"]`); if(r && r.getClientRects().length) return r; }
         if(gear && gear.getClientRects().length) return gear;
-      }
-      for(const m of barMirrors){
-        if(m.src && m.clone && m.src.contains(el)){ const c = resolve(m.clone, pathOf(m.src, el)); if(c && c.getClientRects().length) return c; }
       }
       const open = !!(dr && dr.classList.contains('on'));
       if(open){                                                          // 서랍이 열려 있으면 — 서랍 안 사본을 짚는다
@@ -566,6 +616,7 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
       syncGear();
       syncDup();
       fit();
+      try{ window.dispatchEvent(new Event('pb:layout')); }catch(e){}       // 화면이 자기 크기를 다시 재도록 (시간표 «한 화면»)
     }catch(e){ try{ console.warn('pagebar', e); }catch(_){} }
     busy = false;
   }
@@ -574,7 +625,7 @@ html[data-theme="dark"] #tb .pb-ic{background:#20352C;color:#7FD9B0}
     const tb = document.getElementById('tb'); if(!tb || !wide) return;
     const over = () => tb.scrollWidth > tb.clientWidth + 2;
     if(!over()) return;
-    if(fitOK.bar && barMirrors.length && root.classList.contains('pb-bar-on')){ fitOK.bar = false; syncBar(); if(!over()) return; }
+    if(fitOK.bar && barPortals.length && root.classList.contains('pb-bar-on')){ fitOK.bar = false; syncBar(); if(!over()) return; }
     if(fitOK.tabs && root.classList.contains('pb-tabs-on')){ fitOK.tabs = false; syncTabs(); }
   }
   let rz = 0;

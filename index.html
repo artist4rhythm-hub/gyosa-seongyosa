@@ -1612,6 +1612,27 @@ function renderHome(){
       .tt-now{font-size:12px;font-weight:800;color:#fff;background:var(--gm);border-radius:5px;padding:2px 7px}
       .tt-off{font-size:13px;color:var(--ts);padding:6px 2px}
       .tt-more{display:inline-block;margin-top:9px;font-size:12px;color:var(--gm);text-decoration:none;font-weight:700}
+      /* 🧭 v191 시간표 위젯 — 대상 고르기 · 오늘/이번 주 */
+      .ttw-head{flex-wrap:wrap;row-gap:6px}
+      .ttw-sel{height:30px;max-width:170px;border:1.5px solid var(--ivd);border-radius:8px;background:var(--iv);font:inherit;font-size:12.5px;font-weight:700;color:var(--gd);padding:0 6px;cursor:pointer}
+      .ttw-seg{display:inline-flex;border:1.5px solid var(--ivd);border-radius:8px;overflow:hidden;height:30px}
+      .ttw-seg button{border:0;background:var(--wh);padding:0 10px;font:inherit;font-size:12px;font-weight:700;color:var(--ts);cursor:pointer}
+      .ttw-seg button+button{border-left:1px solid var(--ivd)}
+      .ttw-seg button.on{background:var(--gd);color:#fff}
+      .tt-row.rest b{color:var(--tl);font-weight:600}
+      .ttw-week{display:grid;grid-template-columns:30px repeat(5,minmax(0,1fr));gap:3px}
+      .ttw-d{height:20px;font-size:11.5px;font-weight:800;color:var(--ts);text-align:center;line-height:20px}
+      .ttw-col.today .ttw-d{color:#fff;background:var(--gm);border-radius:6px}
+      .ttw-in{position:relative;background:var(--iv);border-radius:6px}
+      .ttw-col.today .ttw-in{background:#E9F1EC;background:color-mix(in srgb, var(--gm,#2C6E54) 7%, var(--iv))}
+      .ttw-rail .ttw-in{background:none}
+      .ttw-rail span{position:absolute;right:3px;transform:translateY(-50%);font-size:10px;color:var(--tl);font-variant-numeric:tabular-nums}
+      .ttw-b{position:absolute;left:2px;right:2px;border-radius:4px;background:var(--wh);background:color-mix(in srgb, var(--c) 22%, var(--wh));border-left:3px solid var(--c);overflow:hidden;padding:1px 3px;box-sizing:border-box}
+      .ttw-b span{display:block;font-size:10.5px;font-weight:700;color:var(--gd);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .ttw-b.tiny span{display:none}
+      .ttw-b.rest{background:var(--wh);border-left-color:var(--ivd)}
+      .ttw-b.rest span{color:var(--tl);font-weight:600}
+      .ttw-now{position:absolute;left:0;right:0;height:2px;background:#D14B3A;border-radius:1px;z-index:2}
       .hm-tdi{flex:1;min-width:150px;background:var(--wh);border:1px solid var(--ivd);border-radius:12px;padding:11px 14px;display:flex;align-items:center;gap:9px}
       .hm-tdc{font-size:17px;flex:none}
       .hm-tdl{font-size:12px;color:var(--tl);font-weight:600}
@@ -3959,7 +3980,7 @@ let TT_OFF = '';             // 오늘이 쉬는 날이면 그 이름
 const TT_DAYS = ['일','월','화','수','목','금','토'];
 
 function ttOpenSaved(){
-  try { return localStorage.getItem('gyosa_tt_open') === '1'; } catch(e){ return false; }
+  try { return localStorage.getItem('gyosa_tt_open') !== '0'; } catch(e){ return true; }   // 🧭 v191 기본은 펼침 (작은 위젯으로 바로 보이게)
 }
 window.toggleTtCard = function(){
   const box = $I('hm-tt-card'); if(!box) return;
@@ -4073,42 +4094,143 @@ function renderMyTimetable(){
     }
   }
 
-  // ── 자세한 카드 ──
+  // ── 🧭 v191 시간표 위젯 — 내 시간표 · 학년 · 선생님 · 교실 중 골라서 «오늘» 또는 «이번 주»를 작게 ──
   if(!card) return;
-  if(TT_OFF && !TT_TODAY.length){
-    card.innerHTML = `<div class="tt-card"><div class="tt-off">🌿 오늘은 쉬는 날이에요 <b>${esc(TT_OFF)}</b></div></div>`;
-    return;
-  }
-  if(!TT_TODAY.length){
-    card.innerHTML = `<div class="tt-card"><div class="tt-off">☕ 오늘은 수업이 없어요</div></div>`;
-    return;
-  }
+  renderTtWidget();
+}
+
+/* ═══ 📚 시간표 위젯 (v191) ═══
+   · 고른 대상(내 시간표 / 학년 / 선생님 / 교실)과 보기(오늘 · 이번 주)는 이 기기에 기억 (gyosa_ttw)
+   · «크게 보기»를 누르면 시간표 화면이 그 대상으로 열림 (timetable-final.html?kind=…&target=…) */
+const TTW_DAYS = ['월','화','수','목','금'];
+function ttwPref(){ try { const v = JSON.parse(localStorage.getItem('gyosa_ttw') || 'null'); if(v && typeof v === 'object') return { k: v.k || 'mine', m: v.m === 'week' ? 'week' : 'day' }; } catch(e){} return { k:'mine', m:'day' }; }
+function ttwSave(p){ try { localStorage.setItem('gyosa_ttw', JSON.stringify(p)); } catch(e){} }
+function ttwItems(){
+  const snap = TT_SNAP; if(!snap) return { out:[], rooms:{} };
+  const P = snap.place2 || {};
+  const frames = (snap.frameId && P[snap.frameId]) ? [P[snap.frameId]] : Object.values(P);
+  const rooms = {}; (snap.floors||[]).forEach(f=>(f.rooms||[]).forEach(r=>{ rooms[r.id] = r.name || r.label || ''; }));
+  const map = new Map();
+  frames.forEach(byGrade => Object.entries(byGrade||{}).forEach(([grade, byDay]) => Object.entries(byDay||{}).forEach(([day, list]) => (list||[]).forEach(c => {
+    const l = (snap.lessons||[]).find(x=>x.id===c.lessonId); if(!l) return;
+    if((l.grades||[]).length && !l.grades.includes(grade)) return;   // 합반에서 빠졌는데 배치만 남은 것
+    const roomId = c.roomId || l.roomId || '';
+    const key = `${day}|${l.id}|${c.startMin}`;
+    const hit = map.get(key);
+    if(hit){ if(!hit.grades.includes(grade)) hit.grades.push(grade); return; }
+    map.set(key, { key, day, start:c.startMin, dur:c.durMin||l.durMin||50, grades:[grade], subject:l.subject||'수업', color:l.color||'#2C6E54',
+      teacherUids:l.teacherUids||[], roomId, room:rooms[roomId]||'', rest: l.kind==='break' });
+  }))));
+  const gnum = g => { const m = String(g).match(/\d+/); return m ? parseInt(m[0],10) : 999; };
+  const out = [...map.values()];
+  out.forEach(o=>o.grades.sort((a,b)=> gnum(a)-gnum(b) || String(a).localeCompare(String(b),'ko')));
+  return { out, rooms, gnum };
+}
+// 선생님 이름 — 게시본에 적힌 이름 먼저 (시간표 화면과 같게), 없으면 교직원 명부
+const ttwName = u => (((TT_SNAP && TT_SNAP.teachers) || []).find(t=>t.uid===u) || {}).name || ((STAFF_CACHE||{})[u]||{}).name || '';
+const ttwGrade = v => /^\d+$/.test(String(v)) ? `${v}학년` : String(v);
+function ttwTargets(D){
+  const g = new Set(), t = new Set(), r = new Set();
+  D.out.forEach(x=>{ if(x.rest) return; x.grades.forEach(v=>g.add(v)); x.teacherUids.forEach(v=>t.add(v)); if(x.roomId) r.add(x.roomId); });
+  const nm = ttwName;
+  return {
+    grade: [...g].sort((a,b)=>String(a).localeCompare(String(b),'ko',{numeric:true})).map(v=>({ v:'g:'+v, l:ttwGrade(v) })),
+    teacher: [...t].filter(nm).map(v=>({ v:'t:'+v, l:nm(v)+' 선생님' })).sort((a,b)=>a.l.localeCompare(b.l,'ko')),
+    room: [...r].map(v=>({ v:'r:'+v, l:D.rooms[v]||'(교실)' })).sort((a,b)=>a.l.localeCompare(b.l,'ko')),
+  };
+}
+function ttwMatch(x, k){
+  if(k==='mine') return x.teacherUids.includes(CU.uid);
+  const [ty, v] = [k.slice(0,1), k.slice(2)];
+  if(ty==='g') return x.grades.map(String).includes(v);
+  if(ty==='t') return x.teacherUids.includes(v);
+  if(ty==='r') return x.roomId === v;
+  return false;
+}
+function ttwLabel(k, T){
+  if(k==='mine') return '내 시간표';
+  const all = [...T.grade, ...T.teacher, ...T.room]; const o = all.find(x=>x.v===k);
+  return o ? o.l : '';
+}
+function ttwLink(k){
+  if(k==='mine') return 'timetable-final.html?kind=mine';
+  const kind = { g:'grade', t:'teacher', r:'room' }[k.slice(0,1)] || 'mine';
+  return `timetable-final.html?kind=${kind}&target=${encodeURIComponent(k.slice(2))}`;
+}
+window.ttwSet = function(part){ const p = { ...ttwPref(), ...part }; ttwSave(p); renderTtWidget(); };
+function renderTtWidget(){
+  const card = $I('hm-tt'); if(!card) return;
+  if(!TT_SNAP){ card.innerHTML = ''; return; }
+  const D = ttwItems(), T = ttwTargets(D);
+  let P = ttwPref();
+  if(P.k !== 'mine' && !ttwLabel(P.k, T)){ P = { ...P, k:'mine' }; }   // 고른 대상이 이번 게시본에 없으면 내 시간표로
   const open = ttOpenSaved();
-  const rows = TT_TODAY.map(x=>{
-    const on = cur && cur.key===x.key;
-    return `<div class="tt-row ${on?'on':''}">
-      <i class="tt-bar" style="background:${esc(x.color)}"></i>
-      <span class="tt-tm">${hhmm(x.start)}</span>
-      <span class="tt-in">
-        <b>${esc(x.subject)}</b>
-        <span>${esc(x.grades.join(' · '))}${x.room?` · ${esc(x.room)}`:''} · ${x.dur}분</span>
-      </span>
-      ${on?'<span class="tt-now">지금</span>':''}
-    </div>`;
-  }).join('');
+  const mine = D.out.filter(x=>ttwMatch(x, P.k)).filter(x=> P.k==='mine' ? !x.rest : true);
+  const now = new Date(), dow = TT_DAYS[now.getDay()], nowMin = now.getHours()*60 + now.getMinutes();
+  const og = (label, arr) => arr.length ? `<optgroup label="${label}">${arr.map(o=>`<option value="${esc(o.v)}"${o.v===P.k?' selected':''}>${esc(o.l)}</option>`).join('')}</optgroup>` : '';
+  const sel = `<select class="ttw-sel" aria-label="어느 시간표" onchange="ttwSet({k:this.value})" onclick="event.stopPropagation()">
+      <option value="mine"${P.k==='mine'?' selected':''}>내 시간표</option>${og('학년', T.grade)}${og('선생님', T.teacher)}${og('교실', T.room)}</select>`;
+  const seg = `<span class="ttw-seg" role="group" aria-label="보기" onclick="event.stopPropagation()"><button type="button" class="${P.m==='day'?'on':''}" aria-pressed="${P.m==='day'}" onclick="ttwSet({m:'day'})">오늘</button><button type="button" class="${P.m==='week'?'on':''}" aria-pressed="${P.m==='week'}" onclick="ttwSet({m:'week'})">이번 주</button></span>`;
+  let body;
+  if(P.m==='week') body = ttwWeekHTML(mine, P.k, dow, nowMin);
+  else body = ttwDayHTML(mine.filter(x=>x.day===dow), P.k, nowMin);
   card.innerHTML = `
-    <div class="tt-head" onclick="toggleTtCard()">
-      <span class="tt-ic">📚</span>
-      <b>오늘 내 시간표</b>
-      <span class="tt-sub">${TT_DAYS[new Date().getDay()]}요일 · ${TT_TODAY.length}개 수업</span>
-      <span class="tt-go" id="tt-arrow">${open?'⌄':'›'}</span>
+    <div class="tt-head ttw-head" onclick="toggleTtCard()">
+      <span class="tt-ic">📚</span><b>시간표</b>
+      ${sel}${seg}
+      <span class="tt-go" id="tt-arrow" aria-hidden="true">${open?'⌄':'›'}</span>
     </div>
-    <div class="tt-card" id="hm-tt-card" style="display:${open?'':'none'}">
-      ${cur ? `<div class="tt-cur"><span>지금 진행 중</span><b>${esc(cur.subject)} · ${hhmm(cur.start)}~${hhmm(cur.start+cur.dur)}</b></div>`
-        : (next ? `<div class="tt-cur next"><span>다음 수업</span><b>${esc(next.subject)} · ${hhmm(next.start)}</b></div>` : '')}
-      ${rows}
-      <a class="tt-more" href="timetable-final.html">주간 시간표 보기 ›</a>
+    <div class="tt-card ttw-card" id="hm-tt-card" style="display:${open?'':'none'}">
+      ${body}
+      <a class="tt-more" href="${ttwLink(P.k)}">${esc(ttwLabel(P.k, T))} 크게 보기 ›</a>
     </div>`;
+}
+function ttwDayHTML(list, k, nowMin){
+  if(TT_OFF) return `<div class="tt-off">🌿 오늘은 쉬는 날이에요 <b>${esc(TT_OFF)}</b> — «이번 주»로 한 주를 볼 수 있어요</div>`;
+  list = [...list].sort((a,b)=>a.start-b.start);
+  if(!list.length) return `<div class="tt-off">☕ 오늘은 ${k==='mine'?'내 ':''}수업이 없어요</div>`;
+  const cur = list.find(x=> !x.rest && nowMin >= x.start && nowMin < x.start + x.dur);
+  const next = list.find(x=> !x.rest && x.start > nowMin);
+  const who = x => k.startsWith('t:') || k==='mine' ? x.grades.map(ttwGrade).join(' · ') : x.teacherUids.map(ttwName).filter(Boolean).join(' · ');
+  return (cur ? `<div class="tt-cur"><span>지금 진행 중</span><b>${esc(cur.subject)} · ${hhmm(cur.start)}~${hhmm(cur.start+cur.dur)}</b></div>`
+             : (next ? `<div class="tt-cur next"><span>다음 수업</span><b>${esc(next.subject)} · ${hhmm(next.start)}</b></div>` : ''))
+    + list.map(x=>{ const on = cur && cur.key===x.key;
+      return `<div class="tt-row ${on?'on':''}${x.rest?' rest':''}">
+        <i class="tt-bar" style="background:${esc(x.color)}"></i>
+        <span class="tt-tm">${hhmm(x.start)}</span>
+        <span class="tt-in"><b>${esc(x.subject)}</b><span>${esc([who(x), k.startsWith('r:') ? '' : x.room].filter(Boolean).join(' · '))}${x.dur?` · ${x.dur}분`:''}</span></span>
+        ${on?'<span class="tt-now">지금</span>':''}
+      </div>`; }).join('');
+}
+function ttwWeekHTML(list, k, dow, nowMin){
+  if(!list.length) return `<div class="tt-off">☕ 이번 주 ${k==='mine'?'내 ':''}수업이 없어요</div>`;
+  const s0 = Math.floor(Math.min(...list.map(x=>x.start)) / 30) * 30;
+  const e0 = Math.ceil(Math.max(...list.map(x=>x.start + x.dur)) / 30) * 30;
+  const H = 300, ppm = H / Math.max(60, e0 - s0);
+  const hours = []; for(let m = Math.ceil(s0/60)*60; m < e0; m += 60) hours.push(m);
+  const cols = TTW_DAYS.map(d=>{
+    const items = list.filter(x=>x.day===d).sort((a,b)=>a.start-b.start || (b.dur-a.dur));
+    // 같은 시간에 겹친 수업은 나란히 (시간표 화면과 같은 방식)
+    const lane = []; let grp = [], ends = [], gEnd = -1;
+    const flush = () => { const n = Math.max(1, ends.length); grp.forEach(i => { lane[i].n = n; }); grp = []; ends = []; };
+    items.forEach((x, i) => {
+      if(grp.length && x.start >= gEnd) flush();
+      let c = ends.findIndex(e => e <= x.start); if(c < 0){ c = ends.length; ends.push(0); }
+      ends[c] = x.start + x.dur; lane[i] = { c, n: 1 }; grp.push(i); gEnd = Math.max(gEnd, x.start + x.dur);
+    });
+    flush();
+    const cards = items.map((x, i)=>{
+      const L = lane[i] || { c:0, n:1 };
+      const side = L.n > 1 ? `left:calc(${(L.c / L.n * 100).toFixed(2)}% + 1px);right:auto;width:calc(${(100 / L.n).toFixed(2)}% - 2px);` : '';
+      const top = (x.start - s0) * ppm, h = Math.max(6, x.dur * ppm - 1);
+      const tip = `${x.subject} ${hhmm(x.start)}~${hhmm(x.start+x.dur)}${x.room?' · '+x.room:''}`;
+      return `<div class="ttw-b${x.rest?' rest':''}${h < 15 ? ' tiny' : ''}" style="${side}top:${top.toFixed(1)}px;height:${h.toFixed(1)}px;--c:${esc(x.color)}" title="${esc(tip)}"><span>${esc(x.subject)}</span></div>`;
+    }).join('');
+    const nowLine = (d===dow && nowMin >= s0 && nowMin <= e0) ? `<i class="ttw-now" style="top:${((nowMin - s0) * ppm).toFixed(1)}px"></i>` : '';
+    return `<div class="ttw-col${d===dow?' today':''}"><div class="ttw-d">${d}</div><div class="ttw-in" style="height:${H}px">${cards}${nowLine}</div></div>`;
+  }).join('');
+  const rail = `<div class="ttw-rail"><div class="ttw-d"></div><div class="ttw-in" style="height:${H}px">${hours.map(m=>`<span style="top:${((m - s0) * ppm).toFixed(1)}px">${Math.floor(m/60)}시</span>`).join('')}</div></div>`;
+  return `<div class="ttw-week">${rail}${cols}</div>`;
 }
 
 // ③ 오늘 한눈에 (내 출근 · 오늘 일정 · 오늘 생일)

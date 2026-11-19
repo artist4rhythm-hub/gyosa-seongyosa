@@ -360,6 +360,8 @@ function renderShell(activeKey, user){
       </div>
       <nav id="mtab"></nav>`;
     document.body.insertBefore(app, document.body.firstChild);
+    // 🧭 v191 예전 화면 파일에 남은 빈 자리표(<div id="tb"></div><div id="sb"></div>) — 같은 id 가 둘이 되지 않게 치움
+    document.querySelectorAll('body > div#tb:empty, body > div#sb:empty').forEach(el => el.remove());
     if(existing){
       document.getElementById('mn').appendChild(existing);
       existing.style.display = 'flex';
@@ -393,7 +395,7 @@ function loadShowroom(){
   // 🧭 v190 한 줄 머리 + ⚙ 설정 서랍 (pagebar.js) — 화면 이름 · 탭은 위 막대 한 줄에 · 설정은 오른쪽 위 서랍으로
   if(!window.__pbOn && !document.getElementById('pb-js')){
     const s = document.createElement('script');
-    s.id = 'pb-js'; s.src = 'pagebar.js?v=190'; s.defer = true;
+    s.id = 'pb-js'; s.src = 'pagebar.js?v=191'; s.defer = true;
     document.head.appendChild(s);
   }
 }

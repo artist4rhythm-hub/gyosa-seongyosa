@@ -904,10 +904,14 @@ const DEV_CLASS = (w => w<=640 ? 'phone' : w<=1100 ? 'tablet' : 'desktop')
 let tvPct = 100;     // 세로 크기 %
 let fontPct = 0;     // 글자 크기 % (0 = 자동 — 세로에 따라간다)
 let tvFit = false;   // ⤢ 한 화면 맞춤
+/* 🧭 v191 컴퓨터 · 패드는 «하루가 한 화면에»가 기본 — 예전에 저장한 크기(v 없음)도 한 번은 한 화면으로 (⤢ 한 화면을 끄면 그대로 기억) */
+const VP_V = 191;
+const fitDefault = p => (p && p.v === VP_V) ? !!p.fit : (DEV_CLASS !== 'phone' ? true : !!(p && p.fit));
 try {
   const saved = JSON.parse(localStorage.getItem('tf_vp_'+DEV_CLASS) || 'null');
+  tvFit = fitDefault(saved);
   if(saved){
-    tvPct = Number(saved.pct)||100; fontPct = Number(saved.font)||0; tvFit = !!saved.fit;
+    tvPct = Number(saved.pct)||100; fontPct = Number(saved.font)||0;
   } else {
     const z = parseFloat(localStorage.getItem('tf_zoom'));   // 예전 5단계 저장값 이어받기
     if(z) tvPct = Math.max(PCT_MIN, Math.min(PCT_MAX, Math.round(z / TV_BASE * 10) * 10));
@@ -918,7 +922,7 @@ const tvPPM = () => TV_BASE * tvPct / 100;
 
 let _vpTimer = null;
 function saveVP(){
-  const p = { pct:tvPct, font:fontPct, fit:tvFit };
+  const p = { pct:tvPct, font:fontPct, fit:tvFit, v:VP_V };
   try { localStorage.setItem('tf_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   // 계정에도 담아둔다 — 실패해도 이 기기에는 남는다
   clearTimeout(_vpTimer);
@@ -938,7 +942,7 @@ async function loadCloudVP(){
     if(!p) return;
     tvPct = clampPct(Number(p.pct)||100);
     fontPct = Number(p.font)||0;
-    tvFit = !!p.fit;
+    tvFit = fitDefault(p);
     try { localStorage.setItem('tf_vp_'+DEV_CLASS, JSON.stringify(p)); } catch(e){}
   } catch(e){}
 }
@@ -973,13 +977,39 @@ function currentSpanTF(){
   }
   return Math.max(30, e0 - s0);
 }
+let TF_USED = 0;   // 표(시간 칸) 위 · 아래에 쓰는 높이 — 지난번 그린 화면에서 잰 값 (처음엔 300)
 function applyFitZoom(){
   const span = currentSpanTF();
   if(!span) return;
-  // 화면 높이에서 머리말·보기 막대·표 머리글·여백을 뺀 만큼이 표가 쓸 수 있는 높이
-  const used = 300;
-  const avail = Math.max(240, window.innerHeight - used);
+  // 화면 높이에서 머리말·보기 막대·표 머리글·여백을 뺀 만큼이 표가 쓸 수 있는 높이 (글자 크기 설정 = #mn 배율도 계산)
+  const z = parseFloat(getComputedStyle($I('mn') || document.body).zoom) || 1;
+  const used = TF_USED || 300;
+  const avail = Math.max(240, (window.innerHeight - used) / z);
   tvPct = clampPct(avail / span / TV_BASE * 100);
+}
+/* 🧭 v191 그린 뒤에 표가 실제로 어디서 시작하는지 재서, 다르면 한 번 더 맞춘다 (위 막대 정리 · 글자 크기에 따라 달라짐) */
+function measureFit(){
+  const g = document.querySelector('#vw-content .tv-grid'); if(!g || !g.getClientRects().length) return false;
+  // 시간표 카드 위쪽이 화면 맨 위 근처면 그 자리 그대로, 위에 다른 칸(게시 · 설정)이 있어 아래로 밀려 있으면 위 막대 바로 아래까지 올려 볼 때 기준 (v191 검토)
+  const sheet = g.closest('.tv-sheet') || g;
+  const tb = $I('tb'), tbH = tb ? tb.getBoundingClientRect().height : 56;
+  const sheetTop = sheet.getBoundingClientRect().top + (window.scrollY || 0);
+  const inner = g.getBoundingClientRect().top - sheet.getBoundingClientRect().top;
+  const top0 = sheetTop > window.innerHeight * 0.45 ? tbH + 16 : sheetTop;   // 화면 절반 아래로 밀려 있을 때만 «올려 볼 때» 기준
+  const used = Math.round(top0 + inner + 50);   // 아래 여백까지 — 화면이 아래로 밀리지 않게
+  const changed = Math.abs(used - (TF_USED || 300)) > 6;
+  TF_USED = used;
+  return changed;
+}
+let _fitT = null, _fitBusy = false;
+function refitSoon(){
+  clearTimeout(_fitT);
+  if(!tvFit || _fitBusy) return;
+  _fitT = setTimeout(()=>{
+    if(!tvFit || !measureFit()) return;
+    _fitBusy = true;
+    try { applyFitZoom(); renderView(); } finally { _fitBusy = false; }
+  }, 350);
 }
 /* 화면을 돌리거나 크기가 바뀌면 한 화면 맞춤을 다시 계산 */
 let _tfRz = null;
@@ -990,14 +1020,14 @@ window.addEventListener('resize', ()=>{
 });
 
 window.setVwKind = function(k){
-  vwKind = k; vwTarget = '';
+  vwKind = k; vwTarget = ''; try { vwTarget = (k!=='mine' && k!=='cmp' && localStorage.getItem('tf_target_'+k)) || ''; } catch(e){}
   ['mine','grade','teacher','room','cmp'].forEach(x=>{
     const b = $I('vk-'+x); if(b) b.classList.toggle('on', x===k);
   });
   try { localStorage.setItem('tf_kind', k); } catch(e){}
   renderView();
 };
-window.setVwTarget = function(v){ vwTarget = v; renderView(); };
+window.setVwTarget = function(v){ vwTarget = v; try { localStorage.setItem('tf_target_'+vwKind, v); } catch(e){} renderView(); };
 
 function targetsOf(all){
   if(vwKind==='mine') return [{ id:CU.uid, label:(CU.name||'나')+' 선생님' }];
@@ -1299,7 +1329,10 @@ function renderView(){
   const targets = targetsOf(all);
   const sel = $I('vw-target');
   if(sel){
-    if(!targets.some(t=>t.id===vwTarget)) vwTarget = targets.length ? targets[0].id : '';
+    if(!targets.some(t=>t.id===vwTarget)){   // 🧭 v191 고를 대상이 없으면 마지막으로 본 대상 → 첫 대상
+      let last = ''; try { last = localStorage.getItem('tf_target_'+vwKind) || ''; } catch(e){}
+      vwTarget = targets.some(t=>t.id===last) ? last : (targets.length ? targets[0].id : '');
+    }
     sel.innerHTML = targets.map(t=>`<option value="${esc(t.id)}" ${t.id===vwTarget?'selected':''}>${esc(t.label)}</option>`).join('');
     sel.style.display = (vwKind==='mine') ? 'none' : '';
   }
@@ -1310,7 +1343,9 @@ function renderView(){
   box.innerHTML = html || `<div class="empty"><div class="ico">🔍</div>
       <div class="t1">${esc(label)} 에 배치된 수업이 없습니다</div>
       <div>${vwKind==='mine'?'아직 수업이 배정되지 않았습니다.':'다른 대상을 골라보세요.'}</div></div>`;
+  if(html){ refitSoon(); [900, 2000].forEach(t => setTimeout(refitSoon, t)); }   // 위 막대 정리 · 늦게 오는 글꼴 뒤에도 한 번 더
 }
+window.addEventListener('pb:layout', ()=>{ if(tvFit) refitSoon(); });   // 🧭 v191 위 막대가 화면을 정리하면 표 자리가 바뀜 → 다시 재기
 
 /* ═══ 📊 시수 비교 — 학년·부서별로 주당 시수를 견준다 ═══ */
 let CMP_BY = 'grade';        // grade | teacher
@@ -2554,6 +2589,16 @@ const shellKey = c => JSON.stringify([c.role, c.org, c.orgs||[], c.pageDeny||[],
 const canOpenTt = c => { try { const it = (window.menuAllItems ? menuAllItems() : []).find(i => i.key === 'timetable'); return !it || !window.menuAccess || menuAccess(it, c).ok; } catch(e){ return false; } };
 function setKindButtons(){
   try { const k = localStorage.getItem('tf_kind'); if(k) vwKind = k; } catch(e){}
+  // 🧭 v191 마지막으로 본 대상(학년 · 선생님 · 교실)을 기억 · 홈 시간표 위젯에서 «?kind=grade&target=5학년» 으로 열면 그 대상
+  try {
+    const q = new URLSearchParams(location.search), qk = q.get('kind');
+    if(qk && ['mine','grade','teacher','room'].includes(qk)){
+      vwKind = qk; vwTarget = q.get('target') || '';
+      try { localStorage.setItem('tf_kind', qk); if(vwTarget) localStorage.setItem('tf_target_'+qk, vwTarget); } catch(e){}
+      try { history.replaceState(null, '', location.pathname); } catch(e){}   // 새로 고침해도 그 뒤에 고른 것이 그대로
+    }
+    else if(vwKind !== 'mine' && vwKind !== 'cmp' && !vwTarget) vwTarget = localStorage.getItem('tf_target_'+vwKind) || '';
+  } catch(e){}
   ['mine','grade','teacher','room'].forEach(x=>{ const b = $I('vk-'+x); if(b) b.classList.toggle('on', x===vwKind); });
 }
 function showMs(){
