@@ -226,7 +226,17 @@ html.union-on #sb{height:calc(100vh - var(--union-h,0px) - var(--union-b,0px))}
 html.union-on .sumbar{bottom:calc(12px + var(--union-h,0px))}
 html.union-on [style*="position:sticky;bottom:0"]{bottom:var(--union-h,0px)!important}
 html.union-on .toast,html.union-on #hp-toast,html.union-on #acp-toast,html.union-on #hp-fab{translate:0 calc(-1 * var(--union-h,0px))}
+/* 🧭 v190 넓은 화면은 아래 띠 대신 위 막대의 작은 칩 (본문 자리를 띠 높이만큼 돌려받음) */
+#union-chip{position:relative;display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:99px;border:1px solid #E7CF86;
+  background:linear-gradient(90deg,#F5E3A8,#F9EDC4);color:#4A3608;font-family:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+#union-chip:hover,#union-chip.on{border-color:#C9A13A}
+#union-chip .ub-pop{display:none;position:absolute;top:calc(100% + 8px);right:0;width:300px;background:#fff;color:#2A2410;border:1px solid #E7CF86;border-radius:12px;
+  box-shadow:0 12px 30px rgba(60,40,0,.18);padding:12px 14px;font-size:12.5px;font-weight:500;line-height:1.55;white-space:normal;text-align:left;z-index:60;cursor:default}
+#union-chip.on .ub-pop{display:block}
+#union-chip .ub-pop button{margin-top:10px;background:#3B2A06;color:#F8E7B4;border:0;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+html[data-theme="dark"] #union-chip .ub-pop{background:#1E2622;color:#EDE6CF;border-color:#5E4F22}
 `;
+const UB_WIDE = () => (window.innerWidth || 0) > 900 && !!document.getElementById('tb-org');
 let _ubSync = null;
 function syncBand(){
   const b = document.getElementById('union-band'); if(!b) return;
@@ -273,8 +283,10 @@ async function watchUnionAuth(tries){
     paintBanner();
   });
 }
+let _ubMode = '';
 function paintBanner(){
   document.getElementById('union-band')?.remove();
+  document.getElementById('union-chip')?.remove();
   const root = document.documentElement;
   if(!(window.orgCore && orgCore.unionOpen()) || !_authUid){
     if(root.classList.contains('union-on')){
@@ -287,6 +299,27 @@ function paintBanner(){
   if(!document.getElementById('union-style')){
     const st = document.createElement('style'); st.id = 'union-style'; st.textContent = UB_CSS; document.head.appendChild(st);
   }
+  // 🧭 v190 넓은 화면 — 위 막대 칩 (누르면 안내 · 잠그기)
+  if(UB_WIDE()){
+    _ubMode = 'chip';
+    const c = document.createElement('span');
+    c.id = 'union-chip'; c.setAttribute('role', 'button'); c.tabIndex = 0; c.setAttribute('aria-haspopup', 'true'); c.setAttribute('aria-expanded', 'false');
+    c.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12 8.5 4.5 8.5-4.5"/></svg>연합 열림
+      <span class="ub-pop" role="dialog" aria-label="연합 열림 안내">볼 수 있는 화면에서 두 기관을 함께 보여요.<br>교직원 명부는 다른 기관도 보기만 돼요.<br><button type="button" onclick="unionClose()">잠그기</button></span>`;
+    const tog = on => { c.classList.toggle('on', on); c.setAttribute('aria-expanded', on ? 'true' : 'false'); };
+    c.addEventListener('click', e => { if(e.target.closest('.ub-pop')) return; tog(!c.classList.contains('on')); });
+    c.addEventListener('keydown', e => { if(e.target === c && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); tog(!c.classList.contains('on')); } if(e.key === 'Escape'){ tog(false); c.focus(); } });
+    if(!window.__ubDocClick){ window.__ubDocClick = true;            // 바깥을 누르면 닫기 — 한 번만 걸어 둔다
+      document.addEventListener('click', e => { const x = document.getElementById('union-chip'); if(x && x.classList.contains('on') && !x.contains(e.target)){ x.classList.remove('on'); x.setAttribute('aria-expanded', 'false'); } });
+    }
+    document.getElementById('tb-org').prepend(c);
+    root.classList.add('union-on');
+    root.style.setProperty('--union-h', '0px'); root.style.setProperty('--union-b', '0px');
+    document.body.style.paddingBottom = '';
+    hookUbResize();
+    return;
+  }
+  _ubMode = 'band';
   const b = document.createElement('div');
   b.id = 'union-band';
   // 🏛 v157 정직한 안내 — 열쇠는 권한을 넓히지 않는다: 볼 자격이 있는 화면만 두 기관 · 교직원 명부는 다른 기관도 보기만
@@ -296,6 +329,7 @@ function paintBanner(){
   document.body.appendChild(b);
   root.classList.add('union-on');
   syncBand();
+  hookUbResize();
   if(!_ubSync){
     _ubSync = () => syncBand();
     addEventListener('resize', _ubSync);
@@ -305,6 +339,15 @@ function paintBanner(){
     [200, 800, 2000, 4000].forEach(t => setTimeout(_ubSync, t));
     try{ new ResizeObserver(_ubSync).observe(b); }catch(e){}
   }
+}
+
+/* 창 크기가 넓음 ↔ 좁음을 넘나들면 칩 ↔ 띠 · 위 막대가 늦게 생기면 칩으로 다시 */
+let _ubRz = null;
+function hookUbResize(){
+  if(_ubRz) return;
+  _ubRz = () => { const want = UB_WIDE() ? 'chip' : 'band'; if(_ubMode && want !== _ubMode) paintBanner(); else if(_ubMode === 'chip' && !document.getElementById('union-chip')) paintBanner(); };
+  addEventListener('resize', () => { clearTimeout(_ubRz.t); _ubRz.t = setTimeout(_ubRz, 150); });
+  [400, 1500, 3500].forEach(t => setTimeout(_ubRz, t));
 }
 
 /* ── 숨은 문: «교사 선교사» 글자를 3번 ──

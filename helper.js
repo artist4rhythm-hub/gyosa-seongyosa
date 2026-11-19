@@ -522,6 +522,10 @@ html[data-theme="dark"] .hp-btn.pr{color:#06130E}
       if(r.width < 1 || r.height < 1) return false;
       const cs = getComputedStyle(el); return cs.visibility !== 'hidden' && cs.opacity !== '0'; };
     let hit = all.find(ok);
+    /* 🧭 v190 한 줄 머리 — 탭 · 보기 설정이 위 막대 · ⚙ 서랍으로 갔으면 그 자리를 짚는다 (pagebar.js) */
+    if(!hit && all.length && typeof window.pbStand === 'function'){
+      for(const el of all){ const st = window.pbStand(el); if(st && ok(st)){ hit = st; break; } }
+    }
     /* 닫힌 서랍 · «+ 넣기» 상자 · 줄 서랍 안에 있으면 먼저 열고 다시 찾는다 */
     if(!hit && window.Drawer){
       const hid = all.find(el => !el.closest('#hp,#hp-bub,#hp-tip') && el.closest('.dw-body, .dw-addbox, .dw-more, .dw-row-hide'));

@@ -147,7 +147,8 @@ function waitApp(){
     countView();
     setTimeout(() => flush(false), 4000);
   });
-  document.addEventListener('click', e => { const t = e.target && e.target.closest && e.target.closest(TAB_SEL); if(t) countTab(t); }, true);
+  // v190: 위 막대 거울 탭(.pb-tabs)은 세지 않음 — 원래 탭을 대신 눌러 주므로 거기서 한 번만 셈
+  document.addEventListener('click', e => { const t = e.target && e.target.closest && e.target.closest(TAB_SEL); if(t && !t.closest('.pb-tabs')) countTab(t); }, true);
   setInterval(() => flush(false), EVERY + 5000);
 })();
 window.__useFlush = force => flush(force !== false);   // 시험용

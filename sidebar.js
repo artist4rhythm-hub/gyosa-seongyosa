@@ -337,7 +337,7 @@ function renderShell(activeKey, user){
   SB_USER = user || null;
   try{ document.documentElement.setAttribute('data-gx-pk', activeKey || ''); }catch(e){}   // 🏛 v182 화면마다 다른 규격 손질(showroom.css)이 이 이름을 씀
   // 📊 v182 사용 현황 — 화면 · 기기 · 시간대를 이 기기에 세어 두었다가 10분에 한 번 모아서 (usage.js · 수퍼관리자만 봄)
-  try{ if(user && user.uid && !window.__useLoad){ window.__useLoad = 1; import('./usage.js?v=185').catch(()=>{}); } }catch(e){}
+  try{ if(user && user.uid && !window.__useLoad){ window.__useLoad = 1; import('./usage.js?v=190').catch(()=>{}); } }catch(e){}
   // 🔔 v131 이 기기에서 «알림 켜기»를 했으면 — 앱을 열어 둔 동안 온 알림을 화면 위 띠로 (live-push.js)
   try{ if(user && !window.__lpLoad && localStorage.getItem('staff_push_on') === '1'){ window.__lpLoad = 1; import('./live-push.js?v=131').catch(()=>{}); } }catch(e){}
 
@@ -388,6 +388,12 @@ function loadShowroom(){
   if(!window.__gxOn && !document.getElementById('gx-js')){
     const s = document.createElement('script');
     s.id = 'gx-js'; s.src = 'showroom.js?v=184'; s.defer = true;
+    document.head.appendChild(s);
+  }
+  // 🧭 v190 한 줄 머리 + ⚙ 설정 서랍 (pagebar.js) — 화면 이름 · 탭은 위 막대 한 줄에 · 설정은 오른쪽 위 서랍으로
+  if(!window.__pbOn && !document.getElementById('pb-js')){
+    const s = document.createElement('script');
+    s.id = 'pb-js'; s.src = 'pagebar.js?v=190'; s.defer = true;
     document.head.appendChild(s);
   }
 }
