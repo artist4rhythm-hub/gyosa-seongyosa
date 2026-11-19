@@ -226,7 +226,9 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
 .hn .hn-pn[hidden]{display:none !important}
 .hn .hn-pn.wide{grid-column:1 / -1}
 .hn .hn-pn.bare{background:none;border:0;padding:0}
-.hn .hn-pn #hm-tt:empty::before{content:'오늘 내 수업이 없거나 게시된 시간표가 없어요.';font-size:13px;color:var(--hn-ink2)}
+.hn .hn-pn #hm-tt:empty::before{content:'게시된 시간표가 없어요.';font-size:13px;color:var(--hn-ink2)}
+.hn .hn-pn #hm-tt .tt-head{margin-bottom:8px}
+.hn .hn-pn #hm-tt .tt-card{margin-bottom:0}
 .hn .hn-pn #home-boards:empty::before{content:'새 글이 없어요.';font-size:13px;color:var(--hn-ink2)}
 .hn .hn-pn #home-boards{margin-top:0 !important}
 .hn .hn-pn > .hm-sec:first-child{margin-top:0}
@@ -799,13 +801,13 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
     return `<section class="hn-rooms">${window.allRoomsHTML ? window.allRoomsHTML() : ''}</section>`;
   }
   const MORE = [
+    { k: 'tt', l: '시간표', i: 'schedule', w: 'tt', bare: 1 },   // 🧭 v191 시간표 위젯(학년 · 선생님 · 교실 · 오늘/이번 주) — 맨 앞 · 위젯이 머리를 가짐
     { k: 'notice', l: '공지사항', i: 'campaign', own: '<div id="home-notice"><div class="hn-dim">불러오는 중…</div></div>', nohead: 1 },
     { k: 'bday', l: '이번 달 생일', i: 'cake', own: '<div id="home-birthday"><div class="hn-dim">불러오는 중…</div></div>', nohead: 1 },
     { k: 'sched', l: '학사일정', i: 'calendar_month', own: '<div id="home-schedule"><div class="hn-dim">불러오는 중…</div></div>', wide: 1, nohead: 1 },
     { k: 'attend', l: '출결 자세히', i: 'fact_check', w: 'attend', wide: 1 },
     { k: 'mtg', l: '회의에서 맡은 일', i: 'edit_note', w: 'mtg' },
     { k: 'club', l: '동아리 실황', i: 'palette', w: 'club', wide: 1 },
-    { k: 'tt', l: '내 시간표', i: 'schedule', w: 'tt', head: 1 },
     { k: 'chk', l: '오늘 할 일', i: 'checklist', w: 'chk', bare: 1 },
     { k: 'memo', l: '메모 · 포스트잇', i: 'sticky_note_2', w: 'memo', bare: 1 },
     { k: 'wx', l: '날씨', i: 'partly_cloudy_day', w: 'wx', bare: 1 },
@@ -816,7 +818,9 @@ html[data-theme="dark"] .hn .hn-mc.on{background:var(--sb-green);border-color:va
   ];
   let MORE_ON = [];
   function moreHTML(){
-    const open = LS.get(moreKey(), []);
+    let open = LS.get(moreKey(), []);
+    // 🧭 v191 시간표 위젯은 한 번 펼쳐서 보여 줌 (접으면 그대로 기억)
+    try{ const fk = moreKey() + ':tt191'; if(!localStorage.getItem(fk)){ localStorage.setItem(fk, '1'); if(!open.includes('tt')){ open = open.concat('tt'); LS.set(moreKey(), open); } } }catch(e){}
     const items = MORE.map(m => ({ ...m, body: m.own || P.block(m.w) })).filter(m => m.body);
     MORE_ON = items.map(m => m.k);
     const bar = items.map(m => { const on = open.includes(m.k);
