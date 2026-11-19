@@ -6,7 +6,7 @@ export async function badgeFor(db, uid, me){
   if(!me || (me.acStatus || 'active') === 'quit') return 0;
   const orgs = (Array.isArray(me.orgs) && me.orgs.length) ? me.orgs : [me.org];
   const has = (k, v) => Array.isArray(me[k]) && me[k].includes(v);
-  if(!(me.role === 'super' || (!has('pageDeny', 'consult') && (orgs.includes('daniel') || has('pageAllow', 'consult'))))) return 0;
+  if(!(me.role === 'super' || (!has('pageDeny', 'consult') && (orgs.includes('daniel') || orgs.includes('jihyebit') || has('pageAllow', 'consult'))))) return 0;
   try{
     const s = await getDocs(query(collection(db, 'consultNotifs'), where('toUid', '==', uid), where('read', '==', false)));
     return s.size || 0;

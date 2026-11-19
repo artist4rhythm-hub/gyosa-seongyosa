@@ -160,7 +160,7 @@ async function computeBadges(db, uid){
   try { const m = await import('./nhp-badge.js?v=143'); b.nhp = await m.badgeFor(db, uid, me); } catch(e){}
 
   /* 📅 v149 학부모 상담 — 안 읽은 상담 알림 (확인 부탁 · 변경 요청 · 답글 · 처리 · 확정) */
-  try { const m = await import('./consult-badge.js?v=149'); b.consult = await m.badgeFor(db, uid, me); } catch(e){}
+  try { const m = await import('./consult-badge.js?v=192'); b.consult = await m.badgeFor(db, uid, me); } catch(e){}
 
   /* 🔒 v175 주임 회의록 — 멤버인지 · 주제만 공유받았는지 (사이드바에 보일지) + 내 임무 · 새 소식 (따로 불러와서) */
   try { const m = await import('./lead-badge.js?v=177'); b.leadmin = await m.badgeFor(db, uid, me, leadN); } catch(e){}

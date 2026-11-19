@@ -183,7 +183,7 @@ async function offPicker(i){
 }
 async function loadEvts(){
   const r = A.R; const el = document.getElementById('cs-evts'); if(!el) return;
-  const list = (await A.loadEvents(r.year)).filter(e => /상담/.test(String(e.title || '') + String(e.subtitle || '')) && (!e.org || e.org === 'daniel' || e.org === 'all' || (e.orgs || []).includes('daniel')))
+  const list = (await A.loadEvents(r.year)).filter(e => /상담/.test(String(e.title || '') + String(e.subtitle || '')) && C.evOrgOk(e))
     .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)));
   if(!document.getElementById('cs-evts')) return;
   el.innerHTML = list.length ? `<div style="display:flex;flex-direction:column;gap:6px">${list.map(e => `<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:9px 12px;border-radius:10px;background:var(--sb-mint-2)"><span>📅 <b>${esc(e.title || '')}</b> · ${esc(C.dayLabel(e.startDate, true))}${e.endDate && e.endDate !== e.startDate ? ' ~ ' + esc(C.dayLabel(e.endDate, true)) : ''}</span><span class="cs-mut">학사일정</span><span style="flex:1"></span><button class="cs-btn xs m" data-evt="${esc(e.id)}">이 날짜로</button></div>`).join('')}</div>`
@@ -236,7 +236,7 @@ export function after(a){
     const nos = t.closest('[data-nosib]'); if(nos){ await save({ notSib: (r.notSib || []).concat([nos.dataset.nosib.split('|')]) }); return; }
     const oc = t.closest('[data-opt][data-val]'); if(oc){ await save({ opt: Object.assign({}, C.optOf(r), { [oc.dataset.opt]: oc.dataset.val }) }); return; }
     const sb = t.closest('[data-sb]'); if(sb){
-      if(sb.dataset.sb === 'auto'){ const B = await import('./consult-board.js?v=164'); await B.runAuto(A); A.go('board'); return; }
+      if(sb.dataset.sb === 'auto'){ const B = await import('./consult-board.js?v=192'); await B.runAuto(A); A.go('board'); return; }
       if(sb.dataset.sb === 'del'){ if(!(await A.confirm('상담 지우기', `«${esc(r.title)}»을(를) 지울까요? 되돌릴 수 없어요.`, '지우기', true))) return; try{ await A.FS.deleteDoc(A.roundRef()); A.ROUNDS = A.ROUNDS.filter(x => x.id !== r.id); await A.useRound((A.ROUNDS.find(x => x.state !== 'closed') || {}).id || ''); A.go('board'); A.toast('지웠어요'); }catch(err){ A.toast('지우지 못했어요 — ' + A.errText(err), 'err'); } return; }
     }
   };
@@ -278,7 +278,7 @@ export async function newRound(a){
   let evts = [], pickEvt = '', from = '', to = '';
   const prevOf = () => A.ROUNDS.filter(x => (x.org || C.ORG) === C.ORG && ((x.year * 10 + x.term) < (year * 10 + term))).sort((p, q) => (q.year * 10 + q.term) - (p.year * 10 + p.term))[0] || null;
   const draw = async () => {
-    evts = (await A.loadEvents(year)).filter(e => /상담/.test(String(e.title || '') + String(e.subtitle || ''))).sort((p, q) => String(p.startDate).localeCompare(String(q.startDate)));
+    evts = (await A.loadEvents(year)).filter(e => /상담/.test(String(e.title || '') + String(e.subtitle || '')) && C.evOrgOk(e)).sort((p, q) => String(p.startDate).localeCompare(String(q.startDate)));
     const cols = C.colsFromClasses(A.CLASSES, year, C.ORG, A.FLOORS, A.staffName);
     const prev = prevOf();
     const exists = A.ROUNDS.filter(x => x.year === year && x.term === term && (x.org || C.ORG) === C.ORG).length;
@@ -289,7 +289,7 @@ export async function newRound(a){
       <div class="cs-fl">상담 날짜 — 학사일정의 «상담» 일정
         ${evts.length ? evts.map(e => `<label class="cs-radio${pickEvt === e.id ? ' on' : ''}" style="font-weight:500;color:var(--ink)"><input type="radio" name="cs-ne" value="${esc(e.id)}"${pickEvt === e.id ? ' checked' : ''}><span><b>${esc(e.title || '')}</b> · ${esc(C.dayLabel(e.startDate, true))}${e.endDate && e.endDate !== e.startDate ? ' ~ ' + esc(C.dayLabel(e.endDate, true)) : ''}</span></label>`).join('') : `<span class="cs-mut" style="font-weight:500">${year}학년도 학사일정에 «상담»이 들어간 일정이 없어요 — 아래에서 직접 고르세요.</span>`}
         <label class="cs-radio${!pickEvt ? ' on' : ''}" style="font-weight:500;color:var(--ink)"><input type="radio" name="cs-ne" value=""${!pickEvt ? ' checked' : ''}><span><b>직접 고르기</b> · 평일만 <input type="date" class="cs-in" data-from value="${esc(from)}" style="height:32px"> ~ <input type="date" class="cs-in" data-to value="${esc(to)}" style="height:32px"></span></label></div>
-      <div class="cs-desc">· 세로줄: 반편성 ${year}학년도 다니엘아마츠학교 반 <b>${cols.length}줄</b> (학년 순 · 담임 = 상담 교사)${cols.length ? '' : ' — <b style="color:#B42318">반편성에 이 학년도 반이 없어요</b>'}<br>
+      <div class="cs-desc">· 세로줄: 반편성 ${year}학년도 ${esc(C.orgName())} 반 <b>${cols.length}줄</b> (학년 순 · 담임 = 상담 교사)${cols.length ? '' : ' — <b style="color:#B42318">반편성에 이 학년도 반이 없어요</b>'}<br>
         · 시간: 15:30 시작 · 25분 + 쉼 5분 · 하루 5칸 (준비에서 바꿀 수 있어요)<br>
         ${prev ? `· 지난 상담 «${esc(prev.title || prev.id)}»의 교실 · 시간 틀 · 순서 설정을 이어받아요` : '· 처음 만드는 상담이에요 — 순번은 ㄱ→ㅎ부터 시작해요'}</div></div>`;
   };

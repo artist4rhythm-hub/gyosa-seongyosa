@@ -13,7 +13,18 @@
        opt   { order:'flip'|'asc'|'desc'|'fair', guardFront, guardBack, fill:'front'|'even', sib:'next'|'gap1'|'day', kid:'after'|'last'|'sep' }
    · 이 파일은 계산만 — 화면(consult.html)과 시험(Node)이 함께 쓴다 */
 
-export const ORG = 'daniel';
+// 🏫 v192 기관 — 다니엘아마츠학교 · 그루터기 선교원이 같은 기능을 따로 씀 (화면 위 기관 단추로 바꿈 · 상담 문서마다 org)
+export let ORG = 'daniel';
+export const CS_ORGS = ['daniel', 'jihyebit'];
+export const setOrg = o => { if(CS_ORGS.includes(o)) ORG = o; };
+/* 교직원 자녀(학생)가 지금 기관 학생인가 — 학생 문서를 못 읽은 경우는 예전처럼 다니엘로 봄 */
+export const stuHere = (s, o) => { o = o || ORG; const so = s && s.org; return so ? so === o : o === 'daniel'; };
+export const kidHere = (stu, sid, o) => stuHere((stu || {})[sid], o);
+/* 교직원 자녀 문서 — 기관마다 하나 (다니엘은 예전처럼 내 uid · 그루터기는 uid_jihyebit) · 보안 규칙 v52 csKidId 와 같게 */
+export const kidDocId = (uid, o) => { o = o || ORG; return o === 'daniel' ? uid : `${uid}_${o}`; };
+/* 학사일정 행사가 이 기관 것인가 — 학사일정과 같은 읽기: org 없음 = 다니엘 · 'both'/'all' = 모든 기관 · orgs 여러 개 */
+export const evOrgOk = (e, o) => { o = o || ORG; const os = (e && Array.isArray(e.orgs) && e.orgs.length) ? e.orgs : [(e && e.org) || 'daniel']; return os.some(x => x === o || x === 'all' || x === 'both'); };
+export const orgName = o => ((typeof window !== 'undefined' && window.ORGS) || {})[o || ORG] || ({ daniel: '다니엘아마츠학교', jihyebit: '그루터기 선교원' })[o || ORG] || '';
 export const DEF_TPL = { start: '15:30', len: 25, gap: 5, n: 5 };
 export const DEF_OPT = { order: 'flip', guardFront: true, guardBack: true, fill: 'front', sib: 'next', kid: 'after' };
 export const STATES = {

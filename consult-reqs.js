@@ -110,7 +110,7 @@ function watchReplies(id){
 async function reply(q, text, quiet, keepState){
   text = String(text || '').trim(); if(!text) return false;
   const bt = A.FS.writeBatch(A.db);
-  bt.set(A.FS.doc(A.FS.collection(A.db, 'consultReplies')), { reqId: q.id, rid: A.R.id, uid: A.CU.uid, name: A.CU.name || '', text, at: A.FS.serverTimestamp() });
+  bt.set(A.FS.doc(A.FS.collection(A.db, 'consultReplies')), { reqId: q.id, rid: A.R.id, org: C.ORG, uid: A.CU.uid, name: A.CU.name || '', text, at: A.FS.serverTimestamp() });
   const up = { nRep: A.FS.increment(1), lastAt: A.FS.serverTimestamp(), lastBy: A.CU.uid };
   if(A.isMgr && q.state === 'new' && !keepState) up.state = 'answered';
   bt.update(A.FS.doc(A.db, 'consultReqs', q.id), up);
@@ -384,9 +384,10 @@ function stuClass(sid){
 }
 export function kidsHTML(a){
   A = a; C = a.C; esc = a.esc;
-  const mine = (A.KIDDOCS.find(d => d.uid === A.CU.uid) || { kids: [] }).kids || [];
+  const here = sid => C.kidHere(A.STU, sid);   // 🏫 v194 지금 고른 기관의 학생만 (자녀 잇기 문서는 기관을 가리지 않음)
+  const mine = ((A.KIDDOCS.find(d => d.uid === A.CU.uid) || { kids: [] }).kids || []).filter(here);
   const row = (uid, sid, canDel) => `<div class="cs-tr" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto"><span><b>${esc(A.stuName(sid))}</b> <span class="cs-mut">${esc(stuClass(sid))}</span></span><span class="cs-mut">${esc(A.staffName(uid) || '(교직원)')} 선생님 자녀</span>${canDel ? `<button class="cs-btn xs r" data-kdel="${esc(uid)}|${esc(sid)}">끊기</button>` : '<span></span>'}</div>`;
-  const others = A.KIDDOCS.filter(d => d.uid !== A.CU.uid && (d.kids || []).length);
+  const others = A.KIDDOCS.filter(d => d.uid !== A.CU.uid && (d.kids || []).some(here)).map(d => Object.assign({}, d, { kids: d.kids.filter(here) }));
   return `<div style="max-width:1000px;margin:12px 0 0;display:flex;flex-direction:column;gap:12px">
     <div class="cs-card cs-desc">🧑‍🏫 학교에 다니는 자녀가 있는 선생님은 여기서 자녀를 이어 주세요. 상담 일정을 잡을 때 <b>선생님이 상담하는 시간과 겹치지 않게 — 선생님 상담이 끝난 뒤</b>로 잡아요 (편성 담당이 «별도 일정»으로 바꿀 수도 있어요).<br>
       학부모 상담 안에서만 쓰고, 한 번 이어 두면 다음 학기에도 그대로예요.</div>
@@ -399,7 +400,7 @@ export function kidsHTML(a){
 }
 async function pickStudent(title, exclude){
   return new Promise(res => {
-    const all = Object.values(A.STU).filter(s => !s.deleted && (s.org || C.ORG) === C.ORG && (!window.StuStatus || StuStatus.enrolled(s)) && !(exclude || []).includes(s.id))
+    const all = Object.values(A.STU).filter(s => !s.deleted && C.stuHere(s) && (!window.StuStatus || StuStatus.enrolled(s)) && !(exclude || []).includes(s.id))
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
     const m = A.modal(esc(title), `<input class="cs-in" data-q placeholder="이름 찾기" style="width:100%;margin-bottom:10px"><div data-l style="max-height:52vh;overflow:auto"></div>`, '<button class="cs-btn" data-n>취소</button>', 'sm');
     const draw = () => { const q = m.box.querySelector('[data-q]').value.trim(); const l = all.filter(s => !q || String(s.name || '').includes(q)).slice(0, 80);
@@ -423,7 +424,7 @@ async function pickStaff(){
   });
 }
 async function setKids(uid, kids){
-  await A.FS.setDoc(A.FS.doc(A.db, 'consultKids', uid), { uid, org: C.ORG, kids: C.uniq(kids), updatedAt: A.FS.serverTimestamp(), updatedBy: A.CU.uid });
+  await A.FS.setDoc(A.FS.doc(A.db, 'consultKids', C.kidDocId(uid)), { uid, org: C.ORG, kids: C.uniq(kids), updatedAt: A.FS.serverTimestamp(), updatedBy: A.CU.uid });   // 🏫 v194 기관마다 한 문서
 }
 export function afterKids(a){
   A = a; C = a.C; esc = a.esc;
@@ -449,7 +450,7 @@ export function afterKids(a){
       const [uid, sid] = d.dataset.kdel.split('|');
       if(!(await A.confirm('연결 끊기', `${esc(A.stuName(sid))} — ${esc(A.staffName(uid))} 선생님 자녀 연결을 끊을까요?`, '끊기', true))) return;
       const cur = (A.KIDDOCS.find(x => x.uid === uid) || { kids: [] }).kids || [];
-      try{ const left = cur.filter(x => x !== sid); if(left.length) await setKids(uid, left); else await A.FS.deleteDoc(A.FS.doc(A.db, 'consultKids', uid)); A.toast('끊었어요'); }
+      try{ const left = cur.filter(x => x !== sid); if(left.length) await setKids(uid, left); else await A.FS.deleteDoc(A.FS.doc(A.db, 'consultKids', C.kidDocId(uid))); A.toast('끊었어요'); }
       catch(err){ A.toast('끊지 못했어요 — ' + A.errText(err), 'err'); }
     }
   };

@@ -547,7 +547,7 @@ export function after(a){
 async function act(k){
   const r = A.R;
   if(k === 'order'){ A.go('setup'); setTimeout(() => { const el = document.getElementById('cs-s6'); if(el) el.scrollIntoView({ behavior: 'smooth' }); }, 80); return; }
-  if(k === 'print'){ const P = await import('./consult-past.js?v=155'); P.printRound(A, r, A.viewSeats()); return; }
+  if(k === 'print'){ const P = await import('./consult-past.js?v=192'); P.printRound(A, r, A.viewSeats()); return; }
   if(k === 'vers'){ versModal(); return; }
   if(k === 'ack'){
     try{ await A.FS.updateDoc(A.roundRef(), { ['acks.' + A.CU.uid]: r.sentVer }); r.acks = Object.assign({}, r.acks, { [A.CU.uid]: r.sentVer }); A.toast('확인했어요 — 고맙습니다'); A.render(true); }
@@ -698,7 +698,7 @@ async function publish(){
     await A.saveRound(p);
     A.notify(A.colNotifyUids(), 'pub', `📨 학부모 상담 일정 «${label}» — 학부모님께 나가요`, `${r.title} — ${label} (판 ${n}) · 학부모님 변경 요청은 «변경 요청»으로 보내 주세요`, 'consult.html#board');
     A.toast(`«${label}»${C.ro(label)} 기록했어요 — 인쇄 · PDF로 나눠 주세요`);
-    const P = await import('./consult-past.js?v=155'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + pubs.length);
+    const P = await import('./consult-past.js?v=192'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + pubs.length);
   }catch(e){ A.toast('보내지 못했어요 — ' + A.errText(e), 'err'); console.error(e); }
 }
 async function finalize(){
@@ -724,7 +724,7 @@ async function finalize(){
       pubs: (r.pubs || []).concat([{ n: all.length, label: C.FINAL_LABEL, ver: n, at: Date.now(), by: A.CU.uid, byName: A.CU.name || '' }]) });
     A.notify(C.uniq(A.colNotifyUids().concat(A.mgrUids())), 'final', '📌 학부모 상담 일정 최종 반영', `${r.title} — 판 ${n} «${C.FINAL_LABEL}»으로 학부모님께 나가요`, 'consult.html#board');
     A.toast(`최종 반영했어요 — «${C.FINAL_LABEL}»판을 인쇄 · PDF로 나눠 주세요`);
-    const P = await import('./consult-past.js?v=155'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + all.length);
+    const P = await import('./consult-past.js?v=192'); await P.printRound(A, A.R, A.R.seats || {}, 'p' + all.length);
   }catch(e){ A.toast('최종 반영하지 못했어요 — ' + A.errText(e), 'err'); console.error(e); }
 }
 /* v155 ↩ 학부모 확인으로 — 최종 반영을 풀고 4단계로 (변경 요청을 더 반영 → 수정 n 보내기 → 다시 최종 반영) */
