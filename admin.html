@@ -217,6 +217,24 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .otable tr:hover td{background:var(--iv);}
 .sbadge{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;}
 .empty{color:var(--tl);font-size:14px;text-align:center;padding:24px;}
+/* 📦 v195 백업 */
+.bk-last{font-size:13px;font-weight:800;color:var(--ts);margin:-6px 0 12px;display:flex;align-items:center;gap:6px}
+.bk-last.w{color:var(--danger,#C0392B)}
+.bk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:12px}
+.bk-blk{border:1px solid var(--ivd);border-radius:12px;padding:14px 14px 12px;min-width:0}
+.bk-blk h4{margin:0 0 6px;font-size:14px;color:var(--gd)}
+.bk-blk p{font-size:12.5px;color:var(--ts);margin:0 0 10px;line-height:1.6}
+.bk-btns{display:flex;flex-wrap:wrap;gap:6px}
+.bk-btns .bp,.bk-btns .bs{padding:8px 14px;font-size:13px}
+.bk-ck{display:flex;gap:7px;align-items:flex-start;font-size:12.5px;margin:0 0 10px;cursor:pointer;line-height:1.5}
+.bk-ck input{margin-top:3px}
+.bk-st{font-size:12.5px;color:var(--ts);margin-top:8px;min-height:1em;line-height:1.5}
+.bk-h{font-size:13.5px;margin:18px 0 6px;color:var(--gd)}
+.bk-tw{overflow-x:auto}
+.bk-runs{width:100%;border-collapse:collapse;font-size:12.5px;min-width:520px}
+.bk-runs th,.bk-runs td{border-bottom:1px solid var(--iv);padding:7px 6px;text-align:left;vertical-align:top}
+.bk-runs th{font-size:11.5px;color:var(--ts);font-weight:700}
+.bk-runs td:first-child{white-space:nowrap}
 
 /* 토스트 */
 .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--gd);color:var(--wh);padding:12px 24px;border-radius:100px;font-size:14px;font-weight:600;opacity:0;transition:all .3s;z-index:9999;white-space:nowrap;}
@@ -547,7 +565,7 @@ html[data-theme="dark"] .adm-toc a .tcb.w{ color:#E3C878; background:#2A2416; } 
 <script type="module">
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword, createUserWithEmailAndPassword, EmailAuthProvider, reauthenticateWithCredential } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, arrayUnion, arrayRemove, deleteField } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp, writeBatch, arrayUnion, arrayRemove, deleteField, startAfter, documentId, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol, dropLists } from './listcache.js?v=137';   // 📉 v137 명단을 같은 탭에서 잠깐 기억
 dropLists('staff'); try{ addEventListener('pagehide', () => dropLists('staff')); }catch(e){}   // 교직원을 고치는 화면 — 들어올 때 · 나갈 때 기억한 교직원 명단을 버림 (다음 화면은 새로 받음)
 import { attOf, attRange, colOnce, colDrop } from './qread.js';   // 📉 v120 필요한 것만 읽기
@@ -2345,12 +2363,253 @@ async function downloadBackup(){
 }
 window.downloadBackup = downloadBackup;
 
+// ══════════ 📦 v195 백업 (수퍼관리자) — PDF 보관본 · 전체 데이터 ZIP · 지난 백업 ══════════
+//   PDF 보관본 = archive.html (기간 · 항목 · NAS 폴더별 묶음) · 전체 데이터 = 보안 규칙에 있는 모음 전부를 모음별 JSON 으로 묶은 ZIP
+//   기록 = backupRuns (규칙 v53 · 수퍼관리자만 읽음) + 활동 로그 «백업»
+const BK_COLS = ['academicConfig','academicEvents','academicYears','actConfig','actExpenses','actIncomes','actLedgers','actMembers','actRevisions','activityLogs','adminConfig','appErrors','approvalConfig','approvals','attendConfig','attendLocks','attendTypes','attendance','backupRuns','bldConfig','bldExpenses','bldLedgers','bldPrepays','blockClips','boardComments','boardConfig','boardImages','boardNotifs','boardPosts','calendars','certVerify','certificates','classConfig','classes','clubAppPrivate','clubApplications','clubAttendance','clubEnrollments','clubInstructors','clubSemesters','clubStatusShare','config','consultArchive','consultKids','consultNotifs','consultReplies','consultReqs','consultRounds','expenseConfig','expenseDeposits','expenseLocks','expenseReceipts','expenseRevisions','expenseSchoolReturns','expenses','famConfig','famDocs','famRevisions','groupSets','holidays','infoAns','infoForms','joinCodes','leadAgendas','leadComments','leadConfig','leadFiles','leadMeetings','leadShares','leadTasks','leadTopicCmts','leadVersions','loginLogs','meetingComments','meetingFiles','meetingTasks','meetingVersions','meetings','messages','minutesConfig','msgImages','mtgAgendas','mtgDrafts','mtgLog','mtgNotifs','nhpConfig','nhpEditions','nhpEntries','nhpGlossary','nhpLists','nhpMarks','nhpNotifs','nhpReports','nhpSubjects','nhpTerms','notices','parentAccess','parentAccounts','parentClaims','parentComments','parentConfig','parentGate','parentHidden','parentLinks','parentPosts','parentRequests','parents','payConfig','payLogs','payReceipts','payRequests','securityConfig','sessions','shareViewLogs','sharedAcademic','sharedFamily','sharedSheets','sharedTimetables','snapshots','staff','staffArchive','staffSign','studentAttendance','studentPayments','students','systemConfig','teacherAvailability','terms','timetableConfig','timetableFloorImages','timetableLessons','timetablePlacements','timetablePublished','timetablePublishedData','timetableRooms','timetableSetIndex','timetableSetVersions','timetableSets','timetables','unionLogs','usage','userMemos','workConfig','workExceptions','workPeriods','workSettings'];
+const BK_BIG = ['payReceipts','expenseReceipts','meetingFiles','leadFiles','boardImages','msgImages','timetableFloorImages','famDocs','snapshots'];
+const BK_CORE = ['staff','students','classes','attendance','workPeriods','holidays','notices','activityLogs','loginLogs'];   // 열람.html (예전 백업 파일과 같은 화면)
+const BK_ORGQ = ['meetings','meetingComments','meetingFiles','mtgAgendas'];   // 보안 규칙상 기관으로만 물을 수 있는 모음 → 기관마다 따로
+const BK_ORGS = ['daniel','jihyebit','da'];
+const BK_PRIV = ['blockClips','boardNotifs','certVerify','consultNotifs','messages','mtgDrafts','mtgNotifs','nhpNotifs','staffSign','userMemos'];   // 본인만 여는 자료 (쪽지 · 알림 · 임시 저장 · 서명) — 수퍼관리자도 못 읽음 → 매주 자동 백업(서버)에서
+const BK_SECRET = /(key|keys|secret|token|password|passwd)$|api_?key/i;   // geminiKey · apiKey · token …
+const BK_KEYVAL = /^(AIza[0-9A-Za-z_-]{20,}|sk-[A-Za-z0-9_-]{16,})/;   // config/aiKeys 의 gemini · openai 처럼 값이 열쇠 모양이면
+const BK_SEC = { mtg:'회의록', lead:'주임 회의록', pay:'경비', att:'출석부', act:'활동 기록' };
+const bkMs = v => v?.toMillis ? v.toMillis() : v?.seconds ? v.seconds * 1000 : (typeof v === 'number' ? v : 0);
+const bkBytes = n => !n ? '' : n > 1048576 ? (n / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1024)) + 'KB';
+let BK_RUNNING = false;
+function bkCardHTML(){
+  return `
+    <div class="acard" data-dw="adm-backup">
+      <h3 class="actitle">📦 백업</h3>
+      <p class="adesc">종이 대신 PDF와 데이터로 보관해요. 받은 파일은 학교 NAS의 보관함 폴더에 넣어 두세요. 매주 일요일 자동 백업(NAS로 바로 들어감)은 다음 업데이트에서 켜져요.</p>
+      <div class="bk-last" id="bk-last" role="status">지난 백업 기록을 읽는 중…</div>
+      <div class="bk-grid">
+        <section class="bk-blk" aria-labelledby="bk-h-pdf">
+          <h4 id="bk-h-pdf">📄 PDF 보관본</h4>
+          <p>회의록 · 주임 회의록 · 경비 지급 요청서(영수증 사진) · 출석부 · 활동 기록을 기간별로 한 파일에. 볼 사람이 다른 자료는 묶음별로 따로 만들어 NAS의 그 폴더에 넣어요. 교직원용은 기관마다 따로 (다른 기관 회의록이 섞이지 않게).</p>
+          <div class="bk-btns">
+            <button type="button" class="bp" onclick="openArchive('lw','staff','daniel')">지난주 · 다니엘 교직원용</button>
+            <button type="button" class="bp" onclick="openArchive('lw','staff','jihyebit')">지난주 · 그루터기 교직원용</button>
+            <button type="button" class="bs" onclick="openArchive('lw','lead','')">지난주 · 주임용</button>
+            <button type="button" class="bs" onclick="openArchive('lm','pay','')">지난달 · 경비 마감</button>
+            <button type="button" class="bs" onclick="openArchive('','','')">기간 · 항목 고르기</button>
+          </div>
+        </section>
+        <section class="bk-blk" aria-labelledby="bk-h-data">
+          <h4 id="bk-h-data">🗄 전체 데이터 받기</h4>
+          <p>보안 규칙에 있는 모음 ${BK_COLS.length}개를 모음별 JSON으로 묶은 ZIP이에요 (본인만 여는 쪽지 · 알림 ${BK_PRIV.length}가지는 빼고). 안에 든 «열람.html»로 교직원 · 학생 · 출근부 · 로그는 인터넷 없이도 볼 수 있어요.</p>
+          <label class="bk-ck"><input type="checkbox" id="bk-big"> 사진 · 첨부 · 타임머신 사본처럼 큰 자료도 함께 (수백 MB · 몇 분 걸려요)</label>
+          <div class="bk-btns"><button type="button" class="bp" id="bk-data-go" onclick="downloadAllData()">ZIP 받기</button></div>
+          <div class="bk-st" id="bk-data-st" role="status" aria-live="polite"></div>
+        </section>
+      </div>
+      <h4 class="bk-h">지난 백업</h4>
+      <div id="bk-runs" class="bk-tw"></div>
+    </div>`;
+}
+function bkPreset(k){
+  const t = new Date(), ymd = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const mon = d => { const x = new Date(d); x.setDate(x.getDate() - (x.getDay() + 6) % 7); return x; };
+  if(k === 'lw'){ const m = mon(t); m.setDate(m.getDate() - 7); const e = new Date(m); e.setDate(e.getDate() + 6); return [ymd(m), ymd(e)]; }
+  if(k === 'lm') return [ymd(new Date(t.getFullYear(), t.getMonth() - 1, 1)), ymd(new Date(t.getFullYear(), t.getMonth(), 0))];
+  return null;
+}
+window.openArchive = function(k, pack, org){
+  if(!CU || CU.role !== 'super') return;
+  const r = bkPreset(k), qs = new URLSearchParams();
+  if(r){ qs.set('from', r[0]); qs.set('to', r[1]); qs.set('go', '1'); }
+  if(pack) qs.set('pack', pack);
+  if(org) qs.set('org', org);
+  const w = window.open('archive.html' + (qs.toString() ? '?' + qs : ''), '_blank');
+  if(w) w.opener = null;
+};
+function bkKind(r){
+  if(r.mode === 'auto') return '🤖 자동 백업';
+  return r.kind === 'data' ? '🗄 전체 데이터' : '📄 PDF 보관본';
+}
+function bkWhat(r){
+  if(r.kind === 'data'){
+    const f = Array.isArray(r.failed) ? r.failed.length : 0;
+    return `모음 ${Number(r.cols) || 0}개 · ${(Number(r.docs) || 0).toLocaleString()}건${r.bytes ? ' · ' + bkBytes(r.bytes) : ''}${r.photos ? ' · 큰 자료 포함' : ''}${f ? ` · 읽지 못한 모음 ${f}개` : ''}`;
+  }
+  const c = r.counts || {};
+  const parts = (r.sections || []).map(k => `${BK_SEC[k] || k} ${c[k] === -1 ? '읽지 못함' : (Number(c[k]) || 0) + '건'}`);
+  return `${String(r.from || '').slice(5).replace('-','/')} ~ ${String(r.to || '').slice(5).replace('-','/')} · ${parts.join(' · ')}`;
+}
+async function loadBackupRuns(){
+  const box = $I('bk-runs'), last = $I('bk-last'); if(!box) return;
+  try{
+    const s = await getDocs(query(collection(db,'backupRuns'), orderBy('at','desc'), limit(40)));
+    const all = s.docs.map(d => ({ id:d.id, ...d.data() })).sort((a, b) => bkMs(b.at) - bkMs(a.at));
+    const rows = all.slice(0, 12);
+    ADM_LS.bk = bkLatest(all);
+    if(last){
+      const w = bkStale(ADM_LS.bk), ago = ms => { const d = Math.floor((Date.now() - ms) / 86400000); return d === 0 ? '오늘' : d + '일 전'; };
+      last.classList.toggle('w', !!w);
+      last.textContent = (w ? '⚠️ ' : '✓ ') + `마지막 PDF 보관본 ${ADM_LS.bk.pdf ? ago(ADM_LS.bk.pdf) : '없음'} · 마지막 전체 데이터 ${ADM_LS.bk.data ? ago(ADM_LS.bk.data) : '없음'}`;
+    }
+    box.innerHTML = rows.length ? `<table class="bk-runs"><thead><tr><th>때</th><th>종류</th><th>내용</th><th>누가</th></tr></thead><tbody>${rows.map(r => {
+      const d = new Date(bkMs(r.at));
+      return `<tr><td>${bkMs(r.at) ? `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}` : '-'}</td><td>${esc(bkKind(r))}</td><td>${esc(bkWhat(r))}</td><td>${esc(r.name || (r.mode === 'auto' ? '자동' : ''))}</td></tr>`;
+    }).join('')}</tbody></table>` : '<p class="empty" style="padding:12px">아직 백업 기록이 없어요. 위에서 PDF 보관본이나 전체 데이터를 받으면 여기에 남아요.</p>';
+  }catch(e){
+    ADM_LS.bk = null;
+    if(last){ last.classList.remove('w'); last.textContent = ''; }
+    box.innerHTML = '<p class="empty" style="padding:12px">보안 규칙 v53을 게시하면 여기에 백업 기록이 쌓여요. (지금도 관리자 › 활동 로그에 «백업»으로 남아요)</p>';
+  }
+  try{ window.Drawer && Drawer.refresh(); }catch(_){}
+}
+window.loadBackupRuns = loadBackupRuns;
+/* 마지막 백업 — 종류마다 · PDF 보관본은 8일 · 전체 데이터는 31일 넘으면 알림 */
+function bkLatest(rows){
+  const o = { pdf:0, data:0 };
+  rows.forEach(r => { const k = r.mode === 'auto' ? 'pdf' : r.kind === 'data' ? 'data' : 'pdf', ms = bkMs(r.at); if(ms > o[k]) o[k] = ms; if(r.mode === 'auto' && ms > o.data) o.data = ms; });
+  return o;
+}
+function bkStale(b){
+  if(!b || typeof b !== 'object') return null;
+  const d = ms => ms ? Math.floor((Date.now() - ms) / 86400000) : -1;
+  const p = d(b.pdf), z = d(b.data);
+  if(p < 0 && z < 0) return ['아직 백업 기록이 없어요', 'PDF 보관본 · 전체 데이터를 받아 NAS 보관함 폴더에 넣어 두세요'];
+  if(p < 0 || p >= 8) return [p < 0 ? '아직 PDF 보관본을 만든 적이 없어요' : `PDF 보관본을 ${p}일째 만들지 않았어요`, '지난주 교직원용 · 주임용 · 경비 PDF를 만들어 NAS에 넣어 두세요'];
+  if(z < 0 || z >= 31) return [z < 0 ? '아직 전체 데이터를 받은 적이 없어요' : `전체 데이터를 ${z}일째 받지 않았어요`, '한 달에 한 번 «ZIP 받기»로 전체 데이터를 받아 NAS 관리자 폴더에 넣어 두세요'];
+  return null;
+}
+function ensureJSZip(){
+  return new Promise((res, rej) => {
+    if(window.JSZip) return res();
+    let sc = document.getElementById('jszip-script');
+    let failed = false;
+    if(!sc){ sc = document.createElement('script'); sc.id = 'jszip-script'; sc.crossOrigin = 'anonymous'; sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; sc.onerror = () => { failed = true; sc.remove(); }; document.head.appendChild(sc); }
+    const t0 = Date.now(), chk = setInterval(() => { if(window.JSZip){ clearInterval(chk); res(); } else if(failed || Date.now() - t0 > 15000){ clearInterval(chk); document.getElementById('jszip-script')?.remove(); rej(new Error('압축 도구를 불러오지 못했어요 — 인터넷 연결을 확인하고 다시 눌러 주세요')); } }, 100);
+  });
+}
+/* Firestore 값 → JSON (시각은 ISO + 초 · 나노초 그대로 · 다른 문서 가리킴은 경로) */
+function bkEnc(v, col){
+  if(v == null || typeof v !== 'object') return v;
+  if(col === 'config' && !Array.isArray(v)){   // 🔑 열쇠 · 비밀값은 백업에 넣지 않음 (다시 넣으면 됨)
+    const o = {}; for(const k in v) o[k] = typeof v[k] === 'string' && v[k] && (BK_SECRET.test(k) || BK_KEYVAL.test(v[k])) ? '(백업에서 뺌 — 다시 넣어 주세요)' : bkEnc(v[k], col); return o;
+  }
+  if(typeof v.toMillis === 'function' && 'seconds' in v) return { __ts: new Date(v.toMillis()).toISOString(), s: v.seconds, n: v.nanoseconds || 0 };
+  if(typeof v.path === 'string' && v.firestore) return { __ref: v.path };
+  if(typeof v.toBase64 === 'function') return { __bytes: v.toBase64() };
+  if(Array.isArray(v)) return v.map(x => bkEnc(x, col));
+  const o = {}; for(const k in v) o[k] = bkEnc(v[k], col); return o;
+}
+/* 모음 하나를 끝까지 (문서 이름 순 · 쪽마다 page 개) */
+async function bkReadAll(c, page, onN, pre){
+  const out = new Map(); let last = null, guard = 0;
+  while(guard++ < 4000){
+    const cs = [...(pre || []), orderBy(documentId()), limit(page)]; if(last) cs.push(startAfter(last));
+    const s = await getDocs(query(collection(db, c), ...cs));
+    let added = 0;
+    s.docs.forEach(d => { if(!out.has(d.id)){ out.set(d.id, d); added++; } });
+    onN && onN(out.size);
+    if(s.docs.length < page || !added) break;
+    last = s.docs[s.docs.length - 1];
+  }
+  return [...out.values()];
+}
+async function downloadAllData(){
+  if(BK_RUNNING || !CU || CU.role !== 'super') return;
+  const st = $I('bk-data-st'), go = $I('bk-data-go'), big = !!$I('bk-big')?.checked;
+  const say = m => { if(st) st.textContent = m; };
+  BK_RUNNING = true; if(go) go.disabled = true;
+  try{
+    say('압축 도구 준비 중…');
+    await ensureJSZip();
+    const zip = new window.JSZip(), toc = [], core = {}, failed = [];
+    let docs = 0, nOk = 0;
+    /* 모음 하나를 파일로 — 30MB씩 나눠 Blob 으로 (화면 메모리에 글자로 쌓지 않게) */
+    const write = (name, rows) => {
+      const files = []; let part = [], size = 0;
+      const flush = () => { files.push(new Blob(['[\n' + part.join(',\n') + '\n]'], { type:'application/json' })); part = []; size = 0; };
+      rows.forEach(j => { if(size + j.length > 30e6 && part.length) flush(); part.push(j); size += j.length; });
+      flush();
+      if(files.length === 1) zip.file(`data/${name}.json`, files[0]);
+      else files.forEach((f, k) => zip.file(`data/${name}/${String(k + 1).padStart(3, '0')}.json`, f));
+      return files.length;
+    };
+    const parents = { consultRounds: [], consultArchive: [], leadMeetings: [] };
+    for(let i = 0; i < BK_COLS.length; i++){
+      const c = BK_COLS[i];
+      if(c === 'leadTopicCmts') continue;   // 하위 모음 — 아래에서 주임 회의록 주제마다
+      if(!big && BK_BIG.includes(c)){ toc.push({ name:c, status:'skipped', note:'큰 자료 — «큰 자료도 함께»를 켜면 들어감' }); continue; }
+      if(BK_PRIV.includes(c)){ toc.push({ name:c, status:'private', note:'본인만 여는 자료 — 매주 자동 백업(서버)에서 담아요' }); continue; }
+      say(`${i + 1} / ${BK_COLS.length} · ${c} 받는 중…`);
+      try{
+        const page = BK_BIG.includes(c) ? 40 : 500, tick = n => say(`${i + 1} / ${BK_COLS.length} · ${c} ${n.toLocaleString()}건…`);
+        let rows;
+        if(BK_ORGQ.includes(c)){ rows = []; for(const o of BK_ORGS) rows = rows.concat(await bkReadAll(c, page, tick, [where('org', '==', o)])); }
+        else rows = await bkReadAll(c, page, tick);
+        if(c === 'leadMeetings') parents.leadMeetings = rows.map(d => ({ id:d.id, t:(d.data().topics || []).map(t => t.id).filter(Boolean) }));
+        else if(parents[c]) parents[c] = rows.map(d => d.id);
+        if(BK_CORE.includes(c)) core[c] = rows.map(d => ({ _id:d.id, ...d.data() }));
+        const nf = write(c, rows.map(d => JSON.stringify({ _id:d.id, ...bkEnc(d.data(), c) })));
+        toc.push({ name:c, status:'ok', count: rows.length, files: nf, ...(BK_ORGQ.includes(c) ? { note:'기관마다 따로 물어 합침 (' + BK_ORGS.join(' · ') + ')' } : {}) });
+        docs += rows.length; nOk++;
+      }catch(e){
+        const code = String(e && (e.code || e.message) || e);
+        toc.push({ name:c, status: /permission/.test(code) ? 'denied' : 'error', msg: code.slice(0, 160) });
+        failed.push(c);
+      }
+    }
+    /* 하위 모음 — 부모 문서마다 (주임 회의록 주제 댓글 · 상담 판 고친 기록 · 예전 상담표 쪽) */
+    const SUBS = [
+      { name:'leadTopicCmts', file:'leadTopicCmts__c', keys: parents.leadMeetings.flatMap(m => m.t.map(t => `${m.id}_${t}`)), sub:'c' },
+      { name:'consultRounds', file:'consultRounds__vers', keys: parents.consultRounds, sub:'vers' },
+      { name:'consultArchive', file:'consultArchive__parts', keys: parents.consultArchive, sub:'parts', big: true },
+    ];
+    for(const S of SUBS){
+      if(S.big && !big){ toc.push({ name:`${S.name}/*/${S.sub}`, status:'skipped', note:'큰 자료' }); continue; }
+      say(`하위 모음 ${S.name}/…/${S.sub} 받는 중… (${S.keys.length}곳)`);
+      const out = []; let i = 0, bad = 0;
+      const run = async () => { while(i < S.keys.length){ const k = S.keys[i++]; try{ (await getDocs(collection(db, S.name, k, S.sub))).forEach(d => out.push(JSON.stringify({ _parent:k, _id:d.id, ...bkEnc(d.data(), S.name) }))); }catch(e){ bad++; } } };
+      await Promise.all(Array.from({ length: Math.min(8, S.keys.length) }, run));
+      const nf = out.length ? write(S.file, out) : 0;
+      toc.push({ name:`${S.name}/*/${S.sub}`, status: bad && !out.length && S.keys.length ? 'denied' : 'ok', count: out.length, files: nf, parents: S.keys.length, ...(bad ? { unread: bad } : {}) });
+      docs += out.length;
+    }
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+    zip.file('목차.json', JSON.stringify({ made: now.toISOString(), by: CU.name || '', site: '교사 선교사', project: 'daniel-amatz', bigIncluded: big,
+      collections: toc, totalDocs: docs, note: '시각은 {__ts: ISO, s: 초, n: 나노초} · 다른 문서 가리킴은 {__ref: 경로} · 하위 모음은 «부모__하위.json»(_parent = 부모 문서 이름) · private = 본인만 여는 자료(매주 자동 백업에서) · config 의 열쇠 · 비밀값은 뺐어요' }, null, 1));
+    for(const c of BK_CORE) if(!core[c]) core[c] = [];
+    zip.file('열람.html', buildBackupHTML(core, now, true));
+    zip.file('읽어주세요.txt', [
+      '교사 선교사 — 전체 데이터 백업', `만든 때: ${now.toLocaleString('ko-KR')} · 만든 사람: ${CU.name || ''}`, '',
+      '· 열람.html — 더블클릭하면 교직원 · 학생 · 반 · 출근부 · 공지 · 로그를 인터넷 없이 볼 수 있어요.',
+      '· data/모음이름.json — 그 모음의 문서 전부 (컸으면 data/모음이름/001.json … 으로 나눠 담음)',
+      '· 목차.json — 모음마다 문서 수 · 읽지 못한 모음(권한) · 큰 자료를 뺐는지 · 본인만 여는 자료(쪽지 · 알림 · 임시 저장 · 서명)는 빠져 있어요',
+      '· data/부모__하위.json — 하위 모음 (주임 회의록 주제 댓글 · 상담 판 고친 기록 …) · _parent 가 부모 문서 이름',
+      '· 설정(config)의 AI 열쇠 같은 비밀값은 빼고 담았어요 — 되살릴 때 다시 넣어 주세요',
+      big ? '· 사진 · 첨부 · 타임머신 사본도 들어 있어요.' : '· 사진 · 첨부 · 타임머신 사본은 빠져 있어요 (받을 때 «큰 자료도 함께»를 켜면 들어가요).',
+      '· 되살릴 때는 이 ZIP을 그대로 두고 개발 담당에게 맡기세요 (모음 · 문서 이름이 원래대로 들어 있어요).',
+      '· 학생 · 보호자 개인정보가 들어 있어요 — NAS 보관함-관리자 폴더처럼 수퍼관리자만 여는 곳에 두세요.',
+    ].join('\r\n'));
+    const blob = await zip.generateAsync({ type:'blob', compression:'DEFLATE', compressionOptions:{ level:6 }, streamFiles: true }, m => say(`압축 중… ${Math.round(m.percent)}%`));
+    const name = `교사선교사_전체데이터_${stamp}.zip`;
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    say(`✓ 받았어요 — ${name} · 모음 ${nOk}개 · ${docs.toLocaleString()}건 · ${bkBytes(blob.size)}${failed.length ? ` · 읽지 못한 모음 ${failed.length}개 (권한 · 목차.json에 적음)` : ''}`);
+    logActivity('전체 데이터', '백업', 'ZIP', `모음 ${nOk}개 · ${docs}건 · ${bkBytes(blob.size)}${big ? ' · 큰 자료 포함' : ''}`);
+    try{ await addDoc(collection(db,'backupRuns'), { kind:'data', mode:'manual', uid: CU.uid, name: CU.name || '', at: serverTimestamp(),
+      cols: nOk, docs, bytes: blob.size, photos: big, failed: failed.slice(0, 60) }); }catch(e){}
+    loadBackupRuns();
+  }catch(e){
+    say('⚠️ 받지 못했어요 — ' + (e.message || e));
+  }finally{ BK_RUNNING = false; if(go) go.disabled = false; }
+}
+window.downloadAllData = downloadAllData;
+
 // 백업 HTML 파일 생성 (데이터 내장 + 열람 화면)
 function buildBackupHTML(data, now, isSU){
   const ORGS_J = JSON.stringify({jihyebit:'그루터기',daniel:'다니엘아마츠학교'});
   const ROLES_J = JSON.stringify({super:'슈퍼관리자',org_admin:'기관관리자',tab_admin:'부서장',teacher:'교사'});
   const STATUS_J = JSON.stringify({active:'재학',leave:'휴학',quit:'자퇴',grad:'졸업',egrad:'조기졸업'});
-  const dataJson = JSON.stringify(data);
+  const dataJson = JSON.stringify(data).replace(/</g, '\\u003c');   // 🔒 v195 글 안의 «닫는 script 태그»가 열람 화면을 깨지 않게 (< 를 \u003c 로)
   const dstr = `${now.getFullYear()}년 ${now.getMonth()+1}월 ${now.getDate()}일 ${pad(now.getHours())}:${pad(now.getMinutes())}`;
   const counts = Object.entries(data).map(([k,v])=>`${k}: ${v.length}건`).join(', ');
   // 백업 열람 화면은 순수 HTML (인터넷·Firebase 불필요)
@@ -2823,7 +3082,7 @@ const ADM_INFO = {
 };
 /* 설정 찾기 — 서랍 이름과 그 안에서 하는 일 (낱말로 찾음) */
 const ADM_FIND = {
-  sys:[['adm-backup','전체 데이터 백업','백업 다운로드 파일'],['adm-acct','교직원 계정 발급','새 계정 아이디 비밀번호 만들기'],['adm-staff','전체 교직원 목록','수정 비밀번호 비번 퇴사 삭제 복직 휴직']],
+  sys:[['adm-backup','백업','PDF 보관본 전체 데이터 ZIP 백업 다운로드 파일 NAS'],['adm-acct','교직원 계정 발급','새 계정 아이디 비밀번호 만들기'],['adm-staff','전체 교직원 목록','수정 비밀번호 비번 퇴사 삭제 복직 휴직']],
   acc:[['acc-page','페이지 접근 권한','허용 차단 메뉴 숨기기'],['acc-duty','기능별 담당자','담당 공백 시간표 학사일정 경비 출석부 동아리']],
   union:[['','연합 — 두 기관 함께 보기','열쇠 코드 다른 기관']], clone:[['','권한 테스트','테스트 계정 그 선생님 눈으로']],
   hr:[['','인사정보 현황','생년월일 휴대폰 주소 입사일 재직증명서 일괄 입력']],
@@ -2908,7 +3167,7 @@ function renderAdmHead(k){
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
   const orgCount = rows => Object.keys(ORGS).map(o=>[ORGS[o], rows.filter(r=>r.textContent.includes(ORGS[o])).length]).filter(x=>x[1]).map(x=>`${x[0]} ${x[1]}`).join(' · ');
   /* 통합관리 */
-  D('adm-backup', { icon:'cloud_download', title:'전체 데이터 백업', sum: el => T($I('backup-status')?.textContent) || '모든 자료를 파일 하나로 받기 · 인터넷 없이도 열람' });
+  D('adm-backup', { icon:'cloud_download', title: CU && CU.role === 'super' ? '백업' : '전체 데이터 백업', sum: el => T($I('bk-last')?.textContent) || T($I('backup-status')?.textContent) || (CU && CU.role === 'super' ? 'PDF 보관본 · 전체 데이터 ZIP · 지난 백업' : '모든 자료를 파일 하나로 받기 · 인터넷 없이도 열람') });
   D('adm-acct',   { icon:'person_add', title:'교직원 계정 발급', sum: () => '이름 · 아이디 · 처음 비밀번호 · 권한 · 기관 · 부서' });
   D('adm-staff',  { icon:'groups', title:'전체 교직원 목록', open:true,
     sum: el => { const r = [...el.querySelectorAll('#slist .sitem')]; if(!r.length) return '교직원이 없어요';
@@ -3042,7 +3301,7 @@ function showAdmTab(sub){
    · «처음 화면»을 «바로 통합관리»(예전처럼 · 시안 C)로 바꿀 수 있다 — 선생님마다 이 기기에
    · 상태는 이미 불러 둔 교직원 명단 · 알림 숫자로 먼저 그리고, 작은 설정 문서 몇 개만 한 번 더 읽는다 */
 const ADM_SHELF = { acct:2, org:1, work:3, sec:4 };
-const ADM_LS = { loading:false, loaded:false, ny:null, idle:null };
+const ADM_LS = { loading:false, loaded:false, ny:null, idle:null, bk:undefined };
 const admStartKey = () => 'gyosa_adm_start:' + (CU?.uid || '');
 function admStartPref(){ try{ return localStorage.getItem(admStartKey()) === 'sys' ? 'sys' : 'lobby'; }catch(e){ return 'lobby'; } }
 window.setAdmStart = v => {
@@ -3133,6 +3392,10 @@ async function admLobbyLoad(){
   if(admTabAllowed('sec')) jobs.push((async()=>{ try{
     const c = await getDoc(doc(db,'securityConfig','main')); ADM_LS.idle = c.exists() ? Number(c.data().idleMinutes || 0) : 0;
   }catch(e){} })());
+  if(CU && CU.role === 'super') jobs.push((async()=>{ try{   // 📦 v195 마지막 백업 (규칙 v53 전에는 읽지 못함 → 알리지 않음)
+    const s = await getDocs(query(collection(db,'backupRuns'), orderBy('at','desc'), limit(40)));
+    ADM_LS.bk = bkLatest(s.docs.map(d => d.data()));
+  }catch(e){ ADM_LS.bk = null; } })());
   await Promise.all(jobs);
   ADM_LS.loading = false; ADM_LS.loaded = true;
   if($I('c-adm')?.classList.contains('lob')) renderAdmLobby();
@@ -3170,6 +3433,10 @@ function renderAdmLobby(){
   if(admTabAllowed('acc') && S.duty) al.push(['assignment_ind', `기능별 담당자 ${S.duty}곳이 비어 있어요`, `${S.dutyNames} — 비어 있으면 그 기능은 관리자만 고칠 수 있어요`, '지금 정하기', 'acc', 'acc-duty']);
   if(admTabAllowed('log') && S.dormant) al.push(['person_off', `2주 넘게 접속하지 않은 계정 ${S.dormant}명`, `${S.dormantNames} — 휴직 · 퇴사라면 정리해 주세요`, '확인하기', 'log', 'log-idle']);
   if(admTabAllowed('err') && S.err) al.push(['error', `선생님 화면에 새 오류 ${S.err}가지`, '어느 화면에서 났는지 오류 알림판에서 확인해 주세요', '열기', 'err', '']);
+  if(CU.role === 'super' && ADM_LS.bk && typeof ADM_LS.bk === 'object' && admTabAllowed('sys')){   // 📦 v195 PDF 보관본 8일 · 전체 데이터 31일 넘게 없으면
+    const w = bkStale(ADM_LS.bk);
+    if(w) al.push(['backup', w[0], w[1], '백업하기', 'sys', 'adm-backup']);
+  }
   const alHtml = al.length
     ? `<div class="adl-al">${al.map(([ic,t,sub,go,k,dw]) => `<div class="adl-a"><span class="adl-a-ic"><span class="material-symbols-rounded">${ic}</span></span><div class="adl-a-b"><b>${esc(t)}</b><span>${esc(sub)}</span></div><button type="button" class="adl-btn" data-k="${k}" data-goto="${dw}">${go}</button></div>`).join('')}</div>`
     : `<div class="adl-al"><div class="adl-a ok"><span class="adl-a-ic"><span class="material-symbols-rounded">verified_user</span></span><div class="adl-a-b"><b>지금 손볼 것이 없어요</b><span>담당 공백 · 휴면 계정 · 새 오류가 생기면 여기에 먼저 나와요</span></div></div></div>`;
@@ -3184,7 +3451,7 @@ function renderAdmLobby(){
     }).join('')}</div></section>`];
   };
   const isOA = ['super','org_admin'].includes(CU.role);
-  const QK = [['sys','adm-acct','person_add','교직원 계정 만들기', isOA], ['sys','adm-backup','cloud_download','전체 자료 백업 받기', isOA], ['clone','','science','권한 테스트', true], ['org','org-ny','school','새 학년도 준비', true]].filter(([k,,,,ok]) => ok && admTabAllowed(k));
+  const QK = [['sys','adm-acct','person_add','교직원 계정 만들기', isOA], ['sys','adm-backup','cloud_download', CU.role === 'super' ? 'PDF 보관본 · 백업' : '전체 자료 백업 받기', isOA], ['clone','','science','권한 테스트', true], ['org','org-ny','school','새 학년도 준비', true]].filter(([k,,,,ok]) => ok && admTabAllowed(k));
   const quick = QK.length ? [Math.ceil(QK.length / 2) + 1, `<section class="adl-sh adl-k5"><div class="adl-sh-t"><i></i>바로 하기<span>자주 하는 일</span></div><div class="adl-qk">${QK.map(([k,dw,ic,t]) => `<button type="button" class="adl-qb" data-k="${k}" data-goto="${dw}"><span class="material-symbols-rounded">${ic}</span>${t}</button>`).join('')}</div></section>`] : null;
   /* 두 단 — 목차 차례 그대로 왼쪽부터 채우고, 가운데가 절반을 넘는 칸부터 오른쪽 (두 단 키가 비슷하게) */
   const parts = [...ADM_TOC.map(shelf), quick].filter(Boolean);
@@ -5373,7 +5640,7 @@ function renderAdmSys(){
   const isOA=['super','org_admin'].includes(CU.role), isSU=CU.role==='super';
   $I('ca-sys').innerHTML=`
   <div class="asc">
-    ${isOA?`
+    ${isSU ? bkCardHTML() : isOA?`
     <div class="acard" data-dw="adm-backup">
       <h3 class="actitle">💾 전체 데이터 백업</h3>
       <p class="adesc">현재까지 저장된 모든 데이터를 하나의 파일로 다운로드합니다. 받은 파일을 더블클릭하면 인터넷 없이도 모든 자료를 열람할 수 있습니다. 정기적으로 백업해 안전하게 보관하세요.</p>
@@ -5429,6 +5696,7 @@ function renderAdmSys(){
   </div>`;
   if(isOA) updDept();
   loadStaff();
+  if(isSU) loadBackupRuns();
 }
 
 
