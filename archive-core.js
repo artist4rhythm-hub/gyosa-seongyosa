@@ -1,23 +1,24 @@
 /* ═══════════════════════════════════════════════════════════
-   📦 archive-core.js — PDF 보관본 (v195)
-   · 기간 · 항목을 고르면 «목차 + 항목별 쪽»을 한 문서로 그린다 → 브라우저 «PDF로 저장»
+   📦 archive-core.js — PDF 보관본의 «내용» (v195 → v196 책자형)
+   · 기간 · 항목을 고르면 장(章)마다 «한눈에(요약) + 꼭지(회의 한 건 · 한 달 경비 · 한 반 출석)»를 만든다
+     → 쪽 나누기 · 차례 · 머리글 · 쪽 번호는 archive-book.js 가 한다
    · 자료는 src(읽기 창구)로만 받는다
        화면 = 로그인한 수퍼관리자의 Firestore (archive.html)
-       주 1회 자동 백업(다음 단계) = 서버가 넣어 주는 자료 — 같은 그림 · 같은 모양
+       주 1회 자동 백업 = 서버가 넣어 주는 자료 — 같은 그림 · 같은 모양
      src = { query(col, [[칸, 비교, 값], …]) → [{id, …}], get(col, id) → {id, …}|null, sub([경로…]) → [{id, …}] }
      (값이 Date 이면 src 가 시각으로 바꿔서 묻는다)
    · 회의록 · 주임 회의록은 회의록 화면 인쇄와 같은 부품(minutes-core.js)을 그대로 쓴다
-   · 경비 지급 요청서는 지급 요청서 화면의 «세부 내역표 · 영수증 취합» 모양을 그대로 옮겼다
+   · 경비 지급 요청서는 지급 요청서 화면의 «세부 내역표 · 영수증 취합»과 같은 번호 · 같은 합계
    ═══════════════════════════════════════════════════════════ */
 import * as M from './minutes-core.js';
 import { cleanInlineCached, cleanTableCached } from './minutes-files.js';
 
 export const SECTIONS = [
-  { k: 'mtg',  l: '회의록',          d: '세 기관 회의록 — 결정 · 임무 요약 + 전문 · 사진 · 댓글', folder: '교직원' },
-  { k: 'lead', l: '주임 회의록',      d: '주임 회의록 전문 · 사진 · 댓글', folder: '주임' },
-  { k: 'pay',  l: '경비 지급 요청서',  d: '기관별 세부 내역 · 영수증 사진', folder: '경비' },
-  { k: 'att',  l: '출석부',          d: '반별 출결 표 · 결석 · 지각 · 조퇴 사유', folder: '교직원' },
-  { k: 'act',  l: '활동 기록',        d: '누가 언제 무엇을 넣고 · 고치고 · 지웠는지', folder: '관리자' },
+  { k: 'mtg',  l: '회의록',          s: '회의록',   d: '기관 회의록 — 결정 · 임무 한눈에 + 전문 · 사진 · 댓글', folder: '교직원' },
+  { k: 'lead', l: '주임 회의록',      s: '주임',     d: '주임 회의록 — 결정 · 임무 한눈에 + 전문 · 사진 · 댓글', folder: '주임' },
+  { k: 'pay',  l: '경비 지급 요청서',  s: '경비',     d: '기관 · 달마다 세부 내역 → 영수증 사진', folder: '경비' },
+  { k: 'att',  l: '출석부',          s: '출석부',   d: '반마다 날짜별 출결 표 · 결석 · 지각 · 조퇴 사유', folder: '교직원' },
+  { k: 'act',  l: '활동 기록',        s: '활동',     d: '누가 언제 무엇을 넣고 · 고치고 · 지웠는지', folder: '관리자' },
 ];
 export const LATER = ['수행성 · 활동 · 공사 경비', '학사일정 바뀐 것', '증명서 발급', '학부모 상담', '나학평', '학생 · 교직원 명부'];
 /* NAS 폴더별 묶음 — 볼 사람이 다른 자료는 따로 만들어 그 폴더에 넣는다 */
@@ -28,6 +29,7 @@ export const PACKS = [
   { k: 'all',   l: '전부',     s: ['mtg', 'lead', 'pay', 'att', 'act'] },
 ];
 const ORGS = { daniel: '다니엘아마츠학교', jihyebit: '그루터기 선교원', da: 'DA전체', lead: '주임 회의록' };
+const ORG_SHORT = { daniel: '다니엘', jihyebit: '그루터기', da: 'DA전체', lead: '주임' };
 export const ORG_PICK = [{ k: '', l: '두 기관 모두' }, { k: 'daniel', l: '다니엘아마츠학교' }, { k: 'jihyebit', l: '그루터기 선교원' }];
 const PAY_MAX_DAYS = 92;   // 경비(영수증 사진)는 한 번에 3달까지 — 화면 메모리를 넘지 않게
 const ORDER = ['daniel', 'jihyebit', 'da'];
@@ -38,12 +40,14 @@ export const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '
 const pad = n => String(n).padStart(2, '0');
 export const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const tsMs = v => (v && typeof v === 'object' && v._seconds != null) ? v._seconds * 1000 + Math.floor((v._nanoseconds || 0) / 1e6) : M.tsMs(v);   // 서버(Admin SDK)가 넘긴 시각 모양도
-const fmtDT = v => { const ms = tsMs(v); if(!ms) return ''; const d = new Date(ms); return `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
-const won = n => (n == null || isNaN(n)) ? '-' : Number(n).toLocaleString('ko-KR');
+export const fmtDT = v => { const ms = tsMs(v); if(!ms) return ''; const d = new Date(ms); return `${ymd(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+export const won = n => (n == null || isNaN(n)) ? '-' : Number(n).toLocaleString('ko-KR');
 const orgName = o => ORGS[o] || o || '';
+const orgShort = o => ORG_SHORT[o] || o || '';
 const orgRank = o => { const i = ORDER.indexOf(o); return i < 0 ? 9 : i; };
 const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
 const inR = (ds, R) => isDate(ds) && ds >= R.from && ds <= R.to;
+const safeId = s => String(s || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80);
 export function dayList(from, to){
   const out = []; const d = new Date(from + 'T00:00:00'), e = new Date(to + 'T00:00:00');
   for(; d <= e && out.length < 400; d.setDate(d.getDate() + 1)) out.push(ymd(d));
@@ -63,11 +67,14 @@ async function pool(items, n, fn){
   return fail;   // 읽지 못한 수
 }
 const okImg = s => /^data:image\/(jpeg|jpg|png|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(String(s || ''));
-const emptyBox = t => `<p class="arc-none">${esc(t)}</p>`;
-const secHead = (title, sub) => `<header class="arc-sh"><h2>${esc(title)}</h2>${sub ? `<p>${sub}</p>` : ''}</header>`;
-const warnLine = ws => ws.length ? ` · <b class="arc-warn">⚠️ ${esc(ws.join(' · '))}</b>` : '';
+const emptyBox = t => `<p class="bk-none">${esc(t)}</p>`;
 /* 사진을 끝내 못 읽으면 «불러오는 중…» 대신 */
 const noPh = h => h.replace(/(<div class="md-ph"[^>]*>)([^<]*?)불러오는 중…/g, '$1$2(사진을 읽지 못했어요)');
+/* 꼭지 = 차례 한 줄 · 새 쪽에서 시작 (brk) · 머리 띠(head) */
+const part = (id, title, html, o = {}) => ({ id: safeId(id), title, short: o.short || title, sub: o.sub || '', html, brk: o.brk !== false, head: o.head !== false });
+const stat = (l, v, u) => ({ l, v: String(v), u: u || '' });
+const pct = (a, b) => b ? Math.round(a / b * 1000) / 10 : 0;
+const stChip = st => { const s = M.STATUS[st] || M.STATUS.todo; return `<span class="bk-st" style="color:${s.c};background:${s.bg}">${s.l}</span>`; };
 
 /* ═══ 1 · 2  회의록 · 주임 회의록 — 회의록 화면 인쇄와 같은 부품 ═══ */
 async function buildMinutes(src, R, step, lead){
@@ -84,6 +91,8 @@ async function buildMinutes(src, R, step, lead){
   const list = [...byId.values()].filter(m => !m.deleted && inR(m.date, R))
     .map(m => (m.type ? { ...m, type: M.typeFix(m.type) } : m))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.time || '').localeCompare(String(b.time || '')) || orgRank(a.org) - orgRank(b.org));
+  if(fails.length) warn.push(`읽지 못한 기관: ${fails.join(', ')}`);
+  if(!list.length) return { count: 0, warn, stats: [stat('회의', 0, '건')], intro: emptyBox(`이 기간에 적힌 ${title}이 없어요.`), parts: [] };
   step && step(`${title} ${list.length}건 — 사진 · 댓글 읽는 중`);
   /* 사진 · PDF 쪽 */
   const fids = [];
@@ -101,30 +110,42 @@ async function buildMinutes(src, R, step, lead){
     cmts[m.id] = arr.map(c => ({ ...c, at: tsMs(c.at) })).filter(c => !c.del);
   });
   if(cFail) warn.push(`댓글 묶음 ${cFail}개를 읽지 못함`);
-  if(fails.length) warn.unshift(`읽지 못한 기관: ${fails.join(', ')}`);
   const cctx = { clean: cleanInlineCached, cleanTbl: cleanTableCached, print: true, tasks, files, opts: { att: true, img: true, tbl: true } };
+  /* 한눈에 — 결정 · 임무 (회의마다 묶어서, 쪽이 넘어가도 날짜가 보이게 줄마다) */
   const rows = M.summaryRows(list, tasks);
-  const head = secHead(title, `${esc(rangeLabel(R))}${!lead && R.org ? ' · ' + esc(orgName(R.org)) + ' + DA전체' : ''} · ${list.length}건${warnLine(warn)}`);
-  if(!list.length) return { count: 0, warn, html: `<section class="arc-sec">${head}${emptyBox('이 기간에 적힌 회의록이 없어요.')}</section>` };
-  const sum = `<table class="arc-t arc-sum"><thead><tr><th style="width:74px">날짜</th><th style="width:96px">기관</th><th style="width:26%">주제</th><th>결정</th><th style="width:30%">임무 (담당 · 기한 · 상태)</th></tr></thead><tbody>
-    ${rows.length ? rows.map(r => `<tr><td>${esc(M.fmtMD(r.m.date))}</td><td>${esc(orgName(r.m.org))}</td><td>${r.i + 1}. ${esc(r.t.title || '')}</td><td>${r.dec.map(esc).join('<br>')}</td>
-      <td>${r.tk.map(k => `${esc(k.h)}${k.who ? ' · <b>' + esc(k.who) + '</b>' : ''}${k.due ? ' · ' + esc(M.fmtMD(k.due)) + '까지' : ''} · ${(M.STATUS[k.st] || M.STATUS.todo).l}`).join('<br>')}</td></tr>`).join('')
-      : `<tr><td colspan="5" class="arc-c">이 기간 회의록에는 적힌 결정 · 임무가 없어요.</td></tr>`}</tbody></table>`;
-  const docs = list.map(m => {
-    let h = `<div class="arc-pg"><div class="arc-tag">${esc(orgName(m.org))}</div>${M.renderDoc(m, cctx)}`;
+  let nDec = 0, nTask = 0, nDone = 0, nDoing = 0, nLate = 0;
+  const today = ymd(new Date());
+  rows.forEach(r => { nDec += r.dec.length; nTask += r.tk.length; nDone += r.tk.filter(k => k.st === 'done').length; nDoing += r.tk.filter(k => k.st === 'doing').length;
+    nLate += r.tk.filter(k => k.st !== 'done' && isDate(k.due) && k.due < today).length; });
+  const brief = [nTask ? `임무 ${nTask}개 — 완료 ${nDone} · 진행 중 ${nDoing} · 진행 전 ${nTask - nDone - nDoing}` : '적힌 임무가 없어요',
+    nLate ? `기한이 지났는데 끝나지 않은 임무 ${nLate}개` : ''].filter(Boolean);
+  const sum = rows.length ? `<h3 class="bk-h3 bk-kwn">결정 · 임무 한눈에</h3>
+    <table class="bk-t bk-sum"><colgroup><col style="width:15%"><col style="width:24%"><col style="width:29%"><col style="width:32%"></colgroup>
+    <thead><tr><th>회의</th><th>주제</th><th>결정</th><th>임무 · 담당 · 기한</th></tr></thead><tbody>
+    ${rows.map((r, i) => { const first = i === 0 || rows[i - 1].m !== r.m;
+      return `<tr class="${first ? 'g1' : 'g2'}"><td class="bk-when"><b>${esc(M.fmtMD(r.m.date))}</b><small>${esc(orgShort(r.m.org))}</small></td>
+      <td>${r.i + 1}. ${esc(r.t.title || '')}</td><td>${r.dec.map(d => `<div class="bk-li">${esc(d)}</div>`).join('')}</td>
+      <td>${r.tk.map(k => `<div class="bk-li">${esc(k.h)}${k.who ? ' · <b>' + esc(k.who) + '</b>' : ''}${k.due ? ' · ' + esc(M.fmtMD(k.due)) + '까지' : ''} ${stChip(k.st)}</div>`).join('')}</td></tr>`; }).join('')}
+    </tbody></table>` : emptyBox('이 기간 회의록에는 적힌 결정 · 임무가 없어요.');
+  const parts = list.map(m => {
+    let h = `<div class="arc-tag">${esc(orgName(m.org))}</div>${M.renderDoc(m, cctx)}`;
     const cm = cmts[m.id] || [];
     if(cm.length){
       const roots = cm.filter(c => !c.root).sort((a, b) => a.at - b.at);
       const tn = c => c.tgt === 'm' ? '회의록' : String(c.tgt || '').startsWith('t:') ? (() => { const i = (m.topics || []).findIndex(t => 't:' + t.id === c.tgt); return i >= 0 ? `${i + 1}. ${m.topics[i].title || ''}` : '주제'; })() : '임무';
-      h += `<div class="pcm"><h3>댓글 ${cm.length}</h3>${roots.map(r => `<div class="pc"><b>${esc(r.name)}</b> <small>${esc(M.fmtStamp(r.at))} · ${esc(tn(r))}</small><div>${esc(r.text)}</div>
+      h += `<div class="pcm"><h3 class="bk-kwn">댓글 ${cm.length}</h3>${roots.map(r => `<div class="pc-th"><div class="pc"><b>${esc(r.name)}</b> <small>${esc(M.fmtStamp(r.at))} · ${esc(tn(r))}</small><div>${esc(r.text)}</div></div>
         ${cm.filter(c => c.root === r.id).sort((a, b) => a.at - b.at).map(c => `<div class="pc rp"><b>↳ ${esc(c.name)}</b> <small>${esc(M.fmtStamp(c.at))}</small><div>${esc(c.text)}</div></div>`).join('')}</div>`).join('')}</div>`;
     }
-    return h + '</div>';
-  }).join('');
-  return { count: list.length, warn, html: noPh(`<section class="arc-sec">${head}<h3 class="arc-h3">결정 · 임무 한눈에</h3>${sum}${docs}</section>`) };
+    const nt = (m.topics || []).length, tt = M.titleOf(m);
+    const label = tt.includes(orgName(m.org)) || tt.includes(orgShort(m.org)) ? tt : `${orgShort(m.org)} ${tt}`;   // «다니엘 다니엘아마츠학교 회의록»처럼 겹치지 않게
+    return part((lead ? 'lm-' : 'm-') + m.id, `${M.fmtMD(m.date)} ${label}`, noPh(h),
+      { short: `${M.fmtMD(m.date)} ${M.titleOf(m)}`, sub: [m.time, m.place, nt ? `주제 ${nt}` : ''].filter(Boolean).join(' · '), head: false });
+  });
+  return { count: list.length, warn, intro: sum, parts, brief,
+    stats: [stat('회의', list.length, '건'), stat('결정', nDec), stat('임무', nTask, nTask ? `· 완료 ${nDone}` : '')] };
 }
 
-/* ═══ 3  경비 지급 요청서 — 지급 요청서 화면의 세부 내역표 · 영수증 취합 모양 ═══
+/* ═══ 3  경비 지급 요청서 — 지급 요청서 화면의 세부 내역표 · 영수증 취합과 같은 번호 · 합계 ═══
    번호(P001)는 그 달 전체 요청서 기준 (달마다 새로) — 월 취합표 · 화면의 번호와 같게 */
 const isCorr = r => !!(r && r.correctionOf);
 const corrDiff = r => isCorr(r) ? (Number(r.total) || 0) - (Number(r.origTotal) || 0) : 0;
@@ -161,24 +182,33 @@ const classify = s => new Promise(res => {
   im.onerror = () => { clearTimeout(t); res('short'); };
   im.src = s;
 });
+/* 합계 — 반려는 빼고 · 정정은 원본과의 차액만 */
+function payTotals(list){
+  let exp = 0, inc = 0;
+  list.forEach(r => {
+    if(r.status === 'rejected') return;
+    const sum = (r.rows || []).reduce((s, x) => s + (Number(x.sub) || 0), 0);
+    const eff = isCorr(r) ? corrDiff(r) : sum;
+    if(r.mode === 'income') inc += eff; else exp += eff;
+  });
+  return { exp, inc };
+}
 function payDetail(list, noMap, wholeMonth){
-  const COLS = 9; let body = '', expTotal = 0, incTotal = 0;
+  const COLS = 9; let body = '';
+  const { exp: expTotal, inc: incTotal } = payTotals(list);
   list.forEach(r => {
     const no = noMap[r.id] || 'P000', rows = r.rows || [];
     const sum = rows.reduce((s, x) => s + (Number(x.sub) || 0), 0);
     const eff = isCorr(r) ? corrDiff(r) : sum;
-    if(r.status !== 'rejected'){ if(r.mode === 'income') incTotal += eff; else expTotal += eff; }
     const chain = (r.chain || []).map(c => `${c.name || ''}${c.status === 'approved' ? '✓' : ''}`).filter(Boolean).join(' → ');
     const bank = r.bank && (r.bank.bank || r.bank.account) ? `${r.bank.bank || ''} ${r.bank.account || ''} ${r.bank.holder ? '(' + r.bank.holder + ')' : ''}` : '';
-    body += `<tr class="ps-req"><td colspan="${COLS}"><span class="ps-no">${esc(no)}</span>&nbsp;${esc(r.purpose || '(용도 미기재)')}
-      <span class="ps-meta">&nbsp;·&nbsp;${esc(r.applicantName || r.createdByName || '')}&nbsp;·&nbsp;${esc(r.dept || '-')}&nbsp;·&nbsp;${esc(r.date || '')}&nbsp;·&nbsp;${payChip(r)}
-      ${r.paidAt ? `&nbsp;·&nbsp;지급 ${esc(fmtDT(r.paidAt))}` : ''}${chain ? `&nbsp;·&nbsp;결재 ${esc(chain)}` : ''}</span>
-      ${bank ? `<div class="ps-bank">💳 ${esc(bank)}</div>` : ''}</td></tr>`;
+    body += `<tr class="ps-req bk-kwn"><td colspan="${COLS}"><div class="ps-rq1"><span class="ps-no">${esc(no)}</span> <b>${esc(r.purpose || '(용도 미기재)')}</b> ${payChip(r)}</div>
+      <div class="ps-meta">${esc(r.applicantName || r.createdByName || '')} · ${esc(r.dept || '-')} · ${esc(r.date || '')}${r.paidAt ? ` · 지급 ${esc(fmtDT(r.paidAt))}` : ''}${chain ? ` · 결재 ${esc(chain)}` : ''}${bank ? ` · 💳 ${esc(bank)}` : ''}</div></td></tr>`;
     if(!rows.length) body += `<tr><td colspan="${COLS}" class="ps-empty">입력된 항목이 없습니다</td></tr>`;
     else rows.forEach((row, i) => {
       const rc = row.receiptCount != null ? row.receiptCount : (row.receipts ? row.receipts.length : '');
       body += `<tr><td class="ps-c">${i + 1}</td><td>${esc(row.cat_major || '')}</td><td>${esc(row.cat_item || '')}</td><td>${esc(row.name || '')}</td>
-        <td class="ps-c">${esc(row.qty || '')}</td><td class="ps-amt">${row.price ? '₩' + won(row.price) : ''}</td><td class="ps-amt">${row.sub ? '₩' + won(row.sub) : ''}</td>
+        <td class="ps-c">${esc(row.qty || '')}</td><td class="ps-amt">${row.price ? won(row.price) : ''}</td><td class="ps-amt">${row.sub ? won(row.sub) : ''}</td>
         <td>${esc(row.note || '')}</td><td class="ps-c">${rc ? esc(rc) + '장' : ''}</td></tr>`;
     });
     const corr = isCorr(r) ? ` <span class="ps-corr">(정정 ${esc(r.correctionSeq || 1)}차 — 원본 ₩${won(r.origTotal)} 대비 차액 ${eff >= 0 ? '+' : '−'}₩${won(Math.abs(eff))}만 합계 반영)</span>` : '';
@@ -195,27 +225,26 @@ function payDetail(list, noMap, wholeMonth){
       bywho[w] = (bywho[w] || 0) + (isCorr(r) ? corrDiff(r) : rows.reduce((s, x) => s + (Number(x.sub) || 0), 0));
     });
     const tbl = (head, map) => { const ks = Object.keys(map).sort((a, b) => map[b] - map[a]); if(!ks.length) return '';
-      return `<table class="ps-sum"><thead><tr><th style="width:60%">${head}</th><th>금액</th></tr></thead><tbody>${ks.map(k => `<tr><td>${esc(k)}</td><td class="ps-r">₩${won(map[k])}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td>합계</td><td class="ps-r">₩${won(ks.reduce((s, k) => s + map[k], 0))}</td></tr></tfoot></table>`; };
+      return `<table class="bk-t ps-sum"><colgroup><col style="width:62%"><col></colgroup><thead><tr><th>${head}</th><th>금액</th></tr></thead><tbody>${ks.map(k => `<tr><td>${esc(k)}</td><td class="ps-amt">₩${won(map[k])}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>합계</td><td class="ps-amt">₩${won(ks.reduce((s, k) => s + map[k], 0))}</td></tr></tfoot></table>`; };
     const a = tbl('계정과목 (대분류)', bymap), b = tbl('신청자', bywho);
-    extra = (a ? `<div class="ps-secttl">계정과목별 집계</div>${a}` : '') + (b ? `<div class="ps-secttl">신청자별 집계</div>${b}` : '');
+    extra = (a ? `<h3 class="bk-h3 bk-kwn">계정과목별 집계</h3>${a}` : '') + (b ? `<h3 class="bk-h3 bk-kwn">신청자별 집계</h3>${b}` : '');
   }
-  return `<table class="ps-tbl"><colgroup><col style="width:32px"><col style="width:104px"><col style="width:118px"><col><col style="width:44px"><col style="width:88px"><col style="width:96px"><col style="width:150px"><col style="width:52px"></colgroup>
-    <thead><tr><th>#</th><th>대분류</th><th>세부</th><th>품목 · 내용</th><th>수량</th><th>단가</th><th>소계</th><th>비고</th><th>영수증</th></tr></thead>
+  return `<table class="bk-t ps-tbl"><colgroup><col style="width:4.5%"><col style="width:11%"><col style="width:11%"><col style="width:25.5%"><col style="width:6%"><col style="width:10.5%"><col style="width:11.5%"><col style="width:13%"><col style="width:7%"></colgroup>
+    <thead><tr><th>#</th><th>대분류</th><th>세부</th><th>품목 · 내용</th><th>수량</th><th>단가(원)</th><th>소계(원)</th><th>비고</th><th>영수증</th></tr></thead>
     <tbody>${body || `<tr><td colspan="${COLS}" class="ps-empty">요청서가 없습니다</td></tr>`}</tbody>
-    <tfoot><tr><td colspan="${COLS}">지출 합계 &nbsp; ₩${won(expTotal)}${incTotal ? ` &nbsp;&nbsp;|&nbsp;&nbsp; 수입 합계 &nbsp; ₩${won(incTotal)}` : ''}</td></tr>
+    <tfoot><tr class="ps-tot"><td colspan="${COLS}">지출 합계 &nbsp; ₩${won(expTotal)}${incTotal ? ` &nbsp;&nbsp;|&nbsp;&nbsp; 수입 합계 &nbsp; ₩${won(incTotal)}` : ''}</td></tr>
     <tr class="ps-fn"><td colspan="${COLS}">반려된 요청서는 목록에 표시되지만 합계에서는 제외됩니다.</td></tr></tfoot></table>${extra}`;
 }
 async function buildPay(src, R, step){
   if(dayList(R.from, R.to).length > PAY_MAX_DAYS){
     const msg = '경비(영수증 사진)는 한 번에 3달까지만 담아요 — 달마다(또는 분기마다) 따로 만들어 주세요';
-    return { count: 0, warn: [msg], html: `<section class="arc-sec">${secHead('경비 지급 요청서', esc(rangeLabel(R)))}<p class="arc-err">${esc(msg)}</p></section>` };
+    return { count: 0, warn: [msg], stats: [], intro: `<p class="bk-err">${esc(msg)}</p>`, parts: [] };
   }
   const all = (await src.query('payRequests', [])).filter(r => !r.deleted && isDate(r.date) && (!R.org || (r.org || '') === R.org));
   const sel = all.filter(r => inR(r.date, R));
   const warn = [];
-  const head0 = `${esc(rangeLabel(R))}${R.org ? ' · ' + esc(orgName(R.org)) : ''} · ${sel.length}건`;
-  if(!sel.length) return { count: 0, warn, html: `<section class="arc-sec">${secHead('경비 지급 요청서', head0)}${emptyBox('이 기간에 올라온 지급 요청서가 없어요.')}</section>` };
+  if(!sel.length) return { count: 0, warn, stats: [stat('요청서', 0, '건')], intro: emptyBox('이 기간에 올라온 지급 요청서가 없어요.'), parts: [] };
   step && step(`경비 지급 요청서 ${sel.length}건 — 영수증 읽는 중`);
   const rcs = {};
   const rFail = await pool(sel, 4, async r => {
@@ -223,9 +252,8 @@ async function buildPay(src, R, step){
     rcs[r.id] = arr.filter(x => x.requestId === r.id && okImg(x.dataUrl)).sort((a, b) => (a.rowIdx - b.rowIdx) || (a.idx - b.idx));
   });
   if(rFail) warn.push(`요청서 ${rFail}건의 영수증을 읽지 못함`);
-  const head = secHead('경비 지급 요청서', head0 + warnLine(warn));
   const orgs = [...new Set(sel.map(r => r.org || ''))].sort((a, b) => orgRank(a) - orgRank(b) || String(a).localeCompare(String(b)));
-  let html = '', nRc = 0;
+  const parts = [], sumRows = []; let nRc = 0, expAll = 0;
   for(const o of orgs){
     for(const mo of monthsOf(R)){
       const monthPool = all.filter(r => (r.org || '') === o && r.date.startsWith(mo));
@@ -235,31 +263,48 @@ async function buildPay(src, R, step){
       const [y, m] = mo.split('-').map(Number);
       const last = `${mo}-${pad(new Date(y, m, 0).getDate())}`;
       const whole = R.from <= `${mo}-01` && R.to >= last;
-      html += `<div class="arc-pg"><div class="ps-head"><div class="ps-title">${esc(orgName(o) || '(기관 없음)')} 경비 지급 세부 내역</div>
-        <div class="ps-sub">${y}년 ${m}월${whole ? ' (1일~말일)' : ` 가운데 ${esc(M.fmtMD(chosen[0].date))} ~ ${esc(M.fmtMD(chosen[chosen.length - 1].date))}`} · 요청서 ${chosen.length}건 · 번호는 그 달 전체 기준</div></div>
-        ${payDetail(chosen, noMap, whole)}</div>`;
-      let cards = '';
+      const on = orgName(o) || '(기관 없음)';
+      const span = whole ? `${m}월 1일 ~ 말일` : `${M.fmtMD(chosen[0].date)} ~ ${M.fmtMD(chosen[chosen.length - 1].date)}`;
+      const tot = payTotals(chosen); expAll += tot.exp;
+      let cards = '', nThis = 0;
       for(const r of chosen){
         const list = rcs[r.id] || []; if(!list.length) continue;
         let cells = '';
         const types = await Promise.all(list.map(rc => classify(rc.dataUrl)));
         for(const [ri, rc] of list.entries()){
-          const type = types[ri];
           const row = (r.rows || [])[rc.rowIdx];
           const label = row ? `${row.cat_major || ''}${row.cat_item ? ' › ' + row.cat_item : ''} · ${row.name || ''}` : '';
-          cells += `<div class="prc-cell ${type}"><div class="prc-no">${esc(noMap[r.id] || '')}-${(+rc.rowIdx || 0) + 1}.${esc(rc.idx)}</div><img src="${rc.dataUrl}" alt="영수증">${label ? `<div class="prc-lbl">${esc(label)}</div>` : ''}</div>`;
-          nRc++;
+          cells += `<div class="prc-cell ${types[ri]}"><div class="prc-no">${esc(noMap[r.id] || '')}-${(+rc.rowIdx || 0) + 1}.${esc(rc.idx)}</div><img src="${rc.dataUrl}" alt="영수증">${label ? `<div class="prc-lbl">${esc(label)}</div>` : ''}</div>`;
+          nRc++; nThis++;
         }
-        cards += `<div class="prc-card"><div class="prc-hd"><span class="prc-seq">${esc(noMap[r.id] || '')}</span><span class="prc-purpose">${esc(r.purpose || '(용도 미기재)')}</span>
+        cards += `<div class="prc-card"><div class="prc-hd bk-kwn"><span class="prc-seq">${esc(noMap[r.id] || '')}</span><span class="prc-purpose">${esc(r.purpose || '(용도 미기재)')}</span>
           <span class="prc-meta">${esc(r.applicantName || '')} · ${esc(r.dept || '')} · ${esc(r.date || '')} · <b>₩${won(r.total)}</b> · 영수증 ${list.length}장</span></div><div class="prc-grid">${cells}</div></div>`;
       }
-      if(cards) html += `<div class="arc-pg"><div class="prc-head"><div class="prc-title">${esc(orgName(o) || '(기관 없음)')} 경비 지급 영수증</div><div class="prc-sub">${y}년 ${m}월 · 위 세부 내역의 번호(P###-항목.장)와 대조하세요</div></div>${cards}</div>`;
+      sumRows.push(`<tr><td>${esc(on)}</td><td class="ps-c">${y}년 ${m}월</td><td class="ps-c">${chosen.length}건</td><td class="ps-amt">₩${won(tot.exp)}</td><td class="ps-amt">${tot.inc ? '₩' + won(tot.inc) : '-'}</td><td class="ps-c">${nThis}장</td></tr>`);
+      parts.push(part(`pay-${o || 'x'}-${mo}`, `${on} · ${m}월 세부 내역`, `<p class="bk-lead">${esc(span)} · 요청서 ${chosen.length}건 · 번호는 그 달 전체 기준 (P###-항목.장 = 영수증 번호)</p>${payDetail(chosen, noMap, whole)}`,
+        { short: `${orgShort(o)} ${m}월 세부 내역`, sub: span }));
+      if(cards) parts.push(part(`rc-${o || 'x'}-${mo}`, `${on} · ${m}월 영수증`, `<p class="bk-lead">${y}년 ${m}월 · 영수증 ${nThis}장 · 세부 내역의 번호(P###-항목.장)와 대조하세요</p>${cards}`,
+        { short: `${orgShort(o)} ${m}월 영수증`, sub: `${nThis}장` }));
     }
   }
-  return { count: sel.length, warn, html: `<section class="arc-sec arc-wide">${head}<p class="arc-note">요청서 ${sel.length}건 · 영수증 ${nRc}장 · 기관 · 달마다 세부 내역 뒤에 영수증</p>${html}</section>` };
+  const stN = { paid: 0, wait: 0, apv: 0, rej: 0, inc: 0 }, byCat = {};
+  sel.forEach(r => { stN[r.mode === 'income' ? 'inc' : r.status === 'rejected' ? 'rej' : r.paid ? 'paid' : r.status === 'approving' ? 'apv' : 'wait']++;
+    if(r.mode !== 'income' && r.status !== 'rejected' && !isCorr(r)) (r.rows || []).forEach(x => { const k = x.cat_major || '미분류'; byCat[k] = (byCat[k] || 0) + (Number(x.sub) || 0); }); });
+  const topCat = Object.keys(byCat).sort((a, b) => byCat[b] - byCat[a])[0];
+  const brief = [[stN.paid && `지급완료 ${stN.paid}`, stN.wait && `지급대기 ${stN.wait}`, stN.apv && `결재중 ${stN.apv}`, stN.rej && `반려 ${stN.rej}`, stN.inc && `수입 ${stN.inc}`].filter(Boolean).join(' · '),
+    topCat ? `가장 많이 쓴 곳 — ${topCat} ₩${won(byCat[topCat])}` : ''].filter(Boolean);
+  const intro = `<h3 class="bk-h3 bk-kwn">기관 · 달마다</h3><table class="bk-t"><colgroup><col style="width:26%"><col style="width:16%"><col style="width:13%"><col style="width:18%"><col style="width:15%"><col style="width:12%"></colgroup>
+    <thead><tr><th>기관</th><th>달</th><th>요청서</th><th>지출 합계</th><th>수입</th><th>영수증</th></tr></thead><tbody>${sumRows.join('')}</tbody></table>
+    <p class="bk-note">반려된 요청서는 합계에서 빼고, 정정 요청서는 원본과의 차액만 더했어요.</p>`;
+  return { count: sel.length, warn, intro, parts, brief, stats: [stat('요청서', sel.length, '건'), stat('지출', '₩' + won(expAll)), stat('영수증', nRc, '장')] };
 }
 
-/* ═══ 4  출석부 — 반별 표 (기간이 한 달을 넘으면 학생별 합계) ═══ */
+/* ═══ 4  출석부 — 반마다 날짜별 표 (기간이 31일을 넘으면 학생별 합계) ═══
+   · 묶음은 이름으로 (지각 · 조퇴 · 체험학습을 «출석으로 셈»으로 둔 학교도 있어 isPresent 로 묶지 않음 — 출석부 · 홈 위젯과 같은 규칙)
+     ○ = 기본 «출석»만 · 그 밖은 첫 글자 (빨강 = 출석으로 안 셈 · 주황 = 출석으로 셈)
+   · 출석률 = 출석으로 세는 항목이 하나라도 있는 날 / 기록된 날
+   · 반마다 그 반 기록만 (기간 중에 반을 옮긴 학생은 옮기기 전 · 뒤 반에 나뉘어 — 두 번 세지 않음) */
+const bucketOf = n => { n = String(n || ''); return n.includes('체험') ? 'tr' : (n.includes('결석') || n.includes('병결') || n === '결') ? 'ab' : n.includes('지각') ? 'lt' : n.includes('조퇴') ? 'ea' : 'ot'; };
 async function buildAtt(src, R, step){
   const [classes, students, types, recs0] = await Promise.all([
     src.query('classes', []), src.query('students', []), src.query('attendTypes', []).catch(() => []),
@@ -268,81 +313,131 @@ async function buildAtt(src, R, step){
   const recs = recs0.filter(r => inR(r.date, R));
   const T = {}; types.forEach(t => { T[t.id] = t; });
   const S = {}; students.forEach(s => { S[s.id] = s; });
+  const sorted = types.slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  const defT = sorted.find(t => t.name === '출석') || sorted.find(t => t.isPresent) || null;
   const y = +R.from.slice(0, 4);
   let cls = classes.filter(c => +c.year === y);
   if(!cls.length) cls = classes.filter(c => +c.year === y - 1);
   if(R.org) cls = cls.filter(c => c.org === R.org);
   cls = cls.filter(c => (c.students || []).length).sort((a, b) => orgRank(a.org) - orgRank(b.org) || String(a.grade || '').localeCompare(String(b.grade || ''), 'ko', { numeric: true }) || String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
-  const clsIds = new Set(cls.map(c => c.id));
-  const nRec = recs.filter(r => clsIds.has(r.classId)).length;
-  const head = secHead('출석부', `${esc(rangeLabel(R))}${R.org ? ' · ' + esc(orgName(R.org)) : ''} · 반 ${cls.length}개 · 기록 ${nRec}건`);
-  if(!cls.length) return { count: 0, html: `<section class="arc-sec">${head}${emptyBox('이 해의 반 편성이 없어요.')}</section>` };
+  if(!cls.length) return { count: 0, warn: [], stats: [stat('반', 0, '개')], intro: emptyBox('이 해의 반 편성이 없어요.'), parts: [] };
   step && step(`출석부 반 ${cls.length}개 · 기록 ${recs.length}건`);
   const tids = r => (Array.isArray(r.typeIds) && r.typeIds.length) ? r.typeIds : (r.typeId ? [r.typeId] : []);
   const tname = id => (T[id] && T[id].name) || '';
   const isPresent = id => !!(T[id] && (T[id].isPresent || T[id].name === '출석'));
-  /* 학생 · 날짜 → 기록 (한 아이 · 한 날에 둘이면 그 반 것) */
-  const at = {};
-  recs.forEach(r => { const k = r.studentId + '|' + r.date; const cur = at[k]; if(!cur || r.classId) at[k] = r; });
+  const plain = id => defT ? id === defT.id : T[id] && T[id].name === '출석';
+  /* 기록이 이 반 것인지 — 반이 적힌 기록은 그 반 · 반이 없는 옛 기록은 지금 명단에 있는 반 */
+  const roster = new Map(cls.map(c => [c.id, new Set(c.students || [])]));
+  const belongs = (r, c) => r.classId ? r.classId === c.id : roster.get(c.id).has(r.studentId);
   const days = dayList(R.from, R.to);
   const hasRec = new Set(recs.map(r => r.date));
   const cols = days.filter(d => { const w = new Date(d + 'T00:00:00').getDay(); return (w !== 0 && w !== 6) || hasRec.has(d); });
   const grid = cols.length <= 31;
   const WD = ['일', '월', '화', '수', '목', '금', '토'];
   const typeUsed = new Set();
-  let body = '';
+  const NOTE_MAX = 400;
+  const parts = [], sumRows = [], rates = []; let allP = 0, allN = 0, nRec = 0; const allKids = new Set(), allC = { ab: 0, lt: 0, ea: 0, tr: 0, ot: 0 };
   for(const c of cls){
-    /* 지금 명단 + 이 기간에 이 반 기록이 있는 학생(기간 중에 반을 옮기거나 그만둔 학생도 기록이 남게) */
-    const ids = new Set(c.students || []); recs.forEach(r => { if(r.classId === c.id && r.studentId) ids.add(r.studentId); });
+    /* 이 반 기록 — 학생 · 날짜마다 하나 (같은 날 둘이면 반이 적힌 것) */
+    const at = {};
+    recs.forEach(r => { if(!belongs(r, c)) return; const k = r.studentId + '|' + r.date; const cur = at[k]; if(!cur || (r.classId && !cur.classId)) at[k] = r; });
+    const ids = new Set(c.students || []); Object.values(at).forEach(r => { if(r.studentId) ids.add(r.studentId); });
     const kids = [...ids].map(id => S[id]).filter(Boolean).sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko'));
     if(!kids.length) continue;
-    const notes = [];
+    const notes = []; let nNotes = 0;
+    const cnt = { p: 0, n: 0, ab: 0, lt: 0, ea: 0, tr: 0, ot: 0 };
+    const mineOf = s => days.map(d => at[s.id + '|' + d]).filter(r => r && tids(r).length);
+    kids.forEach(s => mineOf(s).forEach(r => {
+      const ids2 = tids(r); cnt.n++;
+      if(ids2.some(isPresent)) cnt.p++;
+      const odd = ids2.filter(i => !plain(i));
+      if(!odd.length) return;
+      odd.forEach(i => typeUsed.add(i));
+      const nm = odd.map(tname).filter(Boolean);
+      new Set(nm.map(bucketOf)).forEach(b => { cnt[b]++; });
+      nNotes++;
+      if(notes.length < NOTE_MAX) notes.push({ d: r.date, n: s.name || '', t: nm.join('·') || '?', r: r.reason || '', ok: ids2.some(isPresent) });
+    }));
+    nRec += cnt.n;
     let tbl;
+    const nm = s => `${esc(s.name || '')}${s.status && s.status !== 'active' ? ` <small>(${esc({ leave: '휴학', quit: '자퇴', grad: '졸업', egrad: '조기졸업' }[s.status] || s.status)})</small>` : ''}`;
     if(grid){
-      const th = cols.map(d => `<th>${+d.slice(8)}<br><small>${WD[new Date(d + 'T00:00:00').getDay()]}</small></th>`).join('');
-      const trs = kids.map(s => `<tr><td class="arc-nm">${esc(s.name || '')}${s.status && s.status !== 'active' ? ` <small>(${esc({ leave: '휴학', quit: '자퇴', grad: '졸업', egrad: '조기졸업' }[s.status] || s.status)})</small>` : ''}</td>${cols.map(d => {
-        const r = at[s.id + '|' + d]; if(!r) return '<td></td>';
-        const ids = tids(r); if(!ids.length) return '<td></td>';
-        ids.forEach(i => typeUsed.add(i));
-        if(ids.every(isPresent)) return '<td class="ok">○</td>';
-        const nm = ids.map(tname).filter(Boolean).join('·');
-        if(r.reason || nm) notes.push(`${esc(s.name || '')} ${esc(M.fmtMD(d))} ${esc(nm)}${r.reason ? ' — ' + esc(r.reason) : ''}`);
-        return `<td class="x">${esc((ids.map(tname).find(n => n && n !== '출석') || '?').slice(0, 1))}</td>`;
-      }).join('')}</tr>`).join('');
-      tbl = `<table class="arc-t arc-att"><thead><tr><th class="arc-nm">이름</th>${th}</tr></thead><tbody>${trs}</tbody></table>`;
+      const wNm = 19, wSum = 9, wDay = Math.max(4.2, Math.min(14, (100 - wNm - wSum) / Math.max(cols.length, 1)));
+      const th = cols.map(d => { const w = new Date(d + 'T00:00:00').getDay(); return `<th class="${w === 0 || w === 6 ? 'we' : ''}">${+d.slice(8)}<small>${WD[w]}</small></th>`; }).join('');
+      const trs = kids.map(s => { let p = 0, n = 0;
+        const tds = cols.map(d => {
+          const w = new Date(d + 'T00:00:00').getDay(), we = w === 0 || w === 6 ? ' we' : '';
+          const r = at[s.id + '|' + d]; const ids2 = r ? tids(r) : [];
+          if(!ids2.length) return `<td class="${we.trim()}"></td>`;
+          n++; const pr = ids2.some(isPresent); if(pr) p++;
+          const odd = ids2.filter(i => !plain(i));
+          if(!odd.length) return `<td class="ok${we}">○</td>`;
+          return `<td class="${pr ? 'y' : 'x'}${we}">${esc((tname(odd[0]) || '?').slice(0, 1))}</td>`;
+        }).join('');
+        return `<tr><td class="bk-nm">${nm(s)}</td>${tds}<td class="bk-tot">${n ? `${p}/${n}` : ''}</td></tr>`; }).join('');
+      tbl = `<table class="bk-t bk-att"><colgroup><col style="width:${wNm}%">${cols.map(() => `<col style="width:${wDay.toFixed(2)}%">`).join('')}<col style="width:${wSum}%"></colgroup>
+        <thead><tr><th class="bk-nm">이름</th>${th}<th>출석</th></tr></thead><tbody>${trs}</tbody></table>`;
     } else {
-      const used = [...new Set(recs.flatMap(tids))].filter(i => !isPresent(i));
-      used.forEach(i => typeUsed.add(i));
+      const used = [...new Set(Object.values(at).flatMap(tids))].filter(i => !plain(i)).sort((a, b) => ((T[a] || {}).order || 0) - ((T[b] || {}).order || 0));
+      const w = Math.max(6, Math.min(14, 62 / Math.max(used.length, 1)));
       const trs = kids.map(s => {
-        const mine = days.map(d => at[s.id + '|' + d]).filter(Boolean);   // 한 아이 · 한 날은 한 번만
-        mine.forEach(r => { const nm = tids(r).filter(i => !isPresent(i)).map(tname).filter(Boolean).join('·'); if(nm && notes.length < 40) notes.push(`${esc(s.name || '')} ${esc(M.fmtMD(r.date))} ${esc(nm)}${r.reason ? ' — ' + esc(r.reason) : ''}`); });
-        return `<tr><td class="arc-nm">${esc(s.name || '')}</td><td class="arc-c">${mine.filter(r => tids(r).some(isPresent)).length}</td>${used.map(i => `<td class="arc-c">${mine.filter(r => tids(r).includes(i)).length || ''}</td>`).join('')}</tr>`;
+        const mine = mineOf(s);
+        return `<tr><td class="bk-nm">${nm(s)}</td><td class="ps-c">${mine.filter(r => tids(r).some(isPresent)).length}</td><td class="ps-c">${mine.length}</td>${used.map(i => `<td class="ps-c">${mine.filter(r => tids(r).includes(i)).length || ''}</td>`).join('')}</tr>`;
       }).join('');
-      tbl = `<table class="arc-t arc-att"><thead><tr><th class="arc-nm">이름</th><th>출석 기록</th>${used.map(i => `<th>${esc(tname(i))}</th>`).join('')}</tr></thead><tbody>${trs}</tbody></table>`;
+      tbl = `<table class="bk-t bk-att2"><colgroup><col style="width:20%"><col style="width:9%"><col style="width:9%">${used.map(() => `<col style="width:${w.toFixed(1)}%">`).join('')}</colgroup>
+        <thead><tr><th class="bk-nm">이름</th><th>출석</th><th>기록</th>${used.map(i => `<th>${esc(tname(i))}</th>`).join('')}</tr></thead><tbody>${trs}</tbody></table>`;
     }
-    body += `<div class="arc-cls"><h4>${esc(orgName(c.org))} · ${c.grade ? esc(c.grade) + ' ' : ''}${esc(c.name || '')} <small>${kids.length}명</small></h4>${tbl}
-      ${notes.length ? `<div class="arc-notes">${notes.join('<br>')}</div>` : ''}</div>`;
+    const noteTbl = notes.length ? `<h3 class="bk-h3 bk-kwn">출석 말고 적힌 날 · 사유 (${nNotes > notes.length ? `${nNotes}건 가운데 ${notes.length}건` : nNotes + '건'})</h3><table class="bk-t bk-notes"><colgroup><col style="width:13%"><col style="width:15%"><col style="width:24%"><col></colgroup>
+      <thead><tr><th>날짜</th><th>이름</th><th>출결</th><th>사유</th></tr></thead><tbody>${notes.sort((a, b) => a.d.localeCompare(b.d) || a.n.localeCompare(b.n, 'ko')).map(x => `<tr><td>${esc(M.fmtMD(x.d))}</td><td>${esc(x.n)}</td><td>${esc(x.t)}${x.ok ? ' <small class="bk-okc">출석으로 셈</small>' : ''}</td><td>${esc(x.r)}</td></tr>`).join('')}</tbody></table>` : '';
+    const cname = `${c.grade ? c.grade + ' ' : ''}${c.name || ''}`;
+    kids.forEach(s => allKids.add(s.id)); allP += cnt.p; allN += cnt.n; ['ab', 'lt', 'ea', 'tr', 'ot'].forEach(k => { allC[k] += cnt[k]; });
+    if(cnt.n) rates.push({ l: cname, r: pct(cnt.p, cnt.n) });
+    sumRows.push(`<tr><td>${esc(orgShort(c.org))} · ${esc(cname)}</td><td class="ps-c">${kids.length}</td><td class="ps-c">${cnt.n}</td><td class="ps-c"><b>${cnt.n ? pct(cnt.p, cnt.n) + '%' : '-'}</b></td><td class="ps-c">${cnt.ab || ''}</td><td class="ps-c">${cnt.lt || ''}</td><td class="ps-c">${cnt.ea || ''}</td><td class="ps-c">${(cnt.tr + cnt.ot) || ''}</td></tr>`);
+    parts.push(part(`att-${c.id}`, `${orgName(c.org)} · ${cname}`, `<p class="bk-lead">학생 ${kids.length}명 · 출결 기록 ${cnt.n}건 · 출석률 ${cnt.n ? pct(cnt.p, cnt.n) + '%' : '-'}</p>${tbl}${noteTbl}`,
+      { short: `${orgShort(c.org)} ${cname}`, sub: `${kids.length}명` }));
   }
-  const legend = grid ? `○ = 출석 · 글자 = 출결 항목 첫 글자 (${[...typeUsed].filter(i => !isPresent(i)).map(i => esc(tname(i))).join(' · ') || '없음'}) · 빈칸 = 기록 없음` : '기간이 한 달을 넘어 학생별 합계로 보여요';
-  return { count: nRec, html: `<section class="arc-sec arc-wide">${head}<p class="arc-note">${legend}</p>${body}</section>` };
+  const usedNames = [...typeUsed].sort((a, b) => ((T[a] || {}).order || 0) - ((T[b] || {}).order || 0)).map(tname).filter(Boolean);
+  const legend = grid ? `○ 출석 · 글자 = 그 밖의 출결 첫 글자 (${usedNames.map(esc).join(' · ') || '없음'}) — <b class="bk-xr">빨강</b> 출석으로 안 셈 · <b class="bk-xy">주황</b> 출석으로 셈 · 빈칸 = 기록 없음 · 회색 = 주말 · «출석» = 출석으로 센 날 / 기록된 날`
+    : `기간이 31일을 넘어 학생마다 합계로 보여요 · «출석» = 출석으로 센 날 · 그 밖의 칸 = 출결 항목마다 날 수`;
+  const intro = `<p class="bk-note">${legend}</p><h3 class="bk-h3 bk-kwn">반마다</h3><table class="bk-t"><colgroup><col style="width:30%"><col style="width:9%"><col style="width:11%"><col style="width:12%"><col style="width:9.5%"><col style="width:9.5%"><col style="width:9.5%"><col style="width:9.5%"></colgroup>
+    <thead><tr><th>반</th><th>학생</th><th>기록</th><th>출석률</th><th>결석</th><th>지각</th><th>조퇴</th><th>그 외</th></tr></thead><tbody>${sumRows.join('')}</tbody></table>
+    <p class="bk-note">결석 · 지각 · 조퇴 · 그 외(체험학습 등)는 그 항목이 적힌 날 수예요. 지각 · 조퇴 · 체험학습을 «출석으로 셈»으로 둔 항목은 출석률에도 출석으로 들어가요.</p>`;
+  const low = rates.length > 1 ? rates.slice().sort((a, b) => a.r - b.r)[0] : null;
+  const brief = [`결석 ${allC.ab} · 지각 ${allC.lt} · 조퇴 ${allC.ea}${allC.tr ? ` · 체험학습 ${allC.tr}` : ''}`, low ? `출석률이 가장 낮은 반 — ${low.l} ${low.r}%` : ''].filter(Boolean);
+  return { count: nRec, warn: [], intro, parts, brief, stats: [stat('반', parts.length, '개'), stat('학생', allKids.size, '명'), stat('출석률', allN ? pct(allP, allN) + '%' : '-')] };
 }
 
 /* ═══ 5  활동 기록 ═══ */
 async function buildAct(src, R, step){
   const a = new Date(R.from + 'T00:00:00'), b = new Date(new Date(R.to + 'T00:00:00').getTime() + DAY);
   const PAGE = { actexp: '활동 경비', family: '가정통신문', club: '동아리' };
+  const twoYears = R.from.slice(0, 4) !== R.to.slice(0, 4);
   const logs = (await src.query('activityLogs', [['at', '>=', a], ['at', '<', b]]))
     .map(l => ({ ...l, ms: tsMs(l.at) })).filter(l => l.ms >= a.getTime() && l.ms < b.getTime() && (!R.org || !l.org || l.org === R.org)).sort((x, y) => x.ms - y.ms);
-  const head = secHead('활동 기록', `${esc(rangeLabel(R))}${R.org ? ' · ' + esc(orgName(R.org)) : ''} · ${logs.length}건`);
-  if(!logs.length) return { count: 0, html: `<section class="arc-sec">${head}${emptyBox('이 기간 활동 기록이 없어요.')}</section>` };
+  if(!logs.length) return { count: 0, warn: [], stats: [stat('기록', 0, '건')], intro: emptyBox('이 기간 활동 기록이 없어요.'), parts: [] };
   step && step(`활동 기록 ${logs.length}건`);
-  const rows = logs.map(l => `<tr><td>${esc(fmtDT(l.ms))}</td><td>${esc(l.name || l.byName || '')}</td><td>${esc(l.category || PAGE[l.page] || l.page || l.kind || '')}</td><td>${esc(l.action || '')}</td><td>${esc(l.target || l.ledgerName || '')}</td><td>${esc(l.detail || '')}</td></tr>`).join('');
-  return { count: logs.length, html: `<section class="arc-sec">${head}<table class="arc-t arc-act"><thead><tr><th style="width:118px">때</th><th style="width:70px">누가</th><th style="width:80px">분류</th><th style="width:70px">작업</th><th style="width:22%">대상</th><th>내용</th></tr></thead><tbody>${rows}</tbody></table></section>` };
+  const catOfL = l => PAGE[l.category] || l.category || PAGE[l.page] || l.page || l.kind || '기타';
+  const byCat = {};
+  const kindOf = a => { a = String(a || ''); return /삭제|지움|빼기|delete|remove/i.test(a) ? 'del' : /수정|고침|변경|정정|되돌림|복원|update|edit|restore/i.test(a) ? 'ed' : /입력|추가|만듦|만들기|등록|올림|게시|create|add|publish/i.test(a) ? 'in' : 'ot'; };
+  logs.forEach(l => { const c = catOfL(l); const k = kindOf(l.action);
+    byCat[c] = byCat[c] || { in: 0, ed: 0, del: 0, ot: 0, n: 0 }; byCat[c][k]++; byCat[c].n++; });
+  const cats = Object.keys(byCat).sort((x, y) => byCat[y].n - byCat[x].n);
+  const tot = k => cats.reduce((s, c) => s + byCat[c][k], 0);
+  const intro = `<h3 class="bk-h3 bk-kwn">분류마다</h3><table class="bk-t"><colgroup><col style="width:32%"><col style="width:13.6%"><col style="width:13.6%"><col style="width:13.6%"><col style="width:13.6%"><col style="width:13.6%"></colgroup>
+    <thead><tr><th>분류</th><th>입력</th><th>수정</th><th>삭제</th><th>그 외</th><th>합계</th></tr></thead><tbody>${cats.map(c => `<tr><td>${esc(c)}</td>${['in', 'ed', 'del', 'ot'].map(k => `<td class="ps-c">${byCat[c][k] || ''}</td>`).join('')}<td class="ps-c"><b>${byCat[c].n}</b></td></tr>`).join('')}</tbody>
+    <tfoot><tr><td>합계</td>${['in', 'ed', 'del', 'ot'].map(k => `<td class="ps-c">${tot(k) || ''}</td>`).join('')}<td class="ps-c">${logs.length}</td></tr></tfoot></table>`;
+  const rows = logs.map(l => `<tr><td>${esc(twoYears ? fmtDT(l.ms) : fmtDT(l.ms).slice(5))}</td><td>${esc(l.name || l.byName || '')}</td><td>${esc(catOfL(l))}</td><td>${esc(l.action || '')}</td><td>${esc(l.target || l.ledgerName || '')}</td><td>${esc(l.detail || '')}</td></tr>`).join('');
+  const html = `<table class="bk-t bk-act"><colgroup><col style="width:13%"><col style="width:11%"><col style="width:11%"><col style="width:8%"><col style="width:24%"><col style="width:33%"></colgroup>
+    <thead><tr><th>때</th><th>누가</th><th>분류</th><th>작업</th><th>대상</th><th>내용</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const brief = [`입력 ${tot('in')} · 수정 ${tot('ed')} · 삭제 ${tot('del')}`, cats[0] ? `가장 많이 바뀐 곳 — ${cats[0]} ${byCat[cats[0]].n}건` : ''].filter(Boolean);
+  return { count: logs.length, warn: [], intro, brief, parts: [part('act-all', `활동 기록 ${logs.length}건 (시간 순)`, html, { short: '활동 기록 전체', sub: rangeLabel(R) })],
+    stats: [stat('기록', logs.length, '건'), stat('입력', tot('in')), stat('수정 · 삭제', tot('ed') + tot('del'))] };
 }
 
 const BUILD = { mtg: (s, R, st) => buildMinutes(s, R, st, false), lead: (s, R, st) => buildMinutes(s, R, st, true), pay: buildPay, att: buildAtt, act: buildAct };
 
-/* ═══ 전체 — 표지 · 목차 + 항목들 ═══ */
+/* ═══ 전체 — 장(章)들 + 책 정보 ═══
+   반환 { meta, chapters:[{k, l, s, d, no, count, err, warn, stats, intro, parts}], sections(기록용), made, org } */
 export async function buildArchive(src, opt, onStep){
   const R = { from: opt.from, to: opt.to, org: ORG_PICK.some(o => o.k === opt.org) ? opt.org : '' };
   if(!isDate(R.from) || !isDate(R.to) || R.from > R.to) throw new Error('기간을 확인해 주세요');
@@ -352,97 +447,19 @@ export async function buildArchive(src, opt, onStep){
   const out = [];
   for(const k of keys){
     const meta = SECTIONS.find(s => s.k === k);
+    const base = { k, l: meta.l, s: meta.s, d: meta.d, no: out.length + 1 };
     onStep && onStep(`${meta.l} 읽는 중…`);
-    try{ out.push({ k, l: meta.l, warn: [], ...(await BUILD[k](src, R, onStep)) }); }
-    catch(e){ out.push({ k, l: meta.l, count: 0, err: String((e && (e.code || e.message)) || e), html: `<section class="arc-sec">${secHead(meta.l, '')}<p class="arc-err">읽지 못했어요 — ${esc((e && (e.code || e.message)) || e)}</p></section>` }); }
+    try{ out.push({ ...base, warn: [], err: '', ...(await BUILD[k](src, R, onStep)) }); }
+    catch(e){ const why = String((e && (e.code || e.message)) || e); out.push({ ...base, count: 0, err: why, warn: [], stats: [], intro: `<p class="bk-err">읽지 못했어요 — ${esc(why)}</p>`, parts: [] }); }
   }
   const made = new Date();
-  const toc = out.map((s, i) => `<tr><td class="arc-c">${i + 1}</td><td><b>${esc(s.l)}</b><div class="arc-d">${esc(SECTIONS.find(x => x.k === s.k).d)}</div></td>
-    <td class="arc-c">${s.err ? '<span class="arc-warn">읽지 못함</span>' : esc(s.count) + '건' + ((s.warn || []).length ? '<br><span class="arc-warn">⚠️ 일부 못 읽음</span>' : '')}</td></tr>`).join('');
-  const cover = `<section class="arc-cover">
-    <div class="arc-brand">교사 선교사</div>
-    <h1>보관본</h1>
-    <div class="arc-range">${esc(rangeLabel(R))}${R.org ? `<div class="arc-org">${esc(orgName(R.org))}</div>` : ''}</div>
-    <table class="arc-t arc-toc"><thead><tr><th style="width:40px">#</th><th>항목</th><th style="width:90px">건수</th></tr></thead><tbody>${toc}</tbody></table>
-    <div class="arc-meta">만든 때 ${esc(fmtDT(made.getTime()))}${opt.by ? ` · 만든 사람 ${esc(opt.by)}` : ''}${opt.auto ? ' · 자동 백업' : ''}<br>
-      이 문서는 그 시점의 기록을 옮긴 사본이에요. 원본은 교사 선교사 사이트에 있어요.</div>
-  </section>`;
-  return { html: cover + out.map(s => s.html).join(''), sections: out.map(({ k, l, count, err, warn }) => ({ k, l, count, err: err || '', warn: (warn || []).slice(0, 4) })), made: made.getTime(), org: R.org };
+  const pk = PACKS.find(p => p.k === opt.pack && p.s.slice().sort().join() === keys.slice().sort().join());
+  const og = ORG_PICK.find(o => o.k === R.org && o.k);
+  return {
+    meta: { from: R.from, to: R.to, range: rangeLabel(R), org: R.org, orgLabel: og ? og.l : '', pack: pk ? pk.k : '', packLabel: pk ? pk.l : '',
+      by: opt.by || '', auto: !!opt.auto, made: made.getTime(), madeLabel: fmtDT(made.getTime()) },
+    chapters: out,
+    sections: out.map(({ k, l, count, err, warn }) => ({ k, l, count, err: err || '', warn: (warn || []).slice(0, 4) })),
+    made: made.getTime(), org: R.org,
+  };
 }
-
-/* ═══ 모양 — 화면 미리 보기 · 인쇄가 같은 규칙 ═══ */
-const PS_CSS = `
-.ps-head{text-align:center;margin-bottom:14px}.ps-title{font-size:19px;font-weight:800;color:#1b4332}.ps-sub{font-size:11.5px;color:#6b8579;margin-top:5px}
-.ps-tbl{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed}
-.ps-tbl th,.ps-tbl td{border:1px solid #d9e2dd;padding:5px 6px;word-break:break-all}
-.ps-tbl thead th{background:#2d6a4f;color:#fff;font-weight:700;text-align:center;font-size:10.5px}
-.ps-tbl tr{break-inside:avoid}.ps-tbl tr.ps-req{break-after:avoid}
-.ps-req td{background:#eef5f1;font-weight:800;color:#1b4332;padding:6px 8px;font-size:11.5px}
-.ps-req .ps-no{color:#2d6a4f;font-weight:900}.ps-req .ps-meta{font-weight:600;color:#5a7267;font-size:10.5px}
-.ps-bank{font-size:10px;color:#6b8579;font-weight:500}
-.ps-c{text-align:center}.ps-r{text-align:right}.ps-amt{text-align:right;font-variant-numeric:tabular-nums}
-.ps-sub2 td{background:#f7f9f8;font-weight:800;color:#2f5c48;text-align:right;font-size:11px}
-.ps-corr{color:#5b21b6;font-weight:700}.ps-rejn{color:#991b1b;font-weight:700}
-.ps-st{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9.5px;font-weight:800}
-.ps-st.paid{background:#dcfce7;color:#166534}.ps-st.wait{background:#fef3c7;color:#92400e}.ps-st.apv{background:#dbeafe;color:#1e40af}
-.ps-st.inc{background:#ede9fe;color:#5b21b6}.ps-st.rej{background:#fee2e2;color:#991b1b}
-.ps-tbl tfoot,.ps-sum tfoot{display:table-row-group}
-.ps-tbl tfoot tr.ps-fn td{background:#fff;border:0;color:#8a9a91;font-size:10px;font-weight:500;padding:6px 0 0}
-.ps-tbl tfoot td{background:#f0e4c4;font-weight:900;color:#8a6410;text-align:right;border-top:2px solid #b08d3c;font-size:12.5px;padding:8px}
-.ps-empty{text-align:center;color:#999;padding:20px}
-.ps-secttl{font-size:13px;font-weight:800;color:#1b4332;margin:18px 0 7px;padding-left:8px;border-left:4px solid #2d6a4f}
-.ps-sum{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px}.ps-sum th,.ps-sum td{border:1px solid #d9e2dd;padding:6px 9px}
-.ps-sum thead th{background:#eef5f1;color:#1b4332;font-weight:800}.ps-sum td.ps-r{text-align:right;font-variant-numeric:tabular-nums}
-.ps-sum tfoot td{background:#f0e4c4;font-weight:900;color:#8a6410}.ps-foot{margin-top:12px;font-size:10px;color:#8a9a91;text-align:right}
-.prc-head{text-align:center;border-bottom:2.5px solid #2d6a4f;padding-bottom:10px;margin-bottom:14px}.prc-title{font-size:18px;font-weight:800;color:#1b4332}.prc-sub{font-size:11.5px;color:#6b8579;margin-top:5px}
-.prc-card{border:1px solid #d9e2dd;border-radius:10px;margin-bottom:14px;overflow:hidden;break-inside:avoid}
-.prc-hd{background:#E8F3EF;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid #d9e2dd}
-.prc-seq{background:#2d6a4f;color:#fff;font-size:12px;font-weight:800;padding:2px 9px;border-radius:10px}
-.prc-purpose{font-size:14px;font-weight:800;color:#1b4332}.prc-meta{font-size:11px;color:#5a7267}.prc-meta b{color:#8a6410}
-.prc-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:12px}
-.prc-cell{border:1px solid #e2e8e5;border-radius:10px;background:#F7F6F2;position:relative;overflow:hidden;text-align:center;padding:6px;break-inside:avoid}
-.prc-cell.wide{grid-column:1 / -1}.prc-cell img{max-width:100%;object-fit:contain;display:block;margin:0 auto}
-.prc-cell.tall img{max-height:400px}.prc-cell.short img{max-height:220px}.prc-cell.wide img{max-height:290px}
-.prc-no{position:absolute;top:4px;left:4px;background:rgba(45,106,79,.9);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;z-index:1}
-.prc-lbl{font-size:9.5px;color:#5a7267;margin-top:4px;line-height:1.3}`;
-
-export const ARC_CSS = M.DOC_CSS + PS_CSS + `
-.arc-doc{font-family:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#1F2320;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.arc-cover{min-height:240mm;display:flex;flex-direction:column;align-items:center;padding-top:28mm;text-align:center}
-.arc-brand{font-size:14px;font-weight:800;letter-spacing:.3em;color:#00704A}
-.arc-cover h1{font-size:44px;font-weight:900;letter-spacing:.3em;margin:10px 0 6px;color:#1E3932}
-.arc-range{font-size:17px;font-weight:700;margin-bottom:26px}.arc-org{font-size:14px;color:#00704A;margin-top:4px}
-.arc-toc{width:100%;max-width:150mm;text-align:left}
-.arc-d{font-size:11px;color:#6B7670;font-weight:500;margin-top:2px}
-.arc-meta{margin-top:auto;font-size:11px;color:#6B7670;line-height:1.8;padding-top:20px}
-.arc-sec{break-before:page}
-.arc-sh{border-bottom:2.5px solid #1E3932;padding-bottom:6px;margin-bottom:12px}
-.arc-sh h2{font-size:20px;font-weight:900;margin:0;color:#1E3932}.arc-sh p{font-size:12px;color:#5A6560;margin:3px 0 0}
-.arc-h3{font-size:13.5px;font-weight:800;margin:4px 0 6px}
-.arc-pg{break-before:page}
-.arc-sh + .arc-pg, .arc-note + .arc-pg, .arc-sum + .arc-pg{break-before:auto}
-.arc-sum{margin-bottom:22px}
-.arc-tag{display:inline-block;font-size:11px;font-weight:800;color:#fff;background:#00704A;border-radius:100px;padding:1px 10px;margin-bottom:4px}
-.arc-t{width:100%;border-collapse:collapse;font-size:11px}
-.arc-t th{background:#1E3932;color:#fff;padding:5px 6px;text-align:left;font-weight:700}
-.arc-t td{border:1px solid #C9C5B9;padding:4px 6px;vertical-align:top;line-height:1.5;word-break:keep-all;overflow-wrap:anywhere}
-.arc-t tr{break-inside:avoid}
-.arc-c{text-align:center}
-.arc-none{color:#6B7670;text-align:center;padding:24px 0;font-size:13px}
-.arc-err{color:#B42318;font-weight:700;padding:12px 0}.arc-warn{color:#B42318}
-.arc-note{font-size:11px;color:#5A6560;margin:0 0 8px}
-.arc-cls{break-inside:avoid;margin-bottom:12px}
-.arc-cls h4{font-size:12.5px;margin:0 0 4px}.arc-cls h4 small{color:#6B7670;font-weight:600}
-.arc-att th,.arc-att td{text-align:center;padding:3px 2px;font-size:10px}.arc-att th small{font-weight:500;opacity:.8}
-.arc-att .arc-nm{text-align:left;white-space:nowrap;padding-left:6px;min-width:70px}
-.arc-att td.ok{color:#00704A}.arc-att td.x{color:#B42318;font-weight:800;background:#FDF1F0}
-.arc-notes{font-size:10px;color:#5A6560;margin-top:4px;line-height:1.6}
-.arc-act td{font-size:10px}
-.md-th{break-after:avoid}.md-dec,.md-task,.md-img,.md-pg,.md-file,.md-link{break-inside:avoid}
-.md-img img{max-height:300px}.md-pg img{max-width:100%}
-.pcm{margin-top:18px;border-top:1px solid #C9C5B9;padding-top:8px}.pcm h3{font-size:12pt;margin:0 0 6px}
-.pc{font-size:10pt;margin:0 0 7px;break-inside:avoid}.pc small{color:#6B7670}.pc.rp{margin:5px 0 0 18px}
-@page{size:A4;margin:14mm 13mm 16mm;@bottom-center{content:counter(page) " / " counter(pages);font-size:8.5pt;color:#93A09A}}
-@page wide{size:A4 landscape;margin:10mm 11mm 13mm;@bottom-center{content:counter(page) " / " counter(pages);font-size:8.5pt;color:#93A09A}}
-.arc-wide{page:wide}
-`;

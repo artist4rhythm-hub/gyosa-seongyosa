@@ -230,6 +230,11 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .bk-ck input{margin-top:3px}
 .bk-st{font-size:12.5px;color:var(--ts);margin-top:8px;min-height:1em;line-height:1.5}
 .bk-h{font-size:13.5px;margin:18px 0 6px;color:var(--gd)}
+.bk-auto{margin-top:12px;border:1px solid var(--ivd);border-radius:12px;padding:12px 14px;background:var(--iv,#F7F6F2)}
+.bk-auto h4{margin:0 0 4px;font-size:14px;color:var(--gd)}
+.bk-auto p{margin:0;font-size:12.5px;color:var(--ts);line-height:1.6}
+.bk-auto .bk-as{font-size:13px;font-weight:800;color:var(--gd);margin:4px 0 2px}
+.bk-auto .bk-as.w{color:var(--danger,#C0392B)}
 .bk-tw{overflow-x:auto}
 .bk-runs{width:100%;border-collapse:collapse;font-size:12.5px;min-width:520px}
 .bk-runs th,.bk-runs td{border-bottom:1px solid var(--iv);padding:7px 6px;text-align:left;vertical-align:top}
@@ -2382,7 +2387,7 @@ function bkCardHTML(){
   return `
     <div class="acard" data-dw="adm-backup">
       <h3 class="actitle">📦 백업</h3>
-      <p class="adesc">종이 대신 PDF와 데이터로 보관해요. 받은 파일은 학교 NAS의 보관함 폴더에 넣어 두세요. 매주 일요일 자동 백업(NAS로 바로 들어감)은 다음 업데이트에서 켜져요.</p>
+      <p class="adesc">종이 대신 책자 모양 PDF와 데이터로 보관해요. 매주 월요일 새벽 자동 백업이 학교 NAS로 바로 들어가고, 필요할 때는 아래에서 직접 만들어 NAS 보관함 폴더에 넣으면 돼요.</p>
       <div class="bk-last" id="bk-last" role="status">지난 백업 기록을 읽는 중…</div>
       <div class="bk-grid">
         <section class="bk-blk" aria-labelledby="bk-h-pdf">
@@ -2404,6 +2409,11 @@ function bkCardHTML(){
           <div class="bk-st" id="bk-data-st" role="status" aria-live="polite"></div>
         </section>
       </div>
+      <section class="bk-auto" aria-labelledby="bk-h-auto">
+        <h4 id="bk-h-auto">🤖 매주 자동 백업 — 월요일 01:00 → 학교 NAS</h4>
+        <div class="bk-as" id="bk-auto-st" role="status">자동 백업 기록을 읽는 중…</div>
+        <p>지난주 교직원용(기관마다) · 주임용 · 경비용 · 활동 기록 PDF + 모든 데이터 · 사진(바뀐 것만) · GitHub · 보안 규칙 · 계정 목록. 매달 첫 월요일에는 지난달 전체 PDF도 함께. 안 돌았거나 NAS가 못 받으면 아침 9시에 수퍼관리자에게 알림이 가요.</p>
+      </section>
       <h4 class="bk-h">지난 백업</h4>
       <div id="bk-runs" class="bk-tw"></div>
     </div>`;
@@ -2429,6 +2439,11 @@ function bkKind(r){
   return r.kind === 'data' ? '🗄 전체 데이터' : '📄 PDF 보관본';
 }
 function bkWhat(r){
+  if(r.mode === 'auto'){
+    const f = Array.isArray(r.failed) ? r.failed.length : 0;
+    return `${String(r.from || '').slice(5).replace('-','/')} ~ ${String(r.to || '').slice(5).replace('-','/')}${r.month ? ` + ${Number(String(r.month).slice(5))}월 전체` : ''} · PDF ${Number(r.pdfs) || 0}개 · 파일 ${Number(r.files) || 0}개${r.bytes ? ' · ' + bkBytes(r.bytes) : ''}`
+      + (r.ok === false ? ` · ⚠️ 못 한 것 ${f}개` : '') + (bkMs(r.nasAt) ? ' · NAS 받음 ✓' : ' · NAS 확인 전');
+  }
   if(r.kind === 'data'){
     const f = Array.isArray(r.failed) ? r.failed.length : 0;
     return `모음 ${Number(r.cols) || 0}개 · ${(Number(r.docs) || 0).toLocaleString()}건${r.bytes ? ' · ' + bkBytes(r.bytes) : ''}${r.photos ? ' · 큰 자료 포함' : ''}${f ? ` · 읽지 못한 모음 ${f}개` : ''}`;
@@ -2444,6 +2459,8 @@ async function loadBackupRuns(){
     const all = s.docs.map(d => ({ id:d.id, ...d.data() })).sort((a, b) => bkMs(b.at) - bkMs(a.at));
     const rows = all.slice(0, 12);
     ADM_LS.bk = bkLatest(all);
+    let bst = null; try{ const x = await getDoc(doc(db, 'config', 'backupState')); bst = x.exists() ? x.data() : null; }catch(_){}
+    bkAutoLine(all, bst);
     if(last){
       const w = bkStale(ADM_LS.bk), ago = ms => { const d = Math.floor((Date.now() - ms) / 86400000); return d === 0 ? '오늘' : d + '일 전'; };
       last.classList.toggle('w', !!w);
@@ -2456,6 +2473,7 @@ async function loadBackupRuns(){
   }catch(e){
     ADM_LS.bk = null;
     if(last){ last.classList.remove('w'); last.textContent = ''; }
+    const au = $I('bk-auto-st'); if(au){ au.classList.remove('w'); au.textContent = '보안 규칙 v53을 게시하면 자동 백업 기록도 여기에 보여요.'; }
     box.innerHTML = '<p class="empty" style="padding:12px">보안 규칙 v53을 게시하면 여기에 백업 기록이 쌓여요. (지금도 관리자 › 활동 로그에 «백업»으로 남아요)</p>';
   }
   try{ window.Drawer && Drawer.refresh(); }catch(_){}
@@ -2464,8 +2482,30 @@ window.loadBackupRuns = loadBackupRuns;
 /* 마지막 백업 — 종류마다 · PDF 보관본은 8일 · 전체 데이터는 31일 넘으면 알림 */
 function bkLatest(rows){
   const o = { pdf:0, data:0 };
-  rows.forEach(r => { const k = r.mode === 'auto' ? 'pdf' : r.kind === 'data' ? 'data' : 'pdf', ms = bkMs(r.at); if(ms > o[k]) o[k] = ms; if(r.mode === 'auto' && ms > o.data) o.data = ms; });
+  rows.forEach(r => { if(r.mode === 'auto' && (r.ok === false || r.only)) return;   // 못 한 것이 있거나 일부만 돌린 자동 백업은 «마지막 백업»으로 치지 않음
+    const k = r.mode === 'auto' ? 'pdf' : r.kind === 'data' ? 'data' : 'pdf', ms = bkMs(r.at); if(ms > o[k]) o[k] = ms; if(r.mode === 'auto' && ms > o.data) o.data = ms; });
   return o;
+}
+/* 🤖 자동 백업 한 줄 — 가장 최근 자동 백업 */
+function bkAutoLine(rows, st){
+  const el = $I('bk-auto-st'); if(!el) return;
+  const a = rows.filter(r => r.mode === 'auto').sort((x, y) => bkMs(y.at) - bkMs(x.at))[0];
+  const fmt = ms => { const d = new Date(ms); return `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  /* 일꾼이 도는 중 · 기록을 남기기 전에 멈춤 (config/backupState) */
+  const run0 = st ? bkMs(st.runningSince) : 0, last0 = st ? bkMs(st.lastRun) : 0;
+  if(run0 && run0 > last0 && Date.now() - run0 < 2 * 3600e3){ el.classList.remove('w'); el.textContent = `⏳ 자동 백업이 도는 중이에요 (${fmt(run0)} 시작)`; return; }
+  if(st && st.lastRunOk === false && last0 && (!a || last0 > bkMs(a.at) + 120e3)){
+    el.classList.add('w'); el.textContent = `⚠️ 마지막 자동 백업이 중간에 멈췄어요 (${fmt(last0)}) — ${(st.lastFailed || []).slice(0, 2).join(', ') || '알 수 없음'}`; return;
+  }
+  if(run0 && run0 > last0 && Date.now() - run0 >= 2 * 3600e3){ el.classList.add('w'); el.textContent = `⚠️ 자동 백업이 ${fmt(run0)}에 시작해 끝나지 않았어요 — Claude에게 알려 주세요`; return; }
+  if(!a){ el.classList.remove('w'); el.textContent = '아직 자동 백업 기록이 없어요 — 설정은 배포 안내의 «자동 백업 켜기»대로 Cloud Shell에서 한 번 하면 돼요.'; return; }
+  const ms = bkMs(a.at), d = new Date(ms), days = Math.floor((Date.now() - ms) / 86400000);
+  const when = `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const nas = bkMs(a.nasAt), nd = nas ? new Date(nas) : null;
+  const bad = a.ok === false, old = days >= 8, noNas = !nas && Date.now() - ms > 6 * 3600e3;
+  el.classList.toggle('w', bad || old || noNas);
+  el.textContent = `${bad || old || noNas ? '⚠️' : '✓'} 마지막 자동 백업 ${when}${days ? ` (${days}일 전)` : ''}${a.only ? ' · 일부만(' + a.only + ')' : ''} · ${bad ? '못 한 것 — ' + (a.failed || []).slice(0, 3).join(', ') : `PDF ${Number(a.pdfs) || 0}개 · 파일 ${Number(a.files) || 0}개${a.bytes ? ' · ' + bkBytes(a.bytes) : ''}`}`
+    + (nd ? ` · NAS 받음 ${nd.getMonth()+1}/${nd.getDate()} ${pad(nd.getHours())}:${pad(nd.getMinutes())}` : noNas ? ' · NAS가 아직 받지 못했어요' : ' · NAS 확인 전');
 }
 function bkStale(b){
   if(!b || typeof b !== 'object') return null;
