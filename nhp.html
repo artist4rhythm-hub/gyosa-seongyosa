@@ -204,6 +204,17 @@ button.mx-n:hover{background:var(--sb-mint-2)}
 @media (max-width:1180px){ .mx-wrap{grid-template-columns:1fr} .mx-side{position:static;max-height:none} }
 @media (max-width:760px){ .mx-t{--mxn:104px} .mx-n .t{font-size:12px;white-space:normal} .mx-h1 .mx-n small{display:none} .mx-bar{left:8px;right:8px;bottom:calc(72px + env(safe-area-inset-bottom));padding:8px 10px} .mx-bar button{height:34px;padding:0 9px} #mx-root{padding-bottom:170px} }
 #mx-root{padding-bottom:64px}
+/* v200 📜 고친 기록 */
+.cg-row{border:1px solid var(--line);border-radius:10px;padding:8px 11px;margin-bottom:6px;font-size:12.5px}
+.cg-row.me{border-left:3px solid var(--sb-green)}
+.cg-h{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-bottom:5px}.cg-h small{color:var(--ink-3)}.cg-h small.w{margin-left:auto;color:var(--ink-2);font-weight:700}
+.cg-b{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1.5fr);gap:8px;line-height:1.55}
+.cg-b .k b{display:block}.cg-b .k span{color:var(--ink-2)}
+.cg-b .was,.cg-b .now{white-space:pre-wrap;word-break:break-word;min-width:0;border-radius:8px;padding:5px 8px}
+.cg-b .was{background:var(--bg,#F2F0EB)}.cg-b .now{background:var(--sb-mint-2)}
+.cg-b small{display:block;font-size:10.5px;font-weight:700;color:var(--ink-3)}
+.cg-f{display:flex;gap:8px;align-items:center;margin-top:6px}.cg-f small{color:#8A5A00}
+@media (max-width:760px){ .cg-b{grid-template-columns:1fr} }
 /* v198 ↩ 되돌리기 · ⏱ 타임머신 */
 .sj-bar{display:flex;gap:8px 12px;flex-wrap:wrap;align-items:flex-start}
 .sj-bar .sj-tabs{flex:1 1 auto}
@@ -643,12 +654,12 @@ html[data-theme="dark"] .pv-pages{background:#0C1512}
 import { initializeApp, getApps, getApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, query, where,
-  onSnapshot, serverTimestamp, Timestamp, writeBatch, runTransaction }
+  onSnapshot, serverTimestamp, Timestamp, writeBatch, runTransaction, orderBy, limit }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 import { cachedCol } from './listcache.js?v=137';
-import * as C from './nhp-core.js?v=198';
-import * as P from './nhp-print.js?v=198';
-import * as ENTRY from './nhp-entry.js?v=199';
+import * as C from './nhp-core.js?v=200';
+import * as P from './nhp-print.js?v=200';
+import * as ENTRY from './nhp-entry.js?v=200';
 import * as SETUP from './nhp-setup.js?v=199';
 import * as EDIT from './nhp-edition.js?v=145';
 import { notifyStaff } from './push-client.js';
@@ -666,7 +677,7 @@ const app = getApps().length ? getApp() : initializeApp(__cfg);
 const auth = getAuth(app);
 const db = (()=>{ try{ return initializeFirestore(app, { experimentalAutoDetectLongPolling: true }); }catch(e){ return getFirestore(app); } })();
 const FS = { doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, deleteField, collection, query, where, onSnapshot,
-  serverTimestamp, Timestamp, writeBatch, runTransaction };
+  serverTimestamp, Timestamp, writeBatch, runTransaction, orderBy, limit };
 
 const $I = id => document.getElementById(id);
 const esc = C.esc;
@@ -1159,7 +1170,7 @@ function boardHTML(){
   const secs = (A.TERM.sections || []).slice().sort((a, b) => (a.gradeNo || 99) - (b.gradeNo || 99));
   const filt = s => BD_F === 'all' ? true : BD_F === 'mine' ? ((s.turn || []).includes(uid) || (s.teacherUids || []).includes(uid)) : BD_F === 'redo' ? C.stateOf(s).k === 'redo' : (s.state || 'draft') === BD_F;
   const fb = (k, l, n) => `<button class="ch ${BD_F === k ? 'mint' : 'gray'}" style="border:0;cursor:pointer;font-family:inherit" data-bdf="${k}">${l}${n != null ? ` ${n}` : ''}</button>`;
-  let h = `<div class="frow" style="align-items:center;margin-bottom:10px"><div class="nh-tabs" style="border:0;padding:0;margin:0"><button data-bdv="grid" class="${BD_V === 'grid' ? 'on' : ''}">▦ 반 × 과목</button><button data-bdv="people" class="${BD_V === 'people' ? 'on' : ''}">👤 선생님별</button></div>
+  let h = `<div class="frow" style="align-items:center;margin-bottom:10px"><div class="nh-tabs" style="border:0;padding:0;margin:0"><button data-bdv="grid" class="${BD_V === 'grid' ? 'on' : ''}">▦ 반 × 과목</button><button data-bdv="people" class="${BD_V === 'people' ? 'on' : ''}">👤 선생님별</button></div>${A.isMgr ? '<button class="nh-btn sm" data-termlog title="이번 학기에 누가 무엇을 고쳤는지 — 선생님 · 반 · 과목 · 날짜로 걸러 보기 (나학평 담당만)">📜 고친 기록</button>' : ''}
     <span class="nh-sp"></span><div class="bd-sum" style="margin:0">${fb('all', '전체', live.length)}${fb('mine', '나와 관련')}${fb('draft', '작성 중', cnt('draft'))}${fb('redo', '수정 요청', cnt('redo'))}${fb('review', '검토 중', cnt('review'))}${fb('final', '최종 대기', cnt('final'))}${fb('done', '승인', cnt('done'))}</div></div>
     <div class="nh-desc bx-legend"><span class="bx-c t-draft demo"><span>3<small>/12</small></span><i class="bx-p"><b style="width:25%"></b></i></span> 작성 중 = 채운 학생 / 전체 · <span class="bx-key t-info">검토</span> <span class="bx-key t-purple">최종</span> <span class="bx-key t-warn">수정</span> <span class="bx-key t-ok">승인</span> · <b style="color:#C2410C">주황 테두리</b> = 지금 내 차례 · 칸을 누르면 그 칸으로 가요</div>`;
   h += progChartHTML(live);   // 📊 v187 단계 · 선생님별 입력 진행
@@ -1570,7 +1581,7 @@ async function viewReport(rid){
 
 /* ═══ 누르기 (한 곳에서) ═══ */
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-go],[data-act],[data-open],[data-notif],[data-board],[data-printsec],[data-bdf],[data-bdv],[data-bulk],[data-pv],[data-edo],[data-prall],[data-prprint],[data-issue],[data-rp],[data-red],[data-rlink],[data-prsec],[data-dzc],[data-dzi],[data-dzs],[data-dzreset],[data-pbook],[data-pbsec],[data-pshelf]');
+  const t = e.target.closest('[data-termlog],[data-go],[data-act],[data-open],[data-notif],[data-board],[data-printsec],[data-bdf],[data-bdv],[data-bulk],[data-pv],[data-edo],[data-prall],[data-prprint],[data-issue],[data-rp],[data-red],[data-rlink],[data-prsec],[data-dzc],[data-dzi],[data-dzs],[data-dzreset],[data-pbook],[data-pbsec],[data-pshelf]');
   if(!t || !$I('nh').contains(t)) return;
   if(t.dataset.go){ A.go(t.dataset.go); return; }
   // v148 출력 화면 — 반 카드 · 출력 모양 그림
@@ -1587,6 +1598,7 @@ document.addEventListener('click', async e => {
   if(t.dataset.open){ A.go('s/' + t.dataset.open); return; }
   if(t.dataset.board){ BD_F = 'all'; A.go('board'); return; }
   if(t.dataset.printsec){ e.stopPropagation(); A.go('print/' + t.dataset.printsec); return; }
+  if('termlog' in t.dataset){ ENTRY.openTermLog(A); return; }
   if(t.dataset.bdf){ BD_F = t.dataset.bdf; lsSet('nhp_bdf', BD_F); route(true); return; }
   if(t.dataset.bdv){ BD_V = t.dataset.bdv; lsSet('nhp_bdv', BD_V); route(true); return; }
   if(t.dataset.bulk){ bulkAct(t.dataset.bulk); return; }

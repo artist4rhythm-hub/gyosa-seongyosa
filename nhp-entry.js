@@ -8,6 +8,7 @@
    · v153 🔎 빈 곳 · 이름 점검 — 덜 채운 학생과 빈 곳 · 다른 학생 이름이 들어간 서술 (화면에서만 · 저장되는 것 없음) · 작성완료 창에도 요약
    · v198 안전: ↩ 되돌리기 · 다시 하기 / 저장 못 한 입력은 이 기기에 보관 → 되살리기 / ⏱ 타임머신(지난 모습 — nhpEntries/칸/vers · 규칙 v54)
           평가 틀을 두 사람이 함께 고쳐도 합쳐서 저장 · 학기 중 기록은 바뀐 칸만 저장 · 상태를 바꾸기 전에 남은 입력부터 저장
+   · v200 📜 고친 기록: 누가 · 언제 · 어느 학생 어느 칸을 · 무엇에서 무엇으로 (nhpEntries/칸/chg · 규칙 v55) — «이것만 되돌리기» · 내가 고친 것만 · 학기 전체(담당)
    ═══════════════════════════════════════════════════════════ */
 import * as SETUP from './nhp-setup.js?v=199';
 
@@ -21,6 +22,7 @@ const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
 
 export async function render(a, el, id, tab){
   bind(a);
+  chgFlushAll();
   flush(); flushSetup();          // 기다리지 않는다 — 칸마다 따로 저장되니 다른 칸으로 옮겨도 섞이지 않음 (연결이 끊겨도 화면은 넘어감)
   if(unEnt){ unEnt(); unEnt = null; }
   LOADING = true;                 // 새 칸의 입력을 읽는 동안에는 되돌리기를 받지 않음 (앞 칸 자료에 섞이지 않게)
@@ -34,6 +36,7 @@ export async function render(a, el, id, tab){
   if(!ENT.rows) ENT.rows = {};
   LOADING = false;
   if(!SPEND[id]){ SRV[id] = SJ(SUB.setup || {}); delete THEIRS[id]; HOLD[id] = false; }
+  CHG_N = 300; CHG_SID = ''; CHG_CACHE[id] = null; CHGOFF[id] = false; chgResume(id);
   STALE = false;
   VIEWMODE = VIEWMODE || (innerWidth < 900 ? 'one' : 'grid');
   CUR = Math.min(CUR, Math.max(0, SIDS.length - 1));
@@ -70,7 +73,8 @@ export function onLive(a){
   const changed = s.state !== SUB.state || s.stage !== SUB.stage || JSON.stringify(s.teacherUids) !== JSON.stringify(SUB.teacherUids) || JSON.stringify(s.rv) !== JSON.stringify(SUB.rv) || s.removed !== SUB.removed;
   const setupChanged = JSON.stringify(s.setup) !== JSON.stringify(SUB.setup) || s.type !== SUB.type || JSON.stringify(s.studentIds) !== JSON.stringify(SUB.studentIds);
   SUB = s;
-  if(changed){ const y = window.scrollY; draw(); window.scrollTo(0, y); A.toast('이 칸의 상태가 바뀌었어요 — ' + C.stateOf(s).ko); return; }
+  if(changed){ CHGOFF[s.id] = false; if(Object.keys(CHGR[s.id] || {}).length){ clearTimeout(CHGT[s.id]); CHGT[s.id] = setTimeout(() => chgFlush(s.id), 1500); }
+    const y = window.scrollY; draw(); window.scrollTo(0, y); A.toast('이 칸의 상태가 바뀌었어요 — ' + C.stateOf(s).ko); return; }
   if(setupChanged && TAB !== 'set'){ SIDS = A.subStudents(SUB); const y = window.scrollY; drawBody(); window.scrollTo(0, y); }
   else if(setupChanged){ SIDS = A.subStudents(SUB); staleDraw(); pvRefresh(); }     // v198 틀 탭에서도 — 옛 화면 위에 고쳐서 덮어쓰지 않게
 }
@@ -89,7 +93,9 @@ function put(path, v){
 }
 /* v === undefined → 그 칸을 지움 */
 function putRaw(path, v){
-  if(!NOHIST) histAdd(SUB.id, path, cloneV(getPath(ENT, path)));
+  const prev0 = cloneV(getPath(ENT, path));
+  if(!NOHIST) histAdd(SUB.id, path, prev0);
+  chgNote(SUB.id, path, prev0, v);
   tmAuto();                       // ⏱ 고치기 «직전» 모습을 가끔(20분에 한 번) 보관
   setPath(ENT, path, v);
   pendOf(SUB.id)[path] = v === undefined ? DEL : v;
@@ -134,6 +140,7 @@ async function flushOne(id){
     LAST_OK = Date.now(); SAVE_ERR = '';
     if(INFL[id] === raw) delete INFL[id];
     stashSave(id);
+    chgReady(id, raw);          // 저장된 것만 «고친 기록»으로
     if(here()){ showSave('ok'); scheduleCnt(); }
     return true;
   }catch(e){
@@ -142,7 +149,7 @@ async function flushOne(id){
     const perm = /permission/.test(e.code || '');
     // 못 저장한 것은 다시 넣어 둔다 (그 사이 새로 고친 칸은 새 값 그대로) · 권한이 없으면 버린다 (상태가 바뀜)
     if(!perm){ const Q = pendOf(id); Object.keys(raw).forEach(k => { if(!(k in Q)) Q[k] = raw[k]; }); }
-    else { const F = (FAILED[id] = FAILED[id] || {}); Object.keys(raw).forEach(k => { F[k] = raw[k]; }); }   // v198 버리지 않고 이 기기에 보관
+    else { const F = (FAILED[id] = FAILED[id] || {}); Object.keys(raw).forEach(k => { F[k] = raw[k]; if(CHGQ[id]) delete CHGQ[id][k]; }); }   // v198 버리지 않고 이 기기에 보관 (저장되지 않았으니 고친 기록에는 안 남김)
     stashSave(id);
     if(here()) showSave('err');
     A.toast('저장하지 못했어요 — ' + SAVE_ERR + (perm ? ' · 넣은 값은 이 기기에 보관해 두었어요' : ''), 'err');
@@ -155,7 +162,8 @@ async function flushOne(id){
     return perm;      // 권한 문제면 다음 칸으로 · 연결 문제면 멈추고 «다시 저장»을 기다림
   }
 }
-window.addEventListener('beforeunload', e => { if(hasPend() || Object.keys(SPEND).length){ flush(); flushSetup(); e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('pagehide', () => { chgFlushAll(); });
+window.addEventListener('beforeunload', e => { chgFlushAll(); if(hasPend() || Object.keys(SPEND).length){ flush(); flushSetup(); e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('hashchange', () => { flush(); flushSetup(); });
 function showSave(st){
   const el = document.getElementById('ej-save'); if(!el) return;
@@ -194,9 +202,9 @@ function undoRedo(again){
   const g = from.pop();
   if(!g){ A.toast(again ? '다시 할 것이 없어요' : '되돌릴 것이 없어요'); return; }
   const back = { tick: -1, t: 0, ops: [] };
-  NOHIST = true;
+  NOHIST = true; VIA = again ? 'again' : 'undo';
   try{ g.ops.slice().reverse().forEach(o => { back.ops.push({ path: o.path, prev: cloneV(getPath(ENT, o.path)) }); putRaw(o.path, cloneV(o.prev)); }); }
-  finally{ NOHIST = false; }
+  finally{ NOHIST = false; VIA = ''; }
   const to = again ? (UNDO[SUB.id] = UNDO[SUB.id] || []) : (REDO[SUB.id] = REDO[SUB.id] || []);
   to.push(back);
   histUI();
@@ -256,7 +264,7 @@ async function stashRestore(){
     return `<div class="tm-ch"><div class="k">${m ? esc(A.stuName(m[1])) + ' · ' + esc(tmLabel(m[2])) : esc(k)}</div><div class="was"><small>이 기기에 남은 값</small>${tmVal(v)}</div><div class="now"><small>지금 저장된 값</small>${tmVal(getPath(ENT, k))}</div></div>`; };
   if(!(await A.confirm('💾 저장되지 않은 입력 되살리기', `<div style="max-height:46vh;overflow:auto">${ks.slice(0, 30).map(line).join('')}${ks.length > 30 ? `<small>외 ${ks.length - 30}칸</small>` : ''}</div>«지금 저장된 값»이 «이 기기에 남은 값»으로 바뀌어요. (↩ 되돌리기로 취소할 수 있어요)`, `${ks.length}칸 되살리기`))) return;
   FAILED[SUB.id] = {};
-  ks.forEach(k => putRaw(k, d.p[k] === DEL ? undefined : d.p[k]));
+  VIA = 'stash'; try{ ks.forEach(k => putRaw(k, d.p[k] === DEL ? undefined : d.p[k])); } finally{ VIA = ''; }
   drawBody(); stashCheck();
   A.toast(`${ks.length}칸을 되살렸어요 ✓`);
 }
@@ -308,16 +316,7 @@ function tmDiff(was, now){
   new Set(Object.keys(a).concat(Object.keys(b))).forEach(k => { if(JSON.stringify(a[k]) !== JSON.stringify(b[k])) out.push({ k, was: a[k], now: b[k] }); });
   return out;
 }
-function tmLabel(k){
-  const st = SUB.setup || {}; const [h, id, w] = k.split('.');
-  const f = (L, key) => ((L || []).find(x => x.id === id) || {})[key];
-  if(h === 'e') return '5단계 · ' + (f(st.items, 't') || '(지금 틀에 없는 항목)');
-  if(h === 'n') return '서술 · ' + (f(st.narr, 't') || f((A.TERM.hr || {}).items, 't') || '글');
-  if(h === 's') return '점수 · ' + (id === '__tot' ? '총 점수' : (f((st.score || {}).cols, 't') || '시험'));
-  if(h === 'a') return '출결'; if(h === 'list') return '봉사 · 수상 목록'; if(h === 'off') return '이 학생 빼기';
-  if(h === 'p') return '부모교육' + (w ? ' · ' + w : ''); if(h === 'no' || h === 'yes') return '참여 표시'; if(h === 'r') return '암송 · 읽기';
-  return h;
-}
+const tmLabel = k => C.leafLabel(SUB, k, (A.TERM.hr || {}).items);
 function tmVal(v){
   if(v === undefined || v === null || v === '') return '<i style="color:var(--ink-3)">(비어 있음)</i>';
   if(typeof v === 'object') return esc(JSON.stringify(v).slice(0, 120));
@@ -349,19 +348,169 @@ async function tmOpen(){
       <div class="tm-det"><div class="frow" style="align-items:center;margin-bottom:8px"><b style="font-size:14px">${esc(tmAt(v.at))} 모습과 지금의 차이</b><span class="nh-sp"></span>${D.length && CAN.edit ? `<button class="nh-btn sm g" data-tmall>달라진 ${D.length}명 모두 그때로 되살리기</button>` : ''}</div>
       ${!CAN.edit ? '<div class="nh-info">지금은 이 칸을 고칠 수 없어 보기만 돼요.</div>' : ''}
       ${D.length ? D.map(x => `<div class="tm-stu"><div class="frow" style="align-items:center"><b>${esc(A.stuName(x.sid))}</b><small style="color:var(--ink-3)">${x.d.length}곳 다름</small><span class="nh-sp"></span>${CAN.edit ? `<button class="nh-btn xs" data-tmone="${esc(x.sid)}">이 학생만 되살리기</button>` : ''}</div>
-        ${x.d.map(c => `<div class="tm-ch"><div class="k">${esc(tmLabel(c.k))}</div><div class="was"><small>그때</small>${tmVal(c.was)}</div><div class="now"><small>지금</small>${tmVal(c.now)}</div></div>`).join('')}</div>`).join('') : '<div class="nh-empty">이때 모습과 지금이 같아요.</div>'}</div></div>`;
+        ${x.d.map(c => `<div class="tm-ch"><div class="k">${esc(tmLabel(c.k))}${CAN.edit && x.d.length > 1 ? `<br><button class="nh-btn xs" data-tmleaf="${esc(x.sid)}" data-k="${esc(c.k)}">이 칸만 되살리기</button>` : ''}</div><div class="was"><small>그때</small>${tmVal(c.was)}</div><div class="now"><small>지금</small>${tmVal(c.now)}</div></div>`).join('')}</div>`).join('') : '<div class="nh-empty">이때 모습과 지금이 같아요.</div>'}</div></div>`;
     m.body.querySelectorAll('[data-tmv]').forEach(b => { b.onclick = () => { cur = b.dataset.tmv; drawTM(); }; });
-    const go = async only => {
+    const go = async (only, one) => {
       const list = only ? D.filter(x => x.sid === only) : D; if(!list.length) return;
-      if(!(await A.confirm('⏱ 그때 모습으로 되살리기', `${only ? esc(A.stuName(only)) : `학생 ${list.length}명`}의 입력을 <b>${esc(tmAt(v.at))}</b> 모습으로 바꿔요. 지금 모습도 타임머신에 보관되고, ↩ 되돌리기로 바로 취소할 수 있어요.`, '되살리기'))) return;
+      if(!(await A.confirm('⏱ 그때 모습으로 되살리기', `${only ? esc(A.stuName(only)) : `학생 ${list.length}명`}의 ${one ? `<b>${esc(tmLabel(one))}</b> 칸만` : '입력을'} <b>${esc(tmAt(v.at))}</b> 모습으로 바꿔요. 지금 모습도 타임머신에 보관되고, ↩ 되돌리기로 바로 취소할 수 있어요.`, '되살리기'))) return;
       await tmSnap('restore', cloneV(ENT.rows || {}));
-      list.forEach(x => x.d.forEach(c => putRaw(`rows.${x.sid}.${c.k}`, cloneV(c.was))));
-      m.close(); drawBody(); A.toast(`${list.length}명을 그때 모습으로 되살렸어요 ✓`);
+      VIA = 'tm'; try{ list.forEach(x => x.d.filter(c => !one || c.k === one).forEach(c => putRaw(`rows.${x.sid}.${c.k}`, cloneV(c.was)))); } finally{ VIA = ''; }
+      m.close(); drawBody(); A.toast(one ? '그 칸만 그때 모습으로 되살렸어요 ✓' : `${list.length}명을 그때 모습으로 되살렸어요 ✓`);
     };
     const all = m.body.querySelector('[data-tmall]'); if(all) all.onclick = () => go('');
     m.body.querySelectorAll('[data-tmone]').forEach(b => { b.onclick = () => go(b.dataset.tmone); });
+    m.body.querySelectorAll('[data-tmleaf]').forEach(b => { b.onclick = () => go(b.dataset.tmleaf, b.dataset.k); });
   };
   drawTM();
+}
+
+/* ═══════════ v200 📜 고친 기록 — 누가 · 언제 · 어느 학생 어느 칸을 · 무엇에서 무엇으로 (nhpEntries/<칸>/chg · 보안 규칙 v55) ═══════════
+   · 저장에 성공한 것만 · 같은 칸을 이어 고친 것은 한 줄로(처음 값 → 마지막 값) · 6초 쉬면(길어도 45초마다) 한 묶음으로 씀
+   · 한 줄씩 «이것만 되돌리기» — 되돌린 것도 기록에 남음 · 규칙 v55 전이면 조용히 쉼 */
+const CHGQ = {}, CHGR = {}, CHGT = {}, CHG0 = {}, CHGOFF = {}; let VIA = '';
+const CHG_VIA = { undo: '되돌리기', again: '다시 하기', tm: '타임머신 되살리기', stash: '저장 안 된 입력 되살리기', revert: '기록에서 되돌리기', bulk: '한꺼번에 넣기', paste: '붙여넣기' };
+function chgNote(id, path, prev, v){
+  if(CHGOFF[id]) return;
+  const Q = (CHGQ[id] = CHGQ[id] || {}); const x = Q[path];
+  if(x){ x.now = cloneV(v); if(VIA) x.v = VIA; else delete x.v; } else Q[path] = Object.assign({ was: prev, now: cloneV(v) }, VIA ? { v: VIA } : {});
+}
+function chgReady(id, raw){
+  const Q = CHGQ[id] || {}; const R = (CHGR[id] = CHGR[id] || {}); let any = false;
+  Object.keys(raw).forEach(k => { const q = Q[k]; if(!q) return;
+    const saved = raw[k] === DEL ? undefined : raw[k];
+    let done;
+    if(k in (PENDS[id] || {})){ done = Object.assign({}, q, { now: cloneV(saved) }); q.was = cloneV(saved); delete q.v; }     // 그새 또 고쳐 기다리는 중 — 지금 저장된 데까지만 기록하고, 다음 것은 여기서부터
+    else { done = q; delete Q[k]; }
+    R[k] = R[k] ? Object.assign({}, done, { was: R[k].was }) : done; any = true; });
+  if(!any) return;
+  chgKeep(id);
+  if(!CHG0[id]) CHG0[id] = Date.now();
+  clearTimeout(CHGT[id]);
+  CHGT[id] = setTimeout(() => chgFlush(id), Date.now() - CHG0[id] > 45000 ? 0 : 3000);
+}
+/* 아직 못 쓴 기록은 이 기기에 적어 둔다 — 쓰기 전에 창이 닫혀도 다음에 그 칸을 열 때 이어서 씀 */
+const chgKey = id => 'nhp_cg_' + ((A && A.CU && A.CU.uid) || '') + '_' + id;
+function chgKeep(id){ try{ const R = CHGR[id] || {}; if(Object.keys(R).length) localStorage.setItem(chgKey(id), JSON.stringify(R)); else localStorage.removeItem(chgKey(id)); }catch(e){} }
+function chgResume(id){
+  try{ const R0 = JSON.parse(localStorage.getItem(chgKey(id)) || 'null'); if(!R0 || typeof R0 !== 'object') return;
+    const R = (CHGR[id] = CHGR[id] || {}); Object.keys(R0).forEach(k => { if(!R[k]) R[k] = R0[k]; else R[k].was = R0[k].was; });
+    if(Object.keys(R).length){ clearTimeout(CHGT[id]); CHGT[id] = setTimeout(() => chgFlush(id), 1500); } }catch(e){}
+}
+async function chgFlush(id){
+  clearTimeout(CHGT[id]); CHG0[id] = 0;
+  const R = CHGR[id]; if(!R || CHGOFF[id] || !Object.keys(R).length) return;
+  CHGR[id] = {};
+  const ch = Object.keys(R).filter(k => JSON.stringify(R[k].was) !== JSON.stringify(R[k].now)).map(k => {
+    const o = { k }; if(R[k].was !== undefined && R[k].was !== null) o.w = R[k].was; if(R[k].now !== undefined && R[k].now !== null) o.n = R[k].now; if(R[k].v) o.v = R[k].v; return o; });
+  const sub = A.subOf(id) || SUB;
+  if(!ch.length || !sub){ chgKeep(id); return; }
+  // 한 묶음이 너무 크면(글이 긴 여러 칸) 나눠 씀
+  const parts = []; let cur = [], sz = 0;
+  ch.forEach(c => { const n = JSON.stringify(c).length; if(cur.length && (sz + n > 300000 || cur.length >= 200)){ parts.push(cur); cur = []; sz = 0; } cur.push(c); sz += n; });
+  if(cur.length) parts.push(cur);
+  const back = list => { const R2 = (CHGR[id] = CHGR[id] || {}); list.forEach(c => { if(R2[c.k]) R2[c.k].was = c.w; else R2[c.k] = { was: c.w, now: c.n, v: c.v }; }); };
+  for(let pi = 0; pi < parts.length; pi++){
+    try{ await FS.addDoc(FS.collection(A.db, 'nhpEntries', id, 'chg'), { termId: sub.termId, subjectId: id, at: FS.serverTimestamp(), by: A.CU.uid, byName: (A.me().name || ''), cnt: parts[pi].length, ch: parts[pi] }); CHG_CACHE[id] = null; }
+    catch(e){
+      const rest = parts.slice(pi).reduce((a, b) => a.concat(b), []);
+      back(rest);                                                              // 못 쓴 것은 모두 되돌려 놓고
+      if(/permission/.test((e && e.code) || '')) CHGOFF[id] = true;            // 규칙 v55 게시 전 · 이 칸에 쓸 수 없는 때 — 상태가 바뀌면 다시 해 봄
+      else { clearTimeout(CHGT[id]); CHGT[id] = setTimeout(() => chgFlush(id), 30000); }      // 잠깐 안 된 것이면 30초 뒤 다시
+      chgKeep(id); console.warn('고친 기록', e); return;
+    }
+  }
+  chgKeep(id);
+}
+function chgFlushAll(){ Object.keys(CHGR).forEach(id => { if(Object.keys(CHGR[id] || {}).length) chgFlush(id); }); }
+/* 읽기 — 칸 하나의 기록 (최근 것부터) */
+const CHG_CACHE = {}; let CHG_MINE = false, CHG_SID = '', CHG_N = 300;
+async function chgLoad(id, n){
+  const q = FS.query(FS.collection(A.db, 'nhpEntries', id, 'chg'), FS.orderBy('at', 'desc'), FS.limit(n || 300));
+  const snap = await FS.getDocs(q); const L = [];
+  snap.forEach(d => L.push(Object.assign({ id: d.id }, d.data())));
+  L.sort((a, b) => tmMs(b.at) - tmMs(a.at));
+  return L.slice(0, n || 300);
+}
+/* 기록 묶음 → 한 줄씩 (학생 · 칸) */
+function chgLines(L, sub){
+  const out = [];
+  L.forEach(g => (Array.isArray(g.ch) ? g.ch : []).forEach((c, i) => { if(!c || typeof c.k !== 'string') return; const m = /^rows\.([^.]+)\.(.+)$/.exec(c.k);
+    out.push({ gid: g.id, i, at: g.at, by: g.by, byName: A.staffName(g.by) || g.byName || '', sid: m ? m[1] : '', leaf: m ? m[2] : (c.k || ''), k: c.k, w: c.w, n: c.n, v: c.v, sub }); }));
+  return out;
+}
+function chgLineHTML(x, opt){
+  const sub = x.sub || SUB; const mine = x.by === A.CU.uid;
+  const lab = x.sid ? C.leafLabel(sub, x.leaf, (A.TERM.hr || {}).items) : (x.leaf === 'meta.days' ? '총 수업일수' : x.leaf);
+  const cur = opt && opt.cur ? getPath(ENT, x.k) : undefined;
+  const moved = opt && opt.cur && JSON.stringify(cur === undefined ? null : cur) !== JSON.stringify(x.n === undefined ? null : x.n);
+  const same = opt && opt.cur && JSON.stringify(cur === undefined ? null : cur) === JSON.stringify(x.w === undefined ? null : x.w);
+  return `<div class="cg-row${mine ? ' me' : ''}"><div class="cg-h"><b>${esc(x.byName || '')}</b><small>${esc(tmAt(x.at))}</small>${x.v ? `<span class="ch gray">${esc(CHG_VIA[x.v] || x.v)}</span>` : ''}${opt && opt.where ? `<small class="w">${esc(opt.where)}</small>` : ''}</div>
+    <div class="cg-b"><div class="k"><b>${esc(x.sid ? A.stuName(x.sid) : '이 칸 공통')}</b><span>${esc(lab)}</span></div>
+      <div class="was"><small>바꾸기 전</small>${tmVal(x.w)}</div><div class="now"><small>바꾼 뒤</small>${tmVal(x.n)}</div></div>
+    ${opt && opt.cur ? `<div class="cg-f">${moved ? `<small>그 뒤에 또 바뀌었어요 — 지금: ${tmVal(cur)}</small>` : ''}<span class="nh-sp"></span>${same ? '<small>지금 값이 «바꾸기 전»과 같아요</small>' : (CAN.edit ? `<button class="nh-btn xs" data-cgrev="${esc(x.gid)}" data-ci="${x.i}">↩ 이것만 되돌리기</button>` : '')}</div>` : (opt && opt.go ? `<div class="cg-f"><span class="nh-sp"></span><button class="nh-btn xs" data-cggo="${esc(opt.go)}">그 칸 기록 열기 →</button></div>` : '')}</div>`;
+}
+function chgPaneHTML(){
+  const L = CHG_CACHE[SUB.id];
+  if(L === undefined || L === null || L.loading){
+    if(!(L && L.loading)){
+      const id = SUB.id; CHG_CACHE[id] = { loading: true };       // 이 칸 것으로만 받음 (받는 사이 다른 칸으로 옮겨도 섞이지 않게) · 여는 중에는 또 묻지 않음
+      chgLoad(id, CHG_N).then(r => { CHG_CACHE[id] = r; }, e => { CHG_CACHE[id] = { err: e }; }).then(() => { if(TAB === 'log' && SUB && SUB.id === id){ const b = document.getElementById('cg-pane'); if(b) b.outerHTML = chgPaneHTML(); } });
+    }
+    return '<div class="st-card" id="cg-pane"><div class="nh-desc">고친 기록을 여는 중…</div></div>';
+  }
+  if(L.err) return `<div class="st-card" id="cg-pane"><b style="font-size:14px">📜 고친 기록</b><div class="nh-warn" style="margin-top:8px">${/permission/.test((L.err && L.err.code) || '') ? '고친 기록 보관함이 아직 열리지 않았어요 — 보안 규칙 <b>v55</b>가 게시되면 켜져요.' : '기록을 읽지 못했어요 — ' + esc(A.errText(L.err))}</div></div>`;
+  let lines = chgLines(L, SUB);
+  const sids = [...new Set(lines.map(x => x.sid).filter(Boolean))];
+  if(CHG_SID && !sids.includes(CHG_SID)) CHG_SID = '';
+  const nMine = lines.filter(x => x.by === A.CU.uid).length;
+  if(CHG_MINE) lines = lines.filter(x => x.by === A.CU.uid);
+  if(CHG_SID) lines = lines.filter(x => x.sid === CHG_SID);
+  return `<div class="st-card" id="cg-pane"><div class="frow" style="align-items:center;margin-bottom:8px"><b style="font-size:14px">📜 고친 기록</b><span class="nh-desc" style="margin:0">누가 · 언제 · 어느 학생 어느 칸을 · 무엇에서 무엇으로 — 한 줄씩 되돌릴 수 있어요 (되돌린 것도 기록에 남아요)</span><span class="nh-sp"></span><button class="nh-btn xs" data-ej="cgreload">새로 고침</button></div>
+    <div class="frow" style="align-items:center;margin-bottom:8px"><div class="nh-tabs" style="border:0;padding:0;margin:0"><button data-cgf="all" class="${CHG_MINE ? '' : 'on'}">모두</button><button data-cgf="mine" class="${CHG_MINE ? 'on' : ''}">내가 고친 것만 ${nMine}</button></div>
+      <select class="nh-sel" style="max-width:190px;height:34px" data-cgsid><option value="">학생 모두</option>${sids.map(sid => `<option value="${esc(sid)}"${sid === CHG_SID ? ' selected' : ''}>${esc(A.stuName(sid))}</option>`).join('')}</select></div>
+    ${lines.length ? lines.slice(0, 400).map(x => chgLineHTML(x, { cur: true })).join('') : `<div class="nh-empty">${L.length ? '여기에 해당하는 기록이 없어요.' : '아직 고친 기록이 없어요. <small>(입력을 고치면 몇 초 뒤부터 여기에 쌓여요)</small>'}</div>`}
+    ${L.length >= CHG_N ? `<div style="text-align:center;margin-top:8px"><button class="nh-btn sm" data-ej="cgmore">더 오래된 기록 보기</button></div>` : ''}</div>`;
+}
+async function chgRevert(gid, i){
+  const L0 = CHG_CACHE[SUB.id]; const g = Array.isArray(L0) && L0.find(x => x.id === gid && x.subjectId === SUB.id); const c = g && (g.ch || [])[+i]; if(!c || !CAN.edit) return;
+  const m = /^rows\.([^.]+)\.(.+)$/.exec(c.k || '');
+  // 이 칸 학생의 한 칸(또는 이 칸 공통 값)일 때만 — 다른 칸 기록 · 잘못된 기록으로 엉뚱한 곳을 바꾸지 않게
+  if(!((m && SIDS.includes(m[1])) || /^meta\.[A-Za-z0-9_]+$/.test(c.k || ''))) return A.toast('이 기록은 여기서 되돌릴 수 없어요.', 'err');
+  const cur = getPath(ENT, c.k);
+  const moved = JSON.stringify(cur === undefined ? null : cur) !== JSON.stringify(c.n === undefined ? null : c.n);
+  if(!(await A.confirm('↩ 이것만 되돌리기', `<div class="tm-ch" style="border:0;margin:0"><div class="k">${m ? esc(A.stuName(m[1])) + '<br>' + esc(tmLabel(m[2])) : esc(c.k)}</div><div class="now"><small>지금</small>${tmVal(cur)}</div><div class="was"><small>되돌리면</small>${tmVal(c.w)}</div></div>${moved ? '<div class="nh-warn">이 기록 뒤에 이 칸이 <b>또 바뀌었어요</b> — 되돌리면 그 뒤에 고친 것도 함께 사라져요.</div>' : ''}이 한 칸만 «바꾸기 전» 값으로 돌려요. (↩ 되돌리기로 바로 취소할 수 있고, 기록에도 남아요)`, '되돌리기'))) return;
+  VIA = 'revert'; try{ putRaw(c.k, c.w === undefined ? undefined : cloneV(c.w)); } finally{ VIA = ''; }
+  await Promise.race([flush().then(() => chgFlush(SUB.id)), new Promise(r => setTimeout(r, 5000))]);
+  CHG_CACHE[SUB.id] = null; drawBody(); A.toast('그 칸만 되돌렸어요 ✓');
+}
+/* 📜 학기 전체 기록 (나학평 담당) — 칸마다 최근 기록을 모아 선생님 · 반 · 과목으로 걸러 봄 */
+export async function openTermLog(a){
+  bind(a);
+  if(!A.isMgr || !A.TERM || document.querySelector('.mm-ov [data-termlog-box]')) return;
+  const m = A.modal('📜 고친 기록 — ' + esc(C.termLabel(A.TERM)), '<div data-termlog-box><div class="nh-desc" data-pg>칸마다 기록을 모으는 중…</div></div>', '', 'wide');
+  const subs = A.SUBS.filter(s => !s.removed); let lines = [], done = 0, denied = false, bad = 0;
+  for(let i = 0; i < subs.length && document.body.contains(m.el); i += 12){
+    await Promise.all(subs.slice(i, i + 12).map(async s => { try{ const got = chgLines(await chgLoad(s.id, 40), s); got.forEach(x => lines.push(x)); }catch(e){ if(/permission/.test((e && e.code) || '')) denied = true; else bad++; } done++; }));
+    const pg = m.body.querySelector('[data-pg]'); if(pg) pg.textContent = `칸마다 기록을 모으는 중… ${done} / ${subs.length}`;
+  }
+  if(!document.body.contains(m.el)) return;
+  if(denied && !lines.length){ m.body.innerHTML = '<div class="nh-warn">고친 기록 보관함이 아직 열리지 않았어요 — 보안 규칙 <b>v55</b>가 게시되면 켜져요.</div>'; return; }
+  lines.sort((x, y) => tmMs(y.at) - tmMs(x.at));
+  const F = { who: '', sec: '', subj: '', day: '' };
+  const whos = [...new Map(lines.map(x => [x.by, x.byName])).entries()].sort((x, y) => String(x[1]).localeCompare(String(y[1]), 'ko'));
+  const secs = (A.TERM.sections || []).slice().sort((x, y) => (x.gradeNo || 99) - (y.gradeNo || 99));
+  const subjN = [...new Set(lines.map(x => A.subLabel(x.sub)))].sort((x, y) => x.localeCompare(y, 'ko'));
+  const dayOf = x => { const t = tmMs(x.at); if(!t) return ''; const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const days = [...new Set(lines.map(dayOf).filter(Boolean))].sort().reverse();
+  const draw = () => {
+    const L = lines.filter(x => (!F.who || x.by === F.who) && (!F.sec || x.sub.secId === F.sec) && (!F.subj || A.subLabel(x.sub) === F.subj) && (!F.day || dayOf(x) === F.day));
+    const sel = (k, first, opts) => `<select class="nh-sel" style="max-width:190px;height:34px" data-tf="${k}"><option value="">${first}</option>${opts.map(([v, l]) => `<option value="${esc(v)}"${F[k] === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+    m.body.innerHTML = `<div class="frow" style="align-items:center;margin-bottom:10px">${sel('who', '선생님 모두', whos)}${sel('sec', '반 모두', secs.map(s => [s.id, C.secLabel(s)]))}${sel('subj', '과목 · 칸 모두', subjN.map(n => [n, n]))}${sel('day', '날짜 모두', days.map(d => [d, d]))}<span class="nh-sp"></span><span class="nh-desc" style="margin:0">${L.length}줄${bad ? ` · 못 읽은 칸 ${bad}` : ''} · 칸마다 최근 40묶음까지</span></div>
+      <div style="max-height:62vh;overflow:auto">${L.slice(0, 500).map(x => chgLineHTML(x, { where: `${A.whereOf(x.sub)} · ${A.subLabel(x.sub)}`, go: `s/${x.sub.id}/log` })).join('') || '<div class="nh-empty">해당하는 기록이 없어요.</div>'}${L.length > 500 ? '<div class="nh-desc">최근 500줄만 보여요 — 위에서 걸러 보세요.</div>' : ''}</div>`;
+    m.body.querySelectorAll('[data-tf]').forEach(x => { x.onchange = () => { F[x.dataset.tf] = x.value; draw(); }; });
+    m.body.querySelectorAll('[data-cggo]').forEach(x => { x.onclick = () => { m.close(); A.go(x.dataset.cggo); }; });
+  };
+  draw();
 }
 
 /* ── 화면 ── */
@@ -1188,7 +1337,8 @@ function logHTML(){
   const AN = { submit: '📨 작성완료', withdraw: '↩ 되찾기', ok: '✅ 검토완료', redo: '↩️ 수정 요청', approve: '🔒 최종 승인', reopen: '🔓 다시 열기', cmt: '💬 코멘트', edit: '✏️ 고침' };
   const canCmt = A.isMgr || (SUB.state === 'draft' && CAN.teacher) || CAN.now;
   return `${canCmt ? `<div class="st-card"><div class="fl"><label>한 줄 코멘트 (이 칸 기록에 남아요 — 학과 개관 · 평가 항목 · 학생 평가에 대한 의견)</label><textarea class="nh-ta" rows="2" id="ej-cmt" placeholder="예: 3번 항목 표현을 다듬어 주세요"></textarea></div><button class="nh-btn sm p" data-ej="cmt">남기기</button></div>` : ''}
-    <div class="st-card">${L.map(l => `<div class="lg-row"><div style="min-width:110px"><b>${esc(AN[l.act] || l.act)}</b><br><small>${esc(fmtAt(l.at))}</small></div><div style="flex:1"><b>${esc(l.name || A.staffName(l.uid))}</b>${l.st ? ` <span class="ch gray">${esc(l.st)}</span>` : ''}${l.msg ? `<div style="white-space:pre-wrap;margin-top:2px">${esc(l.msg)}</div>` : ''}</div></div>`).join('') || '<div class="nh-desc">아직 기록이 없어요.</div>'}</div>`;
+    <div class="st-card">${L.map(l => `<div class="lg-row"><div style="min-width:110px"><b>${esc(AN[l.act] || l.act)}</b><br><small>${esc(fmtAt(l.at))}</small></div><div style="flex:1"><b>${esc(l.name || A.staffName(l.uid))}</b>${l.st ? ` <span class="ch gray">${esc(l.st)}</span>` : ''}${l.msg ? `<div style="white-space:pre-wrap;margin-top:2px">${esc(l.msg)}</div>` : ''}</div></div>`).join('') || '<div class="nh-desc">아직 기록이 없어요.</div>'}</div>
+    ${chgPaneHTML()}`;
 }
 
 /* ═══════════ 누르기 · 바꾸기 ═══════════ */
@@ -1227,6 +1377,7 @@ async function doAct(act){
       const left = Object.keys(PENDS[SUB.id] || {}).length || INFL[SUB.id] || SPEND[SUB.id];
       // 넘기는 일(작성완료 · 검토완료 · 승인)은 내가 넣은 것이 다 저장된 뒤에만 — 되찾기 · 수정 요청 · 다시 열기는 막지 않음
       if(left || (CAN.edit && ['submit', 'ok', 'approve'].includes(act) && stashDiff(SUB.id))){ stashCheck(); return A.toast('아직 저장되지 않은 입력이 있어요 — 연결을 확인하고 위쪽 «다시 저장» 또는 «되살리기» 뒤에 해 주세요.', 'err'); }
+      await Promise.race([chgFlush(SUB.id), new Promise(r => setTimeout(r, 4000))]);      // 상태가 바뀌면 기록도 못 쓰므로 먼저
       if(['submit', 'ok', 'redo', 'approve'].includes(act)) await tmSnap(act);
     }
     await A.act(SUB, act, msg);
@@ -1248,6 +1399,8 @@ async function onClick(e){
   if(!t) return;
   const d = t.dataset;
   if(d.pvw){ setPvw(Number(d.pvw), true); return; }
+  if(d.cgf){ CHG_MINE = d.cgf === 'mine'; drawBody(); return; }
+  if(d.cgrev){ await chgRevert(d.cgrev, d.ci); return; }
   if(d.tab){ await flush(); TAB = d.tab; draw(); return; }
   if(d.mode){ VIEWMODE = d.mode; drawBody(); return; }
   if(d.one){ CUR = Math.max(0, Math.min(SIDS.length - 1, CUR + Number(d.one))); drawBody(); return; }
@@ -1255,8 +1408,8 @@ async function onClick(e){
   if(d.pvi){ PV_I = Math.max(0, Math.min(SIDS.length - 1, PV_I + Number(d.pvi))); drawBody(); return; }
   if(d.lv){ if(!CAN.edit) return; levelPop(t, v => setLevel(d.lv, d.it, v)); return; }
   if(d.lv1){ if(!CAN.edit) return; const cur = Number(((row(d.lv1).e) || {})[d.it]) || 0; const v = Number(d.v); put(`rows.${d.lv1}.e.${d.it}`, cur === v ? null : v); drawBody(); return; }
-  if(d.rowall){ levelPop(t, v => { tmSnap('bulk', cloneV(ENT.rows || {})); SIDS.forEach(sid => setLevel(sid, d.rowall, v)); }); return; }
-  if(d.colall){ levelPop(t, v => { tmSnap('bulk', cloneV(ENT.rows || {})); ((SUB.setup || {}).items || []).forEach(it => setLevel(d.colall, it.id, v)); }); return; }
+  if(d.rowall){ levelPop(t, v => { tmSnap('bulk', cloneV(ENT.rows || {})); VIA = 'bulk'; setTimeout(() => { VIA = ''; }, 0); SIDS.forEach(sid => setLevel(sid, d.rowall, v)); }); return; }
+  if(d.colall){ levelPop(t, v => { tmSnap('bulk', cloneV(ENT.rows || {})); VIA = 'bulk'; setTimeout(() => { VIA = ''; }, 0); ((SUB.setup || {}).items || []).forEach(it => setLevel(d.colall, it.id, v)); }); return; }
   if(d.mk){ if(!canMark()) return; levelPop(t, async v => { MARKS.m[d.mk] = MARKS.m[d.mk] || {}; MARKS.m[d.mk][MK_SES] = MARKS.m[d.mk][MK_SES] || {}; if(v) MARKS.m[d.mk][MK_SES][d.it] = v; else delete MARKS.m[d.mk][MK_SES][d.it]; t.className = 'lv' + (v ? ' v' + v : ''); t.textContent = v || '·'; await saveMarkAt(`m.${d.mk}.${MK_SES}.${d.it}`, v || undefined); }); return; }
   if(d.mks){ MK_SES = d.mks; drawBody(); return; }
   if(d.peall){ const v = await A.prompt('모두 같은 값', '모든 학생에게 넣을 결과', '', { ph: '예: 수료' }); if(v == null) return; SIDS.forEach(sid => put(`rows.${sid}.p.${d.peall}.${d.w}`, v.trim())); drawBody(); return; }
@@ -1284,6 +1437,8 @@ async function onClick(e){
   if(a === 'again') return undoRedo(true);
   if(a === 'tm') return tmOpen();
   if(a === 'avgopen'){ AVG_OPEN = true; drawBody(); return; }
+  if(a === 'cgreload'){ await Promise.race([chgFlush(SUB.id), new Promise(r => setTimeout(r, 4000))]); CHG_CACHE[SUB.id] = null; drawBody(); return; }
+  if(a === 'cgmore'){ CHG_N = Math.min(3000, CHG_N * 4); CHG_CACHE[SUB.id] = null; drawBody(); return; }
   if(a === 'stashok') return stashRestore();
   if(a === 'stashno') return stashDrop();
   if(a === 'check') return openCheck();
@@ -1351,6 +1506,7 @@ function onChange(e){
   if(x.hasAttribute('data-pen')){ SUB.setup = Object.assign({}, SUB.setup, { note: x.value }); saveSetup(); return; }
   if(x.hasAttribute('data-vcp')){ SUB.setup = Object.assign({}, SUB.setup, { pick: x.value }); saveSetup(); return; }
   if(x.hasAttribute('data-pvs')){ PV_SID = x.value; pvRefresh(); return; }
+  if(x.hasAttribute('data-cgsid')){ CHG_SID = x.value; drawBody(); return; }
   if(d.itf != null && x.hasAttribute('data-itf') && (d.f === 'g' || (d.f === 't' && /^\s*[\[［【(（]/.test(x.value)))){ drawBody(); return; }   // 범위 묶음 · [머리말] 단추를 다시 그림 (칸을 떠날 때)
   if(x.hasAttribute('data-pvth')){ pvRefresh(); return; }
   if(d.lay === 'sOn'){ const lay = Object.assign({}, SUB.setup.lay || {}, { sOn: x.checked }); SUB.setup = Object.assign({}, SUB.setup, { lay }); saveSetup(true); drawBody(); return; }
@@ -1400,7 +1556,7 @@ async function pasteGrid(){
   m.box.querySelector('[data-ok]').onclick = () => {
     const g = parse(); const s0 = Number(m.box.querySelector('[data-st]').value) || 0;
     let n = 0, bad = 0;
-    tmSnap('paste', cloneV(ENT.rows || {}));
+    tmSnap('paste', cloneV(ENT.rows || {})); VIA = 'paste'; setTimeout(() => { VIA = ''; }, 0);
     g.forEach((r, i) => { const it = items[i]; if(!it) return; r.forEach((v, j) => { const sid = SIDS[s0 + j]; if(!sid) return; if(/^[1-5]$/.test(v)){ put(`rows.${sid}.e.${it.id}`, Number(v)); n++; } else if(v) bad++; }); });
     m.close(); drawBody(); A.toast(`${n}칸을 넣었어요${bad ? ` · 숫자가 아닌 ${bad}칸은 건너뜀` : ''} ✓`);
   };

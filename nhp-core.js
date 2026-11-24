@@ -396,6 +396,17 @@ const r1 = n => Math.round(n * 10) / 10;
 export const fmt1 = n => { const v = r1(n); return Number.isInteger(v) ? String(v) : v.toFixed(1); };
 
 /* 시험 — 비율(%)이 모든 항목에 있으면 «총 점수»를 비율대로 · 하나라도 비율이 없으면 직접 넣은 값 */
+/* v200 학생 입력의 한 칸(저장 경로의 끝 — e.<항목> · n.<서술> · s.<시험> …)을 사람이 읽는 이름으로 — 타임머신 · 고친 기록 */
+export function leafLabel(sub, k, hrItems){
+  const st = (sub && sub.setup) || {}; const [h, id, w] = String(k || '').split('.');
+  const f = (L, key) => ((L || []).find(x => x.id === id) || {})[key];
+  if(h === 'e') return '5단계 · ' + (f(st.items, 't') || '(지금 틀에 없는 항목)');
+  if(h === 'n') return '서술 · ' + (f(st.narr, 't') || f(hrItems, 't') || '글');
+  if(h === 's') return '점수 · ' + (id === '__tot' ? '총 점수' : (f((st.score || {}).cols, 't') || '시험'));
+  if(h === 'a') return '출결'; if(h === 'list') return '봉사 · 수상 목록'; if(h === 'off') return '이 학생 빼기';
+  if(h === 'p') return '부모교육' + (w ? ' · ' + w : ''); if(h === 'no' || h === 'yes') return '참여 표시'; if(h === 'r') return '암송 · 읽기';
+  return h;
+}
 /* v198 쓰는 시험 항목만 — 이름도 비율도 없는 빈 줄(«＋ 시험 항목»만 누르고 둔 것)은 없는 것으로 (입력 표 · 총점 · 채움 · 출력 모두) */
 export function scoreCols(score, rows, sids){
   return ((score && score.cols) || []).filter(c => String(c.t || '').trim() !== '' || Number(c.w) > 0
