@@ -9,8 +9,10 @@
    · v198 안전: ↩ 되돌리기 · 다시 하기 / 저장 못 한 입력은 이 기기에 보관 → 되살리기 / ⏱ 타임머신(지난 모습 — nhpEntries/칸/vers · 규칙 v54)
           평가 틀을 두 사람이 함께 고쳐도 합쳐서 저장 · 학기 중 기록은 바뀐 칸만 저장 · 상태를 바꾸기 전에 남은 입력부터 저장
    · v200 📜 고친 기록: 누가 · 언제 · 어느 학생 어느 칸을 · 무엇에서 무엇으로 (nhpEntries/칸/chg · 규칙 v55) — «이것만 되돌리기» · 내가 고친 것만 · 학기 전체(담당)
+   · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
 import * as SETUP from './nhp-setup.js?v=199';
+import * as ACTS from './nhp-acts.js?v=201';
 
 let A = null, C = null, esc = null, FS = null;
 let SUB = null, ENT = null, TAB = 'in', EL = null, CAN = null, SEC = null, SIDS = [];
@@ -26,7 +28,7 @@ export async function render(a, el, id, tab){
   flush(); flushSetup();          // 기다리지 않는다 — 칸마다 따로 저장되니 다른 칸으로 옮겨도 섞이지 않음 (연결이 끊겨도 화면은 넘어감)
   if(unEnt){ unEnt(); unEnt = null; }
   LOADING = true;                 // 새 칸의 입력을 읽는 동안에는 되돌리기를 받지 않음 (앞 칸 자료에 섞이지 않게)
-  EL = el; SUB = A.subOf(id); MARKS = null;
+  EL = el; SUB = A.subOf(id); MARKS = null; ACT_KICK = ''; ACT_AUTO = '';
   if(!SUB){ LOADING = false; el.innerHTML = `<div class="nh-empty">칸을 찾을 수 없어요. (다른 학기의 칸이거나 빠진 칸이에요) <br><button class="nh-btn sm" data-go="home">← 내 할 일</button></div>`; return; }
   TAB = tab || (A.lsGet('nhp_tab_' + id, 'in'));
   if(!['in', 'set', 'mk', 'pv', 'log'].includes(TAB)) TAB = 'in';
@@ -316,7 +318,8 @@ function tmDiff(was, now){
   new Set(Object.keys(a).concat(Object.keys(b))).forEach(k => { if(JSON.stringify(a[k]) !== JSON.stringify(b[k])) out.push({ k, was: a[k], now: b[k] }); });
   return out;
 }
-const tmLabel = k => C.leafLabel(SUB, k, (A.TERM.hr || {}).items);
+const actLabel = (sub, k) => { const h = String(k || '').split('.'); if(sub && sub.kind === 'act' && /^(no|yes|au|mn)$/.test(h[0])){ const a = (A.LISTS.activities || []).find(x => x.id === h[1]); return (h[0] === 'au' ? '출석부로 자동 뺌 · ' : h[0] === 'mn' ? '손으로 바꿈 표시 · ' : '참여 · ') + ((a && a.t) || '활동'); } return null; };
+const tmLabel = k => { const h = String(k || '').split('.'); if(SUB && SUB.kind === 'act' && /^(no|yes|au|mn)$/.test(h[0])){ const a = (A.LISTS.activities || []).find(x => x.id === h[1]); return (h[0] === 'au' ? '출석부로 자동 뺌 · ' : h[0] === 'mn' ? '손으로 바꿈 표시 · ' : '참여 · ') + ((a && a.t) || '활동'); } return C.leafLabel(SUB, k, (A.TERM.hr || {}).items); };
 function tmVal(v){
   if(v === undefined || v === null || v === '') return '<i style="color:var(--ink-3)">(비어 있음)</i>';
   if(typeof v === 'object') return esc(JSON.stringify(v).slice(0, 120));
@@ -368,7 +371,7 @@ async function tmOpen(){
    · 저장에 성공한 것만 · 같은 칸을 이어 고친 것은 한 줄로(처음 값 → 마지막 값) · 6초 쉬면(길어도 45초마다) 한 묶음으로 씀
    · 한 줄씩 «이것만 되돌리기» — 되돌린 것도 기록에 남음 · 규칙 v55 전이면 조용히 쉼 */
 const CHGQ = {}, CHGR = {}, CHGT = {}, CHG0 = {}, CHGOFF = {}; let VIA = '';
-const CHG_VIA = { undo: '되돌리기', again: '다시 하기', tm: '타임머신 되살리기', stash: '저장 안 된 입력 되살리기', revert: '기록에서 되돌리기', bulk: '한꺼번에 넣기', paste: '붙여넣기' };
+const CHG_VIA = { undo: '되돌리기', again: '다시 하기', tm: '타임머신 되살리기', stash: '저장 안 된 입력 되살리기', revert: '기록에서 되돌리기', bulk: '한꺼번에 넣기', paste: '붙여넣기', att: '출석부대로 맞춤', acts: '특별활동 화면에서' };
 function chgNote(id, path, prev, v){
   if(CHGOFF[id]) return;
   const Q = (CHGQ[id] = CHGQ[id] || {}); const x = Q[path];
@@ -440,7 +443,7 @@ function chgLines(L, sub){
 }
 function chgLineHTML(x, opt){
   const sub = x.sub || SUB; const mine = x.by === A.CU.uid;
-  const lab = x.sid ? C.leafLabel(sub, x.leaf, (A.TERM.hr || {}).items) : (x.leaf === 'meta.days' ? '총 수업일수' : x.leaf);
+  const lab = x.sid ? (actLabel(sub, x.leaf) || C.leafLabel(sub, x.leaf, (A.TERM.hr || {}).items)) : (x.leaf === 'meta.days' ? '총 수업일수' : /^meta\.ack\./.test(x.leaf || '') ? '담임 확인 · ' + ((((A.LISTS.activities || []).find(a => a.id === String(x.leaf).split('.')[2]) || {}).t) || '활동') : x.leaf);
   const cur = opt && opt.cur ? getPath(ENT, x.k) : undefined;
   const moved = opt && opt.cur && JSON.stringify(cur === undefined ? null : cur) !== JSON.stringify(x.n === undefined ? null : x.n);
   const same = opt && opt.cur && JSON.stringify(cur === undefined ? null : cur) === JSON.stringify(x.w === undefined ? null : x.w);
@@ -475,7 +478,7 @@ async function chgRevert(gid, i){
   const L0 = CHG_CACHE[SUB.id]; const g = Array.isArray(L0) && L0.find(x => x.id === gid && x.subjectId === SUB.id); const c = g && (g.ch || [])[+i]; if(!c || !CAN.edit) return;
   const m = /^rows\.([^.]+)\.(.+)$/.exec(c.k || '');
   // 이 칸 학생의 한 칸(또는 이 칸 공통 값)일 때만 — 다른 칸 기록 · 잘못된 기록으로 엉뚱한 곳을 바꾸지 않게
-  if(!((m && SIDS.includes(m[1])) || /^meta\.[A-Za-z0-9_]+$/.test(c.k || ''))) return A.toast('이 기록은 여기서 되돌릴 수 없어요.', 'err');
+  if(!((m && SIDS.includes(m[1])) || /^meta\.[A-Za-z0-9_]+(\.[A-Za-z0-9_-]+)?$/.test(c.k || ''))) return A.toast('이 기록은 여기서 되돌릴 수 없어요.', 'err');
   const cur = getPath(ENT, c.k);
   const moved = JSON.stringify(cur === undefined ? null : cur) !== JSON.stringify(c.n === undefined ? null : c.n);
   if(!(await A.confirm('↩ 이것만 되돌리기', `<div class="tm-ch" style="border:0;margin:0"><div class="k">${m ? esc(A.stuName(m[1])) + '<br>' + esc(tmLabel(m[2])) : esc(c.k)}</div><div class="now"><small>지금</small>${tmVal(cur)}</div><div class="was"><small>되돌리면</small>${tmVal(c.w)}</div></div>${moved ? '<div class="nh-warn">이 기록 뒤에 이 칸이 <b>또 바뀌었어요</b> — 되돌리면 그 뒤에 고친 것도 함께 사라져요.</div>' : ''}이 한 칸만 «바꾸기 전» 값으로 돌려요. (↩ 되돌리기로 바로 취소할 수 있고, 기록에도 남아요)`, '되돌리기'))) return;
@@ -843,14 +846,54 @@ function parentHTML(){
     <div class="nh-tw"><table class="nh-t"><thead><tr><th class="fc">학생</th>${cols.map(c => `<th>${esc(c.p.t)}${c.p.d ? ` <small>${esc(c.p.d)}</small>` : ''}<br><small>${c.w === 'f' ? '아버지' : '어머니'}</small>${CAN.edit ? ` <button class="nh-btn xs ghost" data-peall="${esc(c.p.id)}" data-w="${c.w}" title="모두 같은 값">⋯</button>` : ''}</th>`).join('')}</tr></thead>
     <tbody>${SIDS.map(sid => `<tr><td class="fc"><b>${esc(A.stuName(sid))}</b></td>${cols.map(c => `<td><input class="nh-in" list="pe-sug" style="min-width:110px" data-pe="${esc(sid)}" data-p="${esc(c.p.id)}" data-w="${c.w}" value="${esc(((row(sid).p || {})[c.p.id] || {})[c.w] || '')}"${ro()}></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
-/* ── 특별활동 ── */
+/* ── 특별활동 ── v201: 활동 날짜의 출결을 학생 칸에 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 */
+let ACT_AUTO = '';
+let ACT_KICK = '';
+function actAttKick(){
+  if(ACT_KICK === SUB.id) return;          // 칸을 열 때마다 한 번 — 읽은 지 5분이 넘었거나 지난번에 못 읽었으면 다시 읽음
+  ACT_KICK = SUB.id;
+  const id = SUB.id;
+  ACTS.loadAtt(A).then(() => { if(SUB && SUB.id === id && TAB === 'in'){ actAuto(); drawBody(); } });
+}
+/* 출석부대로 맞추기 — 칸을 열 때 한 번 말없이(고칠 수 있는 사람만) · 단추를 누르면 출석부를 다시 읽고 */
+function actAuto(force){
+  if(!CAN.edit || !ACTS.attReady() || LOADING) return 0;
+  if(!force && ACT_AUTO === SUB.id) return 0;
+  ACT_AUTO = SUB.id;
+  let n = 0;
+  VIA = 'att';
+  try{ C.actsFor(A.LISTS, SUB.secId).forEach(a => { const p = ACTS.plan(a, SIDS, ENT.rows || {});
+    p.off.forEach(sid => { putRaw(`rows.${sid}.no.${a.id}`, true); putRaw(`rows.${sid}.au.${a.id}`, 'att'); n++; });
+    p.on.forEach(sid => { putRaw(`rows.${sid}.no.${a.id}`, undefined); putRaw(`rows.${sid}.au.${a.id}`, undefined); n++; }); }); }
+  finally{ VIA = ''; }
+  if(n) A.toast(`출석부대로 ${n}곳을 맞췄어요 ✓ (↩ 되돌리기로 취소할 수 있어요)`);
+  return n;
+}
 function actHTML(){
   const acts = C.actsFor(A.LISTS, SUB.secId);
-  if(!acts.length) return `<div class="nh-warn">이 반에 해당하는 특별활동이 학기 공통 목록에 없어요. 나학평 담당 · 목록 담당이 «학기 설정 › 공통 목록»에서 넣어요.</div>`;
-  return `<div class="nh-desc">기본은 «모두 참여»예요 — <b>빠진 학생만 끄세요.</b> «고른 학생만» 활동(예: 강연회 발표)은 한 학생을 켜야 나와요.</div>
+  const ed = ACTS.canLists(A);
+  const top = ed ? `<div class="frow" style="align-items:center;margin-bottom:8px"><span class="nh-desc" style="margin:0">활동(이름 · 날짜 · 활동 사항)은 한 곳에서 한 번만 써요.</span><span class="nh-sp"></span><button class="nh-btn sm g" data-ej="actlist">🎉 활동 목록 고치기</button></div>` : '';
+  if(!acts.length) return top + `<div class="nh-warn">이 반에 해당하는 특별활동이 학기 공통 목록에 없어요. 나학평 담당 · 목록 담당이 «🎉 특별활동»에서 넣어요.</div>`;
+  const dated = acts.some(ACTS.hasDates);
+  if(dated) actAttKick();
+  const ready = ACTS.attReady();
+  if(ready && CAN.edit && ACT_AUTO !== SUB.id){ const id = SUB.id; setTimeout(() => { if(SUB && SUB.id === id && TAB === 'in' && actAuto()) drawBody(); }, 0); }
+  const ack = ((ENT.meta || {}).ack) || {};
+  const notes = [];
+  const cell = (a, sid) => {
+    const on = C.joined(a, row(sid)); const t = ready ? ACTS.attOf(a, sid) : null; const r = row(sid);
+    if(t) notes.push({ a, sid, t, on });
+    const tag = t ? `<span class="act-att${t.all ? ' all' : ''}" title="${esc(A.stuName(sid) + ' — ' + t.text)}">${esc(t.short)}</span>` : '';
+    return `<td class="c${t ? ' act-tc' : ''}"><input type="checkbox" style="width:18px;height:18px;accent-color:var(--sb-green)" data-act="${esc(sid)}" data-a="${esc(a.id)}"${on ? ' checked' : ''}${ro()}>${tag}${(r.au || {})[a.id] && !on ? '<small class="act-au" title="출석부대로 자동으로 뺀 학생">자동</small>' : ''}</td>`;
+  };
+  const body = acts.map(a => `<tr><td class="fc" style="min-width:200px"><b>${esc(a.t)}</b> <small style="color:var(--ink-3)">${esc(a.d || ACTS.whenText(a.from, a.to) || '')}</small>${a.def === 'none' ? ' <span class="ch warn">고른 학생만</span>' : ''}${ACTS.hasDates(a) ? '' : ' <span class="ch gray" title="활동 목록에서 시작 날짜를 넣으면 그날 출결이 여기에 보여요">날짜 없음</span>'}${CAN.edit ? `<br><button class="nh-btn xs ghost" data-actall="${esc(a.id)}" data-on="1">모두 켜기</button><button class="nh-btn xs ghost" data-actall="${esc(a.id)}" data-on="0">모두 끄기</button><button class="nh-btn xs${ack[a.id] ? ' p' : ''}" data-actack="${esc(a.id)}" title="이 활동의 참여 학생을 확인했다는 표시 (담당자 화면에 보여요)">${ack[a.id] ? '✓ 확인함' : '확인'}</button>` : (ack[a.id] ? ' <span class="ch ok">확인함</span>' : '')}</td>
+      ${SIDS.map(sid => cell(a, sid)).join('')}</tr>`).join('');
+  const noteHTML = notes.length ? `<div class="st-card" style="margin-top:10px"><div class="frow" style="align-items:center"><b style="font-size:14px">활동 날짜의 출결</b><span class="nh-desc" style="margin:0">출석부에서 읽어 왔어요 — 정상 출석이 아닌 학생만</span><span class="nh-sp"></span>${CAN.edit ? '<button class="nh-btn xs" data-ej="actsync" title="출석부를 다시 읽고, 수업일 모두 빠진 학생을 빼요 (손으로 바꾼 학생은 그대로)">출석부 다시 맞추기</button>' : ''}</div>
+      ${acts.filter(a => notes.some(o => o.a === a)).map(a => `<div class="act-nl"><b>${esc(a.t)}</b> <small>${esc(a.d || ACTS.whenText(a.from, a.to))}</small>${notes.filter(o => o.a === a).map(o => `<div class="act-n${o.t.all && o.on ? ' bad' : o.t.part && o.on ? ' chk' : ''}"><b>${esc(A.stuName(o.sid))}</b> ${esc(o.t.text)} <span>— ${o.t.all ? (o.on ? '모두 빠졌는데 «참여»예요' : '참여에서 뺌') : o.t.part ? (o.on ? '며칠만 빠짐 · 참여로 둠 (확인해 주세요)' : '며칠만 빠짐 · 손으로 뺌') : (o.on ? '참여' : '손으로 뺌')}</span></div>`).join('')}</div>`).join('')}</div>`
+    : (dated ? `<div class="nh-desc" style="margin-top:8px">${ready ? '활동 날짜에 결석 · 지각 · 조퇴 · 체험학습 · 휴학인 학생이 없어요.' : ACTS.attFailed() ? '출석부를 읽지 못했어요 — 화면을 다시 열어 보세요.' : '출석부를 읽는 중…'}</div>` : '');
+  return top + `<div class="nh-desc">기본은 «모두 참여»예요 — <b>빠진 학생만 끄세요.</b> 활동 날짜에 정상 출석이 아닌 학생은 칸에 사유가 보이고, 수업일 모두 빠진 학생은 출석부대로 자동으로 빠져요. «고른 학생만» 활동(예: 강연회 발표)은 한 학생을 켜야 나와요.</div>
     <div class="nh-tw"><table class="nh-t"><thead><tr><th class="fc">활동</th>${SIDS.map(sid => `<th class="c sv" title="${esc(A.stuLabel(sid))}">${esc(shortName(sid))}</th>`).join('')}</tr></thead>
-    <tbody>${acts.map(a => `<tr><td class="fc" style="min-width:200px"><b>${esc(a.t)}</b> <small style="color:var(--ink-3)">${esc(a.d || '')}</small>${a.def === 'none' ? ' <span class="ch warn">고른 학생만</span>' : ''}${CAN.edit ? `<br><button class="nh-btn xs ghost" data-actall="${esc(a.id)}" data-on="1">모두 켜기</button><button class="nh-btn xs ghost" data-actall="${esc(a.id)}" data-on="0">모두 끄기</button>` : ''}</td>
-      ${SIDS.map(sid => `<td class="c"><input type="checkbox" style="width:18px;height:18px;accent-color:var(--sb-green)" data-act="${esc(sid)}" data-a="${esc(a.id)}"${C.joined(a, row(sid)) ? ' checked' : ''}${ro()}></td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    <tbody>${body}</tbody></table></div>${noteHTML}`;
 }
 /* ── 도서 ── */
 function bookHTML(){
@@ -1413,6 +1456,7 @@ async function onClick(e){
   if(d.mk){ if(!canMark()) return; levelPop(t, async v => { MARKS.m[d.mk] = MARKS.m[d.mk] || {}; MARKS.m[d.mk][MK_SES] = MARKS.m[d.mk][MK_SES] || {}; if(v) MARKS.m[d.mk][MK_SES][d.it] = v; else delete MARKS.m[d.mk][MK_SES][d.it]; t.className = 'lv' + (v ? ' v' + v : ''); t.textContent = v || '·'; await saveMarkAt(`m.${d.mk}.${MK_SES}.${d.it}`, v || undefined); }); return; }
   if(d.mks){ MK_SES = d.mks; drawBody(); return; }
   if(d.peall){ const v = await A.prompt('모두 같은 값', '모든 학생에게 넣을 결과', '', { ph: '예: 수료' }); if(v == null) return; SIDS.forEach(sid => put(`rows.${sid}.p.${d.peall}.${d.w}`, v.trim())); drawBody(); return; }
+  if(d.actack){ if(!CAN.edit) return; const on = !!(((ENT.meta || {}).ack || {})[d.actack]); putRaw(`meta.ack.${d.actack}`, on ? undefined : true); drawBody(); return; }
   if(d.actall){ const a = C.actsFor(A.LISTS, SUB.secId).find(x => x.id === d.actall); if(!a) return; SIDS.forEach(sid => setAct(sid, a, d.on === '1')); drawBody(); return; }
   if(d.svadd){ const L = (row(d.svadd).list || []).slice(); L.push({ id: C.rid('v'), k: 'P', t: '', d: '', c: '' }); put(`rows.${d.svadd}.list`, L); drawBody(); return; }
   if(d.svdel){ const L = (row(d.svdel).list || []).slice(); L.splice(+d.i, 1); put(`rows.${d.svdel}.list`, L); drawBody(); return; }
@@ -1445,6 +1489,8 @@ async function onClick(e){
   if(a === 'reload'){ ENT = await A.getEntry(SUB.id, true); drawBody(); const n = document.getElementById('ej-remote'); if(n) n.style.display = 'none'; return; }
   if(a === 'paste') return pasteGrid();
   if(a === 'attpull') return pullAttendance();
+  if(a === 'actlist'){ await flush(); A.afterActs = () => { A.afterActs = null; if(SUB && SUB.kind === 'act'){ ACT_AUTO = ''; actAuto(); drawBody(); } }; return ACTS.openActs(A); }
+  if(a === 'actsync'){ window.showLoading && showLoading('출석부를 읽는 중…'); try{ await ACTS.loadAtt(A, true); }finally{ window.hideLoading && hideLoading(); } if(!ACTS.attReady()) return A.toast('출석부를 읽지 못했어요.', 'err'); if(!actAuto(true)) A.toast('출석부와 모두 맞아요 ✓'); drawBody(); return; }
   if(a === 'servebulk') return serveBulk();
   if(a === 'students'){ await SETUP.editCellStudents(SUB.id, A); SUB = A.subOf(SUB.id); SIDS = A.subStudents(SUB); draw(); return; }
   if(a === 'itemadd'){ const it = (SUB.setup.items || []).concat([{ id: C.rid('i'), g: '', t: '' }]); SUB.setup = Object.assign({}, SUB.setup, { items: it }); saveSetup(true); drawBody(); setTimeout(() => { const ins = EL.querySelectorAll('[data-itf][data-f="t"]'); if(ins.length) ins[ins.length - 1].focus(); }, 30); return; }
@@ -1485,12 +1531,18 @@ async function onClick(e){
 }
 function setAct(sid, a, on){
   if(a.def === 'none') put(`rows.${sid}.yes.${a.id}`, on ? true : null);
-  else put(`rows.${sid}.no.${a.id}`, on ? null : true);
+  else {
+    put(`rows.${sid}.no.${a.id}`, on ? null : true);
+    // v201 손으로 바꾼 학생 — 출석부로 자동으로 뺀 표시는 지우고, 그날 출결이 정상이 아니면 «손으로 바꿈»을 남겨 다시 맞출 때 건드리지 않게
+    const r = row(sid); const wasAu = !!(r.au || {})[a.id];
+    if(wasAu) putRaw(`rows.${sid}.au.${a.id}`, undefined);
+    if(ACTS.hasDates(a) && (wasAu || (ACTS.attReady() && ACTS.attOf(a, sid))) && !(r.mn || {})[a.id]) putRaw(`rows.${sid}.mn.${a.id}`, true);
+  }
 }
 function onChange(e){
   const x = e.target; const d = x.dataset;
   if(d.off){ put(`rows.${d.off}.off`, x.checked ? true : null); if(VIEWMODE === 'grid') drawBody(); return; }
-  if(d.act){ const a = C.actsFor(A.LISTS, SUB.secId).find(y => y.id === d.a); if(a) setAct(d.act, a, x.checked); return; }
+  if(d.act){ const a = C.actsFor(A.LISTS, SUB.secId).find(y => y.id === d.a); if(a){ setAct(d.act, a, x.checked); if(ACTS.hasDates(a)){ const w = EL.querySelector('.nh-tw'); const sl = w ? w.scrollLeft : 0; drawBody(); const w2 = EL.querySelector('.nh-tw'); if(w2) w2.scrollLeft = sl; const f = EL.querySelector(`[data-act="${CSS.escape(d.act)}"][data-a="${CSS.escape(d.a)}"]`); if(f) f.focus(); } } return; }
   if(d.bk){ put(`rows.${d.bk}.no.${d.b}`, x.checked ? null : true); return; }
   if(d.sv){ const L = (row(d.sv).list || []).map(y => Object.assign({}, y)); if(!L[+d.i]) return; L[+d.i][d.f] = x.value; put(`rows.${d.sv}.list`, L); return; }
   if(d.meta){ put(`meta.${d.meta}`, d.meta === 'days' ? (x.value === '' ? null : Number(x.value)) : x.value); if(d.meta === 'days') drawBody(); return; }
