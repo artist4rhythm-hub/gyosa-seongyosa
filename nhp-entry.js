@@ -9,6 +9,7 @@
    · v198 안전: ↩ 되돌리기 · 다시 하기 / 저장 못 한 입력은 이 기기에 보관 → 되살리기 / ⏱ 타임머신(지난 모습 — nhpEntries/칸/vers · 규칙 v54)
           평가 틀을 두 사람이 함께 고쳐도 합쳐서 저장 · 학기 중 기록은 바뀐 칸만 저장 · 상태를 바꾸기 전에 남은 입력부터 저장
    · v200 📜 고친 기록: 누가 · 언제 · 어느 학생 어느 칸을 · 무엇에서 무엇으로 (nhpEntries/칸/chg · 규칙 v55) — «이것만 되돌리기» · 내가 고친 것만 · 학기 전체(담당)
+   · v203 단계 줄: ① 틀 → ② 입력 → ③ 미리보기 · 점검 → ④ 작성 완료 (지금 어디 · 무엇이 남았는지) · 검토에서 돌아온 의견 띠 → 그 학생에게 바로
    · v202 🗄 가져오기 서랍: 내 다른 반 · 다른 선생님 · 지난 학기의 «내용»(모든 학생 같은 글 · 학생별 글 · 5단계)을 같은 학생끼리 · 문장 모음(나만 — userMemos.nhpPhrases)
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
@@ -216,6 +217,7 @@ function undoRedo(again){
   A.toast(again ? `다시 했어요 (${g.ops.length}칸)` : `되돌렸어요 (${g.ops.length}칸)`);
 }
 function histUI(){
+  CK_C = null; stepsUI();
   const u = document.getElementById('ej-undo'), r = document.getElementById('ej-again');
   if(u) u.disabled = !(SUB && CAN && CAN.edit && (UNDO[SUB.id] || []).length);
   if(r) r.disabled = !(SUB && CAN && CAN.edit && (REDO[SUB.id] || []).length);
@@ -539,7 +541,6 @@ function draw(){
   const isSubj = SUB.kind === 'subj';
   const tabs = [['in', '✏️ 입력'], ['set', isSubj ? '🧩 평가 틀' : '🧩 설정'], ...((isSubj && SUB.type !== 'A' && SUB.type !== 'R') ? [['mk', '📈 학기 중 기록']] : []), ['pv', '👀 미리보기'], ['log', `🗒 기록 · 코멘트${(SUB.log || []).filter(l => l.msg).length ? ' ' + (SUB.log || []).filter(l => l.msg).length : ''}`]];
   if(!tabs.some(t => t[0] === TAB)) TAB = 'in';
-  const last = (SUB.log || []).slice().reverse().find(l => l.act === 'redo');
   EL.innerHTML = `<div style="margin-bottom:10px"><button class="nh-btn sm ghost" data-go="home">← 내 할 일</button> <button class="nh-btn sm ghost" data-go="board">📊 진행 현황</button></div>
     ${SUB.removed ? '<div class="nh-warn">이 칸은 학기 설정에서 «빠진 칸»이에요 (보관 중). 출력에 나오지 않아요.</div>' : ''}
     <div class="sj-top"><div class="tt"><div class="k">${esc(A.whereOf(SUB))} · ${esc(kind.icon || '')} ${esc(isSubj ? (SUB.grp ? '조별 과목' : '교과') : (kind.ko || '').split(' (')[0])}</div>
@@ -548,9 +549,10 @@ function draw(){
       <div class="m" style="margin-top:6px"><span>학생 ${SIDS.length}명 · <b style="color:var(--ink)">${p.done}명 채움</b></span><span class="sv-dot" id="ej-save">${LAST_OK ? '' : ''}</span>
         <span id="ej-remote" class="ch warn" style="display:none;cursor:pointer" data-ej="reload">다른 분이 고쳤어요 · 새로 보기</span></div></div>
       <div class="sj-acts">${actsHTML(p)}</div></div>
-    ${SUB.state === 'draft' && last && last.msg ? `<div class="nh-note" style="cursor:default"><div style="font-size:18px">↩️</div><div><b>수정 요청</b> — ${esc(last.msg)}<small>${esc(last.name || '')} · ${esc(fmtAt(last.at))}</small></div></div>` : ''}
+    ${backNoteHTML()}
     ${lockNote()}
     <div class="nh-warn" id="ej-stash" style="display:none"></div>
+    <div class="stp" id="ej-steps" role="group" aria-label="이 칸의 단계"></div>
     <div class="sj-bar"><div class="sj-tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${TAB === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       <div class="sj-hist"><button class="nh-btn sm" id="ej-undo" data-ej="undo" title="방금 넣은 것 되돌리기 (Ctrl+Z)" disabled>↩ 되돌리기</button><button class="nh-btn sm" id="ej-again" data-ej="again" title="되돌린 것 다시 하기 (Ctrl+Y)" disabled>↪ 다시</button><button class="nh-btn sm" data-ej="tm" title="이 칸의 지난 모습 보기 · 되살리기">⏱ 타임머신</button>${dwCan() ? '<button class="nh-btn sm g" data-ej="drawer" title="내 다른 반 · 다른 선생님 · 지난 학기에 쓴 것 가져오기 · 자주 쓰는 문장 모음">🗄 가져오기 서랍</button>' : ''}</div></div>
     <div id="ej-body"></div>`;
@@ -567,6 +569,73 @@ function lockNote(){
   if(!CAN.teacher && !A.isMgr) return `<div class="nh-info">👀 보기만 할 수 있어요 — 이 칸을 맡은 분은 ${esc((SUB.teacherUids || []).map(A.staffName).join(', ') || '아직 없음')}이에요.</div>`;
   return '';
 }
+/* ═══ v203 단계 줄 — ① 틀(설정) → ② 입력 → ③ 미리보기 · 점검 → ④ 작성 완료 · 지금 어디인지, 무엇이 남았는지 ═══ */
+function stepsModel(){
+  const k = SUB.kind, st = SUB.setup || {}, t = SUB.type || 'E'; const p = C.progressOf(SUB, ENT, SIDS);
+  const S = [];
+  // ① 틀
+  if(k === 'subj'){
+    const ni = (st.items || []).length, nn = (st.narr || []).length, nc = C.scoreCols(st.score).length;
+    const need = ((t === 'E' || t === 'M') && !ni) || ((t === 'S' || t === 'M') && !nc);
+    const fixedBlank = (st.narr || []).filter(n => !C.isEach(n) && !String(n.fixed || '').trim()).length;
+    S.push({ id: 'set', t: '평가 틀', sub: need ? '아직 비어 있어요' : [ni ? `${ni}항목` : '', nc ? `시험 ${nc}` : '', nn ? `서술 ${nn}칸` : ''].filter(Boolean).join(' · ') + (fixedBlank ? ` · 같은 글 ${fixedBlank}칸 비어 있음` : ''), ok: !need, warn: need || fixedBlank > 0 });
+  } else if(k === 'act') S.push({ id: 'set', t: '활동 목록', sub: `${C.actsFor(A.LISTS, SUB.secId).length}개`, ok: C.actsFor(A.LISTS, SUB.secId).length > 0, warn: !C.actsFor(A.LISTS, SUB.secId).length });
+  else if(k === 'book') S.push({ id: 'set', t: '도서 목록', sub: `${(st.books || []).filter(b => String(b.t || '').trim()).length}권`, ok: (st.books || []).some(b => String(b.t || '').trim()), warn: false });
+  else S.push({ id: 'set', t: '설정', sub: '필요할 때만', ok: true, warn: false });
+  // ② 입력
+  const loose = ['att', 'parent', 'act', 'book', 'serve'].includes(k);      // 비워도 되는 칸 — «다 채움»으로 세지 않음
+  S.push({ id: 'in', t: '입력', sub: !SIDS.length ? '학생 없음' : loose ? `학생 ${SIDS.length}명 · 해당하는 것만` : `${p.done} / ${p.total}명 다 채움`, ok: !!SIDS.length && p.done >= p.total, warn: false });
+  // ③ 미리보기 · 점검
+  if(canCheck()){ const c = checkCached(); const bits = [c.miss.length ? `덜 채운 학생 ${c.miss.length}` : '', c.names.length ? `다른 학생 이름 ${c.names.length}곳` : ''].filter(Boolean);
+    S.push({ id: 'chk', t: '미리보기 · 점검', sub: bits.join(' · ') || '빈 곳 · 이름 문제 없음', ok: !c.miss.length, warn: c.names.length > 0 }); }
+  else S.push({ id: 'pv', t: '미리보기', sub: '출력 모양 확인', ok: true, warn: false });
+  // ④ 작성 완료
+  const labels = SUB.rvL || []; const stN = SUB.state || 'draft';
+  const where = stN === 'review' ? `검토 중 · ${labels[SUB.stage || 0] || '검토'}` : stN === 'final' ? `검토 중 · ${SUB.finL || '최종 승인'}` : stN === 'done' ? '최종 승인됨 (잠김)' : (CAN.submit ? `${('r1' in (SUB.rv || {}) ? labels[0] : '') || SUB.finL || '최종 승인'} 단계로 넘겨요` : '맡은 선생님이 넘겨요');
+  S.push({ id: 'done', t: stN === 'draft' ? '작성 완료' : stN === 'done' ? '완료' : '작성 완료함', sub: where, ok: stN !== 'draft', warn: false });
+  // 지금 할 곳 — 작성 중이면 처음으로 덜 된 단계 · 그 뒤는 ④
+  const cur = stN !== 'draft' ? 3 : Math.max(0, S.findIndex(x => !x.ok));
+  return { S, cur, draft: stN === 'draft' };
+}
+function stepsHTML(){
+  const { S, cur, draft } = stepsModel();
+  const tabOf = { set: 'set', in: 'in', pv: 'pv' };
+  return S.map((x, i) => {
+    const on = x.id === 'done' ? false : (tabOf[x.id] === TAB);
+    const cls = `stp-i${i === cur ? ' cur' : ''}${x.ok ? ' ok' : ''}${x.warn ? ' warn' : ''}${on ? ' on' : ''}`;
+    const can = x.id !== 'done' || (draft && CAN.submit);
+    return `<button class="${cls}" data-step="${x.id}"${i === cur ? ' aria-current="step"' : ''}${can ? '' : ' disabled'} title="${esc(x.t + ' — ' + x.sub)}"><span class="n">${x.ok ? '✓' : i + 1}</span><span class="tx"><b>${esc(x.t)}</b><small>${esc(x.sub)}</small></span></button>`;
+  }).join('<i class="stp-ar" aria-hidden="true">›</i>');
+}
+let STP_T = null, CK_C = null;
+/* 점검 결과 — 입력 · 틀이 바뀐 뒤에만 다시 셈 (단계 줄이 자주 다시 그려져도 가볍게) */
+function checkCached(){ if(!CK_C || CK_C.id !== SUB.id || Date.now() - CK_C.at > 3000) CK_C = { id: SUB.id, at: Date.now(), v: checkList() }; return CK_C.v; }
+function stepsUI(now){
+  clearTimeout(STP_T);
+  const go = () => { const el = document.getElementById('ej-steps'); if(!el || !SUB || !CAN || !ENT || LOADING) return; const f = el.contains(document.activeElement) ? document.activeElement.dataset.step : ''; el.innerHTML = stepsHTML(); if(f){ const b = el.querySelector(`[data-step="${f}"]`); if(b && !b.disabled) b.focus(); } };
+  if(now) go(); else STP_T = setTimeout(go, 500);
+}
+/* 검토에서 돌아온 의견 — 마지막으로 넘긴 뒤에 받은 수정 요청 (작성 중일 때만) · 글에 학생 이름이 있으면 그 학생에게 바로 */
+function backNotes(){
+  if(SUB.state !== 'draft') return [];
+  const L = SUB.log || []; let from = -1;
+  L.forEach((l, i) => { if(l.act === 'submit' && (L[i + 1] || {}).act !== 'withdraw') from = i; });      // 넘겼다가 바로 되찾은 것은 세지 않음 — 받은 요청이 그대로 남게
+  return L.slice(from + 1).filter(l => (l.act === 'redo' || l.act === 'reopen') && l.msg);
+}
+/* 의견 글에 나온 학생 — 이름 석 자(띄어 써도) 먼저 · 다음은 성 없는 이름 뒤에 조사나 한글 아닌 글자가 올 때만 (낱말 속 글자는 빼려고) */
+function backSid(msg){
+  msg = String(msg || ''); const tight = msg.replace(/\s+/g, '');
+  const nm = sid => String(A.stuName(sid)).replace(/\s+/g, '');
+  const full = SIDS.findIndex(sid => { const n = nm(sid); return n.length >= 3 ? tight.includes(n) : (n.length === 2 && msg.includes(n)); });
+  if(full >= 0) return full;
+  return SIDS.findIndex(sid => { const n = nm(sid); return /^[가-힣]{3,4}$/.test(n) && new RegExp('(^|[^가-힣])' + n.slice(1) + '(?=이?(는|가|의|를|도|와|랑|에게|한테|만|은|을)([^가-힣]|$)|[^가-힣]|$)').test(msg); });
+}
+function backNoteHTML(){
+  const N = backNotes(); if(!N.length) return '';
+  const l = N[N.length - 1]; const i = backSid(l.msg);
+  return `<div class="stp-back"><b>${l.act === 'reopen' ? '다시 열린 칸' : '검토에서 돌아온 의견'}${N.length > 1 ? ` ${N.length}건` : ''}</b><span>${esc(l.name || '')}: «${esc(l.msg)}» <small>${esc(fmtAt(l.at))}</small></span><span class="nh-sp"></span>
+    ${CAN.edit ? `<button class="nh-btn sm w" data-ej="backgo" data-i="${i}">${i >= 0 ? esc(A.stuName(SIDS[i])) + ' 고치러 가기' : '고치러 가기'}</button>` : ''}${N.length > 1 ? '<button class="nh-btn sm" data-tab="log">모두 보기</button>' : ''}</div>`;
+}
 function actsHTML(p){
   const b = [];
   if(CAN.submit) b.push(`<button class="nh-btn g" data-ej="submit">📨 작성완료 · 검토로</button>`);
@@ -581,6 +650,7 @@ function actsHTML(p){
 const fmtAt = s => { try{ const d = new Date(s); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }catch(e){ return ''; } };
 function drawBody(){
   const B = document.getElementById('ej-body'); if(!B) return;
+  stepsUI(true);
   A.lsSet('nhp_tab_' + SUB.id, TAB);
   if(TAB === 'in') B.innerHTML = inputHTML();
   else if(TAB === 'set'){ B.innerHTML = setupHTML(); setTimeout(pvFit, 0); }
@@ -1173,6 +1243,7 @@ function staleDraw(){
 }
 function staleSoon(){ if(STALE) setTimeout(() => { if(STALE) staleDraw(); }, 200); }
 function saveSetup(now){
+  CK_C = null; stepsUI();
   SPEND[SUB.id] = SUB.setup;
   clearTimeout(ST);
   showSave('ing');
@@ -1443,6 +1514,7 @@ async function onClick(e){
   const t = e.target.closest('button,[data-ej],[data-tab],[data-mode]');
   if(!t) return;
   const d = t.dataset;
+  if(d.step){ const k = d.step; if(k === 'chk'){ if(TAB !== 'pv'){ TAB = 'pv'; EL.querySelectorAll('.sj-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB)); drawBody(); } openCheck(); return; } if(k === 'done'){ if(SUB.state === 'draft' && CAN.submit) return doAct('submit'); return; } TAB = k; EL.querySelectorAll('.sj-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB)); drawBody(); return; }
   if(d.pvw){ setPvw(Number(d.pvw), true); return; }
   if(d.cgf){ CHG_MINE = d.cgf === 'mine'; drawBody(); return; }
   if(d.cgrev){ await chgRevert(d.cgrev, d.ci); return; }
@@ -1483,6 +1555,7 @@ async function onClick(e){
   if(a === 'again') return undoRedo(true);
   if(a === 'tm') return tmOpen();
   if(a === 'drawer') return dwOpen();
+  if(a === 'backgo'){ TAB = 'in'; const i = Number(d.i); if(i >= 0 && ['subj', 'hr', 'vision', 'camp'].includes(SUB.kind)){ VIEWMODE = 'one'; CUR = Math.max(0, Math.min(SIDS.length - 1, i)); } draw(); const b = document.getElementById('ej-body'); if(b) b.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
   if(a === 'avgopen'){ AVG_OPEN = true; drawBody(); return; }
   if(a === 'cgreload'){ await Promise.race([chgFlush(SUB.id), new Promise(r => setTimeout(r, 4000))]); CHG_CACHE[SUB.id] = null; drawBody(); return; }
   if(a === 'cgmore'){ CHG_N = Math.min(3000, CHG_N * 4); CHG_CACHE[SUB.id] = null; drawBody(); return; }
