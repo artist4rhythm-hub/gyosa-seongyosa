@@ -396,9 +396,14 @@ const r1 = n => Math.round(n * 10) / 10;
 export const fmt1 = n => { const v = r1(n); return Number.isInteger(v) ? String(v) : v.toFixed(1); };
 
 /* 시험 — 비율(%)이 모든 항목에 있으면 «총 점수»를 비율대로 · 하나라도 비율이 없으면 직접 넣은 값 */
+/* v198 쓰는 시험 항목만 — 이름도 비율도 없는 빈 줄(«＋ 시험 항목»만 누르고 둔 것)은 없는 것으로 (입력 표 · 총점 · 채움 · 출력 모두) */
+export function scoreCols(score, rows, sids){
+  return ((score && score.cols) || []).filter(c => String(c.t || '').trim() !== '' || Number(c.w) > 0
+    || (rows && (sids || Object.keys(rows)).some(sid => String((((rows[sid] || {}).s) || {})[c.id] ?? '').trim() !== '')));    // 이름 없는 항목이라도 점수가 들어 있으면 보이게 (rows 를 줄 때)
+}
 export function scoreTotal(score, vals){
   if(!score || !score.tot || !score.tot.on) return '';
-  const cols = score.cols || [];
+  const cols = scoreCols(score);
   if(!cols.length) return '';
   const weighted = cols.every(c => Number(c.w) > 0);
   if(!weighted) return (vals && vals.__tot != null) ? String(vals.__tot) : '';
@@ -434,7 +439,7 @@ export function rowFilled(sub, row){
   if(sub.kind === 'subj'){
     const t = sub.type || 'E';
     const eOk = !(t === 'E' || t === 'M') || (st.items || []).every(it => levelOf((row.e || {})[it.id]));
-    const sOk = !(t === 'S' || t === 'M') || ((st.score && st.score.cols) || []).every(c => String((row.s || {})[c.id] ?? '').trim() !== '');
+    const sOk = !(t === 'S' || t === 'M') || scoreCols(st.score).every(c => String((row.s || {})[c.id] ?? '').trim() !== '');
     if(t === 'R'){ const n = Math.max(1, Math.min(3, Number((st.r || {}).n) || 1)); return [1, 2, 3].slice(0, n).every(i => String((row.n || {})['c' + i] || '').trim()); }
     return eOk && sOk && nOk;
   }
@@ -581,10 +586,10 @@ function evalTable(bid, sub, row){
 }
 function scoreTable(bid, sub, row, entry, sids0){
   const sc = (sub.setup || {}).score;
-  if(!sc || !(sc.cols || []).length) return null;
-  const cols = sc.cols, tot = sc.tot && sc.tot.on;
   const sids = sids0 || sub.studentIds || [];
   const rs = (entry && entry.rows) || {};
+  if(!sc || !scoreCols(sc, rs, sids).length) return null;
+  const cols = scoreCols(sc, rs, sids), tot = sc.tot && sc.tot.on;
   const nCol = cols.length + (tot ? 1 : 0);
   const head = [C(`${bid}:sh:t`, sc.title || '성적', Object.assign({ rs: sc.avgOn !== false ? 3 : 2, kd: 'lab' }, HD)),
     C(`${bid}:sh:s`, sc.sub || '', Object.assign({ kd: 'lab' }, HD)),
