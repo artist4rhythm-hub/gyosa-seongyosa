@@ -9,7 +9,7 @@
    · v198 안전: ↩ 되돌리기 · 다시 하기 / 저장 못 한 입력은 이 기기에 보관 → 되살리기 / ⏱ 타임머신(지난 모습 — nhpEntries/칸/vers · 규칙 v54)
           평가 틀을 두 사람이 함께 고쳐도 합쳐서 저장 · 학기 중 기록은 바뀐 칸만 저장 · 상태를 바꾸기 전에 남은 입력부터 저장
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=148';
+import * as SETUP from './nhp-setup.js?v=199';
 
 let A = null, C = null, esc = null, FS = null;
 let SUB = null, ENT = null, TAB = 'in', EL = null, CAN = null, SEC = null, SIDS = [];

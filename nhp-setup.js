@@ -226,6 +226,7 @@ async function createTerm(st, m){
   const secs = st.secs.filter(s => st.useSec[s.id]).map(s => ({ id: s.id, classId: s.classId, name: s.name, grade: s.grade, gradeNo: s.gradeNo, hrUid: s.hrUid || '', students: s.students.slice() }));
   const term = { id, org: C.ORG, year: st.year, term: st.term, name: st.name || st.term + '학기', start: st.start, end: st.end, status: 'open', src: 'new',
     due: st.due, sections: secs, review: st.review, hr: { on: !!st.special.hr, items: st.hrItems, off: {} }, listEditors: [] };
+  { const prev = (A.TERMS || []).filter(x => Array.isArray(x.depts) && x.depts.length).sort((a, b) => String(b.id).localeCompare(String(a.id)))[0]; if(prev) term.depts = JSON.parse(JSON.stringify(prev.depts)); }   // v199 부서 묶음은 지난 학기 것을 이어받음
   term.finAll = C.finAllOf(term, secs);
   const ops = [];
   const ref = FS.doc(A.db, 'nhpTerms', id);
@@ -445,8 +446,307 @@ function secsHTML(t){
       <td><button class="nh-btn xs" data-sstu="${esc(s.id)}">학생 보기 · 고치기</button></td></tr>`).join('')}</tbody></table></div>
     <div class="frow" style="margin-top:10px"><button class="nh-btn sm" data-st="resync">🔄 반편성에서 학생 다시 맞추기</button><button class="nh-btn sm" data-st="addsec">＋ 반 더하기</button></div>`;
 }
+
+/* ═══════════ v199 🧩 칸 한눈에 — «과목 × 반» 표 한 장 + 옆 창 (현우님 고름: 시안 A + C의 오른쪽) ═══════════
+   · 줄 = 과목(같은 이름끼리) · 담임 칸 종류 / 세로줄 = 반(학년 순 · 부서로 묶음)
+   · 칸을 눌러 여러 개 고름 · 과목 이름 = 그 줄 전체 · 반 이름 = 그 세로줄 전체 (부서를 골라 두면 그 부서만)
+   · 고른 칸에 한 번에: 선생님 · 평가 방식 · 평가 틀 함께 쓰기 · 빼기 / 빈 자리 «＋» = 그 반에 칸 더하기(같은 과목 틀을 이어받음)
+   · 부서 묶음은 학기 문서(nhpTerms.depts) — 기본 초등부 1~5 · 중등부 6~9 · 고등부 10~12 */
+let CV = '', MX_SEL = new Set(), MX_FOC = '', MX_DEPT = '', MX_F = '', MX_OFF = false;
+const MX_NEW = {};      // 방금 만든 칸 — 목록에 아직 안 들어왔어도(곧 들어옴) 고른 채로 둠
+const mxFresh = id => MX_NEW[id] && Date.now() - MX_NEW[id] < 8000;
+const cvLoad = () => { try{ return localStorage.getItem('nhp_cv') || ''; }catch(e){ return ''; } };
+const cvSave = v => { try{ localStorage.setItem('nhp_cv', v); }catch(e){} };
+const DEPT_DEF = () => [{ id: 'd1', name: '초등부', from: 1, to: 5 }, { id: 'd2', name: '중등부', from: 6, to: 9 }, { id: 'd3', name: '고등부', from: 10, to: 12 }];
+const deptsOf = t => (Array.isArray(t.depts) && t.depts.length ? t.depts : DEPT_DEF());
+const deptOfSec = (t, sec) => deptsOf(t).find(d => Number(sec.gradeNo) >= Number(d.from) && Number(sec.gradeNo) <= Number(d.to)) || null;
+const deptIdOf = (t, sec) => (deptOfSec(t, sec) || {}).id || '';
+const noFrame = s => s.kind === 'subj' && ((((s.type || 'E') === 'E' || s.type === 'M') && !(((s.setup || {}).items) || []).length) || ((s.type === 'S' || s.type === 'M') && !C.scoreCols((s.setup || {}).score).length));
+const noTch = s => !(s.teacherUids || []).length;
+function mxModel(t){
+  const secs = (t.sections || []).slice().sort((a, b) => (Number(a.gradeNo) || 99) - (Number(b.gradeNo) || 99));
+  const groups = deptsOf(t).map(d => ({ d, secs: secs.filter(s => deptIdOf(t, s) === d.id) })).filter(g => g.secs.length);
+  const rest = secs.filter(s => !deptOfSec(t, s)); if(rest.length) groups.push({ d: { id: '_', name: '그 밖' }, secs: rest });
+  const live = A.SUBS.filter(s => !s.removed);
+  const rows = [];
+  ['hr', 'att', 'parent', 'vision', 'camp', 'act', 'book', 'serve'].forEach(k => {
+    const cells = {}; live.filter(s => s.kind === k && !s.grp).forEach(s => { if(!cells[s.secId]) cells[s.secId] = s; });
+    rows.push({ key: 'k:' + k, kind: k, name: C.KINDS[k].ko.split(' (')[0], icon: C.KINDS[k].icon, cells, grp: [], special: true });
+  });
+  const by = {};
+  live.filter(s => s.kind === 'subj').forEach(s => {
+    let key = 's:' + C.normKey(s.name);
+    if(!s.grp){ let n = 2; while(by[key] && by[key].cells[s.secId]) key = 's:' + C.normKey(s.name) + '#' + (n++); }     // 한 반에 같은 이름이 둘이면 줄을 하나 더
+    const r = (by[key] = by[key] || { key, kind: 'subj', name: s.name, cells: {}, grp: [], ord: 1e9 });
+    if(s.grp) r.grp.push(s); else r.cells[s.secId] = s;
+    r.ord = Math.min(r.ord, s.order || 100);
+  });
+  Object.values(by).sort((a, b) => a.ord - b.ord || a.name.localeCompare(b.name, 'ko')).forEach(r => rows.push(r));
+  return { secs, groups, rows };
+}
+const mxRowOf = (M, id) => M.rows.find(r => Object.values(r.cells).some(s => s.id === id)) || null;
+const shortNames = uids => { const n = names(uids); return n.length ? n[0] + (n.length > 1 ? ` +${n.length - 1}` : '') : ''; };
+function mxCellHTML(s){
+  const st = C.stateOf(s); const sel = MX_SEL.has(s.id);
+  const nt = noTch(s), nf = noFrame(s);
+  const sub = s.kind === 'subj' ? (nf ? '틀 없음' : `${C.shareOf(s, A.SUBS) ? '🔗 ' : ''}${(((s.setup || {}).items) || []).length ? '틀 ' + s.setup.items.length : (C.TYPES[s.type] || C.TYPES.E).short}`) : ((s.cnt && s.cnt.done) ? `${s.cnt.done}/${s.cnt.total}` : '');
+  const dim = (MX_F === 'frame' && !nf) || (MX_F === 'tch' && !nt);
+  return `<button class="mx-c${sel ? ' sel' : ''}${nt ? ' nt' : nf ? ' nf' : ''}${s.state !== 'draft' ? ' st-' + st.k : ''}${dim ? ' dim' : ''}${MX_FOC === s.id ? ' foc' : ''}" data-mxc="${esc(s.id)}" aria-pressed="${sel ? 'true' : 'false'}" title="${esc(A.subLabel(s))} · ${esc(C.secLabel(A.secOf(s.secId)))}${nt ? ' · 맡은 선생님 없음' : ' · ' + esc(names(s.teacherUids).join(', '))}${s.state !== 'draft' ? ' · ' + esc(st.ko) : ''}"><b>${nt ? '미정' : esc(shortNames(s.teacherUids))}</b><small>${esc(s.state !== 'draft' ? st.ko : nt ? '선생님 없음' : sub)}</small></button>`;
+}
+function mxHTML(t){
+  const M = mxModel(t);
+  if(MX_DEPT && !M.groups.some(g => g.d.id === MX_DEPT)) MX_DEPT = '';
+  const vis = M.groups.filter(g => !MX_DEPT || g.d.id === MX_DEPT);
+  const vsecs = vis.flatMap(g => g.secs);
+  const all = A.SUBS.filter(s => !s.removed && !s.grp);
+  MX_SEL = new Set([...MX_SEL].filter(id => all.some(s => s.id === id) || mxFresh(id)));
+  if(MX_FOC && !all.some(s => s.id === MX_FOC) && !mxFresh(MX_FOC)) MX_FOC = '';
+  const subj = all.filter(s => s.kind === 'subj');
+  const hit = s => MX_F === 'frame' ? noFrame(s) : MX_F === 'tch' ? noTch(s) : true;
+  const unused = M.rows.filter(r => r.special && !Object.keys(r.cells).length);
+  const rows = M.rows.filter(r => (!MX_F || vsecs.some(sec => r.cells[sec.id] && hit(r.cells[sec.id]))) && (MX_OFF || MX_F || !unused.includes(r)));
+  const offLine = unused.length && !MX_F ? `<button class="mx-more" data-mxa="off">${MX_OFF ? '▴ 안 쓰는 칸 종류 접기' : `＋ 안 쓰는 칸 종류 ${unused.length}개 보기 <small>${unused.map(r => esc(r.name)).join(' · ')}</small>`}</button>` : '';
+  { // 보이지 않는 칸(다른 부서 · 걸러진 줄)은 고른 것에서 뺀다 — 안 보이는 칸이 함께 바뀌지 않게
+    const shown = new Set(); rows.forEach(r => vsecs.forEach(sec => { if(r.cells[sec.id]) shown.add(r.cells[sec.id].id); }));
+    MX_SEL = new Set([...MX_SEL].filter(id => shown.has(id) || mxFresh(id)));
+    if(MX_FOC && !shown.has(MX_FOC) && !mxFresh(MX_FOC)) MX_FOC = '';
+  }
+  const cols = `grid-template-columns:var(--mxn,150px) repeat(${Math.max(1, vsecs.length)},minmax(54px,1fr))`;
+  const fbtn = (k, l, cur, attr) => `<button class="mx-f${cur === k ? ' on' : ''}" data-${attr}="${esc(k)}">${l}</button>`;
+  const head = `<div class="mx-tool"><div class="mx-stat"><span>반 <b>${M.secs.length}</b></span><span>칸 <b>${all.length}</b></span><span>틀 준비 <b class="ok">${subj.filter(s => !noFrame(s)).length}</b> / ${subj.length}</span><span>선생님 없음 <b class="${all.some(noTch) ? 'bad' : ''}">${all.filter(noTch).length}</b></span></div>
+      <span class="nh-sp"></span><button class="nh-btn sm" data-st="inherit">↩ 지난 학기 평가 틀</button><button class="nh-btn sm g" data-mxa="addsubj">＋ 과목 더하기</button></div>
+    <div class="mx-tool"><span class="mx-l">부서</span>${fbtn('', '전체', MX_DEPT, 'mxdept')}${M.groups.map(g => fbtn(g.d.id, `${esc(g.d.name)}${g.d.from ? ` ${esc(g.d.from)}~${esc(g.d.to)}` : ''}`, MX_DEPT, 'mxdept')).join('')}<button class="nh-btn xs ghost" data-mxa="depts">부서 묶음 고치기</button>
+      <span class="nh-sp"></span><span class="mx-l">보기</span>${fbtn('', '모두', MX_F, 'mxf')}${fbtn('frame', '틀 없는 칸만', MX_F, 'mxf')}${fbtn('tch', '선생님 없는 칸만', MX_F, 'mxf')}</div>`;
+  const grid = `<div class="mx-tw"><div class="mx-t" style="min-width:${120 + vsecs.length * 56}px">
+      <div class="mx-r mx-h1" style="${cols}"><div class="mx-n">과목 · 칸</div>${vis.map(g => `<div class="mx-d" style="grid-column:span ${g.secs.length}">${esc(g.d.name)}</div>`).join('')}</div>
+      <div class="mx-r mx-h2" style="${cols}"><div class="mx-n"></div>${vsecs.map(sec => `<button class="mx-col" data-mxcol="${esc(sec.id)}" title="${esc(C.secLabel(sec))} — 이 반 전체 고르기"><b>${esc(sec.gradeNo || '')}</b> ${esc(String(sec.name || '').replace(/반$/, ''))}</button>`).join('')}</div>
+      ${rows.map((r, i) => { const n = vsecs.filter(sec => r.cells[sec.id]).length; const head2 = i === 0 || rows[i - 1].special !== r.special ? `<div class="mx-sub">${r.special ? '🗂 담임 칸 · 공통' : '📘 교과'}</div>` : '';
+        const types = r.special ? '' : [...new Set(Object.values(r.cells).concat(r.grp).map(s => (C.TYPES[s.type] || C.TYPES.E).short))].join(' · ');
+        const tail = offLine && r.special && (i === rows.length - 1 || !rows[i + 1].special) ? offLine : '';
+        return head2 + `<div class="mx-r${!n && !r.grp.length ? ' off' : ''}" style="${cols}"><button class="mx-n" data-mxrow="${esc(r.key)}" title="이 줄 전체 고르기"><span class="t">${r.icon ? esc(r.icon) + ' ' : ''}${esc(r.name)}</span><small>${r.special ? (n ? `${n}반` : '안 씀') : esc(types)}</small></button>
+          ${r.grp.length && !n ? `<div class="mx-g" style="grid-column:span ${Math.max(1, vsecs.length)}">👥 조별 과목 — 조마다 칸 ${r.grp.length}개 (아래 «조별 과목»에서)</div>`
+            : vsecs.map(sec => r.cells[sec.id] ? mxCellHTML(r.cells[sec.id]) : `<button class="mx-c add" data-mxadd="${esc(r.key)}|${esc(sec.id)}" title="${esc(r.name)} — ${esc(C.secLabel(sec))}에 칸 더하기" aria-label="${esc(r.name)} ${esc(C.secLabel(sec))}에 칸 더하기">＋</button>`).join('')}</div>` + tail; }).join('') || '<div class="nh-empty">여기에 해당하는 칸이 없어요.</div>'}
+    </div></div>`;
+  return `<div class="mx-wrap"><div class="mx-main">${head}${grid}</div><aside class="mx-side">${mxSideHTML(M)}</aside></div>${mxBarHTML(M)}`;
+}
+function mxSideHTML(M){
+  const f = MX_FOC && A.subOf(MX_FOC); const r = f && mxRowOf(M, f.id);
+  if(!f || !r) return `<div class="mx-hint"><b>칸을 누르면</b> 그 과목을 듣는 모든 반과 평가 틀이 여기에 보여요.<br><br>· 칸을 여러 개 누르면 함께 골라져요.<br>· <b>과목 이름</b>을 누르면 그 줄 전체, <b>반 이름</b>을 누르면 그 반 전체가 골라져요. 부서를 먼저 고르면 그 부서만요.<br>· 고른 뒤 아래 띠에서 선생님 · 평가 방식 · 평가 틀 함께 쓰기 · 빼기를 한 번에 해요.<br>· 빈 자리의 <b>＋</b>를 누르면 그 반에 칸이 생겨요 (같은 과목의 틀을 이어받아요).</div>`;
+  const cells = M.secs.filter(sec => r.cells[sec.id]).map(sec => r.cells[sec.id]);
+  const st = f.setup || {}; const items = st.items || []; const sc = C.scoreCols(st.score); const narr = (st.narr || []).filter(n => String(n.t || '').trim());
+  const key = C.shareOf(f, A.SUBS);
+  const frame = f.kind !== 'subj' ? '' : `<div class="mx-ft"><b>평가 틀</b> <small>${esc(C.secLabel(A.secOf(f.secId)))}${key ? ` · 🔗 ${C.shareMembers(key, A.SUBS).length}반 함께 씀` : ''}</small><span class="nh-sp"></span><button class="nh-btn xs" data-mxgo="s/${esc(f.id)}/set">틀 고치기 →</button></div>
+      <div class="mx-fr">${items.length ? items.slice(0, 14).map((it, i) => `<div><i>${i + 1}</i><span>${it.g ? `<em>${esc(it.g)}</em> ` : ''}${esc(it.t || '')}</span></div>`).join('') + (items.length > 14 ? `<div><i></i><span>… 외 ${items.length - 14}항목</span></div>` : '') : (noFrame(f) ? '<div class="none">아직 평가 항목이 없어요.</div>' : '')}
+        ${sc.length ? `<div class="x">시험: ${sc.map(c => esc(c.t || '(이름 없음)') + (Number(c.w) > 0 ? ` ${esc(c.w)}%` : '')).join(' · ')}</div>` : ''}${narr.length ? `<div class="x">서술 칸: ${narr.map(n => esc(n.t)).join(' · ')}</div>` : ''}</div>`;
+  return `<div class="mx-st"><b>${r.icon ? esc(r.icon) + ' ' : ''}${esc(r.name)}</b>${f.kind === 'subj' ? ` <span class="ch type">${esc((C.TYPES[f.type] || C.TYPES.E).short)}</span>` : ''}<small>${cells.length}개 반</small></div>
+    <div class="mx-ls">${cells.map(s => { const sec = A.secOf(s.secId); const k2 = C.shareOf(s, A.SUBS);
+      return `<button class="mx-li${MX_SEL.has(s.id) ? ' sel' : ''}${s.id === f.id ? ' foc' : ''}" data-mxpick="${esc(s.id)}"><span class="cb">${MX_SEL.has(s.id) ? '✓' : ''}</span><span class="a"><b>${esc(sec ? `${sec.gradeNo || ''}학년 ${sec.name}` : '')}</b><small>${noTch(s) ? '<em class="bad">선생님 없음</em>' : esc(names(s.teacherUids).join(', '))}</small></span><span class="b">${s.kind === 'subj' ? (noFrame(s) ? '<em class="warn">틀 없음</em>' : `${k2 ? '🔗 ' : ''}${((s.setup || {}).items || []).length ? ((s.setup || {}).items || []).length + '항목' : '준비됨'}`) : ''}<small>${esc(C.stateOf(s).ko)}</small></span></button>`; }).join('')}</div>
+    <div class="frow" style="margin:8px 0 12px"><button class="nh-btn xs" data-mxrow="${esc(r.key)}">이 줄 전체 고르기</button><button class="nh-btn xs" data-mxgo="s/${esc(f.id)}/in">입력 화면 열기 →</button></div>
+    ${frame}`;
+}
+function mxBarHTML(M){
+  const sel = [...MX_SEL].map(id => A.subOf(id)).filter(s => s && !s.removed && !s.grp);
+  if(!sel.length) return '';
+  const rs = [...new Set(sel.map(s => (mxRowOf(M, s.id) || {}).name).filter(Boolean))];
+  const nSubj = sel.filter(s => s.kind === 'subj').length;
+  return `<div class="mx-bar"><b>${sel.length}칸 고름</b><span class="w">${esc(rs.slice(0, 3).join(' · '))}${rs.length > 3 ? ` 외 ${rs.length - 3}` : ''}</span><span class="nh-sp"></span>
+    <button data-mxa="tch">선생님 바꾸기</button><button data-mxa="type"${nSubj ? '' : ' disabled'}>평가 방식</button><button class="gold" data-mxa="share"${nSubj >= 2 ? '' : ' disabled'} title="고른 교과 칸들이 한 평가 틀을 함께 써요">평가 틀 함께 쓰기</button>
+    ${sel.length === 1 ? `<button data-mxgo="s/${esc(sel[0].id)}/${sel[0].kind === 'subj' ? 'set' : 'in'}">칸 열기</button>` : ''}<button class="del" data-mxa="del">칸 빼기</button><button class="x" data-mxa="clear" aria-label="고르기 풀기">고르기 풀기</button></div>`;
+}
+function mxDraw(){
+  const box = document.getElementById('mx-root'); if(!box || !A.TERM) return;
+  const tw = box.querySelector('.mx-tw'); const x = tw ? tw.scrollLeft : 0, y = window.scrollY;
+  const f = document.activeElement; let back = '';
+  if(f && box.contains(f)){ const k = ['mxc', 'mxrow', 'mxcol', 'mxpick', 'mxadd', 'mxdept', 'mxf', 'mxa'].find(k2 => k2 in f.dataset); if(k) back = `[data-${k}="${CSS.escape(f.dataset[k])}"]`; }
+  box.innerHTML = mxHTML(A.TERM);
+  if(back){ const el = box.querySelector(back); if(el) el.focus({ preventScroll: true }); }
+  const tw2 = box.querySelector('.mx-tw'); if(tw2) tw2.scrollLeft = x; window.scrollTo(0, y);
+}
+const mxLockedOut = L => { const ok = L.filter(s => s.state !== 'done'); return { ok, locked: L.length - ok.length }; };
+async function mxEach(list, fn, label){
+  window.showLoading && showLoading(label || '바꾸는 중…'); let n = 0, bad = 0;
+  try{ for(const s0 of list){
+    const s = A.subOf(s0.id);                         // 창을 열어 둔 사이 바뀌었을 수 있어 — 지금 모습으로 (그새 빠졌거나 승인된 칸은 건너뜀)
+    if(!s || s.removed || s.state === 'done'){ bad++; continue; }
+    try{ mine(); await fn(s); n++; }catch(e){ bad++; console.warn('칸 한꺼번에', s.id, e); } } }
+  finally{ window.hideLoading && hideLoading(); }
+  return { n, bad };
+}
+function mxBind(el){
+  const box = el.querySelector('#mx-root'); if(!box) return;
+  box.onclick = async e => {
+    const b = e.target.closest('button'); if(!b || !box.contains(b)) return;
+    const d = b.dataset; const t = A.TERM; const M = mxModel(t);
+    if(d.st) return;                                   // 시간표 · 지난 학기 — 아래 공통 처리로
+    e.stopPropagation();
+    const vsecs = M.groups.filter(g => !MX_DEPT || g.d.id === MX_DEPT).flatMap(g => g.secs);
+    const toggleAll = ids => { if(!ids.length) return; const all = ids.every(id => MX_SEL.has(id)); ids.forEach(id => { if(all) MX_SEL.delete(id); else MX_SEL.add(id); }); if(!all) MX_FOC = MX_FOC && ids.includes(MX_FOC) ? MX_FOC : ids[0]; };
+    if('mxdept' in d){ MX_DEPT = d.mxdept; return mxDraw(); }
+    if('mxf' in d){ MX_F = d.mxf; return mxDraw(); }
+    if(d.mxc){ if(MX_SEL.has(d.mxc)) MX_SEL.delete(d.mxc); else MX_SEL.add(d.mxc); MX_FOC = d.mxc; return mxDraw(); }
+    if(d.mxpick){ if(MX_SEL.has(d.mxpick)) MX_SEL.delete(d.mxpick); else MX_SEL.add(d.mxpick); MX_FOC = d.mxpick; return mxDraw(); }
+    const hit = s => MX_F === 'frame' ? noFrame(s) : MX_F === 'tch' ? noTch(s) : true;      // «~만» 보기에서는 그 칸들만 골라짐 (흐린 칸 · 숨은 줄은 빼고)
+    if(d.mxrow){ const r = M.rows.find(x => x.key === d.mxrow); if(r) toggleAll(vsecs.filter(sec => r.cells[sec.id] && hit(r.cells[sec.id])).map(sec => r.cells[sec.id].id)); return mxDraw(); }
+    if(d.mxcol){ toggleAll(M.rows.map(r => r.cells[d.mxcol]).filter(x => x && hit(x)).map(s => s.id)); return mxDraw(); }
+    if(d.mxgo){ A.go(d.mxgo); return; }
+    if(d.mxadd){ const i = d.mxadd.lastIndexOf('|'); return mxAdd(M.rows.find(x => x.key === d.mxadd.slice(0, i)), A.secOf(d.mxadd.slice(i + 1))); }
+    const sel = [...MX_SEL].map(id => A.subOf(id)).filter(s => s && !s.removed && !s.grp);
+    if(d.mxa === 'clear'){ MX_SEL.clear(); return mxDraw(); }
+    if(d.mxa === 'off'){ MX_OFF = !MX_OFF; return mxDraw(); }
+    if(d.mxa === 'addsubj') return mxAddSubj(M);
+    if(d.mxa === 'depts') return mxDepts();
+    if(d.mxa === 'tch') return mxTeachers(sel);
+    if(d.mxa === 'type') return mxType(sel.filter(s => s.kind === 'subj'));
+    if(d.mxa === 'share') return mxShare(sel.filter(s => s.kind === 'subj'));
+    if(d.mxa === 'del') return mxDel(sel);
+  };
+}
+async function mxTeachers(sel){
+  const { ok, locked } = mxLockedOut(sel); if(!ok.length) return A.toast('고른 칸이 모두 승인되어 잠겨 있어요.', 'err');
+  const common = (ok[0].teacherUids || []).filter(u => ok.every(s => (s.teacherUids || []).includes(u)));
+  const r = await pickPeople(A, `${ok.length}칸 — 맡은 선생님`, common, { help: `고른 <b>${ok.length}칸 모두</b> 여기서 고른 선생님(들)로 바뀌어요. 여러 분을 고르면 함께 입력할 수 있어요.${locked ? ` (승인된 ${locked}칸은 그대로)` : ''}` });
+  if(r == null) return;
+  const res = await mxEach(ok, s => A.saveSub(s.id, { teacherUids: r, turn: C.turnOf(Object.assign({}, s, { teacherUids: r })) }), '선생님을 바꾸는 중…');
+  try{ await applyReview(A.TERM); }catch(e){ console.warn(e); }
+  A.toast(`${res.n}칸의 맡은 선생님을 바꿨어요 ✓${res.bad ? ` · ${res.bad}칸은 못 바꿈` : ''}`, res.bad ? 'err' : ''); PANE = 'cells'; rerender();
+}
+async function mxType(sel){
+  const { ok, locked } = mxLockedOut(sel); if(!ok.length) return A.toast('바꿀 수 있는 교과 칸이 없어요.', 'err');
+  const m = A.modal(`평가 방식 — ${ok.length}칸`, `<div class="tlist">${C.TYPE_ORDER.map((k, i) => `<label class="tl-row" style="cursor:pointer"><input type="radio" name="mxty" value="${k}"${i === 0 ? ' checked' : ''}><div><b>${esc(C.TYPES[k].ko)}</b> <small style="color:var(--ink-3)">${esc(C.TYPES[k].d)}</small></div><span></span></label>`).join('')}</div>
+    <div class="nh-info">이미 입력한 내용과 만들어 둔 항목은 지우지 않고 남겨 둬요 (방식을 되돌리면 다시 보여요).${locked ? ` 승인된 ${locked}칸은 그대로 두어요.` : ''}</div>${ok.some(s => { const k = C.shareOf(s, A.SUBS); return k && C.shareMembers(k, A.SUBS).some(x => !ok.includes(x)); }) ? '<div class="nh-warn">평가 틀을 함께 쓰는 묶음의 <b>일부만</b> 고르셨어요 — 묶음 전체를 같은 방식으로 맞추는 것이 좋아요 (방식이 다르면 함께 쓰는 틀이 서로 어긋나요).</div>' : ''}`, '<button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>바꾸기</button>');
+  m.box.querySelector('[data-c]').onclick = () => m.close();
+  m.box.querySelector('[data-ok]').onclick = async () => {
+    const ty = (m.box.querySelector('input[name=mxty]:checked') || {}).value; if(!ty) return; m.close();
+    const res = await mxEach(ok.filter(s => (s.type || 'E') !== ty), s => A.saveSub(s.id, { type: ty, setup: C.setupForType(s.setup, ty) }), '평가 방식을 바꾸는 중…');
+    A.toast(`${res.n}칸을 «${C.TYPES[ty].ko}»로 바꿨어요 ✓${res.bad ? ` · ${res.bad}칸은 못 바꿈` : ''}`, res.bad ? 'err' : ''); PANE = 'cells'; rerender();
+  };
+}
+async function mxShare(sel){
+  if(sel.length < 2) return A.toast('교과 칸을 두 개 이상 골라 주세요.', 'err');
+  const best = sel.slice().sort((a, b) => ((b.setup || {}).items || []).length - ((a.setup || {}).items || []).length)[0];
+  const diff = new Set(sel.map(s => C.normKey(s.name))).size > 1;
+  const m = A.modal(`🔗 평가 틀 함께 쓰기 — ${sel.length}칸`, `<div class="nh-desc">고른 칸들이 <b>한 평가 틀</b>을 함께 써요. 한 곳에서 고치면 묶인 칸 모두 바뀌어요 (학생 입력 · 점수는 칸마다 따로).</div>
+    ${diff ? '<div class="nh-warn">과목 이름이 서로 다른 칸이 섞여 있어요 — 같은 틀을 써도 되는지 확인해 주세요.</div>' : ''}
+    <div class="fl"><label>이 칸의 평가 틀로 맞추기</label><select class="nh-sel" data-k="base">${sel.map(s => `<option value="${esc(s.id)}"${s === best ? ' selected' : ''}>${esc(s.name)} · ${esc(C.secLabel(A.secOf(s.secId)))} · ${esc((C.TYPES[s.type] || C.TYPES.E).short)} · 항목 ${((s.setup || {}).items || []).length}개 · ${esc(names(s.teacherUids).join(', ') || '담당 없음')}</option>`).join('')}</select></div>
+    <div data-more></div>
+    <div class="nh-info">작성 중인 칸은 고른 칸의 틀로 바뀌고(이미 넣은 5단계 · 글은 같은 글의 항목끼리 이어짐), 검토 중인 칸은 묶기만 해요. 승인된 칸은 그대로 두어요.</div>`, '<button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>묶기</button>', 'mid');
+  { // 기준 칸이 이미 다른 칸과 묶여 있으면 — 그 칸들도 계속 함께 쓴다는 것을 알림
+    const more = () => { const b0 = A.subOf(m.box.querySelector('[data-k="base"]').value); const k0 = b0 && C.shareOf(b0, A.SUBS); const out = k0 ? C.shareMembers(k0, A.SUBS).filter(x => !sel.some(y => y.id === x.id)) : [];
+      m.box.querySelector('[data-more]').innerHTML = out.length ? `<div class="nh-warn">이 칸은 이미 고르지 않은 <b>${out.length}칸</b>(${out.slice(0, 4).map(x => esc(C.secLabel(A.secOf(x.secId)) || x.name)).join(' · ')}${out.length > 4 ? ' …' : ''})과 함께 쓰고 있어요 — 그 칸들도 계속 같은 틀을 써요. 따로 쓰게 하려면 그 칸의 «평가 틀»에서 «이 칸만 풀기»를 하세요.</div>` : ''; };
+    m.box.querySelector('[data-k="base"]').onchange = more; more(); }
+  m.box.querySelector('[data-c]').onclick = () => m.close();
+  m.box.querySelector('[data-ok]').onclick = async () => {
+    const base = A.subOf(m.box.querySelector('[data-k="base"]').value); if(!base) return; m.close();
+    window.showLoading && showLoading('묶는 중…');
+    try{ const r = await shareCells(base, sel.map(s => s.id), { join: true }); A.toast(`${r.n + 1}칸을 함께 쓰기로 묶었어요 🔗${r.held ? ` (검토 중 ${r.held}칸은 묶기만)` : ''}${r.locked ? ` · 승인된 ${r.locked}칸은 그대로` : ''}`); }
+    catch(e){ A.toast('묶지 못했어요 — ' + A.errText(e), 'err'); }
+    window.hideLoading && hideLoading(); PANE = 'cells'; rerender();
+  };
+}
+async function mxDel(sel){
+  const { ok, locked } = mxLockedOut(sel); if(!ok.length) return A.toast('고른 칸이 모두 승인되어 잠겨 있어요.', 'err');
+  const filled = ok.filter(s => s.cnt && s.cnt.done > 0).length;
+  const list = ok.slice(0, 8).map(s => `${esc(A.subLabel(s))} <small>${esc(C.secLabel(A.secOf(s.secId)))}</small>`).join('<br>') + (ok.length > 8 ? `<br><small>외 ${ok.length - 8}칸</small>` : '');
+  if(!(await A.confirm(`칸 빼기 — ${ok.length}칸`, `<div class="ck-sum">${list}</div>이 칸들을 뺍니다. 출력에 나오지 않고, 맡은 선생님의 «내 할 일»에서도 사라져요.${filled ? `<br><b>이미 입력이 있는 칸이 ${filled}개</b> 있어요 — 지우지 않고 보관해요 (빈 자리의 ＋를 누르면 입력과 함께 돌아와요).` : ''}${locked ? `<br>승인된 ${locked}칸은 그대로 두어요.` : ''}`, '빼기', true))) return;
+  const res = await mxEach(ok, s => A.saveSub(s.id, { removed: true, turn: [] }), '칸을 빼는 중…');
+  ok.forEach(s => MX_SEL.delete(s.id));
+  A.toast(`${res.n}칸을 뺐어요${res.bad ? ` · ${res.bad}칸은 못 뺌` : ''}`, res.bad ? 'err' : ''); PANE = 'cells'; rerender();
+}
+/* 빈 자리 ＋ — 보관해 둔 같은 칸이 있으면 되살리고, 없으면 새로 (교과는 같은 과목의 방식 · 틀을 이어받고, 그 과목이 함께 쓰는 중이면 같이 묶임) */
+async function mxAdd(r, sec){
+  if(!r || !sec) return;
+  const old = A.SUBS.find(s => s.removed && !s.grp && s.secId === sec.id && s.kind === r.kind && (r.kind !== 'subj' || C.normKey(s.name) === C.normKey(r.name)));
+  const sibs = Object.values(r.cells);
+  const dep = deptIdOf(A.TERM, sec);
+  const sib = r.kind !== 'subj' ? null : (sibs.filter(s => { const x = A.secOf(s.secId); return x && deptIdOf(A.TERM, x) === dep; }).sort((a, b) => ((b.setup || {}).items || []).length - ((a.setup || {}).items || []).length)[0] || sibs.slice().sort((a, b) => ((b.setup || {}).items || []).length - ((a.setup || {}).items || []).length)[0] || r.grp[0] || null);
+  const key = sib ? C.shareOf(sib, A.SUBS) : '';
+  const msg = old ? `보관해 둔 칸을 다시 꺼내요${old.cnt && old.cnt.done ? ` (입력 ${old.cnt.done}명분이 함께 돌아와요)` : ''}${r.kind === 'subj' ? ' — 평가 방식 · 평가 틀은 뺄 때 모습 그대로예요' : ''}.`
+    : r.kind === 'subj' ? (sib ? `평가 방식 · 평가 틀은 <b>${esc(C.secLabel(A.secOf(sib.secId)) || '같은 과목')}</b> 것을 이어받아요${key ? ' (함께 쓰기로 묶여요)' : ''}. 맡은 선생님은 더한 뒤 정해 주세요.` : '맡은 선생님과 평가 틀은 더한 뒤 정해 주세요.')
+    : '맡은 선생님은 그 반 나학평 담임이에요.';
+  if(!(await A.confirm('＋ 칸 더하기', `<b>${esc(r.name)}</b> 칸을 <b>${esc(C.secLabel(sec))}</b>에 더할까요?<br>${msg}`, '더하기'))) return;
+  try{
+    let id;
+    if(old){ mine(); await A.saveSub(old.id, { removed: false, turn: C.turnOf(Object.assign({}, old, { removed: false })) }); id = old.id; }
+    else if(r.kind === 'subj'){
+      const extra = sib ? Object.assign({ type: sib.type || 'E', setup: JSON.parse(JSON.stringify(sib.setup || C.emptySetup(sib.type || 'E'))), order: sib.order || 100 }, key ? { share: key } : {}) : {};
+      id = await newCell(sec, 'subj', r.name, extra);
+      if(key && sib && !sib.share && key === 'sh_' + sib.id && sib.state !== 'done'){ mine(); await A.saveSub(sib.id, { share: key }); }
+    } else id = await newCell(sec, r.kind);
+    MX_NEW[id] = Date.now(); MX_SEL = new Set([id]); MX_FOC = id;
+    A.toast(r.kind === 'subj' && !old ? '칸을 더했어요 — 아래 띠에서 «선생님 바꾸기»로 맡은 선생님을 정해 주세요.' : '칸을 더했어요 ✓'); PANE = 'cells'; rerender();
+  }catch(e){ A.toast('더하지 못했어요 — ' + A.errText(e), 'err'); }
+}
+/* ＋ 과목 더하기 — 이름 · 방식 · 반(부서째로)을 한 번에 */
+function mxAddSubj(M){
+  const t = A.TERM;
+  const m = A.modal('＋ 과목 더하기', `<div class="frow"><div class="fl"><label>과목 이름</label><input class="nh-in" data-k="name" placeholder="예: 뿌리깊은 나무"></div>
+      <div class="fl" style="max-width:190px"><label>평가 방식</label><select class="nh-sel" data-k="type">${C.TYPE_ORDER.map(k => `<option value="${k}">${esc(C.TYPES[k].ko)}</option>`).join('')}</select></div></div>
+    <div class="fl"><label>이 과목을 듣는 반 <small style="font-weight:400;color:var(--ink-3)">부서 이름을 누르면 그 부서 전체</small></label>
+      ${M.groups.map(g => `<div class="mx-pk"><button class="nh-btn xs" data-dall="${esc(g.d.id)}">${esc(g.d.name)}</button>${g.secs.map(sec => `<label class="ck"><input type="checkbox" data-sec="${esc(sec.id)}" data-d="${esc(g.d.id)}"${MX_DEPT === g.d.id ? ' checked' : ''}>${esc(sec.gradeNo || '')} ${esc(sec.name)}</label>`).join('')}</div>`).join('')}</div>
+    <label class="ck" style="margin-top:6px"><input type="checkbox" data-k="share" checked>고른 반들이 평가 틀을 함께 쓰기 (한 곳에서 만들면 모든 반에)</label>
+    <div class="nh-desc">이미 같은 이름의 과목이 있는 반은 건너뛰어요. 맡은 선생님은 더한 뒤 표에서 줄 전체를 골라 한 번에 정할 수 있어요.</div>`,
+    '<button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>더하기</button>', 'mid');
+  m.box.querySelectorAll('[data-dall]').forEach(b => { b.onclick = () => { const L = Array.from(m.box.querySelectorAll(`[data-d="${b.dataset.dall}"]`)); const all = L.every(i => i.checked); L.forEach(i => { i.checked = !all; }); }; });
+  m.box.querySelector('[data-c]').onclick = () => m.close();
+  setTimeout(() => m.box.querySelector('[data-k="name"]').focus(), 30);
+  m.box.querySelector('[data-ok]').onclick = async () => {
+    const name = m.box.querySelector('[data-k="name"]').value.trim(); const type = m.box.querySelector('[data-k="type"]').value;
+    const ids = Array.from(m.box.querySelectorAll('[data-sec]:checked')).map(i => i.dataset.sec);
+    if(!name) return A.toast('과목 이름을 넣어 주세요.', 'err');
+    if(!ids.length) return A.toast('반을 하나 이상 골라 주세요.', 'err');
+    const share = m.box.querySelector('[data-k="share"]').checked;
+    m.close(); window.showLoading && showLoading('과목을 더하는 중…');
+    const made = []; let skip = 0, bad = 0;
+    const setup = C.emptySetup(type);
+    for(const sid of ids){
+      const sec = A.secOf(sid); if(!sec) continue;
+      if(A.SUBS.some(s => !s.removed && !s.grp && s.kind === 'subj' && s.secId === sid && C.normKey(s.name) === C.normKey(name))){ skip++; continue; }
+      try{
+        const old = A.SUBS.find(s => s.removed && !s.grp && s.kind === 'subj' && s.secId === sid && C.normKey(s.name) === C.normKey(name));
+        if(old){ mine(); await A.saveSub(old.id, { removed: false, turn: C.turnOf(Object.assign({}, old, { removed: false })) }); made.push({ id: old.id, old: true }); }
+        else made.push({ id: await newCell(sec, 'subj', name, { type, setup: JSON.parse(JSON.stringify(setup)) }) });
+      }catch(e){ bad++; console.warn('과목 더하기', sid, e); }
+    }
+    const fresh = made.filter(x => !x.old).map(x => x.id);
+    if(share && fresh.length > 1){ const key = 'sh_' + fresh[0]; for(const id of fresh){ try{ mine(); await FS.updateDoc(FS.doc(A.db, 'nhpSubjects', id), { share: key, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }); }catch(e){ console.warn('함께 쓰기', id, e); } } }
+    window.hideLoading && hideLoading();
+    made.forEach(x => { MX_NEW[x.id] = Date.now(); }); MX_SEL = new Set(made.map(x => x.id)); MX_FOC = (made[0] || {}).id || '';
+    const rev = made.filter(x => x.old).length;
+    A.toast(`«${name}» ${made.length}칸을 더했어요${rev ? ` (그중 ${rev}칸은 보관해 둔 칸을 예전 모습 그대로 되살림)` : ''}${skip ? ` · 이미 있는 ${skip}반은 건너뜀` : ''}${bad ? ` · ${bad}반은 못 더함` : ''} — 아래 띠에서 «선생님 바꾸기»로 맡은 선생님을 정해 주세요.`, bad ? 'err' : ''); PANE = 'cells'; rerender();
+  };
+}
+/* 부서 묶음 고치기 — 학년 범위로 */
+function mxDepts(){
+  let D = JSON.parse(JSON.stringify(deptsOf(A.TERM)));
+  const m = A.modal('부서 묶음 고치기', '<div data-b></div>', '<button class="nh-btn" data-add style="margin-right:auto">＋ 부서</button><button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>저장</button>');
+  const b = m.box.querySelector('[data-b]');
+  const read = () => { D = Array.from(b.querySelectorAll('[data-dp]')).map(r => ({ id: r.dataset.id, name: r.querySelector('[data-f=name]').value.trim(), from: Math.round(Number(r.querySelector('[data-f=from]').value)) || 0, to: Math.round(Number(r.querySelector('[data-f=to]').value)) || 0 })); };
+  const draw = () => { b.innerHTML = `<div class="nh-desc">표의 세로줄(반)을 묶는 기준이에요. 학년 범위로 정해요 — 평가 내용에는 영향이 없고 설정 화면에서만 써요.</div>` + D.map((d, i) => `<div class="frow" data-dp="${i}" data-id="${esc(d.id || C.rid('d'))}" style="align-items:flex-end"><div class="fl"><label>부서 이름</label><input class="nh-in" data-f="name" value="${esc(d.name || '')}"></div><div class="fl" style="max-width:100px"><label>학년부터</label><input class="nh-in" type="number" min="1" max="12" data-f="from" value="${esc(d.from || '')}"></div><div class="fl" style="max-width:100px"><label>학년까지</label><input class="nh-in" type="number" min="1" max="12" data-f="to" value="${esc(d.to || '')}"></div><button class="nh-btn xs r" data-rm="${i}" style="margin-bottom:6px" aria-label="이 부서 빼기">✕</button></div>`).join('');
+    b.querySelectorAll('[data-rm]').forEach(x => { x.onclick = () => { read(); D.splice(+x.dataset.rm, 1); draw(); }; }); };
+  draw();
+  m.box.querySelector('[data-add]').onclick = () => { read(); D.push({ id: C.rid('d'), name: '', from: '', to: '' }); draw(); };
+  m.box.querySelector('[data-c]').onclick = () => m.close();
+  m.box.querySelector('[data-ok]').onclick = async () => {
+    read();
+    if(!D.length) return A.toast('부서를 하나 이상 두세요.', 'err');
+    if(D.some(d => !d.name || !(d.from >= 1) || !(d.to >= d.from))) return A.toast('이름과 학년 범위를 확인해 주세요 (부터 ≤ 까지).', 'err');
+    const srt = D.slice().sort((x, y) => x.from - y.from);
+    if(srt.some((d, i) => i && d.from <= srt[i - 1].to)) return A.toast('학년 범위가 서로 겹쳐요.', 'err');
+    m.close(); MX_DEPT = '';
+    if(await saveTerm({ depts: srt }, '부서 묶음을 저장했어요 ✓')){ PANE = 'cells'; rerender(); }
+  };
+}
+
 /* ── 칸 ── */
 function cellsHTML(t){
+  if(!CV) CV = cvLoad() || (innerWidth >= 900 ? 'mx' : 'list');
+  const tabs = `<div class="nh-tabs mx-cv" style="border:0;padding:0;margin:0 0 10px"><button data-cv="mx" class="${CV === 'mx' ? 'on' : ''}">▦ 한눈에 (과목 × 반)</button><button data-cv="list" class="${CV === 'list' ? 'on' : ''}">☰ 반별로</button></div>`;
+  if(CV === 'mx') return tabs + `<div id="mx-root">${mxHTML(t)}</div>
+    <div data-grp>${GRP.paneHTML(A)}</div>
+    <div class="nh-desc" style="margin-top:12px">💡 칸 순서 바꾸기 · 칸 이름(출력 이름) · 듣는 학생 고르기 · 시간표에서 새 과목 가져오기는 <b>«☰ 반별로»</b> 보기에서 해요.</div>`;
+  return tabs + cellsListHTML(t);
+}
+function cellsListHTML(t){
   const secs = t.sections || [];
   const ss = A.SUBS.filter(s => s.secId === SEC && !s.removed);
   const kinds = ['hr', 'att', 'parent', 'vision', 'camp', 'act', 'book', 'serve'];
@@ -641,12 +941,14 @@ async function newCell(sec, kind, name, extra){
 function bindSetup(el){
   const t = A.TERM;
   el.querySelectorAll('[data-csec]').forEach(s => s.onchange = () => { SEC = s.value; PANE = 'cells'; rerender(); });
+  mxBind(el);
   el.onclick = async e => {
     const b = e.target.closest('button'); if(!b) return;
     const d = b.dataset;
     if(d.jump){ const det = el.querySelector(`details[data-pane="${d.jump}"]`); if(!det) return; det.open = true; PANE = d.jump; paneSave(PANE);
       el.querySelectorAll('[data-jump]').forEach(x => x.classList.toggle('on', x === b)); det.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if(d.st === 'redraw'){ rerender(); return; }
+    if(d.cv){ CV = d.cv; cvSave(CV); PANE = 'cells'; rerender(); return; }
     if(d.st === 'saveprint'){ await savePrint(); return; }
     if(d.st === 'shareall'){ await shareAll(); return; }
     if(d.st === 'prtsample'){ await printSample(); return; }
@@ -952,6 +1254,30 @@ async function fromTimetable(){
 /* 🔗 v144 같은 과목 모든 반 함께 쓰기 (나학평 담당) — 고른 반의 평가 틀로 맞추고 묶는다
    · 작성 중인 칸만 틀을 바꿈 (검토 중 칸은 묶기만 — 작성 중이 되면 그 칸에서 «↙ 함께 쓰는 틀로 이 칸 바꾸기» · 승인 칸은 그대로)
    · 이미 넣은 5단계 · 서술 · 점수는 같은 글의 항목끼리 이어 준다 */
+/* 기준 칸(base)의 평가 틀로 여러 칸을 함께 쓰기로 묶는다 — «같은 과목 모든 반» · «한눈에» 표에서 같이 씀 */
+async function shareCells(base, pick, opt){
+  const baseId = base.id; const key = (opt && opt.join && C.shareOf(base, A.SUBS)) || ('sh_' + base.id);
+  let n = 0, held = 0, locked = 0;
+  mine();
+  if(base.state !== 'done' && base.share !== key) await A.saveSub(base.id, { share: key });   // 승인된 칸이 기준이면 묶음 이름만 빌려 씀 (sh_<id> 로 자동 인식)
+  for(const id of pick){
+    if(id === baseId) continue;
+    const s = A.subOf(id); if(!s) continue;
+    if(s.state === 'done'){ locked++; continue; }   // 승인(잠김) 칸은 규칙상 묶음도 못 바꿈 — 다시 연 뒤에
+    const patch = { share: key };
+    if(s.state === 'draft'){
+      const old = s.setup || {}, nu = JSON.parse(JSON.stringify(base.setup || {}));
+      patch.setup = nu; if((s.type || 'E') !== (base.type || 'E')) patch.type = base.type || 'E';
+      // 입력을 못 읽으면 여기서 멈춤 (빈 입력으로 잘못 알고 틀만 바꾸지 않게)
+      const snap = await FS.getDoc(FS.doc(A.db, 'nhpEntries', s.id)); const rows = (snap.exists() && snap.data().rows) || {};
+      // 예전 항목 id 의 값도 지우지 않고 남겨 둔다 (틀을 되돌리면 다시 보이게) — 같은 글 항목 · 서술 · 점수 칸은 새 id 로도 이어 줌
+      const up = C.remapPatch(rows, old, nu);
+      if(Object.keys(up).length) await FS.updateDoc(FS.doc(A.db, 'nhpEntries', s.id), Object.assign(up, { updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }));
+    } else held++;
+    await save(s.id, patch); n++;
+  }
+  return { n, held, locked };
+}
 async function shareAll(){
   const subj = A.SUBS.filter(s => s.kind === 'subj' && !s.removed && !s.grp);
   const by = {}; subj.forEach(s => { const k = C.normKey(s.name); (by[k] = by[k] || { name: s.name, cells: [] }).cells.push(s); });
@@ -976,28 +1302,9 @@ async function shareAll(){
     const base = A.subOf(baseId); if(!base) return;
     if(pick.filter(id => id !== baseId).length < 1) return A.toast('함께 쓸 반을 하나 이상 골라 주세요.', 'err');
     m.close();
-    const key = 'sh_' + base.id;
     window.showLoading && showLoading('묶는 중…');
-    let n = 0, held = 0, locked = 0;
     try{
-      mine();
-      if(base.state !== 'done') await A.saveSub(base.id, { share: key });   // 승인된 칸이 기준이면 묶음 이름만 빌려 씀 (sh_<id> 로 자동 인식)
-      for(const id of pick){
-        if(id === baseId) continue;
-        const s = A.subOf(id); if(!s) continue;
-        if(s.state === 'done'){ locked++; continue; }   // 승인(잠김) 칸은 규칙상 묶음도 못 바꿈 — 다시 연 뒤에
-        const patch = { share: key };
-        if(s.state === 'draft'){
-          const old = s.setup || {}, nu = JSON.parse(JSON.stringify(base.setup || {}));
-          patch.setup = nu; if((s.type || 'E') !== (base.type || 'E')) patch.type = base.type || 'E';
-          // 입력을 못 읽으면 여기서 멈춤 (빈 입력으로 잘못 알고 틀만 바꾸지 않게)
-          const snap = await FS.getDoc(FS.doc(A.db, 'nhpEntries', s.id)); const rows = (snap.exists() && snap.data().rows) || {};
-          // 예전 항목 id 의 값도 지우지 않고 남겨 둔다 (틀을 되돌리면 다시 보이게) — 같은 글 항목 · 서술 · 점수 칸은 새 id 로도 이어 줌
-          const up = C.remapPatch(rows, old, nu);
-          if(Object.keys(up).length) await FS.updateDoc(FS.doc(A.db, 'nhpEntries', s.id), Object.assign(up, { updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }));
-        } else held++;
-        await save(s.id, patch); n++;
-      }
+      const { n, held, locked } = await shareCells(base, pick);
       A.toast(`«${base.name}» ${n + 1}반을 함께 쓰기로 묶었어요 🔗${held ? ` (검토 중 ${held}칸은 묶기만 — 작성 중이 되면 그 칸에서 «↙ 함께 쓰는 틀로 이 칸 바꾸기»)` : ''}${locked ? ` · 승인된 ${locked}칸은 그대로 (다시 연 뒤 묶을 수 있어요)` : ''}`);
     }catch(e){ A.toast('묶지 못했어요 — ' + A.errText(e), 'err'); }
     window.hideLoading && hideLoading();
