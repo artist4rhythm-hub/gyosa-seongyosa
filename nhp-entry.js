@@ -98,8 +98,12 @@ async function flushOne(id){
     batch.updatedAt = FS.serverTimestamp(); batch.updatedBy = A.CU.uid;
     try{ await FS.updateDoc(ref, batch); }
     catch(e){
-      if(e && e.code === 'not-found'){
-        // 처음 저장 — 문서만 만들고(rows 는 건드리지 않음: 함께 맡은 선생님이 막 저장한 것을 지우지 않게) 고친 칸을 넣는다
+      // 처음 저장 — 문서가 아직 없으면 보안 규칙은 «없음»이 아니라 «권한 없음»으로 답한다 (없는 문서를 고치는 요청에는 학기(termId)가 없어서)
+      //   → 권한 오류면 문서가 정말 없는지 먼저 본다 (v197: 처음 쓰는 칸에서 «권한이 없어요»로 저장이 안 되던 것)
+      let missing = !!(e && e.code === 'not-found');
+      if(!missing && e && /permission/.test(e.code || '')){ try{ missing = !(await FS.getDoc(ref)).exists(); }catch(e2){} }
+      if(missing){
+        // 문서만 만들고(rows 는 건드리지 않음: 함께 맡은 선생님이 막 저장한 것을 지우지 않게) 고친 칸을 넣는다
         const m = META[id] || {};
         await FS.setDoc(ref, { termId: m.termId, subjectId: id, secId: m.secId || '', kind: m.kind || '', createdAt: FS.serverTimestamp() }, { merge: true });
         await FS.updateDoc(ref, batch);
