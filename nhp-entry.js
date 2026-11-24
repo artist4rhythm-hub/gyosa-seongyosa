@@ -9,6 +9,7 @@
    · v198 안전: ↩ 되돌리기 · 다시 하기 / 저장 못 한 입력은 이 기기에 보관 → 되살리기 / ⏱ 타임머신(지난 모습 — nhpEntries/칸/vers · 규칙 v54)
           평가 틀을 두 사람이 함께 고쳐도 합쳐서 저장 · 학기 중 기록은 바뀐 칸만 저장 · 상태를 바꾸기 전에 남은 입력부터 저장
    · v200 📜 고친 기록: 누가 · 언제 · 어느 학생 어느 칸을 · 무엇에서 무엇으로 (nhpEntries/칸/chg · 규칙 v55) — «이것만 되돌리기» · 내가 고친 것만 · 학기 전체(담당)
+   · v202 🗄 가져오기 서랍: 내 다른 반 · 다른 선생님 · 지난 학기의 «내용»(모든 학생 같은 글 · 학생별 글 · 5단계)을 같은 학생끼리 · 문장 모음(나만 — userMemos.nhpPhrases)
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
 import * as SETUP from './nhp-setup.js?v=199';
@@ -28,6 +29,7 @@ export async function render(a, el, id, tab){
   flush(); flushSetup();          // 기다리지 않는다 — 칸마다 따로 저장되니 다른 칸으로 옮겨도 섞이지 않음 (연결이 끊겨도 화면은 넘어감)
   if(unEnt){ unEnt(); unEnt = null; }
   LOADING = true;                 // 새 칸의 입력을 읽는 동안에는 되돌리기를 받지 않음 (앞 칸 자료에 섞이지 않게)
+  if(DW.el && (!SUB || SUB.id !== id)) dwClose();
   EL = el; SUB = A.subOf(id); MARKS = null; ACT_KICK = ''; ACT_AUTO = '';
   if(!SUB){ LOADING = false; el.innerHTML = `<div class="nh-empty">칸을 찾을 수 없어요. (다른 학기의 칸이거나 빠진 칸이에요) <br><button class="nh-btn sm" data-go="home">← 내 할 일</button></div>`; return; }
   TAB = tab || (A.lsGet('nhp_tab_' + id, 'in'));
@@ -166,7 +168,7 @@ async function flushOne(id){
 }
 window.addEventListener('pagehide', () => { chgFlushAll(); });
 window.addEventListener('beforeunload', e => { chgFlushAll(); if(hasPend() || Object.keys(SPEND).length){ flush(); flushSetup(); e.preventDefault(); e.returnValue = ''; } });
-window.addEventListener('hashchange', () => { flush(); flushSetup(); });
+window.addEventListener('hashchange', () => { flush(); flushSetup(); if(DW.el && !(SUB && location.hash.startsWith('#s/' + SUB.id))) dwClose(); });
 function showSave(st){
   const el = document.getElementById('ej-save'); if(!el) return;
   if(st === 'ing'){ el.className = 'sv-dot'; el.textContent = '저장 중…'; }
@@ -371,7 +373,7 @@ async function tmOpen(){
    · 저장에 성공한 것만 · 같은 칸을 이어 고친 것은 한 줄로(처음 값 → 마지막 값) · 6초 쉬면(길어도 45초마다) 한 묶음으로 씀
    · 한 줄씩 «이것만 되돌리기» — 되돌린 것도 기록에 남음 · 규칙 v55 전이면 조용히 쉼 */
 const CHGQ = {}, CHGR = {}, CHGT = {}, CHG0 = {}, CHGOFF = {}; let VIA = '';
-const CHG_VIA = { undo: '되돌리기', again: '다시 하기', tm: '타임머신 되살리기', stash: '저장 안 된 입력 되살리기', revert: '기록에서 되돌리기', bulk: '한꺼번에 넣기', paste: '붙여넣기', att: '출석부대로 맞춤', acts: '특별활동 화면에서' };
+const CHG_VIA = { undo: '되돌리기', again: '다시 하기', tm: '타임머신 되살리기', stash: '저장 안 된 입력 되살리기', revert: '기록에서 되돌리기', bulk: '한꺼번에 넣기', paste: '붙여넣기', att: '출석부대로 맞춤', acts: '특별활동 화면에서', import: '가져옴 (서랍)' };
 function chgNote(id, path, prev, v){
   if(CHGOFF[id]) return;
   const Q = (CHGQ[id] = CHGQ[id] || {}); const x = Q[path];
@@ -550,7 +552,7 @@ function draw(){
     ${lockNote()}
     <div class="nh-warn" id="ej-stash" style="display:none"></div>
     <div class="sj-bar"><div class="sj-tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${TAB === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-      <div class="sj-hist"><button class="nh-btn sm" id="ej-undo" data-ej="undo" title="방금 넣은 것 되돌리기 (Ctrl+Z)" disabled>↩ 되돌리기</button><button class="nh-btn sm" id="ej-again" data-ej="again" title="되돌린 것 다시 하기 (Ctrl+Y)" disabled>↪ 다시</button><button class="nh-btn sm" data-ej="tm" title="이 칸의 지난 모습 보기 · 되살리기">⏱ 타임머신</button></div></div>
+      <div class="sj-hist"><button class="nh-btn sm" id="ej-undo" data-ej="undo" title="방금 넣은 것 되돌리기 (Ctrl+Z)" disabled>↩ 되돌리기</button><button class="nh-btn sm" id="ej-again" data-ej="again" title="되돌린 것 다시 하기 (Ctrl+Y)" disabled>↪ 다시</button><button class="nh-btn sm" data-ej="tm" title="이 칸의 지난 모습 보기 · 되살리기">⏱ 타임머신</button>${dwCan() ? '<button class="nh-btn sm g" data-ej="drawer" title="내 다른 반 · 다른 선생님 · 지난 학기에 쓴 것 가져오기 · 자주 쓰는 문장 모음">🗄 가져오기 서랍</button>' : ''}</div></div>
     <div id="ej-body"></div>`;
   EL.onclick = onClick; EL.onchange = onChange; EL.oninput = onInput; EL.onkeydown = onKey;
   EL.onpointerdown = onGrip;
@@ -1480,6 +1482,7 @@ async function onClick(e){
   if(a === 'undo') return undoRedo(false);
   if(a === 'again') return undoRedo(true);
   if(a === 'tm') return tmOpen();
+  if(a === 'drawer') return dwOpen();
   if(a === 'avgopen'){ AVG_OPEN = true; drawBody(); return; }
   if(a === 'cgreload'){ await Promise.race([chgFlush(SUB.id), new Promise(r => setTimeout(r, 4000))]); CHG_CACHE[SUB.id] = null; drawBody(); return; }
   if(a === 'cgmore'){ CHG_N = Math.min(3000, CHG_N * 4); CHG_CACHE[SUB.id] = null; drawBody(); return; }
@@ -1814,3 +1817,242 @@ async function saveAsForm(){
   }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); }
 }
 window.addEventListener('resize', () => { if(TAB === 'set') pvFit(); });
+
+/* ═══════════ v202 🗄 가져오기 서랍 — 내 다른 반 · 다른 선생님 · 지난 학기 · 문장 모음 ═══════════
+   · 평가 틀은 예전 «📥 가져오기» 창으로 · 여기서는 «내용»: 모든 학생 같은 글(수업 내용 개관) · 학생별 글 · 5단계 평가
+   · 학생별 내용은 «같은 학생»끼리만 · 넣기 전에 몇 칸이 들어가는지 보여 줌 · 기본은 «빈 칸에만» · 한 번의 되돌리기로 취소 · 고친 기록에 «가져옴»
+   · 문장 모음은 나만 봄 — userMemos/<내 uid>.nhpPhrases (보안 규칙 그대로) */
+const DW = { el: null, tab: 'mine', q: '', key: '', mode: 'empty', parts: { ov: true, narr: true, lv: true }, src: null, ent: {}, focus: null, ph: null, phG: '', phQ: '', phT: '', phGi: '', phErr: false, past: 0, busy: false };
+const dwCan = () => !!SUB && (SUB.kind === 'subj' || SUB.kind === 'hr');
+function dwClose(){ if(DW.el){ DW.el.remove(); DW.el = null; } document.body.classList.remove('dw-open'); }
+/* 마지막으로 쓰던 글 칸 · 커서 자리 (칸이 다시 그려져도 그 자리에 넣게 · 다른 칸의 것은 쓰지 않음) */
+const dwMark = e => { const t = e.target; if(t && t.matches && t.matches('textarea[data-nr]') && SUB) DW.focus = { sub: SUB.id, sid: t.dataset.nr, ni: t.dataset.ni, a: t.selectionStart, b: t.selectionEnd }; };
+['focusin', 'keyup', 'mouseup', 'select', 'input'].forEach(ev => document.addEventListener(ev, dwMark, true));
+async function dwOpen(){
+  if(!dwCan()) return;
+  if(DW.el){ dwClose(); return; }
+  DW.src = null; DW.ent = {}; DW.key = ''; DW.q = ''; DW.ph = null; DW.phErr = false; DW.past = 0;
+  if(DW.focus && DW.focus.sub !== SUB.id) DW.focus = null;
+  if(SUB.kind !== 'subj') DW.tab = 'ph';
+  const el = DW.el = document.createElement('aside'); el.id = 'nh-dw'; el.className = 'dw'; el.setAttribute('aria-label', '가져오기 서랍');
+  document.body.appendChild(el); document.body.classList.add('dw-open');
+  el.addEventListener('click', dwClick); el.addEventListener('input', dwInput); el.addEventListener('change', dwInput);
+  el.addEventListener('mousedown', e => { if(e.target.closest('[data-dwph],[data-dwsel]')) e.preventDefault(); });     // 글 칸의 커서 · 고른 글을 잃지 않게
+  dwDraw();
+  if(SUB.kind === 'subj') dwSources().then(() => { if(DW.el && DW.tab !== 'ph') dwDraw(); });
+  dwPhLoad().then(() => { if(DW.el && DW.tab === 'ph') dwDraw(); });
+}
+const dwStu = (s, term) => { const sec = ((term || A.TERM).sections || []).find(x => x.id === s.secId); return (Array.isArray(s.studentIds) && s.studentIds.length) ? s.studentIds : ((sec && sec.students) || []); };
+async function dwSources(){
+  const id = SUB.id; const out = []; const nameK = C.normKey(SUB.name); const me = A.CU.uid;
+  const mk = (s, sid, t, cur) => { const st = dwStu(s, t); const sec = (t.sections || []).find(x => x.id === s.secId);
+    return { key: sid, id: sid, sub: s, name: s.name, type: s.type || 'E', setup: s.setup || {}, cur, term: C.termLabel(t),
+      where: s.grp ? `${s.grp.setName || ''} ${s.grp.name || ''}`.trim() : (sec ? C.secLabel(sec) : ''), teacher: (s.teacherUids || []).map(A.staffName).filter(Boolean).join(', '),
+      mine: (s.teacherUids || []).includes(me), sameName: C.normKey(s.name) === nameK, same: st.filter(x => SIDS.includes(x)).length }; };
+  A.SUBS.filter(s => s.kind === 'subj' && !s.removed && s.id !== SUB.id).forEach(s => out.push(mk(s, s.id, A.TERM, true)));
+  DW.mk = mk; DW.sort = L => L.sort((a, b) => (b.sameName - a.sameName) || (b.same - a.same) || String(a.name).localeCompare(String(b.name), 'ko') || String(a.where).localeCompare(String(b.where), 'ko'));
+  DW.src = DW.sort(out);
+}
+/* 지난 학기 칸 — «지난 학기» 탭을 처음 열 때만 읽음 */
+async function dwPast(){
+  if(DW.past || !DW.src) return; DW.past = 1;
+  const id = SUB.id; const out = []; let bad = 0;
+  for(const t of (A.TERMS || []).filter(x => x.id !== A.TERM.id && x.src !== 'import')){
+    try{ const q = await FS.getDocs(FS.query(FS.collection(A.db, 'nhpSubjects'), FS.where('termId', '==', t.id)));
+      q.forEach(d => { const s = d.data(); if(s.kind === 'subj' && !s.removed) out.push(DW.mk(s, d.id, t, false)); }); }catch(e){ bad++; }
+  }
+  if(!SUB || SUB.id !== id || !DW.el || !DW.src) return;
+  DW.src = DW.sort(DW.src.filter(x => x.cur).concat(out)); DW.past = bad ? 3 : 2;
+  if(DW.tab === 'past') dwDraw();
+}
+const dwList = () => (DW.src || []).filter(x => DW.tab === 'mine' ? (x.cur && x.mine) : DW.tab === 'oth' ? (x.cur && !x.mine) : !x.cur)
+  .filter(x => !DW.q || `${x.name} ${x.where} ${x.term} ${x.teacher}`.includes(DW.q));
+const dwPick = () => (DW.src || []).find(x => x.key === DW.key) || null;
+/* 무엇이 몇 칸 들어가는지 — ov: 모든 학생 같은 글 · narr: 학생별 글 · lv: 5단계 평가 */
+function dwPlan(x, ent){
+  const st = SUB.setup || {}, ss = x.setup || {}; const rows = (ent && ent.rows) || {}; const all = DW.mode === 'all';
+  // 이름(글)이 같은 것끼리만 (서술 칸은 이름 없는 칸끼리 차례대로) — 이름이 다른 칸에는 넣지 않음
+  const pair = (S, T, blankOk) => { const out = [], used = new Set(); S.forEach(s => { const k = C.normKey(s.t); if(!k && !blankOk) return; const t = T.find(y => !used.has(y.id) && C.normKey(y.t) === k); if(t){ used.add(t.id); out.push([s, t]); } }); return out; };
+  const P = { ov: [], narr: [], lv: [], skip: { ov: 0, narr: 0, lv: 0 }, why: {} };
+  const common = SIDS.filter(sid => rows[sid] && !row(sid).off);
+  // 모든 학생 같은 글
+  pair((ss.narr || []).filter(n => !C.isEach(n) && String(n.fixed || '').trim()), (st.narr || []).filter(n => !C.isEach(n)), true)
+    .forEach(([s, t]) => { if(!all && String(t.fixed || '').trim()){ P.skip.ov++; return; } if(String(t.fixed || '') !== String(s.fixed)) P.ov.push({ id: t.id, t: t.t, v: s.fixed }); });
+  if(!(ss.narr || []).some(n => !C.isEach(n) && String(n.fixed || '').trim())) P.why.ov = '가져올 글이 없어요'; else if(!CAN.setup) P.why.ov = '평가 틀을 고칠 수 있을 때만 가져와요';
+  // 학생별 글
+  const np = pair((ss.narr || []).filter(C.isEach), (st.narr || []).filter(C.isEach), true);
+  common.forEach(sid => np.forEach(([s, t]) => { const v = String(((rows[sid].n || {})[s.id]) || ''); if(!v.trim()) return; const cur = String((row(sid).n || {})[t.id] || '');
+    if(cur === v) return; if(!all && cur.trim()){ P.skip.narr++; return; } P.narr.push({ sid, k: `rows.${sid}.n.${t.id}`, v }); }));
+  if(!x.same) P.why.narr = P.why.lv = '같은 학생이 없어요 (다른 반)'; else if(ent.__err) P.why.narr = P.why.lv = '그 칸을 읽지 못했어요 — 다시 골라 주세요'; else if(!common.length) P.why.narr = P.why.lv = '그 칸에 쓴 것이 아직 없어요'; else if(!CAN.edit) P.why.narr = P.why.lv = '지금은 입력할 수 없는 칸이에요';
+  if(!P.why.narr && !np.length) P.why.narr = (SUB.type === 'R' || x.type === 'R') ? '암송 · 읽기 칸의 내용은 아직 가져오지 못해요' : '이름이 같은 서술 칸이 없어요';
+  // 5단계 평가
+  const E = t => t === 'E' || t === 'M'; const ip = (E(SUB.type || 'E') && E(x.type)) ? pair(ss.items || [], st.items || []).filter(([s, t]) => C.normKey(s.t) === C.normKey(t.t)) : [];
+  common.forEach(sid => ip.forEach(([s, t]) => { const v = Number((rows[sid].e || {})[s.id]) || 0; if(!v) return; const cur = Number((row(sid).e || {})[t.id]) || 0;
+    if(cur === v) return; if(!all && cur){ P.skip.lv++; return; } P.lv.push({ sid, k: `rows.${sid}.e.${t.id}`, v }); }));
+  if(!P.why.lv && !ip.length) P.why.lv = '글이 같은 평가 항목이 없어요';
+  if(!CAN.edit){ P.narr = []; P.lv = []; }
+  if(!CAN.setup) P.ov = [];
+  return P;
+}
+function dwDraw(){
+  const el = DW.el; if(!el || !SUB) return;
+  const subj = SUB.kind === 'subj';
+  const tabs = (subj ? [['mine', '내 다른 반'], ['oth', '다른 선생님'], ['past', '지난 학기']] : []).concat([['ph', '문장 모음']]);
+  let h = `<div class="dw-h"><b>🗄 가져오기 서랍</b><small>${esc(A.whereOf(SUB))} · ${esc(A.subLabel(SUB))}에 넣어요</small><span class="nh-sp"></span><button class="nh-btn sm" data-dwx aria-label="서랍 닫기">닫기</button></div>
+    <div class="dw-tabs">${tabs.map(([k, l]) => `<button data-dwtab="${k}" class="${DW.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  if(DW.tab === 'ph') h += dwPhHTML();
+  else if(!DW.src || (DW.tab === 'past' && DW.past < 2)){ h += '<div class="nh-desc">가져올 곳을 찾는 중…</div>'; if(DW.src && DW.tab === 'past') dwPast(); }
+  else {
+    const x = dwPick();
+    h += `<input class="nh-in" data-dwq placeholder="찾기 — 과목 · 반 · 선생님" value="${esc(DW.q)}" style="width:100%">
+      ${DW.tab === 'past' && DW.past === 3 ? '<div class="nh-warn">읽지 못한 학기가 있어요.</div>' : ''}<div class="dw-list">${dwListHTML()}</div>`;
+    if(x){
+      const ent = DW.ent[x.key];
+      if(!ent) h += '<div class="nh-desc">그 칸을 읽는 중…</div>';
+      else {
+        const P = dwPlan(x, ent); const n = k => P[k].length;
+        const line = (k, lab, unit) => { const off = !n(k); return `<label class="dw-part${off ? ' off' : ''}"><input type="checkbox" data-dwpart="${k}"${DW.parts[k] && !off && !(k === 'ov' && !CAN.setup) ? ' checked' : ''}${off || (k === 'ov' && !CAN.setup) ? ' disabled' : ''}><b>${lab}</b><span>${off ? esc(P.why[k] || (P.skip[k] ? '이미 채워져 있어요 («있는 것도 바꾸기»로 바꿀 수 있어요)' : '넣을 것이 없어요 (이미 같아요)')) : `${n(k)}${unit}${k !== 'ov' ? ` · 학생 ${new Set(P[k].map(o => o.sid)).size}명` : ''}`}</span></label>`; };
+        const pv = n('ov') ? P.ov[0].v : n('narr') ? `${A.stuName(P.narr[0].sid)} — ${P.narr[0].v}` : '';
+        const tot = ['ov', 'narr', 'lv'].filter(k => DW.parts[k] && !(k === 'ov' && !CAN.setup)).reduce((a, k) => a + n(k), 0);
+        h += `<div class="dw-sec">무엇을 가져올까요</div><div class="dw-parts">${line('ov', '모든 학생 같은 글', '칸')}${line('narr', '학생별 글', '칸')}${line('lv', '5단계 평가', '칸')}</div>
+          ${pv ? `<div class="dw-sec">넣기 전에 보기</div><div class="dw-pv">${esc(pv.length > 300 ? pv.slice(0, 300) + ' …' : pv)}</div>` : ''}
+          <div class="frow" style="align-items:center;gap:6px;margin-top:10px"><button class="nh-btn sm${DW.mode === 'empty' ? ' p' : ''}" data-dwmode="empty">빈 칸에만</button><button class="nh-btn sm${DW.mode === 'all' ? ' p' : ''}" data-dwmode="all">있는 것도 바꾸기</button><span class="nh-sp"></span><button class="nh-btn p" data-dwgo${tot ? '' : ' disabled'}>${tot ? `${tot}칸 넣기` : '넣을 것이 없어요'}</button></div>
+          <div class="nh-desc" style="margin-top:6px">학생별 글 · 평가는 넣은 뒤 «↩ 되돌리기» 한 번이면 취소돼요 («모든 학생 같은 글»은 평가 틀에서 고쳐요) · «📜 고친 기록»에 «가져옴»으로 남아요.${STRUCT() ? ' 평가 항목(틀)은 <a href="#" data-dwframe>평가 틀 가져오기</a>에서.' : ''}</div>`;
+      }
+    }
+  }
+  const sc = el.querySelector('.dw-list'); const top = sc ? sc.scrollTop : 0;
+  el.innerHTML = h;
+  const sc2 = el.querySelector('.dw-list'); if(sc2) sc2.scrollTop = top;
+}
+function dwListHTML(){
+  const L = dwList();
+  return (L.slice(0, 60).map(s => `<button class="dw-src${s.key === DW.key ? ' on' : ''}" data-dwsrc="${esc(s.key)}"><b>${esc(s.name)} · ${esc(s.where)}</b><small>${esc(s.cur ? (s.teacher || '선생님 없음') : s.term)}${s.mine && s.cur ? ' (나)' : ''}</small>
+    <span>${s.sameName ? '<i class="ch mint">같은 과목</i>' : ''}${s.same ? `<i class="ch type">같은 학생 ${s.same}</i>` : ''}</span></button>`).join('') || '<div class="nh-desc">해당하는 칸이 없어요.</div>') + (L.length > 60 ? '<div class="nh-desc">위에서 찾아 좁혀 주세요.</div>' : '');
+}
+async function dwLoadEnt(x){
+  if(DW.ent[x.key]) return;
+  let ent = { rows: {} }, ok = true;
+  try{ const d = await FS.getDoc(FS.doc(A.db, 'nhpEntries', x.id)); if(d.exists()) ent = d.data(); }catch(e){ ok = false; ent.__err = true; }
+  DW.ent[x.key] = ent; if(DW.el && DW.key === x.key) dwDraw();
+  if(!ok) delete DW.ent[x.key];          // 못 읽은 것은 담아 두지 않음 — 다시 고르면 다시 읽음
+}
+function dwInput(e){
+  const t = e.target, d = t.dataset;
+  if('dwq' in d){ DW.q = t.value.trim(); const l = DW.el.querySelector('.dw-list'); if(l) l.innerHTML = dwListHTML(); return; }      // 찾기 칸은 그대로 두고 목록만 (한글 입력이 끊기지 않게)
+  if('dwpht' in d){ DW.phT = t.value; return; }
+  if('dwphgi' in d){ DW.phGi = t.value; return; }
+  if(d.dwpart && e.type === 'change'){ DW.parts[d.dwpart] = t.checked; dwDraw(); return; }
+  if('dwphq' in d){ DW.phQ = t.value.trim(); const l = DW.el.querySelector('.dw-list.ph'); if(l) l.innerHTML = dwPhListHTML(); return; }
+}
+async function dwClick(e){
+  const t = e.target.closest('[data-dwx],[data-dwtab],[data-dwsrc],[data-dwmode],[data-dwgo],[data-dwframe],[data-dwph],[data-dwphdel],[data-dwphadd],[data-dwsel],[data-dwphg]');
+  if(!t) return; const d = t.dataset;
+  if('dwframe' in d){ e.preventDefault(); if(STRUCT()) importDialog(); return; }
+  if('dwx' in d){ dwClose(); return; }
+  if(d.dwtab){ DW.tab = d.dwtab; DW.key = ''; DW.q = ''; dwDraw(); return; }
+  if(d.dwsrc){ DW.key = d.dwsrc; dwDraw(); const x = dwPick(); if(x) dwLoadEnt(x); return; }
+  if(d.dwmode){ DW.mode = d.dwmode; dwDraw(); return; }
+  if('dwgo' in d){ dwApply(); return; }
+  if(d.dwph){ dwPhInsert(d.dwph); return; }
+  if(d.dwphdel){ dwPhDel(d.dwphdel); return; }
+  if('dwphadd' in d){ dwPhAdd(); return; }
+  if('dwsel' in d){ dwPhFromSel(); return; }
+  if('dwphg' in d){ DW.phG = d.dwphg; dwDraw(); return; }
+}
+async function dwApply(){
+  const x = dwPick(); const ent = x && DW.ent[x.key]; if(!x || !ent || DW.busy) return;
+  const P = dwPlan(x, ent); const on = k => DW.parts[k] && P[k].length && !(k === 'ov' && !CAN.setup);
+  const n = ['ov', 'narr', 'lv'].filter(on).reduce((a, k) => a + P[k].length, 0); if(!n) return;
+  const nOv = on('ov') ? P.ov.length : 0; const shared = nOv && SUB.share ? ' 함께 쓰는 반의 틀에도 들어가요.' : '';
+  if(DW.mode === 'all' && !(await A.confirm('있는 것도 바꾸기', `이미 써 둔 글 · 평가도 가져온 것으로 <b>바꿔요</b> (${n}칸). 학생별 글 · 평가는 «↩ 되돌리기»로 취소할 수 있어요.${nOv ? ` «모든 학생 같은 글» ${nOv}칸은 되돌리기가 안 되니 평가 틀에서 다시 고쳐요.${shared}` : ''}`, '바꿔 넣기'))) return;
+  if(!SUB || !DW.el || dwPick() !== x) return;
+  if(!SUB || !DW.el) return;
+  DW.busy = true;
+  try{
+    if(on('narr') || on('lv')){
+      if(!CAN.edit){ DW.busy = false; return A.toast('지금은 입력할 수 없는 칸이에요.', 'err'); }
+      tmSnap('bulk', cloneV(ENT.rows || {}));
+      const U = UNDO[SUB.id]; if(U && U.length) U[U.length - 1].t = 0;      // 방금 쓰던 글의 되돌리기 묶음에 섞이지 않게 — 가져온 것은 한 묶음으로
+      VIA = 'import'; try{ ['narr', 'lv'].filter(on).forEach(k => P[k].forEach(o => putRaw(o.k, o.v))); } finally{ VIA = ''; }
+    }
+    if(on('ov')){ const N = (SUB.setup.narr || []).map(nn => { const o = P.ov.find(y => y.id === nn.id); return o ? Object.assign({}, nn, { each: false, fixed: o.v }) : nn; }); SUB.setup = Object.assign({}, SUB.setup, { narr: N }); saveSetup(true); }
+    // 가져온 글에 다른 학생 이름이 있으면 알림 («🔎 이름 점검»과 같은 기준)
+    const bad = on('narr') ? P.narr.filter(o => otherNames(o.sid, o.v).length) : [];
+    A.toast(`${n}칸 넣었어요 ✓${n - nOv ? ' 학생별 글 · 평가는 «↩ 되돌리기»로 취소돼요.' : ''}${nOv ? ` «모든 학생 같은 글»은 평가 틀에서 고쳐요.${shared}` : ''}${bad.length ? ` — 다른 학생 이름이 들어간 글 ${bad.length}곳: «🔎 빈 곳 · 이름 점검»에서 확인해 주세요` : ''}`, bad.length ? 'err' : undefined);
+  }catch(e){ A.toast('넣지 못했어요 — ' + A.errText(e), 'err'); }
+  DW.busy = false; drawBody(); dwDraw();
+}
+/* ── 문장 모음 (나만 봄) ── */
+const dwPhRead = async () => { const d = await FS.getDoc(FS.doc(A.db, 'userMemos', A.CU.uid)); const a = d.exists() ? d.data().nhpPhrases : null; return Array.isArray(a) ? a.filter(p => p && p.id && p.t) : []; };
+async function dwPhLoad(){
+  try{ DW.ph = await dwPhRead(); DW.phErr = false; }
+  catch(e){ DW.ph = null; DW.phErr = true; }          // 못 읽었으면 빈 목록으로 두지 않음 (그 위에 저장하면 담아 둔 문장이 지워지니까)
+}
+/* 저장 — 방금 저장된 목록을 다시 읽어 그 위에 고친다 (다른 창 · 다른 기기에서 담은 문장을 지우지 않게) */
+async function dwPhMut(fn){
+  try{ const cur = await dwPhRead(); const next = fn(cur); if(!next) return false;
+    await FS.setDoc(FS.doc(A.db, 'userMemos', A.CU.uid), { nhpPhrases: next.slice(0, 300) }, { merge: true }); DW.ph = next.slice(0, 300); DW.phErr = false; return true; }
+  catch(e){ A.toast('문장 모음을 저장하지 못했어요 — ' + A.errText(e), 'err'); return false; }
+}
+function dwPhHTML(){
+  if(!DW.ph) return DW.phErr ? '<div class="nh-warn">문장 모음을 읽지 못했어요 — 서랍을 닫았다 다시 열어 주세요.</div>' : '<div class="nh-desc">문장 모음을 여는 중…</div>';
+  const gs = [...new Set(DW.ph.map(p => p.g || '').filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  if(DW.phG && !gs.includes(DW.phG)) DW.phG = '';
+  return `<div class="nh-desc" style="margin-top:0">자주 쓰는 문장을 담아 두고, 글 칸에 커서를 둔 뒤 문장을 누르면 그 자리에 들어가요. <b>○○</b>은 그 학생 이름으로 바뀌어요. 나만 봐요.</div>
+    <div class="dw-add"><textarea class="nh-ta" rows="2" data-dwpht placeholder="담을 문장 (예: ○○이는 문제를 끝까지 읽고 스스로 풀어 보려는 태도가 좋아졌습니다.)">${esc(DW.phT)}</textarea>
+      <div class="frow" style="gap:6px;align-items:center"><input class="nh-in" data-dwphgi list="dw-gs" placeholder="묶음 (예: 태도)" value="${esc(DW.phGi)}" style="flex:1;min-width:90px"><datalist id="dw-gs">${gs.map(g => `<option value="${esc(g)}">`).join('')}</datalist><button class="nh-btn sm" data-dwsel title="글 칸에서 끌어서 고른 글을 위 칸으로 가져와요">고른 글 가져오기</button><button class="nh-btn sm p" data-dwphadd>담기</button></div></div>
+    ${DW.ph.length ? `<div class="frow" style="gap:6px;align-items:center;margin-top:10px"><input class="nh-in" data-dwphq placeholder="문장 찾기" value="${esc(DW.phQ)}" style="flex:1;min-width:100px">${gs.length ? `<button class="nh-btn xs${DW.phG ? '' : ' p'}" data-dwphg="">모두</button>${gs.map(g => `<button class="nh-btn xs${DW.phG === g ? ' p' : ''}" data-dwphg="${esc(g)}">${esc(g)}</button>`).join('')}` : ''}</div>` : ''}
+    <div class="dw-list ph">${dwPhListHTML()}</div>`;
+}
+function dwPhListHTML(){
+  const L = (DW.ph || []).filter(p => (!DW.phG || p.g === DW.phG) && (!DW.phQ || p.t.includes(DW.phQ)));
+  return L.map(p => `<div class="dw-ph"><button class="dw-pht" data-dwph="${esc(p.id)}" title="글 칸의 커서 자리에 넣기">${p.g ? `<i class="ch gray">${esc(p.g)}</i> ` : ''}${esc(p.t)}</button><button class="nh-btn xs" data-dwphdel="${esc(p.id)}" aria-label="이 문장 지우기">지우기</button></div>`).join('') || `<div class="nh-desc">${(DW.ph || []).length ? '해당하는 문장이 없어요.' : '아직 담은 문장이 없어요.'}</div>`;
+}
+/* ○○ → 학생 이름(세 글자 이름은 성을 뺌) · «○○이는/이가…»는 받침 없는 이름이면 «이»를 뺌 (지호이는 → 지호는) */
+const dwGiven = sid => { const nm = A.stuName(sid); return nm.length === 3 ? nm.slice(1) : nm; };
+function dwFill(t, sid){
+  const g = dwGiven(sid); const bat = /[가-힣]$/.test(g) ? hasJong(g.slice(-1)) : true; const E = '(?=[^가-힣]|$)';
+  return t.replace(/○○이?(?=(는|가|를|와|의|도|에게|랑|만|한테)([^가-힣]|$))/g, g + (bat ? '이' : ''))      // ○○이는 · ○○는 → 민준이는 · 지호는
+    .replace(new RegExp('○○(은|을|과|아)' + E, 'g'), (m, p) => g + (bat ? p : { '은': '는', '을': '를', '과': '와', '아': '야' }[p]))
+    .replace(/○○/g, g);
+}
+const dwTa = () => { const f = DW.focus; return (f && EL && SUB && f.sub === SUB.id) ? EL.querySelector(`textarea[data-nr="${CSS.escape(f.sid)}"][data-ni="${CSS.escape(f.ni)}"]`) : null; };
+function dwPhInsert(id){
+  const p = (DW.ph || []).find(x => x.id === id); const ta = dwTa();
+  if(!p) return;
+  if(!ta || ta.readOnly || ta.disabled) return A.toast('넣을 글 칸을 먼저 눌러 커서를 두세요.', 'err');
+  const txt = dwFill(p.t, ta.dataset.nr);
+  const v = ta.value; const live = document.activeElement === ta; const f = DW.focus;
+  const a = Math.min(v.length, live ? ta.selectionStart : (f.a ?? v.length)), b = Math.max(a, Math.min(v.length, live ? ta.selectionEnd : (f.b ?? a)));
+  const sp = a > 0 && !/\s$/.test(v.slice(0, a)) ? ' ' : '';
+  ta.value = v.slice(0, a) + sp + txt + v.slice(b);
+  const at = a + sp.length + txt.length; ta.focus(); try{ ta.setSelectionRange(at, at); }catch(e){}
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function dwPhFromSel(){
+  const ta = dwTa(); const i = DW.el.querySelector('[data-dwpht]'); if(!i) return;
+  const f = DW.focus; const live = ta && document.activeElement === ta;
+  const s = ta ? ta.value.slice(live ? ta.selectionStart : (f.a || 0), live ? ta.selectionEnd : (f.b || 0)).trim() : '';
+  if(!s) return A.toast('글 칸에서 담을 문장을 끌어서 고른 뒤 눌러 주세요.', 'err');
+  const g = dwGiven(ta.dataset.nr);
+  // 학생 이름 → ○○ (앞이 한글이 아니고 뒤가 조사이거나 한글이 아닐 때만 — «하나님 · 지혜롭게» 같은 말은 그대로)
+  i.value = (g.length >= 2 && /^[가-힣]+$/.test(g)) ? s.replace(new RegExp('(^|[^가-힣])' + g + '(?=이?(는|가|의|를|도|와|랑|에게|한테|만|은|을|과|아|야)([^가-힣]|$)|[^가-힣]|$)', 'g'), '$1○○') : s;
+  DW.phT = i.value; i.focus();
+}
+async function dwPhAdd(){
+  const i = DW.el.querySelector('[data-dwpht]'), gi = DW.el.querySelector('[data-dwphgi]'); const t = (i.value || '').trim(); if(!t) return A.toast('담을 문장을 써 주세요.', 'err');
+  if(!DW.ph || DW.busy) return;
+  const it = { id: C.rid('p'), t: t.slice(0, 600), g: (gi.value || '').trim().slice(0, 20) };
+  DW.busy = true;
+  const ok = await dwPhMut(cur => { if(cur.some(p => p.t === it.t)){ A.toast('이미 담겨 있는 문장이에요.', 'err'); return null; } if(cur.length >= 300){ A.toast('문장은 300개까지 담을 수 있어요 — 안 쓰는 것을 지워 주세요.', 'err'); return null; } return [it].concat(cur); });
+  DW.busy = false;
+  if(ok){ DW.phT = ''; A.toast('담았어요 ✓'); }
+  if(DW.el) dwDraw();
+}
+async function dwPhDel(id){
+  const p = (DW.ph || []).find(x => x.id === id); if(!p || DW.busy) return;
+  if(!(await A.confirm('문장 지우기', `<div class="dw-pv">${esc(p.t)}</div>이 문장을 모음에서 지워요.`, '지우기', true))) return;
+  DW.busy = true; await dwPhMut(cur => cur.filter(x => x.id !== id)); DW.busy = false;
+  if(DW.el) dwDraw();
+}
