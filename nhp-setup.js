@@ -957,6 +957,11 @@ function bindSetup(el){
       el.querySelectorAll('[data-ti]').forEach(i => { p[i.dataset.ti] = i.value; });
       el.querySelectorAll('[data-td]').forEach(i => { p.due[i.dataset.td] = i.value; });
       if(p.start && p.end && p.start > p.end) return A.toast('시작이 끝보다 뒤예요.', 'err');
+      // v206 마감 차례 확인 — 입력 ≤ 검토 ≤ 최종 승인 (거꾸로면 한 번 물어봄 · 막지는 않음)
+      { const D = p.due, L = [['entry', '입력 마감'], ['review', '검토 마감'], ['final', '최종 승인 마감']].filter(([k]) => /^\d{4}-\d{2}-\d{2}$/.test(D[k] || ''));
+        const bad = L.find(([k], i) => i > 0 && D[k] < D[L[i - 1][0]]);
+        if(bad){ const prev = L[L.indexOf(bad) - 1];
+          if(!(await A.confirm('마감 날짜 확인', `<b>${bad[1]}</b>(${A.esc(D[bad[0]])})이 <b>${prev[1]}</b>(${A.esc(D[prev[0]])})보다 앞이에요. 이대로 저장할까요?`, '이대로 저장'))) return; } }
       await saveTerm(p, '학기 정보를 저장했어요 ✓'); return;
     }
     if(d.st === 'resync'){ await resyncStudents(); return; }

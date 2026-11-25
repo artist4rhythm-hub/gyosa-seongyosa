@@ -62,7 +62,7 @@ async function markSeen(key){
   try{ const m = seenMap(); m[key] = Date.now(); localStorage.setItem(SEEN_KEY(), JSON.stringify(m)); }catch(e){}
   if(!String(key).startsWith('c:')) return;             // 기관 전체 게시판은 «본 때»만 (사이드바 숫자는 반 게시판만)
   try{   // 사이드바 «우리 반 학부모» 숫자 — 따로 불러와서, 숫자가 안 돼도 게시판은 그대로 돌게
-    const PBB = await import('./pb-badge.js?v=124');
+    const PBB = await import('./pb-badge.js?v=156');
     await PBB.rebase(C.db, C.CU.uid, key);
     if(window.setBadges){ const n = await PBB.badgeFor(C.db, C.CU.uid, true); window.setBadges({ myparents: n }); }
   }catch(e){}

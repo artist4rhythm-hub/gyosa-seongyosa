@@ -13,7 +13,7 @@
    · v202 🗄 가져오기 서랍: 내 다른 반 · 다른 선생님 · 지난 학기의 «내용»(모든 학생 같은 글 · 학생별 글 · 5단계)을 같은 학생끼리 · 문장 모음(나만 — userMemos.nhpPhrases)
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=199';
+import * as SETUP from './nhp-setup.js?v=206';
 import * as ACTS from './nhp-acts.js?v=201';
 
 let A = null, C = null, esc = null, FS = null;
