@@ -694,6 +694,8 @@ function clubCss(){
   .hwc-it .l2 em{font-style:normal;font-weight:800;color:var(--gm)}
   .hwc-it .t{font-size:12px;font-weight:800;color:var(--ts);font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
   .hwc-it.done{opacity:.55}
+  .hwc-tg{font-size:11px;font-weight:900;border-radius:6px;padding:1px 6px;flex:none;white-space:nowrap}
+  .hwc-tg.ex{background:#EDE7F9;color:#4C3A91}.hwc-tg.tm{background:#FFEDD5;color:#9A3412}.hwc-tg.off{background:#FBE9E3;color:#9A3412}
   .hwc-it.now{background:linear-gradient(90deg,rgba(0,112,74,.07),transparent)}
   @media (max-width:640px){ .hwc-list{grid-template-columns:1fr} }`;
   document.head.appendChild(st);
@@ -704,8 +706,9 @@ function clubTodayHTML(o){
   const now = new Date(); const p = x => String(x).padStart(2,'0');
   const hm = `${p(now.getHours())}:${p(now.getMinutes())}`;
   const items = CR.sessionsOn(S.apps, S.sm, S.ts);
+  const offs = CR.offOn(S.apps, S.sm, S.ts).filter(x => x.o.kind === 'skip');   // 🗓 v204 오늘 쉬는 동아리도 한 줄로 (왜 없는지)
   const d = new Date(S.ts + 'T00:00:00');
-  return `<div class="hwc"><div class="hwc-h"><b>${esc(S.orgNm)}</b><span>${Number(S.ts.slice(5,7))}월 ${Number(S.ts.slice(8,10))}일 (${'일월화수목금토'[d.getDay()]}) · 오늘 동아리 ${items.length}개</span>
+  return `<div class="hwc"><div class="hwc-h"><b>${esc(S.orgNm)}</b><span>${Number(S.ts.slice(5,7))}월 ${Number(S.ts.slice(8,10))}일 (${'일월화수목금토'[d.getDay()]}) · 오늘 동아리 ${items.length}개${offs.length ? ` · 휴강 ${offs.length}` : ''}</span>
       <a href="club-status.html">동아리 현황 ›</a></div>
     <div class="hwc-list">${items.map(({ c, s })=>{
       const col = S.cols[c.id] || '#00704A', n = CR.rosterOf(S.enr, c.id).length;
@@ -713,9 +716,11 @@ function clubTodayHTML(o){
       const st = (hm >= s.time && hm < s.end) ? 'now' : (hm >= s.end ? 'done' : '');
       return `<button type="button" class="hwc-it ${st}" onclick="hwClubRoster('${o}','${c.id}')" title="누르면 참여 학생을 볼 수 있어요">
         <span class="bar" style="background:${col}"></span>
-        <span class="mid"><span class="l1"><b>${esc(c.title||'')}</b><span class="no" style="background:${col}">${s.no}/${s.total}차시</span>${st==='now'?'<span class="nowb">● 진행 중</span>':''}</span>
+        <span class="mid"><span class="l1"><b>${esc(c.title||'')}</b><span class="no" style="background:${col}">${s.no}/${s.total}차시</span>${s.extra?`<span class="hwc-tg ex">${esc(s.label||'보강')}</span>`:s.tchg?'<span class="hwc-tg tm">시간 바뀜</span>':''}${st==='now'?'<span class="nowb">● 진행 중</span>':''}</span>
           <span class="l2">🏫 ${room ? esc(room) : '교실 미정'}${who ? ` · 👤 ${esc(who)}` : ''} · 👥 <em>${n}명</em></span></span>
-        <span class="t">${esc(s.time)}–${esc(s.end)}</span></button>`; }).join('')}</div></div>`;
+        <span class="t">${esc(s.time)}–${esc(s.end)}</span></button>`; }).join('')}${offs.map(({ c, o })=>`<div class="hwc-it done" style="cursor:default"><span class="bar" style="background:${S.cols[c.id] || '#00704A'}"></span>
+        <span class="mid"><span class="l1"><b style="text-decoration:line-through">${esc(c.title||'')}</b><span class="hwc-tg off">오늘 휴강</span></span><span class="l2">${esc(o.reason||'사유 없음')} · ${esc(CR.planText(o.plan))}</span></span>
+        <span class="t" style="text-decoration:line-through">${esc(o.time)}–${esc(o.end)}</span></div>`).join('')}</div></div>`;
 }
 function paintClubToday(){
   Object.keys(CLUB_ST).forEach(o=>{ const el = document.getElementById('hwc-' + o); if(el) el.innerHTML = clubTodayHTML(o); });
@@ -747,7 +752,7 @@ async function loadClubWidget(){
   _clubLoadedAt = Date.now(); _clubDay = ts;
   Object.keys(CLUB_ST).forEach(k=> delete CLUB_ST[k]);
   try{
-    if(!CR) CR = await import('./club-roster.js');
+    if(!CR) CR = await import('./club-roster.js?v=204');
     clubCss();
     // 📉 v137 — 동아리 학기 · 개설 · 신청 숫자는 같은 탭에서 5분 기억 (동아리 관리 화면을 열고 닫으면 버림)
     const cuC = getCU(), lcC = { uid: cuC && cuC.uid, ms: 5 * 60000 };
@@ -779,7 +784,7 @@ async function loadClubWidget(){
         const enr = es ? es.docs.map(d=>({id:d.id, ...d.data()})).filter(e=>!e.deleted) : [];
         const cols = CR.colorMap(apps, (shd && shd.exists()) ? (shd.data().colors || null) : null);
         const todays = CR.sessionsOn(apps, sm, ts);
-        if(todays.length){
+        if(todays.length || CR.offOn(apps, sm, ts).some(x=>x.o.kind==='skip')){   // v204 오늘 쉬는 동아리만 있어도 목록으로 (휴강 표시)
           CLUB_ST[o] = { sm, apps, enr, cols, orgNm, ts };
           rows.push(`<div id="hwc-${o}">${clubTodayHTML(o)}</div>`);
         } else {

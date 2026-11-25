@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   🎨 club-roster.js — 동아리 «오늘 수업» 공용 부품 (v-92)
+   🎨 club-roster.js — 동아리 «오늘 수업» 공용 부품 (v-92 · v204: 그날만 바꾼 시각 · 보강 표시 · 휴강과 뒤처리)
    · 홈(동아리 실황)과 동아리 현황이 같은 규칙으로 보여 주도록 한 곳에 모았습니다
      - 교실: 관리자 배정(room)이 진실, 없으면 강사 희망(place)
      - 담당: 강사(instructorName) + 함께하는 강사(coInstructors)
@@ -25,15 +25,57 @@ export const instrOf = c => [String((c && c.instructorName) || (c && c.instr) ||
   .filter(Boolean).join(' · ');
 export const dayLabel = ds => { const d = new Date(ds + 'T00:00:00'); return `${Number(ds.slice(5,7))}월 ${Number(ds.slice(8,10))}일 ${WD[d.getDay()]}요일`; };
 
-/* 휴강을 뺀 수업들 — {date, time, end, no, total} */
+/* 그 회차의 시각 — «그날만 시간 변경»(session.start · durMin)과 보강의 시각을 먼저 봄 (v204: 예전엔 늘 동아리 공통 시각으로 보였음) */
+export function sessTime(c, x){
+  const time = String((x && (x.start || x.time)) || (c && c.start) || '');
+  const dur = Number(x && x.durMin) || Number(c && c.durMin) || 60;
+  return { time, dur, end: addMin(time, dur) };
+}
+const blockedMap = sem => { const bm = {}; ((sem && sem.blocked) || []).forEach(b => { if(b.date) bm[b.date] = b.reason || '운영 불가'; }); return bm; };
+const isOffS = (x, bm) => x.skip || (!x.extra && !x.override && (x.blocked || bm[x.date]));
+/* 휴강을 뺀 수업들 — {date, time, end, dur, no, total, extra, label, tchg, base} */
 export function liveSessions(c, sem){
-  const bm = {}; ((sem && sem.blocked) || []).forEach(b => { if(b.date) bm[b.date] = b.reason || '운영 불가'; });
-  const off = x => x.skip || (!x.extra && !x.override && (x.blocked || bm[x.date]));
-  const arr = ((c && c.sessions) || []).filter(x => x && x.date && !off(x))
-    .map(x => ({ date:x.date, time:x.time || c.start || '', end:addMin(x.time || c.start || '', c.durMin || 60) }))
+  const bm = blockedMap(sem);
+  const arr = ((c && c.sessions) || []).filter(x => x && x.date && !isOffS(x, bm))
+    .map(x => { const t = sessTime(c, x); const baseDur = Number(c.durMin) || 60;
+      return { date:x.date, time:t.time, end:t.end, dur:t.dur, extra:!!x.extra, label: x.extra ? String(x.extraLabel || '보강') : '',
+        tchg: !x.extra && (t.time !== String(c.start || '') || t.dur !== baseDur), base: String(c.start || ''), over: !!x.override }; })
     .sort((a,b) => a.date === b.date ? a.time.localeCompare(b.time) : a.date.localeCompare(b.date));
   const total = arr.length;
   return arr.map((s,i) => ({ ...s, no:i+1, total }));
+}
+/* 휴강한 날들 — {date, kind:'skip'(동아리 휴강)|'school'(학사 휴강), reason, time, end, plan}
+   plan = 휴강 뒤처리(clubApplications.skipPlans[날짜]): { plan:'makeup'|'refund'|'todo', makeup:'보강 날짜', refundDone, … } */
+export function offSessions(c, sem){
+  const bm = blockedMap(sem);
+  return ((c && c.sessions) || []).filter(x => x && x.date && !x.extra && isOffS(x, bm)).map(x => { const t = sessTime(c, x);
+    const school = !x.override && (x.blocked || bm[x.date]);        // 학사 휴강이 먼저 — 그날은 애초에 수업 · 회비가 없으니 보강 · 환불을 묻지 않음
+    return school ? { date:x.date, kind:'school', reason:String(bm[x.date] || x.reason || '학사 휴강'), time:t.time, end:t.end, plan:null }
+                  : { date:x.date, kind:'skip', reason:String(x.skipReason || ''), time:t.time, end:t.end, plan: planOf(c, sem, x.date) }; })
+    .sort((a,b) => a.date.localeCompare(b.date));
+}
+/* 휴강 하나의 뒤처리 상태 — st: 'makeup'(보강 잡힘) · 'refunded'(환불 끝) · 'refund'(환불하기로 · 아직) · 'todo'(보강 · 환불 미정) */
+export function planOf(c, sem, date){
+  const p = ((c && c.skipPlans) || {})[date] || null;
+  if(p && p.plan === 'makeup' && p.makeup){
+    const ok = liveSessions(c, sem).some(s => s.extra && s.date === p.makeup);
+    if(ok) return { st:'makeup', makeup:p.makeup };
+  }
+  if(p && p.plan === 'refund') return { st: p.refundDone ? 'refunded' : 'refund' };
+  return { st:'todo' };
+}
+export const planText = pl => !pl ? '' : pl.st === 'makeup' ? `${Number(pl.makeup.slice(5,7))}/${Number(pl.makeup.slice(8,10))} 보강` : pl.st === 'refunded' ? '환불 끝' : pl.st === 'refund' ? '환불 처리 전' : '보강 · 환불 미정';
+/* 뒤처리가 남은 휴강 — [{c, o}] (보강 · 환불 미정 / 환불하기로 했는데 아직) */
+export function todoSkips(clubs, sem){
+  const out = [];
+  (clubs || []).forEach(c => offSessions(c, sem).forEach(o => { if(o.kind === 'skip' && (o.plan.st === 'todo' || o.plan.st === 'refund')) out.push({ c, o }); }));
+  return out.sort((a,b) => a.o.date.localeCompare(b.o.date));
+}
+/* 그날 쉬는 동아리 — [{c, o}] */
+export function offOn(clubs, sem, ds){
+  const out = [];
+  (clubs || []).forEach(c => offSessions(c, sem).forEach(o => { if(o.date === ds) out.push({ c, o }); }));
+  return out.sort((a,b) => String(a.o.time).localeCompare(String(b.o.time)) || String(a.c.title).localeCompare(String(b.c.title), 'ko'));
 }
 
 /* 색 — 게시 도장 색이 있으면 그것, 없으면 제목 순서대로 (동아리 현황과 같은 색) */
@@ -114,7 +156,7 @@ export async function openClubRoster(o){
   bg.addEventListener('click', ev => { if(ev.target === bg) close(); });
   document.addEventListener('keydown', onKey, true);
   const room = roomOf(c), who = instrOf(c);
-  const head = `<div class="crp-h" style="background:${color}">${esc(c.title || '')}${s ? ` · ${s.no}/${s.total}차시` : ''}
+  const head = `<div class="crp-h" style="background:${color}">${esc(c.title || '')}${s ? ` · ${s.no}/${s.total}차시${s.extra ? ' · ' + esc(s.label) : ''}` : ''}
       <button class="x" type="button" aria-label="닫기">✕</button></div>
     <div class="crp-m">${s ? `<b>${esc(dayLabel(s.date))} ${esc(s.time)} – ${esc(s.end)}</b><br>` : ''}🏫 ${room ? esc(room) : '교실 미정'}${who ? ` · 👤 ${esc(who)}` : ''}</div>`;
   const paint = (flags, marks, note) => {

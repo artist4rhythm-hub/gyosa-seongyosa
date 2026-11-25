@@ -300,6 +300,7 @@ html[data-theme="dark"] .cbs-tile .tag,html[data-theme="dark"] .cbs-tile.now .do
         <button data-t="apps" onclick="showTab('apps')">📥 신청 취합</button>
         <button data-t="grid" onclick="showTab('grid')">🗓 요일·시간 그리드</button>
         <button data-t="enroll" onclick="showTab('enroll')">👨‍👩‍👧 신청 현황·배정</button>
+        <button data-t="sched" onclick="showTab('sched')">🗓 일정 바꾸기 (휴강 · 보강)</button>
         <button data-t="pay" onclick="showTab('pay')">💰 강사 정산</button>
       </div>
     </section>
@@ -438,7 +439,7 @@ async function loadSems(){
     .sort((a,b)=>String(b.rangeFrom||'').localeCompare(String(a.rangeFrom||'')));
   $I('sem-sel').innerHTML = SEMS.length ? SEMS.map(s=>`<option value="${s.id}">${esc(s.name)} · ${ORGS[s.org]||s.org}</option>`).join('')
     : '<option value="">(학기 없음)</option>';
-  if(SEMS.length) pickSem(SEMS[0].id);
+  if(SEMS.length){ const qs = new URLSearchParams(location.search).get('sem'); pickSem((qs && SEMS.find(x=>x.id===qs)) ? qs : SEMS[0].id); }   // 🗓 v204 동아리 현황에서 넘어오면 보던 학기로
   else { SEM = null; paintStatus(); render(); }   // 🏛 v162 학기가 없으면 단계 띠도 숨김
 }
 let _liveRaw = null;
@@ -471,7 +472,8 @@ window.pickSem = async (id)=>{
     SEM.milestones = m;
   }
   if(SEM){ await loadApps(); }
-  if(SEM && semChanged && !VIEW_ONLY){ SEL_STEP = 0; CBS_PEEK = false; CBS_AUTO = false; TAB = cbsDef(cbsCur()); if(cbsCur() >= 4) subEnr(); }   // 🏛 v162 학기를 열면 지금 단계의 도구부터
+  if(SEM && semChanged && !VIEW_ONLY){ SEL_STEP = 0; CBS_PEEK = false; CBS_AUTO = false; TAB = cbsDef(cbsCur()); if(cbsCur() >= 4) subEnr();
+    if(new URLSearchParams(location.search).get('tab') === 'sched' && !window.__cbTabQ){ const qs = new URLSearchParams(location.search).get('sem'); if(!qs || qs === SEM.id){ window.__cbTabQ = 1; TAB = 'sched'; } } }   // 🗓 v204 동아리 현황의 «일정 바꾸기»에서 넘어오면 그 도구부터   // 🏛 v162 학기를 열면 지금 단계의 도구부터
   paintStatus(); liveSubscribe(); initTM(); render();
 };
 window.newSem = async ()=>{
@@ -568,8 +570,8 @@ const CB_STEPS = [
   { n:2, t:'강사 모집',     st:['recruiting'],                  tools:['link','apps'],           def:'apps' },
   { n:3, t:'개설 · 시간표', st:['planning','published'],        tools:['apps','grid'],           def:'apps' },
   { n:4, t:'학부모 신청',   st:['enrolling'],                   tools:['enroll','link','grid'],  def:'enroll' },
-  { n:5, t:'배정 · 확정',   st:['adjusting','confirmed'],       tools:['enroll','grid'],         def:'enroll' },
-  { n:6, t:'운영 · 정산',   st:['running','settling','locked'], tools:['enroll','pay'],          def:'enroll' },
+  { n:5, t:'배정 · 확정',   st:['adjusting','confirmed'],       tools:['enroll','grid','sched'], def:'enroll' },
+  { n:6, t:'운영 · 정산',   st:['running','settling','locked'], tools:['enroll','sched','pay'],  def:'enroll' },
 ];
 let SEL_STEP = 0, CBS_PEEK = false, CBS_AUTO = false, CBS_LAST = 0;   // 0 = 지금 단계를 따라감 · PEEK = 도우미가 단계만 펼쳐 둠 (도구는 아직 안 바꿈)
 function cbsCur(){
@@ -686,8 +688,22 @@ window.__helpReveal = el => {
 function render(){
   if(!SEM){ $I('body').innerHTML='<div class="small">학기를 선택하거나 새로 만드세요.</div>'; return; }
   if(VIEW_ONLY && !['apps','grid','enroll'].includes(TAB)) TAB='apps';
-  ({ set:renderSet, block:renderBlock, q:renderQ, link:renderLink, apps:renderApps, grid:renderGrid, enroll:renderEnroll, pay:renderPay })[TAB]();
+  ({ set:renderSet, block:renderBlock, q:renderQ, link:renderLink, apps:renderApps, grid:renderGrid, enroll:renderEnroll, pay:renderPay, sched:renderSchedTab })[TAB]();
   try{ paintSteps(); }catch(_){}
+}
+
+/* ── 🗓 v204 일정 바꾸기 — 휴강(보강 · 환불 뒤처리) · 보강 · 그날만 시간 (club-sched.js) · 학부모 사이트에 다시 로그인하지 않고 여기서 ── */
+let _schedMod = null;
+async function renderSchedTab(){
+  const semId = SEM.id;
+  $I('body').innerHTML = '<div class="small">일정을 여는 중…</div>';
+  try{
+    if(!_schedMod) _schedMod = await import('./club-sched.js?v=204');
+    if(!VIEW_ONLY){ try{ subEnr(); }catch(e){} if(!ENR.length){ try{ await loadEnr(); }catch(e){} } }
+    if(!SEM || SEM.id !== semId || TAB !== 'sched') return;
+    _schedMod.renderSched({ el: $I('body'), SEM, apps: LIVE, db, FS: { doc, updateDoc, getDoc, setDoc, Timestamp }, me: { uid: CU.uid, name: CU.name || '' }, canEdit: !VIEW_ONLY, toast, esc,
+      snap: snapApps, feeOf, semTotal, countOf: cid => finalRosterOf(cid).length, after: () => { try{ paintSteps(); }catch(_){} } });
+  }catch(e){ console.warn('[일정 바꾸기]', e); $I('body').innerHTML = '<div class="small">일정 화면을 열지 못했어요 — 새로 고쳐 주세요.</div>'; }
 }
 
 /* ── ⚙️ 설정 ── */
