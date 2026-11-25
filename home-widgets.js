@@ -752,7 +752,7 @@ async function loadClubWidget(){
   _clubLoadedAt = Date.now(); _clubDay = ts;
   Object.keys(CLUB_ST).forEach(k=> delete CLUB_ST[k]);
   try{
-    if(!CR) CR = await import('./club-roster.js?v=204');
+    if(!CR) CR = await import('./club-roster.js?v=205');
     clubCss();
     // 📉 v137 — 동아리 학기 · 개설 · 신청 숫자는 같은 탭에서 5분 기억 (동아리 관리 화면을 열고 닫으면 버림)
     const cuC = getCU(), lcC = { uid: cuC && cuC.uid, ms: 5 * 60000 };

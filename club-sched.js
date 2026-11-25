@@ -6,9 +6,10 @@
        clubApplications/<id>.sessions      강사 화면과 같은 모양 (skip · skipReason · extra · extraLabel · start · durMin · override)
        clubApplications/<id>.skipPlans     { '휴강 날짜': { plan:'makeup'|'refund'|'todo', makeup:'보강 날짜', refundDone, refundAt, at } }
                                            — 회차표 밖에 두어, 강사 화면이 회차표를 다시 만들어도 지워지지 않게 · 누가 했는지는 여기에 쓰지 않음(공고된 신청서는 로그인 없이 읽힘)
+       clubApplications/<id>.planOff       ['처음 계획부터 쉬는 날', …] (v205) — 확정 때 적어 둠 · 이 날들은 휴강이 아니라 수업이 없는 날 (뒤처리를 묻지 않음)
        clubAppPrivate/<id>.schedLog        [{ at, name, act, date, note }] 최근 80개 — 교직원 · 그 강사만 읽는 문서
    ═══════════════════════════════════════════════════════════ */
-import { liveSessions, offSessions, planOf, planText, sessTime, addMin, roomOf, instrOf } from './club-roster.js?v=204';
+import { liveSessions, offSessions, planOf, planText, sessTime, addMin, roomOf, instrOf, isPlanOff } from './club-roster.js?v=205';
 
 let E = null, SEL = '', BUSY = false; const LOGS = {};
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
@@ -113,6 +114,8 @@ function clubHTML(a){
     const B = (act, label, cls) => E.canEdit ? `<button type="button" class="csd-b ${cls || ''}" data-csd-${act}="${esc(x.date)}">${label}</button>` : '';
     let cls = past ? 'past' : '', when = `${dl(x.date)}${x.date === td ? ' · 오늘' : ''}`, timeTx = `${esc(tm.time)} – ${esc(tm.end)}`, state = '', acts = '';
     if(school){ cls += ' sch'; timeTx = '<span class="csd-tag sc">학사 휴강</span>'; state = esc(bm[x.date] || x.reason || ''); acts = B('over', '그래도 진행', 'g'); }
+    else if(x.skip && isPlanOff(a, x)){ cls += ' sch'; timeTx = '<span class="csd-tag sc">수업 없는 날</span>'; state = '처음 계획부터 쉬는 날 — 보강 · 환불 없음';
+      acts = B('plan', '휴강으로 처리', '') + B('unskip', '수업하는 날로'); }
     else if(x.skip){ const pl = planOf(a, E.SEM, x.date); cls += ' off';
       timeTx = '<span class="csd-tag todo" style="background:#FBE9E3;color:#9A3412">휴강</span>';
       state = `${esc(x.skipReason || '사유 없음')} · <span class="csd-tag ${pl.st === 'makeup' ? 'mk' : pl.st === 'refunded' ? 'ok' : pl.st === 'refund' ? 'rf' : 'todo'}">${esc(planText(pl))}</span>`;
@@ -156,13 +159,17 @@ async function save(a, mut, note, act, date){
     const cur = await E.FS.getDoc(ref); if(!cur.exists()){ BUSY = false; E.toast('이 동아리를 찾지 못했어요 — 새로 고쳐 주세요.'); return false; }
     const d0 = cur.data();
     const sessions = JSON.parse(JSON.stringify(d0.sessions || [])); const plans = JSON.parse(JSON.stringify(d0.skipPlans || {}));
-    const r = mut(sessions, plans);
-    if(r === false){ BUSY = false; Object.assign(a, { sessions: d0.sessions || [], skipPlans: d0.skipPlans || {} }); draw(); E.toast('그 사이 일정이 바뀌었어요 — 다시 확인해 주세요.'); return false; }
+    // 처음 계획부터 쉬는 날 — 아직 적어 둔 것이 없으면 «지금 뒤처리 없이 쉬는 날 전부»를 처음 계획으로 삼는다 (고치기 전 모습 기준)
+    const off = { list: Array.isArray(d0.planOff) ? d0.planOff.slice() : (d0.sessions || []).filter(x => x && x.skip && !x.extra && !(d0.skipPlans || {})[x.date]).map(x => x.date) };
+    const r = mut(sessions, plans, off);
+    if(r === false){ BUSY = false; Object.assign(a, { sessions: d0.sessions || [], skipPlans: d0.skipPlans || {}, ...(Array.isArray(d0.planOff) ? { planOff: d0.planOff } : {}) }); draw(); E.toast('그 사이 일정이 바뀌었어요 — 다시 확인해 주세요.'); return false; }
     // 뒤처리 정리 — 휴강이 아닌 날의 뒤처리(강사가 강사 화면에서 휴강을 되돌린 것)와 거기에 이어 둔 보강은 뺀다
     Object.keys(plans).forEach(k => { const s = sessions.find(x => x.date === k && !x.extra); if(!s || !s.skip) delete plans[k]; });
     for(let i = sessions.length - 1; i >= 0; i--){ const x = sessions[i]; if(x.extra && x.extraFor && !(plans[x.extraFor] && plans[x.extraFor].plan === 'makeup' && plans[x.extraFor].makeup === x.date)) sessions.splice(i, 1); }
     sessions.sort((x, y) => String(x.date).localeCompare(String(y.date))); renumber(sessions);
+    const planOff = [...new Set(off.list)].filter(k => { const s = sessions.find(x => x.date === k && !x.extra); return s && s.skip && !plans[k]; }).sort();
     const upd = { sessions, sessionCount: sessions.filter(s => !s.blocked && !s.skip).length, skipPlans: plans, adminAt: E.FS.Timestamp.now() };
+    if(Array.isArray(d0.planOff) || ['confirmed', 'running', 'settling', 'locked'].includes(E.SEM.status)) upd.planOff = planOff;      // 확정 전에는 적지 않음 (그때는 뒤처리 없는 쉬는 날이 모두 계획)
     await E.FS.updateDoc(ref, upd);
     Object.assign(a, upd);
     // 바꾼 기록 — 교직원 · 그 강사만 읽는 문서에 (실패해도 일정은 이미 저장됨)
@@ -229,7 +236,9 @@ function skipDlg(a, date, mode){
       <label class="csd-opt" data-o="refund" style="margin-top:6px"><input type="radio" name="csd-pl" value="refund"><span><b>환불해요</b>
         <div class="d">수업이 한 번 줄어요. 1회 ${won(fee)} × ${cnt}명 = <b>${won(fee * cnt)}</b> 을(를) 학부모에게 돌려줘요 (강사 지급액도 그만큼 줄어요). 환불을 마치면 이 줄에서 «환불 처리함»을 눌러요.</div></span></label>
       <label class="csd-opt" data-o="todo" style="margin-top:6px"><input type="radio" name="csd-pl" value="todo"><span><b>아직 못 정했어요</b>
-        <div class="d">«처리 필요»로 남아 동아리 관리 · 동아리 현황에 계속 보여요. 정해지면 이 줄에서 고르면 돼요.</div></span></label></div>
+        <div class="d">«처리 필요»로 남아 동아리 관리 · 동아리 현황에 계속 보여요. 정해지면 이 줄에서 고르면 돼요.</div></span></label>
+      ${mode === 'plan' ? `<label class="csd-opt" data-o="planned" style="margin-top:6px"><input type="radio" name="csd-pl" value="planned"><span><b>처음 계획부터 쉬는 날이에요</b>
+        <div class="d">계획을 짤 때부터 수업이 없던 날 — 휴강이 아니에요. 보강 · 환불 없이 «수업 없는 날»로 두고, 현황에도 휴강으로 띄우지 않아요.</div></span></label>` : ''}</div>
     <div class="csd-err" id="csd-e"></div>
     <div class="row" style="justify-content:flex-end"><button type="button" class="csd-b" data-n>취소</button><button type="button" class="csd-b p" data-y>${mode === 'plan' ? '뒤처리 저장' : '휴강으로 저장'}</button></div>`);
   const $ = q => bg.querySelector(q);
@@ -246,8 +255,8 @@ function skipDlg(a, date, mode){
   $('[data-n]').onclick = () => bg.close();
   $('[data-y]').onclick = async () => {
     const rs = $('#csd-rt').value.trim() || reason; const err = t => { $('#csd-e').textContent = t; };
-    if(!rs) return err('사유를 골라 주세요.');
     if(!plan) return err('뒤처리를 골라 주세요 — 보강 · 환불 · 아직 못 정함.');
+    if(!rs && plan !== 'planned') return err('사유를 골라 주세요.');
     const mdv = $('#csd-md').value, ms = $('#csd-ms').value, mu = Number($('#csd-mu').value) || 0;
     const oldMk = cur.plan === 'makeup' ? cur.makeup : '';
     const muTx = mu && mu !== (Number(x.durMin) || Number(a.durMin) || 60) ? ` (길이 ${mu}분 — 회비가 그만큼 달라져요)` : '';
@@ -258,10 +267,13 @@ function skipDlg(a, date, mode){
       const dup = sOf(a.sessions || [], mdv);
       if(dup && !(dup.extra && dup.extraFor === date)) return err(dup.skip ? '그 날짜는 이 동아리가 휴강한 날이에요 — 그 줄에서 «휴강 되돌리기»를 쓰세요.' : (dup.blocked || bmOf()[mdv]) && !dup.override ? '그 날짜는 학사 휴강일로 회차표에 있어요 — 그 줄의 «그래도 진행»을 쓰세요.' : '그 날짜에는 이미 수업이 있어요.');
     }
+    if(plan === 'planned' && (cur.plan === 'makeup' || (cur.plan === 'refund' && cur.refundDone))){ bg.close();
+      if(!(await ask('처음 계획부터 쉬는 날로', cur.plan === 'makeup' ? `이어 둔 <b>${dl(cur.makeup)} 보강</b>도 함께 빠져요.` : '<b>환불 처리함</b> 표시가 지워져요.', '그렇게 바꾸기'))) return; }
     bg.close();
-    const note = `${a.title || ''} ${md(date)} 휴강(${rs}) — ${plan === 'makeup' ? md(mdv) + ' 보강' + muTx : plan === 'refund' ? '환불' : '보강 · 환불 미정'}`;
-    await save(a, (S, P) => {
+    const note = plan === 'planned' ? `${a.title || ''} ${md(date)} — 처음 계획부터 쉬는 날로` : `${a.title || ''} ${md(date)} 휴강(${rs}) — ${plan === 'makeup' ? md(mdv) + ' 보강' + muTx : plan === 'refund' ? '환불' : '보강 · 환불 미정'}`;
+    await save(a, (S, P, O) => {
       const s = sOf(S, date); if(!s) return false;
+      if(plan === 'planned'){ if(!s.skip) return false; const i = S.findIndex(y => y.extra && y.extraFor === date); if(i >= 0) S.splice(i, 1); delete P[date]; O.list.push(date); return; }
       if(s.blocked || (plan === 'makeup' && S.some(y => y.date === mdv && !(y.extra && y.extraFor === date)))) return false;      // 그 사이 바뀜
       s.skip = true; s.skipReason = rs;                                             // 그날만 바꾼 시간(start · durMin)은 그대로 둠 — 되돌리면 살아남
       if(oldMk && oldMk !== (plan === 'makeup' ? mdv : '')){ const i = S.findIndex(y => y.date === oldMk && y.extra && y.extraFor === date); if(i >= 0) S.splice(i, 1); }   // 보강 날짜를 바꾸거나 환불로 돌리면 이어 둔 예전 보강만 뺌
@@ -273,7 +285,7 @@ function skipDlg(a, date, mode){
         P[date] = Object.assign({ plan: 'makeup', makeup: mdv }, stamp());
       } else if(plan === 'refund') P[date] = Object.assign({ plan: 'refund', refundDone: !!(mode === 'plan' && (P[date] || {}).plan === 'refund' && (P[date] || {}).refundDone) }, stamp());
       else P[date] = Object.assign({ plan: 'todo' }, stamp());
-    }, note, 'skip', date);
+    }, note, plan === 'planned' ? 'planned' : 'skip', date);
   };
 }
 function timeDlg(a, date){
@@ -303,9 +315,10 @@ async function onClick(e){
   if(d.csdPlan) return skipDlg(a, d.csdPlan, 'plan');
   if(d.csdTime) return timeDlg(a, d.csdTime);
   if(d.csdUnskip){ const date = d.csdUnskip; const p = (a.skipPlans || {})[date] || {}; const mk = p.plan === 'makeup' && p.makeup && (a.sessions || []).find(y => y.date === p.makeup && y.extra && y.extraFor === date);
-    if(!(await ask('휴강 되돌리기', `${dl(date)} 수업을 다시 하는 것으로 돌려요.${mk ? `<br>이어 둔 <b>${dl(p.makeup)} 보강</b>도 함께 빼요.` : ''}${p.plan === 'refund' && p.refundDone ? '<br><b>이미 환불 처리함으로 표시된 휴강이에요</b> — 환불을 다시 받아야 하는지 확인해 주세요.' : ''}`, '되돌리기'))) return;
+    const x0 = sOf(a.sessions || [], date); const wasPlan = x0 && isPlanOff(a, x0);
+    if(!(await ask(wasPlan ? '수업하는 날로' : '휴강 되돌리기', wasPlan ? `${dl(date)}은(는) 처음 계획부터 쉬는 날이에요. 수업하는 날로 바꾸면 <b>수업이 한 번 늘고 1인 회비도 1회 ${won(feeAt(a, x0))}만큼 늘어요.</b>` : `${dl(date)} 수업을 다시 하는 것으로 돌려요.${mk ? `<br>이어 둔 <b>${dl(p.makeup)} 보강</b>도 함께 빼요.` : ''}${p.plan === 'refund' && p.refundDone ? '<br><b>이미 환불 처리함으로 표시된 휴강이에요</b> — 환불을 다시 받아야 하는지 확인해 주세요.' : ''}`, wasPlan ? '수업하는 날로' : '되돌리기'))) return;
     return save(a, (S, P) => { const s = sOf(S, date); if(!s) return false; s.skip = false; s.skipReason = '';
-      const i = S.findIndex(y => y.extra && y.extraFor === date); if(i >= 0) S.splice(i, 1); delete P[date]; }, `${a.title || ''} ${md(date)} 휴강 되돌림`, 'unskip', date); }
+      const i = S.findIndex(y => y.extra && y.extraFor === date); if(i >= 0) S.splice(i, 1); delete P[date]; }, `${a.title || ''} ${md(date)} ${wasPlan ? '수업하는 날로' : '휴강 되돌림'}`, 'unskip', date); }
   if(d.csdRfdone || d.csdRfundo){ const date = d.csdRfdone || d.csdRfundo; const on = !!d.csdRfdone;
     if(on && !(await ask('환불 처리함', `${dl(date)} 휴강분 — 1회 ${won(feeAt(a, sOf(a.sessions || [], date)))} × ${E.countOf(a.id)}명 = <b>${won(feeAt(a, sOf(a.sessions || [], date)) * E.countOf(a.id))}</b> 환불을 마쳤다고 표시해요.`, '환불 처리함'))) return;
     return save(a, (S, P) => { P[date] = Object.assign({}, P[date] || { plan: 'refund' }, { plan: 'refund', refundDone: on, refundAt: on ? Date.now() : 0 }); },

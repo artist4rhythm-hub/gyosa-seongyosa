@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   🎨 club-roster.js — 동아리 «오늘 수업» 공용 부품 (v-92 · v204: 그날만 바꾼 시각 · 보강 표시 · 휴강과 뒤처리)
+   🎨 club-roster.js — 동아리 «오늘 수업» 공용 부품 (v-92 · v204: 그날만 바꾼 시각 · 보강 표시 · 휴강과 뒤처리 · v205: 처음 계획부터 쉬는 날은 휴강으로 보지 않음)
    · 홈(동아리 실황)과 동아리 현황이 같은 규칙으로 보여 주도록 한 곳에 모았습니다
      - 교실: 관리자 배정(room)이 진실, 없으면 강사 희망(place)
      - 담당: 강사(instructorName) + 함께하는 강사(coInstructors)
@@ -44,12 +44,18 @@ export function liveSessions(c, sem){
   const total = arr.length;
   return arr.map((s,i) => ({ ...s, no:i+1, total }));
 }
-/* 휴강한 날들 — {date, kind:'skip'(동아리 휴강)|'school'(학사 휴강), reason, time, end, plan}
+/* 처음 계획부터 쉬는 날인지 (v205) — 강사가 계획을 짤 때 뺀 날은 «휴강»이 아니라 그냥 수업이 없는 날 (보강 · 환불을 묻지 않고, 현황에도 휴강으로 띄우지 않음)
+   · 뒤처리(skipPlans)가 적힌 날 = 계획에 있던 수업을 쉰 것 → 휴강
+   · planOff(확정 때 적어 둔 «처음부터 쉬는 날» 목록)가 있으면 거기에 든 날만 계획 · 없는 날(확정 뒤 강사가 뺀 날)은 휴강
+   · planOff 가 아직 없으면(확정 전) 모두 계획으로 봄 */
+export const isPlanOff = (c, x) => !!(x && x.skip) && !((c && c.skipPlans) || {})[x.date] && (!Array.isArray(c && c.planOff) || c.planOff.includes(x.date));
+/* 휴강한 날들 — {date, kind:'skip'(동아리 휴강)|'school'(학사 휴강)|'plan'(처음 계획부터 쉬는 날), reason, time, end, plan}
    plan = 휴강 뒤처리(clubApplications.skipPlans[날짜]): { plan:'makeup'|'refund'|'todo', makeup:'보강 날짜', refundDone, … } */
 export function offSessions(c, sem){
   const bm = blockedMap(sem);
   return ((c && c.sessions) || []).filter(x => x && x.date && !x.extra && isOffS(x, bm)).map(x => { const t = sessTime(c, x);
     const school = !x.override && (x.blocked || bm[x.date]);        // 학사 휴강이 먼저 — 그날은 애초에 수업 · 회비가 없으니 보강 · 환불을 묻지 않음
+    if(!school && isPlanOff(c, x)) return { date:x.date, kind:'plan', reason:'처음 계획부터 쉬는 날', time:t.time, end:t.end, plan:null };
     return school ? { date:x.date, kind:'school', reason:String(bm[x.date] || x.reason || '학사 휴강'), time:t.time, end:t.end, plan:null }
                   : { date:x.date, kind:'skip', reason:String(x.skipReason || ''), time:t.time, end:t.end, plan: planOf(c, sem, x.date) }; })
     .sort((a,b) => a.date.localeCompare(b.date));
@@ -74,7 +80,7 @@ export function todoSkips(clubs, sem){
 /* 그날 쉬는 동아리 — [{c, o}] */
 export function offOn(clubs, sem, ds){
   const out = [];
-  (clubs || []).forEach(c => offSessions(c, sem).forEach(o => { if(o.date === ds) out.push({ c, o }); }));
+  (clubs || []).forEach(c => offSessions(c, sem).forEach(o => { if(o.date === ds && o.kind !== 'plan') out.push({ c, o }); }));      // 처음 계획부터 쉬는 날은 «쉬는 동아리»로 띄우지 않음
   return out.sort((a,b) => String(a.o.time).localeCompare(String(b.o.time)) || String(a.c.title).localeCompare(String(b.c.title), 'ko'));
 }
 

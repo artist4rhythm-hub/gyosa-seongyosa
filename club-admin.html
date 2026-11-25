@@ -554,7 +554,10 @@ window.setStatus = async (st)=>{
   if(st==='confirmed'){ try{ await archiveFinal(); }catch(_){ } }
   if(['confirmed','running'].includes(st)) await buildRosters();
   await updateDoc(doc(db,'clubSemesters',SEM.id), { status: st, statusAt: Timestamp.now() });
-  SEM.status = st; cbsFollow(); paintStatus(); toast(`«${STATUS[st]}» 단계로 바꿨습니다`);
+  SEM.status = st;
+  try{ if(PLAN_FIXED.includes(st)) baselineOff();                          // 🗓 v205 확정하는 순간 «처음 계획부터 쉬는 날»을 적어 둠
+       else APPS.filter(a => Array.isArray(a.planOff)).forEach(a => { delete a.planOff; updateDoc(doc(db,'clubApplications', a.id), { planOff: deleteField() }).catch(()=>{}); }); }catch(_){}   // 확정 전으로 되돌리면 지움 — 다시 확정할 때 새로 적음
+  cbsFollow(); paintStatus(); toast(`«${STATUS[st]}» 단계로 바꿨습니다`);
 };
 window.showTab = (t)=>{ TAB=t;
   if(VIEW_ONLY){ paintStatus(); render(); return; }
@@ -692,13 +695,27 @@ function render(){
   try{ paintSteps(); }catch(_){}
 }
 
+/* 🗓 v205 «처음 계획부터 쉬는 날» 적어 두기 — 학기가 확정된 뒤 처음 열 때 한 번
+   강사가 계획을 짤 때 뺀 날(skip)은 휴강이 아니라 수업이 없는 날 → 보강 · 환불을 묻지 않음. 이 목록에 없는 날을 그 뒤에 쉬면 그때부터 «휴강»(뒤처리 필요) */
+/* club-roster.js 의 isPlanOff 와 같은 기준 — 뒤처리가 없고, 적어 둔 목록이 없거나 거기에 든 날 */
+const planOffA = (a, x) => !!(x && x.skip) && !((a.skipPlans||{})[x.date]) && (!Array.isArray(a.planOff) || a.planOff.includes(x.date));
+const PLAN_FIXED = ['confirmed','running','settling','locked'];
+function baselineOff(){
+  if(VIEW_ONLY || !SEM || !PLAN_FIXED.includes(SEM.status)) return;
+  APPS.filter(a => a.status === 'approved' && !a.deleted && !Array.isArray(a.planOff)).forEach(a => {
+    const planOff = (a.sessions || []).filter(x => x && x.skip && !x.extra && !(a.skipPlans || {})[x.date]).map(x => x.date).sort();
+    a.planOff = planOff;
+    updateDoc(doc(db,'clubApplications', a.id), { planOff }).catch(e => { delete a.planOff; console.warn('[처음 계획] 적지 못함', e && e.code); });
+  });
+}
+
 /* ── 🗓 v204 일정 바꾸기 — 휴강(보강 · 환불 뒤처리) · 보강 · 그날만 시간 (club-sched.js) · 학부모 사이트에 다시 로그인하지 않고 여기서 ── */
 let _schedMod = null;
 async function renderSchedTab(){
   const semId = SEM.id;
   $I('body').innerHTML = '<div class="small">일정을 여는 중…</div>';
   try{
-    if(!_schedMod) _schedMod = await import('./club-sched.js?v=204');
+    if(!_schedMod) _schedMod = await import('./club-sched.js?v=205');
     if(!VIEW_ONLY){ try{ subEnr(); }catch(e){} if(!ENR.length){ try{ await loadEnr(); }catch(e){} } }
     if(!SEM || SEM.id !== semId || TAB !== 'sched') return;
     _schedMod.renderSched({ el: $I('body'), SEM, apps: LIVE, db, FS: { doc, updateDoc, getDoc, setDoc, Timestamp }, me: { uid: CU.uid, name: CU.name || '' }, canEdit: !VIEW_ONLY, toast, esc,
@@ -1102,6 +1119,7 @@ async function loadApps(){
   const snap = await getDocs(query(collection(db,'clubApplications'), where('semId','==',SEM.id)));
   APPS = snap.docs.map(d=>({id:d.id, ...d.data()})).sort((a,b)=>(a.createdAt?.seconds||0)-(b.createdAt?.seconds||0));
   await loadPriv(); mergePriv(APPS);
+  try{ baselineOff(); }catch(e){}
   movePriv(snap.docs.filter(d=>PRIV_KEYS.some(k=>k in d.data())).map(d=>d.id));   // 기다리지 않음
   sweepPriv();
 }
@@ -1269,7 +1287,7 @@ function posterPrintHTML(a, idx, total){
   const bkm = bkSet();
   const rows = (a.sessions||[]).map(ss=>{
     const off = ss.skip || (!ss.extra && !ss.override && (ss.blocked || bkm[ss.date]));
-    const act = off ? (ss.skip ? '강사 휴강' : '학사 휴강') : ((ss.ctitle ? ss.ctitle + (ss.content?' — ':'') : '') + (ss.content||''));
+    const act = off ? (ss.skip ? (planOffA(a, ss) ? '수업 없음' : '휴강') : '학사 휴강') : ((ss.ctitle ? ss.ctitle + (ss.content?' — ':'') : '') + (ss.content||''));
     return `<tr class="${off?'off':''}"><td>${off?'—':(ss.no||'')}</td><td style="white-space:nowrap">${esc(ss.date||'')}</td><td>${esc(act)}</td><td>${esc(ss.materials||'')}</td></tr>`;
   }).join('');
   return `<div class="pg">
@@ -1501,7 +1519,7 @@ window.viewApp = (id)=>{
         if(nb){ s = {...s, blocked:true, reason:bkm[s.date]}; }
         const ovr = s.override && bkm[s.date];
         const off = s.blocked||s.skip;
-        const act = s.blocked ? '<b>🚫 '+esc(s.reason||'휴강')+' — 학사 휴강</b>' : s.skip ? '<b>⏸ 강사 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>'
+        const act = s.blocked ? '<b>🚫 '+esc(s.reason||'휴강')+' — 학사 휴강</b>' : s.skip ? (planOffA(a, s) ? '<b>수업 없는 날 (처음 계획)</b>' : '<b>⏸ 휴강'+(s.skipReason?' — '+esc(s.skipReason):'')+'</b>')
           : (s.sameAct ? G((inh(arr,i,'ctitle','sameAct')?inh(arr,i,'ctitle','sameAct')+' — ':'')+inh(arr,i,'content','sameAct'))
              : (s.ctitle?'<b style="color:#1D4ED8">'+esc(s.ctitle)+'</b><br>':'')+esc(s.content||''));
         return `<tr class="${off?'blocked':''}" ${s.skip?'style="background:#FFF7E6;color:#92400E"':ovr?'style="background:#FFFBEB"':''}><td>${off?'—':s.no}</td><td>${s.date} (${WD[new Date(s.date+'T00:00:00').getDay()]})${ovr?` <span style="background:#FEF3C7;color:#92400E;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">▶ 진행 · 학사: ${esc(bkm[s.date])}</span>`:''}${s.extra?` <span style="background:#EDE9FE;color:#6D28D9;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">➕${esc(s.extraLabel||'보강')}${(s.start||s.durMin)?` · ${s.start||''}${s.durMin?' '+s.durMin+'분':''}`:''}</span>`:(s.start||s.durMin)?` <span style="background:#FFEDD5;color:#C2410C;border-radius:100px;padding:1px 7px;font-size:10px;font-weight:800">🕒 ${s.start||''}${s.durMin?' '+s.durMin+'분':''}</span>`:''}</td><td>${act}</td><td>${off?'':(s.matSame?G(inh(arr,i,'materials','matSame')):esc(s.materials||''))}</td><td>${off?'':(s.sameCost?G(inh(arr,i,'cost','sameCost')):esc(s.cost||''))}</td><td>${off?'':(s.sameNote?G(inh(arr,i,'note','sameNote')):esc(s.note||''))}</td></tr>`; }).join('')}
