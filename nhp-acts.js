@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   🎉 nhp-acts.js — 특별활동 한 곳에서 · 출석부와 맞추기 · v201
+   🎉 nhp-acts.js — 특별활동 한 곳에서 · 출석부와 맞추기 · v201 (v207: 🎨 모든 반 동아리 줄 맞추기)
    · 활동(이름 · 날짜 · 활동 사항 · 대상 반)은 한 사람이 한 번만 — nhpLists/<학기>.activities (예전과 같은 자리 · from · to 날짜가 더해짐)
    · 반마다 칸(nhpEntries/<특별활동 칸>)에는 «빠진 학생»만 — rows.<학생>.no.<활동> (고른 학생만 활동은 yes)
    · 출석부: 활동 날짜에 정상 출석이 아닌 학생(결석 · 병결 · 체험학습 · 지각 · 조퇴 · 휴학)을 사유와 함께 보여 줌
@@ -7,6 +7,7 @@
        며칠만 빠졌으면 빼지 않고 «확인» 표시만 · 손으로 바꾼 학생(rows.<학생>.mn.<활동>)은 그대로 둠
    · 저장되는 새 자리는 nhpEntries 안쪽뿐 — 보안 규칙은 그대로 (v55)
    ═══════════════════════════════════════════════════════════ */
+import * as CLUBS from './nhp-clubs.js?v=207';
 let A = null, C = null, esc = null, FS = null;
 const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
 const pad2 = n => String(n).padStart(2, '0');
@@ -140,7 +141,8 @@ function draw(){
   const left = `<div class="ac-l"><div class="ac-h">활동 ${L.length} · 날짜 순</div>
     ${L.map(a => `<button class="ac-it${a.id === SEL ? ' on' : ''}" data-acsel="${esc(a.id)}"><b>${esc(a.t || '(이름 없음)')}</b><small>${esc(a.d || whenText(a.from, a.to) || '날짜 없음')}${hasDates(a) ? '' : ' · 출석부와 못 맞춤'}${a.def === 'none' ? ' · 고른 학생만' : ''}</small></button>`).join('')}
     ${x && x._new ? `<button class="ac-it on"><b>${esc(x.t || '새 활동')}</b><small>아직 저장 전</small></button>` : ''}
-    ${ed ? `<div class="frow" style="padding:8px"><button class="nh-btn sm g" data-acnew>＋ 활동</button><button class="nh-btn sm" data-acpast>지난 학기에서</button></div>` : ''}</div>`;
+    ${ed ? `<div class="frow" style="padding:8px"><button class="nh-btn sm g" data-acnew>＋ 활동</button><button class="nh-btn sm" data-acpast>지난 학기에서</button></div>
+      <div style="padding:0 8px 8px"><button class="nh-btn sm" style="width:100%" data-acclubs title="동아리 확정 명단을 읽어, 고칠 수 있는 모든 반의 특별활동 칸에 동아리 · 조이클래스 줄을 맞춰요 (담임이 고친 글 · 숨긴 줄은 그대로)">🎨 모든 반 동아리 줄 맞추기</button></div>` : ''}</div>`;
   let mid = '<div class="ac-m"><div class="nh-empty">활동이 아직 없어요.</div></div>', right = '<div class="ac-r"></div>';
   if(x){
     const secs = secsSorted(); const allOn = !x.secs || !x.secs.length;
@@ -210,7 +212,7 @@ async function leaveOk(){
   return await A.confirm('저장하지 않은 것이 있어요', '고친 내용을 버리고 넘어갈까요?', '버리고 넘어가기', true);
 }
 async function onClick(e){
-  const t = e.target.closest('[data-acsel],[data-acnew],[data-acpast],[data-actg],[data-acdef],[data-acsave],[data-acdel],[data-acsync],[data-acopen],[data-ackid],[data-go]');
+  const t = e.target.closest('[data-acsel],[data-acnew],[data-acpast],[data-acclubs],[data-actg],[data-acdef],[data-acsave],[data-acdel],[data-acsync],[data-acopen],[data-ackid],[data-go]');
   if(t && t.dataset.go) e.preventDefault();
   if(!t || !M || BUSY) return;
   const d = t.dataset;
@@ -218,6 +220,7 @@ async function onClick(e){
   if(d.acsel){ if(d.acsel === SEL || !(await leaveOk())) return; SEL = d.acsel; DRAFT = null; OPENSEC = ''; draw(); return; }
   if('acnew' in d){ if(!(await leaveOk())) return; DRAFT = blank(); SEL = DRAFT.id; DIRTY = false; draw(); const i = M.body.querySelector('[data-acf="t"]'); if(i) i.focus(); return; }
   if('acpast' in d){ if(!(await leaveOk())) return; fromPast(); return; }
+  if('acclubs' in d){ syncClubs(); return; }
   if(d.actg){ readForm(); const secs = secsSorted();
     if(d.actg === 'all') DRAFT.secs = [];
     else { const dp = deptsOf(A.TERM).find(x => x.id === d.actg); const ids = secs.filter(s => dp && Number(s.gradeNo) >= Number(dp.from) && Number(s.gradeNo) <= Number(dp.to)).map(s => s.id);
@@ -349,5 +352,27 @@ async function syncAll(loud){
     }
     if(loud || n) A.toast(n ? `출석부대로 ${n}명을 맞췄어요 ✓${skip ? ` (고칠 수 없는 반 ${skip} — 담임이 칸을 열면 맞춰져요)` : ''}` : (skip ? `맞출 반 ${skip}곳은 담임이 칸을 열면 맞춰져요.` : '출석부와 모두 맞아요 ✓'));
   }catch(e){ if(loud) A.toast('맞추지 못했어요 — ' + A.errText(e), 'err'); }
+  BUSY = false; if(M) draw();
+}
+
+/* 🎨 모든 반 동아리 · 조이클래스 줄 맞추기 (v207) — 담임이 칸을 열지 않은 반도 출력 전에 한 번에 */
+async function syncClubs(){
+  if(!canLists(A)) return;
+  BUSY = true;
+  try{
+    await CLUBS.load(A, true);
+    if(!CLUBS.ready()){ A.toast('동아리 명단을 읽지 못했어요.', 'err'); BUSY = false; return; }
+    if(!CLUBS.info().sems.length){ A.toast('이 학기와 기간이 겹치는 «확정»된 동아리 학기가 없어요.', 'err'); BUSY = false; return; }
+    let n = 0, cells = 0, skip = 0;
+    for(const s of secsSorted()){
+      const cell = actCell(s.id); if(!cell) continue;
+      const ent = await A.getEntry(cell.id, true); const ops = CLUBS.plan(A.subStudents(cell), ent.rows || {});
+      if(!ops.length) continue;
+      if(!C.canDo(cell, A.CU.uid, A.isMgr).edit){ skip++; continue; }
+      const patch = {}; ops.forEach(o => { patch[o.path] = o.v === undefined ? null : o.v; });
+      try{ n += await writeCell(cell, patch, 'club'); cells++; }catch(e){ skip++; }
+    }
+    A.toast(n ? `동아리 명단대로 ${cells}개 반 · ${n}줄을 맞췄어요 ✓${skip ? ` (고칠 수 없는 반 ${skip} — 담임이 칸을 열면 맞춰져요)` : ''}` : (skip ? `맞출 반 ${skip}곳은 담임이 칸을 열면 맞춰져요.` : '모든 반이 동아리 명단과 맞아요 ✓'));
+  }catch(e){ A.toast('맞추지 못했어요 — ' + A.errText(e), 'err'); }
   BUSY = false; if(M) draw();
 }

@@ -627,6 +627,24 @@ export function actsFor(lists, secId){
   return ((lists && lists.activities) || []).filter(a => a && String(a.t || '').trim() && (!a.secs || !a.secs.length || a.secs.includes(secId)))
     .sort((a, b) => (a.o || 0) - (b.o || 0));
 }
+/* 동아리 · 조이클래스 줄 (v207) — 특별활동 칸 rows.<학생>.cl.<줄> = «종류\n주제\n선생님\n학기» (nhp-clubs.js 가 동아리 확정 명단에서 넣음)
+   · 종류: club 동아리 참여 · joy 조이클래스 참여 · host 조이클래스를 연 학생
+   · clx.<줄> 숨김 · clm.<줄> 담임이 고친 활동 사항 */
+export function clubAuto(l){
+  return l.k === 'host' ? `* 주제 : ${l.t}\n* 클래스 기획 및 진행` : `* 주제 : ${l.t}` + (l.w ? `\n* 선생님 : ${l.w}` : '');
+}
+export function clubLines(row){
+  row = row || {};
+  const cl = row.cl || {}, clx = row.clx || {}, clm = row.clm || {};
+  const ord = { club: 0, joy: 1, host: 2 };
+  return Object.keys(cl).filter(k => typeof cl[k] === 'string').map(key => {
+    const p = cl[key].split('\n'); const l = { key, k: ord[p[0]] == null ? 'club' : p[0], t: p[1] || '', w: p[2] || '', d: p[3] || '' };
+    l.lab = l.k === 'club' ? '동아리' : '조이클래스';
+    l.hid = !!clx[key]; l.man = typeof clm[key] === 'string' && clm[key].trim() !== '';
+    l.auto = clubAuto(l); l.text = l.man ? clm[key] : l.auto;
+    return l; })
+    .sort((a, b) => ord[a.k] - ord[b.k] || a.t.localeCompare(b.t, 'ko') || a.key.localeCompare(b.key));
+}
 export function joined(a, row){
   row = row || {};
   if(a.def === 'none') return !!(row.yes || {})[a.id];
@@ -728,6 +746,8 @@ export function blockFor(sub, ctx){
   if(sub.kind === 'act'){
     const rows = actsFor(lists, sub.secId).filter(a => joined(a, row)).map(a => ({ id: `${bid}:a:${a.id}`, cells: [
       C(`${bid}:a:${a.id}:t`, a.t, { al: 'c', kd: 'tx' }), C(`${bid}:a:${a.id}:d`, a.d || '', { al: 'c', kd: 'dt' }), C(`${bid}:a:${a.id}:c`, a.c || '', { kd: 'tx' })] }));
+    clubLines(row).filter(l => !l.hid).forEach(l => rows.push({ id: `${bid}:c:${l.key}`, cells: [      // v207 동아리 · 조이클래스 — 지난 학기처럼 특별활동 표 아래 줄로
+      C(`${bid}:c:${l.key}:t`, l.lab, { al: 'c', kd: 'tx' }), C(`${bid}:c:${l.key}:d`, l.d, { al: 'c', kd: 'dt' }), C(`${bid}:c:${l.key}:c`, l.text, { kd: 'tx' })] }));
     if(!rows.length) return null;
     const ag = ctx.actGroup ? ctx.actGroup(stu.id) : '';
     return { id: bid, k: 'act', h: Object.assign({ t: 'fixed', key: 'act', tid: bid + ':h' }, ag ? { meta: `활동조 ${ag}` } : {}), tables: [{ id: `${bid}:T`, cls: 'list', cols: [20, 20, 60], rows: [

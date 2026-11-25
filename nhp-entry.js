@@ -14,7 +14,8 @@
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
 import * as SETUP from './nhp-setup.js?v=206';
-import * as ACTS from './nhp-acts.js?v=201';
+import * as ACTS from './nhp-acts.js?v=207';
+import * as CLUBS from './nhp-clubs.js?v=207';
 
 let A = null, C = null, esc = null, FS = null;
 let SUB = null, ENT = null, TAB = 'in', EL = null, CAN = null, SEC = null, SIDS = [];
@@ -31,7 +32,7 @@ export async function render(a, el, id, tab){
   if(unEnt){ unEnt(); unEnt = null; }
   LOADING = true;                 // 새 칸의 입력을 읽는 동안에는 되돌리기를 받지 않음 (앞 칸 자료에 섞이지 않게)
   if(DW.el && (!SUB || SUB.id !== id)) dwClose();
-  EL = el; SUB = A.subOf(id); MARKS = null; ACT_KICK = ''; ACT_AUTO = '';
+  EL = el; SUB = A.subOf(id); MARKS = null; ACT_KICK = ''; ACT_AUTO = ''; CLUB_KICK = ''; CLUB_AUTO = '';
   if(!SUB){ LOADING = false; el.innerHTML = `<div class="nh-empty">칸을 찾을 수 없어요. (다른 학기의 칸이거나 빠진 칸이에요) <br><button class="nh-btn sm" data-go="home">← 내 할 일</button></div>`; return; }
   TAB = tab || (A.lsGet('nhp_tab_' + id, 'in'));
   if(!['in', 'set', 'mk', 'pv', 'log'].includes(TAB)) TAB = 'in';
@@ -322,8 +323,8 @@ function tmDiff(was, now){
   new Set(Object.keys(a).concat(Object.keys(b))).forEach(k => { if(JSON.stringify(a[k]) !== JSON.stringify(b[k])) out.push({ k, was: a[k], now: b[k] }); });
   return out;
 }
-const actLabel = (sub, k) => { const h = String(k || '').split('.'); if(sub && sub.kind === 'act' && /^(no|yes|au|mn)$/.test(h[0])){ const a = (A.LISTS.activities || []).find(x => x.id === h[1]); return (h[0] === 'au' ? '출석부로 자동 뺌 · ' : h[0] === 'mn' ? '손으로 바꿈 표시 · ' : '참여 · ') + ((a && a.t) || '활동'); } return null; };
-const tmLabel = k => { const h = String(k || '').split('.'); if(SUB && SUB.kind === 'act' && /^(no|yes|au|mn)$/.test(h[0])){ const a = (A.LISTS.activities || []).find(x => x.id === h[1]); return (h[0] === 'au' ? '출석부로 자동 뺌 · ' : h[0] === 'mn' ? '손으로 바꿈 표시 · ' : '참여 · ') + ((a && a.t) || '활동'); } return C.leafLabel(SUB, k, (A.TERM.hr || {}).items); };
+const actLabel = (sub, k) => { const h = String(k || '').split('.'); if(sub && sub.kind === 'act' && /^(cl|clx|clm)$/.test(h[0])) return h[0] === 'clx' ? '동아리 · 조이클래스 줄 숨김' : h[0] === 'clm' ? '동아리 · 조이클래스 줄 · 고친 글' : '동아리 · 조이클래스 줄'; if(sub && sub.kind === 'act' && /^(no|yes|au|mn)$/.test(h[0])){ const a = (A.LISTS.activities || []).find(x => x.id === h[1]); return (h[0] === 'au' ? '출석부로 자동 뺌 · ' : h[0] === 'mn' ? '손으로 바꿈 표시 · ' : '참여 · ') + ((a && a.t) || '활동'); } return null; };
+const tmLabel = k => { const h = String(k || '').split('.'); if(SUB && SUB.kind === 'act' && /^(cl|clx|clm)$/.test(h[0])) return h[0] === 'clx' ? '동아리 · 조이클래스 줄 숨김' : h[0] === 'clm' ? '동아리 · 조이클래스 줄 · 고친 글' : '동아리 · 조이클래스 줄'; if(SUB && SUB.kind === 'act' && /^(no|yes|au|mn)$/.test(h[0])){ const a = (A.LISTS.activities || []).find(x => x.id === h[1]); return (h[0] === 'au' ? '출석부로 자동 뺌 · ' : h[0] === 'mn' ? '손으로 바꿈 표시 · ' : '참여 · ') + ((a && a.t) || '활동'); } return C.leafLabel(SUB, k, (A.TERM.hr || {}).items); };
 function tmVal(v){
   if(v === undefined || v === null || v === '') return '<i style="color:var(--ink-3)">(비어 있음)</i>';
   if(typeof v === 'object') return esc(JSON.stringify(v).slice(0, 120));
@@ -375,7 +376,7 @@ async function tmOpen(){
    · 저장에 성공한 것만 · 같은 칸을 이어 고친 것은 한 줄로(처음 값 → 마지막 값) · 6초 쉬면(길어도 45초마다) 한 묶음으로 씀
    · 한 줄씩 «이것만 되돌리기» — 되돌린 것도 기록에 남음 · 규칙 v55 전이면 조용히 쉼 */
 const CHGQ = {}, CHGR = {}, CHGT = {}, CHG0 = {}, CHGOFF = {}; let VIA = '';
-const CHG_VIA = { undo: '되돌리기', again: '다시 하기', tm: '타임머신 되살리기', stash: '저장 안 된 입력 되살리기', revert: '기록에서 되돌리기', bulk: '한꺼번에 넣기', paste: '붙여넣기', att: '출석부대로 맞춤', acts: '특별활동 화면에서', import: '가져옴 (서랍)' };
+const CHG_VIA = { undo: '되돌리기', again: '다시 하기', tm: '타임머신 되살리기', stash: '저장 안 된 입력 되살리기', revert: '기록에서 되돌리기', bulk: '한꺼번에 넣기', paste: '붙여넣기', att: '출석부대로 맞춤', club: '동아리 명단에서 가져옴', acts: '특별활동 화면에서', import: '가져옴 (서랍)' };
 function chgNote(id, path, prev, v){
   if(CHGOFF[id]) return;
   const Q = (CHGQ[id] = CHGQ[id] || {}); const x = Q[path];
@@ -945,7 +946,7 @@ function actHTML(){
   const acts = C.actsFor(A.LISTS, SUB.secId);
   const ed = ACTS.canLists(A);
   const top = ed ? `<div class="frow" style="align-items:center;margin-bottom:8px"><span class="nh-desc" style="margin:0">활동(이름 · 날짜 · 활동 사항)은 한 곳에서 한 번만 써요.</span><span class="nh-sp"></span><button class="nh-btn sm g" data-ej="actlist">🎉 활동 목록 고치기</button></div>` : '';
-  if(!acts.length) return top + `<div class="nh-warn">이 반에 해당하는 특별활동이 학기 공통 목록에 없어요. 나학평 담당 · 목록 담당이 «🎉 특별활동»에서 넣어요.</div>`;
+  if(!acts.length) return top + `<div class="nh-warn">이 반에 해당하는 특별활동이 학기 공통 목록에 없어요. 나학평 담당 · 목록 담당이 «🎉 특별활동»에서 넣어요.</div>` + clubHTML();
   const dated = acts.some(ACTS.hasDates);
   if(dated) actAttKick();
   const ready = ACTS.attReady();
@@ -965,7 +966,54 @@ function actHTML(){
     : (dated ? `<div class="nh-desc" style="margin-top:8px">${ready ? '활동 날짜에 결석 · 지각 · 조퇴 · 체험학습 · 휴학인 학생이 없어요.' : ACTS.attFailed() ? '출석부를 읽지 못했어요 — 화면을 다시 열어 보세요.' : '출석부를 읽는 중…'}</div>` : '');
   return top + `<div class="nh-desc">기본은 «모두 참여»예요 — <b>빠진 학생만 끄세요.</b> 활동 날짜에 정상 출석이 아닌 학생은 칸에 사유가 보이고, 수업일 모두 빠진 학생은 출석부대로 자동으로 빠져요. «고른 학생만» 활동(예: 강연회 발표)은 한 학생을 켜야 나와요.</div>
     <div class="nh-tw"><table class="nh-t"><thead><tr><th class="fc">활동</th>${SIDS.map(sid => `<th class="c sv" title="${esc(A.stuLabel(sid))}">${esc(shortName(sid))}</th>`).join('')}</tr></thead>
-    <tbody>${body}</tbody></table></div>${noteHTML}`;
+    <tbody>${body}</tbody></table></div>${noteHTML}${clubHTML()}`;
+}
+/* ── 동아리 · 조이클래스 줄 (v207) — 동아리 확정 명단에서 저절로 · 특별활동 표 아래 줄로 출력 ── */
+let CLUB_AUTO = '', CLUB_KICK = '';
+function clubKick(){
+  if(CLUB_KICK === SUB.id) return;
+  CLUB_KICK = SUB.id;
+  const id = SUB.id;
+  CLUBS.load(A).then(() => { if(SUB && SUB.id === id && TAB === 'in'){ clubAuto(); drawBody(); } });
+}
+/* 명단대로 맞추기 — 칸을 열 때 한 번 말없이(고칠 수 있는 사람만) · 단추를 누르면 동아리를 다시 읽고 */
+function clubAuto(force){
+  if(!SUB || SUB.kind !== 'act' || !CAN.edit || !CLUBS.ready() || LOADING) return 0;
+  if(!force && CLUB_AUTO === SUB.id) return 0;
+  CLUB_AUTO = SUB.id;
+  const ops = CLUBS.plan(SIDS, ENT.rows || {});
+  if(!ops.length) return 0;
+  VIA = 'club';
+  try{ ops.forEach(o => putRaw(o.path, o.v)); }
+  finally{ VIA = ''; }
+  const n = new Set(ops.map(o => o.path.split('.').slice(1, 4).join('.').replace(/\.cl[xm]\./, '.cl.'))).size;
+  A.toast(`동아리 명단대로 ${n}줄을 맞췄어요 ✓ (출력에서 빼려면 그 줄의 «숨기기»)`);
+  return n;
+}
+function clubHTML(){
+  clubKick();
+  const ok = CLUBS.ready(); const T = CLUBS.info();
+  const all = SIDS.map(sid => ({ sid, L: C.clubLines(row(sid)) }));
+  const has = all.filter(o => o.L.length).length, hid = all.reduce((n, o) => n + o.L.filter(l => l.hid).length, 0), man = all.reduce((n, o) => n + o.L.filter(l => l.man).length, 0);
+  const st = !ok ? (CLUBS.failed() ? '<div class="nh-warn">동아리 명단을 읽지 못했어요 — «동아리에서 다시 가져오기»를 눌러 보세요. (이미 들어온 줄은 그대로예요)</div>' : '<div class="nh-desc">동아리 명단을 읽는 중…</div>')
+    : !T.sems.length ? '<div class="nh-warn">이 학기와 기간이 겹치는 «확정»된 동아리 학기가 없어요. 동아리 관리에서 명단이 확정되면 여기에 저절로 들어와요.</div>' : '';
+  const ln = (sid, l) => `<span class="cbl-ln${l.hid ? ' hid' : ''}"><b class="cbl-k ${l.k}">${l.lab}${l.k === 'host' ? ' · 연 학생' : ''}</b><span class="cbl-t">${esc(l.man ? l.text.replace(/\n/g, ' / ') : l.t + (l.k === 'host' ? ' — 클래스 기획 및 진행' : l.w ? ' · ' + l.w : ''))}</span>${l.man ? '<span class="ch info" title="담임이 고친 글 — 다시 가져와도 그대로 둬요">손봄</span>' : ''}${l.hid ? '<span class="ch gray">숨김 · 출력 안 함</span>' : ''}${ok && CLUBS.isAmb(sid, l.key) ? '<span class="ch warn" title="같은 이름의 학생이 또 있어요 — 이 학생이 연 것이 맞는지 봐 주세요">이름 같은 학생 있음 · 확인</span>' : ''}${CAN.edit ? `<button class="nh-btn xs ghost" data-cled="${esc(sid)}" data-k="${esc(l.key)}">고치기</button><button class="nh-btn xs ghost" data-clx="${esc(sid)}" data-k="${esc(l.key)}">${l.hid ? '보이기' : '숨기기'}</button>` : ''}</span>`;
+  return `<div class="st-card cbl-card" style="margin-top:10px"><div class="frow" style="align-items:center"><b style="font-size:14px">🎨 동아리 · 조이클래스</b><span class="nh-desc" style="margin:0">동아리 확정 명단에서 저절로 들어와요 — 출력에서는 특별활동 표 아래 줄로</span><span class="nh-sp"></span>${CAN.edit ? '<button class="nh-btn xs" data-ej="clubsync" title="동아리 명단을 다시 읽고 맞춰요 (고친 글 · 숨긴 줄은 그대로)">동아리에서 다시 가져오기</button>' : ''}</div>
+    ${st}<div class="frow" style="gap:6px;margin:6px 0"><span class="ch mint">있는 학생 ${has}</span><span class="ch gray">없는 학생 ${SIDS.length - has}</span>${man ? `<span class="ch info">손본 줄 ${man}</span>` : ''}${hid ? `<span class="ch gray">숨긴 줄 ${hid}</span>` : ''}${ok && T.sems.length ? `<span class="nh-desc" style="margin:0">가져온 곳: ${esc(T.sems.join(' · '))}</span>` : ''}</div>
+    <div class="cbl-list">${all.map(o => `<div class="cbl-row${o.L.length ? '' : ' none'}"><b class="cbl-n" title="${esc(A.stuLabel(o.sid))}">${esc(A.stuName(o.sid))}</b><div class="cbl-ls">${o.L.length ? o.L.map(l => ln(o.sid, l)).join('') : '<i>동아리 · 조이클래스 없음 — 줄이 생기지 않아요</i>'}</div></div>`).join('')}</div>
+    <div class="nh-desc" style="margin:8px 0 0">참여 횟수는 넣지 않아요. 조이클래스를 <b>연 학생</b>은 «클래스 기획 및 진행»으로 들어가요 (동아리 관리의 강사 이름이 학생 이름과 같을 때).</div></div>`;
+}
+/* 한 줄의 활동 사항 고치기 — 비우거나 «자동 글로»를 누르면 명단 글로 돌아감 */
+function clubEdit(sid, key){
+  const l = C.clubLines(row(sid)).find(x => x.key === key); if(!l || !CAN.edit) return;
+  const m = A.modal(`${esc(A.stuName(sid))} — ${l.lab} 줄 고치기`, `<div class="nh-desc">출력의 «활동 사항» 칸에 들어갈 글이에요. 고친 글은 동아리를 다시 가져와도 그대로 둬요.</div>
+    <textarea class="nh-ta" rows="5" data-cltx>${esc(l.text)}</textarea><div class="nh-desc" style="white-space:pre-line">명단 글:\n${esc(l.auto)}</div>`,
+    '<button class="nh-btn" data-auto>자동 글로</button><span class="nh-sp"></span><button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>저장</button>', 'mid');
+  const done = v => { v = String(v || '').replace(/\s+$/, ''); const nv = (!v.trim() || v === l.auto) ? '' : v; if(!nv && (row(sid).clm || {})[key] == null){ m.close(); return; } put(`rows.${sid}.clm.${key}`, (!v.trim() || v === l.auto) ? '' : v); m.close(); drawBody(); };
+  m.box.querySelector('[data-c]').onclick = () => m.close();
+  m.box.querySelector('[data-auto]').onclick = () => done('');
+  m.box.querySelector('[data-ok]').onclick = () => done(m.box.querySelector('[data-cltx]').value);
+  setTimeout(() => { const t = m.box.querySelector('[data-cltx]'); if(t) t.focus(); }, 30);
 }
 /* ── 도서 ── */
 function bookHTML(){
@@ -1530,6 +1578,8 @@ async function onClick(e){
   if(d.mk){ if(!canMark()) return; levelPop(t, async v => { MARKS.m[d.mk] = MARKS.m[d.mk] || {}; MARKS.m[d.mk][MK_SES] = MARKS.m[d.mk][MK_SES] || {}; if(v) MARKS.m[d.mk][MK_SES][d.it] = v; else delete MARKS.m[d.mk][MK_SES][d.it]; t.className = 'lv' + (v ? ' v' + v : ''); t.textContent = v || '·'; await saveMarkAt(`m.${d.mk}.${MK_SES}.${d.it}`, v || undefined); }); return; }
   if(d.mks){ MK_SES = d.mks; drawBody(); return; }
   if(d.peall){ const v = await A.prompt('모두 같은 값', '모든 학생에게 넣을 결과', '', { ph: '예: 수료' }); if(v == null) return; SIDS.forEach(sid => put(`rows.${sid}.p.${d.peall}.${d.w}`, v.trim())); drawBody(); return; }
+  if(d.cled){ clubEdit(d.cled, d.k); return; }
+  if(d.clx){ if(!CAN.edit) return; put(`rows.${d.clx}.clx.${d.k}`, !((row(d.clx).clx || {})[d.k])); drawBody(); return; }
   if(d.actack){ if(!CAN.edit) return; const on = !!(((ENT.meta || {}).ack || {})[d.actack]); putRaw(`meta.ack.${d.actack}`, on ? undefined : true); drawBody(); return; }
   if(d.actall){ const a = C.actsFor(A.LISTS, SUB.secId).find(x => x.id === d.actall); if(!a) return; SIDS.forEach(sid => setAct(sid, a, d.on === '1')); drawBody(); return; }
   if(d.svadd){ const L = (row(d.svadd).list || []).slice(); L.push({ id: C.rid('v'), k: 'P', t: '', d: '', c: '' }); put(`rows.${d.svadd}.list`, L); drawBody(); return; }
@@ -1567,6 +1617,7 @@ async function onClick(e){
   if(a === 'attpull') return pullAttendance();
   if(a === 'actlist'){ await flush(); A.afterActs = () => { A.afterActs = null; if(SUB && SUB.kind === 'act'){ ACT_AUTO = ''; actAuto(); drawBody(); } }; return ACTS.openActs(A); }
   if(a === 'actsync'){ window.showLoading && showLoading('출석부를 읽는 중…'); try{ await ACTS.loadAtt(A, true); }finally{ window.hideLoading && hideLoading(); } if(!ACTS.attReady()) return A.toast('출석부를 읽지 못했어요.', 'err'); if(!actAuto(true)) A.toast('출석부와 모두 맞아요 ✓'); drawBody(); return; }
+  if(a === 'clubsync'){ const id0 = SUB.id; await flush(); window.showLoading && showLoading('동아리 명단을 읽는 중…'); try{ await CLUBS.load(A, true); }finally{ window.hideLoading && hideLoading(); } if(!SUB || SUB.id !== id0) return; if(!CLUBS.ready()){ drawBody(); return A.toast('동아리 명단을 읽지 못했어요.', 'err'); } if(!clubAuto(true)) A.toast('동아리 명단과 모두 맞아요 ✓'); drawBody(); return; }
   if(a === 'servebulk') return serveBulk();
   if(a === 'students'){ await SETUP.editCellStudents(SUB.id, A); SUB = A.subOf(SUB.id); SIDS = A.subStudents(SUB); draw(); return; }
   if(a === 'itemadd'){ const it = (SUB.setup.items || []).concat([{ id: C.rid('i'), g: '', t: '' }]); SUB.setup = Object.assign({}, SUB.setup, { items: it }); saveSetup(true); drawBody(); setTimeout(() => { const ins = EL.querySelectorAll('[data-itf][data-f="t"]'); if(ins.length) ins[ins.length - 1].focus(); }, 30); return; }
