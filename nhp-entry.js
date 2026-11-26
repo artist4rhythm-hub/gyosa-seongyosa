@@ -14,7 +14,7 @@
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
 import * as SETUP from './nhp-setup.js?v=208';
-import * as ACTS from './nhp-acts.js?v=207';
+import * as ACTS from './nhp-acts.js?v=209';
 import * as CLUBS from './nhp-clubs.js?v=207';
 
 let A = null, C = null, esc = null, FS = null;
@@ -993,12 +993,21 @@ function actHTML(){
     const tag = t ? `<span class="act-att${t.all ? ' all' : ''}" title="${esc(A.stuName(sid) + ' — ' + t.text)}">${esc(t.short)}</span>` : '';
     return `<td class="c${t ? ' act-tc' : ''}"><input type="checkbox" style="width:18px;height:18px;accent-color:var(--sb-green)" data-act="${esc(sid)}" data-a="${esc(a.id)}"${on ? ' checked' : ''}${ro()}>${tag}${(r.au || {})[a.id] && !on ? '<small class="act-au" title="출석부대로 자동으로 뺀 학생">자동</small>' : ''}</td>`;
   };
-  const body = acts.map(a => `<tr><td class="fc" style="min-width:200px"><b>${esc(a.t)}</b> <small style="color:var(--ink-3)">${esc(a.d || ACTS.whenText(a.from, a.to) || '')}</small>${a.def === 'none' ? ' <span class="ch warn">고른 학생만</span>' : ''}${ACTS.hasDates(a) ? '' : ' <span class="ch gray" title="활동 목록에서 시작 날짜를 넣으면 그날 출결이 여기에 보여요">날짜 없음</span>'}${CAN.edit ? `<br><button class="nh-btn xs ghost" data-actall="${esc(a.id)}" data-on="1">모두 켜기</button><button class="nh-btn xs ghost" data-actall="${esc(a.id)}" data-on="0">모두 끄기</button><button class="nh-btn xs${ack[a.id] ? ' p' : ''}" data-actack="${esc(a.id)}" title="이 활동의 참여 학생을 확인했다는 표시 (담당자 화면에 보여요)">${ack[a.id] ? '✓ 확인함' : '확인'}</button>` : (ack[a.id] ? ' <span class="ch ok">확인함</span>' : '')}</td>
+  const body = acts.map(a => `<tr><td class="fc" style="min-width:200px"><b>${esc(a.t)}</b> <small style="color:var(--ink-3)">${esc(a.d || ACTS.whenText(a.from, a.to) || '')}</small>${a.def === 'none' ? ' <span class="ch warn">고른 학생만</span>' : ''}${ACTS.hasDates(a) ? '' : ' <span class="ch gray" title="활동 목록에서 시작 날짜를 넣으면 그날 출결이 여기에 보여요">날짜 없음</span>'}${CAN.edit ? `<br><button class="nh-btn xs ghost" data-actall="${esc(a.id)}" data-on="1">모두 켜기</button><button class="nh-btn xs ghost" data-actall="${esc(a.id)}" data-on="0">모두 끄기</button><button class="nh-btn xs${ACTS.ackOf(ack[a.id], a) === 'ok' ? ' p' : ''}" data-actack="${esc(a.id)}" title="이 활동의 참여 학생을 확인했다는 표시 (담당자 화면에 보여요)">${ACTS.ackOf(ack[a.id], a) === 'ok' ? '✓ 확인함' : ACTS.ackOf(ack[a.id], a) === 'old' ? '다시 확인 (날짜가 바뀜)' : '확인'}</button>` : (ACTS.ackOf(ack[a.id], a) === 'ok' ? ' <span class="ch ok">확인함</span>' : ACTS.ackOf(ack[a.id], a) === 'old' ? ' <span class="ch warn">날짜 바뀌기 전 확인</span>' : '')}</td>
       ${SIDS.map(sid => cell(a, sid)).join('')}</tr>`).join('');
   const noteHTML = notes.length ? `<div class="st-card" style="margin-top:10px"><div class="frow" style="align-items:center"><b style="font-size:14px">활동 날짜의 출결</b><span class="nh-desc" style="margin:0">출석부에서 읽어 왔어요 — 정상 출석이 아닌 학생만</span><span class="nh-sp"></span>${CAN.edit ? '<button class="nh-btn xs" data-ej="actsync" title="출석부를 다시 읽고, 수업일 모두 빠진 학생을 빼요 (손으로 바꾼 학생은 그대로)">출석부 다시 맞추기</button>' : ''}</div>
       ${acts.filter(a => notes.some(o => o.a === a)).map(a => `<div class="act-nl"><b>${esc(a.t)}</b> <small>${esc(a.d || ACTS.whenText(a.from, a.to))}</small>${notes.filter(o => o.a === a).map(o => `<div class="act-n${o.t.all && o.on ? ' bad' : o.t.part && o.on ? ' chk' : ''}"><b>${esc(A.stuName(o.sid))}</b> ${esc(o.t.text)} <span>— ${o.t.all ? (o.on ? '모두 빠졌는데 «참여»예요' : '참여에서 뺌') : o.t.part ? (o.on ? '며칠만 빠짐 · 참여로 둠 (확인해 주세요)' : '며칠만 빠짐 · 손으로 뺌') : (o.on ? '참여' : '손으로 뺌')}</span></div>`).join('')}</div>`).join('')}</div>`
     : (dated ? `<div class="nh-desc" style="margin-top:8px">${ready ? '활동 날짜에 결석 · 지각 · 조퇴 · 체험학습 · 휴학인 학생이 없어요.' : ACTS.attFailed() ? '출석부를 읽지 못했어요 — 화면을 다시 열어 보세요.' : '출석부를 읽는 중…'}</div>` : '');
-  return top + `<div class="nh-desc">기본은 «모두 참여»예요 — <b>빠진 학생만 끄세요.</b> 활동 날짜에 정상 출석이 아닌 학생은 칸에 사유가 보이고, 수업일 모두 빠진 학생은 출석부대로 자동으로 빠져요. «고른 학생만» 활동(예: 강연회 발표)은 한 학생을 켜야 나와요.</div>
+  // 📋 v209 확인할 학생 — 출결과 맞지 않거나(모두 빠졌는데 참여 · 며칠만 빠짐) 출석부대로 저절로 뺀 학생만 맨 위에 모아 보여 줌
+  const todo = notes.filter(o => (o.on && (o.t.all || o.t.part) && !(row(o.sid).mn || {})[o.a.id]) || (!o.on && (row(o.sid).au || {})[o.a.id]));      // 담임이 이미 정한 학생(mn)은 다시 묻지 않음
+  const need = todo.filter(o => o.on).length;
+  const unack = acts.filter(a => ACTS.ackOf(ack[a.id], a) !== 'ok').length;
+  const todoHTML = (ready && todo.length) ? `<div class="st-card act-todo${need ? ' need' : ''}"><div class="frow" style="align-items:center"><b style="font-size:14px">📋 확인할 학생 ${todo.length}건</b><span class="nh-desc" style="margin:0">${need ? `정해야 할 것 ${need} · ` : ''}출결과 맞지 않거나, 출석부대로 저절로 뺀 학생이에요</span></div>
+      ${todo.map(o => { const st = o.t.all ? (o.on ? ['bad', '모두 빠졌는데 «참여»'] : ['au', '저절로 뺌']) : (o.on ? ['chk', '며칠만 빠짐 · 확인'] : ['au', '저절로 뺌']);
+        return `<div class="act-td ${st[0]}"><b>${esc(A.stuName(o.sid))}</b><span class="act-ta">${esc(o.a.t)} <small>${esc(o.a.d || ACTS.whenText(o.a.from, o.a.to))}</small></span><span class="act-tw">${esc(o.t.text)}</span><span class="ch ${st[0] === 'au' ? 'gray' : 'warn'}">${st[1]}</span>
+          ${CAN.edit ? `<span class="nh-sp"></span>${o.on ? `<button class="nh-btn xs" data-actfix="${esc(o.sid)}" data-a="${esc(o.a.id)}" data-on="1" title="참여로 두고, 다시 묻지 않아요">참여로 두기</button><button class="nh-btn xs p" data-actfix="${esc(o.sid)}" data-a="${esc(o.a.id)}" data-on="0">빼기</button>` : `<button class="nh-btn xs" data-actfix="${esc(o.sid)}" data-a="${esc(o.a.id)}" data-on="1">참여로 넣기</button>`}` : ''}</div>`; }).join('')}
+      <div class="nh-desc" style="margin:6px 0 0">여기서 정한 학생은 출석부를 다시 맞춰도 그대로 둬요.${unack ? ` 다 보셨으면 아래 표에서 활동마다 «확인»을 눌러 주세요 (확인 전 ${unack}).` : ''}</div></div>` : '';
+  return top + todoHTML + `<div class="nh-desc">기본은 «모두 참여»예요 — <b>빠진 학생만 끄세요.</b> 활동 날짜에 정상 출석이 아닌 학생은 칸에 사유가 보이고, 수업일 모두 빠진 학생은 출석부대로 자동으로 빠져요. «고른 학생만» 활동(예: 강연회 발표)은 한 학생을 켜야 나와요.</div>
     <div class="nh-tw"><table class="nh-t"><thead><tr><th class="fc">활동</th>${SIDS.map(sid => `<th class="c sv" title="${esc(A.stuLabel(sid))}">${esc(shortName(sid))}</th>`).join('')}</tr></thead>
     <tbody>${body}</tbody></table></div>${noteHTML}${clubHTML()}`;
 }
@@ -1551,8 +1560,12 @@ async function doAct(act){
     const sum = (L, f, n) => `<div class="ck-sum">${L.slice(0, n).map(f).join('<br>')}${L.length > n ? `<br><small>외 ${L.length - n}</small>` : ''}</div>`;
     const missH = p.done < p.total ? `<b style="color:var(--danger)">아직 ${p.total - p.done}명이 덜 채워졌어요.</b>${ck.miss.length ? sum(ck.miss, x => `${esc(A.stuName(x.sid))} <small>${x.m.map(esc).join(' · ')}</small>`, 8) : '<br>'}` : '모든 학생을 채웠어요 👏<br>';
     const nameH = ck.names.length ? `<b style="color:#9A5B00">⚠ 다른 학생 이름이 들어간 글 ${ck.names.length}곳</b>${sum(ck.names, x => `${esc(A.stuName(x.sid))} <small>${esc(x.t)} — «${x.h.map(esc).join('» «')}»</small>`, 6)}` : '';
+    let actH = '';
+    if(SUB.kind === 'act'){ const AL = C.actsFor(A.LISTS, SUB.secId); const ak = (ENT.meta || {}).ack || {}; const un = AL.filter(a2 => ACTS.ackOf(ak[a2.id], a2) !== 'ok');
+      let nd = 0; if(ACTS.attReady()) AL.forEach(a2 => SIDS.forEach(sid => { const t2 = ACTS.attOf(a2, sid); const on2 = C.joined(a2, row(sid)); if(t2 && on2 && (t2.all || t2.part) && !(row(sid).mn || {})[a2.id]) nd++; }));
+      if(un.length || nd) actH = `<b style="color:#9A5B00">⚠ ${[nd ? `출결과 맞지 않는 학생 ${nd}건` : '', un.length ? `담임 확인 전인 활동 ${un.length}개 (${un.slice(0, 4).map(a2 => esc(a2.t)).join(', ')}${un.length > 4 ? ' …' : ''})` : ''].filter(Boolean).join(' · ')}</b><br><small style="color:var(--ink-2)">«✏️ 입력» 맨 위 «📋 확인할 학생»과 활동마다 «확인»을 봐 주세요. 그대로 보낼 수도 있어요.</small><br>`; }
     const tip = (ck.miss.length || ck.names.length) ? '<small style="color:var(--ink-2)">«✏️ 입력 › 🔎 빈 곳 · 이름 점검»에서 바로 고치러 갈 수 있어요.</small><br>' : '';
-    const ok = await A.confirm('📨 작성완료 · 검토로 보내기', `${missH}${nameH}${tip}보내면 <b>${esc(next || '')}</b> 단계로 넘어가고 입력이 잠겨요. (첫 단계 검토가 시작되기 전이면 «되찾기»로 다시 고칠 수 있어요)`, '보내기');
+    const ok = await A.confirm('📨 작성완료 · 검토로 보내기', `${missH}${nameH}${actH}${tip}보내면 <b>${esc(next || '')}</b> 단계로 넘어가고 입력이 잠겨요. (첫 단계 검토가 시작되기 전이면 «되찾기»로 다시 고칠 수 있어요)`, '보내기');
     if(!ok) return;
   }
   if(act === 'redo'){
@@ -1614,7 +1627,11 @@ async function onClick(e){
   if(d.peall){ const v = await A.prompt('모두 같은 값', '모든 학생에게 넣을 결과', '', { ph: '예: 수료' }); if(v == null) return; SIDS.forEach(sid => put(`rows.${sid}.p.${d.peall}.${d.w}`, v.trim())); drawBody(); return; }
   if(d.cled){ clubEdit(d.cled, d.k); return; }
   if(d.clx){ if(!CAN.edit) return; put(`rows.${d.clx}.clx.${d.k}`, !((row(d.clx).clx || {})[d.k])); drawBody(); return; }
-  if(d.actack){ if(!CAN.edit) return; const on = !!(((ENT.meta || {}).ack || {})[d.actack]); putRaw(`meta.ack.${d.actack}`, on ? undefined : true); drawBody(); return; }
+  if(d.actfix){ if(!CAN.edit) return; const a = C.actsFor(A.LISTS, SUB.secId).find(y => y.id === d.a); if(!a) return; const on = d.on === '1';
+    if(C.joined(a, row(d.actfix)) !== on) setAct(d.actfix, a, on);
+    if(ACTS.hasDates(a) && !(row(d.actfix).mn || {})[a.id]) putRaw(`rows.${d.actfix}.mn.${a.id}`, true);      // 담임이 정함 — 다시 묻지 않음
+    drawBody(); return; }
+  if(d.actack){ if(!CAN.edit) return; const a = C.actsFor(A.LISTS, SUB.secId).find(y => y.id === d.actack); const on = ACTS.ackOf(((ENT.meta || {}).ack || {})[d.actack], a) === 'ok'; putRaw(`meta.ack.${d.actack}`, on ? undefined : (a ? ACTS.ackVal(a) : true)); drawBody(); return; }
   if(d.actall){ const a = C.actsFor(A.LISTS, SUB.secId).find(x => x.id === d.actall); if(!a) return; SIDS.forEach(sid => setAct(sid, a, d.on === '1')); drawBody(); return; }
   if(d.svadd){ const L = (row(d.svadd).list || []).slice(); L.push({ id: C.rid('v'), k: 'P', t: '', d: '', c: '' }); put(`rows.${d.svadd}.list`, L); drawBody(); return; }
   if(d.svdel){ const L = (row(d.svdel).list || []).slice(); L.splice(+d.i, 1); put(`rows.${d.svdel}.list`, L); drawBody(); return; }

@@ -248,6 +248,19 @@ button.mx-n:hover{background:var(--sb-mint-2)}
 .lg-row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px;line-height:1.6}
 .lg-row b{font-weight:800}.lg-row small{color:var(--ink-3)}
 .stu-chips{display:flex;flex-wrap:wrap;gap:5px}
+/* v209 학사일정에서 가져오기 · 한 표에서 고치기 · 확인할 학생 */
+.cal-list{border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:52vh}
+.cal-row{display:grid;grid-template-columns:28px minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr) 110px;gap:10px;align-items:center;padding:8px 12px;border-top:1px solid var(--line);font-size:13px;cursor:pointer}
+.cal-row:first-child{border-top:none}.cal-row.on{background:var(--mint-bg,#F3FAF6)}.cal-row.have{opacity:.6;cursor:default}.cal-row input{width:17px;height:17px;accent-color:var(--sb-green)}
+.cal-t{display:flex;flex-direction:column;min-width:0}.cal-t small{color:var(--ink-3);font-size:11.5px}.cal-d,.cal-g{font-size:12.5px;color:var(--ink-2)}
+.sh-t td{vertical-align:top}.sh-t .nh-in{height:34px;font-size:13px}.sh-t .nh-ta{font-size:12.5px;line-height:1.6;min-height:64px}.sh-t tr.chg td{background:#FFFBF0}
+.sh-g{font-size:12px;color:var(--ink-2);margin-bottom:4px;overflow-wrap:anywhere}.sh-ch{font-size:11.5px;font-weight:700;color:#8A5A00;margin-top:4px;min-height:14px}
+.sh-dr{margin-top:6px;padding:6px 8px;border-radius:8px;background:#E5EEF8;color:#1D4E89;font-size:11.5px;line-height:1.6}
+.act-todo{margin-bottom:10px}.act-todo.need{border-color:#E6CF8C}
+.act-td{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-size:13px}
+.act-td.bad{background:#FEF2F2}.act-td.chk{background:#FFFBF0}.act-ta{color:var(--ink-2)}.act-ta small{color:var(--ink-3)}.act-tw{font-size:12.5px;color:#7A5A00}
+html[data-theme="dark"] .sh-t tr.chg td,html[data-theme="dark"] .act-td.bad,html[data-theme="dark"] .act-td.chk{background:#2A2A22}html[data-theme="dark"] .sh-dr{background:#22303F;color:#B9D2EE}html[data-theme="dark"] .act-tw,html[data-theme="dark"] .sh-ch{color:#D9B95C}
+@media(max-width:800px){.cal-row{grid-template-columns:28px minmax(0,1fr)}.cal-row .cal-d,.cal-row .cal-g,.cal-row .cal-s{grid-column:2}}
 /* v208 뺀 학생 */
 .so-list{display:flex;flex-direction:column;gap:6px}.so-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;border:1px dashed var(--line);border-radius:10px;background:var(--surface-2,#FAFAF7);font-size:13px}
 .so-row .nh-sel{height:30px;font-size:12.5px;max-width:150px}.so-lv{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:#FBF3DC;color:#7A5A00;white-space:nowrap}
@@ -729,8 +742,8 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
 import { cachedCol } from './listcache.js?v=137';
 import * as C from './nhp-core.js?v=207';
 import * as P from './nhp-print.js?v=207';
-import * as ENTRY from './nhp-entry.js?v=208';
-import * as ACTS from './nhp-acts.js?v=207';
+import * as ENTRY from './nhp-entry.js?v=209';
+import * as ACTS from './nhp-acts.js?v=209';
 import * as SETUP from './nhp-setup.js?v=208';
 import * as EDIT from './nhp-edition.js?v=145';
 import { notifyStaff } from './push-client.js';
@@ -779,9 +792,10 @@ A.modal = function(title, body, foot, cls){
     <div class="mm-h"><span style="min-width:0">${title}</span><button class="x" aria-label="닫기" data-x>✕</button></div>
     <div class="mm-b">${body}</div>${foot ? `<div class="mm-f">${foot}</div>` : ''}</div>`;
   const close = () => { ov.remove(); document.removeEventListener('keydown', onKey); if(m.onClose) m.onClose(); };
-  const onKey = e => { if(e.key === 'Escape' && document.body.lastElementChild === ov) close(); };
-  ov.addEventListener('mousedown', e => { if(e.target === ov) close(); });
-  ov.querySelector('[data-x]').onclick = close;
+  const ask = () => { if(m.guard) m.guard(); else close(); };      // v209 m.guard — 저장하지 않은 것이 있으면 ✕ · Esc · 바깥 누름에도 먼저 물어봄
+  const onKey = e => { if(e.key === 'Escape' && document.body.lastElementChild === ov) ask(); };
+  ov.addEventListener('mousedown', e => { if(e.target === ov) ask(); });
+  ov.querySelector('[data-x]').onclick = ask;
   document.addEventListener('keydown', onKey);
   document.body.appendChild(ov);
   const m = { el: ov, box: ov.querySelector('.mm-box'), body: ov.querySelector('.mm-b'), close, onClose: null };

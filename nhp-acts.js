@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   🎉 nhp-acts.js — 특별활동 한 곳에서 · 출석부와 맞추기 · v201 (v207: 🎨 모든 반 동아리 줄 맞추기)
+   🎉 nhp-acts.js — 특별활동 한 곳에서 · 출석부와 맞추기 · v201 (v207: 🎨 모든 반 동아리 줄 맞추기 · v209: 📅 학사일정에서 · 📋 한 표에서 → nhp-acts-cal.js)
    · 활동(이름 · 날짜 · 활동 사항 · 대상 반)은 한 사람이 한 번만 — nhpLists/<학기>.activities (예전과 같은 자리 · from · to 날짜가 더해짐)
    · 반마다 칸(nhpEntries/<특별활동 칸>)에는 «빠진 학생»만 — rows.<학생>.no.<활동> (고른 학생만 활동은 yes)
    · 출석부: 활동 날짜에 정상 출석이 아닌 학생(결석 · 병결 · 체험학습 · 지각 · 조퇴 · 휴학)을 사유와 함께 보여 줌
@@ -8,6 +8,7 @@
    · 저장되는 새 자리는 nhpEntries 안쪽뿐 — 보안 규칙은 그대로 (v55)
    ═══════════════════════════════════════════════════════════ */
 import * as CLUBS from './nhp-clubs.js?v=207';
+import * as CAL from './nhp-acts-cal.js?v=209';
 let A = null, C = null, esc = null, FS = null;
 const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
 const pad2 = n => String(n).padStart(2, '0');
@@ -23,6 +24,9 @@ export function whenText(from, to){
   return from.slice(0, 7) === to.slice(0, 7) ? `${f} ~ ${+to.slice(8, 10)}일` : `${f} ~ ${+to.slice(5, 7)}월 ${+to.slice(8, 10)}일`;
 }
 export const hasDates = a => !!a && isDate(a.from);
+/* 담임 확인(meta.ack.<활동>) — v209 부터는 확인한 때의 날짜(«시작|끝»)를 적어, 그 뒤 활동 날짜가 바뀌면 «날짜 바뀌기 전 확인»으로 보임 (예전 true 는 그대로 확인으로 봄) */
+export const ackVal = a => hasDates(a) ? `${a.from}|${isDate(a.to) && a.to > a.from ? a.to : ''}` : true;
+export const ackOf = (v, a) => !v ? '' : (typeof v === 'string' && v !== ackVal(a)) ? 'old' : 'ok';
 const rangeOf = a => { const f = a.from, t = isDate(a.to) && a.to >= a.from ? a.to : a.from; return [f, t]; };
 
 /* ── 출석부 읽기 (학기 한 번 · 5분 동안 다시 읽지 않음) ── */
@@ -106,7 +110,8 @@ const deptsOf = t => (Array.isArray(t.depts) && t.depts.length ? t.depts : [{ id
 const secsSorted = () => (A.TERM.sections || []).slice().sort((x, y) => (x.gradeNo || 99) - (y.gradeNo || 99) || String(C.secLabel(x)).localeCompare(String(C.secLabel(y)), 'ko'));
 const actCell = secId => A.SUBS.find(s => s.kind === 'act' && s.secId === secId && !s.removed) || null;
 const sortActs = L => L.slice().sort((x, y) => String(x.from || '9999').localeCompare(String(y.from || '9999')) || (x.o || 0) - (y.o || 0));
-let M = null, SEL = '', DRAFT = null, DIRTY = false, OPENSEC = '', BUSY = false;
+let M = null, SEL = '', DRAFT = null, DRAFT0 = null, DIRTY = false, OPENSEC = '', BUSY = false;
+const HLP = { whenText, canLists, secsSorted, deptsOf, syncAct: (x, loud) => syncAct(x, loud) };      // 📅 nhp-acts-cal.js 에 빌려 주는 것
 
 export async function openActs(a, pick){
   bind(a);
@@ -118,6 +123,7 @@ export async function openActs(a, pick){
   box.addEventListener('click', onClick); box.addEventListener('input', onInput); box.addEventListener('change', onInput);
   await A.reloadLists();
   loadAtt(A).then(() => { if(M) draw(); });
+  if(canLists(A)) CAL.loadEvents(A).then(() => { if(M && !DIRTY) draw(); });
   draw();
 }
 const acts = () => sortActs((A.LISTS.activities || []).filter(x => x && x.id));
@@ -128,6 +134,7 @@ function pickDraft(){
   const it = L.find(x => x.id === SEL) || L[0] || null;
   if(!it){ DRAFT = canLists(A) ? blank() : null; SEL = DRAFT ? DRAFT.id : ''; }
   else { DRAFT = JSON.parse(JSON.stringify(it)); SEL = it.id; }
+  DRAFT0 = DRAFT ? JSON.parse(JSON.stringify(DRAFT)) : null;      // v209 열 때의 모습 — 저장할 때 «내가 고친 칸만» 얹으려고
   DIRTY = false;
 }
 const targetSecs = a => secsSorted().filter(s => !a.secs || !a.secs.length || a.secs.includes(s.id));
@@ -139,9 +146,10 @@ function draw(){
   const ed = canLists(A); const L = acts(); const x = DRAFT;
   const dis = ed ? '' : ' disabled';
   const left = `<div class="ac-l"><div class="ac-h">활동 ${L.length} · 날짜 순</div>
-    ${L.map(a => `<button class="ac-it${a.id === SEL ? ' on' : ''}" data-acsel="${esc(a.id)}"><b>${esc(a.t || '(이름 없음)')}</b><small>${esc(a.d || whenText(a.from, a.to) || '날짜 없음')}${hasDates(a) ? '' : ' · 출석부와 못 맞춤'}${a.def === 'none' ? ' · 고른 학생만' : ''}</small></button>`).join('')}
+    ${L.map(a => `<button class="ac-it${a.id === SEL ? ' on' : ''}" data-acsel="${esc(a.id)}"><b>${esc(a.t || '(이름 없음)')}</b><small>${esc(a.d || whenText(a.from, a.to) || '날짜 없음')}${hasDates(a) ? '' : ' · 출석부와 못 맞춤'}${a.def === 'none' ? ' · 고른 학생만' : ''}${a.src ? ' · 📅' : ''}${CAL.driftOf(a) ? ' · 학사일정과 달라짐' : ''}</small></button>`).join('')}
     ${x && x._new ? `<button class="ac-it on"><b>${esc(x.t || '새 활동')}</b><small>아직 저장 전</small></button>` : ''}
     ${ed ? `<div class="frow" style="padding:8px"><button class="nh-btn sm g" data-acnew>＋ 활동</button><button class="nh-btn sm" data-acpast>지난 학기에서</button></div>
+      <div class="frow" style="padding:0 8px 8px;gap:6px"><button class="nh-btn sm" style="flex:1" data-accal title="학사일정의 이 학기 학생 행사에서 골라 새 활동으로 더해요 (학사일정은 읽기만)">📅 학사일정에서</button><button class="nh-btn sm" style="flex:1" data-acsheet title="모든 활동의 이름 · 일시 · 활동 사항을 한 표에서 고쳐요">📋 한 표에서</button></div>
       <div style="padding:0 8px 8px"><button class="nh-btn sm" style="width:100%" data-acclubs title="동아리 확정 명단을 읽어, 고칠 수 있는 모든 반의 특별활동 칸에 동아리 · 조이클래스 줄을 맞춰요 (담임이 고친 글 · 숨긴 줄은 그대로)">🎨 모든 반 동아리 줄 맞추기</button></div>` : ''}</div>`;
   let mid = '<div class="ac-m"><div class="nh-empty">활동이 아직 없어요.</div></div>', right = '<div class="ac-r"></div>';
   if(x){
@@ -184,11 +192,11 @@ async function fillRight(){
     const J = sids.filter(sid => C.joined(x, rows[sid])); join += J.length; out += sids.length - J.length;
     const notes = sids.map(sid => ({ sid, t: attOf(x, sid) })).filter(o => o.t);
     const p = plan(x, sids, rows);
-    const ack = !!(((ents[i] || {}).meta || {}).ack || {})[x.id];
+    const ack = ackOf((((ents[i] || {}).meta || {}).ack || {})[x.id], x);
     const open = OPENSEC === s.id;
     return `<div class="ac-sec${open ? ' on' : ''}"><button class="ac-sh" data-acopen="${esc(s.id)}"><b>${esc(C.secLabel(s))}</b><span>${J.length} / ${sids.length}</span>
         <span class="ac-out">${notes.length ? esc(notes.slice(0, 3).map(o => `${A.stuName(o.sid)} ${o.t.short}`).join(' · ')) + (notes.length > 3 ? ` 외 ${notes.length - 3}` : '') : '<i>출결 특이 없음</i>'}</span>
-        ${p.off.length + p.on.length ? `<span class="ch warn">맞출 것 ${p.off.length + p.on.length}</span>` : ''}${p.check.length ? `<span class="ch warn">확인 ${p.check.length}</span>` : ''}<span class="ch ${ack ? 'ok' : 'gray'}">${ack ? '담임 확인' : '확인 전'}</span></button>
+        ${p.off.length + p.on.length ? `<span class="ch warn">맞출 것 ${p.off.length + p.on.length}</span>` : ''}${p.check.length ? `<span class="ch warn">확인 ${p.check.length}</span>` : ''}<span class="ch ${ack === 'ok' ? 'ok' : ack === 'old' ? 'warn' : 'gray'}">${ack === 'ok' ? '담임 확인' : ack === 'old' ? '날짜 바뀌기 전 확인' : '확인 전'}</span></button>
       ${open ? `<div class="ac-kids">${sids.map(sid => { const on = C.joined(x, rows[sid]); const t = attOf(x, sid); return `<button class="ac-kid${on ? ' on' : ''}${t ? ' att' : ''}" data-ackid="${esc(sid)}" data-sec="${esc(s.id)}"${can ? '' : ' disabled'} title="${esc(t ? t.text : '')}">${esc(A.stuName(sid))}${t ? ` · ${esc(t.short)}` : ''}</button>`; }).join('')}</div>
         ${notes.length ? `<div class="ac-note">${notes.map(o => `<div><b>${esc(A.stuName(o.sid))}</b> ${esc(o.t.text)}${o.t.all ? (C.joined(x, rows[o.sid]) ? ' — <b>참여로 되어 있어요</b>' : ' — 뺌') : o.t.part ? ' — 며칠만 빠짐 · 확인해 주세요' : ''}</div>`).join('')}</div>` : ''}
         <div class="nh-desc" style="margin:6px 0 0">${can ? '이름을 누르면 참여 · 빠짐이 바뀌어요.' : '이 반은 담임(작성 중) · 나학평 담당이 바꿀 수 있어요.'} <a href="#" data-go="s/${esc(cell.id)}">이 반 칸 열기</a></div>` : ''}</div>`;
@@ -212,7 +220,7 @@ async function leaveOk(){
   return await A.confirm('저장하지 않은 것이 있어요', '고친 내용을 버리고 넘어갈까요?', '버리고 넘어가기', true);
 }
 async function onClick(e){
-  const t = e.target.closest('[data-acsel],[data-acnew],[data-acpast],[data-acclubs],[data-actg],[data-acdef],[data-acsave],[data-acdel],[data-acsync],[data-acopen],[data-ackid],[data-go]');
+  const t = e.target.closest('[data-acsel],[data-acnew],[data-acpast],[data-accal],[data-acsheet],[data-acclubs],[data-actg],[data-acdef],[data-acsave],[data-acdel],[data-acsync],[data-acopen],[data-ackid],[data-go]');
   if(t && t.dataset.go) e.preventDefault();
   if(!t || !M || BUSY) return;
   const d = t.dataset;
@@ -220,6 +228,8 @@ async function onClick(e){
   if(d.acsel){ if(d.acsel === SEL || !(await leaveOk())) return; SEL = d.acsel; DRAFT = null; OPENSEC = ''; draw(); return; }
   if('acnew' in d){ if(!(await leaveOk())) return; DRAFT = blank(); SEL = DRAFT.id; DIRTY = false; draw(); const i = M.body.querySelector('[data-acf="t"]'); if(i) i.focus(); return; }
   if('acpast' in d){ if(!(await leaveOk())) return; fromPast(); return; }
+  if('accal' in d){ if(!(await leaveOk())) return; DIRTY = false; DRAFT = null; draw(); CAL.openPicker(A, HLP, ids => { if(!M) return; DRAFT = null; if(ids && ids.length) SEL = ids[0]; OPENSEC = ''; draw(); }); return; }
+  if('acsheet' in d){ if(!(await leaveOk())) return; DIRTY = false; DRAFT = null; draw(); CAL.openSheet(A, HLP, () => { if(!M) return; DRAFT = null; draw(); }); return; }
   if('acclubs' in d){ syncClubs(); return; }
   if(d.actg){ readForm(); const secs = secsSorted();
     if(d.actg === 'all') DRAFT.secs = [];
@@ -250,7 +260,14 @@ async function save(){
     const i = arr.findIndex(y => y && y.id === it.id);
     // 출력 일시 — 비었거나, 예전 날짜에서 자동으로 만든 글 그대로면 새 날짜로 다시 만든다 (날짜만 바꿨는데 출력이 옛 날짜로 남지 않게)
     if(!it.d || (i >= 0 && it.d === whenText(arr[i].from, arr[i].to))) it.d = whenText(it.from, it.to);
-    if(i >= 0) arr[i] = Object.assign({}, arr[i], it); else { it.o = arr.length; arr.push(it); }
+    if(i >= 0){      // v209 내가 고친 칸만 — 그 사이 «한 표에서» · 다른 분이 고친 다른 칸을 옛 모습으로 덮지 않게
+      const b0 = (DRAFT0 && DRAFT0.id === it.id) ? DRAFT0 : {}; const diff = {};
+      Object.keys(it).forEach(k => { if(JSON.stringify(it[k] == null ? '' : it[k]) !== JSON.stringify(b0[k] == null ? '' : b0[k])) diff[k] = it[k]; });
+      const nx = Object.assign({}, arr[i], diff);
+      if(!('d' in diff) && (!nx.d || nx.d === whenText(arr[i].from, arr[i].to))) nx.d = whenText(nx.from, nx.to);
+      if(nx.to && (!nx.from || nx.to <= nx.from)) nx.to = '';
+      arr[i] = nx;
+    } else { it.o = arr.length; arr.push(it); }
     if(A.markMine) A.markMine();
     await FS.setDoc(FS.doc(A.db, 'nhpLists', A.TERM.id), { termId: A.TERM.id, activities: arr }, { merge: true });
     A.LISTS.activities = arr; DRAFT = null; SEL = it.id; DIRTY = false;
@@ -334,7 +351,12 @@ async function toggleKid(secId, sid){
 }
 /* 출석부대로 — 고칠 수 있는 반 모두 (말없이: 활동 저장 뒤 / 누름: 출석부를 다시 읽고) */
 async function syncAll(loud){
-  const x = DRAFT || acts().find(a => a.id === SEL); if(!x || x._new || !hasDates(x) || x.def === 'none') return;
+  const x = DRAFT || acts().find(a => a.id === SEL);
+  return syncAct(x, loud);
+}
+/* 한 활동을 출석부대로 — «한 표에서»로 날짜를 바꾼 뒤에도 부름 (v209) */
+async function syncAct(x, loud){
+  if(!x || x._new || !hasDates(x) || x.def === 'none') return;
   BUSY = true;
   try{
     if(loud) await loadAtt(A, true);
