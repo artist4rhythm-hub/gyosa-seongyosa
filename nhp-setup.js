@@ -441,7 +441,7 @@ function infoHTML(t){
 function secsHTML(t){
   return `<div class="nh-desc">나학평 담임을 바꾸면 그 반의 «담임 검토» 단계와 담임이 맡은 칸(출결 · 특별활동 …)의 담당도 함께 바뀔지 물어봐요.</div>
     <div class="nh-tw"><table class="nh-t"><thead><tr><th>반</th><th>학생</th><th>나학평 담임</th><th></th></tr></thead><tbody>${(t.sections || []).map(s => `<tr>
-      <td><b>${esc(C.secLabel(s))}</b></td><td>${(s.students || []).length}명</td>
+      <td><b>${esc(C.secLabel(s))}</b></td><td>${(s.students || []).length}명${outOf(s).length ? ` <span class="so-chip" title="이 학기 나학평을 쓰지 않는 학생 — «학생 보기 · 고치기»에서 다시 넣을 수 있어요">🚫 뺀 학생 ${outOf(s).length} · ${esc(outText(s))}</span>` : ''}</td>
       <td><select class="nh-sel" style="height:32px" data-shr="${esc(s.id)}">${hrOpts(s.hrUid)}</select></td>
       <td><button class="nh-btn xs" data-sstu="${esc(s.id)}">학생 보기 · 고치기</button></td></tr>`).join('')}</tbody></table></div>
     <div class="frow" style="margin-top:10px"><button class="nh-btn sm" data-st="resync">🔄 반편성에서 학생 다시 맞추기</button><button class="nh-btn sm" data-st="addsec">＋ 반 더하기</button></div>`;
@@ -1084,6 +1084,7 @@ async function resyncStudents(){
   const secs = (t.sections || []).map(s => {
     const f = fresh.find(x => x.id === s.id);
     if(!f) return s;
+    f.students = f.students.filter(x => !outOf(s).includes(x));      // v208 «뺀 학생»은 다시 맞춰도 빼 둠
     const add = f.students.filter(x => !(s.students || []).includes(x)), rm = (s.students || []).filter(x => !f.students.includes(x));
     if(add.length || rm.length) diffs.push({ s, add, rm });
     return Object.assign({}, s, { students: f.students.slice() });
@@ -1092,10 +1093,10 @@ async function resyncStudents(){
   if(!diffs.length && !newSecs.length) return A.toast('반편성과 같아요 — 바꿀 것이 없어요.');
   const ok = await A.confirm('반편성에서 학생 다시 맞추기', diffs.map(x => `<b>${esc(C.secLabel(x.s))}</b> ${x.add.length ? `· 새로 ${x.add.map(A.stuName).map(esc).join(', ')}` : ''} ${x.rm.length ? `· 빠짐 ${x.rm.map(A.stuName).map(esc).join(', ')}` : ''}`).join('<br>') +
     (newSecs.length ? `<br><br>반편성에 새 반이 있어요: ${newSecs.map(s => esc(C.secLabel(s))).join(', ')} — «＋ 반 더하기»로 넣을 수 있어요.` : '') +
-    '<br><br><span style="color:var(--ink-2)">빠진 학생이 이미 쓴 입력은 지우지 않고 보관해요.</span>', '맞추기');
+    '<br><br><span style="color:var(--ink-2)">빠진 학생이 이미 쓴 입력은 지우지 않고 보관해요. «뺀 학생»(휴학 등)은 그대로 빼 둬요.</span>', '맞추기');
   if(!ok) return;
   void secs;
-  const ok2 = await updateSections(list => list.map(s => { const f = fresh.find(x => x.id === s.id); return f ? Object.assign({}, s, { students: f.students.slice() }) : s; }));
+  const ok2 = await updateSections(list => list.map(s => { const f = fresh.find(x => x.id === s.id); return f ? Object.assign({}, s, { students: f.students.filter(x => !outOf(s).includes(x)) }) : s; }));
   if(ok2){ A.toast('학생을 다시 맞췄어요 ✓'); PANE = 'secs'; rerender(); }
 }
 async function addSection(){
@@ -1120,24 +1121,57 @@ async function addSection(){
     PANE = 'cells'; SEC = add[0].id; rerender();
   };
 }
+/* 🚫 뺀 학생 (v208) — 반편성에는 있지만 이 학기 나학평을 쓰지 않는 학생 (휴학 · 전학 …)
+   · 예전에는 빼면 이름이 사라져서 «왜 없는지» 알 수 없었음 → sec.out = { 학생: 이유 } 로 남겨 화면에 보여 줌
+   · 반편성에 있는데 명단에 없는 학생(예전에 뺀 학생)도 «뺀 학생»으로 함께 보여 줌 */
+const OUT_WHY = ['휴학', '전학 · 자퇴', '장기 결석', '그 밖'];
+const onLeaveNow = id => { const st = A.STU[id]; try{ return !!(st && window.StuStatus && StuStatus.onLeave(st)); }catch(e){ return false; } };
+export const outOf = sec => Object.keys((sec && sec.out) || {}).filter(id => !(sec.students || []).includes(id));
+const outText = sec => outOf(sec).map(id => `${A.stuName(id)}(${sec.out[id] || '뺌'})`).join(', ');
+async function rosterOf(sec){
+  try{
+    A.CLASSES = null;
+    const cls = (await A.loadClasses()).filter(c => Number(c.year) === Number(A.TERM.year) && c.org === C.ORG);
+    const f = C.sectionsFromClasses(cls, A.STU, st => (window.StuStatus ? StuStatus.enrolled(st) : (st.status || 'active') !== 'quit')).find(x => x.id === sec.id);
+    return f ? f.students.slice() : [];
+  }catch(e){ return []; }
+}
+let SEC_BUSY = false;
 async function editSecStudents(secId){
-  const sec = A.secOf(secId); if(!sec) return;
-  const ids = (sec.students || []);
-  const m = A.modal(`${esc(C.secLabel(sec))} 학생`, `<div class="nh-desc">이 반 나학평을 쓰는 학생이에요. 반편성과 다르게 빼거나(예: 이 학기 나학평을 쓰지 않는 학생) 더할 수 있어요.</div>
-    <div class="stu-chips" data-l>${ids.map(id => `<button class="on" data-sid="${esc(id)}">${esc(A.stuLabel(id))}</button>`).join('')}</div>
+  const sec = A.secOf(secId); if(!sec || SEC_BUSY) return;
+  SEC_BUSY = true; let roster = []; try{ roster = await rosterOf(sec); }finally{ SEC_BUSY = false; }
+  const cur = new Set(sec.students || []);
+  const out = Object.assign({}, sec.out || {});
+  Object.keys(out).forEach(id => { if(cur.has(id)) delete out[id]; });
+  const auto = new Set();      // 반편성에는 있지만 명단에 없는 학생 (예전에 뺐거나 · 새로 온 학생) — 이유를 고르거나 넣기 전에는 아무것도 저장하지 않음
+  roster.forEach(id => { if(!cur.has(id) && out[id] == null){ if(onLeaveNow(id)) out[id] = '휴학'; else { out[id] = ''; auto.add(id); } } });      // 지금 휴학 중이면 «휴학»으로 미리
+  const m = A.modal(`${esc(C.secLabel(sec))} 학생`, `<div class="nh-desc">이 반 나학평을 쓰는 학생이에요. 이름을 누르면 <b>뺀 학생</b>으로 내려가요 — 이름은 사라지지 않고, 왜 뺐는지(휴학 등)와 함께 남아요.</div>
+    <div class="fl"><label>나학평을 쓰는 학생 <span data-n1></span></label><div class="stu-chips" data-l></div></div>
+    <div class="fl" style="margin-top:12px"><label>🚫 뺀 학생 — 이 학기 나학평을 쓰지 않아요 <span data-n2></span></label><div class="so-list" data-o></div></div>
     <div class="fl" style="margin-top:12px"><label>학생 더하기 (이름 찾기)</label><input class="nh-in" data-q placeholder="이름"></div><div class="stu-chips" data-r></div>`,
     '<button class="nh-btn" data-c>취소</button><button class="nh-btn p" data-ok>저장</button>', 'mid');
-  const cur = new Set(ids);
-  const L = m.box.querySelector('[data-l]'), Rr = m.box.querySelector('[data-r]');
-  L.onclick = e => { const b = e.target.closest('[data-sid]'); if(!b) return; b.classList.toggle('on'); if(b.classList.contains('on')) cur.add(b.dataset.sid); else cur.delete(b.dataset.sid); };
-  m.box.querySelector('[data-q]').oninput = e => {
-    const q = e.target.value.trim(); if(!q){ Rr.innerHTML = ''; return; }
-    Rr.innerHTML = Object.values(A.STU).filter(s => s.org === C.ORG && (s.name || '').includes(q) && !cur.has(s.id)).slice(0, 20).map(s => `<button data-add="${esc(s.id)}">＋ ${esc(A.stuLabel(s.id))}</button>`).join('');
+  const L = m.box.querySelector('[data-l]'), O = m.box.querySelector('[data-o]'), Rr = m.box.querySelector('[data-r]'), Qi = m.box.querySelector('[data-q]');
+  const paint = () => {
+    L.innerHTML = Array.from(cur).map(id => `<button class="on" data-sid="${esc(id)}" title="누르면 «뺀 학생»으로">${esc(A.stuLabel(id))}${onLeaveNow(id) ? ' <span class="so-lv">휴학 중</span>' : ''}</button>`).join('') || '<span class="nh-desc" style="margin:0">학생이 없어요.</span>';
+    const ids = Object.keys(out);
+    O.innerHTML = ids.length ? ids.map(id => `<div class="so-row"><b>${esc(A.stuLabel(id))}</b>${onLeaveNow(id) ? '<span class="so-lv">휴학 중</span>' : ''}
+      ${auto.has(id) && !out[id] ? '<span class="so-lv" style="background:#E5EEF8;color:#1D4E89" title="반편성에는 있는데 이 명단에 없어요 — 뺄 학생이면 이유를 고르고, 아니면 «다시 넣기»">반편성에만 있음</span>' : ''}
+      <select class="nh-sel" data-why="${esc(id)}" aria-label="뺀 이유"><option value=""${out[id] ? '' : ' selected'}>이유 고르기</option>${OUT_WHY.map(w => `<option${out[id] === w ? ' selected' : ''}>${w}</option>`).join('')}</select>
+      <span class="nh-sp"></span><button class="nh-btn xs" data-back="${esc(id)}">다시 넣기</button></div>`).join('') : '<span class="nh-desc" style="margin:0">뺀 학생이 없어요.</span>';
+    m.box.querySelector('[data-n1]').textContent = `· ${cur.size}명`; m.box.querySelector('[data-n2]').textContent = ids.length ? `· ${ids.length}명` : '';
   };
-  Rr.onclick = e => { const b = e.target.closest('[data-add]'); if(!b) return; cur.add(b.dataset.add); L.insertAdjacentHTML('beforeend', `<button class="on" data-sid="${esc(b.dataset.add)}">${esc(A.stuLabel(b.dataset.add))}</button>`); b.remove(); };
+  const find = () => { const q = Qi.value.trim(); if(!q){ Rr.innerHTML = ''; return; }
+    Rr.innerHTML = Object.values(A.STU).filter(st => st.org === C.ORG && (st.name || '').includes(q) && !cur.has(st.id)).slice(0, 20).map(st => `<button data-add="${esc(st.id)}">＋ ${esc(A.stuLabel(st.id))}</button>`).join(''); };
+  paint();
+  L.onclick = e => { const b = e.target.closest('[data-sid]'); if(!b) return; const id = b.dataset.sid; auto.delete(id); cur.delete(id); out[id] = onLeaveNow(id) ? '휴학' : ''; paint(); find(); };
+  O.onclick = e => { const b = e.target.closest('[data-back]'); if(!b) return; delete out[b.dataset.back]; cur.add(b.dataset.back); paint(); find(); };
+  O.onchange = e => { const x = e.target.closest('[data-why]'); if(x){ out[x.dataset.why] = x.value; paint(); } };
+  Qi.oninput = find;
+  Rr.onclick = e => { const b = e.target.closest('[data-add]'); if(!b) return; cur.add(b.dataset.add); delete out[b.dataset.add]; paint(); find(); };
   m.box.querySelector('[data-c]').onclick = () => m.close();
   m.box.querySelector('[data-ok]').onclick = async () => {
-    const secs = await updateSections(list => list.map(s => s.id === secId ? Object.assign({}, s, { students: Array.from(cur) }) : s));
+    const students = Array.from(cur); const o = {}; Object.keys(out).forEach(id => { if(!cur.has(id) && (out[id] || !auto.has(id))) o[id] = out[id] || '뺌'; });
+    const secs = await updateSections(list => list.map(x => x.id === secId ? Object.assign({}, x, { students, out: o }) : x));
     if(secs){ A.toast('학생을 저장했어요 ✓'); m.close(); PANE = 'secs'; rerender(); }
   };
 }

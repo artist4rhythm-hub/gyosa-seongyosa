@@ -13,7 +13,7 @@
    · v202 🗄 가져오기 서랍: 내 다른 반 · 다른 선생님 · 지난 학기의 «내용»(모든 학생 같은 글 · 학생별 글 · 5단계)을 같은 학생끼리 · 문장 모음(나만 — userMemos.nhpPhrases)
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=206';
+import * as SETUP from './nhp-setup.js?v=208';
 import * as ACTS from './nhp-acts.js?v=207';
 import * as CLUBS from './nhp-clubs.js?v=207';
 
@@ -43,7 +43,7 @@ export async function render(a, el, id, tab){
   LOADING = false;
   if(!SPEND[id]){ SRV[id] = SJ(SUB.setup || {}); delete THEIRS[id]; HOLD[id] = false; }
   CHG_N = 300; CHG_SID = ''; CHG_CACHE[id] = null; CHGOFF[id] = false; chgResume(id);
-  STALE = false;
+  STALE = false; PEND_IN = false;
   VIEWMODE = VIEWMODE || (innerWidth < 900 ? 'one' : 'grid');
   CUR = Math.min(CUR, Math.max(0, SIDS.length - 1));
   draw();
@@ -75,13 +75,13 @@ export function onLive(a){
     else if(inc !== SRV[s.id] && inc !== SENT[s.id]){ if(SPEND[s.id]) THEIRS[s.id] = JSON.parse(inc); else SRV[s.id] = inc; }
     else if(inc === SENT[s.id] && !THEIRS[s.id]) SRV[s.id] = inc;
   }
-  if(SPEND[s.id]) s.setup = SPEND[s.id];      // 아직 저장 중인 평가 틀은 내 화면 것을 그대로
-  const changed = s.state !== SUB.state || s.stage !== SUB.stage || JSON.stringify(s.teacherUids) !== JSON.stringify(SUB.teacherUids) || JSON.stringify(s.rv) !== JSON.stringify(SUB.rv) || s.removed !== SUB.removed;
-  const setupChanged = JSON.stringify(s.setup) !== JSON.stringify(SUB.setup) || s.type !== SUB.type || JSON.stringify(s.studentIds) !== JSON.stringify(SUB.studentIds);
+  if(SPEND[s.id] || FLY[s.id]) s.setup = SPEND[s.id] || SUB.setup;      // 아직 저장 중인 평가 틀은 내 화면 것을 그대로
+  const changed = s.state !== SUB.state || s.stage !== SUB.stage || JSON.stringify(s.teacherUids) !== JSON.stringify(SUB.teacherUids) || SJ(s.rv || {}) !== SJ(SUB.rv || {}) || s.removed !== SUB.removed;
+  const setupChanged = SJ(s.setup || {}) !== SJ(SUB.setup || {}) || s.type !== SUB.type || JSON.stringify(s.studentIds) !== JSON.stringify(SUB.studentIds);
   SUB = s;
   if(changed){ CHGOFF[s.id] = false; if(Object.keys(CHGR[s.id] || {}).length){ clearTimeout(CHGT[s.id]); CHGT[s.id] = setTimeout(() => chgFlush(s.id), 1500); }
     const y = window.scrollY; draw(); window.scrollTo(0, y); A.toast('이 칸의 상태가 바뀌었어요 — ' + C.stateOf(s).ko); return; }
-  if(setupChanged && TAB !== 'set'){ SIDS = A.subStudents(SUB); const y = window.scrollY; drawBody(); window.scrollTo(0, y); }
+  if(setupChanged && TAB !== 'set'){ SIDS = A.subStudents(SUB); if(typingIn()) PEND_IN = true; else { const y = window.scrollY; drawBody(); window.scrollTo(0, y); } }      // v208 글을 치는 중이면 그 칸을 떠난 뒤에 (한글 조합이 끊기지 않게)
   else if(setupChanged){ SIDS = A.subStudents(SUB); staleDraw(); pvRefresh(); }     // v198 틀 탭에서도 — 옛 화면 위에 고쳐서 덮어쓰지 않게
 }
 
@@ -534,7 +534,8 @@ function stageChain(){
     return `<span class="ch ${on ? 'info' : done ? 'ok' : 'gray'}" title="${esc(who.map(A.staffName).join(', '))}">${done && !on ? '✓ ' : ''}${esc(l)}${who.length ? ` · ${esc(who.map(A.staffName).filter(Boolean).slice(0, 2).join(', '))}${who.length > 2 ? '…' : ''}` : ''}</span>`;
   }).join('<span style="color:var(--ink-3)">→</span>');
 }
-function draw(){
+function draw(){ return keepFocus(draw0); }
+function draw0(){
   NM_IX = null;
   CAN = C.canDo(SUB, A.CU.uid, A.isMgr);
   const p = C.progressOf(SUB, ENT, SIDS);
@@ -649,7 +650,40 @@ function actsHTML(p){
   return b.join('');
 }
 const fmtAt = s => { try{ const d = new Date(s); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }catch(e){ return ''; } };
-function drawBody(){
+/* ⌨ v208 다시 그려도 커서는 그 자리에 — 자동 저장 · 다른 분의 저장 · 묶음 다시 그리기로 화면이 바뀌어도 쓰던 칸과 커서 위치를 되살림 */
+function keepFocus(fn){
+  const f = document.activeElement;
+  if(!(f && EL && EL.contains(f) && /^(TEXTAREA|INPUT|SELECT)$/.test(f.tagName))) return fn();
+  const ds = Array.from(f.attributes).filter(a => /^data-/.test(a.name));
+  if(!ds.length) return fn();
+  const sig = f.tagName.toLowerCase() + ds.map(a => `[${a.name}="${CSS.escape(a.value)}"]`).join('');
+  let a = null, b = null, dir = 'none'; try{ a = f.selectionStart; b = f.selectionEnd; dir = f.selectionDirection || 'none'; }catch(e){}
+  const top = f.scrollTop, y = window.scrollY;
+  const r = fn();
+  if(f.isConnected && document.activeElement === f) return r;
+  let n = null; try{ n = EL.querySelector(sig); }catch(e){}
+  if(n && !n.disabled){
+    try{ n.focus({ preventScroll: true }); }catch(e){ n.focus(); }
+    if(a != null){ try{ const len = (n.value || '').length; n.setSelectionRange(Math.min(a, len), Math.min(b, len), dir); }catch(e){} }
+    else if(n.tagName === 'INPUT' && n.type === 'number'){ try{ n.type = 'text'; const len = n.value.length; n.setSelectionRange(len, len); n.type = 'number'; }catch(e){ try{ n.type = 'number'; }catch(e2){} } }      // 숫자 칸은 커서 자리를 알 수 없어 끝으로
+    n.scrollTop = top; if(Math.abs(window.scrollY - y) > 2) window.scrollTo(0, y);
+  }
+  return r;
+}
+function drawBody(){ return keepFocus(drawBody0); }
+/* 칸을 떠나며(change) 다시 그릴 때 — 새로 누른 칸에 커서가 간 뒤에 · 단추를 누르는 중이면 그 누름이 끝난 뒤에 (바로 그리면 커서도 누름도 사라짐) */
+let PDOWN = false;
+if(typeof window !== 'undefined' && !window.__nhpPD){ window.__nhpPD = 1;
+  window.addEventListener('pointerdown', () => { PDOWN = true; }, true);
+  ['pointerup', 'pointercancel'].forEach(ev => window.addEventListener(ev, () => { setTimeout(() => { PDOWN = false; }, 0); }, true));
+  document.addEventListener('focusout', () => { if(PEND_IN) setTimeout(() => { if(PEND_IN && SUB && !typingIn()){ PEND_IN = false; if(TAB !== 'set'){ const y = window.scrollY; drawBody(); window.scrollTo(0, y); } } }, 200); }, true); }
+let PEND_IN = false;
+function laterDraw(tab){
+  const id = SUB && SUB.id;
+  const go = () => { if(SUB && SUB.id === id && TAB === tab) drawBody(); };
+  setTimeout(() => { if(PDOWN) window.addEventListener('click', () => setTimeout(go, 0), { capture: true, once: true }); else go(); }, 0);
+}
+function drawBody0(){
   const B = document.getElementById('ej-body'); if(!B) return;
   stepsUI(true);
   A.lsSet('nhp_tab_' + SUB.id, TAB);
@@ -1132,7 +1166,7 @@ function shareStripHTML(){
   const mem = C.shareMembers(key, A.SUBS).filter(x => x.id !== SUB.id);
   if(!mem.length) return '';
   const me = A.CU.uid;
-  const same = x => JSON.stringify(x.setup || {}) === JSON.stringify(SUB.setup || {}) && (x.type || 'E') === (SUB.type || 'E');
+  const same = x => SJ(x.setup || {}) === SJ(SUB.setup || {}) && (x.type || 'E') === (SUB.type || 'E');
   const why = x => x.state !== 'draft' ? C.stateOf(x).ko : (!A.isMgr && !(x.teacherUids || []).includes(me)) ? '다른 선생님 칸' : '';
   const diff = mem.filter(x => !same(x));
   return `<div class="nh-info sh-strip">🔗 <b>함께 쓰기</b> — 이 평가 틀을 ${mem.length}칸이 함께 써요. 여기서 고치면 함께 바뀌어요 (학생 입력 · 점수는 칸마다).
@@ -1317,7 +1351,7 @@ async function flushSetup(){
             if(SJ(cur) !== base && SJ(cur) !== SJ(mine)){ merged = merge3(JSON.parse(base), mine, cur); setup = merged.setup; }
             tx.update(ref, { setup, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid });
           });
-          viaTx = true; { const s0 = A.subOf(id); if(s0) s0.setup = setup; }
+          viaTx = true; { const s0 = A.subOf(id); if(s0 && SPEND[id] === mine) s0.setup = setup; }
         }catch(e){
           if(/permission|not-found/.test((e && e.code) || '')) throw e;
           merged = null; setup = mine;       // 연결이 끊긴 때 등 — 아래 예전 길로 (연결되면 저장)
@@ -1351,7 +1385,7 @@ async function propagate(id, setup){
   const uid = A.CU.uid; let n = 0;
   for(const x of C.shareMembers(key, A.SUBS)){
     if(x.id === id || x.state !== 'draft' || !(A.isMgr || (x.teacherUids || []).includes(uid))) continue;
-    if(JSON.stringify(x.setup || {}) === JSON.stringify(setup) && (x.type || 'E') === (me.type || 'E')) continue;
+    if(SJ(x.setup || {}) === SJ(setup || {}) && (x.type || 'E') === (me.type || 'E')) continue;
     try{ await applySetupTo(x, setup, me.type || 'E'); n++; }catch(e){ console.warn('함께 쓰기 맞추기', x.id, e); }
   }
   return n;
@@ -1374,7 +1408,7 @@ async function pullShared(){
   if(!mem.length) return;
   const owner = mem.find(x => 'sh_' + x.id === key);
   let src = owner;
-  if(!src){ const cnt = {}; mem.forEach(x => { const k = JSON.stringify([x.type || 'E', x.setup || {}]); cnt[k] = (cnt[k] || 0) + 1; }); const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0]; src = mem.find(x => JSON.stringify([x.type || 'E', x.setup || {}]) === top); }
+  if(!src){ const cnt = {}; mem.forEach(x => { const k = SJ([x.type || 'E', x.setup || {}]); cnt[k] = (cnt[k] || 0) + 1; }); const top = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0]; src = mem.find(x => SJ([x.type || 'E', x.setup || {}]) === top); }
   if(!src) return;
   if(!(await A.confirm('함께 쓰는 틀로 바꾸기', `이 칸의 평가 틀을 <b>${esc(A.whereOf(src))}</b> 칸의 틀로 바꿔요. 이미 넣은 5단계 · 글 · 점수는 <b>같은 글의 항목끼리</b> 이어지고, 맞는 짝이 없는 값은 지우지 않고 남겨 둬요.`, '바꾸기'))) return;
   await flush(); await flushSetup();
@@ -1672,10 +1706,10 @@ function onChange(e){
   if(d.act){ const a = C.actsFor(A.LISTS, SUB.secId).find(y => y.id === d.a); if(a){ setAct(d.act, a, x.checked); if(ACTS.hasDates(a)){ const w = EL.querySelector('.nh-tw'); const sl = w ? w.scrollLeft : 0; drawBody(); const w2 = EL.querySelector('.nh-tw'); if(w2) w2.scrollLeft = sl; const f = EL.querySelector(`[data-act="${CSS.escape(d.act)}"][data-a="${CSS.escape(d.a)}"]`); if(f) f.focus(); } } return; }
   if(d.bk){ put(`rows.${d.bk}.no.${d.b}`, x.checked ? null : true); return; }
   if(d.sv){ const L = (row(d.sv).list || []).map(y => Object.assign({}, y)); if(!L[+d.i]) return; L[+d.i][d.f] = x.value; put(`rows.${d.sv}.list`, L); return; }
-  if(d.meta){ put(`meta.${d.meta}`, d.meta === 'days' ? (x.value === '' ? null : Number(x.value)) : x.value); if(d.meta === 'days') drawBody(); return; }
+  if(d.meta){ put(`meta.${d.meta}`, d.meta === 'days' ? (x.value === '' ? null : Number(x.value)) : x.value); if(d.meta === 'days') laterDraw('in'); return; }
   if(d.at){ const a = Object.assign({ ab: [0, 0, 0], la: [0, 0, 0], eo: [0, 0, 0], ex: [0, 0, 0] }, JSON.parse(JSON.stringify(row(d.at).a || {})));
     if(d.g === 'days'){ if(x.value === '') delete a.days; else a.days = Number(x.value); } else { a[d.g] = (a[d.g] || [0, 0, 0]).slice(); a[d.g][+d.i] = Math.max(0, Number(x.value) || 0); }
-    put(`rows.${d.at}.a`, a); drawBody(); return; }
+    put(`rows.${d.at}.a`, a); laterDraw('in'); return; }
   // 평가 틀
   if(d.sa){ const a = Object.assign({}, SUB.setup.a || {}); a[d.sa] = x.type === 'checkbox' ? x.checked : x.value; SUB.setup = Object.assign({}, SUB.setup, { a }); saveSetup(); return; }
   if(d.sr){ const r = Object.assign({}, SUB.setup.r || {}); r[d.sr] = d.sr === 'n' ? Number(x.value) : x.value; SUB.setup = Object.assign({}, SUB.setup, { r }); saveSetup(); return; }
@@ -1686,7 +1720,7 @@ function onChange(e){
   if(x.hasAttribute('data-vcp')){ SUB.setup = Object.assign({}, SUB.setup, { pick: x.value }); saveSetup(); return; }
   if(x.hasAttribute('data-pvs')){ PV_SID = x.value; pvRefresh(); return; }
   if(x.hasAttribute('data-cgsid')){ CHG_SID = x.value; drawBody(); return; }
-  if(d.itf != null && x.hasAttribute('data-itf') && (d.f === 'g' || (d.f === 't' && /^\s*[\[［【(（]/.test(x.value)))){ drawBody(); return; }   // 범위 묶음 · [머리말] 단추를 다시 그림 (칸을 떠날 때)
+  if(d.itf != null && x.hasAttribute('data-itf') && (d.f === 'g' || (d.f === 't' && /^\s*[\[［【(（]/.test(x.value)))){ laterDraw('set'); return; }   // 범위 묶음 · [머리말] 단추를 다시 그림 (칸을 떠날 때)
   if(x.hasAttribute('data-pvth')){ pvRefresh(); return; }
   if(d.lay === 'sOn'){ const lay = Object.assign({}, SUB.setup.lay || {}, { sOn: x.checked }); SUB.setup = Object.assign({}, SUB.setup, { lay }); saveSetup(true); drawBody(); return; }
   if(x.hasAttribute('data-nreach')){ const N = (SUB.setup.narr || []).map(y => Object.assign({}, y)); N[+d.nreach].each = x.value === '1'; SUB.setup = Object.assign({}, SUB.setup, { narr: N }); saveSetup(true); drawBody(); return; }
