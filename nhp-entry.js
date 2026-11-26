@@ -281,28 +281,53 @@ async function stashDrop(){
   stashCheck();
 }
 
-/* ═══════════ v198 ⏱ 타임머신 — 이 칸의 지난 모습 (nhpEntries/<칸>/vers · 보안 규칙 v54) ═══════════
-   · 보관하는 때: 작성완료 · 검토완료 · 수정 요청 직전 / 붙여넣기 · 한꺼번에 넣기 직전 / 되살리기 직전 / 쓰는 동안 20분에 한 번(고치기 직전 모습)
+/* ═══════════ ⏱ 타임머신 — 이 칸의 지난 모습 (nhpEntries/<칸>/vers) ═══════════
+   · v198 학생 입력: 작성완료 · 검토완료 · 수정 요청 직전 / 붙여넣기 · 한꺼번에 넣기 직전 / 되살리기 직전 / 쓰는 동안 20분에 한 번(고치기 직전 모습)
+   · v210 평가 틀도: 틀을 고치기 시작할 때(20분에 한 번) · 항목을 뺄 때 · 평가 방식을 바꿀 때 · 다른 칸 틀을 가져올 때 · 함께 쓰는 틀에 맞춰질 때 · 되살리기 직전
+       → 모든 보관에 그때의 틀(setup · type)을 함께 넣음 (보안 규칙 v56 — 게시 전에는 예전처럼 학생 입력만 보관하고 조용히 넘어감)
+   · v210 보관 기간: 최근 30일은 모두 / 그보다 오래된 것은 하루에 하나 / 작성완료 · 검토 · 승인 · 틀 바꾸기 · 되살리기 직전은 지우지 않음
    · 규칙 v54 가 아직 없으면 조용히 쉰다 (입력 · 저장은 그대로) */
-const TM = { at: {}, off: {}, last: {} };
-const TM_GAP = 20 * 60000, TM_KEEP = 30;
-const TM_WHY = { submit: '작성완료 직전', ok: '검토완료 직전', redo: '수정 요청 직전', approve: '최종 승인 직전', paste: '붙여넣기 직전', bulk: '한꺼번에 넣기 직전', auto: '쓰는 중 자동 보관', restore: '되살리기 직전', frame: '평가 틀 바꾸기 직전' };
-async function tmSnap(why, rows, id){
+const TM = { at: {}, off: {}, last: {}, fat: {}, aft: {}, r56: null };
+const TM_GAP = 20 * 60000, TM_DAYS = 30, TM_PAGE = 40;
+const TM_WHY = { submit: '작성완료 직전', ok: '검토완료 직전', redo: '수정 요청 직전', approve: '최종 승인 직전', paste: '붙여넣기 직전', bulk: '한꺼번에 넣기 직전', auto: '쓰는 중 자동 보관', restore: '되살리기 직전',
+  frame: '평가 틀 고치기 직전', frdel: '평가 항목 빼기 직전', frtype: '평가 방식 바꾸기 직전', frpull: '다른 틀 가져오기 직전', frsync: '함께 쓰는 틀에 맞춰지기 직전', frback: '평가 틀 되살리기 직전', log: '고친 기록으로 되짚음' };
+const TM_HOLD = { submit: 1, ok: 1, redo: 1, approve: 1, restore: 1, frdel: 1, frtype: 1, frpull: 1, frback: 1 };      // 오래돼도 지우지 않는 것
+const tmIsFr = why => /^fr/.test(why || '');
+const frEmpty = st => { st = st || {}; return !((st.items || []).length || (st.narr || []).length || Object.keys(st).some(k => k !== 'items' && k !== 'narr')); };
+/* 돌려주는 값: true 보관함 · 'same' 바로 앞 보관과 같아 건너뜀 · false 보관 못 함 */
+const tmBytes = (...a) => { try{ return new Blob(a).size; }catch(e){ return a.join('').length * 3; } };
+async function tmSnap(why, rows, id, fr){
   id = id || (SUB && SUB.id); if(!id || TM.off[id]) return false;
-  rows = rows || (ENT && ENT.rows) || {};
+  const sub = A.subOf(id) || SUB; if(!sub) return false;
+  if(!rows){ if(!(SUB && SUB.id === id && ENT && !LOADING)) return false; rows = ENT.rows || {}; }      // 다른 칸 · 여는 중에는 지금 화면의 입력을 쓰지 않음
+  const isFr = tmIsFr(why);
+  const setup = fr ? fr.setup : sub.setup, type = (fr ? fr.type : sub.type) || 'E';
   const js = JSON.stringify(rows);
-  if(js === '{}' || js.length > 900000 || TM.last[id] === js) return false;
-  const sub = A.subOf(id) || SUB;
-  TM.at[id] = Date.now();
-  try{
-    await FS.addDoc(FS.collection(A.db, 'nhpEntries', id, 'vers'), { termId: sub.termId, subjectId: id, why, at: FS.serverTimestamp(), by: A.CU.uid, byName: (A.me().name || ''), n: Object.keys(rows).length, rows: JSON.parse(js) });
-    TM.last[id] = js; try{ localStorage.setItem('nhp_tm_' + id, String(TM.at[id])); }catch(e){}
-    return true;
-  }catch(e){
-    if(/permission/.test((e && e.code) || '')) TM.off[id] = true;     // 규칙 v54 게시 전 · 이 칸에 쓸 수 없는 때 — 이 칸만 쉼
-    else TM.at[id] = Date.now() - TM_GAP + 120000;                    // 잠깐 안 된 것이면 2분 뒤 다시
-    console.warn('타임머신 보관', e); return false;
+  const fj = SJ(setup || {}) + '|' + type;
+  if(isFr ? frEmpty(setup) : js === '{}') return false;
+  const big = tmBytes(js, fj) > 900000;                               // 문서 하나 1MB 한도 (한글은 글자당 3바이트)
+  if(big && (isFr || tmBytes(js) > 900000)) return false;
+  const sig = isFr ? js + '§' + fj : js;
+  if(TM.last[id] === sig) return 'same';
+  if(!isFr) TM.at[id] = Date.now();
+  const base = { termId: sub.termId, subjectId: id, why, at: FS.serverTimestamp(), by: A.CU.uid, byName: (A.me().name || ''), n: Object.keys(rows).length, rows: JSON.parse(js) };
+  const put = withFr => FS.addDoc(FS.collection(A.db, 'nhpEntries', id, 'vers'), withFr ? Object.assign({}, base, { setup: JSON.parse(JSON.stringify(setup || {})), type }) : base);
+  const done = () => { TM.last[id] = sig; if(!isFr){ try{ localStorage.setItem('nhp_tm_' + id, String(TM.at[id])); }catch(e){} } return true; };
+  const perm = e => /permission/.test((e && e.code) || '');
+  const fail = e => {
+    if(perm(e)) TM.off[id] = true;                                    // 규칙 v54 게시 전 · 이 칸에 쓸 수 없는 때 — 이 칸만 쉼
+    else if(!isFr) TM.at[id] = Date.now() - TM_GAP + 120000;          // 잠깐 안 된 것이면 2분 뒤 다시
+    console.warn('타임머신 보관', e); return false; };
+  if(TM.r56 !== false && !frEmpty(setup) && !big){
+    try{ await put(true); TM.r56 = true; return done(); }
+    catch(e){
+      if(isFr){ console.warn('타임머신 틀 보관', e); return false; }      // 틀 보관은 틀을 못 넣으면 뜻이 없음 — 아무것도 쓰지 않고 넘어감 (규칙 v56 여부는 다음 학생 입력 보관 때 가려짐)
+      if(perm(e) && TM.r56 === true) return fail(e);                   // 틀 보관이 되던 중의 거절 — 이 칸에 쓸 수 없는 때
+      try{ await put(false); if(perm(e)) TM.r56 = false; return done(); }catch(e2){ return fail(e2); }      // 규칙 v56 게시 전(또는 틀 때문에 안 써진 때) → 예전 모양(학생 입력만)으로
+    }
   }
+  if(isFr) return false;
+  try{ await put(false); return done(); }catch(e){ return fail(e); }
 }
 function tmAuto(){
   if(!SUB || TM.off[SUB.id]) return;
@@ -311,6 +336,29 @@ function tmAuto(){
   if(Date.now() - TM.at[id] < TM_GAP) return;
   TM.at[id] = Date.now();
   tmSnap('auto', cloneV(ENT.rows || {}), id);
+}
+/* 평가 틀이 바뀌기 «직전» 모습 보관
+   · 무엇인가 사라질 때(항목 · 서술 칸 · 시험 칸 · 책 … 번호가 없어짐 / 써 둔 글이 비워짐)는 늘
+   · 그 밖에는: 바로 앞 보관에서 이어진 고침이면 20분에 한 번 (쓰는 동안 자동 저장마다 쌓이지 않게) · 다른 데서 바뀐 틀이면 늘 */
+const frIds = (o, out) => { if(Array.isArray(o)) o.forEach(x => frIds(x, out)); else if(o && typeof o === 'object'){ if(typeof o.id === 'string') out[o.id] = 1; Object.keys(o).forEach(k => frIds(o[k], out)); } return out; };
+const frTexts = (o, pre, out) => { if(Array.isArray(o)) o.forEach(x => frTexts(x, pre + (x && x.id ? '#' + x.id : ''), out)); else if(o && typeof o === 'object') Object.keys(o).forEach(k => frTexts(o[k], pre + '.' + k, out)); else if(typeof o === 'string') out[pre] = o; return out; };
+function frLost(before, after){
+  const a = frIds(before || {}, {}), b = frIds(after || {}, {});
+  if(Object.keys(a).some(k => !b[k])) return true;
+  const ta = frTexts(before || {}, '', {}), tb = frTexts(after || {}, '', {});
+  return Object.keys(ta).some(k => ta[k].trim().length >= 4 && !String(tb[k] || '').trim());
+}
+function tmFrame(id, before, after, why, type, rows){
+  if(!id || frEmpty(before) || SJ(before || {}) === SJ(after || {})) return;
+  const lost = frLost(before, after);
+  const chain = TM.aft[id] !== undefined && TM.aft[id] === SJ(before || {});      // 내가 방금 저장한 틀에서 이어 고치는 중
+  if(!why) why = lost ? 'frdel' : 'frame';
+  if((why === 'frame' || why === 'frsync') && !lost && chain && Date.now() - (TM.fat[id] || 0) < TM_GAP){ TM.aft[id] = SJ(after || {}); return; }
+  TM.fat[id] = Date.now(); TM.aft[id] = SJ(after || {});
+  const sub = A.subOf(id) || SUB;
+  const mine = SUB && SUB.id === id && !LOADING;
+  Promise.resolve(tmSnap(why, rows || (mine ? cloneV(ENT.rows || {}) : {}), id, { setup: before, type: type || (sub && sub.type) || 'E' }))
+    .then(ok => { if(ok === false){ TM.fat[id] = 0; delete TM.aft[id]; } }).catch(() => {});      // 못 했으면 다음 고침 때 다시
 }
 /* 학생 한 명의 입력을 «저장되는 칸» 단위로 펼침 (출결 a · 봉사 목록 list 는 통째로 한 칸) */
 function tmLeaves(o, pre, out){
@@ -332,35 +380,169 @@ function tmVal(v){
 }
 const tmAt = x => { try{ const d = x && x.toDate ? x.toDate() : new Date((x && x.seconds ? x.seconds * 1000 : x) || Date.now()); return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; }catch(e){ return ''; } };
 const tmMs = x => { try{ return x && x.toMillis ? x.toMillis() : (x && x.seconds ? x.seconds * 1000 : 0); }catch(e){ return 0; } };
+/* 그때의 틀 · 입력으로 한 학생의 출력 모습 (미리보기) */
+function tmBlockHTML(setup, type, rows, sid){
+  const th = A.design().inner;
+  const sub = Object.assign({}, SUB, setup ? { setup, type: type || SUB.type || 'E' } : {});
+  let b = null;
+  try{ b = C.blockFor(sub, { stu: { id: sid, name: A.stuName(sid) }, sec: SEC, entry: Object.assign({}, ENT, { rows: rows || {} }), lists: A.LISTS, staffName: A.staffName, term: A.TERM, actGroup: A.actGroupOf }); }catch(e){ console.warn('타임머신 미리보기', e); }
+  if(!b) return '<div class="nh-desc" style="padding:16px">이 학생은 이 칸이 출력되지 않아요 (비었거나 «출력에서 빼기»).</div>';
+  try{ const p = C.blockParts(b, 'ko', 1, false, th);
+    return `<div class="nr${C.themeClass(th, A.design().shade)}" style="width:680px"><section class="nb nsub">${p.head}${p.tables.map(t => C.tableHTML(t, false, th)).join('')}${p.notes.join('')}</section></div>`;
+  }catch(e){ return '<div class="nh-desc" style="padding:16px">미리보기를 그리지 못했어요.</div>'; }
+}
+/* 평가 틀의 차이 — 그때(was) 와 지금(now) */
+function frDiff(was, wt, now, nt){
+  was = was || {}; now = now || {};
+  const A1 = was.items || [], B1 = now.items || [];
+  const gone = A1.map((x, i) => ({ x, i })).filter(o => !B1.some(y => y.id === o.x.id));
+  const neu = B1.filter(y => !A1.some(x => x.id === y.id));
+  const chg = A1.filter(x => { const y = B1.find(z => z.id === x.id); return y && SJ(x) !== SJ(y); }).map(x => ({ was: x, now: B1.find(z => z.id === x.id) }));
+  const order = !gone.length && !neu.length && A1.map(x => x.id).join() !== B1.map(x => x.id).join();
+  const nA = was.narr || [], nB = now.narr || [];
+  const ngone = nA.filter(x => !nB.some(y => y.id === x.id)), nneu = nB.filter(y => !nA.some(x => x.id === y.id));
+  const nchg = nA.filter(x => { const y = nB.find(z => z.id === x.id); return y && SJ(x) !== SJ(y); }).map(x => ({ was: x, now: nB.find(z => z.id === x.id) }));
+  const nil = v => v == null || v === '' || v === false || (typeof v === 'object' && !Object.keys(v).length);
+  const etc = [...new Set(Object.keys(was).concat(Object.keys(now)))].filter(k => k !== 'items' && k !== 'narr' && !(nil(was[k]) && nil(now[k])) && SJ({ v: was[k] == null ? null : was[k] }) !== SJ({ v: now[k] == null ? null : now[k] }));
+  const norder = !ngone.length && !nneu.length && nA.map(x => x.id).join() !== nB.map(x => x.id).join();
+  const type = (wt || 'E') !== (nt || 'E');
+  return { gone, neu, chg, order, norder, ngone, nneu, nchg, etc, type, any: !!(gone.length || neu.length || chg.length || order || norder || ngone.length || nneu.length || nchg.length || etc.length || type) };
+}
+const FR_ETC = { lay: '표 모양 (칸 너비 · 세부 칸)', score: '시험 성적', a: '출결 항목', r: '암송 · 읽기', mode: '평가 방식 세부', hide: '출력에서 빼기', cols: '단계 칸', lv: '단계 이름' };
+const typeKo = t => { const f = (C.FORMS || []).find(x => x.type === t); return f ? f.ko : (t || ''); };
+const itemLine = x => `${x.g ? `<span class="ch gray">${esc(x.g)}</span> ` : ''}${x.s ? `<span class="ch gray">${esc(x.s)}</span> ` : ''}${esc(x.t || '(글 없음)')}`;
+/* 오래된 것 정리 — 30일이 지난 것만: 지우지 않는 것(작성완료 · 틀 바꾸기 …)은 두고, 나머지는 하루에 하나(그날의 마지막)만 남김. 칸마다 사흘에 한 번 */
+async function tmPrune(id){
+  if(!(CAN.teacher || A.isMgr)) return;
+  const k = 'nhp_tmp_' + id; try{ if(Date.now() - (Number(localStorage.getItem(k)) || 0) < 3 * 864e5) return; }catch(e){}
+  try{
+    const cut = FS.Timestamp.fromMillis(Date.now() - TM_DAYS * 864e5);
+    const q = await FS.getDocs(FS.query(FS.collection(A.db, 'nhpEntries', id, 'vers'), FS.where('at', '<', cut), FS.orderBy('at', 'desc'), FS.limit(300)));
+    const seen = {}; const del = []; const old = [];
+    q.forEach(d => old.push({ id: d.id, x: d.data() }));
+    old.sort((a, b) => tmMs(b.x.at) - tmMs(a.x.at));      // 새것부터 — 그날의 마지막 것을 남김
+    old.forEach(d => { const x = d.x; const ms = tmMs(x.at); if(!ms || ms >= Date.now() - TM_DAYS * 864e5) return;
+      if(TM_HOLD[x.why]) return;
+      const day = new Date(ms); const dk = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
+      if(!seen[dk]){ seen[dk] = 1; return; }
+      del.push(d.id); });
+    for(const vid of del){ try{ await FS.deleteDoc(FS.doc(A.db, 'nhpEntries', id, 'vers', vid)); }catch(e){ break; } }
+    try{ localStorage.setItem(k, String(Date.now())); }catch(e){}
+  }catch(e){ console.warn('타임머신 정리', e); }
+}
 async function tmOpen(){
-  await Promise.race([flush(), new Promise(r => setTimeout(r, 4000))]);
-  const m = A.modal('⏱ 타임머신 — ' + esc(A.subLabel(SUB)), '<div class="nh-desc">지난 모습을 여는 중…</div>', '', 'wide');
-  let L = [];
-  try{ const snap = await FS.getDocs(FS.collection(A.db, 'nhpEntries', SUB.id, 'vers')); snap.forEach(d => L.push(Object.assign({ id: d.id }, d.data()))); }
+  await Promise.race([flush().then(() => flushSetup()), new Promise(r => setTimeout(r, 4000))]);
+  const cellId = SUB.id;
+  const m = A.modal('⏱ 타임머신 — ' + esc(A.subLabel(SUB)), '<div class="nh-desc">지난 모습을 여는 중…</div>', '', 'wide xl');
+  let L = [], more = false, logOn = false, logBusy = false, busy = false;
+  const col = () => FS.collection(A.db, 'nhpEntries', cellId, 'vers');
+  const page = async before => {
+    const q = before ? FS.query(col(), FS.where('at', '<', before), FS.orderBy('at', 'desc'), FS.limit(TM_PAGE)) : FS.query(col(), FS.orderBy('at', 'desc'), FS.limit(TM_PAGE));
+    const snap = await FS.getDocs(q); const out = [];
+    snap.forEach(d => { let x; try{ x = d.data({ serverTimestamps: 'estimate' }); }catch(e){ x = d.data(); } out.push(Object.assign({ id: d.id }, x)); });
+    out.forEach(x => { if(!tmMs(x.at)) x.at = FS.Timestamp.fromMillis(Date.now()); });      // 방금 쓴 것(서버 시각 전) — 맨 위에
+    out.sort((a, b) => tmMs(b.at) - tmMs(a.at));
+    return out;
+  };
+  try{ L = await page(null); more = L.length >= TM_PAGE; }
   catch(e){
     m.body.innerHTML = /permission/.test((e && e.code) || '')
       ? '<div class="nh-warn">타임머신 보관함이 아직 열리지 않았어요 — 보안 규칙 <b>v54</b>가 게시되면 켜져요. (입력과 자동 저장, ↩ 되돌리기는 지금도 돼요)</div>'
       : `<div class="nh-warn">지난 모습을 읽지 못했어요 — ${esc(A.errText(e))}</div>`;
     return;
   }
-  L.sort((a, b) => tmMs(b.at) - tmMs(a.at));
-  // 오래된 것 정리 — 30개 넘으면 (맡은 선생님 · 담당만 지울 수 있음)
-  if(L.length > TM_KEEP && (CAN.teacher || A.isMgr)){ const old = L.splice(TM_KEEP); old.forEach(v => FS.deleteDoc(FS.doc(A.db, 'nhpEntries', SUB.id, 'vers', v.id)).catch(() => {})); }
-  if(!L.length){ m.body.innerHTML = '<div class="nh-empty">아직 보관된 지난 모습이 없어요.<br><small>작성완료 · 수정 요청 · 붙여넣기 직전, 그리고 쓰는 동안 20분에 한 번씩 저절로 보관돼요.</small></div>'; return; }
-  let cur = L[0].id;
+  if(!SUB || SUB.id !== cellId) return;
+  tmPrune(cellId);
+  let cur = L.length ? L[0].id : '', filt = 'all', view = 'diff', psid = (PV_SID && SIDS.includes(PV_SID)) ? PV_SID : (SIDS[0] || '');
+  const hasFr = v => v && v.setup && typeof v.setup === 'object';
+  const shown = () => L.filter(x => filt === 'all' || (filt === 'fr' ? tmIsFr(x.why) : !tmIsFr(x.why)));
+  /* 📜 고친 기록으로 되짚기 — 보관되지 않은 때의 학생 입력을, 지금 모습에서 기록을 거꾸로 되돌려 만든다 (기록에 남은 변경만) */
+  const addLog = async () => {
+    if(logBusy || logOn) return; logBusy = true; drawTM();
+    try{
+      await Promise.race([Promise.resolve(flush()).then(() => chgFlush(cellId)), new Promise(r => setTimeout(r, 5000))]);      // 방금 고친 것까지 기록에 쓴 뒤에
+      CHG_CACHE[cellId] = null;
+      const G = (await chgLoad(cellId, 600)).map(g => tmMs(g.at) ? g : Object.assign({}, g, { at: FS.Timestamp.fromMillis(Date.now()) })).sort((a, b) => tmMs(b.at) - tmMs(a.at));
+      const st = cloneV(ENT.rows || {}); const out = []; let head = 0, idx = -1;      // head: 지금 묶음에서 가장 새 기록의 때 · idx: 이 묶음의 되짚은 모습 자리(-1 = 안 만듦)
+      G.forEach(g => {
+        (g.ch || []).slice().reverse().forEach(c => { const mm = /^rows\.(.+)$/.exec(c.k || ''); if(mm) setPath(st, mm[1], c.w === undefined ? undefined : cloneV(c.w)); });
+        const ms = tmMs(g.at); if(!ms) return;
+        const mk = () => ({ id: 'log_' + g.id, virt: true, why: 'log', at: g.at, byName: g.byName || '', n: Object.keys(st).length, rows: cloneV(st) });
+        if(head && head - ms < 15 * 60000){ if(idx >= 0) out[idx] = mk(); return; }      // 15분 안에 이어 고친 것은 한 묶음 — 그 묶음을 시작하기 전 모습 하나만
+        head = ms; idx = out.length; out.push(mk()); });
+      L = L.concat(out).sort((a, b) => tmMs(b.at) - tmMs(a.at)); logOn = true;
+      if(!out.length) A.toast('고친 기록에서 더 되짚을 모습이 없어요.');
+    }catch(e){ A.toast('고친 기록을 읽지 못했어요 — ' + A.errText(e), 'err'); }
+    logBusy = false; if(!cur && L.length) cur = L[0].id; drawTM();
+  };
+  const loadMore = async () => {
+    if(busy) return; busy = true;
+    try{ const real = L.filter(x => !x.virt); const lastAt = real.length ? real[real.length - 1].at : null; const nx = lastAt ? await page(lastAt) : [];
+      more = nx.length >= TM_PAGE; const have = new Set(L.map(x => x.id)); L = L.concat(nx.filter(x => !have.has(x.id))).sort((a, b) => tmMs(b.at) - tmMs(a.at)); }
+    catch(e){ A.toast('더 읽지 못했어요 — ' + A.errText(e), 'err'); }
+    busy = false; drawTM();
+  };
   const drawTM = () => {
-    const v = L.find(x => x.id === cur) || L[0];
+    if(!document.body.contains(m.body)) return;
+    const S = shown(); const v = S.find(x => x.id === cur) || S[0] || null; if(v) cur = v.id;
+    const nFr = L.filter(x => tmIsFr(x.why)).length;
+    const listH = `<div class="tm-side"><div class="frow" style="gap:5px;margin-bottom:6px">${[['all', `전체 ${L.length}`], ['in', `학생 입력 ${L.length - nFr}`], ['fr', `평가 틀 ${nFr}`]].map(([k, t]) => `<button class="nh-btn xs${filt === k ? ' p' : ''}" data-tmf="${k}">${t}</button>`).join('')}</div>
+      <div class="tm-list">${S.map(x => `<button class="tm-v${x.id === cur ? ' on' : ''}" data-tmv="${esc(x.id)}"><b>${esc(tmAt(x.at))}</b><span>${esc(TM_WHY[x.why] || x.why || '')}</span><small>${esc(x.byName || '')}${tmIsFr(x.why) ? ' · 평가 틀' : ` · 학생 ${Number(x.n) || 0}명`}${hasFr(x) && !tmIsFr(x.why) ? ' · 틀 포함' : ''}${x.virt ? ' · 기록으로 되짚음' : ''}</small></button>`).join('') || '<div class="nh-empty" style="padding:14px">해당하는 보관이 없어요.</div>'}
+        ${more ? `<button class="nh-btn sm" data-tmmore>${busy ? '읽는 중…' : '더 옛날 것 보기'}</button>` : ''}
+        ${!logOn ? `<button class="nh-btn sm ghost" data-tmlog title="«📜 고친 기록»을 거꾸로 되돌려, 보관되지 않은 때의 학생 입력 모습을 만들어 보여 줘요 (기록에 남은 변경만 · 평가 틀은 아님)">${logBusy ? '되짚는 중…' : '📜 고친 기록으로 더 되짚기'}</button>` : ''}</div>
+      <div class="nh-desc" style="margin:8px 0 0;font-size:11.5px">최근 ${TM_DAYS}일은 모두, 그보다 오래된 것은 하루에 하나씩 남겨요. 작성완료 · 틀 바꾸기 직전 같은 중요한 때는 지우지 않아요.</div></div>`;
+    if(!v){ m.body.innerHTML = `<div class="tm-wrap">${listH}<div class="tm-det"><div class="nh-empty">아직 보관된 지난 모습이 없어요.<br><small>작성완료 · 수정 요청 · 붙여넣기 직전, 평가 틀을 고치기 직전, 그리고 쓰는 동안 20분에 한 번씩 저절로 보관돼요.<br>보관이 시작되기 전의 학생 입력은 왼쪽 «📜 고친 기록으로 더 되짚기»로 볼 수 있어요.</small></div></div></div>`; bind(null, [], null); return; }
     const sids = SIDS.filter(sid => (v.rows || {})[sid] || (ENT.rows || {})[sid]);
-    const D = sids.map(sid => ({ sid, d: tmDiff((v.rows || {})[sid], (ENT.rows || {})[sid]) })).filter(x => x.d.length);
-    m.body.innerHTML = `<div class="tm-wrap"><div class="tm-list">${L.map(x => `<button class="tm-v${x.id === cur ? ' on' : ''}" data-tmv="${esc(x.id)}"><b>${esc(tmAt(x.at))}</b><span>${esc(TM_WHY[x.why] || x.why || '')}</span><small>${esc(x.byName || '')} · 학생 ${Number(x.n) || 0}명</small></button>`).join('')}</div>
-      <div class="tm-det"><div class="frow" style="align-items:center;margin-bottom:8px"><b style="font-size:14px">${esc(tmAt(v.at))} 모습과 지금의 차이</b><span class="nh-sp"></span>${D.length && CAN.edit ? `<button class="nh-btn sm g" data-tmall>달라진 ${D.length}명 모두 그때로 되살리기</button>` : ''}</div>
+    const onlyFr = tmIsFr(v.why) && !Object.keys(v.rows || {}).length;
+    const D = onlyFr ? [] : sids.map(sid => ({ sid, d: tmDiff((v.rows || {})[sid], (ENT.rows || {})[sid]) })).filter(x => x.d.length);
+    const fd = hasFr(v) ? frDiff(v.setup, v.type, SUB.setup, SUB.type) : null;
+    const canType = A.isMgr || (SUB.state === 'draft' && CAN.teacher);      // 평가 방식을 바꿀 수 있는 사람 (보안 규칙과 같게)
+    const canFr = !!(CAN.setup && fd && fd.any && (!fd.type || canType));
+    const frH = !hasFr(v) ? (tmIsFr(v.why) ? '' : `<div class="nh-desc" style="margin-bottom:8px">이 보관에는 평가 틀이 들어 있지 않아요${v.virt ? ' (고친 기록으로 되짚은 학생 입력만)' : ' (틀 보관이 켜지기 전의 것 — 학생 입력만)'}.</div>`)
+      : !fd.any ? '<div class="nh-info" style="margin-bottom:8px">🧩 평가 틀은 지금과 같아요.</div>'
+      : `<div class="st-card tm-fr"><div class="frow" style="align-items:center"><b style="font-size:14px">🧩 평가 틀 — 그때와 지금의 차이</b><span class="nh-sp"></span>${canFr ? '<button class="nh-btn sm g" data-tmfrall>평가 틀 전체를 그때로 되살리기</button>' : ''}</div>
+        ${!CAN.setup ? '<div class="nh-desc">지금은 이 칸의 평가 틀을 고칠 수 없어 보기만 돼요.</div>' : (fd.type && !canType ? '<div class="nh-desc">평가 방식까지 돌리는 되살리기는 맡은 선생님(작성 중) · 나학평 담당만 할 수 있어요.</div>' : '')}
+        ${fd.type ? `<div class="tm-fl"><span class="ch warn">평가 방식</span> 그때 <b>${esc(typeKo(v.type || 'E'))}</b> → 지금 <b>${esc(typeKo(SUB.type || 'E'))}</b> <small>(«전체 되살리기»로 함께 돌아가요)</small></div>` : ''}
+        ${fd.gone.map(o => `<div class="tm-fl gone"><span class="ch bad">지금은 없는 항목</span> <span class="tm-ft">${itemLine(o.x)}</span>${CAN.setup && !fd.type ? `<span class="nh-sp"></span><button class="nh-btn xs" data-tmfri="${esc(o.x.id)}">이 항목만 되살리기</button>` : ''}</div>`).join('')}
+        ${fd.chg.map(o => `<div class="tm-fl"><span class="ch info">글 · 범위가 바뀐 항목</span> <span class="tm-ft"><small>그때</small> ${itemLine(o.was)}<br><small>지금</small> ${itemLine(o.now)}</span>${CAN.setup && !fd.type ? `<span class="nh-sp"></span><button class="nh-btn xs" data-tmfri="${esc(o.was.id)}">이 항목만 그때 글로</button>` : ''}</div>`).join('')}
+        ${fd.neu.map(x => `<div class="tm-fl"><span class="ch gray">그 뒤에 생긴 항목</span> <span class="tm-ft">${itemLine(x)}</span> <small>(«전체 되살리기»를 하면 빠져요 — 학생 입력은 지워지지 않아요)</small></div>`).join('')}
+        ${fd.order ? '<div class="tm-fl"><span class="ch gray">항목 순서</span> 그때와 달라요</div>' : ''}${fd.norder ? '<div class="tm-fl"><span class="ch gray">서술 칸 순서</span> 그때와 달라요</div>' : ''}
+        ${fd.ngone.map(x => `<div class="tm-fl gone"><span class="ch bad">지금은 없는 서술 칸</span> <span class="tm-ft">${esc(x.t || '서술')}${!C.isEach(x) && x.fixed ? ` — <small>${esc(String(x.fixed).slice(0, 80))}</small>` : ''}</span></div>`).join('')}
+        ${fd.nchg.map(o => `<div class="tm-fl"><span class="ch info">바뀐 서술 칸</span> <span class="tm-ft">${esc(o.was.t || '서술')}${(!C.isEach(o.was) && (o.was.fixed || '') !== (o.now.fixed || '')) ? `<br><small>그때 글</small> ${tmVal(o.was.fixed)}<br><small>지금 글</small> ${tmVal(o.now.fixed)}` : ''}</span></div>`).join('')}
+        ${fd.nneu.map(x => `<div class="tm-fl"><span class="ch gray">그 뒤에 생긴 서술 칸</span> <span class="tm-ft">${esc(x.t || '서술')}</span></div>`).join('')}
+        ${fd.etc.length ? `<div class="tm-fl"><span class="ch gray">그 밖의 설정</span> ${fd.etc.map(k => esc(FR_ETC[k] || k)).join(' · ')} — 그때와 달라요</div>` : ''}
+        <div class="nh-desc" style="margin:6px 0 0">틀을 되살려도 학생 입력은 지워지지 않아요 — 되살린 항목에 넣어 두었던 단계 · 글이 다시 보여요. 지금 틀도 타임머신에 보관돼요.</div></div>`;
+    const diffH = onlyFr ? '<div class="nh-desc">이 보관은 평가 틀만 담고 있어요 (학생 입력은 그 무렵의 다른 보관을 보세요).</div>'
+      : `<div class="frow" style="align-items:center;margin:10px 0 8px"><b style="font-size:14px">✏️ 학생 입력 — 그때와 지금의 차이</b><span class="nh-sp"></span>${D.length && CAN.edit ? `<button class="nh-btn sm g" data-tmall>달라진 ${D.length}명 모두 그때로 되살리기</button>` : ''}</div>
+      ${v.virt ? '<div class="nh-info" style="margin-bottom:8px">«📜 고친 기록»을 거꾸로 되돌려 만든 모습이에요 — 기록에 남지 않은 변경(예: 틀을 바꾸며 이어 준 값)은 들어 있지 않을 수 있어요. 아래 차이를 보고 필요한 학생 · 칸만 되살리세요.</div>' : ''}
       ${!CAN.edit ? '<div class="nh-info">지금은 이 칸을 고칠 수 없어 보기만 돼요.</div>' : ''}
       ${D.length ? D.map(x => `<div class="tm-stu"><div class="frow" style="align-items:center"><b>${esc(A.stuName(x.sid))}</b><small style="color:var(--ink-3)">${x.d.length}곳 다름</small><span class="nh-sp"></span>${CAN.edit ? `<button class="nh-btn xs" data-tmone="${esc(x.sid)}">이 학생만 되살리기</button>` : ''}</div>
-        ${x.d.map(c => `<div class="tm-ch"><div class="k">${esc(tmLabel(c.k))}${CAN.edit && x.d.length > 1 ? `<br><button class="nh-btn xs" data-tmleaf="${esc(x.sid)}" data-k="${esc(c.k)}">이 칸만 되살리기</button>` : ''}</div><div class="was"><small>그때</small>${tmVal(c.was)}</div><div class="now"><small>지금</small>${tmVal(c.now)}</div></div>`).join('')}</div>`).join('') : '<div class="nh-empty">이때 모습과 지금이 같아요.</div>'}</div></div>`;
+        ${x.d.map(c => `<div class="tm-ch"><div class="k">${esc(tmLabel(c.k))}${CAN.edit && x.d.length > 1 ? `<br><button class="nh-btn xs" data-tmleaf="${esc(x.sid)}" data-k="${esc(c.k)}">이 칸만 되살리기</button>` : ''}</div><div class="was"><small>그때</small>${tmVal(c.was)}</div><div class="now"><small>지금</small>${tmVal(c.now)}</div></div>`).join('')}</div>`).join('')
+        : '<div class="nh-empty">학생 입력은 이때와 지금이 같아요.</div>'}`;
+    const pvSids = SIDS.filter(sid => (v.rows || {})[sid] || (ENT.rows || {})[sid]); if(!pvSids.includes(psid)) psid = pvSids[0] || SIDS[0] || '';
+    const pvH = `<div class="frow" style="align-items:center;gap:8px;margin-bottom:8px"><b style="font-size:13.5px">학생</b><select class="nh-sel" data-tmsid style="max-width:180px">${(pvSids.length ? pvSids : SIDS).map(sid => `<option value="${esc(sid)}"${sid === psid ? ' selected' : ''}>${esc(A.stuName(sid))}</option>`).join('')}</select>
+        <span class="nh-desc" style="margin:0">출력될 모습이에요 — 왼쪽이 그때, 오른쪽이 지금${hasFr(v) ? '' : ' (이 보관에는 틀이 없어 지금 틀로 그렸어요)'}${onlyFr ? ' (그때 틀 + 지금 학생 입력)' : ''}</span></div>
+      <div class="tm-pv2"><div class="tm-pvc"><div class="tm-pvh was">그때 · ${esc(tmAt(v.at))}</div><div class="tm-pvs">${psid ? tmBlockHTML(hasFr(v) ? v.setup : null, v.type, onlyFr ? (ENT.rows || {}) : (v.rows || {}), psid) : ''}</div></div>
+        <div class="tm-pvc"><div class="tm-pvh now">지금</div><div class="tm-pvs">${psid ? tmBlockHTML(null, null, ENT.rows || {}, psid) : ''}</div></div></div>`;
+    m.body.innerHTML = `<div class="tm-wrap">${listH}
+      <div class="tm-det"><div class="frow" style="align-items:center;margin-bottom:8px;gap:6px"><b style="font-size:15px">${esc(tmAt(v.at))}</b><span class="ch gray">${esc(TM_WHY[v.why] || v.why || '')}</span><span class="nh-sp"></span>
+        <button class="nh-btn sm${view === 'diff' ? ' p' : ''}" data-tmview="diff">달라진 곳</button><button class="nh-btn sm${view === 'pv' ? ' p' : ''}" data-tmview="pv">👀 그때 모습 미리보기</button></div>
+      ${view === 'pv' ? pvH : frH + diffH}</div></div>`;
+    bind(v, D, fd);
+    if(view === 'pv') m.body.querySelectorAll('.tm-pvs').forEach(sc => { const w = sc.parentElement.clientWidth - 16; const k = Math.max(0.3, Math.min(1, w / 680)); const inner = sc.firstElementChild; if(inner){ inner.style.transformOrigin = 'top left'; inner.style.transform = `scale(${k})`; sc.style.height = (Math.ceil(Math.max(inner.offsetHeight, inner.scrollHeight) * k) + 28) + 'px'; } });
+  };
+  const bind = (v, D, fd) => {
     m.body.querySelectorAll('[data-tmv]').forEach(b => { b.onclick = () => { cur = b.dataset.tmv; drawTM(); }; });
+    m.body.querySelectorAll('[data-tmf]').forEach(b => { b.onclick = () => { filt = b.dataset.tmf; drawTM(); }; });
+    m.body.querySelectorAll('[data-tmview]').forEach(b => { b.onclick = () => { view = b.dataset.tmview; drawTM(); }; });
+    const mo = m.body.querySelector('[data-tmmore]'); if(mo) mo.onclick = loadMore;
+    const lg = m.body.querySelector('[data-tmlog]'); if(lg) lg.onclick = addLog;
+    const ss = m.body.querySelector('[data-tmsid]'); if(ss) ss.onchange = () => { psid = ss.value; drawTM(); };
+    if(!v) return;
     const go = async (only, one) => {
-      const list = only ? D.filter(x => x.sid === only) : D; if(!list.length) return;
+      const list = only ? D.filter(x => x.sid === only) : D; if(!list.length || !CAN.edit) return;
       if(!(await A.confirm('⏱ 그때 모습으로 되살리기', `${only ? esc(A.stuName(only)) : `학생 ${list.length}명`}의 ${one ? `<b>${esc(tmLabel(one))}</b> 칸만` : '입력을'} <b>${esc(tmAt(v.at))}</b> 모습으로 바꿔요. 지금 모습도 타임머신에 보관되고, ↩ 되돌리기로 바로 취소할 수 있어요.`, '되살리기'))) return;
+      if(!SUB || SUB.id !== cellId) return;
       await tmSnap('restore', cloneV(ENT.rows || {}));
       VIA = 'tm'; try{ list.forEach(x => x.d.filter(c => !one || c.k === one).forEach(c => putRaw(`rows.${x.sid}.${c.k}`, cloneV(c.was)))); } finally{ VIA = ''; }
       m.close(); drawBody(); A.toast(one ? '그 칸만 그때 모습으로 되살렸어요 ✓' : `${list.length}명을 그때 모습으로 되살렸어요 ✓`);
@@ -368,6 +550,54 @@ async function tmOpen(){
     const all = m.body.querySelector('[data-tmall]'); if(all) all.onclick = () => go('');
     m.body.querySelectorAll('[data-tmone]').forEach(b => { b.onclick = () => go(b.dataset.tmone); });
     m.body.querySelectorAll('[data-tmleaf]').forEach(b => { b.onclick = () => go(b.dataset.tmleaf, b.dataset.k); });
+    /* 🧩 평가 틀 되살리기 — 지금 틀을 먼저 보관하고, 학생 입력은 지우지 않음 */
+    const frAll = m.body.querySelector('[data-tmfrall]');
+    if(frAll) frAll.onclick = async () => {
+      if(!CAN.setup || !fd || !fd.any) return;
+      if(!(await A.confirm('🧩 평가 틀 되살리기', `이 칸의 평가 틀 전체를 <b>${esc(tmAt(v.at))}</b> 모습으로 바꿔요${fd.type ? ` (평가 방식도 <b>${esc(typeKo(v.type || 'E'))}</b>(으)로)` : ''}.<br>${fd.gone.length ? `지금은 없는 항목 ${fd.gone.length}개가 돌아오고, ` : ''}${fd.neu.length ? `그 뒤에 생긴 항목 ${fd.neu.length}개는 빠져요. ` : ''}<br><br><span style="color:var(--ink-2)">학생 입력은 건드리지 않아요. 지금 틀을 먼저 타임머신에 보관한 뒤에 바꾸니 다시 돌아올 수 있어요.${C.shareOf(SUB, A.SUBS) ? ' «함께 쓰기»로 묶인 다른 반 칸도 같은 틀로 맞춰져요.' : ''}</span>`, '되살리기'))) return;
+      const here = () => SUB && SUB.id === cellId;
+      if(!here()) return;
+      try{
+        await flush(); await flushSetup();
+        if(!here()){ m.close(); return; }
+        const old = SUB.setup || {}, oldT = SUB.type || 'E'; const nu = JSON.parse(JSON.stringify(v.setup || {})); const nt = v.type || 'E';
+        if(TM.r56 === false) TM.r56 = null;      // 틀이 든 보관이 있다는 것은 규칙 v56이 게시됐다는 뜻 — 다시 해 봄
+        const kept = await tmSnap('frback', cloneV(ENT.rows || {}), cellId, { setup: old, type: oldT });
+        if(kept === false){ A.toast('지금 틀을 타임머신에 보관하지 못해서 되살리지 않았어요 — 잠시 뒤 다시 해 주세요.', 'err'); return; }      // 돌아올 길이 없으면 바꾸지 않음
+        if(!here()){ m.close(); return; }
+        const patch = Object.assign({ setup: nu }, nt !== oldT ? { type: nt } : {});
+        await A.saveSub(cellId, patch);      // 학생 입력(rows)은 쓰지 않음 — 그때 항목 번호 그대로라 넣어 둔 값이 다시 보임
+        TM.fat[cellId] = Date.now(); TM.aft[cellId] = SJ(nu);
+        if(here()){ Object.assign(SUB, patch); SRV[cellId] = SENT[cellId] = SJ(nu); delete SPEND[cellId]; delete THEIRS[cellId]; }
+        { const k0 = C.shareOf(A.subOf(cellId) || SUB, A.SUBS); if(k0) C.shareMembers(k0, A.SUBS).forEach(x => { if(x.id !== cellId) delete TM.aft[x.id]; }); }      // 묶인 칸들도 맞춰지기 직전 틀을 꼭 보관
+        try{ await propagate(cellId, nu); }catch(e){}
+        m.close(); if(here()){ CK_C = null; draw(); } A.toast('평가 틀을 그때 모습으로 되살렸어요 ✓');
+      }catch(e){ A.toast('되살리지 못했어요 — ' + A.errText(e), 'err'); }
+    };
+    m.body.querySelectorAll('[data-tmfri]').forEach(b => { b.onclick = async () => {
+      if(!CAN.setup || !hasFr(v)) return;
+      const src = (v.setup.items || []); const i0 = src.findIndex(x => x.id === b.dataset.tmfri); if(i0 < 0) return;
+      const it = JSON.parse(JSON.stringify(src[i0]));
+      if(!(await A.confirm('🧩 이 항목만 되살리기', `<b>${itemLine(it)}</b><br>이 항목을 ${tmAt(v.at)} 모습으로 되살려요. 학생들에게 넣어 두었던 이 항목의 단계가 다시 보여요.`, '되살리기'))) return;
+      if(!SUB || SUB.id !== cellId) return;
+      try{
+        await flush(); await flushSetup();
+        if(!SUB || SUB.id !== cellId){ m.close(); return; }
+        const items = ((SUB.setup || {}).items || []).slice(); const at = items.findIndex(x => x.id === it.id);
+        if(at >= 0) items[at] = it;
+        else { let pos = -1; for(let k = i0 - 1; k >= 0 && pos < 0; k--){ const p = items.findIndex(x => x.id === src[k].id); if(p >= 0) pos = p + 1; }      // 그때 바로 앞에 있던 항목 뒤에
+          for(let k = i0 + 1; k < src.length && pos < 0; k++){ const p = items.findIndex(x => x.id === src[k].id); if(p >= 0) pos = p; }      // 앞 항목이 모두 없으면 — 그때 바로 뒤에 있던 항목 앞에
+          items.splice(pos < 0 ? items.length : pos, 0, it); }
+        SUB.setup = Object.assign({}, SUB.setup || {}, { items });
+        if(it.s && !((SUB.setup.lay || {}).sOn)) SUB.setup.lay = Object.assign({}, SUB.setup.lay || {}, { sOn: true });
+        delete TM.aft[cellId];      // 되살리기 직전 틀은 늘 보관
+        if(!SUB || SUB.id !== cellId){ m.close(); return; }
+        await saveSetup(true);
+        if(!SUB || SUB.id !== cellId){ m.close(); return; }
+        CK_C = null; drawBody(); drawTM();
+        if(!SPEND[cellId] && SENT[cellId] === SJ(SUB.setup || {})) A.toast('그 항목을 되살렸어요 ✓');
+      }catch(e){ A.toast('되살리지 못했어요 — ' + A.errText(e), 'err'); }
+    }; });
   };
   drawTM();
 }
@@ -1347,6 +1577,7 @@ async function flushSetup(){
   for(const id of Object.keys(SPEND)){
     const mine = SPEND[id]; const base = SRV[id]; let setup = mine, merged = null;
     HOLD[id] = false; FLY[id] = true;
+    if(base !== undefined){ try{ tmFrame(id, JSON.parse(base), mine); }catch(e){} }      // ⏱ v210 바꾸기 직전 틀 보관 (저장을 기다리게 하지 않음)
     try{
       let viaTx = false;
       if(base !== undefined){
@@ -1407,6 +1638,7 @@ async function applySetupTo(x, setup, type){
   const rows = (snap.exists() && snap.data().rows) || {};
   const nu = JSON.parse(JSON.stringify(setup || {}));
   const up = C.remapPatch(rows, x.setup || {}, nu);
+  try{ tmFrame(x.id, x.setup || {}, nu, 'frsync', x.type || 'E', Object.keys(up).length ? cloneV(rows) : {}); }catch(e){}      // ⏱ v210 맞춰지기 직전 그 칸의 틀 · 입력
   if(Object.keys(up).length) await FS.updateDoc(ref, Object.assign(up, { updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }));
   await A.saveSub(x.id, Object.assign({ setup: nu }, (x.type || 'E') !== (type || 'E') ? { type: type || 'E' } : {}));
 }
@@ -1834,7 +2066,7 @@ async function pickForm(k){
   if(f.lay){ const lay = Object.assign({}, setup.lay || {}); lay.sOn = !!f.lay.sOn; if(!lay.sOn) delete lay.s; setup = Object.assign({}, setup, { lay }); }
   try{
     await flush(); await flushSetup();
-    if(f.type !== cur){ await A.saveSub(SUB.id, { type: f.type, setup }); SUB.type = f.type; }
+    if(f.type !== cur){ try{ tmFrame(SUB.id, SUB.setup || {}, setup, 'frtype', cur); }catch(e){} await A.saveSub(SUB.id, { type: f.type, setup }); SUB.type = f.type; SRV[SUB.id] = SENT[SUB.id] = SJ(setup || {}); }
     SUB.setup = setup; await saveSetup(true);
     draw();
   }catch(e){ A.toast('바꾸지 못했어요 — ' + A.errText(e) + (/permission/.test((e && e.code) || '') ? ' (보안 규칙 v38이 필요해요)' : ''), 'err'); }
@@ -1952,6 +2184,7 @@ async function applyImport(x, o){
     const rows = (snap.exists() && snap.data().rows) || {};
     const up = C.remapPatch(rows, old, setup);
     if(Object.keys(up).length) await FS.updateDoc(ref, Object.assign(up, { updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }));
+    try{ tmFrame(SUB.id, old, setup, 'frpull', SUB.type || 'E', cloneV(rows)); }catch(e){}
     const patch = { setup };
     if(type !== (SUB.type || 'E')) patch.type = type;
     let shareNote = '';
