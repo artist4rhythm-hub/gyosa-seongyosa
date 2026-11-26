@@ -119,15 +119,16 @@ const sameSecs = (a, e) => JSON.stringify((a.secs || []).slice().sort()) === JSO
 const dupOf = (arr, e) => arr.find(a => a && a.src === e.id) || arr.find(a => a && key(a.t) === key(e.title) && rangeOf(e)[0] && (a.from || '') === rangeOf(e)[0] && sameSecs(a, e)) || null;
 const haveOf = e => dupOf(actsNow(), e);
 async function writeActs(mut){
-  const ref = FS.doc(A.db, 'nhpLists', A.TERM.id); let out, arr;
+  const ref = FS.doc(A.db, 'nhpLists', A.TERM.id); let out, arr, before = null;
   if(A.markMine) A.markMine();
   await FS.runTransaction(A.db, async tx => {      // 서버의 지금 목록을 읽어 그 위에 — 두 분이 동시에 저장해도 서로 지우지 않음 · 못 읽으면 쓰지 않음
     const snap = await tx.get(ref);
     const cur = snap.exists() ? snap.data() : {};
-    arr = (cur.activities || []).slice();
+    arr = (cur.activities || []).slice(); before = (cur.activities || []).slice();
     out = mut(arr);
     tx.set(ref, { termId: A.TERM.id, activities: arr }, { merge: true });
   });
+  if(A.keep && before) A.keep('lists', { activities: before }, '특별활동 목록');      // ⏱ v211 바뀌기 직전 목록
   A.LISTS = Object.assign({}, A.LISTS, { termId: A.TERM.id, activities: arr });
   return out;
 }

@@ -5,6 +5,7 @@
    ═══════════════════════════════════════════════════════════ */
 import * as IMP from './nhp-import.js?v=142';
 import * as GRP from './nhp-groups.js?v=144';
+import * as KEEP from './nhp-keep.js?v=211';
 
 let A = null, C = null, esc = null, FS = null;
 const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
@@ -345,16 +346,18 @@ async function applyReview(term){
 async function updateSections(mut){
   mine();
   const ref = FS.doc(A.db, 'nhpTerms', A.TERM.id);
-  let secs = null, finAll = null;
+  let secs = null, finAll = null, before = null;
   try{
     await FS.runTransaction(A.db, async tx => {
       const snap = await tx.get(ref);
       const t = snap.data() || {};
+      before = (t.sections || []).map(x => Object.assign({}, x));
       secs = mut((t.sections || []).map(x => Object.assign({}, x)));
       finAll = C.finAllOf(Object.assign({}, t, { sections: secs }), secs);
       tx.update(ref, { sections: secs, finAll, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid });
     });
   }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); return null; }
+  if(A.keep && before) A.keep('term', { sections: before }, '반 · 담임 · 학생');      // ⏱ v211 바뀌기 직전 반 목록
   A.TERM.sections = secs; A.TERM.finAll = finAll;
   return secs;
 }
@@ -381,6 +384,7 @@ function isLocked(s){
 /* 새로 그린 화면에 단추가 생길 때까지 기다렸다가 누르기 */
 function clickWhenReady(sel, ms){ const t0 = Date.now(); const go = () => { const b = document.querySelector(sel); if(b) return b.click(); if(Date.now() - t0 < (ms || 4000)) setTimeout(go, 120); }; setTimeout(go, 120); }
 export async function render(a, el, pane){
+  if(a && a.CFG && !Object.keys(CFG0).length){ try{ CFG0 = JSON.parse(JSON.stringify(a.CFG)); }catch(e){} }
   bind(a);
   if(!A.isMgr){ el.innerHTML = `<div class="nh-empty">학기 설정은 나학평 담당 선생님만 할 수 있어요.</div>`; return; }
   PANE = pane || PANE || paneLoad();
@@ -398,7 +402,7 @@ export async function render(a, el, pane){
     ${closed.length ? `<div class="nh-warn" data-closed>⚠ <b>나학평이 닫힌 선생님 ${closed.length}분</b>이 맡은 자리가 있어요 — ${closed.join(', ')}<br><span>이분들은 나학평을 열 수 없어 입력 · 검토를 못 해요. 수퍼관리자가 <b>관리자 › 접근 권한 › 🗂 화면별 › 나학평</b>에서 열어 주거나, 아래에서 다른 분으로 바꿔 주세요.</span></div>` : ''}
     <div class="st-top"><div class="st-ttl"><b>${esc(C.termLabel(t))}</b><small>${t.src === 'import' ? '옮겨 온 지난 자료' : `반 ${secs.length}개 · 칸 ${live.length}개 · 학생 ${secs.reduce((n, s) => n + (s.students || []).length, 0)}명`}</small></div>
       <div class="st-jump">${(t.src === 'import' ? [] : [['info', '🗓', '학기 정보'], ['secs', '🏫', '반 · 담임'], ['cells', '🧩', '칸'], ['review', '🧐', '검토 순서'], ['hr', '💬', '담임평가'], ['lists', '📋', '공통 목록']]).concat([['print', '🖨', '출력 모양'], ['lang', '🌐', '영문판'], ['import', '🗂', '가져오기']]).map(([k, i, l]) => `<button class="sj${PANE === k ? ' on' : ''}" data-jump="${k}"><i>${i}</i>${l}</button>`).join('')}</div>
-      <div class="nh-desc" style="margin:0">서랍을 누르면 열리고 닫혀요 · 열린 서랍은 이 기기에서 기억해요</div></div>
+      <div class="frow" style="align-items:center;gap:8px"><div class="nh-desc" style="margin:0">서랍을 누르면 열리고 닫혀요 · 열린 서랍은 이 기기에서 기억해요</div><span class="nh-sp"></span><button class="nh-btn sm" data-st="keep" title="학기 정보 · 반 · 학생 · 검토 순서 · 칸 · 공통 목록 · 출력 모양을 바꾸기 직전 모습을 보고 되살려요">⏱ 설정 타임머신</button></div></div>
     ${t.src === 'import' ? '' : `
     <details class="dr" data-pane="info"${open('info')}><summary>${dh('🗓', '학기 정보 · 마감', 'b')}<small>${esc(t.start || '')} ~ ${esc(t.end || '')}${t.status === 'closed' ? ' · 마감됨' : ''}${(t.due || {}).entry ? ` · 입력 마감 ${esc(t.due.entry)}` : ''}</small></summary><div class="db">${infoHTML(t)}</div></details>
     <details class="dr" data-pane="secs"${open('secs')}><summary>${dh('🏫', '반 · 나학평 담임', 'g')}<small>${secs.length}반 · ${secs.reduce((n, s) => n + (s.students || []).length, 0)}명</small></summary><div class="db">${secsHTML(t)}</div></details>
@@ -617,7 +621,7 @@ async function mxType(sel){
   m.box.querySelector('[data-c]').onclick = () => m.close();
   m.box.querySelector('[data-ok]').onclick = async () => {
     const ty = (m.box.querySelector('input[name=mxty]:checked') || {}).value; if(!ty) return; m.close();
-    const res = await mxEach(ok.filter(s => (s.type || 'E') !== ty), s => A.saveSub(s.id, { type: ty, setup: C.setupForType(s.setup, ty) }), '평가 방식을 바꾸는 중…');
+    const res = await mxEach(ok.filter(s => (s.type || 'E') !== ty), async s => { if(A.keepFrame) await A.keepFrame(s, 'frtype'); return A.saveSub(s.id, { type: ty, setup: C.setupForType(s.setup, ty) }); }, '평가 방식을 바꾸는 중…');      // ⏱ v211 그 칸 타임머신에 바꾸기 직전 틀
     A.toast(`${res.n}칸을 «${C.TYPES[ty].ko}»로 바꿨어요 ✓${res.bad ? ` · ${res.bad}칸은 못 바꿈` : ''}`, res.bad ? 'err' : ''); PANE = 'cells'; rerender();
   };
 }
@@ -819,6 +823,7 @@ function langHTML(){
 }
 /* ── 🖨 출력 모양 (v144) — 표지 · 속지 · 마지막 확인 칸 (nhpConfig/main.print · 모든 학기 기본) ── */
 let PRT = null;
+let CFG0 = {};      // ⏱ v211 화면을 열 때의 nhpConfig/main — 저장 전에 화면이 A.CFG 를 바로 고치므로 «직전» 값은 여기서
 function printSummary(){ const d = C.TH.pick(A.CFG); return `표지 ${C.TH.coverLabel(d.cover)} · 속지 ${C.TH.innerLabel(d.inner)}${d.inner !== 'old' ? ' · 음영 ' + C.TH.shadeLabel(d.shade) : ''}${d.sign && d.sign.on ? ' · 확인 칸' : ''}`; }
 /* 음영 보기 — 예시 5단계 표 (가상 글) */
 function shadeSampleHTML(){
@@ -874,8 +879,8 @@ function bindPrint(el){
   };
 }
 async function savePrint(){
-  const patch = { print: { cover: PRT.cover, inner: PRT.inner || '', shade: PRT.shade || '1', sign: PRT.sign }, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid };
-  try{ await FS.setDoc(FS.doc(A.db, 'nhpConfig', 'main'), patch, { merge: true }); A.CFG.print = patch.print; A.SEL = null; A.toast('출력 모양을 저장했어요 ✓'); PANE = 'print'; rerender(); }
+  const patch = { print: { cover: PRT.cover, inner: PRT.inner || '', shade: PRT.shade || '1', sign: Object.assign({}, PRT.sign) }, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid };
+  try{ await FS.setDoc(FS.doc(A.db, 'nhpConfig', 'main'), patch, { merge: true }); if(A.keep) A.keep('cfg', { print: CFG0.print === undefined ? null : CFG0.print }, '출력 모양'); A.CFG.print = patch.print; CFG0 = JSON.parse(JSON.stringify(A.CFG)); A.SEL = null; A.toast('출력 모양을 저장했어요 ✓'); PANE = 'print'; rerender(); }
   catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); }
 }
 async function printSample(){
@@ -903,7 +908,9 @@ function bindImport(el){ const box = el.querySelector('[data-imp]'); if(box) IMP
 /* ── 설정 저장 · 동작 ── */
 async function saveTerm(patch, msg){
   mine();
-  try{ await FS.updateDoc(FS.doc(A.db, 'nhpTerms', A.TERM.id), Object.assign({}, patch, { updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid })); Object.assign(A.TERM, patch); if(msg) A.toast(msg); return true; }
+  const KL = { start: '학기 정보', end: '학기 정보', due: '마감 날짜', days: '수업 일수', review: '검토 순서', depts: '부서 묶음', listEditors: '목록 담당', hr: '담임평가 항목', status: '학기 상태' };
+  const kb = {}; Object.keys(patch).filter(k => k !== 'finAll' && JSON.stringify(A.TERM[k] === undefined ? null : A.TERM[k]) !== JSON.stringify(patch[k] === undefined ? null : patch[k])).forEach(k => { kb[k] = A.TERM[k] === undefined ? null : JSON.parse(JSON.stringify(A.TERM[k])); });      // 실제로 바뀌는 칸의 직전 값만
+  try{ await FS.updateDoc(FS.doc(A.db, 'nhpTerms', A.TERM.id), Object.assign({}, patch, { updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid })); if(A.keep) A.keep('term', kb, [...new Set(Object.keys(kb).map(k => KL[k] || k))].join(' · ')); Object.assign(A.TERM, patch); if(msg) A.toast(msg); return true; }
   catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); return false; }
 }
 async function saveReview(R){
@@ -911,16 +918,20 @@ async function saveReview(R){
   const finAll = C.finAllOf(t, t.sections || []);
   window.showLoading && showLoading('검토관을 모든 칸에 적는 중…');
   try{
-    if(!(await saveTerm({ review: R, finAll }))) return;
+    if(!(await saveTerm({ review: R, finAll }))){ window.hideLoading && hideLoading(); return false; }
     const n = await applyReview(Object.assign({}, A.TERM, { review: R }));
     A.toast(`검토 순서를 저장했어요 ✓ (칸 ${n}개 고침)`);
-  }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); }
+  }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); window.hideLoading && hideLoading(); rerender(); return false; }
   window.hideLoading && hideLoading();
   rerender();
+  return true;
 }
 async function saveLists(patch){
   mine();
-  try{ await FS.setDoc(FS.doc(A.db, 'nhpLists', A.TERM.id), Object.assign({ termId: A.TERM.id }, patch), { merge: true }); Object.assign(A.LISTS, patch); A.toast('목록을 저장했어요 ✓'); return true; }
+  let srv = A.LISTS || {};
+  try{ const d0 = await FS.getDoc(FS.doc(A.db, 'nhpLists', A.TERM.id)); srv = d0.exists() ? d0.data() : {}; }catch(e){}      // ⏱ v211 보관할 «직전»은 서버의 지금 값 (그 사이 다른 분이 고친 것도 남게)
+  const kb = {}; Object.keys(patch).forEach(k => { if(JSON.stringify(srv[k] === undefined ? null : srv[k]) !== JSON.stringify(patch[k] === undefined ? null : patch[k])) kb[k] = srv[k] === undefined ? null : srv[k]; });
+  try{ await FS.setDoc(FS.doc(A.db, 'nhpLists', A.TERM.id), Object.assign({ termId: A.TERM.id }, patch), { merge: true }); if(A.keep) A.keep('lists', kb, '공통 목록'); Object.assign(A.LISTS, patch); A.toast('목록을 저장했어요 ✓'); return true; }
   catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); return false; }
 }
 function rerender(){ const el = document.getElementById('nh-body'); if(el) render(A, el, PANE); }
@@ -948,6 +959,7 @@ function bindSetup(el){
     if(d.jump){ const det = el.querySelector(`details[data-pane="${d.jump}"]`); if(!det) return; det.open = true; PANE = d.jump; paneSave(PANE);
       el.querySelectorAll('[data-jump]').forEach(x => x.classList.toggle('on', x === b)); det.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     if(d.st === 'redraw'){ rerender(); return; }
+    if(d.st === 'keep'){ KEEP.openKeep(A, { saveTerm, updateSections, saveReview, saveLists, mine, applyReview: () => applyReview(A.TERM), after: () => { PRT = null; try{ CFG0 = JSON.parse(JSON.stringify(A.CFG)); }catch(e){} rerender(); } }); return; }
     if(d.cv){ CV = d.cv; cvSave(CV); PANE = 'cells'; rerender(); return; }
     if(d.st === 'saveprint'){ await savePrint(); return; }
     if(d.st === 'shareall'){ await shareAll(); return; }
@@ -1040,7 +1052,7 @@ function bindSetup(el){
       const lv = {}; el.querySelectorAll('[data-lven]').forEach(i => { lv[i.dataset.lven] = i.value.trim(); });
       const cls = {}; el.querySelectorAll('[data-clsen]').forEach(i => { cls[i.dataset.clsen] = i.value.trim(); });
       const patch = { rep: A.CFG.rep || [], levelEn: lv, classEn: cls, translators: A.CFG.translators || [], updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid };
-      try{ await FS.setDoc(FS.doc(A.db, 'nhpConfig', 'main'), patch, { merge: true }); Object.assign(A.CFG, patch); A.toast('저장했어요 ✓'); }
+      try{ await FS.setDoc(FS.doc(A.db, 'nhpConfig', 'main'), patch, { merge: true }); if(A.keep){ const kb = {}; ['rep', 'levelEn', 'classEn', 'translators'].forEach(k => { if(JSON.stringify(CFG0[k] === undefined ? null : CFG0[k]) !== JSON.stringify(patch[k] === undefined ? null : patch[k])) kb[k] = CFG0[k] === undefined ? null : CFG0[k]; }); A.keep('cfg', kb, '영문판 설정'); } Object.assign(A.CFG, patch); CFG0 = JSON.parse(JSON.stringify(A.CFG)); A.toast('저장했어요 ✓'); }
       catch(err){ A.toast('저장하지 못했어요 — ' + A.errText(err), 'err'); }
       return;
     }

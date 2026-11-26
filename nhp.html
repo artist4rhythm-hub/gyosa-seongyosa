@@ -227,6 +227,11 @@ button.mx-n:hover{background:var(--sb-mint-2)}
 .tm-v b{font-size:13px}.tm-v span{font-size:12px;color:var(--ink-2)}.tm-v small{font-size:11px;color:var(--ink-3)}
 .tm-v.on{background:var(--sb-mint-2);border-color:#9CCBB6}
 .tm-det{max-height:62vh;overflow:auto;min-width:0}
+/* v211 설정 타임머신 */
+.kp-ch{display:grid;grid-template-columns:minmax(120px,26%) minmax(0,1fr) minmax(0,1fr);gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-size:13px;line-height:1.6}
+.kp-ch .k{font-weight:700;overflow-wrap:anywhere}.kp-ch .was,.kp-ch .now{min-width:0;overflow-wrap:anywhere}.kp-ch small{color:var(--ink-3);font-size:11px;margin-right:4px}.kp-ch .was{background:#FFFBF0;border-radius:8px;padding:4px 8px}.kp-ch .now{background:var(--surface-2,#F6F6F2);border-radius:8px;padding:4px 8px}
+html[data-theme="dark"] .kp-ch .was{background:#2A2A22}
+@media(max-width:800px){.kp-ch{grid-template-columns:minmax(0,1fr)}}
 /* v210 타임머신 — 평가 틀 · 그때 모습 미리보기 */
 .tm-side{min-width:0}.tm-side .tm-list{max-height:54vh}.tm-list .nh-btn{margin-top:4px}
 .tm-fr{margin-bottom:6px}.tm-fl{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap;padding:7px 10px;border:1px solid var(--line);border-radius:10px;margin-top:6px;font-size:13px;line-height:1.6}
@@ -751,9 +756,9 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
 import { cachedCol } from './listcache.js?v=137';
 import * as C from './nhp-core.js?v=207';
 import * as P from './nhp-print.js?v=207';
-import * as ENTRY from './nhp-entry.js?v=210';
-import * as ACTS from './nhp-acts.js?v=209';
-import * as SETUP from './nhp-setup.js?v=208';
+import * as ENTRY from './nhp-entry.js?v=211';
+import * as ACTS from './nhp-acts.js?v=211';
+import * as SETUP from './nhp-setup.js?v=211';
 import * as EDIT from './nhp-edition.js?v=145';
 import { notifyStaff } from './push-client.js';
 P.ensureCSS();   // 나학평 문서 모양 (미리보기 · 출력본 · 인쇄 공통)
@@ -886,10 +891,66 @@ A.typeChip = sub => sub.kind === 'subj' ? `<span class="ch type">${esc((C.TYPES[
 A.me = () => ({ uid: A.CU.uid, name: A.CU.name || '' });
 
 /* ── 저장 ── */
+/* ═══ ⏱ v211 설정 타임머신 보관 — 나학평의 «설정»이 바뀌기 직전 모습을 nhpKeep 에 남김 ═══
+   · kind: term(학기 설정 · 반 · 학생 · 검토 순서 …) · lists(특별활동 등 공통 목록) · cells(칸의 이름 · 맡은 선생님 · 순서 · 듣는 학생 · 함께 쓰기 · 빼기 …) · cfg(출력 모양 · 영문 이름) · forms(기관 양식 모음)
+   · data = 바뀐 칸들의 «직전» 값만 (전체 문서가 아님) — 되살릴 때도 그 칸만 돌림
+   · 보안 규칙 v57 이 게시되기 전에는 조용히 쉼 (저장은 그대로) · 저장을 기다리게 하지 않음 */
+const KEEP = { off: {}, last: {} };
+const kSJ = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)) ? Object.keys(x).sort().reduce((o, kk) => { o[kk] = x[kk]; return o; }, {}) : x);
+A.keep = function(kind, data, why, n, term){
+  try{
+    if(KEEP.off[kind] || !A.CU || !data || !Object.keys(data).length) return;
+    if(!A.isMgr && !(kind === 'lists' && A.TERM && (A.TERM.listEditors || []).includes(A.CU.uid))) return;      // 보안 규칙과 같게 — 담당(목록은 목록 담당도)만 보관
+    const tid = (kind === 'cfg' || kind === 'forms') ? '_cfg' : (term || (A.TERM && A.TERM.id)); if(!tid) return;
+    const clean = JSON.parse(JSON.stringify(data, (k, v) => v === undefined ? null : v));
+    const js = kSJ(clean); if(new Blob([js]).size > 850000) return;
+    const sig = kind + '|' + tid + '|' + js; if(KEEP.last[kind] === sig) return;      // 같은 것을 거듭 남기지 않음
+    KEEP.last[kind] = sig;
+    addDoc(collection(db, 'nhpKeep'), { termId: tid, kind, why: String(why || '').slice(0, 60), at: serverTimestamp(), by: A.CU.uid, byName: String(A.me().name || '').slice(0, 40), n: Math.round(Number(n) || 0), data: clean })
+      .catch(e => { if(/permission/.test((e && e.code) || '')) KEEP.off[kind] = true; if(KEEP.last[kind] === sig) delete KEEP.last[kind]; console.warn('설정 보관', e); });
+  }catch(e){ console.warn('설정 보관', e); }
+};
+A.keepOff = k => !!KEEP.off[k || 'term'];
+/* 학기 설정에서 여러 칸의 평가 방식을 한꺼번에 바꿀 때 — 그 칸 타임머신에 «바꾸기 직전» 틀을 남김 (칸 화면에서 바꿀 때와 같게) */
+A.keepFrame = function(sub, why){
+  try{
+    const st = sub && sub.setup; if(!sub || !st || !Object.keys(st).length) return Promise.resolve(false);
+    return addDoc(collection(db, 'nhpEntries', sub.id, 'vers'), { termId: sub.termId, subjectId: sub.id, why: why || 'frtype', at: serverTimestamp(), by: A.CU.uid, byName: String(A.me().name || '').slice(0, 40), n: 0, rows: {}, setup: JSON.parse(JSON.stringify(st)), type: sub.type || 'E' })
+      .then(() => true).catch(e => { console.warn('틀 보관', e); return false; });
+  }catch(e){ return Promise.resolve(false); }
+};
+/* 칸 — 누가 어디서 바꾸든 한 곳에서: 칸 목록이 새로 올 때 «내가 바꾼» 칸의 직전 값을 모아 한 묶음으로
+   · 남기는 것은 손으로 정하는 설정만 (아래 목록) — 평가 틀 · 평가 방식 · 상태 · 검토관(검토 순서에서 저절로 정해짐) · 조 편성은 여기서 다루지 않음 */
+const CELL_KEEP = ['name', 'printName', 'printTeacher', 'teacherUids', 'order', 'studentIds', 'share', 'secId', 'removed', 'hide'];
+let PREV_SUB = {}, CELL_BUF = {}, CELL_T = 0, PREV_TERM = '';
+function flushCells(){
+  clearTimeout(CELL_T);
+  const buf = CELL_BUF, tid = PREV_TERM; CELL_BUF = {};
+  const n = Object.keys(buf).length; if(!n || !tid) return;
+  A.keep('cells', { cells: buf }, n === 1 ? Object.values(buf)[0].label : `칸 ${n}개`, n, tid);
+}
+function keepCells(snap, first){
+  const tid = A.TERM && A.TERM.id;
+  if(first || PREV_TERM !== tid){ flushCells(); PREV_SUB = {}; PREV_TERM = tid; snap.forEach(d => { PREV_SUB[d.id] = d.data(); }); return; }      // 학기를 바꾸면 모아 둔 것을 먼저 그 학기 이름으로 남김
+  const next = {};
+  snap.forEach(d => {
+    const cur = d.data(); next[d.id] = cur; const prev = PREV_SUB[d.id]; if(!prev) return;
+    const ms = t => (t && typeof t.toMillis === 'function') ? t.toMillis() : 0;
+    const mineW = (d.metadata && d.metadata.hasPendingWrites) || (cur.updatedBy === A.CU.uid && ms(cur.updatedAt) !== ms(prev.updatedAt));
+    if(!mineW || prev.grp || cur.grp || prev.grpTo || cur.grpTo) return;      // 조별 칸 · 조로 옮긴 칸은 조 편성 화면이 한꺼번에 다룸
+    const keys = CELL_KEEP.filter(k => kSJ(prev[k] === undefined ? null : prev[k]) !== kSJ(cur[k] === undefined ? null : cur[k]));
+    if(!keys.length) return;
+    const b = CELL_BUF[d.id] = CELL_BUF[d.id] || { label: A.subLabel(Object.assign({ id: d.id }, prev)), secId: prev.secId || '', before: {} };
+    keys.forEach(k => { if(!(k in b.before)) b.before[k] = prev[k] === undefined ? null : prev[k]; });      // 묶음 안에서는 가장 처음 모습 (null = 그때는 없던 칸)
+  });
+  PREV_SUB = next;
+  if(Object.keys(CELL_BUF).length){ clearTimeout(CELL_T); CELL_T = setTimeout(flushCells, 2500); }
+}
+window.addEventListener('pagehide', () => { try{ flushCells(); }catch(e){} });
 A.saveSub = async function(id, patch){
   const p = Object.assign({}, patch, { updatedAt: serverTimestamp(), updatedBy: A.CU.uid });
   await updateDoc(doc(db, 'nhpSubjects', id), p);
-  const s = A.subOf(id); if(s) Object.assign(s, patch);
+  const s = A.subOf(id); if(s) Object.keys(patch).forEach(k => { const v = patch[k]; if(v && v._methodName === 'deleteField') delete s[k]; else s[k] = v; });      // 지우는 표시(deleteField)는 화면 값에 남기지 않음
 };
 /* 상태 바꾸기 — 알림까지 */
 A.act = async function(sub, act, msg){
@@ -998,6 +1059,7 @@ A.useTerm = async function(id){
   await new Promise(res => {
     let first = true;
     unSubs = onSnapshot(query(collection(db, 'nhpSubjects'), where('termId', '==', id)), snap => {
+      try{ keepCells(snap, first); }catch(e){ console.warn('설정 보관(칸)', e); }
       A.SUBS = []; snap.forEach(d => A.SUBS.push(Object.assign({ id: d.id }, d.data())));
       A.SUBS.sort((a, b) => (a.order || 0) - (b.order || 0));
       if(first){ first = false; res(); } else softRender();

@@ -13,8 +13,8 @@
    · v202 🗄 가져오기 서랍: 내 다른 반 · 다른 선생님 · 지난 학기의 «내용»(모든 학생 같은 글 · 학생별 글 · 5단계)을 같은 학생끼리 · 문장 모음(나만 — userMemos.nhpPhrases)
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=208';
-import * as ACTS from './nhp-acts.js?v=209';
+import * as SETUP from './nhp-setup.js?v=211';
+import * as ACTS from './nhp-acts.js?v=211';
 import * as CLUBS from './nhp-clubs.js?v=207';
 
 let A = null, C = null, esc = null, FS = null;
@@ -2218,8 +2218,10 @@ async function saveAsForm(){
     const ref = FS.doc(A.db, 'nhpConfig', 'forms');
     const snap = await FS.getDoc(ref);
     const list = (snap.exists() && snap.data().list) || [];
+    const list0 = list.slice();
     list.push({ id: C.rid('f'), name: nm.trim(), d: (d0 || '').trim(), type: SUB.type || 'E', setup: st, by: A.CU.uid, byName: A.CU.name || '', at: new Date().toISOString() });
     await FS.setDoc(ref, { list, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }, { merge: true });
+    if(A.keep) A.keep('forms', { list: list0 }, '기관 양식 모음');      // ⏱ v211 저장된 뒤에 — 바뀌기 직전 모음
     A.FORMS = { list };
     A.toast('기관 양식 모음에 넣었어요 ⭐');
   }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); }

@@ -8,7 +8,7 @@
    · 저장되는 새 자리는 nhpEntries 안쪽뿐 — 보안 규칙은 그대로 (v55)
    ═══════════════════════════════════════════════════════════ */
 import * as CLUBS from './nhp-clubs.js?v=207';
-import * as CAL from './nhp-acts-cal.js?v=209';
+import * as CAL from './nhp-acts-cal.js?v=211';
 let A = null, C = null, esc = null, FS = null;
 const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
 const pad2 = n => String(n).padStart(2, '0');
@@ -270,6 +270,7 @@ async function save(){
     } else { it.o = arr.length; arr.push(it); }
     if(A.markMine) A.markMine();
     await FS.setDoc(FS.doc(A.db, 'nhpLists', A.TERM.id), { termId: A.TERM.id, activities: arr }, { merge: true });
+    if(A.keep) A.keep('lists', { activities: A.LISTS.activities || [] }, '특별활동 목록');      // ⏱ v211 저장된 뒤에 — 바뀌기 직전 목록
     A.LISTS.activities = arr; DRAFT = null; SEL = it.id; DIRTY = false;
     A.toast('활동을 저장했어요 ✓');
   }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); BUSY = false; return; }
@@ -278,11 +279,12 @@ async function save(){
 }
 async function del(){
   const x = DRAFT; if(!x || x._new || !canLists(A)) return;
-  if(!(await A.confirm('이 활동 지우기', `<b>${esc(x.t)}</b>을(를) 목록에서 지워요. 모든 반 출력에서 이 활동이 빠져요. <b>되돌릴 수 없어요.</b>`, '지우기', true))) return;
+  if(!(await A.confirm('이 활동 지우기', `<b>${esc(x.t)}</b>을(를) 목록에서 지워요. 모든 반 출력에서 이 활동이 빠져요. <small>(잘못 지웠으면 학기 설정 › «⏱ 설정 타임머신»에서 되살릴 수 있어요 · 학생 체크는 지워지지 않아요)</small>`, '지우기', true))) return;
   BUSY = true;
   try{ await A.reloadLists(); const arr = (A.LISTS.activities || []).filter(y => y && y.id !== x.id);
     if(A.markMine) A.markMine();
     await FS.setDoc(FS.doc(A.db, 'nhpLists', A.TERM.id), { termId: A.TERM.id, activities: arr }, { merge: true });
+    if(A.keep) A.keep('lists', { activities: A.LISTS.activities || [] }, '특별활동 목록');      // ⏱ v211 저장된 뒤에 — 바뀌기 직전 목록
     A.LISTS.activities = arr; DRAFT = null; SEL = ''; DIRTY = false; A.toast('지웠어요.'); }
   catch(e){ A.toast('지우지 못했어요 — ' + A.errText(e), 'err'); }
   BUSY = false; draw();
@@ -307,6 +309,7 @@ async function fromPast(){
       pick.forEach(a => arr.push({ id: C.rid('l'), t: a.t, d: '', c: a.c || '', from: '', to: '', secs: [], def: a.def === 'none' ? 'none' : 'all', o: arr.length }));
       if(A.markMine) A.markMine();
       await FS.setDoc(FS.doc(A.db, 'nhpLists', A.TERM.id), { termId: A.TERM.id, activities: arr }, { merge: true });
+      if(A.keep) A.keep('lists', { activities: A.LISTS.activities || [] }, '특별활동 목록');      // ⏱ v211 저장된 뒤에 — 바뀌기 직전 목록
       A.LISTS.activities = arr; m.close(); DRAFT = null; SEL = arr[arr.length - 1].id; A.toast(`${pick.length}개 가져왔어요 ✓ 날짜를 넣어 주세요.`); draw(); }
     catch(e){ okb.disabled = false; A.toast('가져오지 못했어요 — ' + A.errText(e), 'err'); }
   };
