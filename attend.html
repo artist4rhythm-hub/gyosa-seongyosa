@@ -203,6 +203,8 @@ body{font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var
 .ckx-t td.ckx-m{padding:4px 8px;border-left:1px solid var(--ivd)}
 .ckx-t td.ckx-m .ckr-m{height:32px}
 .ckx-dash{color:var(--ivd)}
+.ckx-sh.none{color:var(--warn,#b45309)}
+.ckx.none.on{outline:2px dashed var(--warn,#b45309);outline-offset:1px}
 .ckx{width:32px;height:30px;border:1.5px solid var(--ivd);border-radius:8px;background:var(--wh);cursor:pointer;position:relative;padding:0;vertical-align:middle}
 .ckx:hover:not(:disabled){border-color:var(--tc,var(--gm));background:color-mix(in srgb, var(--tc,#16a34a) 10%, var(--wh))}
 .ckx:focus-visible{outline:2px solid var(--gd);outline-offset:2px}
@@ -388,8 +390,22 @@ const reasonShort = r => r==='가족 대소사' ? '대' : r==='가족 여행' ? 
 const needsReasonT = t => !!(t && REASONS[t.name]);
 // '병결'은 «결석·질병»으로 통일 — 새 입력 메뉴에서는 숨긴다 (옛 기록은 결석·질병으로 표시)
 const HIDDEN_TYPE_NAMES = ['병결'];
+/* 🧩 v214 입력 일원화 — «질병지각 · 무단결석 · 체험학습 (가족여행)»처럼 사유가 이름에 붙은 옛 항목 = «기본 항목 + 사유»
+   · 읽을 때만 그렇게 본다 (옛 기록은 고치지 않음) · 새 입력은 늘 «기본 항목 + 사유» 한 가지로
+   · 기본 항목(지각 · 조퇴 · 결석 · 체험학습)이 항목 목록에 있을 때만 옛 항목을 입력 메뉴에서 숨김 — 없으면 예전처럼 그 항목 그대로 */
+const CANON_BASES = ['결석','지각','조퇴','체험학습'];
+const CANON_RS = { '질병':'질병', '무단':'무단', '기타':'기타', '가족대소사':'가족 대소사', '가족여행':'가족 여행' };
+function canonOf(t){
+  if(!t) return null; const n = String(t.name||'').trim();
+  if(n==='병결') return { base:'결석', reason:'질병' };
+  const b = CANON_BASES.find(x=>n.includes(x) && n!==x); if(!b) return null;
+  const r = CANON_RS[n.replace(b,'').replace(/[()（）·\s]/g,'')];
+  return (r && REASONS[b].includes(r)) ? { base:b, reason:r } : null;
+}
+const baseTypeOf = name => TYPES.find(t=>t.name===name) || null;
+const canonHidden = t => { const c = canonOf(t); return !!c && !!baseTypeOf(c.base); };   // 기본 항목이 있어 «기본 + 사유»로 대신 넣을 수 있는 옛 항목
 const menuTypes = () => [...TYPES].sort((a,b)=>(a.order||0)-(b.order||0))
-  .filter(t=>!HIDDEN_TYPE_NAMES.includes(t.name));
+  .filter(t=>!HIDDEN_TYPE_NAMES.includes(t.name) && !canonHidden(t));
 const legacyByeong = t => t && t.name==='병결';
 
 /* ── 🔒 월 단위 잠금 — 입력이 끝난 달은 잠근다 (수퍼·기관관리자만 잠금/해제) ── */
@@ -469,17 +485,20 @@ function tallyStudent(recs, term){
   const out = { 결석:z(), 지각:z(), 조퇴:z(), 체험:{ '가족 대소사':0,'가족 여행':0,'기타':0 } };
   for(const r of recs){
     if(!r.date || r.date < term.start || r.date > term.end) continue;
-    const tids = recTypes(r);
-    const t = tids.length ? TYPES.find(x=>x.id===tids[0]) : null;
-    if(!t) continue;
-    let name = t.name, reason = r.reason||'';
-    if(name==='병결'){ name='결석'; reason='질병'; }
-    if(name==='결석'||name==='지각'||name==='조퇴'){
-      const key = (reason==='질병'||reason==='무단') ? reason : '기타';
-      out[name][key]++;
-    } else if(name==='체험학습'){
-      const key = (reason==='가족 대소사'||reason==='가족 여행') ? reason : '기타';
-      out.체험[key]++;
+    // 🧩 v214 한 기록에 든 항목을 모두 셈(지각 + 조퇴) · «질병지각»처럼 사유가 이름에 붙은 옛 항목도 «지각 · 질병»으로 셈 (예전에는 빠졌음)
+    const seen = {};
+    for(const tid of recTypes(r)){
+      const t = TYPES.find(x=>x.id===tid); if(!t) continue;
+      const cn = canonOf(t);
+      const name = cn ? cn.base : t.name, reason = cn ? cn.reason : (r.reason||'');
+      if(seen[name]) continue; seen[name] = 1;      // 같은 날 같은 종류는 한 번
+      if(name==='결석'||name==='지각'||name==='조퇴'){
+        const key = (reason==='질병'||reason==='무단') ? reason : '기타';
+        out[name][key]++;
+      } else if(name==='체험학습'){
+        const key = (reason==='가족 대소사'||reason==='가족 여행') ? reason : '기타';
+        out.체험[key]++;
+      }
     }
   }
   out.결석합 = out.결석.질병+out.결석.무단+out.결석.기타;
@@ -1183,7 +1202,7 @@ function renderDailyCheck(keep){
     <div class="acard">
       <h3 class="actitle">✅ 출석 체크</h3>
       <p class="adesc">날짜와 반을 고르면 명단이 나와요 — 반 대신 <b>«전체»</b>를 고르면 반 구분 없이 가나다 순으로 한 번에 입력해요. 기본은 모두 출석이고, 바뀐 아이만 고른 뒤 저장하세요.
-        <span style="color:var(--tl)">항목을 여러 개 누르면 함께 기록돼요 (예: 지각+조퇴) · 결석 · 지각 · 조퇴 · 체험학습은 사유도 골라 주세요.</span></p>
+        <span style="color:var(--tl)">항목을 여러 개 누르면 함께 기록돼요 (예: 지각+조퇴) · 결석 · 지각 · 조퇴 · 체험학습은 사유도 함께 골라요 — «표»에서는 사유 칸(질병 · 무단 · 기타)을 한 번만 누르면 돼요.</span></p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <div class="fgrp" style="margin-bottom:0"><label for="ck-date">날짜</label>
           <input type="date" id="ck-date" value="${checkDate}" onchange="onCheckChange()"></div>
@@ -1326,8 +1345,9 @@ async function loadMonthBody(keep){
         if(!di.blocked || t){ bg='color:var(--warn);font-size:10px;font-weight:800'; label = '휴' + (t ? '<sup style="font-size:9px;margin-left:1px">•</sup>' : ''); }
       }
       else if(t){
-        const rs = legacyByeong(t) ? '질병' : (rec.reason||'');   // 옛 «병결»은 결석·질병으로 본다
-        const nm = legacyByeong(t) ? '결' : (t.name||'').slice(0,1);
+        const cn0 = canonOf(t);                                    // 🧩 v214 «질병지각» → 지각 · 질병
+        const rs = cn0 ? cn0.reason : (rec.reason||'');   // 옛 «병결»은 결석·질병으로 본다
+        const nm = cn0 ? cn0.base.slice(0,1) : (t.name||'').slice(0,1);
         const sub = rs ? `<span style="font-size:8px;opacity:.9;vertical-align:1px">${reasonShort(rs)}</span>` : '';
         bg=`background:${legacyByeong(t)?'#dc2626':t.color};color:#fff`;
         label = nm + sub + (tids.length>1?'⁺':'');
@@ -1814,7 +1834,9 @@ function paintSum(){
   const d = presentType(); const cnt = {};
   CK_CTX.rows.forEach(r=>{
     const rec = checkRecords[r.s.id]; const ids = (rec && rec.typeIds && rec.typeIds.length) ? rec.typeIds : (d ? [d.id] : []);
-    const ab = ids.filter(id=>id!==(d&&d.id)); const k = ab.length ? ab[0] : (d&&d.id); if(k) cnt[k] = (cnt[k]||0)+1;
+    const ab = ids.filter(id=>id!==(d&&d.id)); let k = ab.length ? ab[0] : (d&&d.id);
+    if(k){ const t0 = TYPES.find(t=>t.id===k); const cn = canonOf(t0); const bt = cn && baseTypeOf(cn.base); if(bt) k = bt.id; }      // 🧩 v214 «무단지각» 같은 옛 항목은 «지각»으로 합쳐 셈
+    if(k) cnt[k] = (cnt[k]||0)+1;
   });
   el.innerHTML = TYPES.filter(t=>cnt[t.id]).map(t=>`<span class="ck-st"><b style="color:${t.color}">${cnt[t.id]}</b>${esc(t.name)}</span>`).join('')
     + `<span class="ck-st" style="color:var(--tl)">모두 ${CK_CTX.rows.length}명</span>`;
@@ -1890,41 +1912,57 @@ function paintListIn(box){
    · 사유를 고르는 항목(지각 · 조퇴 · 결석 · 체험학습)을 고르면 «사유» 칸에 질병 · 무단 · 기타 */
 const CK_BASES = ['출석', '지각', '조퇴', '결석', '결과', '체험학습'];
 function ckIds(sid){ const d = presentType(); const rec = checkRecords[sid]; return (rec && rec.typeIds && rec.typeIds.length) ? rec.typeIds : (d ? [d.id] : []); }
+/* 🧩 v214 표의 칸 = «기본 항목 × 사유» 하나로 (예전: 위에는 질병지각 · 무단지각 …, 오른쪽에는 또 사유 — 두 군데)
+   · 사유를 고르는 기본 항목(지각 · 조퇴 · 결석 · 체험학습)은 사유마다 한 칸 — 칸을 누르면 «항목 + 사유»가 한 번에 들어감 (오른쪽 «사유» 칸은 없앰)
+   · 옛 항목(질병지각 …)으로 들어간 기록은 같은 칸에 그대로 보임. 그 줄을 누르면 그때 «기본 항목 + 사유»로 바뀜
+   · 사유 없이 들어간 옛 기록이 화면에 있을 때만 «사유 없음» 칸이 생김
+   · 한 아이의 하루 사유는 하나 — 지각 · 조퇴를 함께 넣으면 같은 사유로 기록 */
+function ckOn(rec, col){
+  const ids = (rec && rec.typeIds && rec.typeIds.length) ? rec.typeIds : (presentType() ? [presentType().id] : []);
+  if(!col.b) return ids.includes(col.t.id);
+  if(ids.includes(col.t.id) && (rec.reason||'') === col.r) return true;
+  return col.r !== '' && ids.some(id => { const c = canonOf(TYPES.find(t => t.id === id)); return !!c && c.base === col.b && c.reason === col.r; });
+}
 function ckGroups(){
   const base = menuTypes(), used = new Set();
   CK_CTX.rows.forEach(r => ((checkRecords[r.s.id] || {}).typeIds || []).forEach(id => used.add(id)));
-  const extra = [...used].map(id => TYPES.find(t => t.id === id)).filter(t => t && !base.includes(t));   // 옛 «병결»처럼 숨은 항목이 골라져 있으면 그것도
+  const extra = [...used].map(id => TYPES.find(t => t.id === id)).filter(t => t && !base.includes(t) && !canonHidden(t));   // 숨은 항목이 골라져 있으면 그것도 (기본 + 사유로 보이는 옛 항목은 그 칸에)
   const groups = [];
   [...base, ...extra].forEach(t => {
     // 묶음은 이름으로 (지각 · 조퇴 · 체험학습을 «출석으로 셈»으로 둔 학교도 있어 isPresent 로 묶으면 안 됨) — 기본 출석 항목만 «출석»
     const b = t === presentType() ? '출석' : (CK_BASES.slice(1).find(x => String(t.name).includes(x)) || t.name);
     let g = groups.find(x => x.base === b);
     if(!g){ g = { base: b, cols: [] }; groups.push(g); }
+    if(REASONS[t.name] && t !== presentType()){      // 사유를 고르는 기본 항목 → 사유마다 한 칸
+      const none = CK_CTX.rows.some(r => { const rec = checkRecords[r.s.id]; return rec && (rec.typeIds || []).includes(t.id) && !rec.reason; });
+      REASONS[t.name].forEach(r => g.cols.push({ t, b: t.name, r, sub: r, key: t.id + '|' + r, full: `${t.name} · ${r}` }));
+      if(none) g.cols.push({ t, b: t.name, r: '', sub: '사유 없음', key: t.id + '|', full: `${t.name} · 사유 없음`, none: true });
+      return;
+    }
     const sub = String(t.name).replace(b, '').replace(/[()（）·]/g, ' ').replace(/\s+/g, ' ').trim();
-    g.cols.push({ t, sub: sub || b });
+    g.cols.push({ t, sub: sub || b, key: t.id, full: t.name });
   });
   return groups;
 }
 function tableViewHTML(vis){
   const G = ckGroups(), cols = G.flatMap(g => g.cols);
   const cnt = {};
-  CK_CTX.rows.forEach(r => ckIds(r.s.id).forEach(id => { cnt[id] = (cnt[id] || 0) + 1; }));
+  CK_CTX.rows.forEach(r => { const rec = checkRecords[r.s.id] || {}; cols.forEach(c => { if(ckOn(rec, c)) cnt[c.key] = (cnt[c.key] || 0) + 1; }); });
   const single = g => g.cols.length === 1;
   const two = G.some(g => !single(g)), RS = two ? ' rowspan="2"' : '';   // 묶인 항목이 없으면 머리 한 줄
   const h1 = G.map(g => single(g)
-      ? `<th${RS} class="ckx-gh one" style="--tc:${escA(g.cols[0].t.color || '')}" title="${escA(g.cols[0].t.name)}">${esc(g.cols[0].t.name)}<i>${cnt[g.cols[0].t.id] || ''}</i></th>`
+      ? `<th${RS} class="ckx-gh one" style="--tc:${escA(g.cols[0].t.color || '')}" title="${escA(g.cols[0].full)}">${esc(g.cols[0].t.name)}<i>${cnt[g.cols[0].key] || ''}</i></th>`
       : `<th colspan="${g.cols.length}" class="ckx-gh">${esc(g.base)}</th>`).join('');
   const h2 = G.filter(g => !single(g)).flatMap(g => g.cols.map(c =>
-      `<th class="ckx-sh" style="--tc:${escA(c.t.color || '')}" title="${escA(c.t.name)}">${esc(c.sub)}<i>${cnt[c.t.id] || ''}</i></th>`)).join('');
-  const N = cols.length + 3;
+      `<th class="ckx-sh${c.none ? ' none' : ''}" style="--tc:${escA(c.t.color || '')}" title="${escA(c.full)}">${esc(c.sub)}<i>${cnt[c.key] || ''}</i></th>`)).join('');
   const tr = (r, cho) => {
-    const sid = r.s.id, rec = checkRecords[sid] || {}, ed = edOf(r), ids = ckIds(sid), sibs = sibNames(sid);
-    const cells = cols.map(c => { const on = ids.includes(c.t.id);
-      return `<td class="ckx-c"><button type="button" class="ckx${on ? ' on' : ''}" data-act="type" data-sid="${sid}" data-tid="${c.t.id}"${ed ? '' : ' disabled'} aria-pressed="${on}" aria-label="${escA(r.s.name)} — ${escA(c.t.name)}" title="${escA(c.t.name)}" style="--tc:${escA(c.t.color || '')}"></button></td>`; }).join('');
+    const sid = r.s.id, rec = checkRecords[sid] || {}, ed = edOf(r), sibs = sibNames(sid);
+    const cells = cols.map(c => { const on = ckOn(rec, c);
+      const act = c.b && !c.none ? `data-act="tr" data-r="${escA(c.r)}"` : 'data-act="type"';
+      return `<td class="ckx-c"><button type="button" class="ckx${on ? ' on' : ''}${c.none ? ' none' : ''}" ${act} data-sid="${sid}" data-tid="${c.t.id}"${ed ? '' : ' disabled'} aria-pressed="${on}" aria-label="${escA(r.s.name)} — ${escA(c.full)}" title="${escA(c.none ? c.full + ' — 옆의 사유 칸을 눌러 주세요' : c.full)}" style="--tc:${escA(c.t.color || '')}"></button></td>`; }).join('');
     return `<tr class="ckx-tr${recChanged(sid) ? ' ch' : ''}${isAbn(sid) ? ' ab' : ''}${cho ? ' ckx-cho' : ''}" id="row-${sid}">
       <th class="ckx-n" scope="row"${cho ? ` id="cho-${cho}"` : ''}>${cho ? `<em class="ckx-k">${cho}</em>` : ''}<b>${esc(r.s.name)}</b>${CK_CTX.sc.multi ? `<span class="ck-cls">${esc(r.c.name)}</span>` : ''}${r.grade ? `<span class="ck-gr">${esc(r.grade)}</span>` : ''}${sibs.length ? `<span class="ck-sib" title="형제 ${escA(sibs.join(' · '))}">형제</span>` : ''}${sibNoteHTML(sid)}</th>
       ${cells}
-      <td class="ckx-r">${reasonChips(sid, ed) || '<span class="ckx-dash">—</span>'}</td>
       <td class="ckx-m"><input type="text" class="ckr-m" id="memo-${sid}" data-memo="${sid}" placeholder="메모" value="${escA(rec.memo || '')}"${ed ? '' : ' disabled'} aria-label="${escA(r.s.name)} 메모"></td>
     </tr>`;
   };
@@ -1936,7 +1974,7 @@ function tableViewHTML(vis){
     body += tr(r, cho);
   });
   return `<div class="ckx-wrap"><table class="ckx-t">
-    <thead><tr><th class="ckx-n"${RS}>이름</th>${h1}<th class="ckx-r"${RS}>사유</th><th class="ckx-m"${RS}>메모</th></tr>${two ? `<tr>${h2}</tr>` : ''}</thead>
+    <thead><tr><th class="ckx-n"${RS}>이름</th>${h1}<th class="ckx-m"${RS}>메모</th></tr>${two ? `<tr>${h2}</tr>` : ''}</thead>
     <tbody>${body}</tbody></table></div>`;
 }
 /* 타일형 — 이름표를 누르면 옆(폰은 아래) 칸에서 바꾼다 */
@@ -2001,6 +2039,7 @@ function ckClick(e){
   const b = e.target.closest('[data-act]'); if(!b) return;
   const a = b.dataset.act, sid = b.dataset.sid;
   if(a==='type') return ckType(sid, b.dataset.tid);
+  if(a==='tr') return ckTypeReason(sid, b.dataset.tid, b.dataset.r);
   if(a==='reason') return ckReason(sid, b.dataset.r);
   if(a==='sibundo') return ckSibUndo(sid);
   if(a==='pick'){ CK_SEL = sid; paintList(); if(window.innerWidth<=760){ const p=$I('ck-panel'); if(p && p.scrollTop!=null) p.scrollTop = 0; } return; }
@@ -2032,8 +2071,35 @@ function ckType(sid, tid){
   const r = rowOf(sid); if(!r || !edOf(r)) return;
   const rec = checkRecords[sid] || (checkRecords[sid] = defRec());
   rec.typeIds = nextTypes(rec.typeIds, tid);
+  { const bt = TYPES.find(t=>t.id===tid);      // 🧩 v214 기본 항목을 켜면 같은 묶음의 옛 항목(무단지각 …)은 끔 — 한 기록에 «무단지각 + 지각»이 함께 들어가지 않게
+    if(bt && REASONS[bt.name] && rec.typeIds.includes(tid)) rec.typeIds = rec.typeIds.filter(id=>{ if(id===tid) return true; const c = canonOf(TYPES.find(t=>t.id===id)); return !(c && c.base===bt.name); }); }
   fixReason(rec);
   delete SIB_NOTE[sid];                    // 내가 직접 바꾸면 «형제 따라 바뀜»은 끝
+  if(SIB_ON) sibFollow(sid, true);
+  paintCk();
+}
+/* 🧩 v214 표의 «항목 × 사유» 칸 — 한 번 눌러 항목과 사유를 함께. 다시 누르면 그 항목만 끔 */
+function ckTypeReason(sid, tid, x){
+  const r = rowOf(sid); if(!r || !edOf(r)) return;
+  const rec = checkRecords[sid] || (checkRecords[sid] = defRec());
+  const defId = presentType()?.id; const bt = TYPES.find(t=>t.id===tid); if(!bt) return;
+  const was = ckOn(rec, { t: bt, b: bt.name, r: x });
+  // 같은 묶음의 옛 항목(질병지각 …)은 «기본 항목»으로 바꿔 둠. 다른 묶음의 옛 항목은 손대지 않음 (그 사유는 이름에 들어 있어 그대로 남음)
+  let ids = []; (rec.typeIds||[]).forEach(id=>{ if(id===defId) return; const c = canonOf(TYPES.find(t=>t.id===id)); const nid = (c && c.base===bt.name) ? tid : id; if(!ids.includes(nid)) ids.push(nid); });
+  const others = ids.filter(id=>id!==tid).map(id=>TYPES.find(t=>t.id===id)).filter(t=>t && REASONS[t.name]);      // 사유를 함께 쓰는 다른 기본 항목 (예: 지각을 넣은 채 조퇴를 누름)
+  if(was) ids = ids.filter(id=>id!==tid);
+  else {
+    // 사유 목록이 다른 묶음(지각 · 조퇴 · 결석 ↔ 체험학습)은 한 기록에 함께 넣지 않음 — 사유 칸이 하나라 한쪽 사유를 잃게 됨
+    const clash = others.filter(t=>!(REASONS[t.name]||[]).includes(x));
+    if(clash.length){ toast(`${clash.map(t=>t.name).join(' · ')}와(과) ${bt.name}은(는) 사유가 달라 함께 넣을 수 없어요 — 먼저 ${clash.map(t=>t.name).join(' · ')} 칸을 꺼 주세요.`, 'err'); return; }
+    if(!ids.includes(tid)) ids.push(tid);
+    if(others.length && rec.reason!==x) toast(`${others.map(t=>t.name).join(' · ')}도 «${x}»(으)로 함께 맞췄어요 — 기본 항목끼리는 하루 사유가 하나예요.`);
+    rec.reason = x;
+  }
+  rec.typeIds = ids.length ? ids : (defId ? [defId] : []);
+  if(was && !reasonListOf(rec.typeIds)) rec.reason = '';
+  fixReason(rec);
+  delete SIB_NOTE[sid];
   if(SIB_ON) sibFollow(sid, true);
   paintCk();
 }
