@@ -585,6 +585,7 @@ html[data-theme="dark"] .pb-toc.on{background:#1E3932}
 .dg-row{display:flex;gap:8px;flex-wrap:wrap}
 .dg-cv,.dg-in{font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:6px;cursor:pointer;color:var(--ink)}
 .dg-cv b,.dg-in b{font-size:11.5px;font-weight:800}
+.dg-ro .dg-cv,.dg-ro .dg-in,.dg-ro .dg-sh{cursor:default}
 .dg-cv:hover,.dg-in:hover{border-color:#9CCBB6}
 .dg-cv.on,.dg-in.on{border-color:var(--sb-green);box-shadow:0 0 0 2px #9CCBB6}
 .cv-mini.sm{width:96px;height:136px;border-radius:3px}
@@ -756,10 +757,10 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
 import { cachedCol } from './listcache.js?v=137';
 import * as C from './nhp-core.js?v=207';
 import * as P from './nhp-print.js?v=207';
-import * as ENTRY from './nhp-entry.js?v=211';
-import * as ACTS from './nhp-acts.js?v=211';
-import * as SETUP from './nhp-setup.js?v=211';
-import * as EDIT from './nhp-edition.js?v=145';
+import * as ENTRY from './nhp-entry.js?v=212';
+import * as ACTS from './nhp-acts.js?v=212';
+import * as SETUP from './nhp-setup.js?v=212';
+import * as EDIT from './nhp-edition.js?v=212';
 import { notifyStaff } from './push-client.js';
 P.ensureCSS();   // 나학평 문서 모양 (미리보기 · 출력본 · 인쇄 공통)
 
@@ -1262,7 +1263,7 @@ function homeHTML(){
   if(t.src === 'import') h += `<div class="nh-info">🗂 이 학기는 <b>예전 나학평에서 옮겨 온 지난 자료</b>예요. «🗂 지난 나학평»에서 학생별 원본을 보고 출력본(가리기 · 고치기 · 영문)을 만들 수 있어요.</div>`;
   if(A.NOTIFS.length){
     h += `<div class="nh-sec">🔔 <b>알림</b> ${A.NOTIFS.length}개 <span class="nh-sp"></span><button class="nh-btn xs ghost" data-act="readall">모두 읽음</button></div>`;
-    h += A.NOTIFS.slice(0, 8).map(n => `<div class="nh-note" data-notif="${esc(n.id)}"><div style="font-size:18px">${n.kind === 'redo' ? '↩️' : n.kind === 'done' ? '✅' : '🔓'}</div><div><b>${esc(n.kind === 'redo' ? '수정 요청' : n.kind === 'done' ? '승인 완료' : '다시 열림')}</b> · ${esc(n.text || '')}<small>${esc(n.fromName || '')}</small></div></div>`).join('');
+    h += A.NOTIFS.slice(0, 8).map(n => `<div class="nh-note" data-notif="${esc(n.id)}"><div style="font-size:18px">${n.kind === 'redo' ? '↩️' : n.kind === 'done' ? '✅' : n.kind === 'tm' ? '⏱' : '🔓'}</div><div><b>${esc(n.kind === 'redo' ? '수정 요청' : n.kind === 'done' ? '승인 완료' : n.kind === 'tm' ? '그때 모습으로 되살림' : '다시 열림')}</b> · ${esc(n.text || '')}<small>${esc(n.fromName || '')}</small></div></div>`).join('');
   }
   // 요약 줄 (한 번만)
   const dd = t.due && t.due.entry ? (() => { const days = Math.ceil((new Date(t.due.entry + 'T23:59:59') - new Date()) / 864e5); const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(t.due.entry); return `${m ? `${+m[1]}월 ${+m[2]}일` : esc(t.due.entry)} <small style="color:${days < 0 ? 'var(--danger)' : '#8A6410'}">${days < 0 ? `${-days}일 지남` : days === 0 ? '오늘' : 'D-' + days}</small>`; })() : '<small>정하지 않음</small>';
@@ -1448,7 +1449,7 @@ async function printHTML(secId){
   let h = `<div class="nh-card pr-top"><h3>🖨 출력 · 원본 확정</h3><p class="nh-desc">반을 누르면 학생마다 <b>미리보기 · PDF · 인쇄</b>를 해요. 학부모에게 보내는 <b>원본</b>은 모든 칸이 승인된 뒤 «🔒 원본 확정»으로 만들고, 그 뒤로는 내용이 바뀌지 않아요 (고쳐서 내보낼 때는 <b>출력본</b>).</p>
     <div class="pr-step"><span class="pr-n">1</span><b>반</b><small>${secs.length}반</small></div>
     <div class="pr-secs">${secs.slice().sort((a, b) => (a.gradeNo || 99) - (b.gradeNo || 99)).map(card).join('')}</div>
-    <div class="pr-step"><span class="pr-n">2</span><b>출력 모양</b><small>기본은 학기 설정 › 🖨 출력 모양 · 여기서 고르면 <b>이번에만</b></small>${A.SEL ? '<button class="nh-btn xs ghost" data-dzreset>↩ 기본으로</button>' : ''}</div>
+    <div class="pr-step"><span class="pr-n">2</span><b>출력 모양</b><small>${A.canDesign() ? '기본은 학기 설정 › 🖨 출력 모양 · 여기서 고르면 <b>이번에만</b>' : '나학평 담당이 정한 모양이에요 — 바꾸려면 담당 선생님께 말씀해 주세요'}</small>${A.canDesign() && A.SEL ? '<button class="nh-btn xs ghost" data-dzreset>↩ 기본으로</button>' : ''}</div>
     ${A.designGalleryHTML(sec)}</div>`;
   if(!sec) return h + `<div class="nh-empty" style="margin-top:6px">👆 위에서 반을 누르세요.</div>`;
   const ss = A.docSubs(sec.id);
@@ -1481,7 +1482,18 @@ A.repDocLang = function(d){ return d; };
 A.footFor = (doc) => ({ footL: `${C.ORG_NAME} · 나의 학교생활 · ${doc.cover && doc.cover.term || ''}`, footR: doc.cover && doc.cover.name || '' });
 A.footForEn = (doc) => ({ footL: `${C.ORG_EN} · My School Life · ${doc.cover && doc.cover.term || ''}`, footR: doc.cover && doc.cover.name || '' });
 /* v144 출력 모양 — 학기 설정 › 출력 모양(nhpConfig/main.print)이 기본 · 출력 화면 · 미리보기에서 이번에만 바꿀 수 있음 */
-A.design = function(over){ return C.TH.pick(A.CFG, Object.assign({}, A.SEL || {}, over || {})); };
+A.canDesign = () => !!A.isMgr;      // 🔐 v212 출력 모양(표지 · 속지 · 음영)을 고르는 것은 나학평 담당(학기 설정을 여는 분)만 — 다른 선생님은 정해진 모양으로 보기 · 출력만
+A.design = function(over){ return C.TH.pick(A.CFG, Object.assign({}, (A.canDesign() && A.SEL) || {}, over || {})); };
+/* ⏱ v212 되살리기로 다른 선생님의 칸 · 입력이 바뀔 때 — 그 선생님들에게 알림 (나학평 알림 + 휴대폰) */
+A.tell = async function(uids, text, subId){
+  const to = C.uniq(uids || []).filter(u => u && u !== A.CU.uid); if(!to.length || !text) return 0;
+  const body = String(text).slice(0, 300);
+  try{ const bt = writeBatch(db);
+    to.forEach(u => bt.set(doc(collection(db, 'nhpNotifs')), { toUid: u, fromUid: A.CU.uid, fromName: A.CU.name || '', kind: 'tm', termId: (A.TERM && A.TERM.id) || '', subjectId: subId || '', text: body, read: false, createdAt: serverTimestamp() }));
+    await bt.commit(); }catch(e){ console.warn('되살림 알림', e); }
+  try{ notifyStaff(auth, db, { uids: to, kind: 'etc', title: '⏱ 나학평 — 그때 모습으로 되살림', body, link: subId ? `nhp.html#s/${subId}` : 'nhp.html' }); }catch(e){}
+  return to.length;
+};
 A.signFor = function(doc){
   const d = A.design(); const sg = d.sign;
   if(!sg || !sg.on) return null;
@@ -1523,18 +1535,26 @@ A.designGalleryHTML = function(sec){
   const covers = C.TH.COVER_GROUPS.map(g => `<div class="dg-g"><span class="dg-gl">${esc(g.ko)}</span><div class="dg-row">${C.TH.COVERS.filter(c => c.g === g.k).map(c => `<button class="dg-cv${c.k === d.cover ? ' on' : ''}" data-dzc="${esc(c.k)}" title="${esc(c.d)}">${A.coverThumbHTML(c.k, doc)}<b>${esc(C.TH.optText(c))}</b></button>`).join('')}</div></div>`).join('');
   const inners = C.TH.INNERS.map(x => `<button class="dg-in${x.k === d.inner ? ' on' : ''}" data-dzi="${esc(x.k)}" title="${esc(x.d)}">${A.innerSampleHTML(x.k, d.shade)}<b>${esc(C.TH.optText(x))}</b></button>`).join('');
   const shades = d.inner === 'old' ? '<span class="nh-desc" style="margin:0">예전 속지는 원래 음영 그대로</span>' : C.TH.SHADES.map(x => `<button class="dg-sh${x.k === d.shade ? ' on' : ''}" data-dzs="${esc(x.k)}" title="${esc(x.d)}"><i class="sw sw${x.k}"></i>${esc(C.TH.optText(x))}</button>`).join('');
+  if(!A.canDesign()){      // 🔐 v212 담당이 아니면 «지금 정해진 모양»만 보여 줌 (고르는 단추 없음)
+    const c = C.TH.COVERS.find(x => x.k === d.cover), i = C.TH.INNERS.find(x => x.k === d.inner), sh = C.TH.SHADES.find(x => x.k === d.shade);
+    return `<div class="dg dg-ro"><div class="dg-sec"><span class="dg-t">📕 표지</span><div class="dg-cvs"><div class="dg-row">${c ? `<span class="dg-cv on">${A.coverThumbHTML(c.k, doc)}<b>${esc(C.TH.optText(c))}</b></span>` : ''}</div></div></div>
+      <div class="dg-sec"><span class="dg-t">📄 속지</span><div class="dg-ins">${i ? `<span class="dg-in on">${A.innerSampleHTML(i.k, d.shade)}<b>${esc(C.TH.optText(i))}</b></span>` : ''}</div></div>
+      ${d.inner !== 'old' && sh ? `<div class="dg-sec"><span class="dg-t">🎨 음영</span><div class="dg-shs"><span class="dg-sh on"><i class="sw sw${sh.k}"></i>${esc(C.TH.optText(sh))}</span></div></div>` : ''}</div>`;
+  }
   return `<div class="dg"><div class="dg-sec"><span class="dg-t">📕 표지</span><div class="dg-cvs">${covers}</div></div>
     <div class="dg-sec"><span class="dg-t">📄 속지</span><div class="dg-ins">${inners}</div></div>
     <div class="dg-sec"><span class="dg-t">🎨 음영</span><div class="dg-shs">${shades}</div></div></div>`;
 };
 /* 표지 · 속지 고르기 (작은 줄) — onChange(sel) */
 A.designPickHTML = function(id){
+  if(!A.canDesign()) return '';
   const d = A.design();
   return `<span class="dz-pick" id="${esc(id)}"><label>표지 <select class="nh-sel" data-dz="cover" style="height:32px">${C.TH.coverOptionsHTML(d.cover)}</select></label>
     <label>속지 <select class="nh-sel" data-dz="inner" style="height:32px">${C.TH.listOptionsHTML(C.TH.INNERS, d.inner)}</select></label>
     <label${d.inner === 'old' ? ' style="display:none"' : ''} data-dzsh>음영 <select class="nh-sel" data-dz="shade" style="height:32px">${C.TH.listOptionsHTML(C.TH.SHADES, d.shade)}</select></label></span>`;
 };
 A.bindDesignPick = function(root, onChange){
+  if(!A.canDesign()) return;
   root.querySelectorAll('[data-dz]').forEach(x => x.onchange = () => {
     const cur = A.design();
     const sel = { cover: cur.cover, inner: cur.inner, shade: cur.shade };
@@ -1745,7 +1765,7 @@ document.addEventListener('click', async e => {
   if(t.dataset.go){ A.go(t.dataset.go); return; }
   // v148 출력 화면 — 반 카드 · 출력 모양 그림
   if(t.dataset.prsec){ A.go('print/' + t.dataset.prsec); return; }
-  if(t.dataset.dzc || t.dataset.dzi || t.dataset.dzs){ const cur = A.design(); const sel = { cover: cur.cover, inner: cur.inner, shade: cur.shade };
+  if(t.dataset.dzc || t.dataset.dzi || t.dataset.dzs){ if(!A.canDesign()) return; const cur = A.design(); const sel = { cover: cur.cover, inner: cur.inner, shade: cur.shade };
     if(t.dataset.dzc){ sel.cover = t.dataset.dzc; sel.inner = C.TH.innerForCover(sel.cover); }
     if(t.dataset.dzi) sel.inner = t.dataset.dzi;
     if(t.dataset.dzs) sel.shade = t.dataset.dzs;

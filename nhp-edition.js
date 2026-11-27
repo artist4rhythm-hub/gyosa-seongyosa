@@ -7,6 +7,53 @@
 let A = null, C = null, esc = null, FS = null;
 let SRC = null, SRCDOC = null, ED = null, EDS = [], GL = {}, GLT = {}, GLC = {}, EL = null, OUT = null, DIRTY = false, CANGL = false, KEY = '';
 const bind = a => { A = a; C = a.C; esc = a.esc; FS = a.FS; };
+/* ⏱ v212 출력본도 사라지지 않게
+   · 지우기 = 진짜로 지우지 않고 «지운 출력본»으로 (gone) — 되살릴 수 있음
+   · 저장 = 덮어쓰기 전에 «저장 직전 모습»을 한 벌 따로 남김 (histOf · 20분에 한 번 · 출력본마다 최근 30개)
+   · 규칙은 그대로 (출력본 규칙: 만든 사람 · 나학평 담당이 고침) */
+let OLD = [], SAVED = {}, HIST_AT = {};
+const ED_F = ['lang', 'name', 'ov', 'hide', 'names', 'rep', 'useRep', 'nameEn'];
+const edCore = x => { const o = {}; ED_F.forEach(k => { if(x[k] !== undefined) o[k] = JSON.parse(JSON.stringify(x[k])); }); return o; };
+const edMs = t => (t && typeof t.toMillis === 'function') ? t.toMillis() : (t && t.seconds ? t.seconds * 1000 : 0);
+const edAt = t => { const m = edMs(t); if(!m) return '방금'; const d = new Date(m); const p = n => String(n).padStart(2, '0'); return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+function splitEds(){
+  OLD = EDS.filter(x => x.gone || x.histOf); EDS = EDS.filter(x => !x.gone && !x.histOf);
+  EDS.forEach(x => { SAVED[x.id] = JSON.stringify(edCore(x)); });
+}
+async function keepHist(){
+  if(!ED || !ED.id) return;
+  const was = SAVED[ED.id]; if(!was || was === JSON.stringify(edCore(ED))) return;      // 바뀐 것이 없으면 남기지 않음
+  if(Date.now() - (HIST_AT[ED.id] || 0) < 20 * 60000) return;
+  const t0 = HIST_AT[ED.id] || 0; HIST_AT[ED.id] = Date.now();
+  try{
+    const data = Object.assign(JSON.parse(was), { termId: SRC.termId, sid: SRC.sid || '', srcType: SRC.type, reportId: SRC.reportId || '', secId: SRC.secId || '', histOf: ED.id, ownerUid: A.CU.uid, ownerName: A.CU.name || '', updatedAt: FS.serverTimestamp(), createdAt: FS.serverTimestamp() });
+    const ref = await FS.addDoc(FS.collection(A.db, 'nhpEditions'), data);
+    HIST_AT[ED.id] = Date.now(); OLD.unshift(Object.assign({ id: ref.id }, data, { updatedAt: null }));
+    const mineH = OLD.filter(x => x.histOf === ED.id && x.ownerUid === A.CU.uid).sort((a, b) => (edMs(b.updatedAt) || Date.now()) - (edMs(a.updatedAt) || Date.now()));
+    for(const x of mineH.slice(30)){ try{ await FS.deleteDoc(FS.doc(A.db, 'nhpEditions', x.id)); OLD = OLD.filter(y => y.id !== x.id); }catch(e){ break; } }
+  }catch(e){ HIST_AT[ED.id] = t0; console.warn('출력본 지난 모습 보관', e); }
+}
+function openOld(){
+  const gone = OLD.filter(x => x.gone && !x.histOf).sort((a, b) => edMs(b.goneAt) - edMs(a.goneAt));
+  const hist = ED && ED.id ? OLD.filter(x => x.histOf === ED.id).sort((a, b) => (edMs(b.updatedAt) || Date.now()) - (edMs(a.updatedAt) || Date.now())) : [];
+  const cnt = x => `고친 글 ${Object.keys(x.ov || {}).length} · 가린 것 ${Object.keys(x.hide || {}).length} · 용어 ${(x.rep || []).length}`;
+  const canEd = ED && (ED.ownerUid === A.CU.uid || A.isMgr);
+  const m = A.modal('⏱ 출력본 — 지난 모습 · 지운 출력본', `
+    <div class="nh-sec" style="margin:0 0 6px">🗑 <b>지운 출력본</b> ${gone.length}개</div>
+    ${gone.map(x => `<div class="frow" style="align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px"><span style="flex:1;min-width:0"><b>${x.lang === 'en' ? '🌐 ' : ''}${esc(x.name || '이름 없음')}</b> <small style="color:var(--ink-3)">${esc(x.ownerName || '')} · ${esc(cnt(x))} · ${esc(edAt(x.goneAt))}에 ${esc(x.goneName || '')} 님이 지움</small></span>${x.ownerUid === A.CU.uid || A.isMgr ? `<button class="nh-btn xs g" data-edback="${esc(x.id)}">되살리기</button>` : ''}</div>`).join('') || '<div class="nh-desc">지운 출력본이 없어요.</div>'}
+    <div class="nh-sec" style="margin:14px 0 6px">💾 <b>${ED && ED.id ? '«' + esc(ED.name || '') + '»의 지난 모습' : '지난 모습'}</b> ${hist.length}개</div>
+    ${!ED || !ED.id ? '<div class="nh-desc">출력본을 하나 연 뒤에 누르면 그 출력본의 저장 직전 모습들이 보여요.</div>' : (hist.map(x => `<div class="frow" style="align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px"><span style="flex:1;min-width:0"><b>${esc(edAt(x.updatedAt))}</b> <small style="color:var(--ink-3)">${esc(x.ownerName || '')} 님이 저장하기 직전 · ${esc(cnt(x))}</small></span>${canEd ? `<button class="nh-btn xs" data-edhist="${esc(x.id)}">이 모습 불러오기</button>` : ''}</div>`).join('') || '<div class="nh-desc">아직 없어요 — 저장할 때마다 «저장 직전 모습»이 남아요 (20분에 한 번).</div>')}
+    <div class="nh-desc" style="margin-top:10px">«이 모습 불러오기»는 화면에만 불러와요 — 확인하고 «💾 저장»을 눌러야 바뀌고, 지금 모습도 지난 모습으로 남아요. 원본은 어느 경우에도 그대로예요.</div>`, '', 'wide');
+  m.body.querySelectorAll('[data-edback]').forEach(b => { b.onclick = async () => {
+    const x = OLD.find(y => y.id === b.dataset.edback); if(!x) return;
+    try{ await FS.updateDoc(FS.doc(A.db, 'nhpEditions', x.id), { gone: FS.deleteField(), goneAt: FS.deleteField(), goneBy: FS.deleteField(), goneName: FS.deleteField(), updatedAt: FS.serverTimestamp() });
+      delete x.gone; delete x.goneAt; delete x.goneBy; delete x.goneName; OLD = OLD.filter(y => y.id !== x.id); EDS.unshift(x); SAVED[x.id] = JSON.stringify(edCore(x));
+      m.close(); A.toast(`«${x.name || ''}» 출력본을 되살렸어요 ✓`); if(!DIRTY){ ED = x; } draw(); }
+    catch(e){ A.toast('되살리지 못했어요 — ' + A.errText(e), 'err'); } }; });
+  m.body.querySelectorAll('[data-edhist]').forEach(b => { b.onclick = () => {
+    const x = OLD.find(y => y.id === b.dataset.edhist); if(!x || !ED) return;
+    Object.assign(ED, { ov: {}, hide: {}, names: {}, rep: [], nameEn: '' }, edCore(x), { name: ED.name, lang: ED.lang }); /* 그때 없던 칸은 비움 — 지금 것과 섞이지 않게 */ DIRTY = true; m.close(); draw(); A.toast('그때 모습을 불러왔어요 — 확인하고 «💾 저장»을 누르세요.'); }; });
+}
 
 /* key: «live:반id:학생id» 또는 «past:원본id» · edId: 열 출력본 */
 export async function render(a, el, key, edId){
@@ -59,6 +106,7 @@ async function loadEditions(){
     try{ const q = await FS.getDocs(FS.query(FS.collection(A.db, 'nhpEditions'), FS.where('reportId', '==', SRC.reportId))); q.forEach(d => { if(!EDS.find(x => x.id === d.id)) EDS.push(Object.assign({ id: d.id }, d.data())); }); }catch(e){}
   }
   EDS.sort((a, b) => ((b.updatedAt && b.updatedAt.seconds) || 0) - ((a.updatedAt && a.updatedAt.seconds) || 0));
+  splitEds();
 }
 function translator(){
   const names = {};
@@ -97,7 +145,7 @@ function coverMini(doc){
 function sideHTML(doc, nOv, nHide){
   const ed = ED;
   let h = `<div class="fl"><label>출력본</label><select class="nh-sel" data-edsel><option value="">— 원본 그대로 —</option>${EDS.map(x => `<option value="${esc(x.id)}"${ed && ed.id === x.id ? ' selected' : ''}>${x.lang === 'en' ? '🌐 ' : ''}${esc(x.name || '이름 없음')} · ${esc(x.ownerName || '')}</option>`).join('')}</select></div>
-    <div class="frow"><button class="nh-btn sm g" data-ed="new" data-lang="ko">＋ 새 출력본 (한글)</button><button class="nh-btn sm" data-ed="new" data-lang="en">＋ 영문판</button></div>`;
+    <div class="frow"><button class="nh-btn sm g" data-ed="new" data-lang="ko">＋ 새 출력본 (한글)</button><button class="nh-btn sm" data-ed="new" data-lang="en">＋ 영문판</button><button class="nh-btn sm ghost" data-ed="old" title="저장 직전 모습 · 지운 출력본을 되살려요">⏱ 지난 모습 · 지운 출력본${OLD.filter(x => x.gone && !x.histOf).length ? ' ' + OLD.filter(x => x.gone && !x.histOf).length : ''}</button></div>`;
   if(!ed) return h + `<div class="nh-desc" style="margin-top:12px">· 한글 출력본: 용어 바꾸기(예: 휴교 → 휴업) · 일부 줄 가리기 · 몇 글자 고치기<br>· 영문판: 해외 학교 제출용 — 고정 문구는 저절로 영어, 내용은 번역 표에서</div>`;
   const mine = ed.ownerUid === A.CU.uid || A.isMgr;
   h += `<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">
@@ -203,9 +251,9 @@ async function saveEd(){
     ov: ED.ov || {}, hide: ED.hide || {}, names: ED.names || {}, rep: ED.rep || [], useRep: ED.useRep !== false, nameEn: ED.nameEn || '', ownerUid: ED.ownerUid, ownerName: ED.ownerName || '', updatedAt: FS.serverTimestamp() };
   try{
     // 있는 출력본은 칸을 통째로 바꿔 쓴다 (merge 는 «보이기 · 원래대로»로 지운 것이 남음)
-    if(ED.id){ await FS.updateDoc(FS.doc(A.db, 'nhpEditions', ED.id), data); }
+    if(ED.id){ await keepHist(); await FS.updateDoc(FS.doc(A.db, 'nhpEditions', ED.id), Object.assign({}, data, { gone: FS.deleteField(), goneAt: FS.deleteField(), goneBy: FS.deleteField(), goneName: FS.deleteField() })); }      // 그 사이 다른 곳에서 지웠더라도 저장하면 다시 살아 있는 출력본
     else { data.createdAt = FS.serverTimestamp(); const ref = await FS.addDoc(FS.collection(A.db, 'nhpEditions'), data); ED.id = ref.id; EDS.unshift(ED); history.replaceState(null, '', `#edit/${encodeURIComponent(KEY)}/${ED.id}`); }
-    DIRTY = false; A.toast('출력본을 저장했어요 ✓ (원본은 그대로)'); draw();
+    SAVED[ED.id] = JSON.stringify(edCore(ED)); DIRTY = false; A.toast('출력본을 저장했어요 ✓ (원본은 그대로)'); draw();
   }catch(e){ A.toast('저장하지 못했어요 — ' + A.errText(e), 'err'); }
 }
 /* 번역 표 — 이 문서에서 번역이 필요한 글 (같은 글은 한 줄) */
@@ -309,11 +357,13 @@ async function onClick(e){
     ED = { lang: en ? 'en' : 'ko', name: nm.trim(), ov: {}, hide: {}, rep: [], useRep: !en, nameEn: (A.STU[SRC.sid] || {}).nameEn || '', ownerUid: A.CU.uid, ownerName: A.CU.name || '' };
     DIRTY = true; draw(); return;
   }
+  if(d.ed === 'old') return openOld();
   if(d.ed === 'save') return saveEd();
   if(d.ed === 'del'){
     if(!ED || !ED.id){ ED = null; DIRTY = false; draw(); return; }
-    if(!(await A.confirm('출력본 지우기', `«${esc(ED.name || '')}» 출력본을 지울까요? (원본은 그대로)`, '지우기', true))) return;
-    try{ await FS.deleteDoc(FS.doc(A.db, 'nhpEditions', ED.id)); EDS = EDS.filter(x => x.id !== ED.id); ED = null; DIRTY = false; A.toast('지웠어요.'); draw(); }catch(err){ A.toast('지우지 못했어요 — ' + A.errText(err), 'err'); }
+    if(!(await A.confirm('출력본 지우기', `«${esc(ED.name || '')}» 출력본을 지울까요? (원본은 그대로)<br><br><span style="color:var(--ink-2)">지운 출력본은 «⏱ 지난 모습 · 지운 출력본»에서 되살릴 수 있어요.</span>`, '지우기', true))) return;
+    try{ const g = { gone: true, goneAt: FS.serverTimestamp(), goneBy: A.CU.uid, goneName: A.CU.name || '' }; await FS.updateDoc(FS.doc(A.db, 'nhpEditions', ED.id), g);      // ⏱ v212 진짜로 지우지 않음
+      const x = ED; EDS = EDS.filter(y => y.id !== x.id); OLD.unshift(Object.assign(x, g, { goneAt: null })); ED = null; DIRTY = false; A.toast('지웠어요 — «⏱ 지난 모습 · 지운 출력본»에서 되살릴 수 있어요.'); draw(); }catch(err){ A.toast('지우지 못했어요 — ' + A.errText(err), 'err'); }
     return;
   }
   if(d.ed === 'repadd'){ const f = EL.querySelector('[data-erf]').value.trim(), t = EL.querySelector('[data-ert]').value.trim(); if(!f) return; ED.rep = (ED.rep || []).filter(r => r.f !== f).concat([{ f, t }]); mark(); return; }

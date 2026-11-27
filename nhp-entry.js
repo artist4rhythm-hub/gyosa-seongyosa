@@ -13,8 +13,8 @@
    · v202 🗄 가져오기 서랍: 내 다른 반 · 다른 선생님 · 지난 학기의 «내용»(모든 학생 같은 글 · 학생별 글 · 5단계)을 같은 학생끼리 · 문장 모음(나만 — userMemos.nhpPhrases)
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=211';
-import * as ACTS from './nhp-acts.js?v=211';
+import * as SETUP from './nhp-setup.js?v=212';
+import * as ACTS from './nhp-acts.js?v=212';
 import * as CLUBS from './nhp-clubs.js?v=207';
 
 let A = null, C = null, esc = null, FS = null;
@@ -541,11 +541,12 @@ async function tmOpen(){
     if(!v) return;
     const go = async (only, one) => {
       const list = only ? D.filter(x => x.sid === only) : D; if(!list.length || !CAN.edit) return;
-      if(!(await A.confirm('⏱ 그때 모습으로 되살리기', `${only ? esc(A.stuName(only)) : `학생 ${list.length}명`}의 ${one ? `<b>${esc(tmLabel(one))}</b> 칸만` : '입력을'} <b>${esc(tmAt(v.at))}</b> 모습으로 바꿔요. 지금 모습도 타임머신에 보관되고, ↩ 되돌리기로 바로 취소할 수 있어요.`, '되살리기'))) return;
+      if(!(await A.confirm('⏱ 그때 모습으로 되살리기', `${only ? esc(A.stuName(only)) : `학생 ${list.length}명`}의 ${one ? `<b>${esc(tmLabel(one))}</b> 칸만` : '입력을'} <b>${esc(tmAt(v.at))}</b> 모습으로 바꿔요. 지금 모습도 타임머신에 보관되고, ↩ 되돌리기로 바로 취소할 수 있어요.${(SUB.teacherUids || []).filter(u => u !== A.CU.uid).length ? `<div class="nh-warn" style="margin:10px 0 0">👥 함께 쓰는 <b>${esc((SUB.teacherUids || []).filter(u => u !== A.CU.uid).map(u => A.staffName(u)).filter(Boolean).join(', '))}</b> 선생님이 그 뒤에 쓴 글도 그때 글로 바뀌어요 — 이분들께 알림이 가요.</div>` : ''}`, '되살리기'))) return;
       if(!SUB || SUB.id !== cellId) return;
       await tmSnap('restore', cloneV(ENT.rows || {}));
       VIA = 'tm'; try{ list.forEach(x => x.d.filter(c => !one || c.k === one).forEach(c => putRaw(`rows.${x.sid}.${c.k}`, cloneV(c.was)))); } finally{ VIA = ''; }
       m.close(); drawBody(); A.toast(one ? '그 칸만 그때 모습으로 되살렸어요 ✓' : `${list.length}명을 그때 모습으로 되살렸어요 ✓`);
+      if(A.tell) A.tell(SUB.teacherUids || [], `${A.CU.name || ''} 님이 «${A.subLabel(SUB)}» 칸의 ${only ? A.stuName(only) : `학생 ${list.length}명`} 입력을 ${tmAt(v.at)} 모습으로 되살렸어요 (지금 모습은 타임머신에 보관됨)`, cellId);      // ⏱ v212 함께 쓰는 선생님께 알림
     };
     const all = m.body.querySelector('[data-tmall]'); if(all) all.onclick = () => go('');
     m.body.querySelectorAll('[data-tmone]').forEach(b => { b.onclick = () => go(b.dataset.tmone); });
@@ -572,6 +573,7 @@ async function tmOpen(){
         { const k0 = C.shareOf(A.subOf(cellId) || SUB, A.SUBS); if(k0) C.shareMembers(k0, A.SUBS).forEach(x => { if(x.id !== cellId) delete TM.aft[x.id]; }); }      // 묶인 칸들도 맞춰지기 직전 틀을 꼭 보관
         try{ await propagate(cellId, nu); }catch(e){}
         m.close(); if(here()){ CK_C = null; draw(); } A.toast('평가 틀을 그때 모습으로 되살렸어요 ✓');
+        if(A.tell){ const k1 = C.shareOf(A.subOf(cellId) || SUB, A.SUBS); const mem = k1 ? C.shareMembers(k1, A.SUBS) : [A.subOf(cellId) || SUB]; A.tell(mem.reduce((r, x) => r.concat((x && x.teacherUids) || []), []), `${A.CU.name || ''} 님이 «${A.subLabel(A.subOf(cellId) || SUB)}» 칸의 평가 틀을 ${tmAt(v.at)} 모습으로 되살렸어요 (학생 입력은 그대로 · 지금 틀은 타임머신에 보관됨)`, cellId); }
       }catch(e){ A.toast('되살리지 못했어요 — ' + A.errText(e), 'err'); }
     };
     m.body.querySelectorAll('[data-tmfri]').forEach(b => { b.onclick = async () => {
@@ -1442,7 +1444,7 @@ function pvPaneHTML(){
   if(!PV_SID || !sids.includes(PV_SID)) PV_SID = sids.find(x => (ENT.rows || {})[x]) || sids[0];
   const d = A.design();
   return `<div class="pv2-h"><b>출력 미리보기</b><select class="nh-sel" data-pvs style="height:30px;font-size:12px">${sids.map(x => `<option value="${esc(x)}"${x === PV_SID ? ' selected' : ''}>${esc(A.stuName(x))} (예시)</option>`).join('')}</select>
-      <select class="nh-sel" data-pvth style="height:30px;font-size:12px" title="속지">${C.TH.listOptionsHTML(C.TH.INNERS, d.inner)}</select>
+      ${A.canDesign && !A.canDesign() ? '' : `<select class="nh-sel" data-pvth style="height:30px;font-size:12px" title="속지">${C.TH.listOptionsHTML(C.TH.INNERS, d.inner)}</select>`}
       <span class="pv-wb" title="미리보기 폭 — 가운데 손잡이(⋮)를 끌어도 돼요">${PVW_SET.map(([l, w]) => `<button type="button" data-pvw="${w}" class="${Math.abs(w - PVW) < 2 ? 'on' : ''}">${l}</button>`).join('')}</span></div>
     <div class="pv2-pg"><div class="pv2-fit"><div class="pv2-sc" id="ej-pv-sc">${pvPageHTML(d.inner)}</div></div></div>
     <div class="nh-desc" style="margin:6px 0 0">고치면 바로 바뀌어요 · 실제 A4 종이(여백 15mm) 그대로 · 이 칸만 맨 위에 놓고 보여 줘요 — 쪽 나눔은 «👀 미리보기 › 전체»에서</div>`;

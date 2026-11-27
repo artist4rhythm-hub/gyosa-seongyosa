@@ -92,13 +92,14 @@ export async function openKeep(a, h){
   if(!document.body.contains(box)) return;
   let cur = L.length ? L[0].id : '', filt = 'all', busy = false;
   let solo = {};      // «모두 그때로»에서 빼는 것 — 항목이 늘거나 준 목록의 «목록 전체» (새 항목을 지우지 않게, 순서만 다른 때는 넣음)
+  let who = {}, wide = {};      // ⏱ v212 되살리기마다: 영향을 받는 선생님(who[key] = { uids, what, sub }) · 모든 반에 미치는 것(wide[key] = 글)
   let touched = false;      // 담임 · 맡은 선생님 · 반이 바뀌는 되살리기를 했는가 → 끝난 뒤 검토관을 한 번 다시 맞춤
   prune(L).then(del => { if(del.length){ L = L.filter(x => !del.includes(x.id)); draw(); } }).catch(() => {});
   const can = A.isMgr;
   const secNow = id => (A.TERM.sections || []).find(x => x.id === id);
   /* ── 종류별: 그때와 지금의 차이 → [{ html }] · 되살릴 것 목록(acts[key] = () => Promise) ── */
   const build = v => {
-    const acts = {}; const rows = []; const d = v.data || {}; solo = {};
+    const acts = {}; const rows = []; const d = v.data || {}; solo = {}; who = {}; wide = {};
     const btn = (key, label) => can ? `<br><button class="nh-btn xs" data-kpgo="${esc(key)}">${esc(label || '이것만 되살리기')}</button>` : '';
     if(v.kind === 'term'){
       Object.keys(d).filter(k => !SKIP[k]).forEach(k => {
@@ -113,6 +114,7 @@ export async function openKeep(a, h){
             if((ws.hrUid || '') !== (ns.hrUid || '')) parts.push(['hrUid', '나학평 담임', esc(A.staffName(ws.hrUid) || '(없음)'), esc(A.staffName(ns.hrUid) || '(없음)')]);
             if((ws.name || '') !== (ns.name || '')) parts.push(['name', '반 이름', esc(ws.name || ''), esc(ns.name || '')]);
             parts.forEach(([f, fl, w, n]) => { const key = `sec:${ws.id}:${f}`;
+              who[key] = { uids: [ws.hrUid, ns.hrUid].concat(f === 'students' || f === 'out' ? A.SUBS.filter(x => x.secId === ws.id && !x.removed).reduce((r, x) => r.concat(x.teacherUids || []), []) : []), what: `${lab} · ${fl}` };
               acts[key] = () => { if(f === 'hrUid') touched = true; return H.updateSections(list => list.map(x => { if(x.id !== ws.id) return x;
                 const pick = (o, no) => Object.keys(o || {}).filter(i => !no.includes(i)).reduce((r, i) => { r[i] = o[i]; return r; }, {});
                 if(f === 'out') return Object.assign({}, x, { out: pick(ws.out, x.students || []) });      // 지금 명단에 있는 학생은 «뺀 학생»으로 되돌리지 않음 (명단과 뺀 학생이 겹치지 않게)
@@ -124,6 +126,7 @@ export async function openKeep(a, h){
           return;
         }
         if(same(d[k], A.TERM[k])) return;
+        if(k === 'review') wide['t:' + k] = '검토 순서가 바뀌면 칸마다 검토하는 분이 달라져요'; else if(k === 'due') wide['t:' + k] = '모든 선생님의 마감 표시가 바뀌어요';
         if(k === 'hr'){ rows.push(rowHTML(TERM_L[k], show(d[k], k), show(A.TERM[k], k), '<br><small>담임평가 항목은 칸마다의 틀과 묶여 있어 여기서 돌리지 않아요 — «담임평가 서랍»이나 그 칸의 ⏱ 타임머신에서 되살리세요.</small>')); return; }
         acts['t:' + k] = k === 'review' ? () => { if(d[k] == null) return false; return H.saveReview(clone(d[k])); }
           : async () => { const nul = d[k] == null; const r = await H.saveTerm({ [k]: nul ? FS.deleteField() : clone(d[k]) }); if(r && nul) delete A.TERM[k]; return r; };      // 그때 없던 값은 칸을 지움
@@ -133,15 +136,16 @@ export async function openKeep(a, h){
       Object.keys(d).filter(k => !SKIP[k] && k !== 'termId').forEach(k => {
         const was = d[k], now = (A.LISTS || {})[k]; if(same(was, now)) return;
         const lab = LIST_L[k] || k;
+        const wd = `«${lab}»은 모든 반 통지표에 나가는 글이에요`;
         if(Array.isArray(was)){
           const f = listDiff(was, now);
           const putOne = x => async () => H.saveLists({ [k]: await (async () => { await A.reloadLists(); const arr = ((A.LISTS || {})[k] || []).slice(); const i = arr.findIndex(y => (y.id || y.t) === (x.id || x.t)); if(i >= 0) arr[i] = clone(x); else arr.push(clone(x)); return arr; })() });      // 서버의 지금 목록 위에 이 항목만
-          f.gone.forEach(x => { const key = `l:${k}:${x.id || x.t}`; acts[key] = putOne(x); rows.push(rowHTML(`${lab} — 지금은 없는 항목`, `<b>${esc(ttl(x))}</b>${x.d ? ' <small>' + esc(x.d) + '</small>' : ''}${x.c ? '<br>' + esc(String(x.c).slice(0, 160)) : ''}`, '<i>(없음)</i>', btn(key, '이 항목만 되살리기'))); });
-          f.chg.forEach(x => { const y = (now || []).find(z => (z.id || z.t) === (x.id || x.t)); const key = `l:${k}:${x.id || x.t}`; acts[key] = putOne(x);
+          f.gone.forEach(x => { const key = `l:${k}:${x.id || x.t}`; acts[key] = putOne(x); wide[key] = wd; rows.push(rowHTML(`${lab} — 지금은 없는 항목`, `<b>${esc(ttl(x))}</b>${x.d ? ' <small>' + esc(x.d) + '</small>' : ''}${x.c ? '<br>' + esc(String(x.c).slice(0, 160)) : ''}`, '<i>(없음)</i>', btn(key, '이 항목만 되살리기'))); });
+          f.chg.forEach(x => { const y = (now || []).find(z => (z.id || z.t) === (x.id || x.t)); const key = `l:${k}:${x.id || x.t}`; acts[key] = putOne(x); wide[key] = wd;
             const fs = [...new Set(Object.keys(x).concat(Object.keys(y)))].filter(q => !same(x[q], y[q]));
             rows.push(rowHTML(`${lab} — 바뀐 항목 «${ttl(x)}»`, fs.map(q => `<small>${esc(q === 't' ? '이름' : q === 'd' ? '일시' : q === 'c' ? '활동 사항' : q === 'from' ? '시작' : q === 'to' ? '끝' : q === 'secs' ? '대상 반' : q)}</small> ${show(x[q])}`).join('<br>'), fs.map(q => `<small>&nbsp;</small> ${show(y[q])}`).join('<br>'), btn(key, '이 항목만 그때로'))); });
           f.neu.forEach(y => rows.push(rowHTML(`${lab} — 그 뒤에 생긴 항목`, '<i>(없음)</i>', `<b>${esc(ttl(y))}</b>`, '')));
-          if(f.gone.length + f.chg.length + f.neu.length > 1 || (!f.gone.length && !f.chg.length && !f.neu.length && f.order)){ acts['lk:' + k] = () => H.saveLists({ [k]: clone(was) }); if(f.gone.length + f.chg.length + f.neu.length) solo['lk:' + k] = 1; rows.push(rowHTML(`${lab} — 목록 전체`, `${was.length}개`, `${(now || []).length}개`, btn('lk:' + k, '목록 전체를 그때로'))); }
+          if(f.gone.length + f.chg.length + f.neu.length > 1 || (!f.gone.length && !f.chg.length && !f.neu.length && f.order)){ acts['lk:' + k] = () => H.saveLists({ [k]: clone(was) }); wide['lk:' + k] = wd; if(f.gone.length + f.chg.length + f.neu.length) solo['lk:' + k] = 1; rows.push(rowHTML(`${lab} — 목록 전체`, `${was.length}개`, `${(now || []).length}개`, btn('lk:' + k, '목록 전체를 그때로'))); }
         } else if(was == null){ rows.push(rowHTML(lab, '<i>(그때는 없음)</i>', show(now), '')); }
         else { acts['lk:' + k] = () => H.saveLists({ [k]: clone(was) }); rows.push(rowHTML(lab, show(was), show(now), btn('lk:' + k))); }
       });
@@ -152,6 +156,7 @@ export async function openKeep(a, h){
         if(!fs.length) return;
         const why = s.state === 'done' ? '승인(잠김)된 칸이라 되살릴 수 없어요' : (s.grp || s.grpTo) ? '조별 칸은 «조 편성»에서 고쳐요' : '';
         const key = 'c:' + id;
+        if(!why) who[key] = { uids: (s.teacherUids || []).concat(Array.isArray(b.before.teacherUids) ? b.before.teacherUids : []), what: `${lab} — ${fs.map(k => CELL_L[k] || k).join(' · ')}`, sub: id };
         if(!why) acts[key] = async () => { const cur = A.subOf(id); if(!cur) return false;
           const patch = {}, gone = [];
           fs.forEach(k => { if(b.before[k] == null){ patch[k] = FS.deleteField(); gone.push(k); } else patch[k] = clone(b.before[k]); });      // 그때 없던 값(null)은 칸을 지움 — null 을 적으면 «함께 쓰기» 등이 잠김
@@ -163,7 +168,7 @@ export async function openKeep(a, h){
         rows.push(rowHTML(lab, fs.map(k => `<small>${esc(CELL_L[k] || k)}</small> ${show(b.before[k], k)}`).join('<br>'), fs.map(k => `<small>&nbsp;</small> ${show(s[k], k)}`).join('<br>'), why ? `<br><small>${why}</small>` : btn(key, '이 칸만 그때로'))); });
     } else if(v.kind === 'cfg' || v.kind === 'forms'){
       const docId = v.kind === 'forms' ? 'forms' : 'main'; const nowD = v.kind === 'forms' ? (A.FORMS || {}) : (A.CFG || {});
-      Object.keys(d).filter(k => !SKIP[k]).forEach(k => { if(same(d[k], nowD[k])) return; const key = 'g:' + k;
+      Object.keys(d).filter(k => !SKIP[k]).forEach(k => { if(same(d[k], nowD[k])) return; const key = 'g:' + k; if(v.kind === 'cfg') wide[key] = '모든 출력물에 적용돼요';
         acts[key] = async () => { const tgt = v.kind === 'forms' ? (A.FORMS || {}) : (A.CFG || {}); const nul = d[k] == null; const was = tgt[k] === undefined ? null : clone(tgt[k]);
           await FS.setDoc(FS.doc(A.db, 'nhpConfig', docId), { [k]: nul ? FS.deleteField() : clone(d[k]), updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid }, { merge: true });
           A.keep(v.kind, { [k]: was }, '되살리기 직전'); if(nul) delete tgt[k]; else tgt[k] = clone(d[k]); };
@@ -198,11 +203,21 @@ export async function openKeep(a, h){
     const run = async (keys, what) => {
       if(busy || !keys.length) return;
       busy = true;
-      if(!(await A.confirm('⏱ 그때 설정으로 되살리기', `${what}을(를) <b>${esc(at(v.at))}</b> 모습으로 바꿔요.<br><br><span style="color:var(--ink-2)">지금 설정도 타임머신에 보관되니 다시 돌아올 수 있어요. 학생 입력은 지우지 않아요.</span>`, '되살리기'))){ busy = false; return; }
+      const WHO = who, WIDE = wide;      // 이 되살리기를 누른 때의 것 (그 사이 다시 그려져도 그대로)
+      const W = keys.map(k => WHO[k]).filter(Boolean); const ppl = [...new Set(W.reduce((r, x) => r.concat(x.uids || []), []).filter(u => u && u !== A.CU.uid))];
+      const wd = [...new Set(keys.map(k => WIDE[k]).filter(Boolean))];
+      const warn = (ppl.length ? `<div class="nh-warn" style="margin:10px 0 0">👥 <b>${esc(ppl.map(u => A.staffName(u) || '').filter(Boolean).join(', '))}</b> 선생님의 칸 · 화면이 바뀌어요 — 되살리면 이분들께 알림이 가요. 지금 입력 중일 수 있으니 먼저 말씀해 두면 더 안전해요.</div>` : '')
+        + (wd.length ? `<div class="nh-info" style="margin:10px 0 0">📣 ${wd.map(esc).join(' · ')}.</div>` : '');
+      if(!(await A.confirm('⏱ 그때 설정으로 되살리기', `${what}을(를) <b>${esc(at(v.at))}</b> 모습으로 바꿔요.${warn}<br><span style="color:var(--ink-2)">지금 설정도 타임머신에 보관되니 다시 돌아올 수 있어요. 학생 입력은 지우지 않아요.</span>`, '되살리기'))){ busy = false; return; }
+      const done = [];
       let ok = 0, bad = 0; touched = false;
       window.showLoading && showLoading('되살리는 중…');
-      for(const k of keys){ try{ const r = await acts[k](); if(r === false || r === null) bad++; else ok++; }catch(e){ bad++; console.warn('설정 되살리기', k, e); } }
+      for(const k of keys){ try{ const r = await acts[k](); if(r === false || r === null) bad++; else { ok++; if(WHO[k]) done.push(WHO[k]); } }catch(e){ bad++; console.warn('설정 되살리기', k, e); } }
       if(touched && H.applyReview){ try{ await H.applyReview(); }catch(e){ console.warn('검토관 다시 맞추기', e); } }      // 담임 · 맡은 선생님이 바뀌었으면 검토관도 지금 검토 순서대로
+      if(done.length && A.tell){ try{      // 선생님마다 한 번 — 무엇이 바뀌었는지 묶어서
+        const per = {}; done.forEach(x => (x.uids || []).forEach(u => { if(u && u !== A.CU.uid) (per[u] = per[u] || []).push(x); }));
+        for(const u of Object.keys(per)){ const xs = per[u]; await A.tell([u], `${A.CU.name || ''} 님이 설정을 ${at(v.at)} 모습으로 되살렸어요 — ${xs.slice(0, 3).map(x => x.what).join(' / ')}${xs.length > 3 ? ` 외 ${xs.length - 3}곳` : ''}`, xs.length === 1 ? xs[0].sub : ''); }
+      }catch(e){ console.warn('되살림 알림', e); } }
       window.hideLoading && hideLoading();
       busy = false;
       A.toast(bad ? `${ok}곳 되살림 · ${bad}곳은 되살리지 못했어요.` : (ok > 1 ? `${ok}곳을 그때로 되살렸어요 ✓` : '그때로 되살렸어요 ✓'), bad ? 'err' : undefined);
