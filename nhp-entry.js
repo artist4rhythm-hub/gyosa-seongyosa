@@ -13,7 +13,7 @@
    · v202 🗄 가져오기 서랍: 내 다른 반 · 다른 선생님 · 지난 학기의 «내용»(모든 학생 같은 글 · 학생별 글 · 5단계)을 같은 학생끼리 · 문장 모음(나만 — userMemos.nhpPhrases)
    · v201 🎉 특별활동: 활동 날짜의 출결(결석 · 지각 · 조퇴 · 체험학습 · 휴학)을 학생 칸에 보여 줌 · 수업일 모두 빠진 학생은 출석부대로 자동으로 뺌 · «한 곳에서» 화면(nhp-acts.js)
    ═══════════════════════════════════════════════════════════ */
-import * as SETUP from './nhp-setup.js?v=212';
+import * as SETUP from './nhp-setup.js?v=218';
 import * as ACTS from './nhp-acts.js?v=212';
 import * as CLUBS from './nhp-clubs.js?v=207';
 
@@ -1374,11 +1374,7 @@ function setupHTML(){
     if(t === 'R') L += `<div class="st-card"><b style="font-size:14px">암송 · 읽기 모양</b><div class="frow" style="margin-top:8px"><div class="fl"><label>전체 제목</label><input class="nh-in" data-sr="title" value="${esc((st.r || {}).title || '')}"${dis}></div><div class="fl"><label>항목 제목</label><input class="nh-in" data-sr="it" value="${esc((st.r || {}).it || '')}"${dis}></div>
       <div class="fl" style="max-width:120px"><label>내용 칸 수</label><select class="nh-sel" data-sr="n"${dis}>${[1, 2, 3].map(n => `<option${Number((st.r || {}).n || 1) === n ? ' selected' : ''}>${n}</option>`).join('')}</select></div></div></div>`;
     if(t !== 'R') L += narrEditorHTML(st, dis);
-    L += `<div class="st-card"><div class="frow" style="align-items:center"><span class="nh-desc" style="margin:0">듣는 학생: ${(SUB.studentIds || []).length ? `<b>${SUB.studentIds.length}명</b>${SUB.grp ? ' (조원)' : '만'}` : '반 모두'}</span>${(!SUB.grp && (A.isMgr || (SUB.state === 'draft' && CAN.teacher))) ? '<button class="nh-btn xs" data-ej="students">학생 고르기</button>' : ''}
-        <span class="nh-desc" style="margin:0 0 0 12px">출력 이름: <b>${esc(SUB.printName || SUB.name)}</b></span>
-        <label class="nh-sw" title="끄면 이 칸의 출력에 선생님 이름이 나오지 않아요 (예: 예배처럼 여러 분이 함께 맡는 칸)"><input type="checkbox" data-ej="tname"${st.noT ? '' : ' checked'}${dis}><span class="sw" aria-hidden="true"></span><span>출력에 ${SUB.grp ? '조 담당' : '선생님'} 이름 넣기</span></label>
-        <span class="nh-desc" style="margin:0">${st.noT ? '<b>넣지 않음</b>' : `<b>${esc(SUB.printTeacher || (SUB.teacherUids || []).map(A.staffName).join(', ') || '—')}</b>`}</span>
-        ${SUB.inheritedFrom ? '<span class="ch gray">지난 학기에서 이어받은 틀</span>' : ''}<span class="nh-sp"></span>${A.isMgr && CAN.setup ? '<button class="nh-btn xs" data-ej="saveform">⭐ 기관 양식으로 저장</button>' : ''}</div></div>`;
+    L += keyZoneHTML(st, dis);      // ⚠ v218 이 칸의 중요한 설정 — 보통 카드와 다른 구역
     return h + `<div class="ed2" style="--pvw:${PVW}px"><div class="ed2-l">${L}</div><aside class="ed2-r" id="ej-pv"><span class="pv-grip" title="끌어서 미리보기 폭 바꾸기" aria-label="미리보기 폭"></span>${pvPaneHTML()}</aside></div>`;
   }
   if(k === 'hr') return h + `<div class="st-card"><div class="fl"><label>표 왼쪽 이름</label><input class="nh-in" data-hrl value="${esc(st.label || '담임 평가')}"${dis}></div></div>` + narrEditorHTML(st, dis, true);
@@ -1446,6 +1442,28 @@ function itemsEditorHTML(st, dis){
     ${items.length ? '' : '<div class="nh-desc" style="margin-top:8px">아직 없어요. «＋ 항목» · «📋 여러 줄 붙여넣기»(엑셀 칸: 범위 · 세부 · 내용) · «📥 가져오기»(다른 반 · 지난 학기 · 기관 양식).</div>'}</div>`;
 }
 /* 🔗 함께 쓰기 띠 — 같은 평가 틀을 쓰는 칸들 */
+/* ⚠ v218 이 칸의 중요한 설정 — 듣는 학생 · 출력 이름 · 선생님 이름 (누가 평가받는지 · 출력에 무엇이 나가는지가 바뀌는 것만)
+   · 보통 카드(.st-card)와 헷갈리지 않게 진한 머리띠 + 줄마다 «무엇 · 지금 값 · 바꾸면 생기는 일 · 바꾸기»
+   · «기관 양식으로 저장»은 설정이 아니라 구역 밖으로 */
+function keyZoneHTML(st, dis){
+  const nStu = (SUB.studentIds || []).length;
+  const canStu = !SUB.grp && SUB.state !== 'done' && (A.isMgr || (SUB.state === 'draft' && CAN.teacher));
+  const who = SUB.grp ? '조 담당' : '선생님';
+  const tn = SUB.printTeacher || (SUB.teacherUids || []).map(A.staffName).filter(Boolean).join(', ') || '—';
+  const pn = SUB.printName || SUB.name || '';
+  const row = (n, t, k, v, off, v2, w, act) => `<div class="kz-r"><span class="kz-n" aria-hidden="true">${n}</span><div class="kz-t"><b>${t}</b><small>${k}</small></div>
+      <div class="kz-v"><div class="kz-vv"><span class="kz-chip${off ? ' off' : ''}">${v}</span>${v2 ? `<span class="kz-v2">${v2}</span>` : ''}</div><small>${w}</small></div><div class="kz-a">${act}</div></div>`;
+  const stuV = nStu ? `${nStu}명${SUB.grp ? ' (조원)' : '만'}` : `반 모두 · ${SIDS.length}명`;
+  const stuW = SUB.grp ? '조 편성에서 정해져요' : canStu ? '바꾸면 고른 학생만 평가 · 출력돼요 — 빠지는 학생의 입력은 지워지지 않아요' : (SUB.state === 'done' ? '승인되어 잠긴 칸이에요' : '맡은 선생님이 «작성 중»일 때 바꿀 수 있어요');
+  return `<section class="kz" data-kz aria-label="이 칸의 중요한 설정">
+      <div class="kz-h"><span class="kz-ic" aria-hidden="true">⚠</span><b>이 칸의 중요한 설정</b><small>누가 평가를 받는지 · 출력에 무엇이 나가는지가 바뀌어요 — 바꾸기 전에 한 번 더 확인해요</small></div>
+      ${row(1, '듣는 학생', '이 칸에서 평가하는 학생', esc(stuV), false, nStu && !SUB.grp ? '반 일부만' : '', stuW, canStu ? '<button class="nh-btn kz-b" data-ej="students">학생 고르기</button>' : '')}
+      ${row(2, '출력 이름', '통지표에 찍히는 과목 이름', esc(pn), false, SUB.printName && SUB.printName !== SUB.name ? `칸 이름: ${esc(SUB.name)}` : '칸 이름과 같음', A.isMgr ? '«학기 설정 › 칸 › ☰ 반별로»에서 바꿔요' : '나학평 담당 선생님이 학기 설정에서 바꿔요', '')}
+      ${row(3, `${who} 이름`, '출력에 넣을지', st.noT ? '넣지 않음' : '넣음', !!st.noT, st.noT ? '' : esc(tn), '끄면 미리보기 · 통지표 · PDF에 이름이 안 나와요 (맡은 선생님 · 검토는 그대로)',
+        `<label class="nh-sw" title="끄면 이 칸의 출력에 ${who} 이름이 나오지 않아요 (예: 예배처럼 여러 분이 함께 맡는 칸)"><span>넣기</span><input type="checkbox" data-ej="tname" aria-label="출력에 ${who} 이름 넣기"${st.noT ? '' : ' checked'}${dis}><span class="sw" aria-hidden="true"></span></label>`)}
+    </section>
+    ${(SUB.inheritedFrom || (A.isMgr && CAN.setup)) ? `<div class="kz-out">${SUB.inheritedFrom ? '<span class="ch gray">지난 학기에서 이어받은 틀</span>' : ''}${A.isMgr && CAN.setup ? '<span class="nh-desc" style="margin:0">이 틀을 다른 선생님도 쓰게 하려면</span><button class="nh-btn xs" data-ej="saveform">⭐ 기관 양식으로 저장</button>' : ''}</div>` : ''}`;
+}
 function shareKey(){ return C.shareOf(SUB, A.SUBS); }
 /* 평가 방식(양식) · 가져오기 · 함께 쓰기 묶기/풀기 — 맡은 선생님(작성 중) · 나학평 담당만 (검토관은 글 고치기만 — 규칙 v38 과 같은 기준) */
 const STRUCT = () => !!SUB && SUB.state !== 'done' && (A.isMgr || (SUB.state === 'draft' && !!(CAN && CAN.teacher)));
@@ -1951,7 +1969,10 @@ async function onClick(e){
   if(a === 'actsync'){ window.showLoading && showLoading('출석부를 읽는 중…'); try{ await ACTS.loadAtt(A, true); }finally{ window.hideLoading && hideLoading(); } if(!ACTS.attReady()) return A.toast('출석부를 읽지 못했어요.', 'err'); if(!actAuto(true)) A.toast('출석부와 모두 맞아요 ✓'); drawBody(); return; }
   if(a === 'clubsync'){ const id0 = SUB.id; await flush(); window.showLoading && showLoading('동아리 명단을 읽는 중…'); try{ await CLUBS.load(A, true); }finally{ window.hideLoading && hideLoading(); } if(!SUB || SUB.id !== id0) return; if(!CLUBS.ready()){ drawBody(); return A.toast('동아리 명단을 읽지 못했어요.', 'err'); } if(!clubAuto(true)) A.toast('동아리 명단과 모두 맞아요 ✓'); drawBody(); return; }
   if(a === 'servebulk') return serveBulk();
-  if(a === 'students'){ await SETUP.editCellStudents(SUB.id, A); SUB = A.subOf(SUB.id); SIDS = A.subStudents(SUB); draw(); return; }
+  if(a === 'students'){
+    { const n = (SUB.studentIds || []).length;      // ⚠ v218 고르기 전에 무엇이 달라지는지 먼저
+      if(!(await A.confirm('👥 듣는 학생을 바꿀까요?', `지금은 <b>${n ? n + '명만' : '반 모두 ' + SIDS.length + '명'}</b> 이 칸에서 평가 · 출력돼요.<br>학생을 고르면 <b>고른 학생만</b> 이 칸에서 평가 · 출력돼요.<br><br><span style="color:var(--ink-2)">빠지는 학생의 입력은 지워지지 않고 그대로 남아요 — 다시 넣으면 보여요.</span>`, '학생 고르러 가기'))) return; }
+    await SETUP.editCellStudents(SUB.id, A); SUB = A.subOf(SUB.id); SIDS = A.subStudents(SUB); draw(); return; }
   if(a === 'itemadd'){ const it = (SUB.setup.items || []).concat([{ id: C.rid('i'), g: '', t: '' }]); SUB.setup = Object.assign({}, SUB.setup, { items: it }); saveSetup(true); drawBody(); setTimeout(() => { const ins = EL.querySelectorAll('[data-itf][data-f="t"]'); if(ins.length) ins[ins.length - 1].focus(); }, 30); return; }
   if(a === 'itempaste') return pasteItems();
   if(a === 'tname'){ if(!CAN.setup || t.tagName !== 'INPUT') return; SUB.setup = Object.assign({}, SUB.setup, { noT: !t.checked }); if(t.checked) delete SUB.setup.noT; saveSetup(); drawBody(); A.toast((t.checked ? '출력에 선생님 이름을 넣어요.' : '이 칸은 출력에 선생님 이름을 넣지 않아요.') + (C.shareOf(SUB, A.SUBS) ? ' 틀을 함께 쓰는 칸에도 같이 맞춰져요.' : '')); return; }      // 🙈 v216

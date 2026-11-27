@@ -867,12 +867,82 @@ function printPaneHTML(){
       <div class="fl" style="max-width:200px"><label>이름</label><input class="nh-in" data-prs="principal" value="${esc(PRT.sign.principal || '')}" placeholder="비우면 담임만"></div>
       <div class="fl" style="max-width:240px"><label>날짜 글 (비우면 학기 끝 날짜)</label><input class="nh-in" data-prs="dateText" value="${esc(PRT.sign.dateText || '')}" placeholder="예: 2026년 12월 18일"></div></div>
     <div class="frow" style="margin-top:4px"><button class="nh-btn p sm" data-st="saveprint">💾 출력 모양 저장</button><button class="nh-btn sm" data-st="prtsample">👀 첫 반 첫 학생으로 미리보기</button>
-      <span class="nh-desc" style="margin:0">흰 종이 · 표는 아주 옅은 음영만 · 가장자리 12mm 안 («처음 C안» 표지의 띠만 종이 끝까지)</span></div>`;
+      <span class="nh-desc" style="margin:0">흰 종이 · 표는 아주 옅은 음영만 · 가장자리 12mm 안 («처음 C안» 표지의 띠만 종이 끝까지)</span></div>
+    <div data-tn>${tnHTML()}</div>`;
+}
+/* 🙍 v218 과목별 선생님 이름 — 출력에 넣을지 과목마다 한꺼번에 (모든 반) · 펼치면 반별로
+   · 칸의 setup.noT 한 가지만 고쳐 씀 (그 칸을 고치는 중인 선생님의 틀과 섞이지 않게 — 선생님 화면은 저장할 때 서버 것과 합침)
+   · 승인(잠김)된 칸은 건드리지 않음 · 함께 쓰기로 묶인 칸은 같이 맞춤 · 스위치로 언제든 되돌릴 수 있어 따로 보관하지 않음 (쓰기를 칸마다 한 번만) */
+let TN_OPEN = {};
+const tnOff = s => !!((s && s.setup) || {}).noT;
+const tnName = s => s.printTeacher || names(s.teacherUids).join(', ') || '—';
+function tnModel(){
+  const by = {}; const secs = (A.TERM && A.TERM.sections) || [];
+  const secIx = s => { const i = secs.findIndex(x => x.id === s.secId); return s.grp ? 1e6 : (i < 0 ? 1e5 : i); };
+  A.SUBS.filter(s => !s.removed && s.kind === 'subj').forEach(s => {
+    const key = C.normKey(s.name); const r = (by[key] = by[key] || { key, name: s.name, cells: [], ord: 1e9 });
+    r.cells.push(s); r.ord = Math.min(r.ord, s.order || 100);
+  });
+  return Object.values(by).sort((a, b) => a.ord - b.ord || a.name.localeCompare(b.name, 'ko')).map(r => { r.cells.sort((a, b) => secIx(a) - secIx(b)); return r; });
+}
+function tnHTML(){
+  const t = A.TERM; if(!t || t.src === 'import') return '';
+  const rows = tnModel(); if(!rows.length) return '';
+  const sw = (attr, on, dis, label) => `<label class="nh-sw"><input type="checkbox" ${attr}${on ? ' checked' : ''}${dis ? ' disabled' : ''} aria-label="${esc(label)}"><span class="sw" aria-hidden="true"></span></label>`;
+  const body = rows.map(r => {
+    const n = r.cells.length, on = r.cells.filter(s => !tnOff(s)).length, lk = r.cells.filter(s => s.state === 'done').length;
+    const free = r.cells.filter(s => s.state !== 'done'), allOn = free.length ? free.every(s => !tnOff(s)) : on === n;      // 큰 스위치는 바꿀 수 있는(잠기지 않은) 칸 기준
+    const tch = new Set(); r.cells.forEach(s => (s.teacherUids || []).forEach(u => tch.add(u)));
+    const shown = Array.from(new Set(r.cells.filter(s => !tnOff(s)).map(tnName)));
+    const who = !on ? '— (넣지 않음)' : shown.length === 1 ? shown[0] : `반마다 다름 · ${shown[0]} …`;
+    const chip = on === n ? '<span class="ch mint">모두 넣음</span>' : !on ? '<span class="ch gray">모두 뺌</span>' : `<span class="ch warn">섞임 · ${on} / ${n}</span>`;
+    const open = !!TN_OPEN[r.key];
+    return `<div class="tn-r${open ? ' open' : ''}" data-tnrow="${esc(r.key)}"><div class="tn-nm"><b>${esc(r.name)}</b><small>선생님 ${tch.size}명${lk ? ` · 🔒 승인 ${lk}칸` : ''}</small></div><span class="tn-n">${n}칸</span><span class="tn-who" title="${esc(who)}">${esc(who)}</span><span>${chip}</span>
+        <div class="tn-a">${n > 1 ? `<button class="tn-x" data-tnx="${esc(r.key)}" aria-expanded="${open}">반별 ${open ? '▴' : '▾'}</button>` : ''}${sw(`data-tn="${esc(r.key)}"`, allOn, lk === n, `${r.name} — 출력에 선생님 이름 넣기 (모든 반)`)}</div></div>
+      ${open ? `<div class="tn-sub">${r.cells.map(s => `<div class="tn-c${s.state === 'done' ? ' lk' : ''}"><b>${esc(A.whereOf(s))}</b><small>${s.state === 'done' ? '🔒 승인됨' : tnOff(s) ? '뺌' : '넣음'}</small>${sw(`data-tnc="${esc(s.id)}"`, !tnOff(s), s.state === 'done', `${A.whereOf(s)} ${r.name} — 출력에 선생님 이름 넣기`)}</div>`).join('')}</div>` : ''}`;
+  }).join('');
+  return `<div class="nh-sec">🙍 <b>과목별 선생님 이름</b> <small>출력에 넣을지 과목마다 한꺼번에 — 모든 반에 함께 적용 · 스위치를 누르면 바로 저장돼요 («출력 모양 저장»과 따로)</small></div>
+    <div class="tn"><div class="tn-h"><span>과목</span><span>칸</span><span>지금 출력에 나가는 이름</span><span>지금 상태</span><span>출력에 선생님 이름</span></div>${body}
+      <div class="tn-f"><span>누르면 바뀔 칸 수를 먼저 보여 주고 확인을 받아요.</span><span>🔒 승인(잠김)된 칸은 건드리지 않아요.</span><span>스위치를 다시 누르면 언제든 되돌아가요.</span><span>칸 하나만 바꾸려면 그 칸 «평가 틀» 맨 아래에서도 돼요.</span></div></div>`;
+}
+function tnRedraw(){ const el = document.querySelector('[data-prt] div[data-tn]'); if(el) el.innerHTML = tnHTML(); }
+/* cells: 바꾸려는 칸들 · on: true = 넣기, false = 빼기 */
+async function tnSet(cells, on, label){
+  // 함께 쓰기로 묶인 칸은 틀을 같이 쓰므로 함께 (안 그러면 «다름»이 되고, 누가 틀을 고칠 때 한쪽으로 덮임)
+  const map = {};
+  cells.forEach(c => { const s = A.subOf(c.id); if(!s || s.removed) return; map[s.id] = s; const k = C.shareOf(s, A.SUBS); if(k) C.shareMembers(k, A.SUBS).forEach(x => { if(x.kind === 'subj') map[x.id] = x; }); });
+  const all = Object.values(map);
+  const need = all.filter(s => tnOff(s) === on);                 // 지금 값이 바라는 것과 다른 칸만
+  const todo = need.filter(s => s.state !== 'done'), locked = need.filter(s => s.state === 'done');
+  const extra = todo.filter(s => !cells.some(c => c.id === s.id));
+  if(!todo.length){ A.toast(locked.length ? `바꿀 칸 ${locked.length}개가 모두 승인되어 잠겨 있어요 — «🔓 다시 열기» 뒤에 바꿀 수 있어요.` : `이미 모두 ${on ? '넣게' : '빼게'} 되어 있어요.`, locked.length ? 'err' : undefined); return false; }
+  const list = todo.slice(0, 14).map(s => esc(A.whereOf(s)) + (extra.includes(s) ? ` <small>(함께 쓰기 · ${esc(s.name)})</small>` : '')).join(' · ') + (todo.length > 14 ? ` … 외 ${todo.length - 14}칸` : '');
+  if(!(await A.confirm(`🙍 ${esc(label)} — 선생님 이름 ${on ? '넣기' : '빼기'}`, `<b>${todo.length}칸</b>의 출력(미리보기 · 통지표 · PDF)에 선생님 이름을 <b>${on ? '넣어요' : '넣지 않아요'}</b>.<br><span style="color:var(--ink-2)">${list}</span>${locked.length ? `<br><br>🔒 승인되어 잠긴 <b>${locked.length}칸</b>은 그대로 둬요.` : ''}${extra.length ? `<br><br>🔗 «함께 쓰기»로 묶인 ${extra.length}칸도 같이 맞춰요.` : ''}<br><br><span style="color:var(--ink-2)">맡은 선생님 · 평가 틀 · 학생 입력 · 검토 상태는 건드리지 않아요. 언제든 다시 켜고 끌 수 있어요.</span>`, on ? '넣기' : '빼기'))) return false;
+  let wrote = 0;
+  const res = await mxEach(todo, async s => {
+    if(tnOff(s) !== on) return;                                   // 그새 이미 바뀜
+    await FS.updateDoc(FS.doc(A.db, 'nhpSubjects', s.id), { 'setup.noT': on ? FS.deleteField() : true, updatedAt: FS.serverTimestamp(), updatedBy: A.CU.uid });
+    const st = Object.assign({}, s.setup || {}); if(on) delete st.noT; else st.noT = true; s.setup = st; wrote++;
+  }, '선생님 이름을 바꾸는 중…');
+  // 함께 쓰는 칸의 선생님이 바로 그 순간 틀을 저장하면 한 칸이 예전 값으로 돌아갈 수 있어 — 잠시 뒤 다시 보고 알림
+  setTimeout(() => { try{ const back = todo.map(s => A.subOf(s.id)).filter(s => s && !s.removed && s.state !== 'done' && tnOff(s) === on); if(back.length){ A.toast(`${back.length}칸이 그새 다시 바뀌었어요 (그 칸 선생님이 같은 때 틀을 저장) — 표에서 «섞임»을 확인해 한 번 더 눌러 주세요.`, 'err'); tnRedraw(); } }catch(e){} }, 4000);
+  A.toast(`${wrote}칸 — 출력에 선생님 이름을 ${on ? '넣어요' : '넣지 않아요'} ✓` + (res.bad ? ` · ${res.bad}칸은 바꾸지 못했어요 (승인됐거나 저장 실패)` : '') + (locked.length ? ` · 잠긴 ${locked.length}칸은 그대로` : ''), res.bad ? 'err' : undefined);
+  return true;
+}
+async function tnChange(x){
+  const want = x.checked; x.checked = !want;                      // 확인 전에는 스위치를 그대로
+  let cells = [], label = '';
+  if(x.dataset.tn !== undefined){ const r = tnModel().find(r => r.key === x.dataset.tn); if(!r) return; cells = r.cells; label = `${r.name} (모든 반)`; }
+  else { const s = A.subOf(x.dataset.tnc); if(!s) return; cells = [s]; label = `${A.whereOf(s)} ${s.name}`; }
+  x.disabled = true;
+  try{ await tnSet(cells, want, label); }catch(e){ A.toast('바꾸지 못했어요 — ' + A.errText(e), 'err'); }
+  tnRedraw();
 }
 function bindPrint(el){
   const box = el.querySelector('[data-prt]'); if(!box) return;
   box.onchange = e => {
     const x = e.target;
+    if(x.dataset.tn !== undefined || x.dataset.tnc !== undefined){ tnChange(x); return; }      // 🙍 v218 과목별 선생님 이름 — 바로 저장 (출력 모양 저장과 따로)
     if(x.name === 'prt-cover'){ PRT.cover = x.value; box.innerHTML = printPaneHTML(); return; }
     if(x.name === 'prt-inner' || x.name === 'prt-shade'){ PRT[x.name === 'prt-inner' ? 'inner' : 'shade'] = x.value; const pv = box.querySelector('[data-shpv]'); if(pv) pv.innerHTML = shadeSampleHTML(); return; }
     if(x.dataset.prs){ PRT.sign[x.dataset.prs] = x.type === 'checkbox' ? x.checked : x.value.trim(); }
@@ -958,6 +1028,7 @@ function bindSetup(el){
     const d = b.dataset;
     if(d.jump){ const det = el.querySelector(`details[data-pane="${d.jump}"]`); if(!det) return; det.open = true; PANE = d.jump; paneSave(PANE);
       el.querySelectorAll('[data-jump]').forEach(x => x.classList.toggle('on', x === b)); det.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    if(d.tnx !== undefined){ TN_OPEN[d.tnx] = !TN_OPEN[d.tnx]; tnRedraw(); const nb = el.querySelector(`[data-tnx="${CSS.escape(d.tnx)}"]`); if(nb) nb.focus(); return; }
     if(d.st === 'redraw'){ rerender(); return; }
     if(d.st === 'keep'){ KEEP.openKeep(A, { saveTerm, updateSections, saveReview, saveLists, mine, applyReview: () => applyReview(A.TERM), after: () => { PRT = null; try{ CFG0 = JSON.parse(JSON.stringify(A.CFG)); }catch(e){} rerender(); } }); return; }
     if(d.cv){ CV = d.cv; cvSave(CV); PANE = 'cells'; rerender(); return; }
