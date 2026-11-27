@@ -102,6 +102,7 @@ function putRaw(path, v){
   const prev0 = cloneV(getPath(ENT, path));
   if(!NOHIST) histAdd(SUB.id, path, prev0);
   chgNote(SUB.id, path, prev0, v);
+  if(A.live) try{ A.live.touch(SUB.id, path); }catch(e){}      // 👥 v213 지금 쓰는 학생 줄
   tmAuto();                       // ⏱ 고치기 «직전» 모습을 가끔(20분에 한 번) 보관
   setPath(ENT, path, v);
   pendOf(SUB.id)[path] = v === undefined ? DEL : v;
@@ -650,7 +651,8 @@ async function chgFlush(id){
   if(cur.length) parts.push(cur);
   const back = list => { const R2 = (CHGR[id] = CHGR[id] || {}); list.forEach(c => { if(R2[c.k]) R2[c.k].was = c.w; else R2[c.k] = { was: c.w, now: c.n, v: c.v }; }); };
   for(let pi = 0; pi < parts.length; pi++){
-    try{ await FS.addDoc(FS.collection(A.db, 'nhpEntries', id, 'chg'), { termId: sub.termId, subjectId: id, at: FS.serverTimestamp(), by: A.CU.uid, byName: (A.me().name || ''), cnt: parts[pi].length, ch: parts[pi] }); CHG_CACHE[id] = null; }
+    try{ await FS.addDoc(FS.collection(A.db, 'nhpEntries', id, 'chg'), { termId: sub.termId, subjectId: id, at: FS.serverTimestamp(), by: A.CU.uid, byName: (A.me().name || ''), cnt: parts[pi].length, ch: parts[pi] }); CHG_CACHE[id] = null;
+      if(A.live) try{ const st = {}; let fr = false; parts[pi].forEach(c => { const m = /^rows\.([^.]+)\./.exec(c.k || ''); if(m) st[m[1]] = 1; else fr = true; }); const n = Object.keys(st).length; if(n || !fr) A.live.did(id, n, 'edit'); else A.live.did(id, 0, 'frame'); }catch(e2){} }      // 👥 v213 조금 전 한 일
     catch(e){
       const rest = parts.slice(pi).reduce((a, b) => a.concat(b), []);
       back(rest);                                                              // 못 쓴 것은 모두 되돌려 놓고
