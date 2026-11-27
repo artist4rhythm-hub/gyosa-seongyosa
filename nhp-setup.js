@@ -3,7 +3,7 @@
    · 학기 열기: 반편성 → 반(반 × 학년) · 시간표 «수업 정의» → 과목 칸 · 지난 학기에서 평가 틀 이어받기 · 검토 순서
    · 학기 설정: 학기 정보 · 반과 담임 · 칸(과목 · 출결 · 담임평가 …) · 검토 순서와 검토관 · 담임평가 · 공통 목록 · 영문 · 용어 · 지난 나학평 가져오기
    ═══════════════════════════════════════════════════════════ */
-import * as IMP from './nhp-import.js?v=142';
+import * as IMP from './nhp-import.js?v=220';
 import * as GRP from './nhp-groups.js?v=144';
 import * as KEEP from './nhp-keep.js?v=212';
 

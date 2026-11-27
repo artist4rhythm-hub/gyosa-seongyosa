@@ -46,11 +46,13 @@ export function bind(a, box){
    · 교사 선교사 학번(2017-03 모양)은 예전 학번과 모양이 달라 비교하지 않는다
    · 한 학생(예전 학번)의 여러 학기 원본은 한 번 정하면 모두 같은 학생으로 */
 const NM = x => String(x || '').replace(/\s+/g, '');
-export const oldKey = r => (r.stuNo ? 'n:' + r.stuNo : 'x:' + NM(r.stuName));
+export const oldKey = r => (r.stuNo ? 'n:' + r.stuNo : 'x:' + NM(r.stuName) + (r.by ? '@' + r.by : ''));      // 🗂 v220 학번이 없는 옛 한글 파일 — 이름 + 짐작한 출생연도(by)
 export const birthYearOf = no => (/^\d{8}$/.test(String(no || '')) ? Number(String(no).slice(0, 4)) - 7 : 0);
+/* 🗂 v220 학번이 없으면 옮김 파일이 적어 준 출생연도 짐작(by = 그 해 − 학년 − 6)을 씀 */
+const ebOf = r => birthYearOf(r && r.stuNo) || Number(r && r.by) || 0;
 const byOf = s => Number(String((s && s.birth) || '').slice(0, 4)) || 0;
 export function linkOne(r, students){
-  const nm = NM(r.stuName), eb = birthYearOf(r.stuNo);
+  const nm = NM(r.stuName), eb = ebOf(r);
   const all = Object.values(students || {}).filter(s => s.org === C.ORG && !s.deleted);
   const same = all.filter(s => NM(s.name) === nm);
   if(!same.length) return { sid: '', how: 'none', cand: [] };
@@ -82,10 +84,10 @@ function syncMap(){
 }
 const HOW = { by: '이름 · 출생연도', name: '이름만 (생일 없음)', 'name*': '이름 같음 · 출생연도 다름', many: '같은 이름 여럿', none: '이름 같은 학생 없음', hand: '직접 고름', no: '직접 고름' };
 function rowHTML(k){
-  const L = LINK[k], r = L.r, eb = birthYearOf(r.stuNo);
+  const L = LINK[k], r = L.r, eb = ebOf(r);
   const who = L.sid ? `<b>${esc(A.stuName(L.sid))}</b> <small style="color:var(--ink-2)">${esc(A.stuInfo(L.sid))}</small>` : '<span class="nh-desc" style="margin:0">잇지 않음 (이름으로만 보관)</span>';
   return `<div class="frow" style="align-items:center;margin-bottom:6px;padding:6px 0;border-bottom:1px solid var(--line-soft)">
-      <span style="min-width:230px;font-size:12.5px"><b>${esc(r.stuName)}</b> <small>예전 학번 ${esc(r.stuNo || '-')}${eb ? ` · ${eb}년생쯤` : ''}</small><br><small style="color:var(--ink-3)">${esc(L.terms.join(', '))}</small></span>
+      <span style="min-width:230px;font-size:12.5px"><b>${esc(r.stuName)}</b> <small>${r.stuNo ? `예전 학번 ${esc(r.stuNo)}` : '학번 없음'}${eb ? ` · ${eb}년생쯤` : ''}</small><br><small style="color:var(--ink-3)">${esc(L.terms.join(', '))}</small></span>
       <span class="ch ${L.sid ? (L.how === 'hand' ? 'mint' : 'warn') : 'red'}">${esc(HOW[L.how] || '')}</span>
       <span style="flex:1;min-width:200px;font-size:12.5px">→ ${who}</span>
       <button class="nh-btn xs" data-impick="${esc(k)}">고르기</button></div>`;
@@ -116,7 +118,7 @@ function draw(box){
   v.querySelectorAll('[data-imt]').forEach(i => i.onchange = () => { PICK[i.dataset.imt] = i.checked; });
   v.querySelectorAll('[data-impick]').forEach(b => b.onclick = async () => {
     const k = b.dataset.impick, L = LINK[k];
-    const sid = await A.pickStudent(`🔗 ${L.r.stuName} (예전 학번 ${L.r.stuNo || '-'}) — 어느 학생인가요?`, { name: L.r.stuName, birthYear: birthYearOf(L.r.stuNo), current: L.sid || L.sug || '',
+    const sid = await A.pickStudent(`🔗 ${L.r.stuName} (${L.r.stuNo ? '예전 학번 ' + L.r.stuNo : '학번 없음'}) — 어느 학생인가요?`, { name: L.r.stuName, birthYear: ebOf(L.r), current: L.sid || L.sug || '',
       help: `${esc(L.terms.join(', '))} 원본이 모두 이 학생으로 이어져요. 졸업 · 전학해 교사 선교사에 없는 학생이면 «잇지 않음».` });
     if(sid == null) return;
     LINK[k] = Object.assign({}, L, { sid, how: 'hand', was: L.was || L.how });
@@ -144,8 +146,8 @@ async function run(box){
       const used = new Set(); const ids = [];
       const secs = t.sections.map(s => Object.assign({}, s, { students: [] }));
       t.reports.forEach((r, i) => {
-        let id = `${t.id}__imp__${clean(r.stuNo) || (clean(r.secId) + '_' + i)}`;
-        if(used.has(id)) id = `${t.id}__imp__${clean(r.stuNo)}_${clean(r.secId)}_${i}`;
+        let id = `${t.id}__imp__${clean(r.stuNo) || clean(r.key) || (clean(r.secId) + '_' + i)}`;      // key = 옛 한글 파일 학생마다 한결같은 이름표 (다시 가져와도 같은 문서)
+        if(used.has(id)) id = `${t.id}__imp__${clean(r.stuNo) || clean(r.key)}_${clean(r.secId)}_${i}`;
         used.add(id); ids.push(id);
         const sid = (m[i] || {}).sid || '';
         const sec = secs.find(s => s.id === r.secId); if(sec && sid && !sec.students.includes(sid)) sec.students.push(sid);
@@ -161,7 +163,7 @@ async function run(box){
         const part = todo.slice(k, k + 30);
         const bt = FS.writeBatch(A.db);
         part.forEach(({ r, i, id }) => {
-          bt.set(FS.doc(A.db, 'nhpReports', id), { termId: t.id, org: C.ORG, secId: r.secId, secName: r.secName || '', sid: (m[i] || {}).sid || '', linkHow: (m[i] || {}).how || '', stuNo: r.stuNo || '', stuName: r.stuName || '',
+          bt.set(FS.doc(A.db, 'nhpReports', id), { termId: t.id, org: C.ORG, secId: r.secId, secName: r.secName || '', sid: (m[i] || {}).sid || '', linkHow: (m[i] || {}).how || '', stuNo: r.stuNo || '', stuName: r.stuName || '', ...(r.by ? { by: Number(r.by) } : {}), ...(r.key ? { key: String(r.key) } : {}),
             ver: 1, src: 'import', doc: r.doc, issuedBy: A.CU.uid, issuedByName: A.CU.name || '', issuedAt: FS.serverTimestamp() });
         });
         try{
@@ -198,7 +200,7 @@ async function audit(box){
       window.setLoadStep && setLoadStep(`${C.termLabel(t)} 읽는 중… (${i + 1}/${terms.length})`, Math.round(i / terms.length * 100));
       const q = await FS.getDocs(FS.query(FS.collection(A.db, 'nhpReports'), FS.where('termId', '==', t.id)));
       q.forEach(d => { const x = d.data(); if(x.src !== 'import' || x.superseded) return; const k = oldKey(x);
-        (G[k] = G[k] || { k, r: { stuName: x.stuName, stuNo: x.stuNo }, reps: [] }).reps.push({ id: d.id, termId: x.termId, sid: x.sid || '' }); });
+        (G[k] = G[k] || { k, r: { stuName: x.stuName, stuNo: x.stuNo, by: x.by || 0 }, reps: [] }).reps.push({ id: d.id, termId: x.termId, sid: x.sid || '' }); });
     }
   }catch(e){ window.hideLoading && hideLoading(); out.innerHTML = `<div class="nh-warn">읽지 못했어요 — ${esc(A.errText(e))}</div>`; return; }
   window.hideLoading && hideLoading();
@@ -207,7 +209,7 @@ async function audit(box){
 }
 function judge(g){
   const sids = Array.from(new Set(g.reps.map(x => x.sid)));
-  const eb = birthYearOf(g.r.stuNo);
+  const eb = ebOf(g.r);
   g.sid = sids.length === 1 ? sids[0] : null;
   const sug = linkOne(g.r, A.STU);
   g.sug = sug.sid || sug.sug || '';
@@ -233,20 +235,20 @@ function drawAudit(box){
       <span class="ch ok">✅ 맞음 ${cnt('ok')}</span><span class="ch warn">⚠️ 확인 ${cnt('year') + cnt('name') + cnt('mixed')}</span><span class="ch gray">연결 안 됨 ${cnt('none')}</span>${cnt('gone') ? `<span class="ch red">없어진 학생 ${cnt('gone')}</span>` : ''}
       <span class="nh-sp"></span><label class="ck"><input type="checkbox" data-imall${AUD_ALL ? ' checked' : ''}>맞는 학생도 보기</label>
       ${fixable.length ? `<button class="nh-btn sm g" data-imfix>✨ 추천대로 ${fixable.length}명 잇기</button>` : ''}</div>
-    <div class="nh-desc" style="margin:0 0 6px">«추천» = 이름이 같고, 예전 학번으로 짐작한 출생연도(±1년)가 맞는 학생이 한 명뿐일 때. 졸업 · 전학으로 교사 선교사에 없는 학생은 «연결 안 됨» 그대로 두면 돼요 (이름으로 보관).</div>
-    ${show.map(g => { const eb = birthYearOf(g.r.stuNo); const [tone, lab] = AST[g.st];
+    <div class="nh-desc" style="margin:0 0 6px">«추천» = 이름이 같고, 예전 학번(없으면 그 해 학년)으로 짐작한 출생연도(±1년)가 맞는 학생이 한 명뿐일 때. 졸업 · 전학으로 교사 선교사에 없는 학생은 «연결 안 됨» 그대로 두면 돼요 (이름으로 보관).</div>
+    ${show.map(g => { const eb = ebOf(g.r); const [tone, lab] = AST[g.st];
       const who = g.sid ? `<b>${esc(A.stuName(g.sid))}</b> <small style="color:var(--ink-2)">${esc(A.stuInfo(g.sid))}</small>` : (g.st === 'mixed' ? '<span class="nh-desc" style="margin:0">학기마다 다른 학생</span>' : '<span class="nh-desc" style="margin:0">—</span>');
       const sug = g.sug && g.sug !== g.sid ? (g.sugHow === 'by' ? `<br><small style="color:var(--sb-green,#00704A)">추천: <b>${esc(A.stuName(g.sug))}</b> ${esc(A.stuInfo(g.sug))}</small>`
         : `<br><small style="color:var(--ink-3)">이름이 같은 학생: ${esc(A.stuName(g.sug))} ${esc(A.stuInfo(g.sug))} — 출생연도가 달라 다른 학생일 수 있어요</small>`) : '';
       return `<div class="frow" style="align-items:center;padding:6px 0;border-bottom:1px solid var(--line-soft);margin:0">
-        <span style="min-width:220px;font-size:12.5px"><b>${esc(g.r.stuName)}</b> <small>예전 학번 ${esc(g.r.stuNo || '-')}${eb ? ` · ${eb}년생쯤` : ''} · ${g.reps.length}학기</small></span>
+        <span style="min-width:220px;font-size:12.5px"><b>${esc(g.r.stuName)}</b> <small>${g.r.stuNo ? `예전 학번 ${esc(g.r.stuNo)}` : '학번 없음'}${eb ? ` · ${eb}년생쯤` : ''} · ${g.reps.length}학기</small></span>
         <span class="ch ${tone}">${esc(lab)}</span>
         <span style="flex:1;min-width:220px;font-size:12.5px">→ ${who}${sug}</span>
         <button class="nh-btn xs" data-imaudpick="${esc(g.k)}">고르기</button></div>`; }).join('') || '<div class="nh-info">모두 맞아요 👏</div>'}`;
   const al = out.querySelector('[data-imall]'); if(al) al.onchange = () => { AUD_ALL = al.checked; drawAudit(box); };
   out.querySelectorAll('[data-imaudpick]').forEach(b => b.onclick = async () => {
     const g = AUD[b.dataset.imaudpick]; if(!g) return;
-    const sid = await A.pickStudent(`🔗 ${g.r.stuName} (예전 학번 ${g.r.stuNo || '-'}) — 어느 학생인가요?`, { name: g.r.stuName, birthYear: birthYearOf(g.r.stuNo), current: g.sid || g.sug || '',
+    const sid = await A.pickStudent(`🔗 ${g.r.stuName} (${g.r.stuNo ? '예전 학번 ' + g.r.stuNo : '학번 없음'}) — 어느 학생인가요?`, { name: g.r.stuName, birthYear: ebOf(g.r), current: g.sid || g.sug || '',
       help: `이 학생의 원본 ${g.reps.length}개(${esc(Array.from(new Set(g.reps.map(x => C.termLabel(A.TERMS.find(t => t.id === x.termId) || { id: x.termId })))).join(', '))})가 모두 이 학생으로 이어져요. 원본 내용은 그대로예요.` });
     if(sid == null) return;
     if(await relink([g], () => sid)) drawAudit(box);

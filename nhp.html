@@ -877,9 +877,9 @@ import { getFirestore, initializeFirestore, doc, getDoc, getDocs, setDoc, addDoc
 import { cachedCol } from './listcache.js?v=137';
 import * as C from './nhp-core.js?v=217';
 import * as P from './nhp-print.js?v=217';
-import * as ENTRY from './nhp-entry.js?v=218';
+import * as ENTRY from './nhp-entry.js?v=220';
 import * as ACTS from './nhp-acts.js?v=212';
-import * as SETUP from './nhp-setup.js?v=218';
+import * as SETUP from './nhp-setup.js?v=220';
 import * as EDIT from './nhp-edition.js?v=212';
 import * as LIVE from './nhp-live.js?v=216';
 import { notifyStaff } from './push-client.js';
@@ -1831,7 +1831,7 @@ async function loadPastStudents(box, termId, secId, force){
   let reps = [];
   try{
     const q = await getDocs(query(collection(db, 'nhpReports'), where('termId', '==', termId), where('secId', '==', secId)));
-    q.forEach(d => { const x = d.data(); if(!x.superseded) reps.push({ id: d.id, sid: x.sid || '', src: x.src || '', stuName: x.stuName || (x.doc && x.doc.cover && x.doc.cover.name) || '', stuNo: x.stuNo || '', ver: x.ver || 1, termId: x.termId, secName: x.secName || '' }); });
+    q.forEach(d => { const x = d.data(); if(!x.superseded) reps.push({ id: d.id, sid: x.sid || '', src: x.src || '', stuName: x.stuName || (x.doc && x.doc.cover && x.doc.cover.name) || '', stuNo: x.stuNo || '', by: Number(x.by) || 0, key: x.key || '', ver: x.ver || 1, termId: x.termId, secName: x.secName || '' }); });
   }catch(e){ box.innerHTML = `<div class="nh-warn">원본을 읽지 못했어요 — ${esc(A.errText(e))}</div>`; return; }
   if(!reps.length){ box.innerHTML = `<div class="nh-desc">확정한 원본이 없어요.</div>`; return; }
   reps.forEach(r => { PAST_REPS[r.id] = r; });
@@ -1848,17 +1848,20 @@ async function loadPastStudents(box, termId, secId, force){
 async function relinkReport(rid){
   const r = PAST_REPS[rid]; if(!r) return;
   try{ await A.loadClasses(); }catch(e){}
-  const by = /^\d{8}$/.test(r.stuNo) ? Number(r.stuNo.slice(0, 4)) - 7 : 0;
-  const sid = await A.pickStudent(`🔗 ${r.stuName} (예전 학번 ${r.stuNo || '-'}) — 어느 학생인가요?`, { name: r.stuName, birthYear: by, current: r.sid,
-    help: `원본 내용은 그대로 두고, 교사 선교사의 어느 학생 것인지만 고쳐요.${by ? ` 예전 학번으로 보면 ${by}년생쯤이에요.` : ''}` });
+  const by = /^\d{8}$/.test(r.stuNo) ? Number(r.stuNo.slice(0, 4)) - 7 : (r.by || 0);      // 🗂 v220 학번 없는 옛 한글 파일 원본은 옮길 때 짐작한 출생연도
+  const sid = await A.pickStudent(`🔗 ${r.stuName} (${r.stuNo ? '예전 학번 ' + r.stuNo : '학번 없음'}) — 어느 학생인가요?`, { name: r.stuName, birthYear: by, current: r.sid,
+    help: `원본 내용은 그대로 두고, 교사 선교사의 어느 학생 것인지만 고쳐요.${by ? ` ${r.stuNo ? '예전 학번으로' : '그 해 학년으로'} 보면 ${by}년생쯤이에요.` : ''}` });
   if(sid == null || sid === r.sid) return;
   // 같은 예전 학번의 다른 원본 (다른 학기) — 함께 고칠지
   let others = [];
   if(r.stuNo){
     try{ const q = await getDocs(query(collection(db, 'nhpReports'), where('stuNo', '==', r.stuNo))); q.forEach(d => { const x = d.data(); if(d.id !== rid && x.src === 'import' && (x.sid || '') !== sid && String(x.stuName || '') === String(r.stuName || '')) others.push({ id: d.id, termId: x.termId }); }); }catch(e){}
   }
+  else if(r.key){      // 학번 없는 옛 원본 — 같은 이름표(key)의 다른 학기
+    try{ const q = await getDocs(query(collection(db, 'nhpReports'), where('key', '==', r.key))); q.forEach(d => { const x = d.data(); if(d.id !== rid && x.src === 'import' && !x.stuNo && (x.sid || '') !== sid && String(x.stuName || '') === String(r.stuName || '')) others.push({ id: d.id, termId: x.termId }); }); }catch(e){}
+  }
   let all = false;
-  if(others.length) all = await A.confirm('🔗 다른 학기도 함께?', `같은 예전 학번(${esc(r.stuNo)} · ${esc(r.stuName)})의 다른 학기 원본 <b>${others.length}개</b>도 같은 학생으로 고칠까요?<br><span style="color:var(--ink-2)">${others.map(o => esc(C.termLabel(A.TERMS.find(t => t.id === o.termId) || { id: o.termId }))).join(', ')}</span>`, '모두 고치기');
+  if(others.length) all = await A.confirm('🔗 다른 학기도 함께?', `같은 ${r.stuNo ? '예전 학번(' + esc(r.stuNo) + ' · ' : '학생('}${esc(r.stuName)})의 다른 학기 원본 <b>${others.length}개</b>도 같은 학생으로 고칠까요?<br><span style="color:var(--ink-2)">${others.map(o => esc(C.termLabel(A.TERMS.find(t => t.id === o.termId) || { id: o.termId }))).join(', ')}</span>`, '모두 고치기');
   const ids = [rid].concat(all ? others.map(o => o.id) : []);
   try{
     const bt = writeBatch(db);
