@@ -187,7 +187,7 @@ export function setupForType(prevSetup, type){
   const p = prevSetup || {};
   // 방식을 바꿔도 이미 만든 항목 · 서술 칸은 남긴다 (화면에서 안 보일 뿐)
   return Object.assign(base, p.items && p.items.length ? { items: p.items } : {},
-    p.narr && p.narr.length ? { narr: p.narr } : {}, p.score ? { score: p.score } : {}, p.a ? { a: p.a } : {}, p.r ? { r: p.r } : {});
+    p.narr && p.narr.length ? { narr: p.narr } : {}, p.score ? { score: p.score } : {}, p.a ? { a: p.a } : {}, p.r ? { r: p.r } : {}, p.noT ? { noT: true } : {});      // noT: 출력에 선생님 이름을 넣지 않음 (v216)
 }
 
 /* ═══ v144 평가 틀 양식 (평가 틀 › ① 양식) — 고른 뒤에도 칸 · 항목은 자유롭게 ═══ */
@@ -528,6 +528,7 @@ const C = (id, x, o) => Object.assign({ id, x: x == null ? '' : String(x) }, o |
 const HD = { b: 1, al: 'c' };
 
 export function teacherText(sub, staffName){
+  if((sub.setup || {}).noT) return '';      // 🙈 v216 이 칸은 출력에 선생님 이름을 넣지 않음 (평가 틀에서 켜고 끔)
   if(sub.printTeacher) return sub.printTeacher;
   return (sub.teacherUids || []).map(u => staffName(u)).filter(Boolean).join(', ');
 }

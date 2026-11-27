@@ -159,6 +159,9 @@ export const THEME_CSS = `
 .nr.th-c .nh .k{font-size:10.5px;font-weight:800;letter-spacing:.04em;color:#00704A;white-space:nowrap}
 .nr.th-c .nh .k.g{color:#8A6410}
 .nr.th-c .nh .w{font-size:11.5px;color:#5A6560;padding-bottom:10px;white-space:nowrap;padding-left:10px}
+.nr.th-a .nh .w{white-space:normal;text-align:right;max-width:62%;overflow-wrap:anywhere}      /* v216 선생님 이름이 많으면 줄을 바꿈 (짧으면 예전과 똑같음) */
+.nr.th-c .nh{grid-template-columns:${L}px minmax(0,1fr) fit-content(62%)}
+.nr.th-c .nh .w{white-space:normal;text-align:right;overflow-wrap:anywhere}
 .nr.th-c .ns .nh{display:flex;align-items:center;gap:8px;margin:2px 0 10px}
 .nr.th-c .ns .nh .sq{display:block;width:8px;height:8px;background:#1E3932}
 .nr.th-c .ns .nh .t{font-size:13px;letter-spacing:.06em;padding:0}

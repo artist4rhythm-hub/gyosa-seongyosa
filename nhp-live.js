@@ -15,6 +15,7 @@ let lastW = 0, wT = 0, hbT = 0, tickT = 0, actAt = 0, SKEW = 0;      // SKEW: �
 let OFF = false, unsub = null, LTERM = '', PEERS = [], READY = false, INIT = false;
 let OPEN = null, SCOPE = '', DOCK = null, PREV_HTML = '', VIEW = { v: '', a: '' };
 const cbs = [];
+let BR = { id: '', t: 0, v: null, busy: false };      // 👥 v216 이 칸 — 학생마다 마지막 입력 (고친 기록 요약 · nhp-entry.js chgBrief)
 
 const ms = t => (t && typeof t.toMillis === 'function') ? t.toMillis() : (t && t.seconds ? t.seconds * 1000 : 0);
 const ago = m => { if(!m) return '방금'; const d = Date.now() - m; if(d < 90000) return '방금'; if(d < 3600000) return Math.round(d / 60000) + '분 전';
@@ -77,6 +78,7 @@ export function did(subId, n, a){
   if(top && top.s === subId && top.a === (a || 'edit') && now - top.t < 600000){ top.t = now; top.n = Math.max(Number(top.n) || 0, Number(n) || 0); }
   else LAST.unshift({ t: now, s: subId, n: Number(n) || 0, a: a || 'edit' });
   LAST = LAST.filter(x => now - x.t < 3 * 864e5).slice(0, 6);
+  BR.t = 0;      // 내가 방금 저장 → «학생마다 마지막 입력»도 새로
   write(false); draw();
 }
 function leave(){ if(!INIT || OFF || !ME.sub) return; ME = { sub: '', sid: '' }; lastW = 0; writeNow(); }
@@ -138,6 +140,25 @@ function html(){
     acts.push({ t: Number(x.t) || 0, who: p.id === uid() ? '나' : (p.name || A.staffName(p.id) || ''), s, n: Number(x.n) || 0, a: x.a || 'edit' }); }));
   acts.sort((a, b) => b.t - a.t);
   const actH = acts.slice(0, 8).map(x => `<div class="nhl-a"><span class="nhl-at">${esc(ago(x.t))}</span><div><div><b>${esc(x.who)}</b> ${esc(ACT_L[x.a] || '고침')}${x.n > 0 ? ` <small>학생 ${x.n}명</small>` : ''}</div><small>${esc(whereOf(x.s))}</small></div></div>`).join('');
+  // 이 칸 — 학생마다 누가 마지막으로 입력했나 (창이 펼쳐져 있고 «이 칸만»일 때만 읽음)
+  let whoH = '';
+  if(sc === 'cell' && cell && A.chgBrief){
+    if((BR.id !== cell || (Date.now() - BR.t > 125000 && document.visibilityState === 'visible' && Date.now() - actAt < IDLE)) && !BR.busy){      // 쉬는 동안 · 가려진 동안은 다시 읽지 않음
+      const id = cell; BR.busy = true; if(BR.id !== id){ BR.id = id; BR.v = null; }
+      Promise.resolve().then(() => A.chgBrief(id)).then(v => { if(BR.id === id){ BR.v = v || { rows: [], fail: true }; BR.t = Date.now(); } }, () => { if(BR.id === id){ BR.v = { rows: [], fail: true }; BR.t = Date.now(); } }).then(() => { BR.busy = false; draw(); });
+    }
+    const v = BR.id === cell ? BR.v : null; const subC = A.subOf(cell);
+    if(v && v.fail) whoH = '<div class="nhl-e" style="padding:6px 0">입력 기록을 읽지 못했어요.</div>';
+    else if(v && subC){
+      const ids = (A.subStudents ? A.subStudents(subC) : (subC.studentIds || [])).map(x => (x && x.id) || x);
+      const rows = v.rows.filter(r => !ids.length || ids.includes(r.sid)).sort((a, b) => b.at - a.at);
+      const rest = ids.filter(i => !rows.some(r => r.sid === i)).length;
+      whoH = rows.slice(0, 40).map(r => `<div class="nhl-w"><b>${esc(A.stuName(r.sid) || '')}</b><span>${esc(r.uid === uid() ? '나' : (r.who || ''))}${r.ppl && r.ppl.length > 1 ? ` <i>외 ${r.ppl.length - 1}</i>` : ''}</span><small>${esc(ago(r.at))}${r.labs && r.labs.length ? ' · ' + esc(r.labs.join(', ')) : ''}</small></div>`).join('')
+        + (rest ? `<div class="nhl-e" style="padding:6px 0">아직 입력 기록이 없는 학생 ${rest}명</div>` : '')
+        + (!rows.length && !rest ? '<div class="nhl-e" style="padding:6px 0">아직 입력 기록이 없어요.</div>' : '')
+        + (v.more ? '<div class="nhl-e" style="padding:6px 0">최근 기록만 보여요 — 전체는 «기록 · 코멘트 › 고친 기록»</div>' : '');
+    } else whoH = '<div class="nhl-e" style="padding:6px 0">불러오는 중…</div>';
+  }
   // 칸마다 마지막 저장 (이 반 · 이 칸 범위에서)
   let cellsH = '';
   if(sc !== 'all'){
@@ -151,7 +172,8 @@ function html(){
     <div class="nhl-b">
       ${liveH || `<div class="nhl-e">${READY ? '지금 이 범위에서 작업 중인 선생님이 없어요.' : '불러오는 중…'}</div>`}
       ${actH ? `<div class="nhl-t">조금 전</div>${actH}` : ''}
-      ${cellsH ? `<div class="nhl-t">칸마다 마지막 저장</div>${cellsH}` : ''}
+      ${whoH ? `<div class="nhl-t">이 칸 — 학생마다 마지막 입력</div>${whoH}` : ''}
+      ${cellsH && sc !== 'cell' ? `<div class="nhl-t">칸마다 마지막 저장</div>${cellsH}` : ''}
     </div>
     ${tabs.length > 1 ? `<div class="nhl-f">${tabs.map(([k, l]) => `<button type="button" class="${sc === k ? 'on' : ''}" data-nhlsc="${k}">${l}</button>`).join('')}</div>` : ''}
     <div class="nhl-n">글 내용은 보이지 않아요 — 누가 · 어디를 · 언제만. 6분 넘게 쉬면 저절로 빠져요.</div></div>`;

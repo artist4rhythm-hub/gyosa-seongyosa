@@ -409,7 +409,7 @@ function frDiff(was, wt, now, nt){
   const type = (wt || 'E') !== (nt || 'E');
   return { gone, neu, chg, order, norder, ngone, nneu, nchg, etc, type, any: !!(gone.length || neu.length || chg.length || order || norder || ngone.length || nneu.length || nchg.length || etc.length || type) };
 }
-const FR_ETC = { lay: '표 모양 (칸 너비 · 세부 칸)', score: '시험 성적', a: '출결 항목', r: '암송 · 읽기', mode: '평가 방식 세부', hide: '출력에서 빼기', cols: '단계 칸', lv: '단계 이름' };
+const FR_ETC = { lay: '표 모양 (칸 너비 · 세부 칸)', score: '시험 성적', a: '출결 항목', r: '암송 · 읽기', mode: '평가 방식 세부', hide: '출력에서 빼기', cols: '단계 칸', lv: '단계 이름', noT: '출력에 선생님 이름 넣기 · 빼기' };
 const typeKo = t => { const f = (C.FORMS || []).find(x => x.type === t); return f ? f.ko : (t || ''); };
 const itemLine = x => `${x.g ? `<span class="ch gray">${esc(x.g)}</span> ` : ''}${x.s ? `<span class="ch gray">${esc(x.s)}</span> ` : ''}${esc(x.t || '(글 없음)')}`;
 /* 오래된 것 정리 — 30일이 지난 것만: 지우지 않는 것(작성완료 · 틀 바꾸기 …)은 두고, 나머지는 하루에 하나(그날의 마지막)만 남김. 칸마다 사흘에 한 번 */
@@ -651,7 +651,7 @@ async function chgFlush(id){
   if(cur.length) parts.push(cur);
   const back = list => { const R2 = (CHGR[id] = CHGR[id] || {}); list.forEach(c => { if(R2[c.k]) R2[c.k].was = c.w; else R2[c.k] = { was: c.w, now: c.n, v: c.v }; }); };
   for(let pi = 0; pi < parts.length; pi++){
-    try{ await FS.addDoc(FS.collection(A.db, 'nhpEntries', id, 'chg'), { termId: sub.termId, subjectId: id, at: FS.serverTimestamp(), by: A.CU.uid, byName: (A.me().name || ''), cnt: parts[pi].length, ch: parts[pi] }); CHG_CACHE[id] = null;
+    try{ await FS.addDoc(FS.collection(A.db, 'nhpEntries', id, 'chg'), { termId: sub.termId, subjectId: id, at: FS.serverTimestamp(), by: A.CU.uid, byName: (A.me().name || ''), cnt: parts[pi].length, ch: parts[pi] }); CHG_CACHE[id] = null; delete BRIEF[id];
       if(A.live) try{ const st = {}; let fr = false; parts[pi].forEach(c => { const m = /^rows\.([^.]+)\./.exec(c.k || ''); if(m) st[m[1]] = 1; else fr = true; }); const n = Object.keys(st).length; if(n || !fr) A.live.did(id, n, 'edit'); else A.live.did(id, 0, 'frame'); }catch(e2){} }      // 👥 v213 조금 전 한 일
     catch(e){
       const rest = parts.slice(pi).reduce((a, b) => a.concat(b), []);
@@ -672,6 +672,26 @@ async function chgLoad(id, n){
   snap.forEach(d => L.push(Object.assign({ id: d.id }, d.data())));
   L.sort((a, b) => tmMs(b.at) - tmMs(a.at));
   return L.slice(0, n || 300);
+}
+/* 👥 v216 «지금 작업 중» 창에 보여 줄 요약 — 학생마다 마지막으로 누가 · 언제 · 어느 항목을 (글 내용은 넘기지 않음)
+   고친 기록 최근 80묶음에서 만든다 · 2분 동안 다시 읽지 않음 · 내가 저장하면 새로 */
+const BRIEF = {};
+export async function chgBrief(id){
+  const sub = A.subOf(id); if(!sub) return null;
+  const c = BRIEF[id]; if(c && Date.now() - c.t < 120000) return c.v;
+  let L; try{ L = await chgLoad(id, 80); }catch(e){ BRIEF[id] = { t: Date.now(), v: null }; return null; }
+  const by = {}; let common = null;
+  chgLines(L, sub).forEach(x => {
+    const at = tmMs(x.at) || Date.now();
+    let lab = ''; try{ lab = x.sid ? (actLabel(sub, x.leaf) || C.leafLabel(sub, x.leaf, (A.TERM.hr || {}).items) || '') : ''; }catch(e){}
+    if(!x.sid){ if(!common || at > common.at) common = { at, who: x.byName, uid: x.by }; return; }
+    const o = by[x.sid] = by[x.sid] || { sid: x.sid, at: 0, who: '', uid: '', labs: [], n: 0, ppl: {} };
+    o.n++; if(x.byName) o.ppl[x.byName] = 1;
+    if(at >= o.at){ o.at = at; o.who = x.byName; o.uid = x.by; }
+    if(lab && !o.labs.includes(lab) && o.labs.length < 3) o.labs.push(lab);
+  });
+  const v = { rows: Object.values(by).map(o => Object.assign(o, { ppl: Object.keys(o.ppl) })), common, more: L.length >= 80 };
+  BRIEF[id] = { t: Date.now(), v }; return v;
 }
 /* 기록 묶음 → 한 줄씩 (학생 · 칸) */
 function chgLines(L, sub){
@@ -760,13 +780,15 @@ function stageChain(){
   const labels = (SUB.rvL || []).slice();
   const cur = SUB.state === 'review' ? (SUB.stage || 0) : SUB.state === 'final' ? labels.length : SUB.state === 'done' ? labels.length + 1 : -1;
   const steps = ['작성'].concat(labels).concat([SUB.finL || '최종 승인']);
-  return steps.map((l, i) => {
+  /* 🎛 v216 글만 이어 쓰지 않고 «번호 · 단계 · 맡은 분» 칸으로 — 지금 단계는 진하게, 지난 단계는 ✓ */
+  return `<span class="chn" role="list" aria-label="결재 단계">` + steps.map((l, i) => {
     const k = i - 1;
     const on = (SUB.state === 'draft' && i === 0) || (k === cur && SUB.state !== 'draft') || (SUB.state === 'done' && i === steps.length - 1);
     const done = SUB.state === 'done' || (SUB.state !== 'draft' && k < cur);
     const who = i === 0 ? (SUB.teacherUids || []) : i <= labels.length ? ((SUB.rv || {})['r' + i] || []) : ((SUB.rv || {}).fin || []);
-    return `<span class="ch ${on ? 'info' : done ? 'ok' : 'gray'}" title="${esc(who.map(A.staffName).join(', '))}">${done && !on ? '✓ ' : ''}${esc(l)}${who.length ? ` · ${esc(who.map(A.staffName).filter(Boolean).slice(0, 2).join(', '))}${who.length > 2 ? '…' : ''}` : ''}</span>`;
-  }).join('<span style="color:var(--ink-3)">→</span>');
+    const names = who.map(A.staffName).filter(Boolean);
+    return `<span class="chn-i${on ? ' on' : done ? ' done' : ''}" role="listitem" title="${esc(l + (names.length ? ' — ' + names.join(', ') : ''))}"${on ? ' aria-current="step"' : ''}><i>${done && !on ? '✓' : i + 1}</i><span><b>${esc(l)}</b><small>${names.length ? esc(names.slice(0, 2).join(', ')) + (names.length > 2 ? ` 외 ${names.length - 2}` : '') : '—'}</small></span>${on ? `<em>${SUB.state === 'done' ? '끝' : '지금'}</em>` : ''}</span>`;
+  }).join('<span class="chn-a" aria-hidden="true">›</span>') + '</span>';
 }
 function draw(){ return keepFocus(draw0); }
 function draw0(){
@@ -1353,7 +1375,9 @@ function setupHTML(){
       <div class="fl" style="max-width:120px"><label>내용 칸 수</label><select class="nh-sel" data-sr="n"${dis}>${[1, 2, 3].map(n => `<option${Number((st.r || {}).n || 1) === n ? ' selected' : ''}>${n}</option>`).join('')}</select></div></div></div>`;
     if(t !== 'R') L += narrEditorHTML(st, dis);
     L += `<div class="st-card"><div class="frow" style="align-items:center"><span class="nh-desc" style="margin:0">듣는 학생: ${(SUB.studentIds || []).length ? `<b>${SUB.studentIds.length}명</b>${SUB.grp ? ' (조원)' : '만'}` : '반 모두'}</span>${(!SUB.grp && (A.isMgr || (SUB.state === 'draft' && CAN.teacher))) ? '<button class="nh-btn xs" data-ej="students">학생 고르기</button>' : ''}
-        <span class="nh-desc" style="margin:0 0 0 12px">출력 이름: <b>${esc(SUB.printName || SUB.name)}</b> · ${SUB.grp ? '조 담당' : '교사'} <b>${esc(SUB.printTeacher || (SUB.teacherUids || []).map(A.staffName).join(', ') || '—')}</b></span>
+        <span class="nh-desc" style="margin:0 0 0 12px">출력 이름: <b>${esc(SUB.printName || SUB.name)}</b></span>
+        <label class="nh-sw" title="끄면 이 칸의 출력에 선생님 이름이 나오지 않아요 (예: 예배처럼 여러 분이 함께 맡는 칸)"><input type="checkbox" data-ej="tname"${st.noT ? '' : ' checked'}${dis}><span class="sw" aria-hidden="true"></span><span>출력에 ${SUB.grp ? '조 담당' : '선생님'} 이름 넣기</span></label>
+        <span class="nh-desc" style="margin:0">${st.noT ? '<b>넣지 않음</b>' : `<b>${esc(SUB.printTeacher || (SUB.teacherUids || []).map(A.staffName).join(', ') || '—')}</b>`}</span>
         ${SUB.inheritedFrom ? '<span class="ch gray">지난 학기에서 이어받은 틀</span>' : ''}<span class="nh-sp"></span>${A.isMgr && CAN.setup ? '<button class="nh-btn xs" data-ej="saveform">⭐ 기관 양식으로 저장</button>' : ''}</div></div>`;
     return h + `<div class="ed2" style="--pvw:${PVW}px"><div class="ed2-l">${L}</div><aside class="ed2-r" id="ej-pv"><span class="pv-grip" title="끌어서 미리보기 폭 바꾸기" aria-label="미리보기 폭"></span>${pvPaneHTML()}</aside></div>`;
   }
@@ -1383,8 +1407,8 @@ function setupHTML(){
 function formsHTML(dis){
   const cur = C.formOf(SUB);
   const nForms = ((A.FORMS || {}).list || []).length;
-  return `<div class="st-card"><div class="frow" style="align-items:center"><b style="font-size:14px">① 양식</b><span class="nh-desc" style="margin:0">골라서 시작 — 고른 뒤에도 칸 · 항목은 자유롭게</span><span class="nh-sp"></span>
-      ${STRUCT() ? `<button class="nh-btn xs g" data-ej="import">📥 가져오기 <small>다른 반 · 지난 학기 · 기관 양식${nForms ? ' ' + nForms : ''}</small></button>` : ''}</div>
+  return `<div class="st-card"><div class="frow" style="align-items:center"><b style="font-size:14px">① 양식</b><span class="nh-desc" style="margin:0">골라서 시작 — 고른 뒤에도 칸 · 항목은 자유롭게</span></div>
+      ${STRUCT() ? `<button class="imp-big" data-ej="import" title="다른 반 · 지난 학기 · 기관 양식의 평가 틀을 그대로 가져와요"><span class="ic" aria-hidden="true">📥</span><span class="tx"><b>평가 틀 가져오기</b><small>이미 만든 틀을 그대로 가져와 시작해요 — 가져온 뒤 고칠 수 있어요</small></span><span class="src"><i>🏫 다른 반</i><i>🗓 지난 학기</i><i>⭐ 기관 양식${nForms ? ' ' + nForms : ''}</i></span><span class="go">열기 →</span></button>` : ''}
     ${CAN.setup && !STRUCT() ? '<div class="nh-desc" style="margin:4px 0 0">검토 중에는 항목 글 · 오타만 고칠 수 있어요 — 양식 · 가져오기 · 함께 쓰기는 맡은 선생님(작성 중)과 나학평 담당이 바꿔요.</div>' : ''}
     <div class="fm-tiles">${C.FORMS.map(f => `<button class="fm-tile${f.k === cur ? ' on' : ''}" data-form="${esc(f.k)}"${STRUCT() ? '' : ' disabled'} title="${esc(f.d)}"><b>${esc(f.ko)}</b><small>${esc(f.d)}</small></button>`).join('')}</div></div>`;
 }
@@ -1930,6 +1954,7 @@ async function onClick(e){
   if(a === 'students'){ await SETUP.editCellStudents(SUB.id, A); SUB = A.subOf(SUB.id); SIDS = A.subStudents(SUB); draw(); return; }
   if(a === 'itemadd'){ const it = (SUB.setup.items || []).concat([{ id: C.rid('i'), g: '', t: '' }]); SUB.setup = Object.assign({}, SUB.setup, { items: it }); saveSetup(true); drawBody(); setTimeout(() => { const ins = EL.querySelectorAll('[data-itf][data-f="t"]'); if(ins.length) ins[ins.length - 1].focus(); }, 30); return; }
   if(a === 'itempaste') return pasteItems();
+  if(a === 'tname'){ if(!CAN.setup || t.tagName !== 'INPUT') return; SUB.setup = Object.assign({}, SUB.setup, { noT: !t.checked }); if(t.checked) delete SUB.setup.noT; saveSetup(); drawBody(); A.toast((t.checked ? '출력에 선생님 이름을 넣어요.' : '이 칸은 출력에 선생님 이름을 넣지 않아요.') + (C.shareOf(SUB, A.SUBS) ? ' 틀을 함께 쓰는 칸에도 같이 맞춰져요.' : '')); return; }      // 🙈 v216
   if(a === 'import'){ if(!STRUCT()) return; return importDialog(); }
   if(a === 'splitpre'){ const it = (SUB.setup.items || []).map(x => { const m = /^\s*[\[［【(（]([^\]］】)）]{1,20})[\]］】)）]\s*(\S[\s\S]*)$/.exec(x.t || ''); return m && !String(x.s || '').trim() ? Object.assign({}, x, { s: m[1].trim(), t: m[2].trim() }) : x; });
     SUB.setup = Object.assign({}, SUB.setup, { items: it, lay: Object.assign({}, SUB.setup.lay || {}, { sOn: true }) }); saveSetup(true); drawBody(); A.toast('머리말을 «세부» 칸으로 옮겼어요 ✓'); return; }
@@ -2237,7 +2262,7 @@ async function saveAsForm(){
   const nm = await A.prompt('⭐ 기관 양식으로 저장', '양식 이름 (선생님들이 «가져오기 › 기관 양식 모음»에서 골라요)', `${SUB.name} 기본`, { required: '이름을 넣어 주세요' });
   if(!nm) return;
   const d0 = await A.prompt('설명 (선택)', '예: 수업 태도 기본 · 모든 과목에 쓰기 좋음', '', {});
-  const st = JSON.parse(JSON.stringify(SUB.setup || {}));
+  const st = JSON.parse(JSON.stringify(SUB.setup || {})); delete st.noT;      // 선생님 이름 넣기/빼기는 칸마다 정하는 것 — 양식에는 넣지 않음
   (st.narr || []).forEach(n => { if(!C.isEach(n)) n.fixed = ''; });   // 개관 글은 학기마다 바뀜
   try{
     const ref = FS.doc(A.db, 'nhpConfig', 'forms');
@@ -2332,7 +2357,7 @@ function dwPlan(x, ent){
 function dwDraw(){
   const el = DW.el; if(!el || !SUB) return;
   const subj = SUB.kind === 'subj';
-  const tabs = (subj ? [['mine', '내 다른 반'], ['oth', '다른 선생님'], ['past', '지난 학기']] : []).concat([['ph', '문장 모음']]);
+  const tabs = (subj ? [['mine', '🏫 내 다른 반'], ['oth', '👥 다른 선생님'], ['past', '🗓 지난 학기']] : []).concat([['ph', '💬 문장 모음']]);
   let h = `<div class="dw-h"><b>🗄 가져오기 서랍</b><small>${esc(A.whereOf(SUB))} · ${esc(A.subLabel(SUB))}에 넣어요</small><span class="nh-sp"></span><button class="nh-btn sm" data-dwx aria-label="서랍 닫기">닫기</button></div>
     <div class="dw-tabs">${tabs.map(([k, l]) => `<button data-dwtab="${k}" class="${DW.tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
   if(DW.tab === 'ph') h += dwPhHTML();
