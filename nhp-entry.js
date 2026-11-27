@@ -44,7 +44,7 @@ export async function render(a, el, id, tab){
   if(!SPEND[id]){ SRV[id] = SJ(SUB.setup || {}); delete THEIRS[id]; HOLD[id] = false; }
   CHG_N = 300; CHG_SID = ''; CHG_CACHE[id] = null; CHGOFF[id] = false; chgResume(id);
   STALE = false; PEND_IN = false;
-  VIEWMODE = VIEWMODE || (innerWidth < 900 ? 'one' : 'grid');
+  VIEWMODE = VIEWMODE || (innerWidth < 900 ? 'one' : ((() => { try{ const v = localStorage.getItem('nhp_vmode'); return v === 'one' || v === 'grid' ? v : ''; }catch(e){ return ''; } })() || 'grid'));      // 🎚 v215 넓은 화면에서는 내가 마지막에 고른 보기로
   CUR = Math.min(CUR, Math.max(0, SIDS.length - 1));
   draw();
   // 함께 맡은 선생님 · 검토관이 고친 것 — 쓰는 칸이 아니면 바로 반영
@@ -777,19 +777,23 @@ function draw0(){
   const isSubj = SUB.kind === 'subj';
   const tabs = [['in', '✏️ 입력'], ['set', isSubj ? '🧩 평가 틀' : '🧩 설정'], ...((isSubj && SUB.type !== 'A' && SUB.type !== 'R') ? [['mk', '📈 학기 중 기록']] : []), ['pv', '👀 미리보기'], ['log', `🗒 기록 · 코멘트${(SUB.log || []).filter(l => l.msg).length ? ' ' + (SUB.log || []).filter(l => l.msg).length : ''}`]];
   if(!tabs.some(t => t[0] === TAB)) TAB = 'in';
-  EL.innerHTML = `<div style="margin-bottom:10px"><button class="nh-btn sm ghost" data-go="home">← 내 할 일</button> <button class="nh-btn sm ghost" data-go="board">📊 진행 현황</button></div>
+  const nLog = (SUB.log || []).filter(l => l.msg).length;
+  /* 🎛 v215 위쪽 다듬기 — 제목 줄 하나(돌아가기 · 제목 · 결재 단계 · 단추) + 큰 단계 탭 한 줄(단계 줄과 작은 탭을 하나로) + 도구 한 줄 */
+  EL.innerHTML = `
     ${SUB.removed ? '<div class="nh-warn">이 칸은 학기 설정에서 «빠진 칸»이에요 (보관 중). 출력에 나오지 않아요.</div>' : ''}
-    <div class="sj-top"><div class="tt"><div class="k">${esc(A.whereOf(SUB))} · ${esc(kind.icon || '')} ${esc(isSubj ? (SUB.grp ? '조별 과목' : '교과') : (kind.ko || '').split(' (')[0])}</div>
-      <h2>${esc(A.subLabel(SUB))} ${A.typeChip(SUB)} ${A.stateChip(SUB)}</h2>
-      <div class="m">${stageChain()}</div>
-      <div class="m" style="margin-top:6px"><span>학생 ${SIDS.length}명 · <b style="color:var(--ink)">${p.done}명 채움</b></span><span class="sv-dot" id="ej-save">${LAST_OK ? '' : ''}</span>
-        <span id="ej-remote" class="ch warn" style="display:none;cursor:pointer" data-ej="reload">다른 분이 고쳤어요 · 새로 보기</span></div></div>
+    <div class="sj-top v2">
+      <div class="sj-nav"><button class="nh-btn sm ghost" data-go="home" title="내 할 일로">← 내 할 일</button><button class="nh-btn sm ghost" data-go="board" title="진행 현황으로">📊 진행 현황</button></div>
+      <div class="tt"><div class="k">${esc(A.whereOf(SUB))} · ${esc(kind.icon || '')} ${esc(isSubj ? (SUB.grp ? '조별 과목' : '교과') : (kind.ko || '').split(' (')[0])}</div>
+        <h2>${esc(A.subLabel(SUB))} ${A.typeChip(SUB)} ${A.stateChip(SUB)}</h2></div>
+      <div class="sj-chain"><div class="k">결재 단계 · 학생 ${SIDS.length}명 · <b style="color:var(--ink)">${p.done}명 채움</b><span class="sv-dot" id="ej-save">${LAST_OK ? '' : ''}</span>
+          <span id="ej-remote" class="ch warn" style="display:none;cursor:pointer" data-ej="reload">다른 분이 고쳤어요 · 새로 보기</span></div>
+        <div class="m">${stageChain()}</div></div>
       <div class="sj-acts">${actsHTML(p)}</div></div>
     ${backNoteHTML()}
     ${lockNote()}
     <div class="nh-warn" id="ej-stash" style="display:none"></div>
-    <div class="stp" id="ej-steps" role="group" aria-label="이 칸의 단계"></div>
-    <div class="sj-bar"><div class="sj-tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${TAB === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <div class="stp2" id="ej-steps" role="group" aria-label="이 칸의 단계 — 누르면 그 화면으로"></div>
+    <div class="sj-bar v2"><div class="sj-tabs"><button data-tab="log" class="${TAB === 'log' ? 'on' : ''}" title="검토 의견 · 넘긴 기록 보기">🗒 기록 · 코멘트${nLog ? ` <b class="sj-n">${nLog}</b>` : ''}</button></div>
       <div class="sj-hist"><button class="nh-btn sm" id="ej-undo" data-ej="undo" title="방금 넣은 것 되돌리기 (Ctrl+Z)" disabled>↩ 되돌리기</button><button class="nh-btn sm" id="ej-again" data-ej="again" title="되돌린 것 다시 하기 (Ctrl+Y)" disabled>↪ 다시</button><button class="nh-btn sm" data-ej="tm" title="이 칸의 지난 모습 보기 · 되살리기">⏱ 타임머신</button>${dwCan() ? '<button class="nh-btn sm g" data-ej="drawer" title="내 다른 반 · 다른 선생님 · 지난 학기에 쓴 것 가져오기 · 자주 쓰는 문장 모음">🗄 가져오기 서랍</button>' : ''}</div></div>
     <div id="ej-body"></div>`;
   EL.onclick = onClick; EL.onchange = onChange; EL.oninput = onInput; EL.onkeydown = onKey;
@@ -818,6 +822,8 @@ function stepsModel(){
   } else if(k === 'act') S.push({ id: 'set', t: '활동 목록', sub: `${C.actsFor(A.LISTS, SUB.secId).length}개`, ok: C.actsFor(A.LISTS, SUB.secId).length > 0, warn: !C.actsFor(A.LISTS, SUB.secId).length });
   else if(k === 'book') S.push({ id: 'set', t: '도서 목록', sub: `${(st.books || []).filter(b => String(b.t || '').trim()).length}권`, ok: (st.books || []).some(b => String(b.t || '').trim()), warn: false });
   else S.push({ id: 'set', t: '설정', sub: '필요할 때만', ok: true, warn: false });
+  // (선택) 학기 중 기록 — 탭이 있는 칸만. 안 써도 입력에 지장 없음 → «다음 할 일»로는 세지 않음
+  if(k === 'subj' && t !== 'A' && t !== 'R') S.push({ id: 'mk', t: '학기 중 기록', sub: '회차 점수 평균', ok: false, warn: false, opt: true });
   // ② 입력
   const loose = ['att', 'parent', 'act', 'book', 'serve'].includes(k);      // 비워도 되는 칸 — «다 채움»으로 세지 않음
   S.push({ id: 'in', t: '입력', sub: !SIDS.length ? '학생 없음' : loose ? `학생 ${SIDS.length}명 · 해당하는 것만` : `${p.done} / ${p.total}명 다 채움`, ok: !!SIDS.length && p.done >= p.total, warn: false });
@@ -830,25 +836,40 @@ function stepsModel(){
   const where = stN === 'review' ? `검토 중 · ${labels[SUB.stage || 0] || '검토'}` : stN === 'final' ? `검토 중 · ${SUB.finL || '최종 승인'}` : stN === 'done' ? '최종 승인됨 (잠김)' : (CAN.submit ? `${('r1' in (SUB.rv || {}) ? labels[0] : '') || SUB.finL || '최종 승인'} 단계로 넘겨요` : '맡은 선생님이 넘겨요');
   S.push({ id: 'done', t: stN === 'draft' ? '작성 완료' : stN === 'done' ? '완료' : '작성 완료함', sub: where, ok: stN !== 'draft', warn: false });
   // 지금 할 곳 — 작성 중이면 처음으로 덜 된 단계 · 그 뒤는 ④
-  const cur = stN !== 'draft' ? 3 : Math.max(0, S.findIndex(x => !x.ok));
-  return { S, cur, draft: stN === 'draft' };
+  const cur = stN !== 'draft' ? S.length - 1 : Math.max(0, S.findIndex(x => !x.ok && !x.opt));
+  return { S, cur, draft: stN === 'draft', p };
 }
 function stepsHTML(){
-  const { S, cur, draft } = stepsModel();
-  const tabOf = { set: 'set', in: 'in', pv: 'pv' };
-  return S.map((x, i) => {
-    const on = x.id === 'done' ? false : (tabOf[x.id] === TAB);
-    const cls = `stp-i${i === cur ? ' cur' : ''}${x.ok ? ' ok' : ''}${x.warn ? ' warn' : ''}${on ? ' on' : ''}`;
+  const { S, cur, draft, p } = stepsModel();
+  const tabOf = { set: 'set', mk: 'mk', in: 'in', pv: 'pv', chk: 'pv' };
+  const row = S.map((x, i) => {
+    const on = x.id === 'done' ? false : (tabOf[x.id] === TAB);      // 지금 보고 있는 화면
+    const next = draft && i === cur;                                  // 다음에 할 일
+    const cls = `stp-i${next ? ' cur' : ''}${x.ok ? ' ok' : ''}${x.warn ? ' warn' : ''}${on ? ' on' : ''}${x.opt ? ' opt' : ''}`;
     const can = x.id !== 'done' || (draft && CAN.submit);
-    return `<button class="${cls}" data-step="${x.id}"${i === cur ? ' aria-current="step"' : ''}${can ? '' : ' disabled'} title="${esc(x.t + ' — ' + x.sub)}"><span class="n">${x.ok ? '✓' : i + 1}</span><span class="tx"><b>${esc(x.t)}</b><small>${esc(x.sub)}</small></span></button>`;
-  }).join('<i class="stp-ar" aria-hidden="true">›</i>');
+    const tag = x.opt ? '선택' : next ? (on ? '지금 할 일' : '다음 할 일') : (x.ok && x.id !== 'done' ? '끝남' : '');
+    return `<button class="${cls}" data-step="${x.id}"${next ? ' aria-current="step"' : ''}${on ? ' aria-pressed="true"' : ''}${can ? '' : ' disabled'} title="${esc(x.t + ' — ' + x.sub)}"><span class="n">${x.ok ? '✓' : i + 1}</span><span class="tx"><b>${esc(x.t)}</b><small>${esc(x.sub)}</small></span>${tag ? `<em class="tg">${tag}</em>` : ''}</button>`;
+  }).join('');
+  // 아래 한 줄 — 지금 무엇을 하면 되는지 (작성 중이고 내가 고칠 수 있을 때만)
+  let nx = '';
+  if(draft && CAN.edit && S[cur]){
+    const x = S[cur]; const left = Math.max(0, (p.total || 0) - (p.done || 0));
+    const msg = x.id === 'set' ? `<b>${esc(x.t)}</b>부터 정해 주세요 — ${esc(x.sub)}`
+      : x.id === 'in' ? `<b>입력</b> — 학생 ${left}명이 남았어요 (${p.done} / ${p.total}명 채움)`
+      : (x.id === 'chk' || x.id === 'pv') ? `<b>${esc(x.t)}</b> — ${esc(x.sub)}`
+      : `다 됐어요 — <b>작성 완료</b>를 눌러 ${esc(x.sub.replace(/ 넘겨요$/, ''))} 넘겨 주세요`;
+    const pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+    const here = tabOf[x.id] === TAB && x.id !== 'chk';
+    nx = `<div class="stp-nx"><span class="stp-nxt">다음 할 일</span><span class="stp-msg">${msg}</span><span class="stp-bar" role="img" aria-label="입력 ${pct}%"><i style="width:${pct}%"></i></span>${here ? '' : `<button class="nh-btn sm g" data-step="${x.id}"${x.id === 'done' && !CAN.submit ? ' disabled' : ''}>${x.id === 'done' ? '📨 작성 완료 · 검토로' : esc(x.t) + '(으)로 →'}</button>`}</div>`;
+  }
+  return `<div class="stp">${row}</div>${nx}`;
 }
 let STP_T = null, CK_C = null;
 /* 점검 결과 — 입력 · 틀이 바뀐 뒤에만 다시 셈 (단계 줄이 자주 다시 그려져도 가볍게) */
 function checkCached(){ if(!CK_C || CK_C.id !== SUB.id || Date.now() - CK_C.at > 3000) CK_C = { id: SUB.id, at: Date.now(), v: checkList() }; return CK_C.v; }
 function stepsUI(now){
   clearTimeout(STP_T);
-  const go = () => { const el = document.getElementById('ej-steps'); if(!el || !SUB || !CAN || !ENT || LOADING) return; const f = el.contains(document.activeElement) ? document.activeElement.dataset.step : ''; el.innerHTML = stepsHTML(); if(f){ const b = el.querySelector(`[data-step="${f}"]`); if(b && !b.disabled) b.focus(); } };
+  const go = () => { const el = document.getElementById('ej-steps'); if(!el || !SUB || !CAN || !ENT || LOADING) return; const f = el.contains(document.activeElement) ? document.activeElement.dataset.step : ''; const h = stepsHTML(); if(el.__h === h && el.firstChild) return; el.__h = h; el.innerHTML = h; if(f){ const b = el.querySelector(`[data-step="${f}"]`); if(b && !b.disabled) b.focus(); } };
   if(now) go(); else STP_T = setTimeout(go, 500);
 }
 /* 검토에서 돌아온 의견 — 마지막으로 넘긴 뒤에 받은 수정 요청 (작성 중일 때만) · 글에 학생 이름이 있으면 그 학생에게 바로 */
@@ -1845,12 +1866,12 @@ async function onClick(e){
   const t = e.target.closest('button,[data-ej],[data-tab],[data-mode]');
   if(!t) return;
   const d = t.dataset;
-  if(d.step){ const k = d.step; if(k === 'chk'){ if(TAB !== 'pv'){ TAB = 'pv'; EL.querySelectorAll('.sj-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB)); drawBody(); } openCheck(); return; } if(k === 'done'){ if(SUB.state === 'draft' && CAN.submit) return doAct('submit'); return; } TAB = k; EL.querySelectorAll('.sj-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB)); drawBody(); return; }
+  if(d.step){ const k = d.step; if(k === 'chk'){ if(TAB !== 'pv'){ await flush(); TAB = 'pv'; EL.querySelectorAll('.sj-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB)); drawBody(); } openCheck(); return; } if(k === 'done'){ if(SUB.state === 'draft' && CAN.submit) return doAct('submit'); return; } if(TAB === k) return; await flush(); TAB = k; EL.querySelectorAll('.sj-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === TAB)); drawBody(); return; }      // 🎛 v215 단계 탭 — 옮기기 전에 남은 입력부터 저장
   if(d.pvw){ setPvw(Number(d.pvw), true); return; }
   if(d.cgf){ CHG_MINE = d.cgf === 'mine'; drawBody(); return; }
   if(d.cgrev){ await chgRevert(d.cgrev, d.ci); return; }
   if(d.tab){ await flush(); TAB = d.tab; draw(); return; }
-  if(d.mode){ VIEWMODE = d.mode; drawBody(); return; }
+  if(d.mode){ VIEWMODE = d.mode; try{ if(d.mode === 'one' || d.mode === 'grid') localStorage.setItem('nhp_vmode', d.mode); }catch(e2){} drawBody(); return; }
   if(d.one){ CUR = Math.max(0, Math.min(SIDS.length - 1, CUR + Number(d.one))); drawBody(); return; }
   if(d.pick != null && t.closest('.stu-chips')){ CUR = Number(d.pick); drawBody(); return; }
   if(d.pvi){ PV_I = Math.max(0, Math.min(SIDS.length - 1, PV_I + Number(d.pvi))); drawBody(); return; }
